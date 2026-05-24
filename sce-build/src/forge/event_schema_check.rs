@@ -30,18 +30,24 @@
 //     `<send>` / `<raise>` (transitions, on_entry/on_exit, initial-
 //     transition + history-default, nested <if>/<foreach>).
 //
-// Out of scope at Atomic 3 (deferred):
-//   * Cross-doc Enum underlying-type width narrowing (Atomic 5 — the
-//     EnumRef alias is treated as opaque here; an integer literal
-//     against an enum-typed field passes width-only at Atomic 3+4).
-//   * Per-backend payload struct codegen (Atomic 4).
+// Atomic 5 scope (design RFC §2 DL-5'):
+//   * Cross-doc Enum underlying-type width narrowing — integer
+//     literals compared against (receive-side) or assigned to
+//     (send-side) an enum-typed field are now narrowed against the
+//     enum's declared `underlying_type`. Overflows surface as
+//     `validation/cross-kind-type-mismatch` (reused per Item 4
+//     precedent — no new wire code).
+//
+// Out of scope:
+//   * Per-backend payload struct codegen (Atomic 4 — already landed).
+//   * Strict variant membership (F-κ deferral) — α ships width-only.
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
 use crate::forge::expr::{parse_to_ast, BinOp, ExprKind, TypedExpr};
-use crate::forge::model::{EventSchemaModel, ForgeField, ForgeKind, SceType};
+use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, ForgeKind, SceType};
 use crate::model::{Action, Param, SCXMLModel, Transition};
 
 /// NL→IR Mapping Roadmap Item C1 Path A (DL-7' prerequisite) — resolve
@@ -110,6 +116,56 @@ pub fn resolve_imported_event_schemas(
     resolved
 }
 
+/// NL→IR Item C1 Path A Atomic 5 (DL-5') — resolve the statechart's
+/// `<sce:import kind="enum">` declarations into the per-statechart
+/// `alias → EnumModel` map consumed by the literal-width narrowing
+/// inside [`check_comparison_type`] and [`check_send_param`].
+///
+/// Shape mirrors [`resolve_imported_event_schemas`]: `enums_by_doc_name`
+/// is the orchestrator's build-wide Enum registry keyed by file stem;
+/// `scxml.forge_imports` is filtered to entries whose `kind` is
+/// `ForgeKind::Enum`, each surviving import's `src` is resolved to its
+/// file stem and matched against the registry, then keyed in the
+/// returned map by the import's authored `alias` so the validators can
+/// look up by `SceType::Enum(EnumRef { alias }).alias` directly.
+///
+/// Schema-of-record for the alias: each statechart's own imports table
+/// is the alias surface for that statechart's enum-typed field
+/// comparisons. A statechart whose schema's field declares
+/// `sce:type="enum:Result"` must independently declare an
+/// `<sce:import kind="enum" as="Result"/>` for the narrowing to fire;
+/// otherwise the alias is opaque from the statechart's view and the
+/// narrowing silent-skips (the underlying width was already opaque at
+/// Atomic 3, so silent-skip preserves the conservative-accept default).
+///
+/// Returns empty when the statechart declares no Enum imports — the
+/// non-narrowing baseline path remains zero-cost.
+pub fn resolve_imported_enums(
+    scxml: &SCXMLModel,
+    enums_by_doc_name: &BTreeMap<String, EnumModel>,
+) -> BTreeMap<String, EnumModel> {
+    let mut resolved: BTreeMap<String, EnumModel> = BTreeMap::new();
+    for import in &scxml.forge_imports {
+        if !matches!(import.kind, ForgeKind::Enum) {
+            continue;
+        }
+        let Some(stem) = Path::new(&import.src).file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(em) = enums_by_doc_name.get(stem) else {
+            continue;
+        };
+        // First occurrence wins; per-statechart duplicate-alias is
+        // already rejected upstream by `validate_and_enrich_imports`
+        // as `validation/duplicate-alias` so the silent-skip here is
+        // the conservative-defensive path (no diagnostic double-emit).
+        resolved
+            .entry(import.alias.clone())
+            .or_insert_with(|| em.clone());
+    }
+    resolved
+}
+
 /// Per-statechart receive-side typecheck.
 ///
 /// `imported_schemas` maps SCXML event names (e.g. `"job.completed"`) to
@@ -129,6 +185,7 @@ pub fn resolve_imported_event_schemas(
 pub fn check(
     scxml: &SCXMLModel,
     imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_enums: &BTreeMap<String, EnumModel>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     if imported_schemas.is_empty() {
@@ -140,7 +197,13 @@ pub fn check(
     }
     for state in scxml.states.values() {
         for transition in &state.transitions {
-            check_transition(transition, imported_schemas, &scxml.name, diag_label)?;
+            check_transition(
+                transition,
+                imported_schemas,
+                imported_enums,
+                &scxml.name,
+                diag_label,
+            )?;
         }
     }
     Ok(())
@@ -149,6 +212,7 @@ pub fn check(
 fn check_transition(
     transition: &Transition,
     imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_enums: &BTreeMap<String, EnumModel>,
     statechart_name: &str,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
@@ -175,7 +239,14 @@ fn check_transition(
         return Ok(());
     };
 
-    walk_for_event_data_refs(&ast, schema, transition, statechart_name, diag_label)?;
+    walk_for_event_data_refs(
+        &ast,
+        schema,
+        imported_enums,
+        transition,
+        statechart_name,
+        diag_label,
+    )?;
     Ok(())
 }
 
@@ -186,6 +257,7 @@ fn check_transition(
 fn walk_for_event_data_refs(
     expr: &TypedExpr,
     schema: &EventSchemaModel,
+    imported_enums: &BTreeMap<String, EnumModel>,
     transition: &Transition,
     statechart_name: &str,
     diag_label: &str,
@@ -203,43 +275,134 @@ fn walk_for_event_data_refs(
             // `_event.data.foo` as a field reference; deeper paths are
             // currently unverified because schema fields are flat
             // typed primitives, not nested records).
-            walk_for_event_data_refs(object, schema, transition, statechart_name, diag_label)?;
+            walk_for_event_data_refs(
+                object,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
         }
         ExprKind::Binary { op, left, right } => {
             // Order: field-not-found checks first via recursive walk,
             // then comparison-type-mismatch layered on top.
-            walk_for_event_data_refs(left, schema, transition, statechart_name, diag_label)?;
-            walk_for_event_data_refs(right, schema, transition, statechart_name, diag_label)?;
+            walk_for_event_data_refs(
+                left,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
+            walk_for_event_data_refs(
+                right,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
             if is_comparison(*op) {
                 if let Some(field) = extract_event_data_field(left, schema) {
-                    check_comparison_type(field, right, transition, statechart_name, diag_label)?;
+                    check_comparison_type(
+                        field,
+                        right,
+                        imported_enums,
+                        transition,
+                        statechart_name,
+                        diag_label,
+                    )?;
                 }
                 if let Some(field) = extract_event_data_field(right, schema) {
-                    check_comparison_type(field, left, transition, statechart_name, diag_label)?;
+                    check_comparison_type(
+                        field,
+                        left,
+                        imported_enums,
+                        transition,
+                        statechart_name,
+                        diag_label,
+                    )?;
                 }
             }
         }
         ExprKind::Unary { operand, .. } => {
-            walk_for_event_data_refs(operand, schema, transition, statechart_name, diag_label)?;
+            walk_for_event_data_refs(
+                operand,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
         }
         ExprKind::Conditional {
             condition,
             consequent,
             alternate,
         } => {
-            walk_for_event_data_refs(condition, schema, transition, statechart_name, diag_label)?;
-            walk_for_event_data_refs(consequent, schema, transition, statechart_name, diag_label)?;
-            walk_for_event_data_refs(alternate, schema, transition, statechart_name, diag_label)?;
+            walk_for_event_data_refs(
+                condition,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
+            walk_for_event_data_refs(
+                consequent,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
+            walk_for_event_data_refs(
+                alternate,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
         }
         ExprKind::Call { callee, args } => {
-            walk_for_event_data_refs(callee, schema, transition, statechart_name, diag_label)?;
+            walk_for_event_data_refs(
+                callee,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
             for arg in args {
-                walk_for_event_data_refs(arg, schema, transition, statechart_name, diag_label)?;
+                walk_for_event_data_refs(
+                    arg,
+                    schema,
+                    imported_enums,
+                    transition,
+                    statechart_name,
+                    diag_label,
+                )?;
             }
         }
         ExprKind::Index { object, index } => {
-            walk_for_event_data_refs(object, schema, transition, statechart_name, diag_label)?;
-            walk_for_event_data_refs(index, schema, transition, statechart_name, diag_label)?;
+            walk_for_event_data_refs(
+                object,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
+            walk_for_event_data_refs(
+                index,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
         }
         // Leaf nodes — nothing to walk.
         ExprKind::NumberLit(_)
@@ -338,6 +501,7 @@ fn resolve_field(
 fn check_comparison_type(
     field: &ForgeField,
     other_operand: &TypedExpr,
+    imported_enums: &BTreeMap<String, EnumModel>,
     transition: &Transition,
     statechart_name: &str,
     diag_label: &str,
@@ -346,21 +510,36 @@ fn check_comparison_type(
         Some(kind) => kind,
         None => return Ok(()),
     };
-    if literal_is_compatible_with(&field.sce_type, other_kind) {
-        return Ok(());
+    if !literal_is_compatible_with(&field.sce_type, other_kind) {
+        return Err(located_on_transition(
+            transition,
+            diag_label,
+            ValidationError::CrossKindTypeMismatch {
+                importing_kind: ForgeKind::Statechart,
+                importing_name: statechart_name.to_string(),
+                alias: "_event.data".to_string(),
+                field: field.id.clone(),
+                actual: literal_kind_canonical(other_kind),
+                expected: sce_type_canonical(&field.sce_type),
+            },
+        ));
     }
-    Err(located_on_transition(
-        transition,
-        diag_label,
-        ValidationError::CrossKindTypeMismatch {
-            importing_kind: ForgeKind::Statechart,
-            importing_name: statechart_name.to_string(),
-            alias: "_event.data".to_string(),
-            field: field.id.clone(),
-            actual: literal_kind_canonical(other_kind),
-            expected: sce_type_canonical(&field.sce_type),
-        },
-    ))
+    if let Some(overflow) = enum_underlying_overflow(&field.sce_type, other_operand, imported_enums)
+    {
+        return Err(located_on_transition(
+            transition,
+            diag_label,
+            ValidationError::CrossKindTypeMismatch {
+                importing_kind: ForgeKind::Statechart,
+                importing_name: statechart_name.to_string(),
+                alias: "_event.data".to_string(),
+                field: field.id.clone(),
+                actual: overflow.actual,
+                expected: overflow.expected,
+            },
+        ));
+    }
+    Ok(())
 }
 
 /// The rough type of a comparison's non-`_event.data` operand. Restricted
@@ -420,10 +599,10 @@ fn number_text_looks_like_int(n: &str) -> bool {
 ///     equality-as-bytes coercion at codegen).
 ///   * `SceType::Enum(EnumRef)` accepts `Int` literals (per the lattice
 ///     rule `Enum(E) ⊑ E.underlying_type` — the underlying type is an
-///     unsigned integer at every Path A α declared precedent). At
-///     Atomic 3 scope the underlying width is treated as opaque;
-///     rejecting non-int literals is the conservative correct check.
-///     Atomic 5 lands cross-doc width narrowing.
+///     unsigned integer at every Path A α declared precedent). Width
+///     narrowing against the resolved `underlying_type` runs as a
+///     second layer in [`enum_underlying_overflow`] — this helper
+///     decides category only.
 fn literal_is_compatible_with(field_type: &SceType, literal_kind: LiteralKind) -> bool {
     match field_type {
         SceType::Uint8
@@ -439,13 +618,127 @@ fn literal_is_compatible_with(field_type: &SceType, literal_kind: LiteralKind) -
         }
         SceType::Bool => matches!(literal_kind, LiteralKind::Bool),
         SceType::String | SceType::Bytes => matches!(literal_kind, LiteralKind::String),
-        // NL→IR Item C1 Path A: enum-typed field accepts integer
-        // literals only — Atomic 3 treats the underlying width as
-        // opaque (Atomic 5 threads the resolved width through and may
-        // further narrow `Int` to "integer fits in <underlying_type>").
-        // String / bool / float literals against an enum field are
-        // always wrong.
         SceType::Enum(_) => matches!(literal_kind, LiteralKind::Int),
+    }
+}
+
+/// Atomic 5 narrowing diagnostic payload returned by
+/// [`enum_underlying_overflow`]. `expected` carries the canonical name
+/// of the enum's declared `underlying_type` (e.g. `"uint8"`), `actual`
+/// names the offending integer literal with its parsed value (e.g.
+/// `"integer literal 131071 (0x1FFFF) overflows uint8 underlying type of enum 'Result'"`).
+/// Keeping both halves text-only lets the existing
+/// `CrossKindTypeMismatch` variant carry the narrowing diagnostic
+/// without new wire codes (Item 4 reuse precedent — see
+/// `nl_to_ir_mapping_roadmap.md` Item 4 memo).
+struct EnumUnderlyingOverflow {
+    actual: String,
+    expected: String,
+}
+
+/// NL→IR Item C1 Path A Atomic 5 (DL-5') — width narrowing layered
+/// atop the category check in [`literal_is_compatible_with`]. Returns
+/// `Some` when:
+///
+///   * `field_type` is `SceType::Enum(EnumRef { alias })`,
+///   * the statechart declared an `<sce:import kind="enum" as="alias">`
+///     resolvable via `imported_enums` (silent-skip otherwise — the
+///     alias is opaque from the statechart's view and Atomic 3's
+///     conservative-accept default applies),
+///   * `operand` is an integer literal parseable as a `u64` whose value
+///     exceeds the enum's declared `underlying_type` max.
+///
+/// Returns `None` when any of the above does not hold — the
+/// non-overflowing positive case + the silent-skip case both return
+/// `None` and let the caller continue.
+///
+/// Hex / binary / octal literal forms (`0x`, `0b`, `0o` prefixes) are
+/// parsed alongside decimal so authors can write `_event.data.code ===
+/// 0xFF` against a `uint8` underlying without false rejections. Unary
+/// minus on enum operands is structurally unreachable here: Path A α
+/// declares unsigned-only underlying types (F-ι defers signed), so a
+/// negative literal is the wrong category and gets rejected earlier
+/// inside [`literal_is_compatible_with`] via the int category test.
+/// (`operand_literal_kind` walks through unary minus, but the
+/// resulting `LiteralKind::Int` still passes the category check; the
+/// numeric-parsing path here returns `None` on `-N`, so unary minus
+/// silent-skips narrowing rather than wrongly accepting a negative
+/// value as unsigned — that case raises through the existing typed-
+/// expression pipeline at codegen time.)
+fn enum_underlying_overflow(
+    field_type: &SceType,
+    operand: &TypedExpr,
+    imported_enums: &BTreeMap<String, EnumModel>,
+) -> Option<EnumUnderlyingOverflow> {
+    let SceType::Enum(enum_ref) = field_type else {
+        return None;
+    };
+    let enum_model = imported_enums.get(&enum_ref.alias)?;
+    let value = integer_literal_value(operand)?;
+    if value_fits_underlying(value, &enum_model.underlying_type) {
+        return None;
+    }
+    Some(EnumUnderlyingOverflow {
+        actual: format!(
+            "integer literal {value} overflows {underlying} underlying type of enum '{alias}'",
+            underlying = sce_type_canonical(&enum_model.underlying_type),
+            alias = enum_ref.alias,
+        ),
+        expected: sce_type_canonical(&enum_model.underlying_type),
+    })
+}
+
+/// Parse an integer-literal `TypedExpr` (decimal, hex, binary, or
+/// octal — matches the lexer's [`crate::forge::expr`] numeric forms)
+/// into its `u64` value. Returns `None` for non-integer literals,
+/// unary-prefixed forms (signed literals — unsigned-only enum
+/// underlying), or values that do not fit in `u64`. The Path A α
+/// unsigned-only design lock means a `u64` carrier is always at least
+/// as wide as the largest legal underlying.
+fn integer_literal_value(operand: &TypedExpr) -> Option<u64> {
+    let ExprKind::NumberLit(text) = &operand.kind else {
+        return None;
+    };
+    parse_int_literal_text(text)
+}
+
+/// Parse a numeric literal's verbatim text. Supports the lexer's hex
+/// (`0x` / `0X`), binary (`0b` / `0B`), and octal (`0o` / `0O`)
+/// prefixes plus plain decimal. Returns `None` on parse failure or
+/// when the text encodes a non-integer (decimal point / exponent —
+/// callers already gate on `number_text_looks_like_int` upstream, so
+/// this is a defensive secondary check).
+fn parse_int_literal_text(text: &str) -> Option<u64> {
+    if !number_text_looks_like_int(text) {
+        return None;
+    }
+    if let Some(rest) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        u64::from_str_radix(rest, 16).ok()
+    } else if let Some(rest) = text.strip_prefix("0b").or_else(|| text.strip_prefix("0B")) {
+        u64::from_str_radix(rest, 2).ok()
+    } else if let Some(rest) = text.strip_prefix("0o").or_else(|| text.strip_prefix("0O")) {
+        u64::from_str_radix(rest, 8).ok()
+    } else {
+        text.parse::<u64>().ok()
+    }
+}
+
+/// Compare an unsigned literal `value` against an enum's declared
+/// `underlying_type`. Returns `true` iff `value` fits without
+/// overflow. Path A α declares unsigned-only underlying (F-ι defers
+/// signed); the non-unsigned-int arm is structurally unreachable for
+/// enum underlying types (the parser rejects them with
+/// `validation/enum-unsupported-underlying-type`), but a permissive
+/// `true` here keeps the narrowing layer silent rather than producing
+/// a contradictory diagnostic if a future relaxation changes the
+/// parser-side admission rule.
+fn value_fits_underlying(value: u64, underlying: &SceType) -> bool {
+    match underlying {
+        SceType::Uint8 => value <= u64::from(u8::MAX),
+        SceType::Uint16 => value <= u64::from(u16::MAX),
+        SceType::Uint32 => value <= u64::from(u32::MAX),
+        SceType::Uint64 => true,
+        _ => true,
     }
 }
 
@@ -535,6 +828,7 @@ fn located_on_transition(
 pub fn check_send_side(
     scxml: &SCXMLModel,
     imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_enums: &BTreeMap<String, EnumModel>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     if imported_schemas.is_empty() {
@@ -551,6 +845,7 @@ pub fn check_send_side(
             walk_actions(
                 &transition.actions,
                 imported_schemas,
+                imported_enums,
                 &scxml.name,
                 diag_label,
             )?;
@@ -559,10 +854,22 @@ pub fn check_send_side(
         // document-ordered sequence of executable-content actions
         // (W3C SCXML §3.8, §3.9).
         for block in &state.on_entry_blocks {
-            walk_actions(block, imported_schemas, &scxml.name, diag_label)?;
+            walk_actions(
+                block,
+                imported_schemas,
+                imported_enums,
+                &scxml.name,
+                diag_label,
+            )?;
         }
         for block in &state.on_exit_blocks {
-            walk_actions(block, imported_schemas, &scxml.name, diag_label)?;
+            walk_actions(
+                block,
+                imported_schemas,
+                imported_enums,
+                &scxml.name,
+                diag_label,
+            )?;
         }
         // Initial-transition + history-default action sequences (W3C
         // SCXML §3.11) carry the same executable-content shape as the
@@ -570,12 +877,14 @@ pub fn check_send_side(
         walk_actions(
             &state.initial_transition_actions,
             imported_schemas,
+            imported_enums,
             &scxml.name,
             diag_label,
         )?;
         walk_actions(
             &state.initial_history_default_actions,
             imported_schemas,
+            imported_enums,
             &scxml.name,
             diag_label,
         )?;
@@ -590,11 +899,18 @@ pub fn check_send_side(
 fn walk_actions(
     actions: &[Action],
     imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_enums: &BTreeMap<String, EnumModel>,
     statechart_name: &str,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     for action in actions {
-        check_send_action(action, imported_schemas, statechart_name, diag_label)?;
+        check_send_action(
+            action,
+            imported_schemas,
+            imported_enums,
+            statechart_name,
+            diag_label,
+        )?;
         // Composite-action bodies. The shapes are mutually exclusive
         // by action_type (`<if>` populates then/elseif/else, `<foreach>`
         // populates the `actions` field) but the model serialises them
@@ -603,6 +919,7 @@ fn walk_actions(
         walk_actions(
             &action.then_actions,
             imported_schemas,
+            imported_enums,
             statechart_name,
             diag_label,
         )?;
@@ -610,6 +927,7 @@ fn walk_actions(
             walk_actions(
                 &branch.actions,
                 imported_schemas,
+                imported_enums,
                 statechart_name,
                 diag_label,
             )?;
@@ -617,12 +935,14 @@ fn walk_actions(
         walk_actions(
             &action.else_actions,
             imported_schemas,
+            imported_enums,
             statechart_name,
             diag_label,
         )?;
         walk_actions(
             &action.actions,
             imported_schemas,
+            imported_enums,
             statechart_name,
             diag_label,
         )?;
@@ -637,6 +957,7 @@ fn walk_actions(
 fn check_send_action(
     action: &Action,
     imported_schemas: &BTreeMap<String, EventSchemaModel>,
+    imported_enums: &BTreeMap<String, EnumModel>,
     statechart_name: &str,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
@@ -653,7 +974,14 @@ fn check_send_action(
         return Ok(());
     };
     for param in &action.params {
-        check_send_param(param, action, schema, statechart_name, diag_label)?;
+        check_send_param(
+            param,
+            action,
+            schema,
+            imported_enums,
+            statechart_name,
+            diag_label,
+        )?;
     }
     Ok(())
 }
@@ -677,6 +1005,7 @@ fn check_send_param(
     param: &Param,
     action: &Action,
     schema: &EventSchemaModel,
+    imported_enums: &BTreeMap<String, EnumModel>,
     statechart_name: &str,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
@@ -712,21 +1041,35 @@ fn check_send_param(
     let Some(literal_kind) = operand_literal_kind(&expr_ast) else {
         return Ok(());
     };
-    if literal_is_compatible_with(&field.sce_type, literal_kind) {
-        return Ok(());
+    if !literal_is_compatible_with(&field.sce_type, literal_kind) {
+        return Err(located_on_action(
+            action,
+            diag_label,
+            ValidationError::CrossKindTypeMismatch {
+                importing_kind: ForgeKind::Statechart,
+                importing_name: statechart_name.to_string(),
+                alias: format!("<send event=\"{}\">", action.event),
+                field: field.id.clone(),
+                actual: literal_kind_canonical(literal_kind),
+                expected: sce_type_canonical(&field.sce_type),
+            },
+        ));
     }
-    Err(located_on_action(
-        action,
-        diag_label,
-        ValidationError::CrossKindTypeMismatch {
-            importing_kind: ForgeKind::Statechart,
-            importing_name: statechart_name.to_string(),
-            alias: format!("<send event=\"{}\">", action.event),
-            field: field.id.clone(),
-            actual: literal_kind_canonical(literal_kind),
-            expected: sce_type_canonical(&field.sce_type),
-        },
-    ))
+    if let Some(overflow) = enum_underlying_overflow(&field.sce_type, &expr_ast, imported_enums) {
+        return Err(located_on_action(
+            action,
+            diag_label,
+            ValidationError::CrossKindTypeMismatch {
+                importing_kind: ForgeKind::Statechart,
+                importing_name: statechart_name.to_string(),
+                alias: format!("<send event=\"{}\">", action.event),
+                field: field.id.clone(),
+                actual: overflow.actual,
+                expected: overflow.expected,
+            },
+        ));
+    }
+    Ok(())
 }
 
 /// Anchor a [`ValidationError`] on an action's recorded source
@@ -753,7 +1096,7 @@ fn located_on_action(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::model::{Direction, EnumRef, ForgeField, SceType};
+    use crate::forge::model::{Direction, EnumModel, EnumRef, EnumVariant, ForgeField, SceType};
 
     fn field(id: &str, ty: SceType) -> ForgeField {
         ForgeField {
@@ -775,7 +1118,28 @@ mod tests {
         }
     }
 
+    fn enum_model(name: &str, underlying: SceType) -> EnumModel {
+        EnumModel {
+            name: name.to_string(),
+            underlying_type: underlying,
+            variants: vec![EnumVariant {
+                name: "ok".to_string(),
+                value: 0,
+                source_line: None,
+            }],
+            source_location: None,
+        }
+    }
+
     fn run(schema: EventSchemaModel, cond: &str) -> Result<(), Located<ForgeError>> {
+        run_with_enums(schema, cond, BTreeMap::new())
+    }
+
+    fn run_with_enums(
+        schema: EventSchemaModel,
+        cond: &str,
+        enums: BTreeMap<String, EnumModel>,
+    ) -> Result<(), Located<ForgeError>> {
         let ast = parse_to_ast(cond).expect("valid cond");
         let transition = Transition {
             event: schema.event_name.clone(),
@@ -785,6 +1149,7 @@ mod tests {
         walk_for_event_data_refs(
             &ast,
             &schema,
+            &enums,
             &transition,
             "test_statechart",
             "test_diag_label",
@@ -859,6 +1224,139 @@ mod tests {
             ..Default::default()
         };
         let schemas = BTreeMap::new();
-        check(&scxml, &schemas, "diag").expect("empty map should pass trivially");
+        let enums = BTreeMap::new();
+        check(&scxml, &schemas, &enums, "diag").expect("empty map should pass trivially");
+    }
+
+    // ─── Atomic 5: cross-doc Enum literal width narrowing ───────────
+
+    #[test]
+    fn enum_int_literal_within_underlying_width_passes() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert("Result".to_string(), enum_model("Result", SceType::Uint8));
+        assert!(run_with_enums(s, "_event.data.status === 255", enums).is_ok());
+    }
+
+    #[test]
+    fn enum_int_literal_overflows_underlying_rejects() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert("Result".to_string(), enum_model("Result", SceType::Uint8));
+        let err = run_with_enums(s, "_event.data.status === 256", enums)
+            .expect_err("256 must overflow uint8 underlying");
+        let msg = format!("{err}");
+        assert!(msg.contains("overflows"), "{msg}");
+        assert!(msg.contains("uint8"), "{msg}");
+        assert!(msg.contains("Result"), "{msg}");
+    }
+
+    #[test]
+    fn enum_hex_literal_overflows_underlying_rejects() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert("Result".to_string(), enum_model("Result", SceType::Uint8));
+        // 0x1FFFF = 131071 > 255
+        let err = run_with_enums(s, "_event.data.status === 0x1FFFF", enums)
+            .expect_err("0x1FFFF must overflow uint8 underlying");
+        let msg = format!("{err}");
+        assert!(msg.contains("131071"), "{msg}");
+        assert!(msg.contains("uint8"), "{msg}");
+    }
+
+    #[test]
+    fn enum_hex_literal_at_underlying_boundary_passes() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert("Result".to_string(), enum_model("Result", SceType::Uint8));
+        // 0xFF = 255, exact uint8 boundary.
+        assert!(run_with_enums(s, "_event.data.status === 0xFF", enums).is_ok());
+    }
+
+    #[test]
+    fn enum_int_literal_within_wider_underlying_passes() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "code",
+                SceType::Enum(EnumRef {
+                    alias: "Code".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert("Code".to_string(), enum_model("Code", SceType::Uint16));
+        // 65535 = u16::MAX, exact uint16 boundary.
+        assert!(run_with_enums(s, "_event.data.code === 65535", enums).is_ok());
+    }
+
+    #[test]
+    fn enum_int_literal_overflows_uint16_underlying_rejects() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "code",
+                SceType::Enum(EnumRef {
+                    alias: "Code".to_string(),
+                }),
+            )],
+        );
+        let mut enums = BTreeMap::new();
+        enums.insert("Code".to_string(), enum_model("Code", SceType::Uint16));
+        // 65536 > u16::MAX.
+        let err = run_with_enums(s, "_event.data.code === 65536", enums)
+            .expect_err("65536 must overflow uint16 underlying");
+        let msg = format!("{err}");
+        assert!(msg.contains("65536"), "{msg}");
+        assert!(msg.contains("uint16"), "{msg}");
+    }
+
+    #[test]
+    fn enum_int_literal_unknown_alias_silent_skips() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        // No imported enums declared — narrowing silent-skips
+        // (conservative-accept), but category check still requires Int.
+        let enums = BTreeMap::new();
+        assert!(run_with_enums(s, "_event.data.status === 999999", enums).is_ok());
     }
 }
