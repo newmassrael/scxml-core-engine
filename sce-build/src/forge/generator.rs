@@ -1417,11 +1417,7 @@ fn render_enum(
             let name = match lang {
                 Language::Cpp | Language::Rust => filters::to_pascal_case(v.name.clone()),
                 Language::Kotlin | Language::Python => to_upper_snake(&v.name),
-                Language::Go => format!(
-                    "{}{}",
-                    enum_name,
-                    filters::to_pascal_case(v.name.clone())
-                ),
+                Language::Go => format!("{}{}", enum_name, filters::to_pascal_case(v.name.clone())),
                 Language::C11 => format!("{}_{}", upper_snake_type, to_upper_snake(&v.name)),
             };
             let value_text = v.value.to_string();
@@ -11288,7 +11284,9 @@ pub fn generate_kotlin_with_imports(
             render_bounded_collection_kotlin(&env, m, imports, options)?
         }
         // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
-        ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Enum(m) => {
+            render_enum(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -13084,7 +13082,9 @@ pub fn generate_python_with_imports(
             render_bounded_collection_python(&env, m, imports, options)?
         }
         // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
-        ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Enum(m) => {
+            render_enum(&env, m, imports, crate::generator::Language::Python)?
+        }
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
