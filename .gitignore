@@ -11,6 +11,7 @@ build_conformance_c/
 build_conformance_cpp/
 build_round_trip_cpp/
 build_round_trip_c/
+build_mesh_test/
 /bin/
 lib/
 out/
