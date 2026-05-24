@@ -1039,18 +1039,15 @@ pub fn generate_cpp_with_imports_and_externs(
         // helper. `codegen_matrix::template_ships(Enum, Cpp) = true`
         // so `check()` lets dispatch through to here.
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Cpp)?,
-        // NL→IR Item C1 Path A Atomic 3: EventSchema is parse-time
-        // metadata — no codegen emission at Atomic 3 scope.
-        // `codegen_matrix::check` returns
-        // `CodegenGenericKindBackendEmitMissing` for `(EventSchema,
-        // Cpp)` so this dispatch arm is structurally unreachable.
-        // Atomic 4 (DL-6' continuation) lands the per-backend payload
-        // struct template and replaces this arm with a real
-        // `render_event_schema(...)` call.
-        ForgeDocument::EventSchema(_) => unreachable!(
-            "ForgeDocument::EventSchema rejected by codegen_matrix::check on cpp \
-             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
-        ),
+        // NL→IR Item C1 Path A Atomic 4: EventSchema lowers to a
+        // per-backend payload struct via `render_event_schema`. Each
+        // field's type (including `SceType::Enum(EnumRef)`) resolves
+        // through `LangCtx::resolved_type`, so imported Enum types
+        // emit qualified names without re-emitting variants (single
+        // source of truth on the Enum kind itself).
+        ForgeDocument::EventSchema(m) => {
+            render_event_schema(&env, m, imports, crate::generator::Language::Cpp)?
+        }
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -1472,6 +1469,141 @@ fn render_enum(
     ctx.insert("variants".into(), serde_json::json!(variants));
     l.insert_imports(&mut ctx, imports);
     l.render(env, "enum", ctx)
+}
+
+// ── EventSchema rendering (unified, NL→IR Item C1 Path A Atomic 4) ──
+//
+// Lowers an `EventSchemaModel` to a per-backend payload struct. Each
+// field's type is resolved through [`LangCtx::resolved_type`] so
+// `SceType::Enum(EnumRef { alias })` reuses the imported Enum's
+// emitted type (the single source of truth — EventSchema never
+// re-emits enum variants per design RFC §3 DL-6'). The 6 emission
+// shapes:
+//
+//   * C++   `struct <Schema>Payload { ... };` in `namespace SCE::Generated::<Schema>`
+//   * Rust  `#[derive(Debug, Clone, PartialEq)] pub struct <Schema>Payload { ... }`
+//   * Kotlin `data class <Schema>Payload(val ...)`
+//   * Go    `type <Schema>Payload struct { ... }` (camelCase field names)
+//   * Python `@dataclass class <Schema>Payload: ...`
+//   * C11   `typedef struct { ... } <Schema>Payload_t;`
+//
+// For each field whose `sce_type` resolves to an imported Enum, the
+// per-backend type string carries the qualified name (cpp `SCE::Generated::<E>::<E>`,
+// rust `<e>::<E>`, kotlin bare `<E>` under wildcard import, go `<e>.<E>`,
+// python `<e>.<E>`, c11 `<E>_t`). The corresponding include / use /
+// import directive surfaces via the per-backend list contexts
+// (`enum_includes` for cpp/c, `enum_use_paths` for rust,
+// `enum_kotlin_packages` for kotlin, `go_enum_imports` for go,
+// `python_enum_imports` for python).
+fn render_event_schema(
+    env: &minijinja::Environment,
+    m: &EventSchemaModel,
+    imports: &[ImportContext],
+    _lang: crate::generator::Language,
+) -> Result<String, ForgeError> {
+    let l = LangCtx::new(_lang);
+
+    let payload_struct_name = format!("{}Payload", filters::to_pascal_case(m.name.clone()));
+
+    // Per-field type + id presentation. `resolved_type` handles both
+    // primitives and enum aliases; the same string lands on the
+    // backend-specific template key (`cpp_type` / `rs_type` / …)
+    // because every backend's payload struct emits one field with the
+    // resolved type and the field id. Field id stays verbatim for
+    // cpp/rust/kotlin/python/c11; Go promotes to PascalCase via
+    // `go_field_name` so the struct field is exported.
+    let fields: Vec<serde_json::Value> = m
+        .fields
+        .iter()
+        .map(|f| {
+            let resolved = l.resolved_type(&f.sce_type, imports);
+            let go_field_name = filters::to_pascal_case(f.id.clone());
+            serde_json::json!({
+                "id": f.id,
+                "cpp_type": resolved,
+                "rs_type": resolved,
+                "kt_type": resolved,
+                "go_type": resolved,
+                "py_type": resolved,
+                "c_type": resolved,
+                "go_field_name": go_field_name,
+            })
+        })
+        .collect();
+
+    // Per-backend enum-import surface. Walk `imports` filtered to Enum
+    // kind; non-Enum imports (Lookup, Codec, Procedure, etc.) cannot
+    // surface as EventSchema fields (the XSD union restricts
+    // `sce:type` to primitives + `enum:<alias>` on EventSchema docs),
+    // so their inclusion would only add dead `#include` / `use`
+    // noise. Each backend extracts the directive from
+    // `ImportContext.include_stmt` / `namespace` / `type_name` —
+    // already populated by `resolve_imports` with the correct
+    // per-language shape.
+    let enum_imports: Vec<&ImportContext> = imports.iter().filter(|i| i.kind == "enum").collect();
+
+    // C++ / C11: per-imported-enum `<snake>.h` include path. The
+    // `namespace` slot carries the snake-case doc name on every
+    // backend except C++ where it is `SCE::Generated::<Pascal>`; for
+    // these two backends we derive the include filename from
+    // `type_name` (PascalCase doc name) via snake-case conversion so
+    // both arms produce the same `<snake>.h` filename the Enum
+    // generator emits.
+    let enum_includes: Vec<String> = enum_imports
+        .iter()
+        .map(|i| format!("{}.h", filters::to_snake_case(i.type_name.clone())))
+        .collect();
+
+    // Rust: per-imported-enum bare snake path; the template emits
+    // `use crate::<snake>;` so qualified `<snake>::<Pascal>`
+    // references resolve at use-sites. Pulled from `namespace`
+    // (Rust's resolve_imports arm sets namespace = snake).
+    let enum_use_paths: Vec<String> = enum_imports.iter().map(|i| i.namespace.clone()).collect();
+
+    // Kotlin: per-imported-enum bare snake package; the template
+    // emits `import com.sce.generated.<snake>.*` wildcard so the bare
+    // class name reaches unqualified scope.
+    let enum_kotlin_packages: Vec<String> =
+        enum_imports.iter().map(|i| i.namespace.clone()).collect();
+
+    // Go: per-imported-enum full module-prefixed path. The Go arm of
+    // `resolve_imports` populates `include_stmt` as
+    // `"\t\"<prefix>/<snake>\""`; strip the surrounding tab + quotes
+    // so the template can wrap them with its own `import (...)`
+    // syntax.
+    let go_enum_imports: Vec<String> = enum_imports
+        .iter()
+        .map(|i| i.include_stmt.trim().trim_matches('"').to_string())
+        .collect();
+
+    // Python: per-imported-enum `<snake> import <Pascal>` (the
+    // template prepends `from `). Reuses the snake form already in
+    // `namespace` plus the Pascal name in `type_name`, which keeps
+    // the directive shape orthogonal to whether the imported kind is
+    // stateful or stateless.
+    let python_enum_imports: Vec<String> = enum_imports
+        .iter()
+        .map(|i| format!(".{} import {}", i.namespace, i.type_name))
+        .collect();
+
+    let mut ctx = l.base_context(&m.name);
+    ctx.insert("payload_struct_name".into(), payload_struct_name.into());
+    ctx.insert("event_name".into(), m.event_name.clone().into());
+    ctx.insert("fields".into(), serde_json::json!(fields));
+    ctx.insert("enum_includes".into(), serde_json::json!(enum_includes));
+    ctx.insert("enum_use_paths".into(), serde_json::json!(enum_use_paths));
+    ctx.insert(
+        "enum_kotlin_packages".into(),
+        serde_json::json!(enum_kotlin_packages),
+    );
+    ctx.insert("go_enum_imports".into(), serde_json::json!(go_enum_imports));
+    ctx.insert(
+        "python_enum_imports".into(),
+        serde_json::json!(python_enum_imports),
+    );
+    l.insert_imports(&mut ctx, imports);
+
+    l.render(env, "event_schema", ctx)
 }
 
 // ── Condition rendering (unified) ─────────────────────────────
@@ -11299,13 +11431,10 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Enum(m) => {
             render_enum(&env, m, imports, crate::generator::Language::Kotlin)?
         }
-        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
-        // scope — see Cpp backend arm for the documented unreachable
-        // rationale.
-        ForgeDocument::EventSchema(_) => unreachable!(
-            "ForgeDocument::EventSchema rejected by codegen_matrix::check on kotlin \
-             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
-        ),
+        // NL→IR Item C1 Path A Atomic 4: see cpp dispatch.
+        ForgeDocument::EventSchema(m) => {
+            render_event_schema(&env, m, imports, crate::generator::Language::Kotlin)?
+        }
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -11470,13 +11599,10 @@ pub fn generate_rust_with_imports_and_externs(
         }
         // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Rust)?,
-        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
-        // scope — see Cpp backend arm for the documented unreachable
-        // rationale.
-        ForgeDocument::EventSchema(_) => unreachable!(
-            "ForgeDocument::EventSchema rejected by codegen_matrix::check on rust \
-             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
-        ),
+        // NL→IR Item C1 Path A Atomic 4: see cpp dispatch.
+        ForgeDocument::EventSchema(m) => {
+            render_event_schema(&env, m, imports, crate::generator::Language::Rust)?
+        }
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -12955,13 +13081,10 @@ pub fn generate_go_with_imports(
         }
         // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Go)?,
-        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
-        // scope — see Cpp backend arm for the documented unreachable
-        // rationale.
-        ForgeDocument::EventSchema(_) => unreachable!(
-            "ForgeDocument::EventSchema rejected by codegen_matrix::check on go \
-             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
-        ),
+        // NL→IR Item C1 Path A Atomic 4: see cpp dispatch.
+        ForgeDocument::EventSchema(m) => {
+            render_event_schema(&env, m, imports, crate::generator::Language::Go)?
+        }
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -13118,13 +13241,10 @@ pub fn generate_python_with_imports(
         ForgeDocument::Enum(m) => {
             render_enum(&env, m, imports, crate::generator::Language::Python)?
         }
-        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
-        // scope — see Cpp backend arm for the documented unreachable
-        // rationale.
-        ForgeDocument::EventSchema(_) => unreachable!(
-            "ForgeDocument::EventSchema rejected by codegen_matrix::check on python \
-             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
-        ),
+        // NL→IR Item C1 Path A Atomic 4: see cpp dispatch.
+        ForgeDocument::EventSchema(m) => {
+            render_event_schema(&env, m, imports, crate::generator::Language::Python)?
+        }
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -13280,13 +13400,10 @@ pub fn generate_c11_with_imports_and_externs(
         }
         // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::C11)?,
-        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
-        // scope — see Cpp backend arm for the documented unreachable
-        // rationale.
-        ForgeDocument::EventSchema(_) => unreachable!(
-            "ForgeDocument::EventSchema rejected by codegen_matrix::check on c11 \
-             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
-        ),
+        // NL→IR Item C1 Path A Atomic 4: see cpp dispatch.
+        ForgeDocument::EventSchema(m) => {
+            render_event_schema(&env, m, imports, crate::generator::Language::C11)?
+        }
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -17097,14 +17214,13 @@ impl LangCtx {
     /// got threaded through; both cases should panic loudly per
     /// `feedback_silently_broken_hooks`.
     ///
-    /// `#[allow(dead_code)]` until Atomic 4 (EventSchema payload
-    /// struct codegen) wires the production consumer — the helper +
-    /// its ImportContext slot are the load-bearing infrastructure
-    /// Atomic 4 needs to emit enum-typed payload fields without
-    /// re-implementing the separator-per-backend matrix at the
-    /// EventSchema rendering site. Unit tests cover both helpers so
-    /// the contract is verified independently of the consumer site.
-    #[allow(dead_code)]
+    /// Atomic 4 (EventSchema payload struct codegen) is the production
+    /// consumer — `render_event_schema` calls
+    /// [`Self::resolved_type`] which dispatches into this helper when
+    /// it encounters an `Enum`-typed field. The helper + its
+    /// `ImportContext::enum_qualified_type` slot together let the
+    /// EventSchema rendering site emit enum-typed payload fields
+    /// without re-implementing the separator-per-backend matrix.
     fn qualified_enum_type(&self, import: &ImportContext) -> String {
         debug_assert!(
             !import.enum_qualified_type.is_empty(),
@@ -17131,10 +17247,11 @@ impl LangCtx {
     /// surface routing bugs at codegen time rather than silently
     /// emitting an integer placeholder.
     ///
-    /// `#[allow(dead_code)]`: same deferral as
-    /// [`Self::qualified_enum_type`] — see that doc-comment for the
-    /// Atomic 4 wiring plan.
-    #[allow(dead_code)]
+    /// Atomic 4 (EventSchema payload struct codegen) is the production
+    /// consumer — `render_event_schema` calls this for every field's
+    /// `sce_type` so an `Enum(EnumRef)` field surfaces as the imported
+    /// Enum kind's qualified type name and a primitive surfaces as
+    /// its language-native scalar.
     fn resolved_type(&self, ty: &SceType, imports: &[ImportContext]) -> String {
         match ty {
             SceType::Enum(r) => {

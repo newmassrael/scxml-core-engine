@@ -2531,21 +2531,6 @@ pub fn compile_scxml_with_imports(
             identifier: stem,
             diagnostic_label: basename,
         };
-        // NL→IR Item C1 Path A (Atomic 3): EventSchema documents are
-        // parse-time metadata only — they participated in pass-1
-        // capture + receive/send-side typecheck + mesh DL-7' but emit
-        // no per-backend code at Atomic 3 scope. Atomic 4 (DL-6'
-        // continuation) lands the per-backend payload struct lowering
-        // templates and removes this skip. Detecting the kind via
-        // the cheap `detect_kind` helper avoids a second full parse
-        // — same pattern used by other kind-aware orchestrator
-        // branches.
-        if matches!(
-            forge::parser::detect_kind(&content),
-            Ok(Some(forge::model::ForgeKind::EventSchema))
-        ) {
-            continue;
-        }
         let base_dir = forge_path.parent().unwrap_or_else(|| Path::new("."));
         let effective_options = bc_options_override.as_ref().unwrap_or(options);
         let out =
