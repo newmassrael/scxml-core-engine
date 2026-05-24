@@ -668,3 +668,138 @@ fn positive_enum_literal_at_send_side_boundary_accepts() {
     )
     .expect("0xFF send param must fit uint8 underlying");
 }
+
+// ─── F-κ: strict variant membership ─────────────────────────────────
+
+/// Negative — `_event.data.status === 7` against the `enum:Result`
+/// (uint8 carrier, declared `{ok=0, error=1, timeout=2}`, default
+/// strict). 7 fits the underlying width but is not declared, so the
+/// F-κ membership layer rejects with the reused
+/// `validation/cross-kind-type-mismatch` wire code (design lock #2 —
+/// no new code). The diagnostic enumerates the declared variant set
+/// so authors can pick the value they meant.
+#[test]
+fn negative_enum_variant_not_declared_receive_side_rejects() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "result.scxml",
+            "schema_job_completed_with_enum.scxml",
+            "negative_statechart_enum_variant_not_declared.scxml",
+        ],
+    );
+    let enum_path = &staged[0];
+    let schema_path = &staged[1];
+    let scxml_path = &staged[2];
+    let err = run(
+        &[scxml_path.as_path()],
+        &[enum_path.as_path(), schema_path.as_path()],
+    )
+    .err()
+    .expect("orchestrator should reject undeclared variant 7 against strict enum");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindTypeMismatch {
+                field,
+                actual,
+                expected,
+                alias,
+                ..
+            } => {
+                assert_eq!(field, "status");
+                assert_eq!(expected, "enum:Result");
+                assert!(
+                    actual.contains("integer literal 7")
+                        && actual.contains("not a declared variant")
+                        && actual.contains("Result")
+                        && actual.contains("ok=0")
+                        && actual.contains("error=1")
+                        && actual.contains("timeout=2"),
+                    "expected message to name literal 7 + declared variant set; got {actual:?}"
+                );
+                assert_eq!(alias, "_event.data");
+            }
+            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
+/// Negative — send-side mirror: `<send><param name="status" expr="7"/>`
+/// against the same strict `enum:Result` field. The F-κ membership
+/// check rejects on the send branch with the same diagnostic shape.
+#[test]
+fn negative_enum_variant_not_declared_send_side_rejects() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "result.scxml",
+            "schema_job_completed_with_enum.scxml",
+            "negative_statechart_send_enum_variant_not_declared.scxml",
+        ],
+    );
+    let enum_path = &staged[0];
+    let schema_path = &staged[1];
+    let scxml_path = &staged[2];
+    let err = run(
+        &[scxml_path.as_path()],
+        &[enum_path.as_path(), schema_path.as_path()],
+    )
+    .err()
+    .expect("orchestrator should reject undeclared variant 7 on send param against strict enum");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindTypeMismatch {
+                field,
+                actual,
+                expected,
+                alias,
+                ..
+            } => {
+                assert_eq!(field, "status");
+                assert_eq!(expected, "enum:Result");
+                assert!(
+                    actual.contains("integer literal 7")
+                        && actual.contains("not a declared variant"),
+                    "expected message to name literal 7 + membership reason; got {actual:?}"
+                );
+                assert!(
+                    alias.contains("send") && alias.contains("job.completed"),
+                    "expected alias to name the <send event=\"job.completed\"> site, got {alias:?}"
+                );
+            }
+            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
+/// Positive — opt-out enum (`sce:strict-variants="false"`) accepts
+/// values outside the declared variant set as long as they fit the
+/// underlying carrier. Design lock #4: width narrowing remains
+/// active, but the membership check silent-skips. Exercises both
+/// the receive-side (`_event.data.code === 0x21`) and send-side
+/// (`<param expr="0x80"/>`) branches in a single fixture to lock
+/// the opt-out path against single-branch regressions.
+#[test]
+fn positive_enum_strict_opt_out_accepts_undeclared_within_width() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "uds_nrc_open.scxml",
+            "schema_uds_response_open.scxml",
+            "positive_statechart_enum_strict_opt_out.scxml",
+        ],
+    );
+    let enum_path = &staged[0];
+    let schema_path = &staged[1];
+    let scxml_path = &staged[2];
+    run(
+        &[scxml_path.as_path()],
+        &[enum_path.as_path(), schema_path.as_path()],
+    )
+    .expect("0x21 / 0x80 must pass on opt-out enum (declared set is just {0x10, 0x11})");
+}

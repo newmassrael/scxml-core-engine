@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A follow-up F-κ negative fixture: a statechart
+  imports the cross-doc enum-bearing schema AND the underlying Enum
+  doc (a closed-set vocabulary — `result.scxml` declares
+  `ok=0, error=1, timeout=2` and does NOT carry `sce:strict-variants`,
+  so the default `true` applies). The receive-side comparison
+  `_event.data.status === 7` passes width narrowing (7 fits the uint8
+  carrier) but fails the F-κ membership check (7 is not declared).
+  Surfaces as `validation/cross-kind-type-mismatch` (Item 4 reuse
+  precedent — no new wire code per design lock #2).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="negative_enum_variant_not_declared"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed_with_enum.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <sce:import src="result.scxml" kind="enum" as="Result"/>
+  <state id="waiting">
+    <transition event="job.completed" cond="_event.data.status === 7" target="ok"/>
+  </state>
+  <state id="ok"/>
+</scxml>

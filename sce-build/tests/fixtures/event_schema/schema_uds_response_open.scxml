@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A follow-up F-κ fixture: EventSchema referencing
+  the open-set `uds_nrc_open.scxml` enum vocabulary. Pairs with
+  `positive_statechart_enum_strict_opt_out.scxml` to exercise the
+  opt-out branch — width narrowing still runs on the uint8 carrier,
+  but the membership check silent-skips because the imported enum
+  carries `sce:strict-variants="false"`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="uds_response_schema_open"
+       sce:kind="event-schema"
+       sce:event-name="uds.response">
+  <sce:import src="uds_nrc_open.scxml" kind="enum" as="UdsNrc"/>
+  <datamodel>
+    <data id="code" sce:type="enum:UdsNrc" sce:direction="in"/>
+  </datamodel>
+</scxml>

@@ -914,9 +914,51 @@ precedent — no new wire code). The narrowing fires only when the
 statechart's own `<sce:import kind="enum" as="<alias>">` resolves
 the enum alias; otherwise the narrowing silent-skips
 (conservative-accept default — category check still requires the
-literal to be an integer). Strict variant membership checking
-(`literal must be one of the declared variant values`) is
-deferred to F-κ.
+literal to be an integer).
+
+**Strict variant membership** (F-κ): after the width narrowing
+layer accepts an integer literal against an enum-typed field, the
+membership layer verifies the literal's value is one of the
+imported enum's declared `<sce:variant value="…"/>` set. A
+comparison like `_event.data.status === 7` against an enum
+declaring `{ok=0, error=1, timeout=2}` fits the underlying carrier
+but is not a declared variant, and raises
+`validation/cross-kind-type-mismatch` (same reuse precedent — no
+new wire code). The diagnostic enumerates the declared variant set
+in declaration order so authors can pick the value they meant.
+Receive-side and send-side branches share a single membership
+helper so the diagnostic shape is identical on both sites; the
+width-overflow diagnostic always wins when both conditions hold
+(a literal that overflows the underlying carrier is the more
+fundamental violation and surfaces first).
+
+**Opt-out for open-set vocabularies**: enum documents that declare
+only a partial set of values with the expectation that wire-side
+values outside the declared set are legal (open-set status
+vocabularies — e.g. UDS NRC, OEM-extensible response codes) opt
+out of the membership check via `sce:strict-variants="false"` on
+the enum's `<scxml>` root:
+
+```xml
+<scxml sce:kind="enum" name="UdsNrc"
+       sce:underlying-type="uint8"
+       sce:strict-variants="false">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="generalReject" value="16"/>
+      <!-- OEM extensions accepted at runtime; declared set is partial -->
+    </data>
+  </datamodel>
+</scxml>
+```
+
+The opt-out is owned by the declaring vocabulary (not the
+consuming statechart) so the decision lives with the schema-of-
+record. Width narrowing still runs regardless of this opt-out —
+overflow of the declared underlying carrier remains a wire-level
+violation. Default is `true` (strict): an enum that does not set
+the attribute is checked as closed-set, matching the typed-
+vocabulary intent of `sce:kind="enum"`.
 
 ---
 
