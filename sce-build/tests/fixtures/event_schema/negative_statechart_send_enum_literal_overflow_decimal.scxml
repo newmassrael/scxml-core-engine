@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A Atomic 5 negative fixture covering the decimal
+  literal form of the send-side overflow (sibling of
+  `negative_statechart_send_enum_literal_overflow.scxml` which uses
+  hex). Exercises the decimal arm of `parse_int_literal_text` so the
+  narrowing layer does not regress to "hex-only" by accident.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="negative_send_enum_literal_overflow_decimal"
+       version="1.0"
+       initial="ready"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed_with_enum.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <sce:import src="result.scxml" kind="enum" as="Result"/>
+  <state id="ready">
+    <transition event="user.go" target="done">
+      <send event="job.completed">
+        <param name="status" expr="256"/>
+        <param name="elapsed_ms" expr="42"/>
+      </send>
+    </transition>
+  </state>
+  <state id="done"/>
+</scxml>

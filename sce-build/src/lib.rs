@@ -1970,6 +1970,19 @@ pub fn compile_scxml_with_imports(
         String,
         forge::model::EventSchemaModel,
     > = std::collections::BTreeMap::new();
+    // NL→IR Item C1 Path A (Atomic 5) — Enum kind documents keyed by
+    // file stem (doc name), consumed by
+    // `event_schema_check::resolve_imported_enums` to thread each
+    // statechart's `<sce:import kind="enum">` set into the
+    // receive/send-side literal-width narrowing layer
+    // (`enum_underlying_overflow`). Doc-name uniqueness across the
+    // build is already enforced by `cross_doc.record_document` above,
+    // so the per-stem `insert` here is safe (collisions structurally
+    // unreachable). Mirrors the `event_schemas_by_doc_name` capture
+    // shape directly so the orchestrator's pass-2 wiring stays
+    // symmetric across the two cross-kind import categories.
+    let mut enums_by_doc_name: std::collections::BTreeMap<String, forge::model::EnumModel> =
+        std::collections::BTreeMap::new();
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
@@ -2098,6 +2111,17 @@ pub fn compile_scxml_with_imports(
                 // when an affected cross-machine `<send>` walks.
                 event_schemas_by_doc_name.insert(schema.name.clone(), schema);
             }
+            forge::model::ForgeDocument::Enum(em) => {
+                // NL→IR Item C1 Path A (Atomic 5, DL-5') — capture
+                // Enum docs by their doc name (file stem) so the
+                // per-statechart resolver can follow each
+                // `<sce:import kind="enum">` to the EnumModel and
+                // narrow integer-literal comparisons / send-params
+                // against the declared `underlying_type`. Same
+                // doc-name uniqueness invariant as the EventSchema
+                // capture immediately above.
+                enums_by_doc_name.insert(em.name.clone(), em);
+            }
             _ => {}
         }
     }
@@ -2179,8 +2203,24 @@ pub fn compile_scxml_with_imports(
             model,
             &event_schemas_by_doc_name,
         );
-        forge::event_schema_check::check(model, &per_doc_schemas, basename)?;
-        forge::event_schema_check::check_send_side(model, &per_doc_schemas, basename)?;
+        // NL→IR Item C1 Path A (Atomic 5, DL-5') — per-statechart enum
+        // imports drive the literal-width narrowing layer inside the
+        // receive- + send-side validators. A statechart whose schema
+        // declares an enum-typed field MUST also declare its own
+        // `<sce:import kind="enum" as="<alias>">` for the narrowing to
+        // resolve the alias against an `EnumModel`; otherwise the
+        // alias is opaque from the statechart's view and the
+        // narrowing silent-skips (Atomic 3's conservative-accept
+        // default preserves the category-only behavior).
+        let per_doc_enums =
+            forge::event_schema_check::resolve_imported_enums(model, &enums_by_doc_name);
+        forge::event_schema_check::check(model, &per_doc_schemas, &per_doc_enums, basename)?;
+        forge::event_schema_check::check_send_side(
+            model,
+            &per_doc_schemas,
+            &per_doc_enums,
+            basename,
+        )?;
     }
 
     // ── C2 follow-up Atomic B outbox cross-resolution ──
