@@ -129,6 +129,16 @@ name = "codegen_smoke"
 path = "tests/codegen_smoke.rs"
 required-features = ["cli"]
 
+# NL→IR Item C1 Path A Atomic 2 — per-backend Enum codegen smoke gate.
+# Generates each positive Enum fixture on all 6 backends and feeds the
+# output to a per-backend syntax checker (g++, syn::parse_file, gofmt,
+# kotlinc, py_compile, clang). Same `cli`-feature gate as
+# `codegen_smoke` since it shells out to the `sce-codegen` binary.
+[[test]]
+name = "forge_codegen_enum_smoke"
+path = "tests/forge_codegen_enum_smoke.rs"
+required-features = ["cli"]
+
 # NL→IR Mapping Roadmap Items 1+5 — `sce:req` / `sce:unresolved`
 # annotation comment emission across all six codegen backends. Pair
 # with `codegen_smoke` (compile gate on annotated output) so both
