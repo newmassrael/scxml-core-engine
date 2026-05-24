@@ -477,6 +477,7 @@ fn parse_forge_from_node(
             parse_bounded_collection(root, label).map(ForgeDocument::BoundedCollection)
         }
         ForgeKind::Enum => parse_enum(root, label).map(ForgeDocument::Enum),
+        ForgeKind::EventSchema => parse_event_schema(root, label).map(ForgeDocument::EventSchema),
         ForgeKind::Statechart => Err(located(
             root,
             label.diagnostic_label,
@@ -7804,6 +7805,150 @@ fn parse_bounded_collection(
     })
 }
 
+// ── Event-schema kind parser (NL→IR Item C1 Path A) ───────────
+
+/// Parse `<scxml sce:kind="event-schema" sce:event-name="X">…</scxml>` into
+/// an [`EventSchemaModel`] — NL→IR Mapping Roadmap Item C1 Path A,
+/// design RFC §3 DL-1' / DL-3' / DL-5' / DL-9'.
+///
+/// **Required attributes / structure**
+///   * `sce:event-name` attribute on the `<scxml>` root — names the SCXML
+///     event the schema constrains (e.g. `"job.completed"`).
+///   * A `<datamodel>` element containing one or more `<data>` children
+///     with `sce:type="..."` + `sce:direction="in"`. Schemas with zero
+///     fields surface as an empty-collection diagnostic — a typed
+///     payload contract with no fields would not type any expression
+///     and is almost certainly an authoring mistake.
+///
+/// **Built-in event rejection (DL-9')**
+///   Events whose name lies in the W3C SCXML reserved namespace
+///   (`error.*`, `done.invoke.*`, `done.state.*`) are rejected with
+///   `validation/event-schema-on-builtin-event`. The platform raises
+///   these events with implementation-defined payload shape; an
+///   authored schema cannot meaningfully constrain them.
+///
+/// **Direction invariant (DL-5')**
+///   Each `<data>` must declare `sce:direction="in"`. The payload is the
+///   receiver's read-only view; an `out` field on a schema has no
+///   meaning and would surface as confusing codegen on Atomic 4.
+///
+/// **Duplicate field-id rejection**
+///   Each field's `id` must be unique across the schema (the receive-
+///   side typecheck would otherwise have to pick one declaration to
+///   honor on `_event.data.<id>`, hiding the conflict from the author).
+///
+/// **Out of scope (deferred to other atomics)**
+///   * Send-side payload validation against the schema (event_schema_check).
+///   * Mesh cross-machine schema match (mesh/deploy validator).
+///   * Per-backend payload struct lowering (Atomic 4).
+///   * Inline `<sce:event-schema>` form (F-ζ).
+fn parse_event_schema(
+    root: &roxmltree::Node,
+    label: DocumentLabel<'_>,
+) -> Result<EventSchemaModel, Located<ForgeError>> {
+    let event_name = sce_attr(root, "event-name").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingAttribute {
+                element: "EventSchema <scxml>".into(),
+                attr: "sce:event-name".into(),
+            },
+        )
+    })?;
+
+    if EventSchemaModel::is_builtin_event_name(&event_name) {
+        return Err(located(
+            root,
+            label.diagnostic_label,
+            ValidationError::EventSchemaOnBuiltinEvent {
+                event_name: event_name.clone(),
+            },
+        ));
+    }
+
+    // EventSchema fields live inside a `<datamodel>` wrapper as
+    // `<data>` elements — matches the Lookup / Validator / Transform
+    // surface and lets the codec-targeted `<sce:field>` XSD shape stay
+    // single-purpose. Each `<data>` parses through `parse_forge_field`
+    // (the same helper every other kind uses), so SceType /
+    // Direction / sce:quantity / sce:max-size validation is reused
+    // verbatim.
+    let datamodel = find_child(root, "datamodel").ok_or_else(|| {
+        located(
+            root,
+            label.diagnostic_label,
+            ValidationError::MissingElement {
+                kind: ForgeKind::EventSchema,
+                element: "datamodel".into(),
+            },
+        )
+    })?;
+
+    let mut fields: Vec<ForgeField> = Vec::new();
+    let mut seen_ids: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+    for data in data_children(&datamodel) {
+        let field = parse_forge_field(&data, label.diagnostic_label)?;
+        if field.direction != Direction::In {
+            // Reproduce the offending direction value verbatim so the
+            // diagnostic mirrors the authored token. `Direction::In`
+            // is excluded by the predicate so the third arm is
+            // structurally unreachable.
+            let value = match field.direction {
+                Direction::Out => "out".to_string(),
+                Direction::Internal => "internal".to_string(),
+                Direction::In => {
+                    unreachable!("guarded by the `field.direction != Direction::In` check above")
+                }
+            };
+            return Err(located(
+                &data,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: format!("EventSchema field '{}'", field.id),
+                    attr: "sce:direction".into(),
+                    value,
+                    expected: "in (event schema fields are the receive-side payload view; \
+                               author-authored `out` / `internal` have no meaning on a \
+                               schema declaration)"
+                        .into(),
+                },
+            ));
+        }
+        if !seen_ids.insert(field.id.clone()) {
+            return Err(located(
+                &data,
+                label.diagnostic_label,
+                ValidationError::DuplicateId {
+                    kind: ForgeKind::EventSchema,
+                    what: "field".into(),
+                    id: field.id.clone(),
+                },
+            ));
+        }
+        fields.push(field);
+    }
+
+    if fields.is_empty() {
+        return Err(located(
+            root,
+            label.diagnostic_label,
+            ValidationError::EmptyCollection {
+                kind: ForgeKind::EventSchema,
+                what: "<data> field with sce:direction=\"in\"".into(),
+            },
+        ));
+    }
+
+    Ok(EventSchemaModel {
+        name: label.identifier.to_string(),
+        event_name,
+        fields,
+        source_location: forge_source_location_of(root, label.diagnostic_label),
+    })
+}
+
 fn require_attr(
     node: &roxmltree::Node,
     attr: &str,
@@ -7841,7 +7986,14 @@ fn find_sce_child<'a>(node: &'a roxmltree::Node, local: &str) -> Option<roxmltre
 /// - `src` (required): relative path to the imported SCXML file.
 /// - `kind` (required): the forge kind of the imported document.
 /// - `as` (required): alias used in expressions.
-fn parse_imports(
+///
+/// NL→IR Mapping Roadmap Item C1 Path A (DL-7' prerequisite): exposed
+/// `pub` so the SCXML parser (`crate::parser::SCXMLParser`) can capture
+/// `<sce:import>` declarations on the statechart root into
+/// `SCXMLModel::forge_imports`, enabling per-statechart EventSchema
+/// visibility for the receive/send-side validators and the mesh
+/// cross-machine validator.
+pub fn parse_imports(
     root: &roxmltree::Node,
     doc_name: &str,
 ) -> Result<Vec<ForgeImport>, Located<ForgeError>> {

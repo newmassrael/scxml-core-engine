@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A cross-doc fixture: a `sce:kind="enum"`
+  vocabulary document referenced by
+  `schema_job_completed_with_enum.scxml` via `sce:type="enum:Result"`.
+  Three bijective variants over a uint8 carrier — the typed enum
+  the EventSchema field resolves to. Replaces the prior
+  `result_enum.scxml` Lookup-as-enum shape per design RFC §2 (Lookup
+  is many-to-one dispatch; Enum is the typed vocabulary kind).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="enum"
+       name="result"
+       sce:underlying-type="uint8">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="0"/>
+      <sce:variant name="error" value="1"/>
+      <sce:variant name="timeout" value="2"/>
+    </data>
+  </datamodel>
+</scxml>

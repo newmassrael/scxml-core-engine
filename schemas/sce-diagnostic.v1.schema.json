@@ -336,7 +336,10 @@
         "validation/enum-variant-duplicate-name",
         "validation/enum-variant-duplicate-value",
         "validation/enum-variant-value-overflows-underlying",
-        "validation/enum-unsupported-underlying-type"
+        "validation/enum-unsupported-underlying-type",
+        "validation/event-schema-on-builtin-event",
+        "validation/event-payload-field-unknown",
+        "mesh/event-schema-mismatch"
       ]
     },
     "stage": {

@@ -323,6 +323,16 @@ fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<Sou
             &m.source_location,
         ),
         ForgeDocument::Enum(m) => ("<scxml sce:kind=\"enum\">", &m.name, &m.source_location),
+        // NL→IR Item C1 Path A: EventSchema follows the same Atomic
+        // 0c convention — the parser captures the root element's
+        // source position into `source_location` for the SCE-MAP
+        // marker, and this walker surfaces it to downstream consumers
+        // (sourcemap, drift-guard, error anchoring).
+        ForgeDocument::EventSchema(m) => (
+            "<scxml sce:kind=\"event-schema\">",
+            &m.name,
+            &m.source_location,
+        ),
     }
 }
 

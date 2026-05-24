@@ -1806,6 +1806,13 @@
               "description": "True iff the generated `executeEntryActions` body uses `this`.\n\nDrives the static/non-static decision in `tools/codegen/templates/entry_exit_actions.jinja2`. Each feature that emits a `this`-referencing expression into the body contributes to this predicate — adding a new feature means updating only this one spot rather than extending the template's conditional. Kept separate from `needs_nonstatic_method` (which gates lambda captures in parallel-region blocks) because the two sets of features overlap but are not identical — notably, mesh-rpc invokes synthesize a `reinterpret_cast<uintptr_t>(&engine)`-bearing block directly inside `executeEntryActions` but add no lambda captures, and scheduler state reached via `engine.scheduleEvent(...)` likewise touches `engine` (not `this`) but still leaks through the switch body.",
               "type": "boolean"
             },
+            "forge_imports": {
+              "description": "NL→IR Mapping Roadmap Item C1 Path A (DL-7' prerequisite) — `<sce:import>` declarations on the statechart's `<scxml>` root. Each entry names a cross-doc dependency by `kind`, `src`, and `alias` so per-doc validators can compute per-statechart import visibility (rather than the legacy single global registry that merged every kind document in the build into one shared map). Today's primary consumer: per-machine EventSchema visibility for mesh DL-7' cross-machine validation and receive/send-side schema selection on the per-statechart check passes. Empty for statecharts that declare no `<sce:import>` children — the schemaless-fallback path stays a no-op walk.\n\nSerialized into the manifest so downstream tooling (mesh codegen, AST export) can read the import graph without re-parsing the SCXML.",
+              "items": {
+                "$ref": "#/definitions/ForgeImport"
+              },
+              "type": "array"
+            },
             "global_scripts": {
               "items": {
                 "$ref": "#/definitions/Action"
@@ -3112,6 +3119,50 @@
             "variants"
           ],
           "type": "object"
+        },
+        {
+          "description": "NL→IR Item C1 Path A: typed `_event.data` payload contract. Parse-time metadata at Atomic 3 scope; Atomic 4 lands per- backend payload struct codegen. See [`EventSchemaModel`].",
+          "properties": {
+            "event_name": {
+              "description": "SCXML event name this schema constrains (e.g. `\"job.completed\"`, `\"task.failed\"`). Treated case-sensitively per W3C SCXML 1.0 §5.10 event-matching rules. Built-in event names (`error.*`, `done.invoke.*`, `done.state.*`) are rejected at parse time by the schema-on-builtin guard.",
+              "type": "string"
+            },
+            "fields": {
+              "description": "Typed fields exposed via `_event.data.<field>`. Each field's `direction` is `Direction::In` (payload is the receiver's read-only view); the parser enforces this so authors cannot declare an `out`-direction field that would have no meaning on the receive side. `sce_type` may be a primitive (Uint8/Int32/Float64/Bool/String/Bytes) or [`SceType::Enum`] referring to an imported `sce:kind=\"enum\"` document.",
+              "items": {
+                "$ref": "#/definitions/ForgeField"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "event-schema"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "description": "Symbol name for the schema document — drives symbol mangling and import-table lookup. For the top-level surface form this is the document's basename (e.g. `job_completed_schema`); for the inline form, the parser synthesizes a deterministic name from the enclosing statechart name + event name so anonymous lowered schemas remain referenceable in diagnostics.",
+              "type": "string"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"event-schema\">` root element (or the synthesized location of the lowered inline form). Drives the per-kind body function's SCE-MAP marker. Same convention as `EnumModel.source_location`."
+            }
+          },
+          "required": [
+            "event_name",
+            "fields",
+            "kind",
+            "name"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -3326,6 +3377,13 @@
           "description": "Closed set of named variants with 1:1 wire-key values — NL→IR Mapping Roadmap Item C1 Path A. Distinct from [`Self::Lookup`] (many-to-one dispatch) by the bijectivity invariant: each variant's `value` is unique within the document, and the generated typed enum carries that wire byte verbatim. Surface form is a top-level `<scxml sce:kind=\"enum\" sce:underlying-type=\"<int>\">` document with one `<sce:variant name=\"…\" value=\"…\"/>` child per variant. Per-backend codegen lowers to `enum class : uint8_t` / `#[repr(u8)] enum` / `IntEnum` / etc. (Atomic 2, deferred — Atomic 1 is parse + IR only). Inline form (`<sce:enum>` as child of `<scxml>`) defers per design RFC §8 F-ζ.",
           "enum": [
             "enum"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Typed contract for `_event.data` of a named SCXML event — NL→IR Mapping Roadmap Item C1 Path A (18th kind). Maps an event name (`job.completed`, `task.failed`, …) to a list of typed `<data>` declarations so the receive-side typecheck can validate `_event.data.<field>` expressions in transition `cond` attributes at parse time. Send-side payload validation (`<send>/<param name=\"F\">`) and mesh cross-machine validation (DL-7') ride the same shape. Schemaless fallback (DL-9'): events without an imported EventSchema retain dynamic `_event.data` behavior. W3C built-in events (`error.*`, `done.invoke.*`, `done.state.*`) are explicitly excluded — declaring a schema for these raises `validation/event-schema-on-builtin-event`. Per-backend payload struct codegen (Atomic 4) emits a typed record per backend that references imported Enum kinds by qualified name via `LangCtx::resolved_type`; the Enum kind owns its emitted type, so EventSchema never re-emits enum variants (single source of truth per design RFC §3 DL-6').",
+          "enum": [
+            "event_schema"
           ],
           "type": "string"
         }

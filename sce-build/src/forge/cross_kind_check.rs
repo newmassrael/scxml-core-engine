@@ -210,7 +210,19 @@ fn collect_member_fields(doc: &ForgeDocument) -> Option<Vec<(String, SceType)>> 
         // Authors reference variants as `<EnumName>.<variant>` which
         // resolves through the cross-kind binding pass to the imported
         // enum's variant list, not the member-field check below.
-        | ForgeDocument::Enum(_) => return None,
+        | ForgeDocument::Enum(_)
+        // NL→IR Item C1 Path A: EventSchema is imported via
+        // `<sce:import>` for cross-doc binding (the receive-side
+        // typecheck pass resolves `_event.data.<field>` against the
+        // schema's declared fields by *event name*, not by alias
+        // access). The import alias itself is never used in
+        // expression positions like `alias.field` — the link is
+        // implicit through SCXML event-name matching. Empty surface
+        // keeps the alias-access path from suggesting EventSchema
+        // fields as candidates for an `alias.field` typo on a
+        // different kind. Functional resolution lives in
+        // `event_schema_check.rs`.
+        | ForgeDocument::EventSchema(_) => return None,
     }
     Some(out)
 }

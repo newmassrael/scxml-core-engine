@@ -802,7 +802,108 @@ temperature encoding `physical = raw * 0.5 - 40` Celsius for an
 
 ---
 
-## Appendix — `DiagnosticCode` index (315 codes)
+### EventSchema kind (NL→IR Mapping Roadmap Item C1 Path A)
+
+A typed contract for the `_event.data` payload of a named SCXML
+event — each schema names exactly one event and declares the typed
+fields authors may read via `_event.data.<field>` in transition
+`cond` attributes and write via `<send>/<param>` payloads.
+
+**Surface forms** (DL-8' — both produce identical IR shapes):
+
+- Top-level form (primary):
+  `<scxml sce:kind="event-schema" sce:event-name="job.completed">…</scxml>`
+- Inline form (sugar, deferred to F-ζ — out of scope for Path A
+  α): `<sce:event-schema event-name="job.completed">…</sce:event-schema>`
+  as a child of `<scxml>`. The top-level form is the only Path A
+  α surface; inline lowering ships when an inline consumer
+  surfaces.
+
+**Field declaration** uses `<data id="..." sce:type="..."
+sce:direction="in"/>` inside a `<datamodel>` wrapper. `sce:type`
+may be any of the primitive `SceType` values (`uint8` / `uint16`
+/ `uint32` / `uint64` / `int8` / `int16` / `int32` / `int64` /
+`float32` / `float64` / `bool` / `string` / `bytes`) or
+`enum:<enum-alias>` for an enum drawn from an imported
+`sce:kind="enum"` document (Path A's 17th kind).
+
+**Direction invariant** (DL-5'): `sce:direction` must be `in` —
+the payload is the receiver's read-only view. `out` / `internal`
+directions raise `validation/invalid-attribute` at parse time.
+
+**Schemaless fallback** (DL-9'): events without an imported
+EventSchema retain the dynamic `_event.data` baseline — no
+diagnostic, identical W3C IRP behavior. W3C built-in event
+namespaces are explicitly excluded:
+
+- `validation/event-schema-on-builtin-event` — an EventSchema
+  document declares `sce:event-name` against a W3C SCXML reserved
+  event prefix (`error.*`, `done.invoke.*`, `done.state.*`). The
+  platform raises these events with implementation-defined
+  payload shape; an authored schema cannot meaningfully constrain
+  them. Repair: rename the schema's `sce:event-name` to a
+  non-reserved value or delete the schema document.
+
+**Receive-side typecheck** (DL-5'): `_event.data.<field>`
+expressions in transition `cond` attributes resolve against the
+imported EventSchema for the transition's event. Field-not-found
+surfaces through `validation/cross-kind-field-not-found` (existing
+code reused per Item 4 precedent; carries the schema's declared
+field surface as `Fix::ReplaceOneOf` candidates). Comparison
+type-mismatch (e.g. `_event.data.elapsed_ms === 'forty-two'`
+against a `uint32` field) surfaces through
+`validation/cross-kind-type-mismatch` (also reused per Item 4
+precedent).
+
+**Send-side payload typecheck** (DL-4'): a `<send event="X">` or
+`<raise event="X">` (in transition `actions`, `<onentry>`, or
+`<onexit>` content, including nested `<if>` / `<foreach>` bodies)
+whose event name `X` resolves to an imported EventSchema has its
+`<param name="F" expr="..."/>` children validated against the
+schema's declared field surface. Two rejections:
+
+- `validation/event-payload-field-unknown` — `<param name="F">`
+  carries a name `F` that is not declared on the schema. The
+  schema's full field surface ships as a closed
+  `Fix::ReplaceOneOf` candidate set, mirroring the receive-side
+  `validation/cross-kind-field-not-found` shape so `did_you_mean`-
+  style typo repair surfaces identically on both sides.
+- `validation/cross-kind-type-mismatch` (reused per Item 4
+  precedent) — `<param expr="...">` is a primitive literal whose
+  syntactic type does not unify with the schema field's declared
+  `sce_type`. Non-literal expressions (variable references,
+  nested computations, function calls) defer to the existing
+  typed-expression pipeline at codegen time.
+
+**Mesh cross-machine validation** (DL-7'): when `<send target="#X">`
+appears on a statechart deployed to machine A and addresses
+machine B (the `#X` resolves to B's machine id via the
+deploy.yaml topology), the sender and receiver EventSchemas for
+the send's event name must agree on field shape. One rejection:
+
+- `mesh/event-schema-mismatch` — either (a) both sides declare an
+  EventSchema but their canonical structural hashes diverge
+  (fields sorted by id, normalized JSON via schemars), (b) sender
+  declares a schema while receiver does not, or (c) receiver
+  declares a schema while sender does not. The `Display` form
+  names the specific divergence reason so consumers do not have
+  to substring-grep the prose. Repair is two-axis (realign the
+  two schemas, or declare a schema on the side that is missing
+  it) — author-domain choice, no closed candidate set.
+
+**Per-backend payload codegen** (DL-6' continuation) lands in
+Atomic 4 of the C1 Path A chain — the per-backend payload struct
+surface (`struct <Schema>Payload` on C++, `pub struct
+<Schema>Payload` on Rust, `data class <Schema>Payload` on
+Kotlin, typed struct on Go, `@dataclass` on Python, `typedef
+struct { … } <Schema>Payload_t` on C11) emits as one
+coordinated commit so the cross-backend parity gate (§6.2.6)
+closes in lockstep. Atomic 3 ships parse + receive/send-side +
+mesh typecheck only.
+
+---
+
+## Appendix — `DiagnosticCode` index (318 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -875,6 +976,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/enum-variant-duplicate-value` | Validation |
 | `validation/enum-variant-value-overflows-underlying` | Validation |
 | `validation/enum-unsupported-underlying-type` | Validation |
+| `validation/event-schema-on-builtin-event` | Validation |
+| `validation/event-payload-field-unknown` | Validation |
+| `mesh/event-schema-mismatch` | Validation |
 | `algorithm/local-shadows-param` | Validation |
 | `algorithm/lvalue-unsupported` | Validation |
 | `algorithm/return-missing` | Validation |
