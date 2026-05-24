@@ -54,10 +54,10 @@ fn forge_kind_enum_is_stateless_zero_runtime_dep() {
 }
 
 #[test]
-fn forge_kind_enum_count_is_seventeen() {
-    // Atomic 1: pre-existing 16 + Enum = 17. EventSchema is the 18th
-    // kind landed by Atomic 3.
-    assert_eq!(ForgeKind::ALL_ATTR_NAMES.len(), 17);
+fn forge_kind_enum_count_is_eighteen() {
+    // Atomic 1: pre-existing 16 + Enum = 17. Atomic 3 landed
+    // EventSchema as the 18th kind.
+    assert_eq!(ForgeKind::ALL_ATTR_NAMES.len(), 18);
 }
 
 // ── codegen_matrix gate (Atomic 2: 6-backend lockstep) ──────────

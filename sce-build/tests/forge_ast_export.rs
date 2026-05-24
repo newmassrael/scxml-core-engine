@@ -336,6 +336,13 @@ const FIXTURE_PER_KIND: &[(&str, &str)] = &[
     // mirror `*_ast_export_min` siblings — the round-trip envelope is
     // what's under test, not enum-feature richness.
     ("enum", "enum_ast_export_min.scxml"),
+    // NL→IR Item C1 Path A Atomic 3: EventSchema kind round-trip
+    // coverage. Minimal-shape fixture (one uint8 field, no enum
+    // import) chosen to mirror `*_ast_export_min` siblings — the
+    // round-trip envelope is under test, not EventSchema-feature
+    // richness. The `ast.export.min` event name is generic and
+    // non-reserved so the parse-time built-in-event guard accepts.
+    ("event-schema", "event_schema_ast_export_min.scxml"),
 ];
 
 #[test]

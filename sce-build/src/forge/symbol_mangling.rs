@@ -312,6 +312,13 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         ForgeDocument::Worker(m) => &m.name,
         ForgeDocument::BoundedCollection(m) => &m.name,
         ForgeDocument::Enum(m) => &m.name,
+        // NL→IR Item C1 Path A: EventSchema follows the same name-
+        // from-model convention as every other forge kind. The
+        // schema document's symbol name drives import-table lookup
+        // and per-machine binding diagnostics; Atomic 4's payload-
+        // struct codegen reads it as the Pascal-cased struct
+        // identifier root.
+        ForgeDocument::EventSchema(m) => &m.name,
     }
 }
 

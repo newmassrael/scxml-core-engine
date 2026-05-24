@@ -1039,6 +1039,18 @@ pub fn generate_cpp_with_imports_and_externs(
         // helper. `codegen_matrix::template_ships(Enum, Cpp) = true`
         // so `check()` lets dispatch through to here.
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Cpp)?,
+        // NL→IR Item C1 Path A Atomic 3: EventSchema is parse-time
+        // metadata — no codegen emission at Atomic 3 scope.
+        // `codegen_matrix::check` returns
+        // `CodegenGenericKindBackendEmitMissing` for `(EventSchema,
+        // Cpp)` so this dispatch arm is structurally unreachable.
+        // Atomic 4 (DL-6' continuation) lands the per-backend payload
+        // struct template and replaces this arm with a real
+        // `render_event_schema(...)` call.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on cpp \
+             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -11287,6 +11299,13 @@ pub fn generate_kotlin_with_imports(
         ForgeDocument::Enum(m) => {
             render_enum(&env, m, imports, crate::generator::Language::Kotlin)?
         }
+        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
+        // scope — see Cpp backend arm for the documented unreachable
+        // rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on kotlin \
+             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
+        ),
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -11451,6 +11470,13 @@ pub fn generate_rust_with_imports_and_externs(
         }
         // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Rust)?,
+        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
+        // scope — see Cpp backend arm for the documented unreachable
+        // rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on rust \
+             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
+        ),
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -12929,6 +12955,13 @@ pub fn generate_go_with_imports(
         }
         // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::Go)?,
+        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
+        // scope — see Cpp backend arm for the documented unreachable
+        // rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on go \
+             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
+        ),
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -13085,6 +13118,13 @@ pub fn generate_python_with_imports(
         ForgeDocument::Enum(m) => {
             render_enum(&env, m, imports, crate::generator::Language::Python)?
         }
+        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
+        // scope — see Cpp backend arm for the documented unreachable
+        // rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on python \
+             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
+        ),
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -13240,6 +13280,13 @@ pub fn generate_c11_with_imports_and_externs(
         }
         // NL→IR Item C1 Path A Atomic 2: see cpp dispatch.
         ForgeDocument::Enum(m) => render_enum(&env, m, imports, crate::generator::Language::C11)?,
+        // NL→IR Item C1 Path A Atomic 3: parse-time-only at Atomic 3
+        // scope — see Cpp backend arm for the documented unreachable
+        // rationale.
+        ForgeDocument::EventSchema(_) => unreachable!(
+            "ForgeDocument::EventSchema rejected by codegen_matrix::check on c11 \
+             at Atomic 3 scope (Atomic 4 lands payload struct lowering)"
+        ),
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));

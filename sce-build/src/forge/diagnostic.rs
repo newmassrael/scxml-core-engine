@@ -2411,6 +2411,28 @@ pub enum DiagnosticCode {
     /// [`ValidationError::EnumUnsupportedUnderlyingType`].
     #[serde(rename = "validation/enum-unsupported-underlying-type")]
     ValidationEnumUnsupportedUnderlyingType,
+
+    // ── NL→IR Item C1 Path A: EventSchema kind (Atomic 3) ───────
+    //    Three new codes for the 18th Forge kind:
+    //    `validation/event-schema-on-builtin-event` (DL-9'; rejects
+    //    schema declarations against the W3C SCXML reserved event
+    //    namespaces `error.*` / `done.invoke.*` / `done.state.*`),
+    //    `validation/event-payload-field-unknown` (DL-4' send-side;
+    //    rejects `<send>/<param name="F">` whose `F` is not declared
+    //    on the imported EventSchema), and `mesh/event-schema-mismatch`
+    //    (DL-7' cross-machine; rejects `<send target="#...">` whose
+    //    sender and receiver disagree on the event's typed payload
+    //    contract). Field-not-found + type-mismatch on the receive-
+    //    side reuse the existing `validation/cross-kind-field-not-found`
+    //    + `validation/cross-kind-type-mismatch` codes per Item 4
+    //    reuse precedent — the type-mismatch code is also reused on
+    //    the send-side per the same precedent. ────────────────────
+    #[serde(rename = "validation/event-schema-on-builtin-event")]
+    ValidationEventSchemaOnBuiltinEvent,
+    #[serde(rename = "validation/event-payload-field-unknown")]
+    ValidationEventPayloadFieldUnknown,
+    #[serde(rename = "mesh/event-schema-mismatch")]
+    MeshEventSchemaMismatch,
 }
 
 /// Canonical enumeration of every `DiagnosticCode` variant.
@@ -2845,6 +2867,10 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationEnumVariantDuplicateValue,
         ValidationEnumVariantValueOverflowsUnderlying,
         ValidationEnumUnsupportedUnderlyingType,
+        // ── NL→IR Item C1 Path A Atomic 3: EventSchema kind ────
+        ValidationEventSchemaOnBuiltinEvent,
+        ValidationEventPayloadFieldUnknown,
+        MeshEventSchemaMismatch,
     ]
 };
 
@@ -3448,7 +3474,19 @@ impl DiagnosticCode {
             | ValidationEnumVariantDuplicateName
             | ValidationEnumVariantDuplicateValue
             | ValidationEnumVariantValueOverflowsUnderlying
-            | ValidationEnumUnsupportedUnderlyingType => None,
+            | ValidationEnumUnsupportedUnderlyingType
+            // NL→IR Item C1 Path A: EventSchema kind (Atomic 3) — the
+            // three rejections (built-in-event schema, send-side
+            // payload field-unknown, mesh cross-machine schema
+            // mismatch) are SCE-internal hygiene with no external
+            // spec section naming them — the W3C-defined platform
+            // contract on `error.*` etc. drives DL-9' but does not
+            // name the rejection; DL-4' and DL-7' are SCE typed-
+            // binding and mesh contracts respectively. spec_anchor
+            // stays None.
+            | ValidationEventSchemaOnBuiltinEvent
+            | ValidationEventPayloadFieldUnknown
+            | MeshEventSchemaMismatch => None,
         }
     }
 
@@ -3895,6 +3933,10 @@ impl DiagnosticCode {
             ValidationEnumUnsupportedUnderlyingType => {
                 "validation/enum-unsupported-underlying-type"
             }
+            // ── NL→IR Item C1 Path A: EventSchema kind (Atomic 3) ──
+            ValidationEventSchemaOnBuiltinEvent => "validation/event-schema-on-builtin-event",
+            ValidationEventPayloadFieldUnknown => "validation/event-payload-field-unknown",
+            MeshEventSchemaMismatch => "mesh/event-schema-mismatch",
         }
     }
 }
@@ -6725,6 +6767,68 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![name.clone(), declared.clone()],
         },
+        ValidationError::EventSchemaOnBuiltinEvent { event_name } => DiagnosticPayload {
+            // NL→IR Mapping Roadmap Item C1 Path A (DL-9'): EventSchema
+            // declared against a W3C built-in event namespace
+            // (`error.*`, `done.invoke.*`, `done.state.*`). No
+            // `fix` candidate set — the legal repair is to rename the
+            // schema's `sce:event-name` to a non-reserved value or
+            // delete the schema document; neither is enumerable from
+            // the offending input.
+            code: DiagnosticCode::ValidationEventSchemaOnBuiltinEvent,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(event_name.clone()),
+            fix: None,
+            // The reserved-event name is the canonical identity —
+            // two distinct authored schemas pointing at the same
+            // built-in event collapse to the same diagnostic ID.
+            key_fragments: vec![event_name.clone()],
+        },
+        ValidationError::EventPayloadFieldUnknown {
+            importing_kind,
+            importing_name,
+            event_name,
+            field,
+            imported_kind: _,
+            imported_name: _,
+            candidates,
+        } => DiagnosticPayload {
+            // NL→IR Mapping Roadmap Item C1 Path A (DL-4' send-side):
+            // the `<param name="F">` on a `<send event="X">` /
+            // `<raise event="X">` references an undeclared field on
+            // the imported EventSchema for `X`. Mirrors
+            // `CrossKindFieldNotFound`'s closed candidate set so
+            // consumers see `did_you_mean`-style typo repair.
+            code: DiagnosticCode::ValidationEventPayloadFieldUnknown,
+            stage: Stage::Validation,
+            // `expected` carries the declared-field surface so
+            // `Fix::ReplaceOneOf` consumers (and the
+            // FixCarriesCandidates non-overlap-class guard) see the
+            // closed candidate set verbatim.
+            expected: if candidates.is_empty() {
+                None
+            } else {
+                Some(candidates.clone())
+            },
+            actual: Some(field.clone()),
+            fix: if candidates.is_empty() {
+                None
+            } else {
+                Some(Fix::ReplaceOneOf {
+                    candidates: candidates.clone(),
+                })
+            },
+            // Statechart + event + offending field name form the
+            // canonical identity — two unrelated bad params in the
+            // same statechart on different events stay distinct.
+            key_fragments: vec![
+                importing_kind.to_string(),
+                importing_name.clone(),
+                event_name.clone(),
+                field.clone(),
+            ],
+        },
     }
 }
 
@@ -7714,7 +7818,7 @@ mod tests {
             (
                 "forge/unsupported-kind",
                 ValidationError::UnsupportedKind("bogus".into()).into(),
-                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum"]}}"#,
+                r#"{"v":1,"id":"fnv1a:812898e1a23fda4d","code":"validation/unsupported-kind","stage":"validation","spec":"SCE Forge §3.2","message":"unsupported sce:kind value: 'bogus'","actual":"bogus","fix":{"kind":"replace_one_of","candidates":["statechart","transform","lookup","condition","codec","procedure","validator","filter","interpolation","timer","observer","algorithm","link","buffer-pool","worker","bounded-collection","enum","event-schema"]}}"#,
             ),
             (
                 "forge/duplicate-id",
@@ -9823,6 +9927,31 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:1438d7bd57263c36","code":"validation/enum-unsupported-underlying-type","stage":"validation","message":"enum 'result': sce:underlying-type='float32' is not supported (Path A α: uint8 | uint16 | uint32 | uint64)","actual":"float32"}"#,
             ),
+            // ── NL→IR Item C1 Path A Atomic 3: EventSchema kind ───
+            //   `id` hashes are placeholders; the goldens test prints
+            //   the actual FNV1a on first run, copy them back here.
+            (
+                "validation/event-schema-on-builtin-event",
+                ValidationError::EventSchemaOnBuiltinEvent {
+                    event_name: "error.execution".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fdece2ea5d583d9c","code":"validation/event-schema-on-builtin-event","stage":"validation","message":"EventSchema cannot declare a schema for W3C built-in event 'error.execution' (reserved namespace: error., done.invoke., done.state.)","actual":"error.execution"}"#,
+            ),
+            (
+                "validation/event-payload-field-unknown",
+                ValidationError::EventPayloadFieldUnknown {
+                    importing_kind: ForgeKind::Statechart,
+                    importing_name: "demo".into(),
+                    event_name: "job.completed".into(),
+                    field: "stauts".into(),
+                    imported_kind: ForgeKind::EventSchema,
+                    imported_name: "job_completed_schema".into(),
+                    candidates: vec!["count".into(), "status".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:fa3df31661845cdb","code":"validation/event-payload-field-unknown","stage":"validation","message":"statechart 'demo': <send event=\"job.completed\"> declares <param name=\"stauts\"> not in the EventSchema for 'job.completed' (imported event-schema 'job_completed_schema') (declared fields: count, status)","expected":["count","status"],"actual":"stauts","fix":{"kind":"replace_one_of","candidates":["count","status"]}}"#,
+            ),
         ]
     }
 
@@ -11071,6 +11200,21 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:8d27e49c9b609f34","code":"mesh/io","stage":"io","message":"I/O error on /tmp/mesh.log: entity not found"}"#,
             ),
+            // ── NL→IR Item C1 Path A Atomic 3: EventSchema mesh DL-7' ──
+            (
+                "mesh/event-schema-mismatch",
+                DeployError::EventSchemaMismatch {
+                    event_name: "job.completed".into(),
+                    sender_machine: "alpha".into(),
+                    receiver_machine: "beta".into(),
+                    reason: crate::mesh::error::EventSchemaMismatchReason::StructuralHashMismatch {
+                        sender_hash: "a1b2".into(),
+                        receiver_hash: "c3d4".into(),
+                    },
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:7cc311d0bc85d710","code":"mesh/event-schema-mismatch","stage":"mesh-deploy","message":"cross-machine schema mismatch on event 'job.completed' between sender machine 'alpha' and receiver machine 'beta': structural-hash mismatch (sender=a1b2, receiver=c3d4)","expected":["c3d4"],"actual":"a1b2"}"#,
+            ),
         ]
     }
 
@@ -11533,7 +11677,15 @@ mod tests {
             // circular-dependency siblings ride NeutralOrDeterministic
             // (deterministic repair = author edits a single declared
             // type / removes a cyclic import; no closed candidate set).
-            | ValidationCrossKindFieldNotFound => FixCarriesCandidates,
+            | ValidationCrossKindFieldNotFound
+            // NL→IR Mapping Roadmap Item C1 Path A (DL-4' send-side) —
+            // the send-side payload field-unknown mirror of cross-kind
+            // field-not-found. Carries the EventSchema's declared
+            // field set as the same closed-form `Fix::ReplaceOneOf`
+            // candidate list so `did_you_mean`-style typo repair
+            // surfaces identically on `<send>/<param>` and on
+            // `_event.data.<field>` use sites.
+            | ValidationEventPayloadFieldUnknown => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
             ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
@@ -12092,7 +12244,21 @@ mod tests {
             | ValidationEnumVariantDuplicateName
             | ValidationEnumVariantDuplicateValue
             | ValidationEnumVariantValueOverflowsUnderlying
-            | ValidationEnumUnsupportedUnderlyingType => NeutralOrDeterministic,
+            | ValidationEnumUnsupportedUnderlyingType
+            // NL→IR Item C1 Path A (Atomic 3): EventSchema built-in-
+            // event schema rejection — repair is author-domain
+            // (rename `sce:event-name` to a non-reserved value or
+            // delete the schema document). Reserved-prefix list is
+            // closed but the legal replacement event name is open,
+            // so no `ReplaceOneOf` set fits — NeutralOrDeterministic.
+            | ValidationEventSchemaOnBuiltinEvent
+            // NL→IR Item C1 Path A (Atomic 3): mesh cross-machine
+            // EventSchema mismatch — repair is two-axis (realign
+            // sender ↔ receiver schemas by editing one side's field
+            // declarations, or declare a schema on the side that is
+            // missing it). Neither axis names a closed candidate set
+            // the validator can predict — author-domain choice.
+            | MeshEventSchemaMismatch => NeutralOrDeterministic,
         }
     }
 
@@ -12576,7 +12742,11 @@ mod tests {
                 | ValidationEnumVariantDuplicateName
                 | ValidationEnumVariantDuplicateValue
                 | ValidationEnumVariantValueOverflowsUnderlying
-                | ValidationEnumUnsupportedUnderlyingType => true,
+                | ValidationEnumUnsupportedUnderlyingType
+                // NL→IR Item C1 Path A: EventSchema kind (Atomic 3)
+                | ValidationEventSchemaOnBuiltinEvent
+                | ValidationEventPayloadFieldUnknown
+                | MeshEventSchemaMismatch => true,
             }
         }
         for &code in ALL_DIAGNOSTIC_CODES {
@@ -12588,7 +12758,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            315,
+            318,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -13331,7 +13501,40 @@ mod tests {
              SCXML §5.10 selection order, making the later one \
              dead). Both NeutralOrDeterministic. Language-prefixed \
              `cond` values (`cpp:`, `kotlin:`, `rust:`) stay opaque \
-             to keep the false-positive surface at zero. 308 → 310.",
+             to keep the false-positive surface at zero. 308 → 310. \
+             Then NL→IR Mapping Roadmap Item C1 Path A Atomic 1 lands \
+             the Enum kind — five parse-time invariant codes: \
+             `validation/enum-no-variants` (empty variant list), \
+             `validation/enum-variant-duplicate-name` (two variants \
+             share an identifier), `validation/enum-variant-duplicate-value` \
+             (Path A bijectivity violation — two variants share a \
+             wire byte), `validation/enum-variant-value-overflows-underlying` \
+             (variant value exceeds declared `sce:underlying-type` \
+             width), `validation/enum-unsupported-underlying-type` \
+             (carrier outside the supported uint8/uint16/uint32/uint64 \
+             set). All NeutralOrDeterministic — variant names and \
+             values are author-defined so no closed `ReplaceOneOf` \
+             set fits. 310 → 315. Then Atomic 3 lands the EventSchema \
+             kind — three codes: \
+             `validation/event-schema-on-builtin-event` (DL-9'; \
+             rejects schema declarations against W3C SCXML reserved \
+             event namespaces `error.*` / `done.invoke.*` / \
+             `done.state.*`), \
+             `validation/event-payload-field-unknown` (DL-4' send-side; \
+             rejects `<send>/<param name=\"F\">` where `F` is not on \
+             the imported EventSchema — FixCarriesCandidates over the \
+             schema's declared field surface, mirroring \
+             `validation/cross-kind-field-not-found`) and \
+             `mesh/event-schema-mismatch` (DL-7' cross-machine; \
+             rejects `<send target=\"#machine_id\">` when the sender's \
+             and receiver's EventSchemas disagree on field shape — \
+             structural-hash mismatch, sender-only partial coverage, \
+             or receiver-only partial coverage — NeutralOrDeterministic, \
+             two-axis author repair). Send-side type-mismatch reuses \
+             `validation/cross-kind-type-mismatch` per Item 4 reuse \
+             precedent. Receive-side field-not-found + comparison \
+             type-mismatch reuse the existing cross-kind codes per \
+             the same precedent. 315 → 318.",
         );
     }
 
