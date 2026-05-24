@@ -110,28 +110,30 @@ impl InferredType {
     /// `Quantity` annotation so `Quantity { base: Int{..}, .. }` still
     /// reports as integer-like.
     pub fn is_integer_like(&self) -> bool {
-        match self {
-            Self::UntypedInt | Self::Int { .. } => true,
-            Self::Quantity {
-                base: NumericBaseType::Int { .. },
-                ..
-            } => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::UntypedInt
+                | Self::Int { .. }
+                | Self::Quantity {
+                    base: NumericBaseType::Int { .. },
+                    ..
+                }
+        )
     }
 
     /// Is this type a concrete or untyped float? Looks through a
     /// `Quantity` annotation so `Quantity { base: Float{..}, .. }` still
     /// reports as float-like.
     pub fn is_float_like(&self) -> bool {
-        match self {
-            Self::UntypedFloat | Self::Float { .. } => true,
-            Self::Quantity {
-                base: NumericBaseType::Float { .. },
-                ..
-            } => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::UntypedFloat
+                | Self::Float { .. }
+                | Self::Quantity {
+                    base: NumericBaseType::Float { .. },
+                    ..
+                }
+        )
     }
 
     /// Does any arithmetic operand of this type require floating-point
@@ -365,12 +367,11 @@ fn join_arith_quantity(left: InferredType, right: InferredType) -> InferredType 
 
         // Quantity ⊔ untyped literal — literal adopts the quantity.
         (Quantity { .. }, UntypedInt) | (UntypedInt, Quantity { .. }) => {
-            let q = if matches!(left, Quantity { .. }) {
+            if matches!(left, Quantity { .. }) {
                 left
             } else {
                 right
-            };
-            q
+            }
         }
         (Quantity { .. }, UntypedFloat) | (UntypedFloat, Quantity { .. }) => {
             // Untyped float against an integer-backed quantity widens
