@@ -266,3 +266,87 @@ fn negative_enum_unsupported_underlying_rejects() {
         "got {err:?}"
     );
 }
+
+// ── F-κ doc-as-contract: codegen ignores strict_variants ─────────
+
+/// `forge::generator::render_enum` carries a comment asserting that
+/// `EnumModel::strict_variants` is never consumed by codegen — the
+/// F-κ opt-out is a parse-time validator concern. This drift guard
+/// mechanises that claim: two enum documents differing only in
+/// `sce:strict-variants` (and sharing the same identifier so the
+/// emitted symbol names stay byte-identical) must produce
+/// byte-identical [`GeneratedOutput`] at every backend. Any
+/// divergence signals codegen has started reading the opt-out
+/// flag — at which point either the codegen-side read must revert
+/// or design RFC §8 F-κ must expand to cover the new surface.
+#[test]
+fn enum_codegen_ignores_strict_variants_at_every_backend() {
+    use sce_build::compile_forge_from_string;
+    use sce_build::generator::Language;
+
+    const SHARED_LABEL: DocumentLabel<'static> = DocumentLabel {
+        identifier: "result",
+        diagnostic_label: "result.scxml",
+    };
+
+    fn enum_doc(strict_attr: Option<&str>) -> String {
+        let extra = strict_attr
+            .map(|v| format!(" sce:strict-variants=\"{v}\""))
+            .unwrap_or_default();
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="enum"
+       name="result"
+       sce:underlying-type="uint8"{extra}>
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="0"/>
+      <sce:variant name="error" value="1"/>
+      <sce:variant name="timeout" value="2"/>
+    </data>
+  </datamodel>
+</scxml>
+"#
+        )
+    }
+
+    // Three surface forms must all collapse to the same emitted
+    // bytes: explicit strict, explicit open, and the default
+    // (attribute absent). The default-absent case is the implicit
+    // strict path most authors hit.
+    let implicit = enum_doc(None);
+    let explicit_strict = enum_doc(Some("true"));
+    let explicit_open = enum_doc(Some("false"));
+
+    for lang in [
+        Language::Cpp,
+        Language::Rust,
+        Language::Kotlin,
+        Language::Go,
+        Language::Python,
+        Language::C11,
+    ] {
+        let a = compile_forge_from_string(&implicit, SHARED_LABEL, lang)
+            .unwrap_or_else(|e| panic!("{lang:?} compile (implicit): {e:?}"));
+        let b = compile_forge_from_string(&explicit_strict, SHARED_LABEL, lang)
+            .unwrap_or_else(|e| panic!("{lang:?} compile (strict): {e:?}"));
+        let c = compile_forge_from_string(&explicit_open, SHARED_LABEL, lang)
+            .unwrap_or_else(|e| panic!("{lang:?} compile (open): {e:?}"));
+
+        // GeneratedOutput is not Eq/Debug — compare the load-bearing
+        // `files: Vec<(filename, content)>` field directly. The
+        // `deps` field is empty for `from_string` routes (no
+        // preprocessor inputs).
+        assert_eq!(
+            a.files, b.files,
+            "{lang:?}: implicit-default and explicit strict=true diverge — render_enum is reading strict_variants",
+        );
+        assert_eq!(
+            b.files, c.files,
+            "{lang:?}: explicit strict=true and strict=false diverge — render_enum is reading strict_variants",
+        );
+    }
+}
