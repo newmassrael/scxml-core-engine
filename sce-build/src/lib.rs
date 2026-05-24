@@ -1945,6 +1945,31 @@ pub fn compile_scxml_with_imports(
     // precedent (no deploy ⇒ no cross-doc deploy-vs-forge to check).
     let mut link_models_for_xref: Vec<(String, forge::model::LinkModel)> = Vec::new();
     let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> = Vec::new();
+    // NL→IR Item C1 Path A (Atomic 3) — EventSchemas keyed by file
+    // stem (doc name). Populated in pass-1 alongside the other forge-
+    // doc captures; consumed in pass-2 by
+    // `event_schema_check::resolve_imported_event_schemas` which
+    // projects per-statechart event-name views out of the build-wide
+    // registry based on each statechart's own
+    // `<sce:import kind="event-schema">` declarations.
+    //
+    // Per-statechart import visibility (DL-7' prerequisite) replaces
+    // any legacy "one schema per event globally" rule: two machines
+    // on a mesh may legitimately declare different schemas for the
+    // same event name (e.g., during a rolling deploy with version
+    // skew) — the cross-machine validator
+    // (`mesh::deploy::validate_event_schemas_cross_machine`) is the
+    // load-bearing rejection signal for any *actual* divergence.
+    //
+    // Doc-name uniqueness across the build is already enforced by
+    // `cross_doc.record_document` above; the map's `insert` is safe
+    // (collisions unreachable). Doc-name keying lets the per-
+    // statechart resolver follow each import's `src` file stem to
+    // the exact schema document the author named.
+    let mut event_schemas_by_doc_name: std::collections::BTreeMap<
+        String,
+        forge::model::EventSchemaModel,
+    > = std::collections::BTreeMap::new();
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
@@ -2057,6 +2082,22 @@ pub fn compile_scxml_with_imports(
                 let key = doc.name().to_string();
                 element_type_candidates.insert(key, doc);
             }
+            forge::model::ForgeDocument::EventSchema(schema) => {
+                // NL→IR Item C1 Path A (Atomic 3, DL-7') — capture
+                // EventSchemas by their doc name (file stem) so the
+                // per-statechart resolver can follow each
+                // `<sce:import src="X.scxml">` to the exact schema
+                // document the author named. Doc-name uniqueness was
+                // already enforced by `cross_doc.record_document`
+                // above, so insertion is safe (collisions
+                // structurally unreachable). Per-statechart import
+                // visibility means two statecharts may legitimately
+                // import different schemas for the same event name;
+                // the cross-machine validator surfaces any *actual*
+                // divergence as `mesh/event-schema-mismatch` only
+                // when an affected cross-machine `<send>` walks.
+                event_schemas_by_doc_name.insert(schema.name.clone(), schema);
+            }
             _ => {}
         }
     }
@@ -2106,6 +2147,40 @@ pub fn compile_scxml_with_imports(
     for (path, model) in &scxml_models {
         let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
         parser::validate_on_sample_link_references(model, &cross_doc, &pool_reg, basename)?;
+    }
+
+    // ── NL→IR Item C1 Path A (Atomic 3) EventSchema receive- + send-side typecheck ──
+    //
+    // Receive-side (DL-5'): walks every parsed statechart's
+    // transition `cond` expressions for `_event.data.<field>`
+    // member-access patterns and verifies the field against the
+    // schema declared for that transition's event.
+    //
+    // Send-side (DL-4'): walks every `<send event="X">` /
+    // `<raise event="X">` (inside transition `actions`, `<onentry>`,
+    // `<onexit>`, initial-transition + history-default sequences,
+    // and nested `<if>` / `<foreach>` bodies) and verifies each
+    // `<param name="F" expr="...">` against the schema's declared
+    // field surface.
+    //
+    // Both passes run after pass-1 capture
+    // (`event_schemas_by_doc_name` populated) and after pass-2 SCXML
+    // parsing (`scxml_models` populated). The per-statechart
+    // resolver walks each SCXML's `<sce:import>` declarations to
+    // determine which schemas are in-scope for THIS document — so a
+    // statechart that does not declare any event-schema imports keeps
+    // the dynamic `_event.data` baseline even when other statecharts
+    // in the same build declare schemas. Failure short-circuits
+    // codegen pass-3, matching the worker outbox + BC cross-doc
+    // pattern.
+    for (path, model) in &scxml_models {
+        let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let per_doc_schemas = forge::event_schema_check::resolve_imported_event_schemas(
+            model,
+            &event_schemas_by_doc_name,
+        );
+        forge::event_schema_check::check(model, &per_doc_schemas, basename)?;
+        forge::event_schema_check::check_send_side(model, &per_doc_schemas, basename)?;
     }
 
     // ── C2 follow-up Atomic B outbox cross-resolution ──
@@ -2266,6 +2341,25 @@ pub fn compile_scxml_with_imports(
         mesh::deploy::validate_stateless_accept_externs(deploy_cfg, &orchestrator_plugin_symbols)
             .map_err(mesh::error::MeshError::from)
             .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+
+        // ── NL→IR Item C1 Path A (Atomic 3, DL-7') cross-machine
+        //    EventSchema validation ─────────────────────────────────
+        //
+        // Per-machine schema visibility (derived from each statechart's
+        // `<sce:import kind="event-schema">` declarations) is compared
+        // across every cross-machine `<send target="#X">` so divergent
+        // schemas surface as `mesh/event-schema-mismatch` instead of
+        // silently producing two incompatible wire contracts. Runs in
+        // the deploy-aware path because the rejection depends on the
+        // mesh topology — single-statechart compilations (no deploy)
+        // cannot exhibit a cross-machine mismatch by construction.
+        mesh::deploy::validate_event_schemas_cross_machine(
+            deploy_cfg,
+            &scxml_models,
+            &event_schemas_by_doc_name,
+        )
+        .map_err(mesh::error::MeshError::from)
+        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
         // ── C10-β link/inbound-event-queue-unsized ──
         //
@@ -2437,6 +2531,21 @@ pub fn compile_scxml_with_imports(
             identifier: stem,
             diagnostic_label: basename,
         };
+        // NL→IR Item C1 Path A (Atomic 3): EventSchema documents are
+        // parse-time metadata only — they participated in pass-1
+        // capture + receive/send-side typecheck + mesh DL-7' but emit
+        // no per-backend code at Atomic 3 scope. Atomic 4 (DL-6'
+        // continuation) lands the per-backend payload struct lowering
+        // templates and removes this skip. Detecting the kind via
+        // the cheap `detect_kind` helper avoids a second full parse
+        // — same pattern used by other kind-aware orchestrator
+        // branches.
+        if matches!(
+            forge::parser::detect_kind(&content),
+            Ok(Some(forge::model::ForgeKind::EventSchema))
+        ) {
+            continue;
+        }
         let base_dir = forge_path.parent().unwrap_or_else(|| Path::new("."));
         let effective_options = bc_options_override.as_ref().unwrap_or(options);
         let out =
@@ -3931,7 +4040,14 @@ fn discover_stateful_member_fields(
         // SCXML-expression-visible member fields. Authors reference
         // variants as `<EnumName>.<variant>` (resolved through the
         // cross-kind binding pass), not as alias.field.
-        | ForgeDocument::Enum(_) => {}
+        | ForgeDocument::Enum(_)
+        // NL→IR Item C1 Path A: EventSchema is parse-time metadata.
+        // The payload contract lives in `_event.data.<field>`
+        // resolution (handled by `event_schema_check.rs`, keyed by
+        // SCXML event name) not as `alias.field` access on the
+        // schema's import alias. No member surface visible through
+        // the `alias.field` path.
+        | ForgeDocument::EventSchema(_) => {}
     }
     out
 }
@@ -4004,7 +4120,11 @@ fn discover_stateful_member_methods(
         // NL→IR Item C1 Path A: Enum exposes no instance methods —
         // typed enum declaration emits a type, not a callable. Same
         // empty stance as stateless kinds.
-        | ForgeDocument::Enum(_) => Vec::new(),
+        | ForgeDocument::Enum(_)
+        // NL→IR Item C1 Path A: EventSchema exposes no instance
+        // methods — the schema is type-only metadata, addressed via
+        // SCXML event names, not method calls on an alias.
+        | ForgeDocument::EventSchema(_) => Vec::new(),
     }
 }
 
@@ -4140,7 +4260,14 @@ fn discover_primary_function(
         // a callable. Authors reference variants as `<EnumName>.<v>`,
         // resolved through the cross-kind binding pass; no primary
         // function name belongs at this site.
-        | forge::model::ForgeDocument::Enum(_) => None,
+        | forge::model::ForgeDocument::Enum(_)
+        // NL→IR Item C1 Path A: EventSchema is parse-time metadata
+        // with no primary function callsite — the schema document
+        // does not emit a callable surface (Atomic 4 emits a payload
+        // struct, not a free function, and the SCXML event handler
+        // is dispatched implicitly by event-name match, not by alias
+        // function call).
+        | forge::model::ForgeDocument::EventSchema(_) => None,
         // RFC §5.A Algorithm: free function whose name is the
         // SCXML-author-declared `name=` attribute, lowered to each
         // language's idiomatic identifier per RFC §5.J.5. The

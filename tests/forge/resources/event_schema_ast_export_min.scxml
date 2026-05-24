@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- NL→IR Item C1 Path A Atomic 3 — minimal EventSchema fixture for
+     the forge_ast_export round-trip drift guard. Mirrors the
+     `*_ast_export_min` naming convention used by enum / buffer_pool /
+     link / worker fixtures: the smallest legal shape that exercises
+     the kind's wire envelope without dragging in cross-doc imports. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="event-schema"
+       name="event_schema_ast_export_min"
+       sce:event-name="ast.export.min">
+  <datamodel>
+    <data id="payload_byte" sce:type="uint8" sce:direction="in"/>
+  </datamodel>
+</scxml>

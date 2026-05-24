@@ -218,6 +218,55 @@ pub struct LinkDriverClassMismatchPayload {
     pub driver_candidates_list: String,
 }
 
+/// NL→IR Mapping Roadmap Item C1 Path A (DL-7') — distinguishes the
+/// three shapes a cross-machine EventSchema mismatch can take so
+/// consumers can match without substring-greping the `Display` prose.
+/// The `Display` impl emits the exact phrases spliced into the outer
+/// `DeployError::EventSchemaMismatch` `{reason}` placeholder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EventSchemaMismatchReason {
+    /// Both machines declare an EventSchema for the event, but their
+    /// canonical structural hashes differ (fields, types, or order
+    /// after sort+normalize). Carries both hashes for diagnostic
+    /// context.
+    StructuralHashMismatch {
+        /// Sender-side canonical schema hash (hex).
+        sender_hash: String,
+        /// Receiver-side canonical schema hash (hex).
+        receiver_hash: String,
+    },
+    /// Sender declares an EventSchema for the event; receiver does
+    /// not. The receiver would observe a dynamically-shaped payload
+    /// where the sender promised a typed one.
+    SenderOnly,
+    /// Receiver declares an EventSchema for the event; sender does
+    /// not. The sender's `<param>` set is unvalidated where the
+    /// receiver expects a typed contract.
+    ReceiverOnly,
+}
+
+impl std::fmt::Display for EventSchemaMismatchReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::StructuralHashMismatch {
+                sender_hash,
+                receiver_hash,
+            } => write!(
+                f,
+                "structural-hash mismatch (sender={sender_hash}, receiver={receiver_hash})"
+            ),
+            Self::SenderOnly => write!(
+                f,
+                "sender declares an EventSchema but receiver does not (partial coverage)"
+            ),
+            Self::ReceiverOnly => write!(
+                f,
+                "receiver declares an EventSchema but sender does not (partial coverage)"
+            ),
+        }
+    }
+}
+
 /// Errors from deploy.yaml deserialization.
 #[derive(Debug, thiserror::Error)]
 pub enum DeployError {
@@ -1725,6 +1774,36 @@ pub enum DeployError {
         machine: String,
         per_link_budget_us: u32,
         tick_period_us: u32,
+    },
+
+    /// NL→IR Mapping Roadmap Item C1 Path A (DL-7' mesh cross-machine
+    /// validation): a `<send target="#{receiver_machine}">` in a
+    /// statechart deployed on `{sender_machine}` carries event name
+    /// `{event_name}`, but the sender's and receiver's imported
+    /// EventSchema for that event do not agree on field shape
+    /// (structural-hash mismatch) or one side declares a schema while
+    /// the other does not (partial coverage). Wire code:
+    /// `mesh/event-schema-mismatch`. Repair is author-domain: realign
+    /// the two schemas (rename / re-type fields on either side) or
+    /// declare a schema on the side that is missing it.
+    #[error(
+        "cross-machine schema mismatch on event '{event_name}' between sender machine '{sender_machine}' and receiver machine '{receiver_machine}': {reason}"
+    )]
+    EventSchemaMismatch {
+        /// SCXML event name (the `event="..."` attribute on the
+        /// offending `<send target="#...">`).
+        event_name: String,
+        /// Machine id hosting the statechart that authored the
+        /// `<send target="#...">`.
+        sender_machine: String,
+        /// Machine id targeted by the send (the value after `#` in
+        /// `target`).
+        receiver_machine: String,
+        /// Why the schemas were rejected — distinguishes the
+        /// structural-hash divergence case from the partial-coverage
+        /// cases without forcing consumers to substring-grep the
+        /// `Display` text.
+        reason: EventSchemaMismatchReason,
     },
 }
 
@@ -3450,6 +3529,53 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 tick_period_us.to_string(),
             ],
         },
+        // ── NL→IR Mapping Roadmap Item C1 Path A (DL-7') cross-
+        //    machine EventSchema mismatch. `actual` carries the
+        //    sender's view (hash or "absent" tag), `expected`
+        //    enumerates the receiver's view; `key_fragments` joins
+        //    event + both machine names + reason tag so two distinct
+        //    mismatches in the same build collapse to different
+        //    `fnv1a:...` IDs.
+        DeployError::EventSchemaMismatch {
+            event_name,
+            sender_machine,
+            receiver_machine,
+            reason,
+        } => {
+            let (actual, expected, reason_tag) = match reason {
+                EventSchemaMismatchReason::StructuralHashMismatch {
+                    sender_hash,
+                    receiver_hash,
+                } => (
+                    Some(sender_hash.clone()),
+                    Some(vec![receiver_hash.clone()]),
+                    "structural-hash-mismatch",
+                ),
+                EventSchemaMismatchReason::SenderOnly => (
+                    Some("schema-declared".to_string()),
+                    Some(vec!["schema-absent".to_string()]),
+                    "sender-only",
+                ),
+                EventSchemaMismatchReason::ReceiverOnly => (
+                    Some("schema-absent".to_string()),
+                    Some(vec!["schema-declared".to_string()]),
+                    "receiver-only",
+                ),
+            };
+            DiagnosticPayload {
+                code: DiagnosticCode::MeshEventSchemaMismatch,
+                stage: Stage::MeshDeploy,
+                actual,
+                expected,
+                fix: None,
+                key_fragments: vec![
+                    event_name.clone(),
+                    sender_machine.clone(),
+                    receiver_machine.clone(),
+                    reason_tag.to_string(),
+                ],
+            }
+        }
     }
 }
 

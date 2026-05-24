@@ -3205,6 +3205,69 @@ pub enum ValidationError {
         /// The author's literal attribute value.
         declared: String,
     },
+
+    /// NL→IR Mapping Roadmap Item C1 Path A (DL-9'): an EventSchema
+    /// document declares `sce:event-name="<X>"` against an event name
+    /// that is reserved for the W3C SCXML platform (`error.*`,
+    /// `done.invoke.*`, `done.state.*`). The platform raises these
+    /// events with implementation-defined payload shape; an authored
+    /// schema cannot constrain them without contradicting the platform
+    /// contract. Wire code: `validation/event-schema-on-builtin-event`.
+    /// See [`crate::forge::model::EventSchemaModel::BUILTIN_EVENT_PREFIXES`]
+    /// for the closed prefix set.
+    #[error(
+        "EventSchema cannot declare a schema for W3C built-in event '{event_name}' \
+         (reserved namespace: {})",
+        crate::forge::model::EventSchemaModel::BUILTIN_EVENT_PREFIXES.join(", ")
+    )]
+    EventSchemaOnBuiltinEvent {
+        /// Authored `sce:event-name` value that collides with a
+        /// reserved W3C namespace prefix.
+        event_name: String,
+    },
+
+    /// NL→IR Mapping Roadmap Item C1 Path A (DL-4' send-side): a
+    /// `<send event="X">` or `<raise event="X">` carries a
+    /// `<param name="F"/>` whose name `F` is not declared on the
+    /// EventSchema imported for event `X`. Wire code:
+    /// `validation/event-payload-field-unknown`. Carries the schema's
+    /// declared field surface as a closed `Fix::ReplaceOneOf`
+    /// candidate set so consumers see the legal alternatives for
+    /// `did_you_mean`-style typo repair, mirroring
+    /// [`ValidationError::CrossKindFieldNotFound`] from the receive-
+    /// side validator.
+    #[error(
+        "{importing_kind} '{importing_name}': <send event=\"{event_name}\"> declares <param name=\"{field}\"> not in the EventSchema for '{event_name}' (imported {imported_kind} '{imported_name}'){}",
+        if candidates.is_empty() {
+            String::new()
+        } else {
+            format!(" (declared fields: {})", candidates.join(", "))
+        }
+    )]
+    EventPayloadFieldUnknown {
+        /// Importing kind — typically `ForgeKind::Statechart` since
+        /// `<send>`/`<raise>` originate from SCXML executable content.
+        importing_kind: ForgeKind,
+        /// Statechart-document name carrying the offending send.
+        importing_name: String,
+        /// SCXML event name (the `event="..."` attribute on the
+        /// offending `<send>` / `<raise>`).
+        event_name: String,
+        /// Authored `<param name="...">` value that did not resolve
+        /// to a declared field on the schema.
+        field: String,
+        /// Imported kind — fixed at `ForgeKind::EventSchema` for this
+        /// variant; carried for diagnostic-payload symmetry with
+        /// [`ValidationError::CrossKindFieldNotFound`].
+        imported_kind: ForgeKind,
+        /// Schema-document `name` attribute (typically derived from
+        /// the schema's `sce:event-name`).
+        imported_name: String,
+        /// Sorted, deduplicated list of the schema's declared field
+        /// ids. Drives `Fix::ReplaceOneOf` so consumers see the
+        /// closed candidate set for typo repair.
+        candidates: Vec<String>,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

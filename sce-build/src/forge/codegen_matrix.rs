@@ -83,7 +83,14 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // enum on every language (`enum class : <int>` / `#[repr(<int>)]
         // enum` / `IntEnum` / etc.) — no MCU-specific constraint.
         // Generic class.
-        | ForgeKind::Enum => KindClass::Generic,
+        | ForgeKind::Enum
+        // NL→IR Item C1 Path A: EventSchema lowers to a backend-native
+        // payload struct on every language (`struct <S>Payload` /
+        // `pub struct <S>Payload` / `data class <S>Payload` / etc.) —
+        // typed-Enum fields resolve through the Enum kind's emitted
+        // type via the import context. No MCU-specific hardware
+        // constraint; Generic class matches Enum's stance.
+        | ForgeKind::EventSchema => KindClass::Generic,
         // RFC §5.C / §5.J.4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language` (existing A6
@@ -202,6 +209,14 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // §5.J.4 Generic-class contract; matrix dispatch lets every
         // `(Enum, lang)` pair through to the per-language render arm.
         ForgeKind::Enum => true,
+        // NL→IR Item C1 Path A Atomic 3: EventSchema is parse-time
+        // metadata only — no per-backend codegen template ships yet.
+        // Atomic 4 (DL-6' continuation) lands the 6-backend payload
+        // struct codegen templates and flips this arm to `true`.
+        // Until then, an attempt to emit an EventSchema document
+        // surfaces as `codegen/generic-kind-backend-emit-missing` via
+        // `check()` — the truthful answer ("no template ships").
+        ForgeKind::EventSchema => false,
     }
 }
 

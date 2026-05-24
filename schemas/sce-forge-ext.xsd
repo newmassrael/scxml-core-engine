@@ -59,6 +59,16 @@
            1:1 wire-key values. Distinct from `lookup` by the
            bijectivity invariant on variant values. -->
       <xs:enumeration value="enum"/>
+      <!-- NL→IR Mapping Roadmap Item C1 Path A — EventSchema kind.
+           Typed contract for the `_event.data` payload of a named
+           SCXML event. Carries the event name on the root via
+           `sce:event-name`; declares typed `<data>` children that
+           are read by transition `cond` expressions as
+           `_event.data.<field>` and written via `<send>/<param>`
+           payloads. Atomic 3 scope: parse + receive/send-side
+           typecheck + mesh DL-7'. Per-backend payload struct
+           codegen lands at Atomic 4. -->
+      <xs:enumeration value="event-schema"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -205,6 +215,15 @@
        unsigned ints at parse time (see
        `validation/enum-unsupported-underlying-type`). -->
   <xs:attribute name="underlying-type" type="sce:sceType"/>
+
+  <!-- NL→IR Mapping Roadmap Item C1 Path A — `sce:event-name` on a
+       `sce:kind="event-schema"` `<scxml>` root names the SCXML event
+       whose `_event.data` payload the schema constrains. Reserved
+       W3C namespaces (`error.*`, `done.invoke.*`, `done.state.*`)
+       are rejected by `parse_event_schema` (raises
+       `validation/event-schema-on-builtin-event`). Free-form string
+       at the XSD layer; semantic validation lives in sce-build. -->
+  <xs:attribute name="event-name" type="xs:string"/>
   <xs:attribute name="unit" type="xs:string"/>
   <xs:attribute name="default" type="xs:string"/>
   <xs:attribute name="input" type="xs:string"/>
