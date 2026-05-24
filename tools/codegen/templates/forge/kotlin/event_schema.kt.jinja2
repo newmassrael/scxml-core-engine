@@ -1,0 +1,22 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "kotlin", module_level=true) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
+// Runtime: {{ runtime_dep }}
+// Event name: {{ event_name }}
+// Do not edit — regenerate from the source SCXML file.
+
+package com.sce.generated.{{ package }}
+{% for imp_pkg in enum_kotlin_packages %}
+import com.sce.generated.{{ imp_pkg }}.*
+{% endfor %}
+
+data class {{ payload_struct_name }}(
+{%- for f in fields %}
+    val {{ f.id }}: {{ f.kt_type }}{% if not loop.last %},{% endif %}
+
+{%- endfor %}
+)

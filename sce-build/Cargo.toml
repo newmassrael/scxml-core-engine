@@ -139,6 +139,17 @@ name = "forge_codegen_enum_smoke"
 path = "tests/forge_codegen_enum_smoke.rs"
 required-features = ["cli"]
 
+# NL→IR Item C1 Path A Atomic 4 — per-backend EventSchema codegen
+# smoke gate. Generates each standalone EventSchema fixture on all 6
+# backends (cross-doc enum-import fixtures are exercised by the
+# integration-test layer) and feeds the output to the same per-backend
+# syntax checkers as `forge_codegen_enum_smoke`. Cli-feature gate
+# mirrors that test since the harness shells out to `sce-codegen`.
+[[test]]
+name = "forge_codegen_event_schema_smoke"
+path = "tests/forge_codegen_event_schema_smoke.rs"
+required-features = ["cli"]
+
 # NL→IR Mapping Roadmap Items 1+5 — `sce:req` / `sce:unresolved`
 # annotation comment emission across all six codegen backends. Pair
 # with `codegen_smoke` (compile gate on annotated output) so both
