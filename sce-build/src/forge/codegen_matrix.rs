@@ -195,13 +195,13 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // lines 2573-2575). All 6 backends emit; the γ chain entirely
         // closes the §5.L matrix.
         ForgeKind::BoundedCollection => true,
-        // NL→IR Item C1 Path A Atomic 1: Enum lives at IR-only level —
-        // no codegen template ships on any backend yet. Atomic 2 lands
-        // the 6-backend templates and flips this arm to `true` for all
-        // languages. Until then, `generator.rs` Enum dispatch arms
-        // route through the existing `TemplateMissing` outcome (per
-        // `lookup()` below).
-        ForgeKind::Enum => false,
+        // NL→IR Item C1 Path A Atomic 2: Enum ships on all 6 backends
+        // via `tools/codegen/templates/forge/<lang>/enum.<ext>.jinja2`
+        // — `generator.rs::render_enum` lowers `EnumModel` to a typed
+        // backend-native enum per design RFC §3 DL-6'. Matches the
+        // §5.J.4 Generic-class contract; matrix dispatch lets every
+        // `(Enum, lang)` pair through to the per-language render arm.
+        ForgeKind::Enum => true,
     }
 }
 
