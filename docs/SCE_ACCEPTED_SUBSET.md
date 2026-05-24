@@ -891,15 +891,32 @@ the send's event name must agree on field shape. One rejection:
   two schemas, or declare a schema on the side that is missing
   it) — author-domain choice, no closed candidate set.
 
-**Per-backend payload codegen** (DL-6' continuation) lands in
-Atomic 4 of the C1 Path A chain — the per-backend payload struct
-surface (`struct <Schema>Payload` on C++, `pub struct
-<Schema>Payload` on Rust, `data class <Schema>Payload` on
-Kotlin, typed struct on Go, `@dataclass` on Python, `typedef
-struct { … } <Schema>Payload_t` on C11) emits as one
-coordinated commit so the cross-backend parity gate (§6.2.6)
-closes in lockstep. Atomic 3 ships parse + receive/send-side +
-mesh typecheck only.
+**Per-backend payload codegen** (DL-6' continuation) ships the
+per-backend payload struct surface (`struct <Schema>Payload` on
+C++, `pub struct <Schema>Payload` on Rust, `data class
+<Schema>Payload` on Kotlin, typed struct on Go, `@dataclass` on
+Python, `typedef struct { … } <Schema>Payload_t` on C11) so the
+cross-backend parity gate (§6.2.6) closes in lockstep.
+Enum-typed fields reference the imported Enum kind's qualified
+type per backend (`SCE::Generated::<E>::<E>` on C++, `<e>::<E>`
+on Rust, wildcard-import bare `<E>` on Kotlin, `<e>.<E>` on Go,
+`<e>.<E>` on Python, `<E>_t` on C11) — no variant re-emission;
+the Enum document remains the single source of truth.
+
+**Cross-doc Enum literal width narrowing** (DL-5'): integer
+literals compared against (receive-side) or assigned to
+(send-side) an enum-typed field are narrowed against the
+imported enum's declared `underlying_type`. Decimal, hex (`0x`),
+binary (`0b`), and octal (`0o`) literal forms all parse; values
+exceeding the underlying width raise
+`validation/cross-kind-type-mismatch` (reused per Item 4
+precedent — no new wire code). The narrowing fires only when the
+statechart's own `<sce:import kind="enum" as="<alias>">` resolves
+the enum alias; otherwise the narrowing silent-skips
+(conservative-accept default — category check still requires the
+literal to be an integer). Strict variant membership checking
+(`literal must be one of the declared variant values`) is
+deferred to F-κ.
 
 ---
 
