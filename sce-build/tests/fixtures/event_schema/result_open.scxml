@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A Atomic 5 width-axis isolation fixture (post-
+  F-κ). Same uint8 carrier as `result.scxml` but with
+  `sce:strict-variants="false"` so the membership layer silent-skips,
+  letting the paired Atomic 5 boundary fixtures
+  (`positive_statechart_enum_literal_within_width.scxml` + send
+  mirror) exercise the width narrowing axis in isolation from F-κ
+  membership. Declares a single sentinel variant to satisfy the
+  parse-time `enum-no-variants` invariant — actual values exercised
+  by the fixtures (255, 0xFF, 0) need not be declared on this enum.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="enum"
+       name="result_open"
+       sce:underlying-type="uint8"
+       sce:strict-variants="false">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="ok" value="0"/>
+    </data>
+  </datamodel>
+</scxml>

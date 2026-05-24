@@ -2,9 +2,14 @@
 <!--
   NL→IR Item C1 Path A Atomic 5 positive boundary fixture (send-side
   mirror of `positive_statechart_enum_literal_within_width.scxml`):
-  `<send event="job.completed"><param name="status" expr="255"/>` and
-  the hex equivalent both fit the uint8 carrier exactly. Locks the
-  send-side branch of the narrowing layer against off-by-one drift.
+  `<send event="job.completed"><param name="status" expr="0xFF"/>`
+  fits the uint8 carrier exactly. Locks the send-side branch of the
+  narrowing layer against off-by-one drift.
+
+  Imports the open-set `result_open` enum pair so the F-κ membership
+  layer silent-skips and the fixture exercises the width axis in
+  isolation (post-F-κ axis split, same pattern as the receive-side
+  mirror).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -12,8 +17,8 @@
        version="1.0"
        initial="ready"
        datamodel="ecmascript">
-  <sce:import src="schema_job_completed_with_enum.scxml" kind="event-schema" as="JobCompletedSchema"/>
-  <sce:import src="result.scxml" kind="enum" as="Result"/>
+  <sce:import src="schema_job_completed_with_open_enum.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <sce:import src="result_open.scxml" kind="enum" as="ResultOpen"/>
   <state id="ready">
     <transition event="user.go" target="done">
       <send event="job.completed">

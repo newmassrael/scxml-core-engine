@@ -3096,6 +3096,10 @@
               ],
               "description": "Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source position of the `<scxml sce:kind=\"enum\">` root element. Drives the per-kind body function's SCE-MAP marker."
             },
+            "strict_variants": {
+              "description": "NL→IR Item C1 Path A follow-up F-κ — strict variant membership switch. When `true` (the default), integer literals compared against (receive-side) or assigned to (send-side) an `enum:<alias>`-typed field must be one of the values declared on this enum's `variants`. Set to `false` via `sce:strict-variants=\"false\"` on the enum's `<scxml>` root for open-set status vocabularies (UDS NRC, OEM-extensible response codes) where wire-side values outside the declared set are legal. Width narrowing remains active regardless of this opt- out — only the membership check silent-skips when `false`.",
+              "type": "boolean"
+            },
             "underlying_type": {
               "allOf": [
                 {
@@ -3115,6 +3119,7 @@
           "required": [
             "kind",
             "name",
+            "strict_variants",
             "underlying_type",
             "variants"
           ],

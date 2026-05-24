@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A follow-up F-κ negative fixture (send-side
+  mirror of `negative_statechart_enum_variant_not_declared.scxml`):
+  `<send event="job.completed"><param name="status" expr="7"/>` against
+  the `enum:Result` field. 7 fits the uint8 carrier (width narrowing
+  accepts) but is not one of `result.scxml`'s declared variants
+  (`ok=0, error=1, timeout=2`), so the F-κ membership layer rejects.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="negative_send_enum_variant_not_declared"
+       version="1.0"
+       initial="ready"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed_with_enum.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <sce:import src="result.scxml" kind="enum" as="Result"/>
+  <state id="ready">
+    <transition event="user.go" target="done">
+      <send event="job.completed">
+        <param name="status" expr="7"/>
+        <param name="elapsed_ms" expr="42"/>
+      </send>
+    </transition>
+  </state>
+  <state id="done"/>
+</scxml>

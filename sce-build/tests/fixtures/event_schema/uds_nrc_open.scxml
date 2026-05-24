@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A follow-up F-κ fixture: an enum vocabulary that
+  declares a partial set of variants but opts out of strict membership
+  checking via `sce:strict-variants="false"`. Pattern is the open-set
+  status-code vocabulary (e.g. UDS NRC, OEM-extensible response codes)
+  where wire-side values outside the declared set are legal — the enum
+  declarer signals this by setting the opt-out attribute on the root.
+  Width narrowing still runs (the underlying uint8 carrier remains a
+  hard wire-level bound); only the membership check silent-skips.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="enum"
+       name="uds_nrc_open"
+       sce:underlying-type="uint8"
+       sce:strict-variants="false">
+  <datamodel>
+    <data id="variants">
+      <sce:variant name="generalReject" value="16"/>
+      <sce:variant name="serviceNotSupported" value="17"/>
+    </data>
+  </datamodel>
+</scxml>

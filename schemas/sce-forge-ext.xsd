@@ -216,6 +216,22 @@
        `validation/enum-unsupported-underlying-type`). -->
   <xs:attribute name="underlying-type" type="sce:sceType"/>
 
+  <!-- NL→IR Item C1 Path A follow-up F-κ — `sce:strict-variants` on
+       a `sce:kind="enum"` `<scxml>` root opts the enum out of the
+       strict variant-membership check that runs over integer
+       literals compared against (receive-side) or assigned to
+       (send-side) an `enum:<alias>`-typed field. Defaults to `true`
+       (strict): integer literals whose value is not one of the
+       enum's declared `<sce:variant value="…"/>` set raise
+       `validation/cross-kind-type-mismatch` (reused per Item 4
+       precedent — no new wire code). Set to `false` for open-set
+       status vocabularies (e.g. UDS NRC, OEM-extensible response
+       codes) where wire-side values outside the declared set are
+       legal. Width narrowing (`enum-underlying-overflow`) still
+       runs regardless of this opt-out — overflow of the declared
+       underlying type remains a wire-level error. -->
+  <xs:attribute name="strict-variants" type="xs:boolean"/>
+
   <!-- NL→IR Mapping Roadmap Item C1 Path A — `sce:event-name` on a
        `sce:kind="event-schema"` `<scxml>` root names the SCXML event
        whose `_event.data` payload the schema constrains. Reserved
