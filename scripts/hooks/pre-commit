@@ -2,7 +2,9 @@
 # Git pre-commit hook — fast-fail on
 #   1. Rust files that are not canonically fmt'd (mirrors
 #      `.github/workflows/fmt-check.yml`).
-#   2. §6.2.6 drift between committed Rust + Kotlin generated trees and
+#   2. Rust files that fail `cargo clippy --workspace --all-targets`
+#      (mirrors `.github/workflows/clippy-check.yml`).
+#   3. §6.2.6 drift between committed Rust + Kotlin generated trees and
 #      the template tree + Cargo.lock (mirrors
 #      `.github/workflows/drift-verify.yml` real-tree invariants).
 #
@@ -42,7 +44,29 @@ if [ -n "${staged_rs}" ]; then
 fi
 
 # -----------------------------------------------------------------------
-# 2. §6.2.6 real-tree drift (new gate).
+# 2. Workspace clippy (mirrors .github/workflows/clippy-check.yml).
+# -----------------------------------------------------------------------
+# Workspace `[workspace.lints.rust] warnings = "deny"` only catches
+# rustc warnings; clippy style/complexity/suspicious categories require
+# explicit `cargo clippy`. Run alongside fmt when any Rust file is
+# staged. Skipped (with diagnostic) when cargo is absent, matching the
+# fmt gate's behavior for fresh-checkout contributors.
+if [ -n "${staged_rs}" ]; then
+    if ! command -v cargo >/dev/null 2>&1; then
+        echo "pre-commit: cargo not on PATH; skipping clippy check." >&2
+    else
+        if ! cargo clippy --workspace --all-targets -- -D warnings; then
+            echo "" >&2
+            echo "pre-commit: cargo clippy failed." >&2
+            echo "pre-commit:   fix the lints above, then re-stage and retry." >&2
+            echo "pre-commit:   bypass with 'git commit --no-verify' (CI gate still runs)." >&2
+            exit 1
+        fi
+    fi
+fi
+
+# -----------------------------------------------------------------------
+# 3. §6.2.6 real-tree drift (new gate).
 # -----------------------------------------------------------------------
 # Per Q-§6.2.6-3 the `template-hash` covers the whole template tree plus
 # Cargo.lock; an edit to any backend's templates can invalidate every
