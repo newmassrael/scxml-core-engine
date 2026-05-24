@@ -1240,15 +1240,22 @@ mod tests {
         }
     }
 
-    /// Atomic 5 width-narrowing test helper — produces a single-variant
-    /// enum with `strict_variants = false` so the membership layer
-    /// (F-κ) silent-skips. This isolates the width axis exercised by
-    /// the Atomic 5 tests below from the orthogonal membership axis
-    /// exercised by the F-κ tests further down, matching the
-    /// "orthogonal axes" fixture discipline. The F-κ tests build
-    /// their own enum models via `enum_model_strict` /
-    /// `enum_model_open` with the full variant set they care about.
-    fn enum_model(name: &str, underlying: SceType) -> EnumModel {
+    /// Width-axis test helper — produces a single-variant enum with
+    /// `strict_variants = false` so the membership layer (F-κ)
+    /// silent-skips. Name is explicit (`_open` suffix) so axis intent
+    /// is visible at every call site: tests using this helper care
+    /// about width narrowing only, not membership. The earlier
+    /// unsuffixed `enum_model` name silently diverged from
+    /// production's `strict_variants = true` default, creating a
+    /// drift vector for any newly-authored test that read the helper
+    /// as "production-default enum"; the `_open` suffix forces an
+    /// explicit choice at the call site.
+    ///
+    /// F-κ tests build their own models via
+    /// `enum_model_strict_with_variants` /
+    /// `enum_model_open_with_variants` (declared below) when they
+    /// need a richer variant set.
+    fn enum_model_open(name: &str, underlying: SceType) -> EnumModel {
         EnumModel {
             name: name.to_string(),
             underlying_type: underlying,
@@ -1360,6 +1367,11 @@ mod tests {
     }
 
     // ─── Atomic 5: cross-doc Enum literal width narrowing ───────────
+    //
+    // All tests in this section use `enum_model_open` so the F-κ
+    // membership layer silent-skips and the assertions exercise the
+    // width axis in isolation. Membership behavior has its own
+    // dedicated test section further below.
 
     #[test]
     fn enum_int_literal_within_underlying_width_passes() {
@@ -1373,7 +1385,10 @@ mod tests {
             )],
         );
         let mut enums = BTreeMap::new();
-        enums.insert("Result".to_string(), enum_model("Result", SceType::Uint8));
+        enums.insert(
+            "Result".to_string(),
+            enum_model_open("Result", SceType::Uint8),
+        );
         assert!(run_with_enums(s, "_event.data.status === 255", enums).is_ok());
     }
 
@@ -1389,7 +1404,10 @@ mod tests {
             )],
         );
         let mut enums = BTreeMap::new();
-        enums.insert("Result".to_string(), enum_model("Result", SceType::Uint8));
+        enums.insert(
+            "Result".to_string(),
+            enum_model_open("Result", SceType::Uint8),
+        );
         let err = run_with_enums(s, "_event.data.status === 256", enums)
             .expect_err("256 must overflow uint8 underlying");
         let msg = format!("{err}");
@@ -1410,7 +1428,10 @@ mod tests {
             )],
         );
         let mut enums = BTreeMap::new();
-        enums.insert("Result".to_string(), enum_model("Result", SceType::Uint8));
+        enums.insert(
+            "Result".to_string(),
+            enum_model_open("Result", SceType::Uint8),
+        );
         // 0x1FFFF = 131071 > 255
         let err = run_with_enums(s, "_event.data.status === 0x1FFFF", enums)
             .expect_err("0x1FFFF must overflow uint8 underlying");
@@ -1431,7 +1452,10 @@ mod tests {
             )],
         );
         let mut enums = BTreeMap::new();
-        enums.insert("Result".to_string(), enum_model("Result", SceType::Uint8));
+        enums.insert(
+            "Result".to_string(),
+            enum_model_open("Result", SceType::Uint8),
+        );
         // 0xFF = 255, exact uint8 boundary.
         assert!(run_with_enums(s, "_event.data.status === 0xFF", enums).is_ok());
     }
@@ -1448,7 +1472,7 @@ mod tests {
             )],
         );
         let mut enums = BTreeMap::new();
-        enums.insert("Code".to_string(), enum_model("Code", SceType::Uint16));
+        enums.insert("Code".to_string(), enum_model_open("Code", SceType::Uint16));
         // 65535 = u16::MAX, exact uint16 boundary.
         assert!(run_with_enums(s, "_event.data.code === 65535", enums).is_ok());
     }
@@ -1465,7 +1489,7 @@ mod tests {
             )],
         );
         let mut enums = BTreeMap::new();
-        enums.insert("Code".to_string(), enum_model("Code", SceType::Uint16));
+        enums.insert("Code".to_string(), enum_model_open("Code", SceType::Uint16));
         // 65536 > u16::MAX.
         let err = run_with_enums(s, "_event.data.code === 65536", enums)
             .expect_err("65536 must overflow uint16 underlying");
@@ -1493,7 +1517,16 @@ mod tests {
 
     // ─── F-κ: strict variant membership ─────────────────────────────
 
-    fn enum_model_strict(name: &str, underlying: SceType, variants: &[(&str, u64)]) -> EnumModel {
+    /// F-κ membership-axis test helper: strict enum with author-supplied
+    /// declared variants. Use this when the test exercises membership
+    /// behavior and needs the declared set to be a concrete, asserted
+    /// surface (e.g. "value 7 is rejected because it's not declared
+    /// among {ok=0, error=1, timeout=2}").
+    fn enum_model_strict_with_variants(
+        name: &str,
+        underlying: SceType,
+        variants: &[(&str, u64)],
+    ) -> EnumModel {
         EnumModel {
             name: name.to_string(),
             underlying_type: underlying,
@@ -1510,8 +1543,16 @@ mod tests {
         }
     }
 
-    fn enum_model_open(name: &str, underlying: SceType, variants: &[(&str, u64)]) -> EnumModel {
-        let mut m = enum_model_strict(name, underlying, variants);
+    /// F-κ opt-out test helper: same as
+    /// [`enum_model_strict_with_variants`] but with the opt-out flag
+    /// flipped. Use this when the test exercises the opt-out branch
+    /// (open-set vocabularies where undeclared values are legal).
+    fn enum_model_open_with_variants(
+        name: &str,
+        underlying: SceType,
+        variants: &[(&str, u64)],
+    ) -> EnumModel {
+        let mut m = enum_model_strict_with_variants(name, underlying, variants);
         m.strict_variants = false;
         m
     }
@@ -1530,7 +1571,7 @@ mod tests {
         let mut enums = BTreeMap::new();
         enums.insert(
             "Result".to_string(),
-            enum_model_strict(
+            enum_model_strict_with_variants(
                 "Result",
                 SceType::Uint8,
                 &[("ok", 0), ("error", 1), ("timeout", 2)],
@@ -1553,7 +1594,7 @@ mod tests {
         let mut enums = BTreeMap::new();
         enums.insert(
             "Result".to_string(),
-            enum_model_strict(
+            enum_model_strict_with_variants(
                 "Result",
                 SceType::Uint8,
                 &[("ok", 0), ("error", 1), ("timeout", 2)],
@@ -1590,7 +1631,7 @@ mod tests {
         let mut enums = BTreeMap::new();
         enums.insert(
             "Result".to_string(),
-            enum_model_strict(
+            enum_model_strict_with_variants(
                 "Result",
                 SceType::Uint8,
                 &[("ok", 0), ("error", 1), ("timeout", 2)],
@@ -1618,7 +1659,7 @@ mod tests {
         let mut enums = BTreeMap::new();
         enums.insert(
             "UdsNrc".to_string(),
-            enum_model_open(
+            enum_model_open_with_variants(
                 "UdsNrc",
                 SceType::Uint8,
                 &[("generalReject", 0x10), ("serviceNotSupported", 0x11)],
@@ -1651,7 +1692,7 @@ mod tests {
         let mut enums = BTreeMap::new();
         enums.insert(
             "Result".to_string(),
-            enum_model_strict("Result", SceType::Uint8, &[("ok", 0), ("error", 1)]),
+            enum_model_strict_with_variants("Result", SceType::Uint8, &[("ok", 0), ("error", 1)]),
         );
         // 0x05 = 5, undeclared and fits uint8.
         let err = run_with_enums(s, "_event.data.status === 0x05", enums)
