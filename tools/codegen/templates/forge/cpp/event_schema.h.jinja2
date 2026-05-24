@@ -1,0 +1,33 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
+
+{%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{{ sce_map.source_marker(source_location, "cpp", module_level=true) }}
+
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="event-schema")
+// Runtime: {{ runtime_dep }}
+// Event name: {{ event_name }}
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <string>
+#include <vector>
+{% for inc in enum_includes %}
+#include "{{ inc }}"
+{% endfor %}
+
+namespace SCE::Generated::{{ namespace }} {
+
+struct {{ payload_struct_name }} {
+{% for f in fields %}
+    {{ f.cpp_type }} {{ f.id }};
+{% endfor %}
+};
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

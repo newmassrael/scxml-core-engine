@@ -209,14 +209,16 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // §5.J.4 Generic-class contract; matrix dispatch lets every
         // `(Enum, lang)` pair through to the per-language render arm.
         ForgeKind::Enum => true,
-        // NL→IR Item C1 Path A Atomic 3: EventSchema is parse-time
-        // metadata only — no per-backend codegen template ships yet.
-        // Atomic 4 (DL-6' continuation) lands the 6-backend payload
-        // struct codegen templates and flips this arm to `true`.
-        // Until then, an attempt to emit an EventSchema document
-        // surfaces as `codegen/generic-kind-backend-emit-missing` via
-        // `check()` — the truthful answer ("no template ships").
-        ForgeKind::EventSchema => false,
+        // NL→IR Item C1 Path A Atomic 4: EventSchema ships on all 6
+        // backends via `tools/codegen/templates/forge/<lang>/event_schema.<ext>.jinja2`
+        // — `generator.rs::render_event_schema` lowers
+        // `EventSchemaModel` to a per-backend payload struct
+        // (`struct <Schema>Payload` / `data class <Schema>Payload` /
+        // `@dataclass` / `typedef struct ... <Schema>Payload_t`).
+        // Matches the §5.J.4 Generic-class contract per design RFC
+        // §3 DL-6'; matrix dispatch lets every `(EventSchema, lang)`
+        // pair through to the per-language render arm.
+        ForgeKind::EventSchema => true,
     }
 }
 
