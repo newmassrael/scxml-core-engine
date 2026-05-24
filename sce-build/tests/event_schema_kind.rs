@@ -15,14 +15,14 @@
 //!     / [`DeployError`] variants reused per Item 4 precedent or
 //!     introduced by Atomic 3:
 //!       - unknown receive field → CrossKindFieldNotFound
-//!                                  (with did-you-mean candidates)
+//!         (with did-you-mean candidates)
 //!       - receive type mismatch → CrossKindTypeMismatch
 //!       - builtin event         → EventSchemaOnBuiltinEvent
 //!       - unknown send param    → EventPayloadFieldUnknown
-//!                                  (with did-you-mean candidates)
+//!         (with did-you-mean candidates)
 //!       - send type mismatch    → CrossKindTypeMismatch
 //!       - mesh sender-only      → DeployError::EventSchemaMismatch
-//!                                  (reason=SenderOnly)
+//!         (reason=SenderOnly)
 //!
 //! Fixtures live in `sce-build/tests/fixtures/event_schema/`. The
 //! orchestrator pass that runs the receive/send-side validators is

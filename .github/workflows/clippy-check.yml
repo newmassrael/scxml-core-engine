@@ -1,0 +1,65 @@
+name: Rust clippy check
+
+# CI gate enforcing `cargo clippy --workspace --all-targets -- -D warnings`
+# on every push and PR. Mirrors the fmt-check.yml pattern: a fast
+# pre-merge guard so the tree stays clippy-clean, complementing the
+# workspace's `[workspace.lints.rust] warnings = "deny"` policy which
+# only gates rustc warnings (clippy style/complexity/suspicious
+# categories require explicit `cargo clippy` invocation).
+#
+# Motivation: prior to this gate, 6 clippy regressions slipped through
+# review on the Item 4 quantity (`0803c08ff`) and C1 Path A Atomic 3
+# (`c46b1dbff`) commits because `cargo check` / `cargo test` /
+# `cargo fmt --check` all pass on code that fails `cargo clippy`.
+# Source-tree lint drift is the parallel of the §6.2.6 generated-tree
+# drift that drift-verify.yml already gates.
+#
+# The corresponding pre-commit hook (scripts/hooks/pre-commit) gives
+# developers a local fast-fail, but the CI gate is the authoritative
+# enforcement point — hooks are opt-in install per developer, the
+# workflow is mandatory per merge.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - 'clippy.toml'
+      - '.clippy.toml'
+      - '.github/workflows/clippy-check.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**/*.rs'
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - 'clippy.toml'
+      - '.clippy.toml'
+      - '.github/workflows/clippy-check.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clippy-check:
+    name: cargo clippy --workspace --all-targets
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain (with clippy)
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - name: Cache cargo registry + target
+      uses: Swatinem/rust-cache@v2
+
+    - name: cargo clippy --workspace --all-targets
+      run: cargo clippy --workspace --all-targets -- -D warnings
