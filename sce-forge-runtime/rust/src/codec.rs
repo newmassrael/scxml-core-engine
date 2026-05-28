@@ -72,6 +72,17 @@ pub enum CodecError {
     /// driving a DMA bounce buffer will run on `SliceSink` and surface
     /// overflow as a typed error rather than aborting.
     BufferOverflow,
+    /// RFC §5.B B2 repeat / B3 TLV chain primitive: the wire carried
+    /// more elements than the codec's declared `sce:max-count` bound
+    /// (the fixed-capacity `heapless::Vec<Body, MAX_COUNT>` backing the
+    /// list field is full). The no-alloc list representation stores
+    /// elements in bounded inline storage rather than a growable heap
+    /// `Vec`, so an over-long wire run surfaces as this typed error
+    /// instead of an allocation. Authors raise `sce:max-count` to admit
+    /// longer runs (trading inline footprint for capacity). Decode-side
+    /// symbol; the Cpp/Kotlin truncation backends never construct it
+    /// (their list storage is the heap-backed host container).
+    TooManyElements,
 }
 
 /// Read-only cursor over a borrowed input slice. Decode bodies use
