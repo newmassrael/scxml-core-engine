@@ -278,3 +278,75 @@ impl<'a> CodecZenohRequest<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecZenohRequest<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecZenohRequestOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_wireexpr::CodecZenohWireexprOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_msg_put::CodecZenohMsgPutOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_msg_del::CodecZenohMsgDelOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_query::CodecZenohQueryOwned;
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohRequestOwned {
+    pub header: u8,
+    pub rid: u64,
+    pub keyexpr: CodecZenohWireexprOwned,
+    pub extensions: Option<Vec<CodecZenohExtEntryOwned>>,
+    pub body: CodecZenohRequestOwnedVariant,
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodecZenohRequestOwnedVariant {
+    CodecZenohMsgPut(CodecZenohMsgPutOwned),
+    CodecZenohMsgDel(CodecZenohMsgDelOwned),
+    CodecZenohQuery(CodecZenohQueryOwned),
+    Default {
+        tag: u8,
+        body: CodecZenohQueryOwned,
+    },
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohRequestVariant<'a> {
+    /// Deep-copy this borrowed variant body into its owned mirror.
+    pub fn into_owned(self) -> CodecZenohRequestOwnedVariant {
+        match self {
+            CodecZenohRequestVariant::CodecZenohMsgPut(_b) => CodecZenohRequestOwnedVariant::CodecZenohMsgPut(_b.into_owned()),
+            CodecZenohRequestVariant::CodecZenohMsgDel(_b) => CodecZenohRequestOwnedVariant::CodecZenohMsgDel(_b.into_owned()),
+            CodecZenohRequestVariant::CodecZenohQuery(_b) => CodecZenohRequestOwnedVariant::CodecZenohQuery(_b.into_owned()),
+            CodecZenohRequestVariant::Default { tag, body } => CodecZenohRequestOwnedVariant::Default { tag, body: body.into_owned() },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohRequest<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecZenohRequestOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecZenohRequestOwned {
+        CodecZenohRequestOwned {
+            header: self.header,
+            rid: self.rid,
+            keyexpr: self.keyexpr.into_owned(),
+            extensions: self.extensions.map(|_v| _v.into_iter().map(|_e| _e.into_owned()).collect()),
+            body: self.body.into_owned(),
+        }
+    }
+}

@@ -121,3 +121,36 @@ impl<'a> CodecTlvEntry<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecTlvEntry<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecTlvEntryOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecTlvEntryOwned {
+    pub entry_type: u8,
+    pub entry_len: u8,
+    pub entry_body: Vec<u8>,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecTlvEntry<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecTlvEntryOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecTlvEntryOwned {
+        CodecTlvEntryOwned {
+            entry_type: self.entry_type,
+            entry_len: self.entry_len,
+            entry_body: self.entry_body.to_vec(),
+        }
+    }
+}

@@ -216,3 +216,40 @@ impl<'a> CodecZenohMsgDel<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecZenohMsgDel<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecZenohMsgDelOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_timestamp::CodecZenohTimestampOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohMsgDelOwned {
+    pub header: u8,
+    pub timestamp: Option<CodecZenohTimestampOwned>,
+    pub extensions: Option<Vec<CodecZenohExtEntryOwned>>,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohMsgDel<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecZenohMsgDelOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecZenohMsgDelOwned {
+        CodecZenohMsgDelOwned {
+            header: self.header,
+            timestamp: self.timestamp.map(|_v| _v.into_owned()),
+            extensions: self.extensions.map(|_v| _v.into_iter().map(|_e| _e.into_owned()).collect()),
+        }
+    }
+}

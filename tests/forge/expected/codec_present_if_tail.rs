@@ -140,3 +140,34 @@ impl<'a> CodecPresentIfTail<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecPresentIfTail<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecPresentIfTailOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecPresentIfTailOwned {
+    pub flags: u8,
+    pub payload: Option<Vec<u8>>,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecPresentIfTail<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecPresentIfTailOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecPresentIfTailOwned {
+        CodecPresentIfTailOwned {
+            flags: self.flags,
+            payload: self.payload.map(|_v| _v.to_vec()),
+        }
+    }
+}

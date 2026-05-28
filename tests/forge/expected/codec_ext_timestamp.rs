@@ -123,3 +123,36 @@ impl<'a> CodecExtTimestamp<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecExtTimestamp<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecExtTimestampOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecExtTimestampOwned {
+    pub time: u64,
+    pub zid_size: u8,
+    pub zid: Vec<u8>,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecExtTimestamp<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecExtTimestampOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecExtTimestampOwned {
+        CodecExtTimestampOwned {
+            time: self.time,
+            zid_size: self.zid_size,
+            zid: self.zid.to_vec(),
+        }
+    }
+}
