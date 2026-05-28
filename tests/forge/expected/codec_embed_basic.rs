@@ -25,13 +25,13 @@ use super::codec_zenoh_locator::CodecZenohLocator;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecEmbedBasic {
+pub struct CodecEmbedBasic<'a> {
     pub tag: u8,
-    pub locator: CodecZenohLocator,
+    pub locator: CodecZenohLocator<'a>,
 }
 
 #[allow(dead_code)]
-impl CodecEmbedBasic {
+impl<'a> CodecEmbedBasic<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -44,7 +44,7 @@ impl CodecEmbedBasic {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // RFC §5.B B2 repeat / B3 TLV chain primitives: streaming
         // decode mixes plain fixed-width reads (per-field via the
         // present-if helper's non-gated arm) with repeat loops that

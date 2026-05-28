@@ -32,14 +32,14 @@ const _: () = assert!(
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecDmaAlignedBasic {
+pub struct CodecDmaAlignedBasic<'a> {
     pub msg_id: u8,
     pub reserved: u8,
-    pub aligned_payload: Vec<u8>,
+    pub aligned_payload: &'a [u8],
 }
 
 #[allow(dead_code)]
-impl CodecDmaAlignedBasic {
+impl<'a> CodecDmaAlignedBasic<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -52,7 +52,7 @@ impl CodecDmaAlignedBasic {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // Variable-length codec. RFC §5.B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
@@ -70,7 +70,7 @@ impl CodecDmaAlignedBasic {
         let raw = cursor.peek_slice(_frame_len)?;
         let msg_id = raw[0];
         let reserved = raw[1];
-        let aligned_payload = raw[32..].to_vec();
+        let aligned_payload = &raw[32..];
         let value = Self {
             msg_id,
             reserved,

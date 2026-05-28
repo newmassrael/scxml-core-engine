@@ -25,13 +25,13 @@ use super::codec_zenoh_decl_ext_keyexpr::CodecZenohDeclExtKeyexpr;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohUndeclToken {
+pub struct CodecZenohUndeclToken<'a> {
     pub id: u32,
-    pub ext_keyexpr: Option<CodecZenohDeclExtKeyexpr>,
+    pub ext_keyexpr: Option<CodecZenohDeclExtKeyexpr<'a>>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohUndeclToken {
+impl<'a> CodecZenohUndeclToken<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -44,7 +44,7 @@ impl CodecZenohUndeclToken {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>, z: u8) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>, z: u8) -> Result<Self, CodecError> {
         // RFC Axis-1 inversion: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces

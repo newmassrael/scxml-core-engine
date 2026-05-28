@@ -1924,6 +1924,63 @@ impl CodecModel {
         self.fields.iter().any(|f| f.is_variable_length())
     }
 
+    /// Borrowed zero-copy round — SSOT for "does this codec's generated
+    /// Rust struct need a `<'a>` lifetime parameter?". True iff it holds
+    /// a scalar `Bytes` / `String` field (decoded as a zero-copy
+    /// `&'a [u8]` / `&'a str` view per the `SceCursor::peek_slice ->
+    /// &'a [u8]` borrow contract) OR it embeds / repeats / tlv-chains /
+    /// variant-dispatches a body codec that is itself borrowed.
+    ///
+    /// The body-codec query is the caller's responsibility via
+    /// `body_borrowed(alias)` because the two call sites resolve it from
+    /// different sources: the enrichment-time recursion
+    /// (`lib.rs::codec_is_borrowed_recursive`) re-parses the import file
+    /// graph, while the codegen-time check
+    /// (`generator.rs::codec_self_borrowed`) reads the already-enriched
+    /// `ImportContext::codec_is_borrowed` flags. Both share THIS
+    /// structural predicate — the scalar-field rule and the
+    /// embed/repeat/tlv/variant traversal live in exactly one place.
+    ///
+    /// Repeat / tlv-chain / embed fields carry a `SceType::Bytes`
+    /// *sentinel* (their real type is the body codec), so the scalar
+    /// check excludes them; their borrowed-ness flows through
+    /// `body_borrowed` instead. Including them would over-approximate and
+    /// emit an unused `<'a>` (E0392) — inference must stay exact.
+    pub(crate) fn is_borrowed_with(&self, mut body_borrowed: impl FnMut(&str) -> bool) -> bool {
+        // Direct scalar Bytes / String view.
+        if self.fields.iter().any(|f| {
+            !f.is_repeat()
+                && !f.is_tlv_chain()
+                && !f.is_embed()
+                && matches!(f.sce_type, SceType::Bytes | SceType::String)
+        }) {
+            return true;
+        }
+        // Variant arm bodies (incl. the default arm).
+        if let Some(v) = &self.variant {
+            if v.arms
+                .iter()
+                .chain(v.default_arm.iter())
+                .any(|arm| body_borrowed(&arm.body_alias))
+            {
+                return true;
+            }
+        }
+        // Repeat / tlv-chain / embed body codecs.
+        self.fields.iter().any(|f| {
+            let alias = if f.is_repeat() {
+                f.repeat_body_alias.as_deref()
+            } else if f.is_tlv_chain() {
+                f.tlv_chain_body_alias.as_deref()
+            } else if f.is_embed() {
+                f.embed_body_alias.as_deref()
+            } else {
+                None
+            };
+            alias.is_some_and(&mut body_borrowed)
+        })
+    }
+
     /// Whether the codec has any repeat field (RFC §5.B B2). Forces
     /// the streaming decode/encode path because a repeat field's wire
     /// length is runtime-determined (count_ref or until-eof) and the

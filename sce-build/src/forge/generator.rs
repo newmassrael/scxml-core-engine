@@ -135,6 +135,18 @@ pub struct ImportContext {
     #[serde(skip)]
     pub codec_emits_default_ctor: bool,
 
+    /// Borrowed zero-copy codec round: `true` when the imported codec's
+    /// generated Rust struct carries a `<'a>` lifetime parameter —
+    /// either because it holds a scalar `Bytes` / `String` field
+    /// (decoded as a `&'a [u8]` / `&'a str` view) or because it
+    /// transitively embeds / repeats / variant-dispatches a body codec
+    /// that does. The parent codec reads this to decide whether a field
+    /// of this imported type contributes `<'a>` to the parent's own
+    /// struct/decode signature. `false` for non-codec imports and codec
+    /// imports whose model failed to parse during enrichment.
+    #[serde(skip)]
+    pub codec_is_borrowed: bool,
+
     /// RFC §5.B B5-ν: for codec imports whose `<sce:variant>` declares
     /// `tag="parent.<flag>"` (parent-scope tag), the named flag. The
     /// parent codec's cross-doc validator uses this to detect Q-3
@@ -388,6 +400,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_is_borrowed: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
                 embed_dispatch: imp.embed_dispatch.clone(),
@@ -427,6 +440,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_is_borrowed: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
                 embed_dispatch: imp.embed_dispatch.clone(),
@@ -468,6 +482,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_is_borrowed: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
                 embed_dispatch: imp.embed_dispatch.clone(),
@@ -535,6 +550,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_is_borrowed: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
                 embed_dispatch: imp.embed_dispatch.clone(),
@@ -576,6 +592,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_is_borrowed: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
                 embed_dispatch: imp.embed_dispatch.clone(),
@@ -618,6 +635,7 @@ fn resolve_single_import(
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_is_borrowed: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
                 embed_dispatch: imp.embed_dispatch.clone(),
@@ -1682,6 +1700,98 @@ fn render_condition(
 
 // ── Codec rendering (unified) ─────────────────────────────────
 
+/// Whether the imported codec aliased `alias` carries a `<'a>` lifetime
+/// — its generated Rust struct holds a borrowed view, or transitively
+/// embeds one. Reads the enrichment-populated
+/// [`ImportContext::codec_is_borrowed`] flag; the transitive walk over
+/// the import file graph already ran in `validate_and_enrich_imports`
+/// (`codec_is_borrowed_recursive`). Mirrors how `render_codec` reads
+/// each import's `codec_max_bytes` instead of re-deriving the recursion.
+fn import_codec_borrowed(imports: &[ImportContext], alias: &str) -> bool {
+    imports
+        .iter()
+        .find(|i| i.alias == alias)
+        .map(|i| i.codec_is_borrowed)
+        .unwrap_or(false)
+}
+
+/// Whether THIS codec's `<sce:variant>` enum needs a `<'a>` lifetime:
+/// any arm body (incl. the default arm) is a borrowed codec, so the
+/// `body` field type and the generated `{Struct}Variant` enum carry the
+/// parent's `'a`. Distinct from [`codec_self_borrowed`] — a codec may be
+/// borrowed via an own scalar field while its variant arms are all
+/// fixed-width, in which case the struct gets `<'a>` but the variant
+/// enum does not.
+fn codec_variant_body_borrowed(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    m.variant.as_ref().is_some_and(|v| {
+        v.arms
+            .iter()
+            .chain(v.default_arm.iter())
+            .any(|arm| import_codec_borrowed(imports, &arm.body_alias))
+    })
+}
+
+/// Whether THIS codec's generated Rust struct needs a `<'a>` lifetime
+/// parameter: it holds a scalar `Bytes` / `String` field (decoded as a
+/// zero-copy `&'a [u8]` / `&'a str` view per the `SceCursor::peek_slice
+/// -> &'a [u8]` borrow contract) OR it embeds / repeats / tlv-chains /
+/// variant-dispatches a body codec that is itself borrowed (the body's
+/// lifetime infects the parent through `Body<'a>` / `Vec<Body<'a>>`
+/// field types).
+///
+/// Combines the codec's own fields with the enrichment-populated
+/// per-import `codec_is_borrowed` flags — the same composition shape as
+/// the inline `max_bytes` rollup which reads each import's
+/// `codec_max_bytes`. The recursive file-graph walk lives in
+/// `codec_is_borrowed_recursive` (lib.rs) and sets those per-import
+/// flags during enrichment. Inference is exact: an unused lifetime
+/// parameter is a hard compile error (E0392), so this must never
+/// over-approximate.
+fn codec_self_borrowed(m: &CodecModel, imports: &[ImportContext]) -> bool {
+    // SSOT predicate (`CodecModel::is_borrowed_with`) over the
+    // codegen-time resolver: each embed/repeat/tlv/variant body alias is
+    // resolved by reading the enrichment-populated
+    // `ImportContext::codec_is_borrowed` flag. Shares the scalar-field
+    // rule and body traversal with the enrichment-time recursion
+    // (`lib.rs::codec_is_borrowed_recursive`) so the two cannot diverge.
+    m.is_borrowed_with(|alias| import_codec_borrowed(imports, alias))
+}
+
+/// Rust lifetime suffix (`"<'a>"` or `""`) for a body codec aliased
+/// `alias` used in TYPE position. Non-empty only when the language is
+/// Rust and the body codec is borrowed; the parent struct then carries
+/// the `<'a>` this refers to. Applied where the body name appears as a
+/// type (`Vec<Body<'a>>`, `Body<'a>`, variant-arm field). `Body::decode`
+/// / `Body::default` call sites keep the bare name (`Body<'a>::method()`
+/// is not valid path syntax) and let inference fill the lifetime from
+/// the cursor / assignment context.
+fn rust_codec_body_lifetime(
+    lang: crate::generator::Language,
+    imports: &[ImportContext],
+    alias: &str,
+) -> &'static str {
+    if matches!(lang, crate::generator::Language::Rust) && import_codec_borrowed(imports, alias) {
+        "<'a>"
+    } else {
+        ""
+    }
+}
+
+/// Codec scalar field type. For Rust, a `Bytes` / `String` field decodes
+/// as a borrowed zero-copy view (`&'a [u8]` / `&'a str`) per the
+/// `SceCursor::peek_slice -> &'a [u8]` borrow contract; every other
+/// `SceType`, and every non-Rust backend, keeps the owned `type_name`
+/// spelling. SSOT for the scalar borrowed mapping — used both at the
+/// bare field-type site and inside the present-if `Option<…>` wrap so
+/// the two never diverge.
+fn codec_scalar_type(l: &LangCtx, ty: &SceType) -> String {
+    match (l.lang, ty) {
+        (crate::generator::Language::Rust, SceType::Bytes) => "&'a [u8]".to_string(),
+        (crate::generator::Language::Rust, SceType::String) => "&'a str".to_string(),
+        _ => l.type_name(ty).to_string(),
+    }
+}
+
 fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
@@ -1844,7 +1954,18 @@ fn render_codec(
         .map(|f| -> Result<serde_json::Value, ForgeError> {
             let mut obj = serde_json::Map::new();
             obj.insert("id".into(), l.codec_field_id(&f.id).into());
-            obj.insert(type_key.into(), l.type_name(&f.sce_type).into());
+            // Borrowed zero-copy codec round (Rust only): a scalar
+            // `Bytes` / `String` codec field decodes as a zero-copy view
+            // over the cursor buffer (`&'a [u8]` / `&'a str`) per the
+            // `SceCursor::peek_slice -> &'a [u8]` borrow contract, rather
+            // than an owned `Vec<u8>` / `String`. Any codec holding such
+            // a field is borrowed (`codec_self_borrowed`), so the struct
+            // carries the `<'a>` this `&'a` refers to. The other five
+            // backends own their codec fields, so they fall through to
+            // the shared `type_name`. Repeat / tlv / embed override this
+            // slot below with their list / body shapes; present-if wraps
+            // it in `Option<…>` (both routes share `codec_scalar_type`).
+            obj.insert(type_key.into(), codec_scalar_type(&l, &f.sce_type).into());
             obj.insert(
                 "decode_expr".into(),
                 generate_decode_expr(f, m.default_endian, lang, &m.fields).into(),
@@ -1931,6 +2052,14 @@ fn render_codec(
                     )?;
                     let body_decoder = resolve_variant_arm_decoder(alias, lang);
                     let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                    // Borrowed zero-copy: when the repeat element codec is
+                    // itself borrowed, the element type carries the
+                    // parent's `<'a>` (`Vec<Body<'a>>`). The `Vec` stays
+                    // alloc-gated until the no-alloc list round; only the
+                    // element's lifetime threads here. Rust-only — other
+                    // backends own their elements. Applied at type
+                    // positions only (`::decode` calls stay bare).
+                    let body_lt = rust_codec_body_lifetime(lang, imports, alias);
                     let max_count = crate::forge::limits::resolve_max_count(f.max_count);
                     obj.insert("max_count".into(), max_count.into());
                     obj.insert("repeat_body_type".into(), body_type.clone().into());
@@ -1947,7 +2076,7 @@ fn render_codec(
                     // the C-side `_len`). Predicate=None codecs keep the
                     // bare list type for back-compat with B2-α goldens.
                     let bare = match lang {
-                        crate::generator::Language::Rust => format!("Vec<{body_type}>"),
+                        crate::generator::Language::Rust => format!("Vec<{body_type}{body_lt}>"),
                         crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
                         // Kotlin: `MutableList<T>` mirrors the codec's
                         // existing `mutableListOf<Byte>()` encode buffer
@@ -2006,6 +2135,7 @@ fn render_codec(
                             f,
                             &m.fields,
                             &body_type,
+                            body_lt,
                             &body_decoder,
                             max_count,
                             lang,
@@ -2075,6 +2205,10 @@ fn render_codec(
                     )?;
                     let body_decoder = resolve_variant_arm_decoder(alias, lang);
                     let body_encoder = resolve_variant_arm_encoder(alias, lang);
+                    // Borrowed zero-copy: a borrowed TLV entry codec
+                    // carries the parent's `<'a>` in the element type
+                    // (`Vec<Entry<'a>>`). Rust-only, type positions only.
+                    let body_lt = rust_codec_body_lifetime(lang, imports, alias);
                     obj.insert("tlv_chain_body_type".into(), body_type.clone().into());
                     obj.insert("tlv_chain_body_decoder".into(), body_decoder.clone().into());
                     obj.insert("tlv_chain_body_encoder".into(), body_encoder.clone().into());
@@ -2087,8 +2221,8 @@ fn render_codec(
                     // as-truth — `_len = 0` signals absent).
                     let gated = f.present_if.is_some();
                     let wrapped = match (lang, gated) {
-                        (crate::generator::Language::Rust, false) => format!("Vec<{body_type}>"),
-                        (crate::generator::Language::Rust, true) => format!("Option<Vec<{body_type}>>"),
+                        (crate::generator::Language::Rust, false) => format!("Vec<{body_type}{body_lt}>"),
+                        (crate::generator::Language::Rust, true) => format!("Option<Vec<{body_type}{body_lt}>>"),
                         // RFC §5.B B5-ε closures: cpp/kotlin/go/python emit
                         // TLV chain via the host-language list shape — Zenoh
                         // ext envelopes ship on zenoh-rs / zenoh-cpp / zenoh-
@@ -2119,6 +2253,7 @@ fn render_codec(
                             field: f,
                             fields: &m.fields,
                             body_type: &body_type,
+                            body_lt,
                             body_decoder: &body_decoder,
                             max_depth: *max_depth,
                             on_overflow: *on_overflow,
@@ -2126,9 +2261,16 @@ fn render_codec(
                             lang,
                         })
                     } else {
-                        tlv_chain_streaming_decode_stmt(
-                            f, &body_type, &body_decoder, *max_depth, *on_overflow, terminate_on, lang,
-                        )
+                        tlv_chain_streaming_decode_stmt(TlvChainDecode {
+                            field: f,
+                            body_type: &body_type,
+                            body_lt,
+                            body_decoder: &body_decoder,
+                            max_depth: *max_depth,
+                            on_overflow: *on_overflow,
+                            terminate_on,
+                            lang,
+                        })
                     };
                     obj.insert("tlv_chain_decode_stmt".into(), decode_stmt.into());
                     let encode_block = if f.present_if.is_some() {
@@ -2192,9 +2334,16 @@ fn render_codec(
                     // `c_type` / equivalent slot was set earlier
                     // from the SceType::Bytes sentinel, so we
                     // replace it here.
+                    // Borrowed zero-copy: a borrowed embed body carries
+                    // the parent's `<'a>` in the field type (`Body<'a>` /
+                    // `Option<Body<'a>>`). Rust-only; `body_type_ty` is
+                    // the type-position spelling (the embed decode helper
+                    // calls `Body::decode` bare and needs no suffix).
+                    let body_lt = rust_codec_body_lifetime(lang, imports, alias);
+                    let body_type_ty = format!("{body_type}{body_lt}");
                     let host_type = if f.present_if.is_some() {
                         match lang {
-                            crate::generator::Language::Rust => format!("Option<{body_type}>"),
+                            crate::generator::Language::Rust => format!("Option<{body_type_ty}>"),
                             crate::generator::Language::Cpp => format!("std::optional<{body_type}>"),
                             crate::generator::Language::Kotlin => format!("{body_type}?"),
                             crate::generator::Language::Go => format!("*{body_type}"),
@@ -2202,7 +2351,7 @@ fn render_codec(
                             crate::generator::Language::C11 => body_type.clone(),
                         }
                     } else {
-                        body_type.clone()
+                        body_type_ty.clone()
                     };
                     obj.insert(type_key.into(), host_type.clone().into());
                     let embed_thread = embed_parent_flags_thread_args(
@@ -2599,7 +2748,10 @@ fn render_codec(
                 // equivalent; skipping here avoids overwriting with
                 // `Option<Vec<u8>>`.
                 if f.present_if.is_some() && !f.is_repeat() && !f.is_embed() && !f.is_tlv_chain() {
-                    let inner = l.type_name(&f.sce_type);
+                    // Borrowed zero-copy: a gated `Bytes` / `String`
+                    // field's inner type is the `&'a` view (Rust), so the
+                    // wrap becomes `Option<&'a [u8]>` / `Option<&'a str>`.
+                    let inner = codec_scalar_type(&l, &f.sce_type);
                     let wrapped = match lang {
                         crate::generator::Language::Rust => {
                             format!("Option<{inner}>")
@@ -3158,6 +3310,14 @@ fn render_codec(
                 obj.insert("value_literal".into(), value_literal.into());
                 obj.insert("variant_name".into(), variant_name.into());
                 obj.insert("body_type".into(), body_type.into());
+                // Borrowed zero-copy: type-position `<'a>` suffix when
+                // this arm's body codec is borrowed. The enum-variant
+                // field type uses `{body_type}{body_lifetime}`; the
+                // `body_type::decode` / `::default` call sites stay bare.
+                obj.insert(
+                    "body_lifetime".into(),
+                    rust_codec_body_lifetime(lang, imports, &arm.body_alias).into(),
+                );
                 obj.insert("body_decoder".into(), body_decoder.into());
                 obj.insert("body_encoder".into(), body_encoder.into());
                 obj.insert("c_kind_constant".into(), c_kind_constant.into());
@@ -3263,6 +3423,13 @@ fn render_codec(
                 let mut obj = serde_json::Map::new();
                 obj.insert("variant_name".into(), "Default".to_string().into());
                 obj.insert("body_type".into(), body_type.into());
+                // Borrowed zero-copy: type-position `<'a>` suffix for the
+                // default arm's body (the `tag/body` struct-variant field
+                // type). `::decode` / `::default` call sites stay bare.
+                obj.insert(
+                    "body_lifetime".into(),
+                    rust_codec_body_lifetime(lang, imports, &d.body_alias).into(),
+                );
                 obj.insert("body_decoder".into(), body_decoder.into());
                 obj.insert("body_encoder".into(), body_encoder.into());
                 obj.insert("c_kind_constant".into(), c_kind_constant.into());
@@ -3640,6 +3807,30 @@ fn render_codec(
             crate::forge::rust_derive_policy::RustDeriveCategory::CodecVariantEnum
                 .derives_attr()
                 .into(),
+        );
+        // Borrowed zero-copy codec round: thread the `<'a>` lifetime that
+        // the codec's borrowed `&'a [u8]` / `&'a str` views (and embedded
+        // borrowed bodies) require. `struct_lifetime` decorates the
+        // struct/impl/Default sites (`<'a>` or empty); `cursor_lifetime`
+        // ties the decode cursor's borrow to the struct (`'a` vs the
+        // byte-stable `'_` for non-borrowed codecs); `variant_lifetime`
+        // decorates the `{Struct}Variant` enum only when an arm body is
+        // itself borrowed. Empty / `'_` for non-borrowed codecs keeps
+        // their goldens byte-identical. Rust-only — the other five
+        // backends own their codec fields and never see these keys.
+        let self_borrowed = codec_self_borrowed(m, imports);
+        let variant_borrowed = codec_variant_body_borrowed(m, imports);
+        ctx.insert(
+            "struct_lifetime".into(),
+            if self_borrowed { "<'a>" } else { "" }.into(),
+        );
+        ctx.insert(
+            "cursor_lifetime".into(),
+            if self_borrowed { "'a" } else { "'_" }.into(),
+        );
+        ctx.insert(
+            "variant_lifetime".into(),
+            if variant_borrowed { "<'a>" } else { "" }.into(),
         );
     }
 
@@ -4565,6 +4756,10 @@ fn repeat_streaming_decode_stmt(
     field: &CodecField,
     fields: &[CodecField],
     body_type: &str,
+    // Borrowed zero-copy: `"<'a>"` when the element codec is borrowed
+    // (Rust), applied to the `Vec<Body<'a>>` element type annotation;
+    // `""` otherwise. `Body::decode` call sites stay bare.
+    body_lt: &str,
     body_decoder: &str,
     max_count: u32,
     lang: crate::generator::Language,
@@ -4596,6 +4791,7 @@ fn repeat_streaming_decode_stmt(
             pred,
             count_ref,
             body_type,
+            body_lt,
             body_decoder,
             max_count,
             lang,
@@ -4619,7 +4815,7 @@ fn repeat_streaming_decode_stmt(
             let len_field_snake = filters::to_snake_case(len_field.clone());
             format!(
                 "let {id} = {{\n            \
-                     let mut _vec: Vec<{body_type}> = Vec::with_capacity({len_field_snake} as usize);\n            \
+                     let mut _vec: Vec<{body_type}{body_lt}> = Vec::with_capacity({len_field_snake} as usize);\n            \
                      for _ in 0..{len_field_snake} {{\n                \
                          _vec.push({body_type}::decode(cursor)?);\n            \
                      }}\n            \
@@ -4629,7 +4825,7 @@ fn repeat_streaming_decode_stmt(
         }
         (Language::Rust, CountRef::UntilEof) => format!(
             "let {id} = {{\n            \
-                 let mut _vec: Vec<{body_type}> = Vec::new();\n            \
+                 let mut _vec: Vec<{body_type}{body_lt}> = Vec::new();\n            \
                  while cursor.remaining() > 0 {{\n                \
                      _vec.push({body_type}::decode(cursor)?);\n            \
                  }}\n            \
@@ -5804,6 +6000,9 @@ struct RepeatDecodeGated<'a> {
     pred: &'a PresentIfPredicate,
     count_ref: &'a CountRef,
     body_type: &'a str,
+    // Borrowed zero-copy: `"<'a>"` for a borrowed element codec (Rust),
+    // applied to the `Vec<Body<'a>>` element type annotation.
+    body_lt: &'a str,
     body_decoder: &'a str,
     max_count: u32,
     lang: crate::generator::Language,
@@ -5834,6 +6033,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         pred,
         count_ref,
         body_type,
+        body_lt,
         body_decoder,
         max_count,
         lang,
@@ -5852,7 +6052,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             format!(
                 "let {id} = if {test} {{\n            \
                      let _n = {len_field_snake}.expect(\"co-gating: count present-if matches repeat\");\n            \
-                     let mut _vec: Vec<{body_type}> = Vec::with_capacity(_n as usize);\n            \
+                     let mut _vec: Vec<{body_type}{body_lt}> = Vec::with_capacity(_n as usize);\n            \
                      for _ in 0.._n {{\n                \
                          _vec.push({body_type}::decode(cursor)?);\n            \
                      }}\n            \
@@ -5864,7 +6064,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         }
         (Language::Rust, CountRef::UntilEof) => format!(
             "let {id} = if {test} {{\n            \
-                 let mut _vec: Vec<{body_type}> = Vec::new();\n            \
+                 let mut _vec: Vec<{body_type}{body_lt}> = Vec::new();\n            \
                  while cursor.remaining() > 0 {{\n                \
                      _vec.push({body_type}::decode(cursor)?);\n            \
                  }}\n            \
@@ -6158,18 +6358,38 @@ fn repeat_streaming_encode_block_gated(
 /// cpp/kotlin/go/python TLV chain emit; the prior MCU-only gate sat at
 /// the host-language wrapper choice (std::vector / MutableList / []T /
 /// List), not at any hardware constraint.
-fn tlv_chain_streaming_decode_stmt(
-    field: &CodecField,
-    body_type: &str,
-    body_decoder: &str,
+/// Non-gated tlv-chain decode args, bundled into a struct mirroring
+/// [`TlvChainDecodeGated`] — keeps the call surface under the
+/// `too_many_arguments` bound (the `body_lt` borrowed-zero-copy field
+/// pushed the loose-arg form to 8) and stays SSOT-consistent with the
+/// gated variant's shape.
+struct TlvChainDecode<'a> {
+    field: &'a CodecField,
+    body_type: &'a str,
+    // Borrowed zero-copy: `"<'a>"` for a borrowed entry codec (Rust),
+    // applied to the `Vec<Entry<'a>>` element type annotation.
+    body_lt: &'a str,
+    body_decoder: &'a str,
     max_depth: u32,
     on_overflow: crate::forge::model::TlvOverflowPolicy,
-    terminate_on: &crate::forge::model::TlvTerminateStrategy,
+    terminate_on: &'a crate::forge::model::TlvTerminateStrategy,
     lang: crate::generator::Language,
-) -> String {
+}
+
+fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
     use crate::forge::model::TlvOverflowPolicy;
     use crate::forge::model::TlvTerminateStrategy;
     use crate::generator::Language;
+    let TlvChainDecode {
+        field,
+        body_type,
+        body_lt,
+        body_decoder,
+        max_depth,
+        on_overflow,
+        terminate_on,
+        lang,
+    } = ctx;
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     // RFC §5.B Y3 — entry-flag termination accessor, per-language. The
@@ -6234,7 +6454,7 @@ fn tlv_chain_streaming_decode_stmt(
             };
             format!(
                 "let {id} = {{\n            \
-                     let mut _vec: Vec<{body_type}> = Vec::with_capacity({max_depth} as usize);\n            \
+                     let mut _vec: Vec<{body_type}{body_lt}> = Vec::with_capacity({max_depth} as usize);\n            \
                      for _ in 0..{max_depth}u32 {{\n{body}\
                      }}{overflow_check}\n            \
                      _vec\n        \
@@ -6537,6 +6757,9 @@ struct TlvChainDecodeGated<'a> {
     field: &'a CodecField,
     fields: &'a [CodecField],
     body_type: &'a str,
+    // Borrowed zero-copy: `"<'a>"` for a borrowed entry codec (Rust),
+    // applied to the `Vec<Entry<'a>>` element type annotation.
+    body_lt: &'a str,
     body_decoder: &'a str,
     max_depth: u32,
     on_overflow: crate::forge::model::TlvOverflowPolicy,
@@ -6570,6 +6793,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
         field,
         fields,
         body_type,
+        body_lt,
         body_decoder,
         max_depth,
         on_overflow,
@@ -6625,7 +6849,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             };
             format!(
                 "let {id} = if {test} {{\n            \
-                     let mut _vec: Vec<{body_type}> = Vec::with_capacity({max_depth} as usize);\n            \
+                     let mut _vec: Vec<{body_type}{body_lt}> = Vec::with_capacity({max_depth} as usize);\n            \
                      for _ in 0..{max_depth}u32 {{\n{body}\
                      }}{overflow_check}\n            \
                      Some(_vec)\n        \
@@ -7337,7 +7561,7 @@ fn present_if_decode_tail(
             "let {id} = {{\n            \
                  let _n = cursor.remaining();\n            \
                  let raw = cursor.peek_slice(_n)?;\n            \
-                 let _v = raw.to_vec();\n            \
+                 let _v = raw;\n            \
                  cursor.advance(_n)?;\n            \
                  _v\n        \
              }};"
@@ -7348,7 +7572,7 @@ fn present_if_decode_tail(
                 "let {id} = if {test} {{\n            \
                      let _n = cursor.remaining();\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
-                     let _v = raw.to_vec();\n            \
+                     let _v = raw;\n            \
                      cursor.advance(_n)?;\n            \
                      Some(_v)\n        \
                  }} else {{\n            \
@@ -7587,7 +7811,7 @@ fn present_if_decode_length_ref(
             "let {id} = {{\n            \
                  let _n = {n_rust};\n            \
                  let raw = cursor.peek_slice(_n)?;\n            \
-                 let _v = raw.to_vec();\n            \
+                 let _v = raw;\n            \
                  cursor.advance(_n)?;\n            \
                  _v\n        \
              }};"
@@ -7598,7 +7822,7 @@ fn present_if_decode_length_ref(
                 "let {id} = if {test} {{\n            \
                      let _n = {n_rust};\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
-                     let _v = raw.to_vec();\n            \
+                     let _v = raw;\n            \
                      cursor.advance(_n)?;\n            \
                      Some(_v)\n        \
                  }} else {{\n            \
@@ -7783,8 +8007,7 @@ fn present_if_decode_string_length_ref(
                      let _n = {n_rust};\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
                      let _v = core::str::from_utf8(raw)\n                \
-                         .map_err(|_| CodecError::InvalidUtf8)?\n                \
-                         .to_string();\n            \
+                         .map_err(|_| CodecError::InvalidUtf8)?;\n            \
                      cursor.advance(_n)?;\n            \
                      _v\n        \
                  }};"
@@ -7798,8 +8021,7 @@ fn present_if_decode_string_length_ref(
                      let _n = {n_rust};\n            \
                      let raw = cursor.peek_slice(_n)?;\n            \
                      let _v = core::str::from_utf8(raw)\n                \
-                         .map_err(|_| CodecError::InvalidUtf8)?\n                \
-                         .to_string();\n            \
+                         .map_err(|_| CodecError::InvalidUtf8)?;\n            \
                      cursor.advance(_n)?;\n            \
                      Some(_v)\n        \
                  }} else {{\n            \
@@ -10038,7 +10260,7 @@ fn generate_decode_expr(
             // collide with a `len` template-scope alias.
             Language::Cpp => format!("std::vector<uint8_t>(raw + {byte_off}, raw + _frame_len)"),
             Language::Kotlin => format!("raw.copyOfRange({byte_off}, raw.size)"),
-            Language::Rust => format!("raw[{byte_off}..].to_vec()"),
+            Language::Rust => format!("&raw[{byte_off}..]"),
             Language::Go | Language::Python => format!("raw[{byte_off}:]"),
             // C11 V1β/V2b: variable-length decode is multi-statement
             // (bounds check + memcpy + len assignment), so the template
@@ -10123,7 +10345,7 @@ fn generate_decode_expr(
                 Language::Kotlin =>
                     format!("raw.copyOfRange({byte_off}, {byte_off} + {len_value_kotlin}{suffix_signed})"),
                 Language::Rust =>
-                    format!("raw[{byte_off}..{byte_off} + {len_value_rust}{suffix_signed}].to_vec()"),
+                    format!("&raw[{byte_off}..{byte_off} + {len_value_rust}{suffix_signed}]"),
                 Language::Go =>
                     format!("raw[{byte_off}:{byte_off}+{len_value_go}{suffix_signed}]"),
                 Language::Python =>
@@ -19660,16 +19882,17 @@ fn lower_decoded_field_value(
             // setting `data[i]` + `len` from a static const initializer
             // — emitted at the template level, so we just hand the
             // raw byte literal sequence.
+            // Borrowed zero-copy: the codec bytes field is `&'a [u8]`, so
+            // emit a byte-string literal (`b"\xCA\xFE"`) — a
+            // const-promoted `&'static [u8; N]` that unsizes to `&[u8]`
+            // at the struct-field coercion site and outlives the test
+            // body. Empty case is `b""` (typed `&[u8; 0]`), so the
+            // `assert_eq!` comparison resolves without an annotation.
             let rust = if bs.is_empty() {
-                // Type annotation required so `assert_eq!(actual, expected)`
-                // can resolve the equality comparison without help from
-                // surrounding context — the test sidecar is included via
-                // `include!()` and has no struct-field hint at the
-                // assertion call site.
-                "Vec::<u8>::new()".to_string()
+                "b\"\"".to_string()
             } else {
-                let parts: Vec<String> = bs.iter().map(|b| format!("0x{b:02x}")).collect();
-                format!("vec![{}]", parts.join(", "))
+                let hex: String = bs.iter().map(|b| format!("\\x{b:02x}")).collect();
+                format!("b\"{hex}\"")
             };
             let c = if bs.is_empty() {
                 String::new()
@@ -19698,10 +19921,10 @@ fn lower_decoded_field_value(
                     other => vec![other],
                 })
                 .collect::<String>();
-            Ok((
-                format!("String::from(\"{escaped}\")"),
-                format!("\"{escaped}\""),
-            ))
+            // Borrowed zero-copy: the codec string field is `&'a str`, so
+            // emit a plain `&'static str` literal (coerces to `&'a str`)
+            // rather than an owned `String`.
+            Ok((format!("\"{escaped}\""), format!("\"{escaped}\"")))
         }
         (val, ty) => Err(ForgeError::from(GenerateError::UnsupportedFeature(
             format!(
@@ -20085,6 +20308,7 @@ mod tests {
             codec_max_bytes: None,
             codec_first_flags: None,
             codec_emits_default_ctor: false,
+            codec_is_borrowed: false,
             buffer_pool_slot_size: None,
             bc_element_snake: None,
             embed_dispatch: None,
@@ -20691,6 +20915,7 @@ mod tests {
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_is_borrowed: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
                 embed_dispatch: None,
@@ -20719,6 +20944,7 @@ mod tests {
                 codec_max_bytes: None,
                 codec_first_flags: None,
                 codec_emits_default_ctor: false,
+                codec_is_borrowed: false,
                 buffer_pool_slot_size: None,
                 bc_element_snake: None,
                 embed_dispatch: None,

@@ -2833,6 +2833,82 @@ fn compute_codec_recursive_max_bytes(
     }
 }
 
+/// Whether a codec's generated Rust struct holds any borrowed (`&'a`)
+/// reference and therefore needs a `<'a>` lifetime parameter.
+///
+/// A codec is borrowed iff it has a scalar `Bytes` / `String` field
+/// (decoded as a zero-copy `&'a [u8]` / `&'a str` view per the
+/// `SceCursor::peek_slice -> &'a [u8]` borrow contract) OR it embeds /
+/// repeats / tlv-chains / variant-dispatches a body codec that is
+/// itself transitively borrowed (the body's lifetime infects the
+/// parent through `Vec<Body<'a>>` / `Body<'a>` field types).
+///
+/// Mirrors [`compute_codec_recursive_max_bytes`] in structure: resolves
+/// each referenced import alias to its parsed codec model and recurses,
+/// with the same `visited`-set cycle guard. A cycle leaf contributes
+/// `false` (its own scalar fields are still inspected directly by the
+/// frame that opened the cycle). Borrowed-ness is exact, never an
+/// over-approximation: an unused lifetime parameter is a hard compile
+/// error (E0392), so the inference must not claim `<'a>` for a codec
+/// that holds no borrow.
+fn codec_is_borrowed_recursive(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> bool {
+    // Resolve a single import alias to its body codec's transitive
+    // borrowed-ness. `None` (missing / parse error / kind mismatch /
+    // cycle) contributes `false` — matches the conservative skip in
+    // `compute_codec_recursive_max_bytes::resolve_import_max`.
+    fn resolve_import_borrowed(
+        alias: &str,
+        imports: &[forge::model::ForgeImport],
+        base_dir: &Path,
+        visited: &mut HashSet<PathBuf>,
+    ) -> Option<bool> {
+        let imp = imports.iter().find(|i| i.alias == alias)?;
+        let imp_path = base_dir.join(&imp.src);
+        let visit_key = imp_path.clone();
+        if !visited.insert(visit_key.clone()) {
+            return None;
+        }
+        let result = (|| -> Option<bool> {
+            let content = std::fs::read_to_string(&imp_path).ok()?;
+            let stem = imp_path.file_stem()?.to_str()?;
+            let basename = imp_path.file_name()?.to_str()?;
+            let label = DocumentLabel {
+                identifier: stem,
+                diagnostic_label: basename,
+            };
+            let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
+            let inner_cm = match parsed.document {
+                forge::model::ForgeDocument::Codec(c) => c,
+                _ => return None,
+            };
+            let inner_base = imp_path.parent()?.to_path_buf();
+            Some(codec_is_borrowed_recursive(
+                &inner_cm,
+                &parsed.imports,
+                &inner_base,
+                visited,
+            ))
+        })();
+        visited.remove(&visit_key);
+        result
+    }
+
+    // SSOT predicate (`CodecModel::is_borrowed_with`) over the file-graph
+    // resolver: each embed/repeat/tlv/variant body alias is resolved by
+    // re-parsing the import and recursing. The scalar-field rule and the
+    // body traversal live on the model so codegen-time
+    // (`generator.rs::codec_self_borrowed`) and this enrichment-time walk
+    // can never diverge.
+    cm.is_borrowed_with(|alias| {
+        resolve_import_borrowed(alias, imports, base_dir, visited).unwrap_or(false)
+    })
+}
+
 /// Validate and enrich `<sce:import>` declarations in a single pass.
 ///
 /// For each import, reads the file once and performs:
@@ -2956,6 +3032,20 @@ fn validate_and_enrich_imports(
                     &inner_base,
                     &mut visited,
                 ));
+                // Borrowed zero-copy codec round: capture whether the
+                // imported codec's generated Rust struct carries a `<'a>`
+                // lifetime (holds a `&'a [u8]` / `&'a str` view or embeds
+                // a body codec that does). The parent codec uses this to
+                // thread `<'a>` into its own struct/decode signature when
+                // it embeds / repeats / variant-dispatches this import.
+                let mut borrow_visited: HashSet<PathBuf> = HashSet::new();
+                borrow_visited.insert(src_path.clone());
+                ctx.codec_is_borrowed = codec_is_borrowed_recursive(
+                    cm,
+                    &parsed.imports,
+                    &inner_base,
+                    &mut borrow_visited,
+                );
                 // RFC Axis-1 inversion: capture the imported leaf
                 // codec's declared `<sce:flag-inputs>` so the parent-
                 // local cross-doc validator can confirm every input is

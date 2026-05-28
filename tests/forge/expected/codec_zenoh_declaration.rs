@@ -33,15 +33,15 @@ use super::codec_zenoh_decl_final::CodecZenohDeclFinal;
 // alongside its catch-all body.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodecZenohDeclarationVariant {
-    CodecZenohDeclKexpr(CodecZenohDeclKexpr),
+pub enum CodecZenohDeclarationVariant<'a> {
+    CodecZenohDeclKexpr(CodecZenohDeclKexpr<'a>),
     CodecZenohUndeclKexpr(CodecZenohUndeclKexpr),
-    CodecZenohDeclSubscriber(CodecZenohDeclSubscriber),
-    CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriber),
-    CodecZenohDeclQueryable(CodecZenohDeclQueryable),
-    CodecZenohUndeclQueryable(CodecZenohUndeclQueryable),
-    CodecZenohDeclToken(CodecZenohDeclToken),
-    CodecZenohUndeclToken(CodecZenohUndeclToken),
+    CodecZenohDeclSubscriber(CodecZenohDeclSubscriber<'a>),
+    CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriber<'a>),
+    CodecZenohDeclQueryable(CodecZenohDeclQueryable<'a>),
+    CodecZenohUndeclQueryable(CodecZenohUndeclQueryable<'a>),
+    CodecZenohDeclToken(CodecZenohDeclToken<'a>),
+    CodecZenohUndeclToken(CodecZenohUndeclToken<'a>),
     CodecZenohDeclFinal(CodecZenohDeclFinal),
     Default {
         tag: u8,
@@ -49,7 +49,7 @@ pub enum CodecZenohDeclarationVariant {
     },
 }
 
-impl Default for CodecZenohDeclarationVariant {
+impl<'a> Default for CodecZenohDeclarationVariant<'a> {
     fn default() -> Self {
         // RFC variant-default-uniformity: pick the declared default
         // arm (`<sce:arm default="true"/>`) so a freshly-constructed
@@ -66,13 +66,13 @@ impl Default for CodecZenohDeclarationVariant {
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohDeclaration {
+pub struct CodecZenohDeclaration<'a> {
     pub header: u8,
-    pub body: CodecZenohDeclarationVariant,
+    pub body: CodecZenohDeclarationVariant<'a>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohDeclaration {
+impl<'a> CodecZenohDeclaration<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -85,7 +85,7 @@ impl CodecZenohDeclaration {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // Decode fixed prefix (RFC §5.B variant primitive B1-β: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;

@@ -23,14 +23,14 @@ use sce_forge_runtime::codec::VecSink;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohWireexpr {
+pub struct CodecZenohWireexpr<'a> {
     pub id: u64,
     pub suffix_len: Option<u64>,
-    pub suffix: Option<String>,
+    pub suffix: Option<&'a str>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohWireexpr {
+impl<'a> CodecZenohWireexpr<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -43,7 +43,7 @@ impl CodecZenohWireexpr {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>, n: u8) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>, n: u8) -> Result<Self, CodecError> {
         // RFC Axis-1 inversion: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -71,8 +71,7 @@ impl CodecZenohWireexpr {
             let _n = suffix_len.unwrap() as usize;
             let raw = cursor.peek_slice(_n)?;
             let _v = core::str::from_utf8(raw)
-                .map_err(|_| CodecError::InvalidUtf8)?
-                .to_string();
+                .map_err(|_| CodecError::InvalidUtf8)?;
             cursor.advance(_n)?;
             Some(_v)
         } else {

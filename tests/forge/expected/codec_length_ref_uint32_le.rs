@@ -23,13 +23,13 @@ use sce_forge_runtime::codec::VecSink;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecLengthRefUint32Le {
+pub struct CodecLengthRefUint32Le<'a> {
     pub payload_len: u32,
-    pub payload: Vec<u8>,
+    pub payload: &'a [u8],
 }
 
 #[allow(dead_code)]
-impl CodecLengthRefUint32Le {
+impl<'a> CodecLengthRefUint32Le<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -42,7 +42,7 @@ impl CodecLengthRefUint32Le {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // Variable-length codec. RFC §5.B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
@@ -59,7 +59,7 @@ impl CodecLengthRefUint32Le {
         }
         let raw = cursor.peek_slice(_frame_len)?;
         let payload_len = raw[0] as u32 | ((raw[1] as u32) << 8) | ((raw[2] as u32) << 16) | ((raw[3] as u32) << 24);
-        let payload = raw[4..4 + payload_len as usize].to_vec();
+        let payload = &raw[4..4 + payload_len as usize];
         let value = Self {
             payload_len,
             payload,

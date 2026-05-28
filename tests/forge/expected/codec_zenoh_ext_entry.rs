@@ -27,17 +27,17 @@ use super::codec_zenoh_ext_zbuf::CodecZenohExtZbuf;
 // alongside its catch-all body.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodecZenohExtEntryVariant {
+pub enum CodecZenohExtEntryVariant<'a> {
     CodecZenohExtUnit(CodecZenohExtUnit),
     CodecZenohExtZint(CodecZenohExtZint),
-    CodecZenohExtZbuf(CodecZenohExtZbuf),
+    CodecZenohExtZbuf(CodecZenohExtZbuf<'a>),
     Default {
         tag: u8,
         body: CodecZenohExtUnit,
     },
 }
 
-impl Default for CodecZenohExtEntryVariant {
+impl<'a> Default for CodecZenohExtEntryVariant<'a> {
     fn default() -> Self {
         // RFC variant-default-uniformity: pick the declared default
         // arm (`<sce:arm default="true"/>`) so a freshly-constructed
@@ -54,13 +54,13 @@ impl Default for CodecZenohExtEntryVariant {
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohExtEntry {
+pub struct CodecZenohExtEntry<'a> {
     pub header: u8,
-    pub body: CodecZenohExtEntryVariant,
+    pub body: CodecZenohExtEntryVariant<'a>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohExtEntry {
+impl<'a> CodecZenohExtEntry<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -73,7 +73,7 @@ impl CodecZenohExtEntry {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // Decode fixed prefix (RFC §5.B variant primitive B1-β: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;

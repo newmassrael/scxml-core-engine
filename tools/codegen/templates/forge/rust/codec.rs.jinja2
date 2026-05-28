@@ -46,21 +46,21 @@ const _: () = assert!(
 // alongside its catch-all body.
 #[allow(dead_code)]
 {{ codec_variant_enum_derives_attr }}
-pub enum {{ struct_name }}Variant {
+pub enum {{ struct_name }}Variant{{ variant_lifetime }} {
 {% for arm in variant.arms %}
-    {{ arm.variant_name }}({{ arm.body_type }}),
+    {{ arm.variant_name }}({{ arm.body_type }}{{ arm.body_lifetime }}),
 {% endfor %}
 {% if variant.default_arm %}
     {{ variant.default_arm.variant_name }} {
         tag: {{ variant.tag_native_type }},
-        body: {{ variant.default_arm.body_type }},
+        body: {{ variant.default_arm.body_type }}{{ variant.default_arm.body_lifetime }},
     },
 {% endif %}
 }
 
 {% set ns = namespace(default_arm=none) %}
 {% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
-impl Default for {{ struct_name }}Variant {
+impl{{ variant_lifetime }} Default for {{ struct_name }}Variant{{ variant_lifetime }} {
     fn default() -> Self {
 {% if ns.default_arm %}
         // RFC variant-default-uniformity: pick the declared default
@@ -95,12 +95,12 @@ impl Default for {{ struct_name }}Variant {
 {% endfor -%}
 #[allow(dead_code)]
 {{ codec_struct_derives_attr }}
-pub struct {{ struct_name }} {
+pub struct {{ struct_name }}{{ struct_lifetime }} {
 {% for field in fields %}
     pub {{ field.id }}: {{ field.rs_type }},
 {% endfor %}
 {% if has_variant %}
-    pub body: {{ struct_name }}Variant,
+    pub body: {{ struct_name }}Variant{{ variant_lifetime }},
 {% endif %}
 }
 {% if ns.has_flag_default %}
@@ -112,7 +112,7 @@ pub struct {{ struct_name }} {
 // freshly-constructed instance carries the wire-MID for its own
 // dispatch tag. Fields without declared values fall through to
 // `Default::default()` (preserving derive(Default) semantics).
-impl Default for {{ struct_name }} {
+impl{{ struct_lifetime }} Default for {{ struct_name }}{{ struct_lifetime }} {
     fn default() -> Self {
         Self {
 {% for field in fields %}
@@ -127,7 +127,7 @@ impl Default for {{ struct_name }} {
 {% endif %}
 
 #[allow(dead_code)]
-impl {{ struct_name }} {
+impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -140,7 +140,7 @@ impl {{ struct_name }} {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
 {% if has_parent_flags %}
         // RFC §5.B B5-γ: `parent_flags` is the parent codec's flags
         // carrier value, threaded through by the variant arm dispatcher.

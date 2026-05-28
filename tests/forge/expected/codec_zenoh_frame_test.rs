@@ -5,7 +5,7 @@
 fn test_vector_codec_zenoh_frame_l38() {
     let actual = CodecZenohFrame {
         sn: 0x0u64,
-        payload: Vec::<u8>::new(),
+        payload: b"",
     };
     let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x00u8];
@@ -27,7 +27,7 @@ fn test_vector_codec_zenoh_frame_l38() {
         "<sce:test-vector> at SCXML L38: field `sn` mismatch"
     );
     assert_eq!(
-        decoded.payload, Vec::<u8>::new(),
+        decoded.payload, b"",
         "<sce:test-vector> at SCXML L38: field `payload` mismatch"
     );
 }
@@ -35,7 +35,7 @@ fn test_vector_codec_zenoh_frame_l38() {
 fn test_vector_codec_zenoh_frame_l42() {
     let actual = CodecZenohFrame {
         sn: 0x1u64,
-        payload: vec![0xca, 0xfe],
+        payload: b"\xca\xfe",
     };
     let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x01u8, 0xcau8, 0xfeu8];
@@ -57,7 +57,7 @@ fn test_vector_codec_zenoh_frame_l42() {
         "<sce:test-vector> at SCXML L42: field `sn` mismatch"
     );
     assert_eq!(
-        decoded.payload, vec![0xca, 0xfe],
+        decoded.payload, b"\xca\xfe",
         "<sce:test-vector> at SCXML L42: field `payload` mismatch"
     );
 }
@@ -65,7 +65,7 @@ fn test_vector_codec_zenoh_frame_l42() {
 fn test_vector_codec_zenoh_frame_l46() {
     let actual = CodecZenohFrame {
         sn: 0x7fu64,
-        payload: vec![0xaa, 0xbb, 0xcc],
+        payload: b"\xaa\xbb\xcc",
     };
     let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x7fu8, 0xaau8, 0xbbu8, 0xccu8];
@@ -87,7 +87,7 @@ fn test_vector_codec_zenoh_frame_l46() {
         "<sce:test-vector> at SCXML L46: field `sn` mismatch"
     );
     assert_eq!(
-        decoded.payload, vec![0xaa, 0xbb, 0xcc],
+        decoded.payload, b"\xaa\xbb\xcc",
         "<sce:test-vector> at SCXML L46: field `payload` mismatch"
     );
 }
@@ -95,7 +95,7 @@ fn test_vector_codec_zenoh_frame_l46() {
 fn test_vector_codec_zenoh_frame_l50() {
     let actual = CodecZenohFrame {
         sn: 0x80u64,
-        payload: vec![0xde, 0xad],
+        payload: b"\xde\xad",
     };
     let encoded = actual.encode_to_vec();
     let expected: &[u8] = &[0x80u8, 0x01u8, 0xdeu8, 0xadu8];
@@ -117,7 +117,7 @@ fn test_vector_codec_zenoh_frame_l50() {
         "<sce:test-vector> at SCXML L50: field `sn` mismatch"
     );
     assert_eq!(
-        decoded.payload, vec![0xde, 0xad],
+        decoded.payload, b"\xde\xad",
         "<sce:test-vector> at SCXML L50: field `payload` mismatch"
     );
 }
