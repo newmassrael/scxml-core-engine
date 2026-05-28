@@ -119,7 +119,10 @@ fn codec_with_flag_default_drops_default_keeps_ssot_trio() {
         "codec with flag_default must NOT derive Default (manual impl below); got:\n{src}"
     );
     assert!(
-        src.contains("impl Default for"),
+        // Lifetime-agnostic: a borrowed codec emits `impl<'a> Default
+        // for Name<'a>`, a fixed-width one `impl Default for Name`. Both
+        // satisfy the intent — a MANUAL Default impl exists (not derived).
+        src.contains("Default for CodecZenohDeclare"),
         "codec with flag_default must emit manual impl Default; got:\n{src}"
     );
 }
