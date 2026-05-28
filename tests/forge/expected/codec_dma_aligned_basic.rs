@@ -31,7 +31,7 @@ const _: () = assert!(
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecDmaAlignedBasic {
     pub msg_id: u8,
     pub reserved: u8,

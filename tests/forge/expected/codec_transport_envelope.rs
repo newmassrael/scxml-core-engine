@@ -30,6 +30,7 @@ use super::codec_zenoh_join::CodecZenohJoin;
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CodecTransportEnvelopeVariant {
     CodecZenohInitBody(CodecZenohInitBody),
     CodecZenohOpenBody(CodecZenohOpenBody),
@@ -60,7 +61,7 @@ impl Default for CodecTransportEnvelopeVariant {
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecTransportEnvelope {
     pub header: u8,
     pub body: CodecTransportEnvelopeVariant,
