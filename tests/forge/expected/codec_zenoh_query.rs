@@ -16,6 +16,12 @@ extern crate alloc;
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
+// RFC §5.B B2/B3: bounded inline list storage for repeat / tlv-chain
+// fields — heap-free `heapless::Vec<T, N>` (re-exported by the runtime),
+// the Rust mirror of the C11 `T elems[MAX]; len` representation. Always
+// available (no `alloc` gate) so list-bearing codecs compile on the
+// pure no_std no-alloc MCU tier.
+use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
 
@@ -30,7 +36,7 @@ pub struct CodecZenohQuery<'a> {
     pub consolidation: Option<u8>,
     pub parameters_len: Option<u64>,
     pub parameters: Option<&'a [u8]>,
-    pub extensions: Option<Vec<CodecZenohExtEntry<'a>>>,
+    pub extensions: Option<HeaplessVec<CodecZenohExtEntry<'a>, 8>>,
 }
 
 // RFC variant-default-uniformity Atomic β: at least one field's
@@ -108,10 +114,11 @@ impl<'a> CodecZenohQuery<'a> {
             None
         };
         let extensions = if (header & 0x80u8) != 0 {
-            let mut _vec: Vec<CodecZenohExtEntry<'a>> = Vec::with_capacity(8 as usize);
+            let mut _vec: HeaplessVec<CodecZenohExtEntry<'a>, 8> = HeaplessVec::new();
             for _ in 0..8u32 {
                     if cursor.remaining() == 0 { break; }
-                    _vec.push(CodecZenohExtEntry::decode(cursor)?);
+                    _vec.push(CodecZenohExtEntry::decode(cursor)?)
+                        .map_err(|_| CodecError::TooManyElements)?;
                 }
                 if cursor.remaining() > 0 {
                     return Err(CodecError::TlvChainOverflow);

@@ -1650,6 +1650,7 @@ dependencies = [
 name = "sce-forge-runtime"
 version = "0.1.0"
 dependencies = [
+ "heapless",
  "sce-build",
  "serde_json",
 ]
