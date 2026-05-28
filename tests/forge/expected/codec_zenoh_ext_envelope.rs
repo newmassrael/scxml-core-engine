@@ -24,7 +24,7 @@ use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohExtEnvelope {
     pub header_flags: u8,
     pub extensions: Vec<CodecZenohExtEntry>,

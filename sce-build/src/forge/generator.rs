@@ -1476,6 +1476,16 @@ fn render_enum(
     ctx.insert("sce_underlying_name".into(), sce_underlying_name.into());
     ctx.insert("variants".into(), serde_json::json!(variants));
     l.insert_imports(&mut ctx, imports);
+
+    if matches!(l.lang, crate::generator::Language::Rust) {
+        ctx.insert(
+            "forge_enum_derives_attr".into(),
+            crate::forge::rust_derive_policy::RustDeriveCategory::ForgeEnum
+                .derives_attr()
+                .into(),
+        );
+    }
+
     l.render(env, "enum", ctx)
 }
 
@@ -1610,6 +1620,15 @@ fn render_event_schema(
         serde_json::json!(python_enum_imports),
     );
     l.insert_imports(&mut ctx, imports);
+
+    if matches!(l.lang, crate::generator::Language::Rust) {
+        ctx.insert(
+            "event_schema_payload_derives_attr".into(),
+            crate::forge::rust_derive_policy::RustDeriveCategory::EventSchemaPayload
+                .derives_attr()
+                .into(),
+        );
+    }
 
     l.render(env, "event_schema", ctx)
 }
@@ -3595,6 +3614,34 @@ fn render_codec(
     }
 
     l.insert_imports(&mut ctx, imports);
+
+    if matches!(l.lang, crate::generator::Language::Rust) {
+        // Codec struct derive line. `Default` is conditional per RFC
+        // variant-default-uniformity Atomic β: codecs whose `<sce:flags>`
+        // carrier declares a wire-MID constant (`has_flag_default`)
+        // emit a manual `impl Default` below the struct so the carrier
+        // bakes in the OR of every declared `(value & mask) << bit`.
+        // Codecs without flag defaults derive `Default` here. The
+        // category-uniform derives (Debug, Clone, PartialEq) come from
+        // the SSOT and are always appended.
+        let mut codec_struct_traits: Vec<&'static str> = if has_flag_default {
+            Vec::new()
+        } else {
+            vec!["Default"]
+        };
+        codec_struct_traits
+            .extend(crate::forge::rust_derive_policy::RustDeriveCategory::CodecStruct.derives());
+        ctx.insert(
+            "codec_struct_derives_attr".into(),
+            format!("#[derive({})]", codec_struct_traits.join(", ")).into(),
+        );
+        ctx.insert(
+            "codec_variant_enum_derives_attr".into(),
+            crate::forge::rust_derive_policy::RustDeriveCategory::CodecVariantEnum
+                .derives_attr()
+                .into(),
+        );
+    }
 
     l.render(env, "codec", ctx)
 }
@@ -11779,6 +11826,7 @@ pub fn render_machine_link_bus_rust(
         machine_pascal => filters::to_pascal_case(machine_name.to_string()),
         machine_snake => filters::to_snake_case(machine_name.to_string()),
         links => links,
+        link_bus_event_derives_attr => crate::forge::rust_derive_policy::RustDeriveCategory::LinkBusEvent.derives_attr(),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -12246,6 +12294,8 @@ fn render_bounded_collection_rust(
         index_by_field => m.index_by.clone().unwrap_or_default(),
         index_by_rust_type => index_by_rust_type,
         runtime_dep => "self-contained on (rust, std) and (rust, no_std)",
+        handle_derives_attr => crate::forge::rust_derive_policy::RustDeriveCategory::BoundedCollectionHandle.derives_attr(),
+        overflow_error_derives_attr => crate::forge::rust_derive_policy::RustDeriveCategory::BoundedCollectionOverflowError.derives_attr(),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(

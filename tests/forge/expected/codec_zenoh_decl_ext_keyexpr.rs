@@ -24,7 +24,7 @@ use super::codec_zenoh_decl_ext_keyexpr_inner::CodecZenohDeclExtKeyexprInner;
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohDeclExtKeyexpr {
     pub outer_header: u8,
     pub total_length: u64,

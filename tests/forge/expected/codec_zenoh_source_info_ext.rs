@@ -24,7 +24,7 @@ use super::codec_zenoh_source_info::CodecZenohSourceInfo;
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecZenohSourceInfoExt {
     pub ext_size: u64,
     pub info: CodecZenohSourceInfo,

@@ -25,6 +25,7 @@ use super::codec_zenoh_push_body::CodecZenohPushBody;
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohReply {
     pub header: u8,
     pub consolidation: Option<u8>,

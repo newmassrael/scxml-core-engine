@@ -56,7 +56,7 @@ const GEN_MASK: u32 = (1u32 << GEN_BITS) - 1;
 /// (high {{ '{' }}GEN_BITS{{ '}' }} bits). Each `remove → insert` reuse in the same
 /// slot increments the generation counter so a stale handle's
 /// `get()` returns `None` and `remove()` returns `false`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+{{ handle_derives_attr }}
 pub struct {{ pascal }}Handle(u32);
 
 impl {{ pascal }}Handle {
@@ -84,7 +84,7 @@ impl {{ pascal }}Handle {
 /// The diagnostic-event runtime firing into the SCXML engine event
 /// queue is a separate concern — γ2 emits this Err uniformly for both
 /// policies per spec line 2612 ("Result<Handle, OverflowError>").
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+{{ overflow_error_derives_attr }}
 pub struct {{ pascal }}OverflowError;
 
 {# cfg-conditional backing storage per spec line 2571. The
