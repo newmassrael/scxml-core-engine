@@ -1,0 +1,73 @@
+name: sce-forge codec clippy (alloc on)
+
+# Clippy gate for SCE-generated Rust codecs. The workspace clippy gate
+# (clippy-check.yml) only lints hand-written `src/`; the generated codec
+# `.rs` are golden text files, not workspace members, so codegen clippy
+# regressions would otherwise reach a downstream consumer (e.g.
+# watching-zenoh) undetected — the rustc-green / consumer-clippy-red gap.
+# This gate compiles every committed codec golden with the `alloc` feature
+# ON (the consumer's build config, exercising the owned projection too) and
+# runs `cargo clippy -- -D warnings`. No blanket allow: the codegen emits
+# clippy-clean Rust; the only suppression is a targeted per-item allow on
+# the deliberate DMA-alignment compile-time drift guard.
+#
+# Complements sce-forge-codec-no-alloc.yml (which proves the borrowed path
+# compiles `--no-default-features`).
+#
+# Trigger: changes to the codec generator/template, the committed codec
+# goldens the gate lints, the forge runtime, the gate script itself, or the
+# cargo lockfile.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sce-forge-runtime/**'
+      - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
+      - 'sce-build/src/forge/generator.rs'
+      - 'tests/forge/expected/codec_*.rs'
+      - 'scripts/check_clippy_codec.sh'
+      - 'Cargo.lock'
+      - '.github/workflows/sce-forge-codec-clippy.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce-forge-runtime/**'
+      - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
+      - 'sce-build/src/forge/generator.rs'
+      - 'tests/forge/expected/codec_*.rs'
+      - 'scripts/check_clippy_codec.sh'
+      - 'Cargo.lock'
+      - '.github/workflows/sce-forge-codec-clippy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codec-clippy:
+    name: Clippy generated codecs (alloc on)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        components: clippy
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-codec-clippy-${{ hashFiles('Cargo.lock') }}
+
+    - name: Clippy generated codecs with -D warnings
+      run: scripts/check_clippy_codec.sh
