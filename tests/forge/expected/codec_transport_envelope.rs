@@ -229,3 +229,77 @@ impl<'a> CodecTransportEnvelope<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecTransportEnvelope<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecTransportEnvelopeOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_init_body::CodecZenohInitBodyOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_open_body::CodecZenohOpenBodyOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_frame::CodecZenohFrameOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_fragment::CodecZenohFragmentOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_join::CodecZenohJoinOwned;
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecTransportEnvelopeOwned {
+    pub header: u8,
+    pub body: CodecTransportEnvelopeOwnedVariant,
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodecTransportEnvelopeOwnedVariant {
+    CodecZenohInitBody(CodecZenohInitBodyOwned),
+    CodecZenohOpenBody(CodecZenohOpenBodyOwned),
+    CodecZenohClose(CodecZenohClose),
+    CodecZenohKeepAlive(CodecZenohKeepAlive),
+    CodecZenohFrame(CodecZenohFrameOwned),
+    CodecZenohFragment(CodecZenohFragmentOwned),
+    CodecZenohJoin(CodecZenohJoinOwned),
+    Default {
+        tag: u8,
+        body: CodecZenohClose,
+    },
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecTransportEnvelopeVariant<'a> {
+    /// Deep-copy this borrowed variant body into its owned mirror.
+    pub fn into_owned(self) -> CodecTransportEnvelopeOwnedVariant {
+        match self {
+            CodecTransportEnvelopeVariant::CodecZenohInitBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b.into_owned()),
+            CodecTransportEnvelopeVariant::CodecZenohOpenBody(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b.into_owned()),
+            CodecTransportEnvelopeVariant::CodecZenohClose(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohClose(_b),
+            CodecTransportEnvelopeVariant::CodecZenohKeepAlive(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohKeepAlive(_b),
+            CodecTransportEnvelopeVariant::CodecZenohFrame(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohFrame(_b.into_owned()),
+            CodecTransportEnvelopeVariant::CodecZenohFragment(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohFragment(_b.into_owned()),
+            CodecTransportEnvelopeVariant::CodecZenohJoin(_b) => CodecTransportEnvelopeOwnedVariant::CodecZenohJoin(_b.into_owned()),
+            CodecTransportEnvelopeVariant::Default { tag, body } => CodecTransportEnvelopeOwnedVariant::Default { tag, body },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecTransportEnvelope<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecTransportEnvelopeOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecTransportEnvelopeOwned {
+        CodecTransportEnvelopeOwned {
+            header: self.header,
+            body: self.body.into_owned(),
+        }
+    }
+}

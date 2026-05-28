@@ -30,6 +30,21 @@ fn test_vector_codec_zenoh_frame_l38() {
         decoded.payload, b"",
         "<sce:test-vector> at SCXML L38: field `payload` mismatch"
     );
+    // Owned-projection round-trip (consumer-requested; acceptance #2):
+    // deep-copy the borrowed decode into its owned mirror and assert
+    // every field still equals the oracle. Owned `Vec<u8>` / `String`
+    // fields compare directly against the `&[u8]` / `&str` literals.
+    let owned = CodecZenohFrame::decode(&mut SceCursor::new(expected))
+        .expect("<sce:test-vector> at SCXML L38: decode for into_owned failed")
+        .into_owned();
+    assert_eq!(
+        owned.sn, 0x0u64,
+        "<sce:test-vector> at SCXML L38: into_owned field `sn` mismatch"
+    );
+    assert_eq!(
+        owned.payload, b"",
+        "<sce:test-vector> at SCXML L38: into_owned field `payload` mismatch"
+    );
 }
 #[test]
 fn test_vector_codec_zenoh_frame_l42() {
@@ -59,6 +74,21 @@ fn test_vector_codec_zenoh_frame_l42() {
     assert_eq!(
         decoded.payload, b"\xca\xfe",
         "<sce:test-vector> at SCXML L42: field `payload` mismatch"
+    );
+    // Owned-projection round-trip (consumer-requested; acceptance #2):
+    // deep-copy the borrowed decode into its owned mirror and assert
+    // every field still equals the oracle. Owned `Vec<u8>` / `String`
+    // fields compare directly against the `&[u8]` / `&str` literals.
+    let owned = CodecZenohFrame::decode(&mut SceCursor::new(expected))
+        .expect("<sce:test-vector> at SCXML L42: decode for into_owned failed")
+        .into_owned();
+    assert_eq!(
+        owned.sn, 0x1u64,
+        "<sce:test-vector> at SCXML L42: into_owned field `sn` mismatch"
+    );
+    assert_eq!(
+        owned.payload, b"\xca\xfe",
+        "<sce:test-vector> at SCXML L42: into_owned field `payload` mismatch"
     );
 }
 #[test]
@@ -90,6 +120,21 @@ fn test_vector_codec_zenoh_frame_l46() {
         decoded.payload, b"\xaa\xbb\xcc",
         "<sce:test-vector> at SCXML L46: field `payload` mismatch"
     );
+    // Owned-projection round-trip (consumer-requested; acceptance #2):
+    // deep-copy the borrowed decode into its owned mirror and assert
+    // every field still equals the oracle. Owned `Vec<u8>` / `String`
+    // fields compare directly against the `&[u8]` / `&str` literals.
+    let owned = CodecZenohFrame::decode(&mut SceCursor::new(expected))
+        .expect("<sce:test-vector> at SCXML L46: decode for into_owned failed")
+        .into_owned();
+    assert_eq!(
+        owned.sn, 0x7fu64,
+        "<sce:test-vector> at SCXML L46: into_owned field `sn` mismatch"
+    );
+    assert_eq!(
+        owned.payload, b"\xaa\xbb\xcc",
+        "<sce:test-vector> at SCXML L46: into_owned field `payload` mismatch"
+    );
 }
 #[test]
 fn test_vector_codec_zenoh_frame_l50() {
@@ -119,5 +164,20 @@ fn test_vector_codec_zenoh_frame_l50() {
     assert_eq!(
         decoded.payload, b"\xde\xad",
         "<sce:test-vector> at SCXML L50: field `payload` mismatch"
+    );
+    // Owned-projection round-trip (consumer-requested; acceptance #2):
+    // deep-copy the borrowed decode into its owned mirror and assert
+    // every field still equals the oracle. Owned `Vec<u8>` / `String`
+    // fields compare directly against the `&[u8]` / `&str` literals.
+    let owned = CodecZenohFrame::decode(&mut SceCursor::new(expected))
+        .expect("<sce:test-vector> at SCXML L50: decode for into_owned failed")
+        .into_owned();
+    assert_eq!(
+        owned.sn, 0x80u64,
+        "<sce:test-vector> at SCXML L50: into_owned field `sn` mismatch"
+    );
+    assert_eq!(
+        owned.payload, b"\xde\xad",
+        "<sce:test-vector> at SCXML L50: into_owned field `payload` mismatch"
     );
 }

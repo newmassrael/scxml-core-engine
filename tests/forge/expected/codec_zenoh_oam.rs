@@ -257,3 +257,67 @@ impl<'a> CodecZenohOam<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecZenohOam<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecZenohOamOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_ext_entry::CodecZenohExtEntryOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_ext_zbuf::CodecZenohExtZbufOwned;
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohOamOwned {
+    pub header: u8,
+    pub id: u16,
+    pub extensions: Option<Vec<CodecZenohExtEntryOwned>>,
+    pub body: CodecZenohOamOwnedVariant,
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodecZenohOamOwnedVariant {
+    CodecZenohExtUnit(CodecZenohExtUnit),
+    CodecZenohExtZint(CodecZenohExtZint),
+    CodecZenohExtZbuf(CodecZenohExtZbufOwned),
+    Default {
+        tag: u8,
+        body: CodecZenohExtUnit,
+    },
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohOamVariant<'a> {
+    /// Deep-copy this borrowed variant body into its owned mirror.
+    pub fn into_owned(self) -> CodecZenohOamOwnedVariant {
+        match self {
+            CodecZenohOamVariant::CodecZenohExtUnit(_b) => CodecZenohOamOwnedVariant::CodecZenohExtUnit(_b),
+            CodecZenohOamVariant::CodecZenohExtZint(_b) => CodecZenohOamOwnedVariant::CodecZenohExtZint(_b),
+            CodecZenohOamVariant::CodecZenohExtZbuf(_b) => CodecZenohOamOwnedVariant::CodecZenohExtZbuf(_b.into_owned()),
+            CodecZenohOamVariant::Default { tag, body } => CodecZenohOamOwnedVariant::Default { tag, body },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohOam<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecZenohOamOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecZenohOamOwned {
+        CodecZenohOamOwned {
+            header: self.header,
+            id: self.id,
+            extensions: self.extensions.map(|_v| _v.into_iter().map(|_e| _e.into_owned()).collect()),
+            body: self.body.into_owned(),
+        }
+    }
+}

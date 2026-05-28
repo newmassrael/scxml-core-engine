@@ -151,3 +151,36 @@ impl<'a> CodecExtEncodingInfo<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecExtEncodingInfo<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecExtEncodingInfoOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecExtEncodingInfoOwned {
+    pub combined_id: u32,
+    pub schema_size: u8,
+    pub schema: Option<Vec<u8>>,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecExtEncodingInfo<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecExtEncodingInfoOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecExtEncodingInfoOwned {
+        CodecExtEncodingInfoOwned {
+            combined_id: self.combined_id,
+            schema_size: self.schema_size,
+            schema: self.schema.map(|_v| _v.to_vec()),
+        }
+    }
+}
