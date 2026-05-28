@@ -81,7 +81,7 @@ impl CodecZenohPushBody {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match ((header >> 0) & (0x1F as u8)) as u8 {
+        let body = match header & 0x1F {
             1u8 => CodecZenohPushBodyVariant::CodecZenohPut(CodecZenohPut::decode(cursor)?),
             2u8 => CodecZenohPushBodyVariant::CodecZenohDel(CodecZenohDel::decode(cursor)?),
             other => CodecZenohPushBodyVariant::Default {
@@ -102,23 +102,19 @@ impl CodecZenohPushBody {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn mid(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+        self.header & 0x1F
     }
 
     pub fn set_mid(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0x1F) | (v & 0x1F);
     }
 
     pub fn rest(&self) -> u8 {
-        (((self.header >> 5) & (0x07 as u8))) as u8
+        (self.header >> 5) & 0x07
     }
 
     pub fn set_rest(&mut self, v: u8) {
-        let _mask: u8 = (0x07 as u8) << 5;
-        let _val: u8 = ((v as u8) & (0x07 as u8)) << 5;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0xE0) | ((v & 0x07) << 5);
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound

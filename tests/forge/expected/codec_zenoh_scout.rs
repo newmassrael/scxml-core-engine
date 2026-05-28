@@ -90,13 +90,11 @@ impl<'a> CodecZenohScout<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn what(&self) -> u8 {
-        (((self.cbyte >> 0) & (0x07 as u8))) as u8
+        self.cbyte & 0x07
     }
 
     pub fn set_what(&mut self, v: u8) {
-        let _mask: u8 = (0x07 as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x07 as u8)) << 0;
-        self.cbyte = (self.cbyte & !_mask) | _val;
+        self.cbyte = (self.cbyte & !0x07) | (v & 0x07);
     }
 
     pub fn i(&self) -> bool {
@@ -112,13 +110,11 @@ impl<'a> CodecZenohScout<'a> {
     }
 
     pub fn zid_len_m1(&self) -> u8 {
-        (((self.cbyte >> 4) & (0x0F as u8))) as u8
+        (self.cbyte >> 4) & 0x0F
     }
 
     pub fn set_zid_len_m1(&mut self, v: u8) {
-        let _mask: u8 = (0x0F as u8) << 4;
-        let _val: u8 = ((v as u8) & (0x0F as u8)) << 4;
-        self.cbyte = (self.cbyte & !_mask) | _val;
+        self.cbyte = (self.cbyte & !0xF0) | ((v & 0x0F) << 4);
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound

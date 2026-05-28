@@ -83,13 +83,11 @@ impl<'a> CodecZenohSourceInfo<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn zidlen_m1(&self) -> u8 {
-        (((self.header >> 4) & (0x0F as u8))) as u8
+        (self.header >> 4) & 0x0F
     }
 
     pub fn set_zidlen_m1(&mut self, v: u8) {
-        let _mask: u8 = (0x0F as u8) << 4;
-        let _val: u8 = ((v as u8) & (0x0F as u8)) << 4;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0xF0) | ((v & 0x0F) << 4);
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound
@@ -110,7 +108,7 @@ impl<'a> CodecZenohSourceInfo<'a> {
         // `vle_encode_block` with the language-appropriate self/
         // struct prefix.
         w.write_u8(self.header)?;
-        w.write_bytes(&self.zid)?;
+        w.write_bytes(self.zid)?;
         {
             let mut _vle = self.eid as u64;
             while _vle >= 0x80 {

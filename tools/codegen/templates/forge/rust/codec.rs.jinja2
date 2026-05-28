@@ -40,6 +40,13 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 // `const _: () = assert!` declarations catch any future hand-edit to
 // the byte_offset that would break the wire-layout invariant.
 {% for field in fields %}{% if field.dma_burst_align -%}
+// `byte_off` and `dma_burst_align` are baked from independent SCXML inputs,
+// but clippy sees only integer literals: the check reads as a constant
+// (assertions_on_constants) and, whenever the offset equals the alignment,
+// as `x % x` (eq_op, deny-by-default). The assert is nonetheless a genuine
+// compile-time drift guard — a future hand-edit that misaligns the offset
+// must fail to compile — so the lints are suppressed at this site only.
+#[allow(clippy::eq_op, clippy::assertions_on_constants)]
 const _: () = assert!(
     {{ field.byte_off }} % {{ field.dma_burst_align }} == 0,
     "RFC §5.B B3: codec field '{{ field.id }}' offset must be {{ field.dma_burst_align }}-aligned"
@@ -415,13 +422,15 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% for fl in field.flags %}
 {% if fl.multi_bit %}
     pub fn {{ fl.name_acc }}(&self) -> {{ fl.result_type }} {
-        (((self.{{ field.id }} >> {{ fl.bit }}) & ({{ fl.value_mask_literal }} as {{ field.rs_type }}))) as {{ fl.result_type }}
+        {{ fl.acc_expr }}
     }
 
     pub fn {{ fl.name_set }}(&mut self, v: {{ fl.result_type }}) {
-        let _mask: {{ field.rs_type }} = ({{ fl.value_mask_literal }} as {{ field.rs_type }}) << {{ fl.bit }};
-        let _val: {{ field.rs_type }} = ((v as {{ field.rs_type }}) & ({{ fl.value_mask_literal }} as {{ field.rs_type }})) << {{ fl.bit }};
-        self.{{ field.id }} = (self.{{ field.id }} & !_mask) | _val;
+{% if fl.bit != 0 %}
+        self.{{ field.id }} = (self.{{ field.id }} & !{{ fl.mask_literal }}) | (({% if fl.result_type != field.rs_type %}v as {{ field.rs_type }}{% else %}v{% endif %} & {{ fl.value_mask_literal }}) << {{ fl.bit }});
+{% else %}
+        self.{{ field.id }} = (self.{{ field.id }} & !{{ fl.mask_literal }}) | ({% if fl.result_type != field.rs_type %}v as {{ field.rs_type }}{% else %}v{% endif %} & {{ fl.value_mask_literal }});
+{% endif %}
     }
 
 {% else %}
@@ -596,7 +605,9 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
             w.write_u8(0)?;
         }
 {% endif %}
-        w.write_bytes(&self.{{ field.id }})?;
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        w.write_bytes(self.{{ field.id }})?;
 {% endif %}
 {% endfor %}
         Ok(())

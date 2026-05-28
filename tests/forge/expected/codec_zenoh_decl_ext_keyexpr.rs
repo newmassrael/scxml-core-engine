@@ -83,13 +83,11 @@ impl<'a> CodecZenohDeclExtKeyexpr<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn ext_id(&self) -> u8 {
-        (((self.outer_header >> 0) & (0x0F as u8))) as u8
+        self.outer_header & 0x0F
     }
 
     pub fn set_ext_id(&mut self, v: u8) {
-        let _mask: u8 = (0x0F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x0F as u8)) << 0;
-        self.outer_header = (self.outer_header & !_mask) | _val;
+        self.outer_header = (self.outer_header & !0x0F) | (v & 0x0F);
     }
 
     pub fn m(&self) -> bool {
@@ -105,13 +103,11 @@ impl<'a> CodecZenohDeclExtKeyexpr<'a> {
     }
 
     pub fn enc(&self) -> u8 {
-        (((self.outer_header >> 5) & (0x03 as u8))) as u8
+        (self.outer_header >> 5) & 0x03
     }
 
     pub fn set_enc(&mut self, v: u8) {
-        let _mask: u8 = (0x03 as u8) << 5;
-        let _val: u8 = ((v as u8) & (0x03 as u8)) << 5;
-        self.outer_header = (self.outer_header & !_mask) | _val;
+        self.outer_header = (self.outer_header & !0x60) | ((v & 0x03) << 5);
     }
 
     pub fn z(&self) -> bool {
@@ -145,7 +141,7 @@ impl<'a> CodecZenohDeclExtKeyexpr<'a> {
         // struct prefix.
         w.write_u8(self.outer_header)?;
         {
-            let mut _vle = self.total_length as u64;
+            let mut _vle = self.total_length;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;

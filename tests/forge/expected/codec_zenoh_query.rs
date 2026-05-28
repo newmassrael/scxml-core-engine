@@ -143,13 +143,11 @@ impl<'a> CodecZenohQuery<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn mid(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+        self.header & 0x1F
     }
 
     pub fn set_mid(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0x1F) | (v & 0x1F);
     }
 
     pub fn c(&self) -> bool {
@@ -214,7 +212,7 @@ impl<'a> CodecZenohQuery<'a> {
         }
         if let Some(_v) = self.parameters_len {
         {
-            let mut _vle = _v as u64;
+            let mut _vle = _v;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;

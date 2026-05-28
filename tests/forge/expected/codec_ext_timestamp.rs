@@ -91,7 +91,7 @@ impl<'a> CodecExtTimestamp<'a> {
         // `vle_encode_block` with the language-appropriate self/
         // struct prefix.
         {
-            let mut _vle = self.time as u64;
+            let mut _vle = self.time;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
@@ -99,7 +99,7 @@ impl<'a> CodecExtTimestamp<'a> {
             w.write_u8(_vle as u8)?;
         }
         w.write_u8(self.zid_size)?;
-        w.write_bytes(&self.zid)?;
+        w.write_bytes(self.zid)?;
         Ok(())
     }
 

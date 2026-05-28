@@ -91,14 +91,14 @@ impl<'a> CodecTransportEnvelope<'a> {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match ((header >> 0) & (0x1F as u8)) as u8 {
-            1u8 => CodecTransportEnvelopeVariant::CodecZenohInitBody(CodecZenohInitBody::decode(cursor, ((header >> 6) & 0x1) as u8, ((header >> 5) & 0x1) as u8)?),
-            2u8 => CodecTransportEnvelopeVariant::CodecZenohOpenBody(CodecZenohOpenBody::decode(cursor, ((header >> 5) & 0x1) as u8)?),
+        let body = match header & 0x1F {
+            1u8 => CodecTransportEnvelopeVariant::CodecZenohInitBody(CodecZenohInitBody::decode(cursor, (header >> 6) & 0x1, (header >> 5) & 0x1)?),
+            2u8 => CodecTransportEnvelopeVariant::CodecZenohOpenBody(CodecZenohOpenBody::decode(cursor, (header >> 5) & 0x1)?),
             3u8 => CodecTransportEnvelopeVariant::CodecZenohClose(CodecZenohClose::decode(cursor)?),
             4u8 => CodecTransportEnvelopeVariant::CodecZenohKeepAlive(CodecZenohKeepAlive::decode(cursor)?),
             5u8 => CodecTransportEnvelopeVariant::CodecZenohFrame(CodecZenohFrame::decode(cursor)?),
             6u8 => CodecTransportEnvelopeVariant::CodecZenohFragment(CodecZenohFragment::decode(cursor)?),
-            7u8 => CodecTransportEnvelopeVariant::CodecZenohJoin(CodecZenohJoin::decode(cursor, ((header >> 6) & 0x1) as u8)?),
+            7u8 => CodecTransportEnvelopeVariant::CodecZenohJoin(CodecZenohJoin::decode(cursor, (header >> 6) & 0x1)?),
             other => CodecTransportEnvelopeVariant::Default {
                 tag: other,
                 body: CodecZenohClose::decode(cursor)?,
@@ -117,13 +117,11 @@ impl<'a> CodecTransportEnvelope<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn mid(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+        self.header & 0x1F
     }
 
     pub fn set_mid(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0x1F) | (v & 0x1F);
     }
 
     pub fn a(&self) -> bool {
@@ -182,10 +180,10 @@ impl<'a> CodecTransportEnvelope<'a> {
         // Append the active arm's encoded bytes.
         match &self.body {
             CodecTransportEnvelopeVariant::CodecZenohInitBody(b) => {
-                b.encode(w, ((self.header >> 6) & 0x1) as u8, ((self.header >> 5) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 6) & 0x1, (self.header >> 5) & 0x1)?;
             }
             CodecTransportEnvelopeVariant::CodecZenohOpenBody(b) => {
-                b.encode(w, ((self.header >> 5) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 5) & 0x1)?;
             }
             CodecTransportEnvelopeVariant::CodecZenohClose(b) => {
                 b.encode(w)?;
@@ -200,7 +198,7 @@ impl<'a> CodecTransportEnvelope<'a> {
                 b.encode(w)?;
             }
             CodecTransportEnvelopeVariant::CodecZenohJoin(b) => {
-                b.encode(w, ((self.header >> 6) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 6) & 0x1)?;
             }
             CodecTransportEnvelopeVariant::Default { body, .. } => {
                 body.encode(w)?;

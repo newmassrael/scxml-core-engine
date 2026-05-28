@@ -2685,7 +2685,7 @@ fn render_codec(
             obj.insert("has_flags".into(), (!f.flags.is_empty()).into());
             obj.insert(
                 "flags".into(),
-                serde_json::json!(build_flag_ctx(&f.flags, &f.sce_type, lang)),
+                serde_json::json!(build_flag_ctx(&f.id, &f.flags, &f.sce_type, lang)),
             );
             // RFC variant-default-uniformity Atomic β: precompute the
             // carrier's Default-time initializer from any `<sce:flag
@@ -2700,32 +2700,31 @@ fn render_codec(
             // template can drop it verbatim into the manual impl.
             let any_declared_value = f.flags.iter().any(|fl| fl.value.is_some());
             if any_declared_value {
-                let acc: u64 = f.flags.iter().fold(0u64, |a, fl| {
-                    match fl.value {
-                        Some(v) => {
-                            let mask: u64 = if fl.width >= 64 {
-                                u64::MAX
-                            } else {
-                                (1u64 << fl.width) - 1
-                            };
-                            a | ((v & mask) << fl.bit)
-                        }
-                        None => a,
-                    }
-                });
-                let (suffix_rust, hex_digits) = match f.sce_type.int_bit_width() {
-                    Some(8)  => ("u8",  2usize),
-                    Some(16) => ("u16", 4),
-                    Some(32) => ("u32", 8),
-                    Some(64) => ("u64", 16),
-                    // Non-unsigned carriers are rejected at parse time
-                    // (`<sce:flags>` requires uint8/16/32/64). Defensive
-                    // fallback keeps the literal type-checkable rather
-                    // than panicking inside a template render.
-                    _ => ("u8", 2),
-                };
-                let rs_literal = format!("0x{:0w$x}{}", acc, suffix_rust, w = hex_digits);
-                obj.insert("rs_flag_default_literal".into(), rs_literal.into());
+                let acc: u64 = flag_default_carrier_value(f);
+                // Rust derives `Default` (the all-zero value) for free, so a
+                // manual `impl Default` is only warranted when the OR-
+                // accumulated carrier default is non-zero. An all-zero manual
+                // impl would duplicate the derive verbatim (clippy::
+                // derivable_impl), so the Rust literal is skipped and the
+                // struct keeps `#[derive(Default)]` (see the Rust derive-attr
+                // decision, keyed on the same `flag_default_carrier_value`
+                // SSOT). The other backends express their zero-init
+                // differently (C++ member-init, etc.) and still emit below.
+                if acc != 0 {
+                    let (suffix_rust, hex_digits) = match f.sce_type.int_bit_width() {
+                        Some(8)  => ("u8",  2usize),
+                        Some(16) => ("u16", 4),
+                        Some(32) => ("u32", 8),
+                        Some(64) => ("u64", 16),
+                        // Non-unsigned carriers are rejected at parse time
+                        // (`<sce:flags>` requires uint8/16/32/64). Defensive
+                        // fallback keeps the literal type-checkable rather
+                        // than panicking inside a template render.
+                        _ => ("u8", 2),
+                    };
+                    let rs_literal = format!("0x{:0w$x}{}", acc, suffix_rust, w = hex_digits);
+                    obj.insert("rs_flag_default_literal".into(), rs_literal.into());
+                }
                 // C++ default member initializer: `T id{0x02u};`. C++ has
                 // no Default trait — the equivalent of Rust's manual
                 // `impl Default` is a brace-enclosed init right on the
@@ -3706,18 +3705,24 @@ fn render_codec(
                 match lang_ {
                     crate::generator::Language::Rust => {
                         let result_ty = format!("u{result_bits}");
-                        // Mask in carrier width then narrowing-cast to result type.
-                        // Both halves of the bit-and need the same type, so the
-                        // mask carries an `as <result_type>` after the carrier
-                        // already shifted into result-type-fitting bits via the
-                        // narrowing cast on the outer expression. Outer parens
-                        // are deliberately omitted: Rust's `unused_parens` lint
-                        // (deny-by-default in newer toolchains) flags
-                        // `match (((... ) as u8))` because the trailing `as`
-                        // cast already binds tighter than the match scrutinee
-                        // boundary — wrapping it adds nothing semantically.
-                        let expr = format!(
-                            "(({carrier_id} >> {bit}) & ({value_mask_lit} as {result_ty})) as {result_ty}"
+                        // SSOT minimal bit-extract: `(carrier >> bit) & mask`,
+                        // narrowed `as result_ty` only when the carrier type
+                        // differs (e.g. a u16 tag field sliced to a u8 tag).
+                        // The peek byte is u8; an own/caller tag carries its
+                        // declared width. The common u8-header / u8-tag case
+                        // collapses to a bare `carrier & mask` — a clean match
+                        // scrutinee with no redundant cast or `>> 0`.
+                        let from_ty = if peek_mode {
+                            "u8".to_string()
+                        } else {
+                            rust_type(&tag_type).to_string()
+                        };
+                        let expr = rust_bit_extract(
+                            &carrier_id,
+                            bit,
+                            &value_mask_lit,
+                            &from_ty,
+                            &result_ty,
                         );
                         (expr.clone(), expr)
                     }
@@ -3946,13 +3951,18 @@ fn render_codec(
     if matches!(l.lang, crate::generator::Language::Rust) {
         // Codec struct derive line. `Default` is conditional per RFC
         // variant-default-uniformity Atomic β: codecs whose `<sce:flags>`
-        // carrier declares a wire-MID constant (`has_flag_default`)
-        // emit a manual `impl Default` below the struct so the carrier
-        // bakes in the OR of every declared `(value & mask) << bit`.
-        // Codecs without flag defaults derive `Default` here. The
-        // category-uniform derives (Debug, Clone, PartialEq) come from
-        // the SSOT and are always appended.
-        let mut codec_struct_traits: Vec<&'static str> = if has_flag_default {
+        // carrier bakes a NON-ZERO wire-MID constant
+        // (`flag_default_carrier_value(f) != 0`) emit a manual `impl Default`
+        // below the struct so the carrier carries the OR of every declared
+        // `(value & mask) << bit`. An all-zero declared default equals the
+        // derive, so it stays derived here (a manual all-zero impl would trip
+        // clippy::derivable_impl). This uses the SAME SSOT predicate as the
+        // per-field `rs_flag_default_literal` gate, so the derive-attr and
+        // the manual-impl emission can never desync. The category-uniform
+        // derives (Debug, Clone, PartialEq) come from the SSOT and are
+        // always appended.
+        let has_rust_manual_default = m.fields.iter().any(|f| flag_default_carrier_value(f) != 0);
+        let mut codec_struct_traits: Vec<&'static str> = if has_rust_manual_default {
             Vec::new()
         } else {
             vec!["Default"]
@@ -5887,9 +5897,22 @@ fn embed_flag_bind_thread_args(
                         // snake_cased (see codec_field_id). Carrier
                         // ref must match — idempotent for snake ids.
                         let snake = filters::to_snake_case(carrier.clone());
+                        let mask_lit = format!("0x{mask:X}");
+                        // The carrier is a uint8 single-byte flags carrier and
+                        // the child encode param is u8, so the extract needs no
+                        // narrowing cast — SSOT `rust_bit_extract`.
                         (
-                            format!(", (({snake} >> {bit}) & 0x{mask:X}) as u8"),
-                            format!(", ((self.{snake} >> {bit}) & 0x{mask:X}) as u8"),
+                            format!(", {}", rust_bit_extract(&snake, bit, &mask_lit, "u8", "u8")),
+                            format!(
+                                ", {}",
+                                rust_bit_extract(
+                                    &format!("self.{snake}"),
+                                    bit,
+                                    &mask_lit,
+                                    "u8",
+                                    "u8"
+                                )
+                            ),
                         )
                     }
                     Language::Cpp => (
@@ -6129,9 +6152,13 @@ fn caller_tag_arg_decode(
                     return match lang {
                         Language::Rust => {
                             // Decode-site local is snake_cased per
-                            // codec_field_id; carrier ref must match.
+                            // codec_field_id; carrier ref must match. uint8
+                            // carrier → u8 child arg, so no narrowing cast.
                             let snake = filters::to_snake_case(carrier_name.to_string());
-                            format!(", (({snake} >> {bit}) & 0x{mask:X}) as u8")
+                            format!(
+                                ", {}",
+                                rust_bit_extract(&snake, bit, &format!("0x{mask:X}"), "u8", "u8")
+                            )
                         }
                         Language::Cpp => format!(
                             ", static_cast<std::uint8_t>(({carrier_name} >> {bit}) & 0x{mask:X})"
@@ -7337,7 +7364,52 @@ fn tlv_chain_streaming_encode_block_gated(
 /// byte and friends). `result_type_<lang>` names the accessor's
 /// return / setter-param type per language: `bool` when single-bit,
 /// the smallest unsigned integer type that fits when multi-bit.
+/// OR-accumulated carrier default baked from this field's
+/// `<sce:flag value="N"/>` declarations: `Σ (value & ((1<<width)-1)) << bit`.
+/// Zero when no value is declared OR every declared value is zero — in which
+/// case the carrier's natural zero default already matches and no manual
+/// default-init need be emitted (Rust derives `Default`; a manual all-zero
+/// impl would trip clippy::derivable_impl). SSOT shared by the Rust
+/// derive-attr decision and the per-field `rs_flag_default_literal` emission
+/// so the two can never disagree on whether a manual `impl Default` exists.
+/// Minimal idiomatic Rust bit-range extract from a `carrier` expression:
+/// `(carrier >> bit) & mask`, narrowed with `as to_ty` only when it actually
+/// differs from the carrier type `from_ty`. Drops the `>> 0` no-op
+/// (clippy::identity_op), the same-type `as` cast (clippy::unnecessary_cast),
+/// and over-parenthesization. SSOT for every Rust site that slices bits out
+/// of a carrier byte/word — the flag getter accessor, the variant dispatch
+/// tag, and parent-flag-derived child-encode arguments all emit through here
+/// so they stay clippy-clean and consistent. `mask_lit` is the UNSHIFTED
+/// value mask literal (e.g. `0x07`), which infers the carrier type in place.
+fn rust_bit_extract(carrier: &str, bit: u32, mask_lit: &str, from_ty: &str, to_ty: &str) -> String {
+    let masked = if bit == 0 {
+        format!("{carrier} & {mask_lit}")
+    } else {
+        format!("({carrier} >> {bit}) & {mask_lit}")
+    };
+    if from_ty == to_ty {
+        masked
+    } else {
+        format!("({masked}) as {to_ty}")
+    }
+}
+
+fn flag_default_carrier_value(field: &CodecField) -> u64 {
+    field.flags.iter().fold(0u64, |a, fl| match fl.value {
+        Some(v) => {
+            let mask: u64 = if fl.width >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << fl.width) - 1
+            };
+            a | ((v & mask) << fl.bit)
+        }
+        None => a,
+    })
+}
+
 fn build_flag_ctx(
+    field_id: &str,
     flags: &[FlagDef],
     carrier: &SceType,
     lang: crate::generator::Language,
@@ -7438,6 +7510,25 @@ fn build_flag_ctx(
                     Language::Python => "int".to_string(),
                 }
             };
+            // Rust multi-bit getter body, emitted through the shared
+            // `rust_bit_extract` SSOT so the accessor matches the variant-tag
+            // and parent-flag bit-slicing exactly (no `>> 0`, no same-type
+            // cast). Carrier type is the field's Rust type; result is the
+            // smallest unsigned holding `width` bits. Computed before the
+            // moving `obj.insert`s so it can borrow `result_type` / `value_
+            // mask_literal`.
+            let acc_expr = if multi_bit && matches!(lang, Language::Rust) {
+                let cased_id = codec_field_local_name(field_id, lang);
+                Some(rust_bit_extract(
+                    &format!("self.{cased_id}"),
+                    f.bit,
+                    &value_mask_literal,
+                    rust_type(carrier),
+                    &result_type,
+                ))
+            } else {
+                None
+            };
             let mut obj = serde_json::Map::new();
             obj.insert("bit".into(), f.bit.into());
             obj.insert("width".into(), width.into());
@@ -7447,6 +7538,9 @@ fn build_flag_ctx(
             obj.insert("result_type".into(), result_type.into());
             obj.insert("name_acc".into(), name_acc.into());
             obj.insert("name_set".into(), name_set.into());
+            if let Some(acc_expr) = acc_expr {
+                obj.insert("acc_expr".into(), acc_expr.into());
+            }
             serde_json::Value::Object(obj)
         })
         .collect()
@@ -8935,7 +9029,9 @@ fn present_if_encode_tail(
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
     match (lang, field.present_if.is_some()) {
-        (Language::Rust, false) => format!("        w.write_bytes(&self.{id})?;"),
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        (Language::Rust, false) => format!("        w.write_bytes(self.{id})?;"),
         (Language::Rust, true) => format!(
             "        if let Some(_v) = &self.{id} {{\n            \
                  w.write_bytes(_v)?;\n        \
@@ -9190,7 +9286,9 @@ fn present_if_encode_length_ref(
         return present_if_encode_string_length_ref(field, fields, lang);
     }
     match (lang, field.present_if.is_some()) {
-        (Language::Rust, false) => format!("        w.write_bytes(&self.{id})?;"),
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        (Language::Rust, false) => format!("        w.write_bytes(self.{id})?;"),
         (Language::Rust, true) => format!(
             "        if let Some(_v) = &self.{id} {{\n            \
                  w.write_bytes(_v)?;\n        \
@@ -10320,16 +10418,22 @@ fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Lang
 fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::Language) -> String {
     use crate::generator::Language;
     match lang {
-        Language::Rust => format!(
-            "        {{\n            \
-                 let mut _vle = {value_expr} as u64;\n            \
-                 while _vle >= 0x80 {{\n                \
-                     w.write_u8((_vle as u8 & 0x7F) | 0x80)?;\n                \
-                     _vle >>= 7;\n            \
-                 }}\n            \
-                 w.write_u8(_vle as u8)?;\n        \
-             }}"
-        ),
+        Language::Rust => {
+            // The VLE accumulator is u64; a u64 source needs no widening cast
+            // (clippy::unnecessary_cast on `u64 as u64`). Narrower fields
+            // widen explicitly.
+            let widen = if width_bits >= 64 { "" } else { " as u64" };
+            format!(
+                "        {{\n            \
+                     let mut _vle = {value_expr}{widen};\n            \
+                     while _vle >= 0x80 {{\n                \
+                         w.write_u8((_vle as u8 & 0x7F) | 0x80)?;\n                \
+                         _vle >>= 7;\n            \
+                     }}\n            \
+                     w.write_u8(_vle as u8)?;\n        \
+                 }}"
+            )
+        }
         Language::Cpp => format!(
             "        {{\n            \
                  std::uint64_t _w = static_cast<std::uint64_t>({value_expr});\n            \
@@ -10426,6 +10530,9 @@ fn generate_decode_expr(
                     Language::C11 => {
                         format!("(uint8_t)((raw[{byte_off}] >> {bit_off}) & 0x{mask:02X})")
                     }
+                    // Drop the `>> 0` no-op for a bit-offset-0 field
+                    // (clippy::identity_op).
+                    Language::Rust if bit_off == 0 => format!("raw[{byte_off}] & 0x{mask:02X}"),
                     _ => format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}"),
                 }
             } else {
@@ -11317,9 +11424,17 @@ fn generate_encode_exprs(
                     crate::generator::Language::Kotlin => parts.push(format!(
                         "({field_ref}.toInt() and 0x{mask:02X} shl {bit_off})"
                     )),
-                    crate::generator::Language::Cpp
-                    | crate::generator::Language::Rust
-                    | crate::generator::Language::C11 => {
+                    crate::generator::Language::Rust => {
+                        // Drop the `<< 0` no-op for a bit-offset-0 field
+                        // (clippy::identity_op) — `& mask` already leaves the
+                        // low bits in place.
+                        if bit_off == 0 {
+                            parts.push(format!("({field_ref} & 0x{mask:02X})"))
+                        } else {
+                            parts.push(format!("(({field_ref} & 0x{mask:02X}) << {bit_off})"))
+                        }
+                    }
+                    crate::generator::Language::Cpp | crate::generator::Language::C11 => {
                         parts.push(format!("(({field_ref} & 0x{mask:02X}) << {bit_off})"))
                     }
                     _ => parts.push(format!("({field_ref} & 0x{mask:02X}) << {bit_off}")),
@@ -11368,6 +11483,9 @@ fn encode_single_field_unified(
             let mask = (1u64 << bits) - 1;
             let inner = match lang {
                 Language::Kotlin => format!("{field_ref}.toInt() and 0x{mask:02X} shl {bit_off}"),
+                // Drop the `<< 0` no-op for a bit-offset-0 field
+                // (clippy::identity_op).
+                Language::Rust if bit_off == 0 => format!("{field_ref} & 0x{mask:02X}"),
                 _ => format!("({field_ref} & 0x{mask:02X}) << {bit_off}"),
             };
             exprs.push(l.codec_to_byte(&inner));
@@ -17809,7 +17927,10 @@ impl LangCtx {
         match self.lang {
             crate::generator::Language::Cpp => format!("static_cast<uint8_t>({expr})"),
             crate::generator::Language::Kotlin => format!("({expr}).toByte()"),
-            crate::generator::Language::Rust => format!("({expr}) as u8"),
+            // Both callers (sub-byte field + sub-byte group compose) build a
+            // u8-typed expression that `write_u8` takes directly, so an `as u8`
+            // would be a no-op cast (clippy::unnecessary_cast).
+            crate::generator::Language::Rust => expr.to_string(),
             crate::generator::Language::Go => format!("byte({expr})"),
             crate::generator::Language::Python => format!("({expr}) & 0xFF"),
             crate::generator::Language::C11 => format!("(uint8_t)({expr})"),
