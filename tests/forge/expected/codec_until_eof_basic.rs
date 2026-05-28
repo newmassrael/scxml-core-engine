@@ -16,6 +16,12 @@ extern crate alloc;
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
+// RFC §5.B B2/B3: bounded inline list storage for repeat / tlv-chain
+// fields — heap-free `heapless::Vec<T, N>` (re-exported by the runtime),
+// the Rust mirror of the C11 `T elems[MAX]; len` representation. Always
+// available (no `alloc` gate) so list-bearing codecs compile on the
+// pure no_std no-alloc MCU tier.
+use sce_forge_runtime::heapless::Vec as HeaplessVec;
 
 use super::codec_repeat_elem::CodecRepeatElem;
 
@@ -26,7 +32,7 @@ use super::codec_repeat_elem::CodecRepeatElem;
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecUntilEofBasic {
-    pub msgs: Vec<CodecRepeatElem>,
+    pub msgs: HeaplessVec<CodecRepeatElem, 64>,
 }
 
 #[allow(dead_code)]
@@ -53,9 +59,10 @@ impl CodecUntilEofBasic {
         // Element bodies recurse into their own codec — each may
         // itself surface NeedMoreBytes, unwinding the partial frame.
         let msgs = {
-            let mut _vec: Vec<CodecRepeatElem> = Vec::new();
+            let mut _vec: HeaplessVec<CodecRepeatElem, 64> = HeaplessVec::new();
             while cursor.remaining() > 0 {
-                _vec.push(CodecRepeatElem::decode(cursor)?);
+                _vec.push(CodecRepeatElem::decode(cursor)?)
+                    .map_err(|_| CodecError::TooManyElements)?;
             }
             _vec
         };

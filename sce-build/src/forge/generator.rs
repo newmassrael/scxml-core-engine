@@ -2076,7 +2076,16 @@ fn render_codec(
                     // the C-side `_len`). Predicate=None codecs keep the
                     // bare list type for back-compat with B2-α goldens.
                     let bare = match lang {
-                        crate::generator::Language::Rust => format!("Vec<{body_type}{body_lt}>"),
+                        // RFC §5.B B2: no-alloc bounded inline list — Rust
+                        // mirrors the C11 `T elems[MAX]; len` shape via
+                        // `heapless::Vec<T, MAX_COUNT>` (re-exported as
+                        // `HeaplessVec`). Heap-free, so list-bearing codecs
+                        // reach the pure no_std no-alloc MCU tier. Element
+                        // payload stays borrowed (`Body<'a>`) — only the
+                        // thin view structs live inline.
+                        crate::generator::Language::Rust => {
+                            format!("HeaplessVec<{body_type}{body_lt}, {max_count}>")
+                        }
                         crate::generator::Language::Cpp => format!("std::vector<{body_type}>"),
                         // Kotlin: `MutableList<T>` mirrors the codec's
                         // existing `mutableListOf<Byte>()` encode buffer
@@ -2221,8 +2230,17 @@ fn render_codec(
                     // as-truth — `_len = 0` signals absent).
                     let gated = f.present_if.is_some();
                     let wrapped = match (lang, gated) {
-                        (crate::generator::Language::Rust, false) => format!("Vec<{body_type}{body_lt}>"),
-                        (crate::generator::Language::Rust, true) => format!("Option<Vec<{body_type}{body_lt}>>"),
+                        // RFC §5.B B3: no-alloc bounded inline TLV chain —
+                        // `heapless::Vec<Entry, MAX_DEPTH>` (re-exported as
+                        // `HeaplessVec`), the Rust mirror of the C11
+                        // fixed-buffer + len shape. The chain bound is
+                        // `max_depth` (the declared entry cap).
+                        (crate::generator::Language::Rust, false) => {
+                            format!("HeaplessVec<{body_type}{body_lt}, {max_depth}>")
+                        }
+                        (crate::generator::Language::Rust, true) => {
+                            format!("Option<HeaplessVec<{body_type}{body_lt}, {max_depth}>>")
+                        }
                         // RFC §5.B B5-ε closures: cpp/kotlin/go/python emit
                         // TLV chain via the host-language list shape — Zenoh
                         // ext envelopes ship on zenoh-rs / zenoh-cpp / zenoh-
@@ -4799,25 +4817,25 @@ fn repeat_streaming_decode_stmt(
     }
 
     match (lang, count_ref) {
-        // Rust: `Vec<T>::with_capacity(n)` for length-field counts —
-        // n is read from the sibling local already bound by an earlier
-        // streaming statement (cast to usize for the Vec API). Until-
-        // EOF uses a default-capacity `Vec::new()` because the
-        // element count is not known up-front; vector growth is
-        // amortized O(1) so the missing reservation is acceptable for
-        // the v1 trunk shape.
+        // Rust: no-alloc bounded inline `heapless::Vec<T, MAX_COUNT>`
+        // (re-exported as `HeaplessVec`). `push` returns `Result<(), T>`
+        // when the fixed capacity is exceeded, surfaced as the typed
+        // `CodecError::TooManyElements` so an over-long wire run fails
+        // cleanly instead of allocating. The count source (length-field)
+        // bounds the loop; until-EOF runs to cursor exhaustion. The
+        // `MAX_COUNT` cap is the declared `sce:max-count` (default 16).
         (Language::Rust, CountRef::LengthField(len_field)) => {
             // Sibling-field reference: the count source's Rust local
             // was bound under `codec_field_id` (snake_case) at the
-            // prior decode_stmt, so the capacity hint + loop bound
-            // must read the snake-cased name. Idempotent for
-            // already-snake ids.
+            // prior decode_stmt, so the loop bound must read the
+            // snake-cased name. Idempotent for already-snake ids.
             let len_field_snake = filters::to_snake_case(len_field.clone());
             format!(
                 "let {id} = {{\n            \
-                     let mut _vec: Vec<{body_type}{body_lt}> = Vec::with_capacity({len_field_snake} as usize);\n            \
+                     let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
                      for _ in 0..{len_field_snake} {{\n                \
-                         _vec.push({body_type}::decode(cursor)?);\n            \
+                         _vec.push({body_type}::decode(cursor)?)\n                    \
+                         .map_err(|_| CodecError::TooManyElements)?;\n            \
                      }}\n            \
                      _vec\n        \
                  }};"
@@ -4825,9 +4843,10 @@ fn repeat_streaming_decode_stmt(
         }
         (Language::Rust, CountRef::UntilEof) => format!(
             "let {id} = {{\n            \
-                 let mut _vec: Vec<{body_type}{body_lt}> = Vec::new();\n            \
+                 let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
                  while cursor.remaining() > 0 {{\n                \
-                     _vec.push({body_type}::decode(cursor)?);\n            \
+                     _vec.push({body_type}::decode(cursor)?)\n                    \
+                     .map_err(|_| CodecError::TooManyElements)?;\n            \
                  }}\n            \
                  _vec\n        \
              }};"
@@ -6052,9 +6071,10 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
             format!(
                 "let {id} = if {test} {{\n            \
                      let _n = {len_field_snake}.expect(\"co-gating: count present-if matches repeat\");\n            \
-                     let mut _vec: Vec<{body_type}{body_lt}> = Vec::with_capacity(_n as usize);\n            \
+                     let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
                      for _ in 0.._n {{\n                \
-                         _vec.push({body_type}::decode(cursor)?);\n            \
+                         _vec.push({body_type}::decode(cursor)?)\n                    \
+                         .map_err(|_| CodecError::TooManyElements)?;\n            \
                      }}\n            \
                      Some(_vec)\n        \
                  }} else {{\n            \
@@ -6064,9 +6084,10 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
         }
         (Language::Rust, CountRef::UntilEof) => format!(
             "let {id} = if {test} {{\n            \
-                 let mut _vec: Vec<{body_type}{body_lt}> = Vec::new();\n            \
+                 let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
                  while cursor.remaining() > 0 {{\n                \
-                     _vec.push({body_type}::decode(cursor)?);\n            \
+                     _vec.push({body_type}::decode(cursor)?)\n                    \
+                     .map_err(|_| CodecError::TooManyElements)?;\n            \
                  }}\n            \
                  Some(_vec)\n        \
              }} else {{\n            \
@@ -6442,19 +6463,20 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
             let body = match &entry_flag_acc {
                 None => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
-                     _vec.push({body_type}::decode(cursor)?);\n            "
+                     _vec.push({body_type}::decode(cursor)?)\n                    \
+                     .map_err(|_| CodecError::TooManyElements)?;\n            "
                 ),
                 Some(acc) => format!(
                     "                if cursor.remaining() == 0 {{ break; }}\n                \
                      let _entry = {body_type}::decode(cursor)?;\n                \
                      let _continue = _entry.{acc}();\n                \
-                     _vec.push(_entry);\n                \
+                     _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                \
                      if !_continue {{ break; }}\n            "
                 ),
             };
             format!(
                 "let {id} = {{\n            \
-                     let mut _vec: Vec<{body_type}{body_lt}> = Vec::with_capacity({max_depth} as usize);\n            \
+                     let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_depth}> = HeaplessVec::new();\n            \
                      for _ in 0..{max_depth}u32 {{\n{body}\
                      }}{overflow_check}\n            \
                      _vec\n        \
@@ -6837,19 +6859,20 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
             let body = match &entry_flag_acc {
                 None => format!(
                     "                    if cursor.remaining() == 0 {{ break; }}\n                    \
-                     _vec.push({body_type}::decode(cursor)?);\n                "
+                     _vec.push({body_type}::decode(cursor)?)\n                        \
+                     .map_err(|_| CodecError::TooManyElements)?;\n                "
                 ),
                 Some(acc) => format!(
                     "                    if cursor.remaining() == 0 {{ break; }}\n                    \
                      let _entry = {body_type}::decode(cursor)?;\n                    \
                      let _continue = _entry.{acc}();\n                    \
-                     _vec.push(_entry);\n                    \
+                     _vec.push(_entry).map_err(|_| CodecError::TooManyElements)?;\n                    \
                      if !_continue {{ break; }}\n                "
                 ),
             };
             format!(
                 "let {id} = if {test} {{\n            \
-                     let mut _vec: Vec<{body_type}{body_lt}> = Vec::with_capacity({max_depth} as usize);\n            \
+                     let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_depth}> = HeaplessVec::new();\n            \
                      for _ in 0..{max_depth}u32 {{\n{body}\
                      }}{overflow_check}\n            \
                      Some(_vec)\n        \

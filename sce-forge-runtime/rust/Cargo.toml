@@ -28,6 +28,16 @@ default = []
 # Consumers running on std or no_std+alloc targets opt in explicitly.
 alloc = []
 
+[dependencies]
+# Bounded inline list storage for codec repeat / tlv-chain fields
+# (RFC §5.B B2/B3). `heapless::Vec<T, N>` is `#![no_std]` and needs no
+# heap, so generated codecs reach the pure no_std no-alloc MCU tier; the
+# Rust mirror of the C11 backend's `T elems[MAX]; size_t elems_len;`
+# fixed-buffer representation. Re-exported (`pub use heapless;`) so codec
+# output references `sce_forge_runtime::heapless::Vec` and consumers keep
+# a single dependency edge with one pinned heapless version.
+heapless.workspace = true
+
 # Cross-language numerical conformance harness. build.rs invokes
 # sce_build::compile_forge_with_imports() at build time to generate
 # Rust fixtures into OUT_DIR from the SCXML sources in tests/forge/resources.

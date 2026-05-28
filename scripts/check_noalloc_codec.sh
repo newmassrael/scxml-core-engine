@@ -12,10 +12,14 @@
 # of the consumer build that motivated the round (watching-zenoh's
 # codec crate failing `--no-default-features`).
 #
-# Scope: list-free scalar codecs (Tail / LengthRef bytes views). Codecs
-# carrying repeat / tlv-chain / embed list bodies still hold a
-# `Vec<Body<'a>>` (alloc-gated) until the no-alloc list round, so they
-# are intentionally excluded here — NOT a permanent carve-out.
+# Scope: scalar codecs (Tail / LengthRef byte views) AND list-bearing
+# codecs (RFC §5.B B2 repeat / B3 tlv-chain). The latter are now heap-
+# free via `heapless::Vec<Body<'a>, MAX>` bounded inline storage (the
+# Rust mirror of the C11 `T elems[MAX]; len` shape), so they compile
+# under `no_std` without `alloc` too — list elements decode into fixed
+# capacity, with `CodecError::TooManyElements` on overflow instead of a
+# heap grow. Single-codec embed needs no list storage and was already
+# no-alloc after the scalar round.
 #
 # Usage (from repo root):  scripts/check_noalloc_codec.sh
 
@@ -40,6 +44,14 @@ CODECS=(
     codec_length_ref_uint16_le
     codec_length_ref_uint16_be
     codec_length_ref_uint32_le
+    # List-bearing codecs (RFC §5.B B2 repeat / B3 tlv-chain) — no-alloc
+    # via heapless::Vec bounded inline storage. Each pulls its element
+    # codec as a sibling module (the golden's `use super::<elem>`).
+    codec_repeat_elem
+    codec_repeat_basic
+    codec_until_eof_basic
+    codec_tlv_entry
+    codec_tlv_chain_basic
 )
 
 cat > "$WORK/Cargo.toml" <<EOF
@@ -77,5 +89,5 @@ done
 echo "==> Compiling ${#CODECS[@]} borrowed scalar codecs with --no-default-features (no_std, no alloc)"
 ( cd "$WORK" && cargo build --no-default-features )
 
-echo "OK: borrowed scalar codecs compile no_std without alloc."
+echo "OK: scalar + list-bearing (repeat / tlv-chain) codecs compile no_std without alloc."
 rm -rf "$WORK"

@@ -22,6 +22,13 @@ pub mod lookup;
 pub mod observer;
 pub mod timer;
 
+// Re-export `heapless` so generated codec output can spell its bounded
+// inline list type as `sce_forge_runtime::heapless::Vec<T, N>` without a
+// separate dependency edge — one pinned version, owned by this runtime.
+// `heapless` is `#![no_std]` and heap-free, so this does not weaken the
+// crate's pure no_std no-alloc baseline.
+pub use heapless;
+
 #[cfg(feature = "alloc")]
 pub mod procedure;
 
