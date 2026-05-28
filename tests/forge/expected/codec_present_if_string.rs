@@ -183,7 +183,7 @@ impl<'a> CodecPresentIfString<'a> {
         CodecPresentIfStringOwned {
             carrier: self.carrier,
             text_len: self.text_len,
-            text: self.text.map(|_v| alloc::string::String::from(_v)),
+            text: self.text.map(alloc::string::String::from),
         }
     }
 }

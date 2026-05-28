@@ -190,7 +190,7 @@ impl<'a> CodecZenohEncoding<'a> {
         CodecZenohEncodingOwned {
             packed_id: self.packed_id,
             schema_len: self.schema_len,
-            schema: self.schema.map(|_v| alloc::string::String::from(_v)),
+            schema: self.schema.map(alloc::string::String::from),
         }
     }
 }

@@ -1876,6 +1876,12 @@ fn rust_owned_field_keys(
         let expr = match conv {
             // Option<Copy/owned scalar> moves wholesale — no per-element map.
             Conv::Move => self_ref,
+            // `String::from` is a free function → point-free `.map(String::from)`
+            // (a closure here trips clippy::redundant_closure, a default lint).
+            // The method-call convs below stay closures: their point-free form
+            // (`.map(Vec::to_vec)` etc.) is only flagged by the pedantic
+            // clippy::redundant_closure_for_method_calls, off by default.
+            Conv::StringFrom => format!("{self_ref}.map(alloc::string::String::from)"),
             _ => format!("{self_ref}.map(|_v| {})", apply("_v")),
         };
         Ok((format!("Option<{inner_ty}>"), expr))

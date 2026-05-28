@@ -180,7 +180,7 @@ impl<'a> CodecZenohWireexpr<'a> {
         CodecZenohWireexprOwned {
             id: self.id,
             suffix_len: self.suffix_len,
-            suffix: self.suffix.map(|_v| alloc::string::String::from(_v)),
+            suffix: self.suffix.map(alloc::string::String::from),
         }
     }
 }
