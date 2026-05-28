@@ -47,7 +47,7 @@ impl CodecSubbyte {
         let raw = cursor.peek_slice(1)?;
         let priority = (raw[0] >> 5) & 0x07;
         let channel = (raw[0] >> 2) & 0x07;
-        let direction = (raw[0] >> 0) & 0x03;
+        let direction = raw[0] & 0x03;
         let value = Self {
             priority,
             channel,
@@ -68,7 +68,7 @@ impl CodecSubbyte {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        w.write_u8((((self.priority & 0x07) << 5) | ((self.channel & 0x07) << 2) | ((self.direction & 0x03) << 0)) as u8)?;
+        w.write_u8(((self.priority & 0x07) << 5) | ((self.channel & 0x07) << 2) | (self.direction & 0x03))?;
         Ok(())
     }
 

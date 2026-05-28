@@ -96,7 +96,9 @@ impl<'a> CodecLengthRefUint32Le<'a> {
         w.write_u8((self.payload_len >> 8 & 0xFF) as u8)?;
         w.write_u8((self.payload_len >> 16 & 0xFF) as u8)?;
         w.write_u8((self.payload_len >> 24 & 0xFF) as u8)?;
-        w.write_bytes(&self.payload)?;
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        w.write_bytes(self.payload)?;
         Ok(())
     }
 

@@ -63,7 +63,7 @@ impl<'a> CodecZenohInterestBody<'a> {
             _v
         };
         let keyexpr = if (header & 0x10u8) != 0 {
-            Some(CodecZenohWireexpr::decode(cursor, ((header >> 5) & 0x1) as u8)?)
+            Some(CodecZenohWireexpr::decode(cursor, (header >> 5) & 0x1)?)
         } else {
             None
         };
@@ -197,7 +197,7 @@ impl<'a> CodecZenohInterestBody<'a> {
         // unified encode path.
         w.write_u8(self.header)?;
         if let Some(_v) = &self.keyexpr {
-            _v.encode(w, ((self.header >> 5) & 0x1) as u8)?;
+            _v.encode(w, (self.header >> 5) & 0x1)?;
         }
         Ok(())
     }

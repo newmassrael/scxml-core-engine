@@ -119,13 +119,11 @@ impl<'a> CodecZenohMsgDel<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn mid(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+        self.header & 0x1F
     }
 
     pub fn set_mid(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0x1F) | (v & 0x1F);
     }
 
     pub fn t(&self) -> bool {

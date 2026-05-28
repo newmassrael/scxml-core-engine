@@ -130,7 +130,7 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
         // unified encode path.
         w.write_u8(self.inner_header)?;
         {
-            let mut _vle = self.id as u64;
+            let mut _vle = self.id;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;

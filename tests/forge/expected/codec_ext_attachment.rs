@@ -93,7 +93,9 @@ impl<'a> CodecExtAttachment<'a> {
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
         w.write_u8(self.length)?;
-        w.write_bytes(&self.body)?;
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        w.write_bytes(self.body)?;
         Ok(())
     }
 

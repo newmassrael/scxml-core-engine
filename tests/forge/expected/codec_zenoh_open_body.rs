@@ -110,7 +110,7 @@ impl<'a> CodecZenohOpenBody<'a> {
         // has_vle_fields so a codec mixing VLE + present-if uses the
         // unified encode path.
         {
-            let mut _vle = self.lease as u64;
+            let mut _vle = self.lease;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
@@ -118,7 +118,7 @@ impl<'a> CodecZenohOpenBody<'a> {
             w.write_u8(_vle as u8)?;
         }
         {
-            let mut _vle = self.initial_sn as u64;
+            let mut _vle = self.initial_sn;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
@@ -127,7 +127,7 @@ impl<'a> CodecZenohOpenBody<'a> {
         }
         if let Some(_v) = self.cookie_len {
         {
-            let mut _vle = _v as u64;
+            let mut _vle = _v;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;

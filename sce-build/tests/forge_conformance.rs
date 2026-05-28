@@ -9803,8 +9803,8 @@ fn forge_b5_nu_inversion_beta_emits_caller_tag_signature() {
     // Parent decode call site extracts the tag from the carrier byte
     // and passes the masked u8 value to the leaf's decode.
     assert!(
-        parent_rust.contains("((header >> 6) & 0x1) as u8"),
-        "parent decode must compute `((header >> 6) & 0x1) as u8` for `tag` arg\n{parent_rust}"
+        parent_rust.contains("(header >> 6) & 0x1"),
+        "parent decode must compute `(header >> 6) & 0x1` for `tag` arg\n{parent_rust}"
     );
     // Encode side remains byte-identical — the `_derived_header`
     // derivation block still fires (data source: parent.embed_dispatch).
@@ -12581,11 +12581,11 @@ fn axis1_phase_b_emits_typed_param_and_predicate_consumption() {
         .map(|(_, body)| body.clone())
         .expect("parent codec emit");
     assert!(
-        parent_rust.contains("((header >> 5) & 0x1) as u8"),
-        "parent decode embed-site must extract `((header >> 5) & 0x1) as u8`\n{parent_rust}"
+        parent_rust.contains("(header >> 5) & 0x1"),
+        "parent decode embed-site must extract `(header >> 5) & 0x1`\n{parent_rust}"
     );
     assert!(
-        parent_rust.contains("((self.header >> 5) & 0x1) as u8"),
+        parent_rust.contains("(self.header >> 5) & 0x1"),
         "parent encode embed-site must extract from self.header\n{parent_rust}"
     );
 
@@ -12714,8 +12714,8 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
 
     // Arm dispatch decode site must extract S from `header` and thread.
     assert!(
-        parent_rust.contains("CodecAxis1D1WithInput::decode(cursor, ((header >> 6) & 0x1) as u8)?"),
-        "variant arm decode must thread `((header >> 6) & 0x1) as u8`:\n{parent_rust}"
+        parent_rust.contains("CodecAxis1D1WithInput::decode(cursor, (header >> 6) & 0x1)?"),
+        "variant arm decode must thread `(header >> 6) & 0x1`:\n{parent_rust}"
     );
     // No-input arm must NOT pick up any spurious arg.
     assert!(
@@ -12724,7 +12724,7 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
     );
     // Encode site reads through `self.header` and threads through the sink.
     assert!(
-        parent_rust.contains("b.encode(w, ((self.header >> 6) & 0x1) as u8)?;"),
+        parent_rust.contains("b.encode(w, (self.header >> 6) & 0x1)?;"),
         "variant arm encode must thread sink and extract from self.header:\n{parent_rust}"
     );
 
@@ -12771,7 +12771,7 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
 /// Coverage:
 ///   1. Rust emit-shape substring assertion — proves `((header >> 5)
 ///      & 0x1) as u8` (flag-bind for N) is emitted BEFORE
-///      `((header >> 6) & 0x1) as u8` (variant-dispatch for M).
+///      `(header >> 6) & 0x1` (variant-dispatch for M).
 ///   2. End-to-end round-trip via `rustc_test_codec_set_with_extra` —
 ///      a hand-written sidecar exercises the four-corner truth table
 ///      of (M, N) ∈ {0,1}² with variant discriminant + payload-byte
@@ -12911,8 +12911,8 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
             lang: sce_build::generator::Language::Rust,
             parent_stem: "codec_axis1_embed_disp_parent",
             dispatcher_stem: "codec_axis1_embed_disp.rs",
-            caller_positive: "((header >> 5) & 0x1) as u8, ((header >> 6) & 0x1) as u8",
-            caller_negative: "((header >> 6) & 0x1) as u8, ((header >> 5) & 0x1) as u8",
+            caller_positive: "(header >> 5) & 0x1, (header >> 6) & 0x1",
+            caller_negative: "(header >> 6) & 0x1, (header >> 5) & 0x1",
             callee_positive: "pub fn decode(cursor: &mut SceCursor<'_>, n: u8, tag: u8)",
             callee_negative: "pub fn decode(cursor: &mut SceCursor<'_>, tag: u8, n: u8)",
         },
@@ -13504,9 +13504,9 @@ fn axis1_inversion_multi_flag_input_order() {
     assert!(
         parent_body.contains(
             "CodecMultiDisp::decode(cursor, \
-             ((header >> 5) & 0x1) as u8, \
-             ((header >> 6) & 0x1) as u8, \
-             ((header >> 7) & 0x1) as u8)?"
+             (header >> 5) & 0x1, \
+             (header >> 6) & 0x1, \
+             (header >> 7) & 0x1)?"
         ),
         "caller MUST emit (N, M, P) at the embed-site decode call in flag-input \
          declaration order; got:\n{parent_body}"

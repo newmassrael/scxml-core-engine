@@ -154,7 +154,7 @@ impl<'a> CodecZenohResponse<'a> {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match ((_peek >> 0) & (0x1F as u8)) as u8 {
+        let body = match _peek & 0x1F {
             4u8 => CodecZenohResponseVariant::CodecZenohReply(CodecZenohReply::decode(cursor)?),
             5u8 => CodecZenohResponseVariant::CodecZenohErr(CodecZenohErr::decode(cursor)?),
             other => CodecZenohResponseVariant::Default {
@@ -180,13 +180,11 @@ impl<'a> CodecZenohResponse<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn mid(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+        self.header & 0x1F
     }
 
     pub fn set_mid(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0x1F) | (v & 0x1F);
     }
 
     pub fn n(&self) -> bool {
@@ -245,7 +243,7 @@ impl<'a> CodecZenohResponse<'a> {
         // through the same per-field path.
         w.write_u8(self.header)?;
         {
-            let mut _vle = self.request_id as u64;
+            let mut _vle = self.request_id;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
@@ -262,7 +260,7 @@ impl<'a> CodecZenohResponse<'a> {
         }
         if let Some(_v) = self.suffix_len {
         {
-            let mut _vle = _v as u64;
+            let mut _vle = _v;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;

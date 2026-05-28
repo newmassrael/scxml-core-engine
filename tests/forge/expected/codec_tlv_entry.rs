@@ -97,7 +97,9 @@ impl<'a> CodecTlvEntry<'a> {
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
         w.write_u8(self.entry_type)?;
         w.write_u8(self.entry_len)?;
-        w.write_bytes(&self.entry_body)?;
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        w.write_bytes(self.entry_body)?;
         Ok(())
     }
 

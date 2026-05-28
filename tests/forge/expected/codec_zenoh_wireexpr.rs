@@ -108,7 +108,7 @@ impl<'a> CodecZenohWireexpr<'a> {
         // has_vle_fields so a codec mixing VLE + present-if uses the
         // unified encode path.
         {
-            let mut _vle = self.id as u64;
+            let mut _vle = self.id;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
@@ -117,7 +117,7 @@ impl<'a> CodecZenohWireexpr<'a> {
         }
         if let Some(_v) = self.suffix_len {
         {
-            let mut _vle = _v as u64;
+            let mut _vle = _v;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
