@@ -377,7 +377,7 @@ impl<'a> CodecZenohResponse<'a> {
             request_id: self.request_id,
             key_id: self.key_id,
             suffix_len: self.suffix_len,
-            suffix: self.suffix.map(|_v| alloc::string::String::from(_v)),
+            suffix: self.suffix.map(alloc::string::String::from),
             extensions: self.extensions.map(|_v| _v.into_iter().map(|_e| _e.into_owned()).collect()),
             body: self.body.into_owned(),
         }
