@@ -25,16 +25,16 @@ use super::codec_zenoh_locator::CodecZenohLocator;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohHello {
+pub struct CodecZenohHello<'a> {
     pub version: u8,
     pub cbyte: u8,
-    pub zid: Vec<u8>,
+    pub zid: &'a [u8],
     pub num_locators: Option<u64>,
-    pub locators: Option<Vec<CodecZenohLocator>>,
+    pub locators: Option<Vec<CodecZenohLocator<'a>>>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohHello {
+impl<'a> CodecZenohHello<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -47,7 +47,7 @@ impl CodecZenohHello {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>, l: u8) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>, l: u8) -> Result<Self, CodecError> {
         // RFC Axis-1 inversion: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -79,7 +79,7 @@ impl CodecZenohHello {
         let zid = {
             let _n = (((cbyte >> 4) & 0xF) as usize).wrapping_add(1);
             let raw = cursor.peek_slice(_n)?;
-            let _v = raw.to_vec();
+            let _v = raw;
             cursor.advance(_n)?;
             _v
         };
@@ -91,7 +91,7 @@ impl CodecZenohHello {
         };
         let locators = if (l & 0x01u8) != 0 {
             let _n = num_locators.expect("co-gating: count present-if matches repeat");
-            let mut _vec: Vec<CodecZenohLocator> = Vec::with_capacity(_n as usize);
+            let mut _vec: Vec<CodecZenohLocator<'a>> = Vec::with_capacity(_n as usize);
             for _ in 0.._n {
                 _vec.push(CodecZenohLocator::decode(cursor)?);
             }

@@ -23,14 +23,14 @@ use sce_forge_runtime::codec::VecSink;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohScout {
+pub struct CodecZenohScout<'a> {
     pub version: u8,
     pub cbyte: u8,
-    pub zid: Option<Vec<u8>>,
+    pub zid: Option<&'a [u8]>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohScout {
+impl<'a> CodecZenohScout<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -43,7 +43,7 @@ impl CodecZenohScout {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
         // advances the cursor per field. Gated fields wrap their
         // read inside an `if predicate { Some(...) } else { None }`
@@ -70,7 +70,7 @@ impl CodecZenohScout {
         let zid = if (cbyte & 0x08u8) != 0 {
             let _n = (((cbyte >> 4) & 0xF) as usize).wrapping_add(1);
             let raw = cursor.peek_slice(_n)?;
-            let _v = raw.to_vec();
+            let _v = raw;
             cursor.advance(_n)?;
             Some(_v)
         } else {

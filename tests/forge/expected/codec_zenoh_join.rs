@@ -23,10 +23,10 @@ use sce_forge_runtime::codec::VecSink;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohJoin {
+pub struct CodecZenohJoin<'a> {
     pub version: u8,
     pub cbyte: u8,
-    pub zid: Vec<u8>,
+    pub zid: &'a [u8],
     pub sn_res: Option<u8>,
     pub batch_size: Option<u16>,
     pub lease: u64,
@@ -35,7 +35,7 @@ pub struct CodecZenohJoin {
 }
 
 #[allow(dead_code)]
-impl CodecZenohJoin {
+impl<'a> CodecZenohJoin<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -48,7 +48,7 @@ impl CodecZenohJoin {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>, s: u8) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>, s: u8) -> Result<Self, CodecError> {
         // RFC Axis-1 inversion: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -80,7 +80,7 @@ impl CodecZenohJoin {
         let zid = {
             let _n = (((cbyte >> 4) & 0xF) as usize).wrapping_add(1);
             let raw = cursor.peek_slice(_n)?;
-            let _v = raw.to_vec();
+            let _v = raw;
             cursor.advance(_n)?;
             _v
         };

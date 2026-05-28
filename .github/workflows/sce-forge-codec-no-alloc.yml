@@ -1,0 +1,71 @@
+name: sce-forge codec no_std no-alloc build
+
+# Borrowed zero-copy codec round verify-before-ship gate. Proves that
+# SCE-generated scalar codecs (Tail / LengthRef byte views) compile under
+# `no_std` WITHOUT the `alloc` feature — the heap-free MCU tier the codec
+# generator now reaches by emitting borrowed `&'a [u8]` / `&'a str` views
+# and gating every Vec / String / VecSink / encode_to_vec site behind
+# `#[cfg(feature = "alloc")]`. This is the SCE-side mirror of the consumer
+# build (watching-zenoh codec crate) that motivated the round by failing
+# `--no-default-features`.
+#
+# List-bearing codecs (repeat / tlv-chain / embed) still hold a
+# `Vec<Body<'a>>` until the no-alloc list round and are intentionally out
+# of scope for this gate.
+#
+# Trigger: changes to the codec generator/template, the committed codec
+# goldens the gate compiles, the forge runtime, the gate script itself, or
+# the cargo lockfile.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sce-forge-runtime/**'
+      - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
+      - 'sce-build/src/forge/generator.rs'
+      - 'tests/forge/expected/codec_*.rs'
+      - 'scripts/check_noalloc_codec.sh'
+      - 'Cargo.lock'
+      - '.github/workflows/sce-forge-codec-no-alloc.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce-forge-runtime/**'
+      - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
+      - 'sce-build/src/forge/generator.rs'
+      - 'tests/forge/expected/codec_*.rs'
+      - 'scripts/check_noalloc_codec.sh'
+      - 'Cargo.lock'
+      - '.github/workflows/sce-forge-codec-no-alloc.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  codec-no-alloc:
+    name: Compile borrowed scalar codecs --no-default-features
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-codec-no-alloc-${{ hashFiles('Cargo.lock') }}
+
+    - name: Compile generated scalar codecs no_std without alloc
+      run: scripts/check_noalloc_codec.sh

@@ -31,21 +31,21 @@ use super::codec_zenoh_join::CodecZenohJoin;
 // alongside its catch-all body.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodecTransportEnvelopeVariant {
-    CodecZenohInitBody(CodecZenohInitBody),
-    CodecZenohOpenBody(CodecZenohOpenBody),
+pub enum CodecTransportEnvelopeVariant<'a> {
+    CodecZenohInitBody(CodecZenohInitBody<'a>),
+    CodecZenohOpenBody(CodecZenohOpenBody<'a>),
     CodecZenohClose(CodecZenohClose),
     CodecZenohKeepAlive(CodecZenohKeepAlive),
-    CodecZenohFrame(CodecZenohFrame),
-    CodecZenohFragment(CodecZenohFragment),
-    CodecZenohJoin(CodecZenohJoin),
+    CodecZenohFrame(CodecZenohFrame<'a>),
+    CodecZenohFragment(CodecZenohFragment<'a>),
+    CodecZenohJoin(CodecZenohJoin<'a>),
     Default {
         tag: u8,
         body: CodecZenohClose,
     },
 }
 
-impl Default for CodecTransportEnvelopeVariant {
+impl<'a> Default for CodecTransportEnvelopeVariant<'a> {
     fn default() -> Self {
         // RFC variant-default-uniformity: pick the declared default
         // arm (`<sce:arm default="true"/>`) so a freshly-constructed
@@ -62,13 +62,13 @@ impl Default for CodecTransportEnvelopeVariant {
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecTransportEnvelope {
+pub struct CodecTransportEnvelope<'a> {
     pub header: u8,
-    pub body: CodecTransportEnvelopeVariant,
+    pub body: CodecTransportEnvelopeVariant<'a>,
 }
 
 #[allow(dead_code)]
-impl CodecTransportEnvelope {
+impl<'a> CodecTransportEnvelope<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -81,7 +81,7 @@ impl CodecTransportEnvelope {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // Decode fixed prefix (RFC §5.B variant primitive B1-β: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;

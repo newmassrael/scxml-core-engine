@@ -23,15 +23,15 @@ use sce_forge_runtime::codec::VecSink;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohOpenBody {
+pub struct CodecZenohOpenBody<'a> {
     pub lease: u64,
     pub initial_sn: u64,
     pub cookie_len: Option<u64>,
-    pub cookie: Option<Vec<u8>>,
+    pub cookie: Option<&'a [u8]>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohOpenBody {
+impl<'a> CodecZenohOpenBody<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -44,7 +44,7 @@ impl CodecZenohOpenBody {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>, a: u8) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>, a: u8) -> Result<Self, CodecError> {
         // RFC Axis-1 inversion: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
@@ -72,7 +72,7 @@ impl CodecZenohOpenBody {
         let cookie = if (a & 0x01u8) == 0 {
             let _n = cookie_len.unwrap() as usize;
             let raw = cursor.peek_slice(_n)?;
-            let _v = raw.to_vec();
+            let _v = raw;
             cursor.advance(_n)?;
             Some(_v)
         } else {

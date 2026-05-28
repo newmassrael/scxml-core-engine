@@ -25,10 +25,10 @@ use super::codec_zenoh_ext_entry::CodecZenohExtEntry;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohResponseFinal {
+pub struct CodecZenohResponseFinal<'a> {
     pub header: u8,
     pub request_id: u64,
-    pub extensions: Option<Vec<CodecZenohExtEntry>>,
+    pub extensions: Option<Vec<CodecZenohExtEntry<'a>>>,
 }
 
 // RFC variant-default-uniformity Atomic β: at least one field's
@@ -38,7 +38,7 @@ pub struct CodecZenohResponseFinal {
 // freshly-constructed instance carries the wire-MID for its own
 // dispatch tag. Fields without declared values fall through to
 // `Default::default()` (preserving derive(Default) semantics).
-impl Default for CodecZenohResponseFinal {
+impl<'a> Default for CodecZenohResponseFinal<'a> {
     fn default() -> Self {
         Self {
             header: 0x1au8,
@@ -49,7 +49,7 @@ impl Default for CodecZenohResponseFinal {
 }
 
 #[allow(dead_code)]
-impl CodecZenohResponseFinal {
+impl<'a> CodecZenohResponseFinal<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -62,7 +62,7 @@ impl CodecZenohResponseFinal {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
         // advances the cursor per field. Gated fields wrap their
         // read inside an `if predicate { Some(...) } else { None }`
@@ -82,7 +82,7 @@ impl CodecZenohResponseFinal {
         };
         let request_id = cursor.read_vle_u64()?;
         let extensions = if (header & 0x80u8) != 0 {
-            let mut _vec: Vec<CodecZenohExtEntry> = Vec::with_capacity(4 as usize);
+            let mut _vec: Vec<CodecZenohExtEntry<'a>> = Vec::with_capacity(4 as usize);
             for _ in 0..4u32 {
                     if cursor.remaining() == 0 { break; }
                     let _entry = CodecZenohExtEntry::decode(cursor)?;

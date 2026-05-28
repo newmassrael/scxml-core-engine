@@ -28,17 +28,17 @@ use super::codec_zenoh_ext_zbuf::CodecZenohExtZbuf;
 // alongside its catch-all body.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodecZenohOamVariant {
+pub enum CodecZenohOamVariant<'a> {
     CodecZenohExtUnit(CodecZenohExtUnit),
     CodecZenohExtZint(CodecZenohExtZint),
-    CodecZenohExtZbuf(CodecZenohExtZbuf),
+    CodecZenohExtZbuf(CodecZenohExtZbuf<'a>),
     Default {
         tag: u8,
         body: CodecZenohExtUnit,
     },
 }
 
-impl Default for CodecZenohOamVariant {
+impl<'a> Default for CodecZenohOamVariant<'a> {
     fn default() -> Self {
         // RFC variant-default-uniformity: pick the declared default
         // arm (`<sce:arm default="true"/>`) so a freshly-constructed
@@ -55,11 +55,11 @@ impl Default for CodecZenohOamVariant {
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohOam {
+pub struct CodecZenohOam<'a> {
     pub header: u8,
     pub id: u16,
-    pub extensions: Option<Vec<CodecZenohExtEntry>>,
-    pub body: CodecZenohOamVariant,
+    pub extensions: Option<Vec<CodecZenohExtEntry<'a>>>,
+    pub body: CodecZenohOamVariant<'a>,
 }
 
 // RFC variant-default-uniformity Atomic β: at least one field's
@@ -69,7 +69,7 @@ pub struct CodecZenohOam {
 // freshly-constructed instance carries the wire-MID for its own
 // dispatch tag. Fields without declared values fall through to
 // `Default::default()` (preserving derive(Default) semantics).
-impl Default for CodecZenohOam {
+impl<'a> Default for CodecZenohOam<'a> {
     fn default() -> Self {
         Self {
             header: 0x1fu8,
@@ -81,7 +81,7 @@ impl Default for CodecZenohOam {
 }
 
 #[allow(dead_code)]
-impl CodecZenohOam {
+impl<'a> CodecZenohOam<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -94,7 +94,7 @@ impl CodecZenohOam {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -110,7 +110,7 @@ impl CodecZenohOam {
         };
         let id = cursor.read_vle_u16()?;
         let extensions = if (header & 0x80u8) != 0 {
-            let mut _vec: Vec<CodecZenohExtEntry> = Vec::with_capacity(4 as usize);
+            let mut _vec: Vec<CodecZenohExtEntry<'a>> = Vec::with_capacity(4 as usize);
             for _ in 0..4u32 {
                     if cursor.remaining() == 0 { break; }
                     let _entry = CodecZenohExtEntry::decode(cursor)?;
