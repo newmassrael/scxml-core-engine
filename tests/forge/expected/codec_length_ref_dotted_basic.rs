@@ -88,23 +88,19 @@ impl<'a> CodecLengthRefDottedBasic<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn hdr(&self) -> u8 {
-        (((self.carrier >> 0) & (0x0F as u8))) as u8
+        self.carrier & 0x0F
     }
 
     pub fn set_hdr(&mut self, v: u8) {
-        let _mask: u8 = (0x0F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x0F as u8)) << 0;
-        self.carrier = (self.carrier & !_mask) | _val;
+        self.carrier = (self.carrier & !0x0F) | (v & 0x0F);
     }
 
     pub fn payload_len(&self) -> u8 {
-        (((self.carrier >> 4) & (0x0F as u8))) as u8
+        (self.carrier >> 4) & 0x0F
     }
 
     pub fn set_payload_len(&mut self, v: u8) {
-        let _mask: u8 = (0x0F as u8) << 4;
-        let _val: u8 = ((v as u8) & (0x0F as u8)) << 4;
-        self.carrier = (self.carrier & !_mask) | _val;
+        self.carrier = (self.carrier & !0xF0) | ((v & 0x0F) << 4);
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound
@@ -119,7 +115,9 @@ impl<'a> CodecLengthRefDottedBasic<'a> {
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
         w.write_u8(self.carrier)?;
-        w.write_bytes(&self.payload)?;
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        w.write_bytes(self.payload)?;
         Ok(())
     }
 

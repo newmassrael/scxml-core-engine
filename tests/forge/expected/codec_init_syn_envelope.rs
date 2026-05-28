@@ -79,11 +79,11 @@ impl CodecInitSynEnvelope {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match ((header >> 0) & (0x1F as u8)) as u8 {
-            1u8 => CodecInitSynEnvelopeVariant::CodecInitSynBody(CodecInitSynBody::decode(cursor, ((header >> 6) & 0x1) as u8)?),
+        let body = match header & 0x1F {
+            1u8 => CodecInitSynEnvelopeVariant::CodecInitSynBody(CodecInitSynBody::decode(cursor, (header >> 6) & 0x1)?),
             other => CodecInitSynEnvelopeVariant::Default {
                 tag: other,
-                body: CodecInitSynBody::decode(cursor, ((header >> 6) & 0x1) as u8)?,
+                body: CodecInitSynBody::decode(cursor, (header >> 6) & 0x1)?,
             },
         };
         Ok(Self {
@@ -99,13 +99,11 @@ impl CodecInitSynEnvelope {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn mid(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+        self.header & 0x1F
     }
 
     pub fn set_mid(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0x1F) | (v & 0x1F);
     }
 
     pub fn s(&self) -> bool {
@@ -140,10 +138,10 @@ impl CodecInitSynEnvelope {
         // Append the active arm's encoded bytes.
         match &self.body {
             CodecInitSynEnvelopeVariant::CodecInitSynBody(b) => {
-                b.encode(w, ((self.header >> 6) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 6) & 0x1)?;
             }
             CodecInitSynEnvelopeVariant::Default { body, .. } => {
-                body.encode(w, ((self.header >> 6) & 0x1) as u8)?;
+                body.encode(w, (self.header >> 6) & 0x1)?;
             }
         }
         Ok(())

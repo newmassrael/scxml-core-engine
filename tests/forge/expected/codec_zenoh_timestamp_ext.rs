@@ -86,7 +86,7 @@ impl<'a> CodecZenohTimestampExt<'a> {
         // `vle_encode_block` with the language-appropriate self/
         // struct prefix.
         {
-            let mut _vle = self.ext_size as u64;
+            let mut _vle = self.ext_size;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;

@@ -126,7 +126,7 @@ impl<'a> CodecZenohDeclQueryable<'a> {
         }
         if let Some(_v) = self.ext_value {
         {
-            let mut _vle = _v as u64;
+            let mut _vle = _v;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;

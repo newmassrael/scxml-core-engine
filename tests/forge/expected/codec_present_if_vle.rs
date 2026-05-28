@@ -113,7 +113,7 @@ impl CodecPresentIfVle {
         w.write_u8(self.flags)?;
         if let Some(_v) = self.optional_id {
         {
-            let mut _vle = _v as u64;
+            let mut _vle = _v;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;

@@ -58,13 +58,11 @@ impl CodecQosByte {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn priority(&self) -> u8 {
-        (((self.qos >> 0) & (0x07 as u8))) as u8
+        self.qos & 0x07
     }
 
     pub fn set_priority(&mut self, v: u8) {
-        let _mask: u8 = (0x07 as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x07 as u8)) << 0;
-        self.qos = (self.qos & !_mask) | _val;
+        self.qos = (self.qos & !0x07) | (v & 0x07);
     }
 
     pub fn reliable(&self) -> bool {
@@ -80,13 +78,11 @@ impl CodecQosByte {
     }
 
     pub fn congestion(&self) -> u8 {
-        (((self.qos >> 4) & (0x03 as u8))) as u8
+        (self.qos >> 4) & 0x03
     }
 
     pub fn set_congestion(&mut self, v: u8) {
-        let _mask: u8 = (0x03 as u8) << 4;
-        let _val: u8 = ((v as u8) & (0x03 as u8)) << 4;
-        self.qos = (self.qos & !_mask) | _val;
+        self.qos = (self.qos & !0x30) | ((v & 0x03) << 4);
     }
 
     pub fn express(&self) -> bool {

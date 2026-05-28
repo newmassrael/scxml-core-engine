@@ -21,6 +21,13 @@ use sce_forge_runtime::codec::VecSink;
 // == 0` and that all preceding fields are Fixed bit-size. These
 // `const _: () = assert!` declarations catch any future hand-edit to
 // the byte_offset that would break the wire-layout invariant.
+// `byte_off` and `dma_burst_align` are baked from independent SCXML inputs,
+// but clippy sees only integer literals: the check reads as a constant
+// (assertions_on_constants) and, whenever the offset equals the alignment,
+// as `x % x` (eq_op, deny-by-default). The assert is nonetheless a genuine
+// compile-time drift guard — a future hand-edit that misaligns the offset
+// must fail to compile — so the lints are suppressed at this site only.
+#[allow(clippy::eq_op, clippy::assertions_on_constants)]
 const _: () = assert!(
     32 % 32 == 0,
     "RFC §5.B B3: codec field 'aligned_payload' offset must be 32-aligned"
@@ -101,7 +108,9 @@ impl<'a> CodecDmaAlignedBasic<'a> {
         while w.position() < 32 {
             w.write_u8(0)?;
         }
-        w.write_bytes(&self.aligned_payload)?;
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        w.write_bytes(self.aligned_payload)?;
         Ok(())
     }
 

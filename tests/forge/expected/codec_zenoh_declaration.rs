@@ -95,15 +95,15 @@ impl<'a> CodecZenohDeclaration<'a> {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match ((header >> 0) & (0x1F as u8)) as u8 {
-            0u8 => CodecZenohDeclarationVariant::CodecZenohDeclKexpr(CodecZenohDeclKexpr::decode(cursor, ((header >> 5) & 0x1) as u8)?),
+        let body = match header & 0x1F {
+            0u8 => CodecZenohDeclarationVariant::CodecZenohDeclKexpr(CodecZenohDeclKexpr::decode(cursor, (header >> 5) & 0x1)?),
             1u8 => CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(CodecZenohUndeclKexpr::decode(cursor)?),
-            2u8 => CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(CodecZenohDeclSubscriber::decode(cursor, ((header >> 5) & 0x1) as u8)?),
-            3u8 => CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriber::decode(cursor, ((header >> 7) & 0x1) as u8)?),
-            4u8 => CodecZenohDeclarationVariant::CodecZenohDeclQueryable(CodecZenohDeclQueryable::decode(cursor, ((header >> 5) & 0x1) as u8, ((header >> 7) & 0x1) as u8)?),
-            5u8 => CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(CodecZenohUndeclQueryable::decode(cursor, ((header >> 7) & 0x1) as u8)?),
-            6u8 => CodecZenohDeclarationVariant::CodecZenohDeclToken(CodecZenohDeclToken::decode(cursor, ((header >> 5) & 0x1) as u8)?),
-            7u8 => CodecZenohDeclarationVariant::CodecZenohUndeclToken(CodecZenohUndeclToken::decode(cursor, ((header >> 7) & 0x1) as u8)?),
+            2u8 => CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(CodecZenohDeclSubscriber::decode(cursor, (header >> 5) & 0x1)?),
+            3u8 => CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriber::decode(cursor, (header >> 7) & 0x1)?),
+            4u8 => CodecZenohDeclarationVariant::CodecZenohDeclQueryable(CodecZenohDeclQueryable::decode(cursor, (header >> 5) & 0x1, (header >> 7) & 0x1)?),
+            5u8 => CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(CodecZenohUndeclQueryable::decode(cursor, (header >> 7) & 0x1)?),
+            6u8 => CodecZenohDeclarationVariant::CodecZenohDeclToken(CodecZenohDeclToken::decode(cursor, (header >> 5) & 0x1)?),
+            7u8 => CodecZenohDeclarationVariant::CodecZenohUndeclToken(CodecZenohUndeclToken::decode(cursor, (header >> 7) & 0x1)?),
             26u8 => CodecZenohDeclarationVariant::CodecZenohDeclFinal(CodecZenohDeclFinal::decode(cursor)?),
             other => CodecZenohDeclarationVariant::Default {
                 tag: other,
@@ -123,13 +123,11 @@ impl<'a> CodecZenohDeclaration<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn mid(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+        self.header & 0x1F
     }
 
     pub fn set_mid(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0x1F) | (v & 0x1F);
     }
 
     pub fn n(&self) -> bool {
@@ -188,28 +186,28 @@ impl<'a> CodecZenohDeclaration<'a> {
         // Append the active arm's encoded bytes.
         match &self.body {
             CodecZenohDeclarationVariant::CodecZenohDeclKexpr(b) => {
-                b.encode(w, ((self.header >> 5) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 5) & 0x1)?;
             }
             CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(b) => {
                 b.encode(w)?;
             }
             CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(b) => {
-                b.encode(w, ((self.header >> 5) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 5) & 0x1)?;
             }
             CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(b) => {
-                b.encode(w, ((self.header >> 7) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 7) & 0x1)?;
             }
             CodecZenohDeclarationVariant::CodecZenohDeclQueryable(b) => {
-                b.encode(w, ((self.header >> 5) & 0x1) as u8, ((self.header >> 7) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 5) & 0x1, (self.header >> 7) & 0x1)?;
             }
             CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(b) => {
-                b.encode(w, ((self.header >> 7) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 7) & 0x1)?;
             }
             CodecZenohDeclarationVariant::CodecZenohDeclToken(b) => {
-                b.encode(w, ((self.header >> 5) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 5) & 0x1)?;
             }
             CodecZenohDeclarationVariant::CodecZenohUndeclToken(b) => {
-                b.encode(w, ((self.header >> 7) & 0x1) as u8)?;
+                b.encode(w, (self.header >> 7) & 0x1)?;
             }
             CodecZenohDeclarationVariant::CodecZenohDeclFinal(b) => {
                 b.encode(w)?;

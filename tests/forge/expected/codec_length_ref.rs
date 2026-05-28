@@ -97,7 +97,9 @@ impl<'a> CodecLengthRef<'a> {
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
         w.write_u8(self.msg_id)?;
         w.write_u8(self.len)?;
-        w.write_bytes(&self.payload)?;
+        // `self.<id>` is the borrowed `&'a [u8]` view — pass it directly;
+        // `&self.<id>` would be `&&[u8]` (clippy::needless_borrow).
+        w.write_bytes(self.payload)?;
         Ok(())
     }
 

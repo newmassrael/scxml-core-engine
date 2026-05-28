@@ -122,23 +122,19 @@ impl<'a> CodecZenohJoin<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn whatami(&self) -> u8 {
-        (((self.cbyte >> 0) & (0x03 as u8))) as u8
+        self.cbyte & 0x03
     }
 
     pub fn set_whatami(&mut self, v: u8) {
-        let _mask: u8 = (0x03 as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x03 as u8)) << 0;
-        self.cbyte = (self.cbyte & !_mask) | _val;
+        self.cbyte = (self.cbyte & !0x03) | (v & 0x03);
     }
 
     pub fn zid_len_m1(&self) -> u8 {
-        (((self.cbyte >> 4) & (0x0F as u8))) as u8
+        (self.cbyte >> 4) & 0x0F
     }
 
     pub fn set_zid_len_m1(&mut self, v: u8) {
-        let _mask: u8 = (0x0F as u8) << 4;
-        let _val: u8 = ((v as u8) & (0x0F as u8)) << 4;
-        self.cbyte = (self.cbyte & !_mask) | _val;
+        self.cbyte = (self.cbyte & !0xF0) | ((v & 0x0F) << 4);
     }
 
     /// Worst-case encoded byte count for this codec — the upper bound
@@ -166,7 +162,7 @@ impl<'a> CodecZenohJoin<'a> {
         // unified encode path.
         w.write_u8(self.version)?;
         w.write_u8(self.cbyte)?;
-        w.write_bytes(&self.zid)?;
+        w.write_bytes(self.zid)?;
         if let Some(_v) = self.sn_res {
             w.write_u8(_v)?;
         }
@@ -175,7 +171,7 @@ impl<'a> CodecZenohJoin<'a> {
             w.write_u8((_v >> 8) as u8)?;
         }
         {
-            let mut _vle = self.lease as u64;
+            let mut _vle = self.lease;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
@@ -183,7 +179,7 @@ impl<'a> CodecZenohJoin<'a> {
             w.write_u8(_vle as u8)?;
         }
         {
-            let mut _vle = self.next_sn_reliable as u64;
+            let mut _vle = self.next_sn_reliable;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
@@ -191,7 +187,7 @@ impl<'a> CodecZenohJoin<'a> {
             w.write_u8(_vle as u8)?;
         }
         {
-            let mut _vle = self.next_sn_best_effort as u64;
+            let mut _vle = self.next_sn_best_effort;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;

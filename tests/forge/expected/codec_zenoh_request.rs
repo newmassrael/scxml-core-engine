@@ -118,7 +118,7 @@ impl<'a> CodecZenohRequest<'a> {
             _v
         };
         let rid = cursor.read_vle_u64()?;
-        let keyexpr = CodecZenohWireexpr::decode(cursor, ((header >> 5) & 0x1) as u8)?;
+        let keyexpr = CodecZenohWireexpr::decode(cursor, (header >> 5) & 0x1)?;
         let extensions = if (header & 0x80u8) != 0 {
             let mut _vec: HeaplessVec<CodecZenohExtEntry<'a>, 4> = HeaplessVec::new();
             for _ in 0..4u32 {
@@ -137,7 +137,7 @@ impl<'a> CodecZenohRequest<'a> {
         // from the cursor. The default arm (when declared) carries the
         // runtime tag value so encode can round-trip it back onto the
         // wire.
-        let body = match ((_peek >> 0) & (0x1F as u8)) as u8 {
+        let body = match _peek & 0x1F {
             1u8 => CodecZenohRequestVariant::CodecZenohMsgPut(CodecZenohMsgPut::decode(cursor)?),
             2u8 => CodecZenohRequestVariant::CodecZenohMsgDel(CodecZenohMsgDel::decode(cursor)?),
             3u8 => CodecZenohRequestVariant::CodecZenohQuery(CodecZenohQuery::decode(cursor)?),
@@ -162,13 +162,11 @@ impl<'a> CodecZenohRequest<'a> {
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
     pub fn mid(&self) -> u8 {
-        (((self.header >> 0) & (0x1F as u8))) as u8
+        self.header & 0x1F
     }
 
     pub fn set_mid(&mut self, v: u8) {
-        let _mask: u8 = (0x1F as u8) << 0;
-        let _val: u8 = ((v as u8) & (0x1F as u8)) << 0;
-        self.header = (self.header & !_mask) | _val;
+        self.header = (self.header & !0x1F) | (v & 0x1F);
     }
 
     pub fn n(&self) -> bool {
@@ -227,14 +225,14 @@ impl<'a> CodecZenohRequest<'a> {
         // through the same per-field path.
         w.write_u8(self.header)?;
         {
-            let mut _vle = self.rid as u64;
+            let mut _vle = self.rid;
             while _vle >= 0x80 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
             }
             w.write_u8(_vle as u8)?;
         }
-        self.keyexpr.encode(w, ((self.header >> 5) & 0x1) as u8)?;
+        self.keyexpr.encode(w, (self.header >> 5) & 0x1)?;
         if let Some(_list) = &self.extensions {
             for _e in _list {
                 _e.encode(w)?;
