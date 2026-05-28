@@ -25,14 +25,14 @@ use super::codec_zenoh_decl_ext_keyexpr_inner::CodecZenohDeclExtKeyexprInner;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohDeclExtKeyexpr {
+pub struct CodecZenohDeclExtKeyexpr<'a> {
     pub outer_header: u8,
     pub total_length: u64,
-    pub inner: CodecZenohDeclExtKeyexprInner,
+    pub inner: CodecZenohDeclExtKeyexprInner<'a>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohDeclExtKeyexpr {
+impl<'a> CodecZenohDeclExtKeyexpr<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -45,7 +45,7 @@ impl CodecZenohDeclExtKeyexpr {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // Streaming codec: each field reads its own bytes from the
         // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
         // a fixed window; cursor advances per-field. RFC §5.B B4:

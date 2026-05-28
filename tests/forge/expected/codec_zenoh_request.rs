@@ -29,17 +29,17 @@ use super::codec_zenoh_query::CodecZenohQuery;
 // alongside its catch-all body.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodecZenohRequestVariant {
-    CodecZenohMsgPut(CodecZenohMsgPut),
-    CodecZenohMsgDel(CodecZenohMsgDel),
-    CodecZenohQuery(CodecZenohQuery),
+pub enum CodecZenohRequestVariant<'a> {
+    CodecZenohMsgPut(CodecZenohMsgPut<'a>),
+    CodecZenohMsgDel(CodecZenohMsgDel<'a>),
+    CodecZenohQuery(CodecZenohQuery<'a>),
     Default {
         tag: u8,
-        body: CodecZenohQuery,
+        body: CodecZenohQuery<'a>,
     },
 }
 
-impl Default for CodecZenohRequestVariant {
+impl<'a> Default for CodecZenohRequestVariant<'a> {
     fn default() -> Self {
         // RFC variant-default-uniformity: pick the declared default
         // arm (`<sce:arm default="true"/>`) so a freshly-constructed
@@ -56,12 +56,12 @@ impl Default for CodecZenohRequestVariant {
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub struct CodecZenohRequest {
+pub struct CodecZenohRequest<'a> {
     pub header: u8,
     pub rid: u64,
-    pub keyexpr: CodecZenohWireexpr,
-    pub extensions: Option<Vec<CodecZenohExtEntry>>,
-    pub body: CodecZenohRequestVariant,
+    pub keyexpr: CodecZenohWireexpr<'a>,
+    pub extensions: Option<Vec<CodecZenohExtEntry<'a>>>,
+    pub body: CodecZenohRequestVariant<'a>,
 }
 
 // RFC variant-default-uniformity Atomic β: at least one field's
@@ -71,7 +71,7 @@ pub struct CodecZenohRequest {
 // freshly-constructed instance carries the wire-MID for its own
 // dispatch tag. Fields without declared values fall through to
 // `Default::default()` (preserving derive(Default) semantics).
-impl Default for CodecZenohRequest {
+impl<'a> Default for CodecZenohRequest<'a> {
     fn default() -> Self {
         Self {
             header: 0x1cu8,
@@ -84,7 +84,7 @@ impl Default for CodecZenohRequest {
 }
 
 #[allow(dead_code)]
-impl CodecZenohRequest {
+impl<'a> CodecZenohRequest<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -97,7 +97,7 @@ impl CodecZenohRequest {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
@@ -114,7 +114,7 @@ impl CodecZenohRequest {
         let rid = cursor.read_vle_u64()?;
         let keyexpr = CodecZenohWireexpr::decode(cursor, ((header >> 5) & 0x1) as u8)?;
         let extensions = if (header & 0x80u8) != 0 {
-            let mut _vec: Vec<CodecZenohExtEntry> = Vec::with_capacity(4 as usize);
+            let mut _vec: Vec<CodecZenohExtEntry<'a>> = Vec::with_capacity(4 as usize);
             for _ in 0..4u32 {
                     if cursor.remaining() == 0 { break; }
                     let _entry = CodecZenohExtEntry::decode(cursor)?;

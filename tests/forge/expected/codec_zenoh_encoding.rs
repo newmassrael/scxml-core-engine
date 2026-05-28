@@ -23,14 +23,14 @@ use sce_forge_runtime::codec::VecSink;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohEncoding {
+pub struct CodecZenohEncoding<'a> {
     pub packed_id: u32,
     pub schema_len: Option<u64>,
-    pub schema: Option<String>,
+    pub schema: Option<&'a str>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohEncoding {
+impl<'a> CodecZenohEncoding<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -43,7 +43,7 @@ impl CodecZenohEncoding {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
         // advances the cursor per field. Gated fields wrap their
         // read inside an `if predicate { Some(...) } else { None }`
@@ -66,8 +66,7 @@ impl CodecZenohEncoding {
             let _n = schema_len.unwrap() as usize;
             let raw = cursor.peek_slice(_n)?;
             let _v = core::str::from_utf8(raw)
-                .map_err(|_| CodecError::InvalidUtf8)?
-                .to_string();
+                .map_err(|_| CodecError::InvalidUtf8)?;
             cursor.advance(_n)?;
             Some(_v)
         } else {

@@ -31,21 +31,21 @@ use super::codec_zenoh_oam::CodecZenohOam;
 // alongside its catch-all body.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
-pub enum CodecZenohNetworkEnvelopeVariant {
-    CodecZenohInterest(CodecZenohInterest),
-    CodecZenohResponseFinal(CodecZenohResponseFinal),
-    CodecZenohResponse(CodecZenohResponse),
-    CodecZenohRequest(CodecZenohRequest),
+pub enum CodecZenohNetworkEnvelopeVariant<'a> {
+    CodecZenohInterest(CodecZenohInterest<'a>),
+    CodecZenohResponseFinal(CodecZenohResponseFinal<'a>),
+    CodecZenohResponse(CodecZenohResponse<'a>),
+    CodecZenohRequest(CodecZenohRequest<'a>),
     CodecZenohPush(CodecZenohPush),
-    CodecZenohDeclare(CodecZenohDeclare),
-    CodecZenohOam(CodecZenohOam),
+    CodecZenohDeclare(CodecZenohDeclare<'a>),
+    CodecZenohOam(CodecZenohOam<'a>),
     Default {
         tag: u8,
-        body: CodecZenohOam,
+        body: CodecZenohOam<'a>,
     },
 }
 
-impl Default for CodecZenohNetworkEnvelopeVariant {
+impl<'a> Default for CodecZenohNetworkEnvelopeVariant<'a> {
     fn default() -> Self {
         // RFC variant-default-uniformity: pick the declared default
         // arm (`<sce:arm default="true"/>`) so a freshly-constructed
@@ -62,12 +62,12 @@ impl Default for CodecZenohNetworkEnvelopeVariant {
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohNetworkEnvelope {
-    pub body: CodecZenohNetworkEnvelopeVariant,
+pub struct CodecZenohNetworkEnvelope<'a> {
+    pub body: CodecZenohNetworkEnvelopeVariant<'a>,
 }
 
 #[allow(dead_code)]
-impl CodecZenohNetworkEnvelope {
+impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -80,7 +80,7 @@ impl CodecZenohNetworkEnvelope {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte

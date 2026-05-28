@@ -45,9 +45,12 @@
         let encoded = {{ f.name | to_pascal_case }} {
 {% for field in f.fields %}
 {% if field.type == "bytes" %}
-            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.clone(),
+            {# Borrowed zero-copy: the codec field is `&'a [u8]`, so bind a
+               borrow of the owned oracle `Vec<u8>` (alive through the encode
+               call) rather than an owned clone. #}
+            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.as_slice(),
 {% elif field.type == "string" %}
-            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.to_string(),
+            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.as_str(),
 {% else %}
             {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }},
 {% endif %}
@@ -64,11 +67,25 @@
         let round_tripped = {{ f.name | to_pascal_case }}::decode(&mut cursor)
             .expect("{{ f.name }} decode must succeed");
 {% for field in f.fields %}
+{% if field.type == "bytes" %}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }},
+            input_{{ field.name | to_snake_case }}.as_slice(),
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
+{% elif field.type == "string" %}
+        assert_eq!(
+            round_tripped.{{ field.name | to_snake_case }},
+            input_{{ field.name | to_snake_case }}.as_str(),
+            "{{ f.name }} case {i} decode {{ field.name }}"
+        );
+{% else %}
         assert_eq!(
             round_tripped.{{ field.name | to_snake_case }},
             input_{{ field.name | to_snake_case }},
             "{{ f.name }} case {i} decode {{ field.name }}"
         );
+{% endif %}
 {% endfor %}
 {% else %}
         // RFC §5.B B5-α empty body — decode must succeed but there are

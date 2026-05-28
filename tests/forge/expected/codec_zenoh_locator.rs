@@ -23,13 +23,13 @@ use sce_forge_runtime::codec::VecSink;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecZenohLocator {
+pub struct CodecZenohLocator<'a> {
     pub locator_len: u64,
-    pub locator: String,
+    pub locator: &'a str,
 }
 
 #[allow(dead_code)]
-impl CodecZenohLocator {
+impl<'a> CodecZenohLocator<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -42,7 +42,7 @@ impl CodecZenohLocator {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // Streaming codec: each field reads its own bytes from the
         // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
         // a fixed window; cursor advances per-field. RFC §5.B B4:
@@ -56,8 +56,7 @@ impl CodecZenohLocator {
             let _n = locator_len as usize;
             let raw = cursor.peek_slice(_n)?;
             let _v = core::str::from_utf8(raw)
-                .map_err(|_| CodecError::InvalidUtf8)?
-                .to_string();
+                .map_err(|_| CodecError::InvalidUtf8)?;
             cursor.advance(_n)?;
             _v
         };

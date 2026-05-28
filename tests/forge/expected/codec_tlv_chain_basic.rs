@@ -25,13 +25,13 @@ use super::codec_tlv_entry::CodecTlvEntry;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecTlvChainBasic {
+pub struct CodecTlvChainBasic<'a> {
     pub header_flags: u8,
-    pub extensions: Vec<CodecTlvEntry>,
+    pub extensions: Vec<CodecTlvEntry<'a>>,
 }
 
 #[allow(dead_code)]
-impl CodecTlvChainBasic {
+impl<'a> CodecTlvChainBasic<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -44,7 +44,7 @@ impl CodecTlvChainBasic {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // RFC §5.B B2 repeat / B3 TLV chain primitives: streaming
         // decode mixes plain fixed-width reads (per-field via the
         // present-if helper's non-gated arm) with repeat loops that
@@ -60,7 +60,7 @@ impl CodecTlvChainBasic {
             _v
         };
         let extensions = {
-            let mut _vec: Vec<CodecTlvEntry> = Vec::with_capacity(8 as usize);
+            let mut _vec: Vec<CodecTlvEntry<'a>> = Vec::with_capacity(8 as usize);
             for _ in 0..8u32 {
                 if cursor.remaining() == 0 { break; }
                 _vec.push(CodecTlvEntry::decode(cursor)?);

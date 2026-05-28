@@ -23,14 +23,14 @@ use sce_forge_runtime::codec::VecSink;
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
 #[derive(Default, Debug, Clone, PartialEq)]
-pub struct CodecTlvEntry {
+pub struct CodecTlvEntry<'a> {
     pub entry_type: u8,
     pub entry_len: u8,
-    pub entry_body: Vec<u8>,
+    pub entry_body: &'a [u8],
 }
 
 #[allow(dead_code)]
-impl CodecTlvEntry {
+impl<'a> CodecTlvEntry<'a> {
     /// Construct an instance with every field zero-initialized via
     /// [`Default`]. Generated procedure_l2 code stores codec instances
     /// as owned members and needs an infallible constructor to
@@ -43,7 +43,7 @@ impl CodecTlvEntry {
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
-    pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
+    pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // Variable-length codec. RFC §5.B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
@@ -61,7 +61,7 @@ impl CodecTlvEntry {
         let raw = cursor.peek_slice(_frame_len)?;
         let entry_type = raw[0];
         let entry_len = raw[1];
-        let entry_body = raw[2..2 + entry_len as usize].to_vec();
+        let entry_body = &raw[2..2 + entry_len as usize];
         let value = Self {
             entry_type,
             entry_len,
