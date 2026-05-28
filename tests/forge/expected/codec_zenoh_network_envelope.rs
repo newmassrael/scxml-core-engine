@@ -179,3 +179,77 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecZenohNetworkEnvelope<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecZenohNetworkEnvelopeOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_interest::CodecZenohInterestOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_response_final::CodecZenohResponseFinalOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_response::CodecZenohResponseOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_request::CodecZenohRequestOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_declare::CodecZenohDeclareOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_oam::CodecZenohOamOwned;
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohNetworkEnvelopeOwned {
+    pub body: CodecZenohNetworkEnvelopeOwnedVariant,
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodecZenohNetworkEnvelopeOwnedVariant {
+    CodecZenohInterest(CodecZenohInterestOwned),
+    CodecZenohResponseFinal(CodecZenohResponseFinalOwned),
+    CodecZenohResponse(CodecZenohResponseOwned),
+    CodecZenohRequest(CodecZenohRequestOwned),
+    CodecZenohPush(CodecZenohPush),
+    CodecZenohDeclare(CodecZenohDeclareOwned),
+    CodecZenohOam(CodecZenohOamOwned),
+    Default {
+        tag: u8,
+        body: CodecZenohOamOwned,
+    },
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohNetworkEnvelopeVariant<'a> {
+    /// Deep-copy this borrowed variant body into its owned mirror.
+    pub fn into_owned(self) -> CodecZenohNetworkEnvelopeOwnedVariant {
+        match self {
+            CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b.into_owned()),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b.into_owned()),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(_b.into_owned()),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(_b.into_owned()),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohPush(_b),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(_b.into_owned()),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(_b.into_owned()),
+            CodecZenohNetworkEnvelopeVariant::Default { tag, body } => CodecZenohNetworkEnvelopeOwnedVariant::Default { tag, body: body.into_owned() },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohNetworkEnvelope<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecZenohNetworkEnvelopeOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecZenohNetworkEnvelopeOwned {
+        CodecZenohNetworkEnvelopeOwned {
+            body: self.body.into_owned(),
+        }
+    }
+}

@@ -241,3 +241,85 @@ impl<'a> CodecZenohDeclaration<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecZenohDeclaration<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecZenohDeclarationOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_decl_kexpr::CodecZenohDeclKexprOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_decl_subscriber::CodecZenohDeclSubscriberOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_undecl_subscriber::CodecZenohUndeclSubscriberOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_decl_queryable::CodecZenohDeclQueryableOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_undecl_queryable::CodecZenohUndeclQueryableOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_decl_token::CodecZenohDeclTokenOwned;
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_undecl_token::CodecZenohUndeclTokenOwned;
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohDeclarationOwned {
+    pub header: u8,
+    pub body: CodecZenohDeclarationOwnedVariant,
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodecZenohDeclarationOwnedVariant {
+    CodecZenohDeclKexpr(CodecZenohDeclKexprOwned),
+    CodecZenohUndeclKexpr(CodecZenohUndeclKexpr),
+    CodecZenohDeclSubscriber(CodecZenohDeclSubscriberOwned),
+    CodecZenohUndeclSubscriber(CodecZenohUndeclSubscriberOwned),
+    CodecZenohDeclQueryable(CodecZenohDeclQueryableOwned),
+    CodecZenohUndeclQueryable(CodecZenohUndeclQueryableOwned),
+    CodecZenohDeclToken(CodecZenohDeclTokenOwned),
+    CodecZenohUndeclToken(CodecZenohUndeclTokenOwned),
+    CodecZenohDeclFinal(CodecZenohDeclFinal),
+    Default {
+        tag: u8,
+        body: CodecZenohDeclFinal,
+    },
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohDeclarationVariant<'a> {
+    /// Deep-copy this borrowed variant body into its owned mirror.
+    pub fn into_owned(self) -> CodecZenohDeclarationOwnedVariant {
+        match self {
+            CodecZenohDeclarationVariant::CodecZenohDeclKexpr(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclKexpr(_b.into_owned()),
+            CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclKexpr(_b),
+            CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclSubscriber(_b.into_owned()),
+            CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclSubscriber(_b.into_owned()),
+            CodecZenohDeclarationVariant::CodecZenohDeclQueryable(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclQueryable(_b.into_owned()),
+            CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclQueryable(_b.into_owned()),
+            CodecZenohDeclarationVariant::CodecZenohDeclToken(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclToken(_b.into_owned()),
+            CodecZenohDeclarationVariant::CodecZenohUndeclToken(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohUndeclToken(_b.into_owned()),
+            CodecZenohDeclarationVariant::CodecZenohDeclFinal(_b) => CodecZenohDeclarationOwnedVariant::CodecZenohDeclFinal(_b),
+            CodecZenohDeclarationVariant::Default { tag, body } => CodecZenohDeclarationOwnedVariant::Default { tag, body },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohDeclaration<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecZenohDeclarationOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecZenohDeclarationOwned {
+        CodecZenohDeclarationOwned {
+            header: self.header,
+            body: self.body.into_owned(),
+        }
+    }
+}

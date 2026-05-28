@@ -221,3 +221,46 @@ impl<'a> CodecZenohJoin<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecZenohJoin<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecZenohJoinOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohJoinOwned {
+    pub version: u8,
+    pub cbyte: u8,
+    pub zid: Vec<u8>,
+    pub sn_res: Option<u8>,
+    pub batch_size: Option<u16>,
+    pub lease: u64,
+    pub next_sn_reliable: u64,
+    pub next_sn_best_effort: u64,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohJoin<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecZenohJoinOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecZenohJoinOwned {
+        CodecZenohJoinOwned {
+            version: self.version,
+            cbyte: self.cbyte,
+            zid: self.zid.to_vec(),
+            sn_res: self.sn_res,
+            batch_size: self.batch_size,
+            lease: self.lease,
+            next_sn_reliable: self.next_sn_reliable,
+            next_sn_best_effort: self.next_sn_best_effort,
+        }
+    }
+}

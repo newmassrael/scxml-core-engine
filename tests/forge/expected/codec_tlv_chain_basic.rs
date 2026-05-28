@@ -127,3 +127,36 @@ impl<'a> CodecTlvChainBasic<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecTlvChainBasic<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecTlvChainBasicOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+use super::codec_tlv_entry::CodecTlvEntryOwned;
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecTlvChainBasicOwned {
+    pub header_flags: u8,
+    pub extensions: Vec<CodecTlvEntryOwned>,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecTlvChainBasic<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecTlvChainBasicOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecTlvChainBasicOwned {
+        CodecTlvChainBasicOwned {
+            header_flags: self.header_flags,
+            extensions: self.extensions.into_iter().map(|_e| _e.into_owned()).collect(),
+        }
+    }
+}

@@ -148,3 +148,36 @@ impl<'a> CodecInitCookieBody<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecInitCookieBody<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecInitCookieBodyOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecInitCookieBodyOwned {
+    pub version: u8,
+    pub cookie_size: Option<u16>,
+    pub cookie: Option<Vec<u8>>,
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecInitCookieBody<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecInitCookieBodyOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecInitCookieBodyOwned {
+        CodecInitCookieBodyOwned {
+            version: self.version,
+            cookie_size: self.cookie_size,
+            cookie: self.cookie.map(|_v| _v.to_vec()),
+        }
+    }
+}

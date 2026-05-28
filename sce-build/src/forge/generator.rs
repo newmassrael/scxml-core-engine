@@ -1792,6 +1792,99 @@ fn codec_scalar_type(l: &LangCtx, ty: &SceType) -> String {
     }
 }
 
+/// Owned-projection mapping for one codec field — the alloc-gated
+/// `{Codec}Owned` mirror (consumer-requested owned round; the rkyv-style
+/// Archived(borrowed) ↔ native(owned) split, both generated from the one
+/// SCXML SSOT). Returns `(owned_field_type, into_owned_expr)` where the
+/// expr deep-copies `self.<id>` (consumed by `into_owned(self)`).
+///
+/// Owned containers (`Vec` / `String`) are alloc, so the whole mirror is
+/// `#[cfg(feature = "alloc")]`; the borrowed no-alloc path is untouched.
+/// Rust-only. Borrowed-ness of nested / element / embed bodies is read
+/// from the enrichment-populated `ImportContext::codec_is_borrowed`
+/// flags (`import_codec_borrowed`) — a borrowed body has its own
+/// `{Body}Owned` mirror + `into_owned`; a non-borrowed body is already
+/// owned and moves through unchanged.
+fn rust_owned_field_keys(
+    f: &CodecField,
+    codec_name: &str,
+    imports: &[ImportContext],
+    l: &LangCtx,
+) -> Result<(String, String), ForgeError> {
+    // Fieldless → Copy, so `conv` survives the closure borrow + the
+    // later opt match without clones.
+    #[derive(Clone, Copy)]
+    enum Conv {
+        Move,         // value already owned (Copy scalar / non-borrowed body)
+        ToVec,        // &[u8] -> Vec<u8>
+        StringFrom,   // &str  -> String
+        IntoOwned,    // borrowed body -> {Body}Owned
+        ListBorrowed, // list of borrowed bodies -> Vec<{Body}Owned>
+        ListOwned,    // list of owned bodies     -> Vec<{Body}>
+    }
+
+    let id = l.codec_field_id(&f.id);
+    let opt = f.present_if.is_some();
+
+    let (inner_ty, conv): (String, Conv) = if f.is_repeat() || f.is_tlv_chain() {
+        let alias = if f.is_repeat() {
+            f.repeat_body_alias.as_deref()
+        } else {
+            f.tlv_chain_body_alias.as_deref()
+        }
+        .expect("parser sets the body alias for every repeat / tlv-chain field");
+        let body_type = resolve_repeat_body_type(codec_name, alias, imports, l.lang)?;
+        if import_codec_borrowed(imports, alias) {
+            (format!("Vec<{body_type}Owned>"), Conv::ListBorrowed)
+        } else {
+            (format!("Vec<{body_type}>"), Conv::ListOwned)
+        }
+    } else if f.is_embed() {
+        let alias = f
+            .embed_body_alias
+            .as_deref()
+            .expect("parser sets the embed body alias for every embed field");
+        let body_type = resolve_repeat_body_type(codec_name, alias, imports, l.lang)?;
+        if import_codec_borrowed(imports, alias) {
+            (format!("{body_type}Owned"), Conv::IntoOwned)
+        } else {
+            (body_type, Conv::Move)
+        }
+    } else {
+        match f.sce_type {
+            SceType::Bytes => ("Vec<u8>".to_string(), Conv::ToVec),
+            SceType::String => ("alloc::string::String".to_string(), Conv::StringFrom),
+            _ => (l.type_name(&f.sce_type).to_string(), Conv::Move),
+        }
+    };
+
+    let apply = |e: &str| -> String {
+        match conv {
+            Conv::Move => e.to_string(),
+            Conv::ToVec => format!("{e}.to_vec()"),
+            Conv::StringFrom => format!("alloc::string::String::from({e})"),
+            Conv::IntoOwned => format!("{e}.into_owned()"),
+            Conv::ListBorrowed => {
+                format!("{e}.into_iter().map(|_e| _e.into_owned()).collect()")
+            }
+            Conv::ListOwned => format!("{e}.into_iter().collect()"),
+        }
+    };
+
+    let self_ref = format!("self.{id}");
+    if opt {
+        let expr = match conv {
+            // Option<Copy/owned scalar> moves wholesale — no per-element map.
+            Conv::Move => self_ref,
+            _ => format!("{self_ref}.map(|_v| {})", apply("_v")),
+        };
+        Ok((format!("Option<{inner_ty}>"), expr))
+    } else {
+        let expr = apply(&self_ref);
+        Ok((inner_ty, expr))
+    }
+}
+
 fn render_codec(
     env: &minijinja::Environment,
     m: &CodecModel,
@@ -2856,6 +2949,17 @@ fn render_codec(
                 );
                 obj.insert("quantity_accessor".into(), payload);
             }
+            // Consumer-requested owned projection (Rust only): per-field
+            // owned-mirror type + the `into_owned(self)` deep-copy expr.
+            // Only consumed by the codec.rs template's `{Codec}Owned`
+            // block, which itself emits solely for borrowed codecs
+            // (`emit_owned`) under `#[cfg(feature = "alloc")]`.
+            if matches!(lang, crate::generator::Language::Rust) {
+                let (rs_owned_type, rs_into_owned_expr) =
+                    rust_owned_field_keys(f, &m.name, imports, &l)?;
+                obj.insert("rs_owned_type".into(), rs_owned_type.into());
+                obj.insert("rs_into_owned_expr".into(), rs_into_owned_expr.into());
+            }
             Ok(serde_json::Value::Object(obj))
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -3327,6 +3431,21 @@ fn render_codec(
                 let mut obj = serde_json::Map::new();
                 obj.insert("value_literal".into(), value_literal.into());
                 obj.insert("variant_name".into(), variant_name.into());
+                // Owned-projection mirror (Rust, alloc-gated): the arm
+                // body's owned type + the match-arm deep-copy expr. A
+                // borrowed arm body reaches its `{Body}Owned` mirror via
+                // `.into_owned()`; a non-borrowed body is already owned
+                // and moves through unchanged.
+                if matches!(lang, crate::generator::Language::Rust) {
+                    let (owned_body_type, owned_body_into) =
+                        if import_codec_borrowed(imports, &arm.body_alias) {
+                            (format!("{body_type}Owned"), "_b.into_owned()".to_string())
+                        } else {
+                            (body_type.clone(), "_b".to_string())
+                        };
+                    obj.insert("owned_body_type".into(), owned_body_type.into());
+                    obj.insert("owned_body_into".into(), owned_body_into.into());
+                }
                 obj.insert("body_type".into(), body_type.into());
                 // Borrowed zero-copy: type-position `<'a>` suffix when
                 // this arm's body codec is borrowed. The enum-variant
@@ -3440,6 +3559,24 @@ fn render_codec(
                 ) = combine_arm_call_args(&default_flag_bind_args);
                 let mut obj = serde_json::Map::new();
                 obj.insert("variant_name".into(), "Default".to_string().into());
+                // Owned-projection mirror for the default arm. The match
+                // destructures `{ tag, body }`; `owned_body_into` is the
+                // full field-init fragment so the non-borrowed case emits
+                // the `body` shorthand (avoids the `body: body`
+                // redundant-field-name clippy lint downstream).
+                if matches!(lang, crate::generator::Language::Rust) {
+                    let (owned_body_type, owned_body_into) =
+                        if import_codec_borrowed(imports, &d.body_alias) {
+                            (
+                                format!("{body_type}Owned"),
+                                "body: body.into_owned()".to_string(),
+                            )
+                        } else {
+                            (body_type.clone(), "body".to_string())
+                        };
+                    obj.insert("owned_body_type".into(), owned_body_type.into());
+                    obj.insert("owned_body_into".into(), owned_body_into.into());
+                }
                 obj.insert("body_type".into(), body_type.into());
                 // Borrowed zero-copy: type-position `<'a>` suffix for the
                 // default arm's body (the `tag/body` struct-variant field
@@ -3849,6 +3986,31 @@ fn render_codec(
         ctx.insert(
             "variant_lifetime".into(),
             if variant_borrowed { "<'a>" } else { "" }.into(),
+        );
+        // Consumer-requested owned projection: emit the alloc-gated
+        // `{Codec}Owned` mirror + `into_owned()` only for borrowed
+        // codecs. A non-borrowed codec is already lifetime-free / owned,
+        // so its borrowed type IS its owned form — no mirror needed.
+        ctx.insert("emit_owned".into(), self_borrowed.into());
+        // Owned-mirror imports: each borrowed imported codec body
+        // (`{Type}<'a>`) has a `{Type}Owned` mirror that the
+        // `into_owned()` deep-copy references; bring it into scope
+        // alloc-gated. A non-borrowed codec imports no borrowed bodies
+        // (embedding one would make it borrowed), so this is empty there.
+        let owned_imports: Vec<serde_json::Value> = imports
+            .iter()
+            .filter(|i| i.kind == "codec" && i.codec_is_borrowed)
+            .map(|i| {
+                format!(
+                    "#[cfg(feature = \"alloc\")]\nuse super::{}::{}Owned;",
+                    i.namespace, i.type_name
+                )
+                .into()
+            })
+            .collect();
+        ctx.insert(
+            "owned_imports".into(),
+            serde_json::Value::Array(owned_imports),
         );
     }
 
@@ -19801,6 +19963,18 @@ fn render_codec_test_vector_sidecar(
     ctx.insert(
         "test_vectors".into(),
         minijinja::Value::from_serialize(&rows),
+    );
+    // Consumer-requested owned-projection round-trip (Rust): a plain
+    // codec sidecar-eligible here is borrowed iff it holds a scalar
+    // `Bytes` / `String` view (no embed / repeat / tlv / variant bodies
+    // reach this gate, so the body resolver is `false`). When borrowed,
+    // the sidecar additionally exercises `into_owned()` and asserts the
+    // owned fields equal the decoded oracle — acceptance #2 (deep-copy
+    // identity). Non-borrowed plain codecs have no `into_owned`, so the
+    // template skips the block.
+    ctx.insert(
+        "codec_is_borrowed".into(),
+        m.is_borrowed_with(|_alias| false).into(),
     );
 
     if matches!(lang, Language::C11) {

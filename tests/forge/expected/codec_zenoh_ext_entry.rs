@@ -203,3 +203,61 @@ impl<'a> CodecZenohExtEntry<'a> {
         _sce_v
     }
 }
+
+// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// `CodecZenohExtEntry<'a>` above is a zero-copy view borrowing the decode
+// buffer. AP / async consumers that persist a decoded message beyond the
+// buffer's lifetime call `.into_owned()` for this lifetime-free
+// `CodecZenohExtEntryOwned`. The rkyv-style Archived(borrowed) ↔ native
+// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
+// / `String` are alloc, so the whole projection is gated; the no-alloc
+// borrowed path above is untouched.
+#[cfg(feature = "alloc")]
+use super::codec_zenoh_ext_zbuf::CodecZenohExtZbufOwned;
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CodecZenohExtEntryOwned {
+    pub header: u8,
+    pub body: CodecZenohExtEntryOwnedVariant,
+}
+
+#[cfg(feature = "alloc")]
+#[derive(Debug, Clone, PartialEq)]
+pub enum CodecZenohExtEntryOwnedVariant {
+    CodecZenohExtUnit(CodecZenohExtUnit),
+    CodecZenohExtZint(CodecZenohExtZint),
+    CodecZenohExtZbuf(CodecZenohExtZbufOwned),
+    Default {
+        tag: u8,
+        body: CodecZenohExtUnit,
+    },
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohExtEntryVariant<'a> {
+    /// Deep-copy this borrowed variant body into its owned mirror.
+    pub fn into_owned(self) -> CodecZenohExtEntryOwnedVariant {
+        match self {
+            CodecZenohExtEntryVariant::CodecZenohExtUnit(_b) => CodecZenohExtEntryOwnedVariant::CodecZenohExtUnit(_b),
+            CodecZenohExtEntryVariant::CodecZenohExtZint(_b) => CodecZenohExtEntryOwnedVariant::CodecZenohExtZint(_b),
+            CodecZenohExtEntryVariant::CodecZenohExtZbuf(_b) => CodecZenohExtEntryOwnedVariant::CodecZenohExtZbuf(_b.into_owned()),
+            CodecZenohExtEntryVariant::Default { tag, body } => CodecZenohExtEntryOwnedVariant::Default { tag, body },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<'a> CodecZenohExtEntry<'a> {
+    /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
+    /// [`CodecZenohExtEntryOwned`] (alloc). Call at a decode boundary when
+    /// the decoded value must outlive the input buffer — e.g. stored in a
+    /// long-lived enum or moved across an async task. The no-alloc
+    /// borrowed path is unaffected; this method exists only under
+    /// `feature = "alloc"`.
+    pub fn into_owned(self) -> CodecZenohExtEntryOwned {
+        CodecZenohExtEntryOwned {
+            header: self.header,
+            body: self.body.into_owned(),
+        }
+    }
+}

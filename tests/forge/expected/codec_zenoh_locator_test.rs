@@ -30,6 +30,21 @@ fn test_vector_codec_zenoh_locator_l38() {
         decoded.locator, "",
         "<sce:test-vector> at SCXML L38: field `locator` mismatch"
     );
+    // Owned-projection round-trip (consumer-requested; acceptance #2):
+    // deep-copy the borrowed decode into its owned mirror and assert
+    // every field still equals the oracle. Owned `Vec<u8>` / `String`
+    // fields compare directly against the `&[u8]` / `&str` literals.
+    let owned = CodecZenohLocator::decode(&mut SceCursor::new(expected))
+        .expect("<sce:test-vector> at SCXML L38: decode for into_owned failed")
+        .into_owned();
+    assert_eq!(
+        owned.locator_len, 0x0u64,
+        "<sce:test-vector> at SCXML L38: into_owned field `locator_len` mismatch"
+    );
+    assert_eq!(
+        owned.locator, "",
+        "<sce:test-vector> at SCXML L38: into_owned field `locator` mismatch"
+    );
 }
 #[test]
 fn test_vector_codec_zenoh_locator_l42() {
@@ -59,6 +74,21 @@ fn test_vector_codec_zenoh_locator_l42() {
     assert_eq!(
         decoded.locator, "abc",
         "<sce:test-vector> at SCXML L42: field `locator` mismatch"
+    );
+    // Owned-projection round-trip (consumer-requested; acceptance #2):
+    // deep-copy the borrowed decode into its owned mirror and assert
+    // every field still equals the oracle. Owned `Vec<u8>` / `String`
+    // fields compare directly against the `&[u8]` / `&str` literals.
+    let owned = CodecZenohLocator::decode(&mut SceCursor::new(expected))
+        .expect("<sce:test-vector> at SCXML L42: decode for into_owned failed")
+        .into_owned();
+    assert_eq!(
+        owned.locator_len, 0x3u64,
+        "<sce:test-vector> at SCXML L42: into_owned field `locator_len` mismatch"
+    );
+    assert_eq!(
+        owned.locator, "abc",
+        "<sce:test-vector> at SCXML L42: into_owned field `locator` mismatch"
     );
 }
 #[test]
@@ -90,6 +120,21 @@ fn test_vector_codec_zenoh_locator_l46() {
         decoded.locator, "tcp/127.0.0.1:7447",
         "<sce:test-vector> at SCXML L46: field `locator` mismatch"
     );
+    // Owned-projection round-trip (consumer-requested; acceptance #2):
+    // deep-copy the borrowed decode into its owned mirror and assert
+    // every field still equals the oracle. Owned `Vec<u8>` / `String`
+    // fields compare directly against the `&[u8]` / `&str` literals.
+    let owned = CodecZenohLocator::decode(&mut SceCursor::new(expected))
+        .expect("<sce:test-vector> at SCXML L46: decode for into_owned failed")
+        .into_owned();
+    assert_eq!(
+        owned.locator_len, 0x12u64,
+        "<sce:test-vector> at SCXML L46: into_owned field `locator_len` mismatch"
+    );
+    assert_eq!(
+        owned.locator, "tcp/127.0.0.1:7447",
+        "<sce:test-vector> at SCXML L46: into_owned field `locator` mismatch"
+    );
 }
 #[test]
 fn test_vector_codec_zenoh_locator_l50() {
@@ -119,5 +164,20 @@ fn test_vector_codec_zenoh_locator_l50() {
     assert_eq!(
         decoded.locator, "héllo",
         "<sce:test-vector> at SCXML L50: field `locator` mismatch"
+    );
+    // Owned-projection round-trip (consumer-requested; acceptance #2):
+    // deep-copy the borrowed decode into its owned mirror and assert
+    // every field still equals the oracle. Owned `Vec<u8>` / `String`
+    // fields compare directly against the `&[u8]` / `&str` literals.
+    let owned = CodecZenohLocator::decode(&mut SceCursor::new(expected))
+        .expect("<sce:test-vector> at SCXML L50: decode for into_owned failed")
+        .into_owned();
+    assert_eq!(
+        owned.locator_len, 0x6u64,
+        "<sce:test-vector> at SCXML L50: into_owned field `locator_len` mismatch"
+    );
+    assert_eq!(
+        owned.locator, "héllo",
+        "<sce:test-vector> at SCXML L50: into_owned field `locator` mismatch"
     );
 }

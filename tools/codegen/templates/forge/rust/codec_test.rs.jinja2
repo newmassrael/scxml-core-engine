@@ -42,5 +42,20 @@ fn test_vector_{{ name }}_l{{ tv.source_line }}() {
         "<sce:test-vector> at SCXML L{{ tv.source_line }}: field `{{ f.name_snake }}` mismatch"
     );
 {% endfor %}
+{% if codec_is_borrowed %}
+    // Owned-projection round-trip (consumer-requested; acceptance #2):
+    // deep-copy the borrowed decode into its owned mirror and assert
+    // every field still equals the oracle. Owned `Vec<u8>` / `String`
+    // fields compare directly against the `&[u8]` / `&str` literals.
+    let owned = {{ name_pascal }}::decode(&mut SceCursor::new(expected))
+        .expect("<sce:test-vector> at SCXML L{{ tv.source_line }}: decode for into_owned failed")
+        .into_owned();
+{% for f in tv.fields %}
+    assert_eq!(
+        owned.{{ f.name_snake }}, {{ f.value_literal_rust }},
+        "<sce:test-vector> at SCXML L{{ tv.source_line }}: into_owned field `{{ f.name_snake }}` mismatch"
+    );
+{% endfor %}
+{% endif %}
 }
 {% endfor %}
