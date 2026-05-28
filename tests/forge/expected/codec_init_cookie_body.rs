@@ -22,7 +22,7 @@ use sce_forge_runtime::codec::VecSink;
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
-#[derive(Default)]
+#[derive(Default, Debug, Clone, PartialEq)]
 pub struct CodecInitCookieBody {
     pub version: u8,
     pub cookie_size: Option<u16>,

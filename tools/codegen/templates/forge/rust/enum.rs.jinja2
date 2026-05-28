@@ -9,7 +9,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 #[repr({{ underlying_type }})]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+{{ forge_enum_derives_attr }}
 pub enum {{ enum_name }} {
 {% for v in variants %}
     {{ v.name }} = {{ v.value }},

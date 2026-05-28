@@ -23,7 +23,7 @@ use tokio::sync::mpsc;
 
 /// Per-link outbound TX envelope. Generated as a closed enum keyed by
 /// link name so cross-link routing is type-safe at compile time.
-#[derive(Debug, Clone)]
+{{ link_bus_event_derives_attr }}
 pub enum LinkBusEvent {
 {% for link in links %}    /// Envelope for `<sce:link name="{{ link.name }}"/>`.
     {{ link.pascal_name }}(Vec<u8>),

@@ -26,6 +26,7 @@ use super::codec_zenoh_err::CodecZenohErr;
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CodecZenohResponseVariant {
     CodecZenohReply(CodecZenohReply),
     CodecZenohErr(CodecZenohErr),
@@ -51,6 +52,7 @@ impl Default for CodecZenohResponseVariant {
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohResponse {
     pub header: u8,
     pub request_id: u64,

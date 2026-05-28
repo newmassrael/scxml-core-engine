@@ -24,6 +24,7 @@ use super::codec_zenoh_push_body::CodecZenohPushBody;
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CodecZenohPushVariant {
     CodecZenohPushBody(CodecZenohPushBody),
     Default {
@@ -48,6 +49,7 @@ impl Default for CodecZenohPushVariant {
 // subset of fixtures, so unused-but-pub fields/methods would otherwise
 // trigger dead_code on every codec build.
 #[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohPush {
     pub header: u8,
     pub body: CodecZenohPushVariant,

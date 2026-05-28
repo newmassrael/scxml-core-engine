@@ -13,7 +13,7 @@
 use crate::{{ use_path }};
 {% endfor %}
 
-#[derive(Debug, Clone, PartialEq)]
+{{ event_schema_payload_derives_attr }}
 pub struct {{ payload_struct_name }} {
 {% for f in fields %}
     pub {{ f.id }}: {{ f.rs_type }},
