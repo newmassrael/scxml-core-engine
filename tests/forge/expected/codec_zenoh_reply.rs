@@ -243,6 +243,32 @@ pub struct CodecZenohReplyOwned {
 }
 
 #[cfg(feature = "alloc")]
+#[allow(dead_code)]
+impl CodecZenohReplyOwned {
+    // RFC §5.B B1-γ + B5-α read-accessor parity with the borrowed view: pure
+    // bit getters over the copied carrier (rkyv Archived↔native getter
+    // parity), so alloc consumers read `{Codec}Owned` with the same API as
+    // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
+    // Read-only — write accessors belong with an owned-encode path, which
+    // does not exist yet.
+    pub fn mid(&self) -> u8 {
+        self.header & 0x1F
+    }
+
+    pub fn c(&self) -> bool {
+        (self.header & 0x20) != 0
+    }
+
+    pub fn x(&self) -> bool {
+        (self.header & 0x40) != 0
+    }
+
+    pub fn z(&self) -> bool {
+        (self.header & 0x80) != 0
+    }
+}
+
+#[cfg(feature = "alloc")]
 impl<'a> CodecZenohReply<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohReplyOwned`] (alloc). Call at a decode boundary when

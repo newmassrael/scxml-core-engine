@@ -158,6 +158,24 @@ pub struct CodecLengthRefDottedBasicOwned {
 }
 
 #[cfg(feature = "alloc")]
+#[allow(dead_code)]
+impl CodecLengthRefDottedBasicOwned {
+    // RFC §5.B B1-γ + B5-α read-accessor parity with the borrowed view: pure
+    // bit getters over the copied carrier (rkyv Archived↔native getter
+    // parity), so alloc consumers read `{Codec}Owned` with the same API as
+    // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
+    // Read-only — write accessors belong with an owned-encode path, which
+    // does not exist yet.
+    pub fn hdr(&self) -> u8 {
+        self.carrier & 0x0F
+    }
+
+    pub fn payload_len(&self) -> u8 {
+        (self.carrier >> 4) & 0x0F
+    }
+}
+
+#[cfg(feature = "alloc")]
 impl<'a> CodecLengthRefDottedBasic<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecLengthRefDottedBasicOwned`] (alloc). Call at a decode boundary when

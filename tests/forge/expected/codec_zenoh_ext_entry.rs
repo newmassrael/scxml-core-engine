@@ -218,6 +218,32 @@ pub struct CodecZenohExtEntryOwned {
 }
 
 #[cfg(feature = "alloc")]
+#[allow(dead_code)]
+impl CodecZenohExtEntryOwned {
+    // RFC §5.B B1-γ + B5-α read-accessor parity with the borrowed view: pure
+    // bit getters over the copied carrier (rkyv Archived↔native getter
+    // parity), so alloc consumers read `{Codec}Owned` with the same API as
+    // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
+    // Read-only — write accessors belong with an owned-encode path, which
+    // does not exist yet.
+    pub fn ext_id(&self) -> u8 {
+        self.header & 0x0F
+    }
+
+    pub fn m(&self) -> bool {
+        (self.header & 0x10) != 0
+    }
+
+    pub fn enc(&self) -> u8 {
+        (self.header >> 5) & 0x03
+    }
+
+    pub fn z(&self) -> bool {
+        (self.header & 0x80) != 0
+    }
+}
+
+#[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq)]
 pub enum CodecZenohExtEntryOwnedVariant {
     CodecZenohExtUnit(CodecZenohExtUnit),
