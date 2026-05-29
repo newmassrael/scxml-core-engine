@@ -1606,6 +1606,20 @@ fn forge_codec_embed_basic_cpp() {
     assert_standalone_forge("codec_embed_basic", "codec_embed_basic.h");
 }
 
+// codec_nested_body / codec_nested_parent: orthogonal-axis coverage for the
+// owned->borrowed projection — a fallible borrowed body embedded (present /
+// optional) and list-nested, exercising every transitive `try_as_borrowed`
+// path (Rust-only projection; all 6 backends still emit the codec).
+#[test]
+fn forge_codec_nested_body_cpp() {
+    assert_standalone_forge("codec_nested_body", "codec_nested_body.h");
+}
+
+#[test]
+fn forge_codec_nested_parent_cpp() {
+    assert_standalone_forge("codec_nested_parent", "codec_nested_parent.h");
+}
+
 // ── RFC §5.B Wire RFC Phase B Y1 — declare/undeclare family (4
 // wireexpr-bearing decls + 1 trivial undecl). All compose Y0a's
 // codec_zenoh_wireexpr through Y0c embed grammar. The four
@@ -5199,6 +5213,16 @@ fn forge_kotlin_codec_embed_basic() {
 }
 
 #[test]
+fn forge_kotlin_codec_nested_body() {
+    assert_standalone_forge_kotlin("codec_nested_body", "CodecNestedBody.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_nested_parent() {
+    assert_standalone_forge_kotlin("codec_nested_parent", "CodecNestedParent.kt");
+}
+
+#[test]
 fn forge_kotlin_codec_zenoh_decl_kexpr() {
     assert_standalone_forge_kotlin("codec_zenoh_decl_kexpr", "CodecZenohDeclKexpr.kt");
 }
@@ -5703,6 +5727,16 @@ fn forge_rust_codec_embed_basic() {
 }
 
 #[test]
+fn forge_rust_codec_nested_body() {
+    assert_standalone_forge_rust("codec_nested_body", "codec_nested_body.rs");
+}
+
+#[test]
+fn forge_rust_codec_nested_parent() {
+    assert_standalone_forge_rust("codec_nested_parent", "codec_nested_parent.rs");
+}
+
+#[test]
 fn forge_rust_codec_zenoh_decl_kexpr() {
     assert_standalone_forge_rust("codec_zenoh_decl_kexpr", "codec_zenoh_decl_kexpr.rs");
 }
@@ -6204,6 +6238,16 @@ fn forge_go_codec_embed_basic() {
 }
 
 #[test]
+fn forge_go_codec_nested_body() {
+    assert_standalone_forge_go("codec_nested_body", "codec_nested_body.go");
+}
+
+#[test]
+fn forge_go_codec_nested_parent() {
+    assert_standalone_forge_go("codec_nested_parent", "codec_nested_parent.go");
+}
+
+#[test]
 fn forge_go_codec_zenoh_decl_kexpr() {
     assert_standalone_forge_go("codec_zenoh_decl_kexpr", "codec_zenoh_decl_kexpr.go");
 }
@@ -6676,6 +6720,16 @@ fn forge_python_codec_embed_basic() {
 }
 
 #[test]
+fn forge_python_codec_nested_body() {
+    assert_standalone_forge_python("codec_nested_body", "codec_nested_body.py");
+}
+
+#[test]
+fn forge_python_codec_nested_parent() {
+    assert_standalone_forge_python("codec_nested_parent", "codec_nested_parent.py");
+}
+
+#[test]
 fn forge_python_codec_zenoh_decl_kexpr() {
     assert_standalone_forge_python("codec_zenoh_decl_kexpr", "codec_zenoh_decl_kexpr.py");
 }
@@ -7104,6 +7158,16 @@ fn forge_c11_codec_zenoh_wireexpr() {
 #[test]
 fn forge_c11_codec_embed_basic() {
     assert_standalone_forge_c("codec_embed_basic", "codec_embed_basic.c.h");
+}
+
+#[test]
+fn forge_c11_codec_nested_body() {
+    assert_standalone_forge_c("codec_nested_body", "codec_nested_body.c.h");
+}
+
+#[test]
+fn forge_c11_codec_nested_parent() {
+    assert_standalone_forge_c("codec_nested_parent", "codec_nested_parent.c.h");
 }
 
 #[test]

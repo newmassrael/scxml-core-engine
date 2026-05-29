@@ -107,11 +107,46 @@ fn main() {
     // position). The same trace info is preserved as a regular
     // `// SCE-MAP:` comment on the following line of the generated
     // source, so the stripped attribute carries no unique information.
-    for name in &[
-        "codec_default_marker_arm_a",
-        "codec_default_marker_arm_b",
-        "codec_variant_default_marker",
-    ] {
+    generate_stripped_fixtures(
+        &[
+            "codec_default_marker_arm_a",
+            "codec_default_marker_arm_b",
+            "codec_variant_default_marker",
+        ],
+        &resource_dir,
+        &out_dir,
+        &options,
+    );
+
+    // Step 5: owned->borrowed projection round-trip. The *fallible*
+    // `try_as_borrowed` path (`try_project_bounded` over a bounded list,
+    // plus embed / present-if / list of a fallible body) has no B5-θ
+    // test-vector sidecar — that gate rejects repeat / tlv-chain /
+    // present-if codecs — so generate the nested-fallible codecs (and
+    // their locator leaf) here for an explicit runtime round-trip +
+    // overflow assertion in `forge_nested_round_trip.rs`.
+    generate_stripped_fixtures(
+        &[
+            "codec_zenoh_locator",
+            "codec_nested_body",
+            "codec_nested_parent",
+        ],
+        &resource_dir,
+        &out_dir,
+        &options,
+    );
+}
+
+/// Generate each named forge SCXML to Rust into `OUT_DIR`, stripping the
+/// leading `#![doc]` inner attribute so the result can be `include!()`-ed
+/// inside a parent `mod {}` by the round-trip integration tests.
+fn generate_stripped_fixtures(
+    names: &[&str],
+    resource_dir: &Path,
+    out_dir: &str,
+    options: &ForgeCompileOptions,
+) {
+    for name in names {
         let scxml_path = resource_dir.join(format!("{name}.scxml"));
         let content = std::fs::read_to_string(&scxml_path)
             .unwrap_or_else(|e| panic!("read {}: {e}", scxml_path.display()));
@@ -119,12 +154,12 @@ fn main() {
             &content,
             DocumentLabel::symmetric(name),
             Language::Rust,
-            &resource_dir,
-            &options,
+            resource_dir,
+            options,
         )
         .unwrap_or_else(|e| panic!("sce-build codegen failed for {name}: {e}"));
         for (filename, code) in output.files {
-            let target = Path::new(&out_dir).join(&filename);
+            let target = Path::new(out_dir).join(&filename);
             std::fs::write(&target, strip_inner_doc(&code))
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
