@@ -1,0 +1,85 @@
+# Mnemosyne adoption tooling
+
+Glue for adopting [Mnemosyne](https://github.com/newmassrael/mnemosyne) as the
+ledger for SCE's W3C SCXML citations (the `§scxml-...` anchors used across the
+codebase and comments). This directory is **adoption tooling, not part of the
+SCE engine**, and is deliberately kept out of `src/` and the engine crates.
+
+## Why this lives here (and not in an engine crate)
+
+SCE's engine is deterministic and offline: `cargo build` / `ctest` must produce
+the same result without touching the network. The tools here either (a) parse a
+**vendored** spec snapshot (fully deterministic), or (b) run only inside a
+**separate CI drift-check job** that must never gate the normal build/test.
+
+The placement rule we follow: the `deterministic-only` boundary is about the
+*engine/build/test reproducibility* and about keeping LLM/AI code out of tree —
+not about forbidding a non-AI, self-contained spec-fetch utility. So these live
+in `tools/mnemosyne-adoption/`, physically separated from the engine, with the
+network-touching step isolated to a dedicated CI job.
+
+## Contents
+
+| Path | Role |
+|------|------|
+| `spec-snapshot/scxml-REC-20150901.html` | Vendored W3C SCXML Recommendation snapshot (offline input) |
+| `spec-snapshot/PROVENANCE.json` | URL + revision + `fetched_sha256` + date for the snapshot |
+| `scxml_toc_to_manifest.py` | **A1**: vendored spec HTML -> Mnemosyne bulk-section-create manifest + anchor map |
+
+## A1 — TOC to manifest
+
+```bash
+python3 tools/mnemosyne-adoption/scxml_toc_to_manifest.py \
+    --manifest out/scxml-manifest.json \
+    --anchor-map out/scxml-anchor-map.json
+```
+
+Standard library only (`html.parser.HTMLParser` for parsing); deterministic
+(same vendored HTML in -> byte-identical JSON out). Emits two artifacts (both
+regenerable, neither committed):
+
+- **manifest** — `[{section_id, parent_doc, title, parent_section?}]`, the input
+  shape for Mnemosyne's future bulk-section-create primitive (A2). Skeleton
+  only: `normative_excerpt` is added per section later, using the anchor map.
+- **anchor map** — `{section_id: {anchor_url, source_revision}}`, preserving the
+  spec `#anchor` (lost from the section id) for the excerpt-assembly step.
+
+### Section-id naming policy
+
+This is SCE's own policy (its SSOT is the converter module):
+
+| Spec heading | section id | Rule |
+|--------------|------------|------|
+| `5.10 System Variables` | `§scxml-5.10` | numeric: keep dots |
+| `6.2.6 Message Content` | `§scxml-6.2.6` | numeric |
+| `A.1 Conforming Documents` | `§scxml-A-1` | lettered: dots -> hyphens |
+| `B.2.11 <foreach>` | `§scxml-B-2-11` | lettered |
+| `D Algorithm ...` | `§scxml-D` | appendix root |
+| `procedure interpret(...)` (`#interpret`) | `§scxml-D-interpret` | unnumbered appendix-D helper -> letter + spec anchor |
+
+The policy is designed so every id is citation-safe under Mnemosyne's code
+citation extractor (which keeps a `.` in a citation token only when flanked by
+ASCII digits, so `§39.implementations` splits as section `39` + prose suffix).
+That grammar is **owned by Mnemosyne, not mirrored here**. Rather than re-encode
+the rule (a second source of truth that could drift), the policy's compatibility
+is proven by the closed-loop integration test, which feeds representative ids
+through the real `mnemosyne-cli validate-code-refs`.
+
+### Tests
+
+```bash
+python3 -m unittest discover -s tools/mnemosyne-adoption/tests
+```
+
+Unit tests cover the naming policy, parenting, title extraction, and a
+self-consistency invariant over the full snapshot, with no Mnemosyne dependency.
+The closed-loop test (skipped when `mnemosyne-cli` is not on PATH) delegates
+citation-safety to Mnemosyne's extractor.
+
+## Snapshot drift (B1, not yet wired)
+
+The live CI drift-check job re-fetches `spec-snapshot/PROVENANCE.json`'s `url`,
+recomputes sha256 (format `^[0-9a-f]{64}$`, supplied to Mnemosyne's `B2`
+rev-diff scan), and compares against the recorded `fetched_sha256`. It runs as a
+**separate job** so an upstream change or network failure never breaks the
+engine build/test.
