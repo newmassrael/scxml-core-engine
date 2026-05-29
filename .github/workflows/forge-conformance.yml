@@ -127,7 +127,12 @@ jobs:
 
     - name: Run Rust Conformance Harness
       run: |
-        cargo test --release -p sce-forge-runtime --test numerical_conformance 2>&1 | tee rust_conformance.log
+        # `--features alloc` is REQUIRED: the numerical_conformance target is
+        # gated `required-features = ["alloc"]` (its fixtures use encode_to_vec
+        # / the owned projection), so without the flag cargo skips or errors on
+        # the target and the harness never executes. With it the harness runs
+        # the full cross-language oracle (145 Rust cases).
+        cargo test --release -p sce-forge-runtime --features alloc --test numerical_conformance 2>&1 | tee rust_conformance.log
 
     - name: Summarize
       if: always()
