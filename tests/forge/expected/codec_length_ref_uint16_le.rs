@@ -151,3 +151,18 @@ impl<'a> CodecLengthRefUint16Le<'a> {
         }
     }
 }
+
+#[cfg(feature = "alloc")]
+impl CodecLengthRefUint16LeOwned {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// view (the owned form is read-only), so an owned consumer reaches it
+    /// via `as_borrowed` then `encode` / `encode_to_vec`. Each
+    /// field is projected by reference — a cheap re-borrow, not a copy.
+    pub fn as_borrowed(&self) -> CodecLengthRefUint16Le<'_> {
+        CodecLengthRefUint16Le {
+            payload_len: self.payload_len,
+            payload: self.payload.as_slice(),
+        }
+    }
+}

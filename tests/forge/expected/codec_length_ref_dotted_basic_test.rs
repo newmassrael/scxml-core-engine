@@ -45,6 +45,16 @@ fn test_vector_codec_length_ref_dotted_basic_l41() {
         owned.payload, b"",
         "<sce:test-vector> at SCXML L41: into_owned field `payload` mismatch"
     );
+    // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
+    // owned mirror back into the zero-copy view and assert it re-encodes to
+    // the exact oracle bytes — closing the borrowed→owned→borrowed loop so
+    // an owned value reaches the borrowed-only `encode`. Every sidecar-
+    // eligible codec is scalar / bytes / string (no bounded list reaches
+    // this gate), so the projection is infallible.
+    assert_eq!(
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        "<sce:test-vector> at SCXML L41: as_borrowed re-encode mismatch"
+    );
 }
 #[test]
 fn test_vector_codec_length_ref_dotted_basic_l45() {
@@ -90,6 +100,16 @@ fn test_vector_codec_length_ref_dotted_basic_l45() {
         owned.payload, b"\xaa\xbb",
         "<sce:test-vector> at SCXML L45: into_owned field `payload` mismatch"
     );
+    // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
+    // owned mirror back into the zero-copy view and assert it re-encodes to
+    // the exact oracle bytes — closing the borrowed→owned→borrowed loop so
+    // an owned value reaches the borrowed-only `encode`. Every sidecar-
+    // eligible codec is scalar / bytes / string (no bounded list reaches
+    // this gate), so the projection is infallible.
+    assert_eq!(
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        "<sce:test-vector> at SCXML L45: as_borrowed re-encode mismatch"
+    );
 }
 #[test]
 fn test_vector_codec_length_ref_dotted_basic_l49() {
@@ -134,5 +154,15 @@ fn test_vector_codec_length_ref_dotted_basic_l49() {
     assert_eq!(
         owned.payload, b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e",
         "<sce:test-vector> at SCXML L49: into_owned field `payload` mismatch"
+    );
+    // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
+    // owned mirror back into the zero-copy view and assert it re-encodes to
+    // the exact oracle bytes — closing the borrowed→owned→borrowed loop so
+    // an owned value reaches the borrowed-only `encode`. Every sidecar-
+    // eligible codec is scalar / bytes / string (no bounded list reaches
+    // this gate), so the projection is infallible.
+    assert_eq!(
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        "<sce:test-vector> at SCXML L49: as_borrowed re-encode mismatch"
     );
 }

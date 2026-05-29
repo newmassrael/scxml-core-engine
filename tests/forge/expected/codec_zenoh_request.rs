@@ -357,6 +357,21 @@ impl<'a> CodecZenohRequestVariant<'a> {
 }
 
 #[cfg(feature = "alloc")]
+impl CodecZenohRequestOwnedVariant {
+    /// Re-borrow this owned variant body back into its borrowed mirror —
+    /// the inverse of `into_owned`. Reuses the borrowed view's single
+    /// `encode`; the owned form deliberately carries no encode of its own.
+    pub fn try_as_borrowed(&self) -> Result<CodecZenohRequestVariant<'_>, CodecError> {
+        Ok(match self {
+            CodecZenohRequestOwnedVariant::CodecZenohMsgPut(_b) => CodecZenohRequestVariant::CodecZenohMsgPut(_b.try_as_borrowed()?),
+            CodecZenohRequestOwnedVariant::CodecZenohMsgDel(_b) => CodecZenohRequestVariant::CodecZenohMsgDel(_b.try_as_borrowed()?),
+            CodecZenohRequestOwnedVariant::CodecZenohQuery(_b) => CodecZenohRequestVariant::CodecZenohQuery(_b.try_as_borrowed()?),
+            CodecZenohRequestOwnedVariant::Default { tag, body } => CodecZenohRequestVariant::Default { tag: *tag, body: body.try_as_borrowed()? },
+        })
+    }
+}
+
+#[cfg(feature = "alloc")]
 impl<'a> CodecZenohRequest<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohRequestOwned`] (alloc). Call at a decode boundary when
@@ -372,5 +387,26 @@ impl<'a> CodecZenohRequest<'a> {
             extensions: self.extensions.map(|_v| _v.into_iter().map(|_e| _e.into_owned()).collect()),
             body: self.body.into_owned(),
         }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl CodecZenohRequestOwned {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// view (the owned form is read-only), so an owned consumer reaches it
+    /// via `try_as_borrowed` then `encode` / `encode_to_vec`. Each
+    /// field is projected by reference — a cheap re-borrow, not a copy.
+    /// Fallible: a bounded `<sce:repeat>` / `<sce:tlv-chain>` list whose
+    /// owned `Vec` holds more than its declared `N` raises
+    /// `CodecError::TooManyElements` — the same bound decode enforces.
+    pub fn try_as_borrowed(&self) -> Result<CodecZenohRequest<'_>, CodecError> {
+        Ok(CodecZenohRequest {
+            header: self.header,
+            rid: self.rid,
+            keyexpr: self.keyexpr.as_borrowed(),
+            extensions: self.extensions.as_ref().map(|_l| sce_forge_runtime::codec::try_project_bounded(_l, |_e| Ok(_e.as_borrowed()))).transpose()?,
+            body: self.body.try_as_borrowed()?,
+        })
     }
 }

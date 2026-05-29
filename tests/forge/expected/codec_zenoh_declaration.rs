@@ -333,6 +333,27 @@ impl<'a> CodecZenohDeclarationVariant<'a> {
 }
 
 #[cfg(feature = "alloc")]
+impl CodecZenohDeclarationOwnedVariant {
+    /// Re-borrow this owned variant body back into its borrowed mirror —
+    /// the inverse of `into_owned`. Reuses the borrowed view's single
+    /// `encode`; the owned form deliberately carries no encode of its own.
+    pub fn as_borrowed(&self) -> CodecZenohDeclarationVariant<'_> {
+        match self {
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclKexpr(_b) => CodecZenohDeclarationVariant::CodecZenohDeclKexpr(_b.as_borrowed()),
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclKexpr(_b) => CodecZenohDeclarationVariant::CodecZenohUndeclKexpr(_b.clone()),
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclSubscriber(_b) => CodecZenohDeclarationVariant::CodecZenohDeclSubscriber(_b.as_borrowed()),
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclSubscriber(_b) => CodecZenohDeclarationVariant::CodecZenohUndeclSubscriber(_b.as_borrowed()),
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclQueryable(_b) => CodecZenohDeclarationVariant::CodecZenohDeclQueryable(_b.as_borrowed()),
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclQueryable(_b) => CodecZenohDeclarationVariant::CodecZenohUndeclQueryable(_b.as_borrowed()),
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclToken(_b) => CodecZenohDeclarationVariant::CodecZenohDeclToken(_b.as_borrowed()),
+            CodecZenohDeclarationOwnedVariant::CodecZenohUndeclToken(_b) => CodecZenohDeclarationVariant::CodecZenohUndeclToken(_b.as_borrowed()),
+            CodecZenohDeclarationOwnedVariant::CodecZenohDeclFinal(_b) => CodecZenohDeclarationVariant::CodecZenohDeclFinal(_b.clone()),
+            CodecZenohDeclarationOwnedVariant::Default { tag, body } => CodecZenohDeclarationVariant::Default { tag: *tag, body: body.clone() },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
 impl<'a> CodecZenohDeclaration<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohDeclarationOwned`] (alloc). Call at a decode boundary when
@@ -344,6 +365,21 @@ impl<'a> CodecZenohDeclaration<'a> {
         CodecZenohDeclarationOwned {
             header: self.header,
             body: self.body.into_owned(),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl CodecZenohDeclarationOwned {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// view (the owned form is read-only), so an owned consumer reaches it
+    /// via `as_borrowed` then `encode` / `encode_to_vec`. Each
+    /// field is projected by reference — a cheap re-borrow, not a copy.
+    pub fn as_borrowed(&self) -> CodecZenohDeclaration<'_> {
+        CodecZenohDeclaration {
+            header: self.header,
+            body: self.body.as_borrowed(),
         }
     }
 }

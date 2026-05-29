@@ -56,6 +56,16 @@ fn test_vector_{{ name }}_l{{ tv.source_line }}() {
         "<sce:test-vector> at SCXML L{{ tv.source_line }}: into_owned field `{{ f.name_snake }}` mismatch"
     );
 {% endfor %}
+    // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
+    // owned mirror back into the zero-copy view and assert it re-encodes to
+    // the exact oracle bytes — closing the borrowed→owned→borrowed loop so
+    // an owned value reaches the borrowed-only `encode`. Every sidecar-
+    // eligible codec is scalar / bytes / string (no bounded list reaches
+    // this gate), so the projection is infallible.
+    assert_eq!(
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        "<sce:test-vector> at SCXML L{{ tv.source_line }}: as_borrowed re-encode mismatch"
+    );
 {% endif %}
 }
 {% endfor %}

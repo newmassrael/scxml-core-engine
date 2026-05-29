@@ -45,6 +45,16 @@ fn test_vector_codec_zenoh_locator_l38() {
         owned.locator, "",
         "<sce:test-vector> at SCXML L38: into_owned field `locator` mismatch"
     );
+    // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
+    // owned mirror back into the zero-copy view and assert it re-encodes to
+    // the exact oracle bytes — closing the borrowed→owned→borrowed loop so
+    // an owned value reaches the borrowed-only `encode`. Every sidecar-
+    // eligible codec is scalar / bytes / string (no bounded list reaches
+    // this gate), so the projection is infallible.
+    assert_eq!(
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        "<sce:test-vector> at SCXML L38: as_borrowed re-encode mismatch"
+    );
 }
 #[test]
 fn test_vector_codec_zenoh_locator_l42() {
@@ -89,6 +99,16 @@ fn test_vector_codec_zenoh_locator_l42() {
     assert_eq!(
         owned.locator, "abc",
         "<sce:test-vector> at SCXML L42: into_owned field `locator` mismatch"
+    );
+    // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
+    // owned mirror back into the zero-copy view and assert it re-encodes to
+    // the exact oracle bytes — closing the borrowed→owned→borrowed loop so
+    // an owned value reaches the borrowed-only `encode`. Every sidecar-
+    // eligible codec is scalar / bytes / string (no bounded list reaches
+    // this gate), so the projection is infallible.
+    assert_eq!(
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        "<sce:test-vector> at SCXML L42: as_borrowed re-encode mismatch"
     );
 }
 #[test]
@@ -135,6 +155,16 @@ fn test_vector_codec_zenoh_locator_l46() {
         owned.locator, "tcp/127.0.0.1:7447",
         "<sce:test-vector> at SCXML L46: into_owned field `locator` mismatch"
     );
+    // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
+    // owned mirror back into the zero-copy view and assert it re-encodes to
+    // the exact oracle bytes — closing the borrowed→owned→borrowed loop so
+    // an owned value reaches the borrowed-only `encode`. Every sidecar-
+    // eligible codec is scalar / bytes / string (no bounded list reaches
+    // this gate), so the projection is infallible.
+    assert_eq!(
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        "<sce:test-vector> at SCXML L46: as_borrowed re-encode mismatch"
+    );
 }
 #[test]
 fn test_vector_codec_zenoh_locator_l50() {
@@ -179,5 +209,15 @@ fn test_vector_codec_zenoh_locator_l50() {
     assert_eq!(
         owned.locator, "héllo",
         "<sce:test-vector> at SCXML L50: into_owned field `locator` mismatch"
+    );
+    // Owned→borrowed projection round-trip (acceptance #2): re-borrow the
+    // owned mirror back into the zero-copy view and assert it re-encodes to
+    // the exact oracle bytes — closing the borrowed→owned→borrowed loop so
+    // an owned value reaches the borrowed-only `encode`. Every sidecar-
+    // eligible codec is scalar / bytes / string (no bounded list reaches
+    // this gate), so the projection is infallible.
+    assert_eq!(
+        owned.as_borrowed().encode_to_vec().as_slice(), expected,
+        "<sce:test-vector> at SCXML L50: as_borrowed re-encode mismatch"
     );
 }

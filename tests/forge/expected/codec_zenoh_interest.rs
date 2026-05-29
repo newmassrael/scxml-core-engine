@@ -291,3 +291,23 @@ impl<'a> CodecZenohInterest<'a> {
         }
     }
 }
+
+#[cfg(feature = "alloc")]
+impl CodecZenohInterestOwned {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// view (the owned form is read-only), so an owned consumer reaches it
+    /// via `try_as_borrowed` then `encode` / `encode_to_vec`. Each
+    /// field is projected by reference — a cheap re-borrow, not a copy.
+    /// Fallible: a bounded `<sce:repeat>` / `<sce:tlv-chain>` list whose
+    /// owned `Vec` holds more than its declared `N` raises
+    /// `CodecError::TooManyElements` — the same bound decode enforces.
+    pub fn try_as_borrowed(&self) -> Result<CodecZenohInterest<'_>, CodecError> {
+        Ok(CodecZenohInterest {
+            header: self.header,
+            id: self.id,
+            body: self.body.as_ref().map(|_v| _v.as_borrowed()),
+            extensions: self.extensions.as_ref().map(|_l| sce_forge_runtime::codec::try_project_bounded(_l, |_e| Ok(_e.as_borrowed()))).transpose()?,
+        })
+    }
+}
