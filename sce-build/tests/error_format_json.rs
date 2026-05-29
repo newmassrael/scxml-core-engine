@@ -17,7 +17,7 @@
 // start with `{`, so anything grepping for JSON in human output breaks
 // loudly instead of silently mis-parsing.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -74,7 +74,7 @@ fn write_missing_datamodel_fixture() -> (ScratchDir, PathBuf) {
     (dir, path)
 }
 
-fn run_generate(bin: &PathBuf, scxml: &PathBuf, error_format: &str) -> std::process::Output {
+fn run_generate(bin: &Path, scxml: &Path, error_format: &str) -> std::process::Output {
     Command::new(bin)
         .args([
             "--error-format",
@@ -441,7 +441,7 @@ fn json_mode_emits_one_ndjson_record_per_xsd_violation() {
         );
         let lineno = location["line"]
             .as_u64()
-            .expect(&format!("line must be present: {line}"));
+            .unwrap_or_else(|| panic!("line must be present: {line}"));
         assert!(lineno > 0, "line must be > 0: {line}");
         seen_lines.push(lineno);
     }
@@ -1008,7 +1008,7 @@ fn write_filter_missing_param_fixture(
 /// three filter param tests so each branch — moving-average, debounce,
 /// low-pass — gets its own regression assertion without copy-paste
 /// drift.
-fn assert_filter_param_anchored_at_output_data(scxml: &PathBuf) {
+fn assert_filter_param_anchored_at_output_data(scxml: &Path) {
     let out = run_generate(&sce_codegen_bin(), scxml, "json");
     assert!(
         !out.status.success(),
