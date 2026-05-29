@@ -74,7 +74,12 @@ fn main() {
 
         for (filename, code) in output.files {
             let target = Path::new(&out_dir).join(&filename);
-            std::fs::write(&target, &code)
+            // The numerical-conformance harness `include!()`s each fixture
+            // inside a parent `mod {}`, where a leading `#![doc = "SCE-MAP:
+            // ..."]` inner attribute is illegal — strip it (same lossless
+            // treatment Step 4 applies; the trace info survives as the
+            // sibling `// SCE-MAP:` comment line).
+            std::fs::write(&target, strip_inner_doc(&code))
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
     }
@@ -119,14 +124,20 @@ fn main() {
         )
         .unwrap_or_else(|e| panic!("sce-build codegen failed for {name}: {e}"));
         for (filename, code) in output.files {
-            let stripped: String = code
-                .lines()
-                .filter(|line| !line.trim_start().starts_with("#![doc"))
-                .collect::<Vec<_>>()
-                .join("\n");
             let target = Path::new(&out_dir).join(&filename);
-            std::fs::write(&target, &stripped)
+            std::fs::write(&target, strip_inner_doc(&code))
                 .unwrap_or_else(|e| panic!("write {}: {e}", target.display()));
         }
     }
+}
+
+/// Drop the leading `#![doc = "SCE-MAP: ..."]` inner attribute so the
+/// generated fixture can be `include!()`-ed inside a parent `mod {}` (inner
+/// attributes are illegal at an `include!` injection point). Lossless — the
+/// same trace lands on the sibling `// SCE-MAP:` comment line.
+fn strip_inner_doc(code: &str) -> String {
+    code.lines()
+        .filter(|line| !line.trim_start().starts_with("#![doc"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
