@@ -1,0 +1,9 @@
+{
+  "source": "W3C SCXML Recommendation",
+  "url": "https://www.w3.org/TR/scxml/",
+  "revision": "REC-scxml-20150901",
+  "file": "scxml-REC-20150901.html",
+  "fetched_sha256": "25da59a4a475e9751ad855b639c933b2d465911bb7eed7d33ffd600196e2a209",
+  "fetched_at": "2026-05-30",
+  "note": "Vendored snapshot so the manifest build is offline/deterministic. The live drift-check CI job (B1) re-fetches the URL, recomputes sha256, and compares against this value to detect upstream spec revision drift."
+}
