@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a borrowed AND fallible body codec, used as the
+     embedded / list-element body in codec_nested_parent to exercise the
+     owned->borrowed projection's transitive-fallibility paths.
+
+     "Borrowed": the `<sce:repeat>` element (codec_zenoh_locator) holds a
+     `&'a str`, so this codec's generated Rust struct carries `<'a>` and a
+     `{Codec}Owned` mirror. "Fallible": it holds a bounded `<sce:repeat>`
+     (owned `Vec` -> borrowed `heapless::Vec<_, 4>`), so its owned
+     projection is `try_as_borrowed -> Result` (overflow past max-count
+     raises CodecError::TooManyElements). A parent that embeds or
+     list-nests this body therefore reaches the `_b.try_as_borrowed()?`
+     element / embed projections that no prior fixture covered.
+
+     Wire shape (big-endian, streaming):
+       byte 0   : n     (uint8 element count)
+       byte 1+  : locs  (n x codec_zenoh_locator: VLE len + UTF-8 string) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_nested_body">
+  <sce:import src="codec_zenoh_locator.scxml" kind="codec" as="codec_zenoh_locator"/>
+  <datamodel>
+    <sce:field id="n" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:repeat id="locs" type="codec_zenoh_locator" sce:byte="1"
+                count="n" max-count="4"/>
+  </datamodel>
+</scxml>
