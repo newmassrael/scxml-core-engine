@@ -50,7 +50,10 @@
                call) rather than an owned clone. #}
             {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.as_slice(),
 {% elif field.type == "string" %}
-            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }}.as_str(),
+            {# `input_X` is already `&str` (unmarshalled via `Value::as_str`)
+               and the codec field is `&'a str`, so bind it directly — a
+               further `.as_str()` would hit the unstable `str::as_str`. #}
+            {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }},
 {% else %}
             {{ field.name | to_snake_case }}: input_{{ field.name | to_snake_case }},
 {% endif %}
@@ -76,7 +79,7 @@
 {% elif field.type == "string" %}
         assert_eq!(
             round_tripped.{{ field.name | to_snake_case }},
-            input_{{ field.name | to_snake_case }}.as_str(),
+            input_{{ field.name | to_snake_case }},
             "{{ f.name }} case {i} decode {{ field.name }}"
         );
 {% else %}
