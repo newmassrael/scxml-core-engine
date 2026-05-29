@@ -1,0 +1,57 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+{# Rust Forge codec flag bit-accessor block — SSOT for the inherent per-bit
+   accessors emitted on BOTH the borrowed `{Codec}<'a>` view and the owned
+   `{Codec}Owned` mirror. The bodies are pure functions over the carrier
+   scalar (identical on both structs, which hold the same `header: uN`), so a
+   consumer reads either with one API and never re-derives the SCE wire bit
+   layout (rkyv-style Archived↔native getter parity). Expressions are sourced
+   from `build_flag_ctx` / `rust_bit_extract` in the generator — this macro
+   only wraps them in method syntax. `include_setters` is true for the
+   borrowed view (full read/write); false for the owned read-only sink (no
+   owned-encode path exists, so write accessors would be dead surface).
+   Blank lines separate methods (none leading or trailing) so the caller owns
+   the surrounding whitespace: the borrowed site adds one blank before the
+   following const, the owned site closes its impl with no trailing blank. #}
+{% macro accessors(fields, include_setters) %}
+{%- set ns = namespace(emitted=false) -%}
+{% for field in fields %}
+{% if field.has_flags %}
+{% for fl in field.flags %}
+{% if ns.emitted %}
+
+{% endif %}
+{% set ns.emitted = true %}
+{% if fl.multi_bit %}
+    pub fn {{ fl.name_acc }}(&self) -> {{ fl.result_type }} {
+        {{ fl.acc_expr }}
+    }
+{% if include_setters %}
+
+    pub fn {{ fl.name_set }}(&mut self, v: {{ fl.result_type }}) {
+{% if fl.bit != 0 %}
+        self.{{ field.id }} = (self.{{ field.id }} & !{{ fl.mask_literal }}) | (({% if fl.result_type != field.rs_type %}v as {{ field.rs_type }}{% else %}v{% endif %} & {{ fl.value_mask_literal }}) << {{ fl.bit }});
+{% else %}
+        self.{{ field.id }} = (self.{{ field.id }} & !{{ fl.mask_literal }}) | ({% if fl.result_type != field.rs_type %}v as {{ field.rs_type }}{% else %}v{% endif %} & {{ fl.value_mask_literal }});
+{% endif %}
+    }
+{% endif %}
+{% else %}
+    pub fn {{ fl.name_acc }}(&self) -> bool {
+        (self.{{ field.id }} & {{ fl.mask_literal }}) != 0
+    }
+{% if include_setters %}
+
+    pub fn {{ fl.name_set }}(&mut self, v: bool) {
+        if v {
+            self.{{ field.id }} |= {{ fl.mask_literal }};
+        } else {
+            self.{{ field.id }} &= !{{ fl.mask_literal }};
+        }
+    }
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endmacro %}

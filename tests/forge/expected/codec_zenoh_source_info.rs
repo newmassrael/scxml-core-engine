@@ -167,6 +167,20 @@ pub struct CodecZenohSourceInfoOwned {
 }
 
 #[cfg(feature = "alloc")]
+#[allow(dead_code)]
+impl CodecZenohSourceInfoOwned {
+    // RFC §5.B B1-γ + B5-α read-accessor parity with the borrowed view: pure
+    // bit getters over the copied carrier (rkyv Archived↔native getter
+    // parity), so alloc consumers read `{Codec}Owned` with the same API as
+    // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
+    // Read-only — write accessors belong with an owned-encode path, which
+    // does not exist yet.
+    pub fn zidlen_m1(&self) -> u8 {
+        (self.header >> 4) & 0x0F
+    }
+}
+
+#[cfg(feature = "alloc")]
 impl<'a> CodecZenohSourceInfo<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohSourceInfoOwned`] (alloc). Call at a decode boundary when

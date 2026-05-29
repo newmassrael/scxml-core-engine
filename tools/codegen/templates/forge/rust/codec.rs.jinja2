@@ -2,6 +2,7 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
+{%- import '_macros/forge_rust_flag_accessors.jinja2' as flags %}
 {{ sce_map.source_marker(source_location, "rust", module_level=true) }}
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -417,39 +418,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     // range. Setters mask + shift on the way in so out-of-range
     // callers can't corrupt sibling bits. Wire layout is unchanged —
     // the carrier still occupies its declared bytes.
-{% for field in fields %}
-{% if field.has_flags %}
-{% for fl in field.flags %}
-{% if fl.multi_bit %}
-    pub fn {{ fl.name_acc }}(&self) -> {{ fl.result_type }} {
-        {{ fl.acc_expr }}
-    }
-
-    pub fn {{ fl.name_set }}(&mut self, v: {{ fl.result_type }}) {
-{% if fl.bit != 0 %}
-        self.{{ field.id }} = (self.{{ field.id }} & !{{ fl.mask_literal }}) | (({% if fl.result_type != field.rs_type %}v as {{ field.rs_type }}{% else %}v{% endif %} & {{ fl.value_mask_literal }}) << {{ fl.bit }});
-{% else %}
-        self.{{ field.id }} = (self.{{ field.id }} & !{{ fl.mask_literal }}) | ({% if fl.result_type != field.rs_type %}v as {{ field.rs_type }}{% else %}v{% endif %} & {{ fl.value_mask_literal }});
-{% endif %}
-    }
-
-{% else %}
-    pub fn {{ fl.name_acc }}(&self) -> bool {
-        (self.{{ field.id }} & {{ fl.mask_literal }}) != 0
-    }
-
-    pub fn {{ fl.name_set }}(&mut self, v: bool) {
-        if v {
-            self.{{ field.id }} |= {{ fl.mask_literal }};
-        } else {
-            self.{{ field.id }} &= !{{ fl.mask_literal }};
-        }
-    }
-
-{% endif %}
-{% endfor %}
-{% endif %}
-{% endfor %}
+{{ flags.accessors(fields, true) }}
 {% endif %}
     /// Worst-case encoded byte count for this codec — the upper bound
     /// against which `VecSink::new` reserves capacity in the
@@ -662,6 +631,20 @@ pub struct {{ struct_name }}Owned {
     pub body: {{ struct_name }}OwnedVariant,
 {% endif %}
 }
+{% if has_flags %}
+
+#[cfg(feature = "alloc")]
+#[allow(dead_code)]
+impl {{ struct_name }}Owned {
+    // RFC §5.B B1-γ + B5-α read-accessor parity with the borrowed view: pure
+    // bit getters over the copied carrier (rkyv Archived↔native getter
+    // parity), so alloc consumers read `{Codec}Owned` with the same API as
+    // the borrowed view and never re-derive the SCE wire bit layout (SSOT).
+    // Read-only — write accessors belong with an owned-encode path, which
+    // does not exist yet.
+{{ flags.accessors(fields, false) -}}
+}
+{% endif %}
 {% if has_variant %}
 
 #[cfg(feature = "alloc")]
