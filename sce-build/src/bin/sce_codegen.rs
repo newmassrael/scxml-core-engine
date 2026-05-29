@@ -682,6 +682,7 @@ enum Commands {
         ///   - `validate_links_cross_doc` (C13-α-1, §5.K Q-C13-5 a)
         ///   - `validate_links_burst_invariants` (C13-α-2, §5.K 2489-2500)
         ///   - `validate_reassembly_cross_doc` (C13-α-2 + C9-β, §5.M 2946-2995)
+        ///
         /// Omit to keep the multi-doc orchestrator deploy-unaware
         /// (matching every pre-existing call site's Q-η5 (a) silent-
         /// skip semantics).
@@ -2399,6 +2400,9 @@ struct TestMetadata {
     specnum: String,
 }
 
+// CLI command dispatcher: the parameters mirror the `generate-w3c` subcommand
+// flags 1:1, so a params struct would only re-wrap the parsed CLI surface.
+#[allow(clippy::too_many_arguments)]
 fn cmd_generate_w3c(
     language: &str,
     registry: Option<&str>,
@@ -2669,6 +2673,10 @@ trait W3cBackend {
     }
 
     /// Generate test file content. Default returns empty (C++ uses CMake-managed test headers).
+    // Trait method shared by every backend; the parameter set is the fixed
+    // per-test codegen surface (id, stems, dirs, metadata), not a refactorable
+    // local helper.
+    #[allow(clippy::too_many_arguments)]
     fn generate_test_file(
         &self,
         _test_id: &str,
@@ -3400,7 +3408,7 @@ impl W3cBackend for RustBackend {
                 && path
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .map_or(false, |n| n.starts_with("test"))
+                    .is_some_and(|n| n.starts_with("test"))
             {
                 fs::remove_dir_all(&path).ok();
             }
@@ -3725,12 +3733,10 @@ impl W3cBackend for KotlinBackend {
             fs::remove_dir_all(&self.sm_base).ok();
             println!("Cleaned: {}", self.sm_base.display());
         }
-        for entry in fs::read_dir(&self.test_dir).into_iter().flatten() {
-            if let Ok(entry) = entry {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("Test") && name.ends_with(".kt") {
-                    fs::remove_file(entry.path()).ok();
-                }
+        for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with("Test") && name.ends_with(".kt") {
+                fs::remove_file(entry.path()).ok();
             }
         }
         println!("Cleaned test classes in: {}", self.test_dir.display());
@@ -4408,7 +4414,7 @@ fn cmd_verify(
         Err(e) => {
             cli_exit(CliError::ReadInput {
                 path: format!("{}: source-hash compute failed: {e}", input_path.display()),
-                source: std::io::Error::new(std::io::ErrorKind::Other, "drift compute"),
+                source: std::io::Error::other("drift compute"),
             });
         }
     };
@@ -4417,7 +4423,7 @@ fn cmd_verify(
         Err(e) => {
             cli_exit(CliError::ReadInput {
                 path: format!("{}: template-hash compute failed: {e}", tpl_root.display()),
-                source: std::io::Error::new(std::io::ErrorKind::Other, "drift compute"),
+                source: std::io::Error::other("drift compute"),
             });
         }
     };
@@ -4687,14 +4693,13 @@ fn cmd_list_fixtures(
     // both subcommands. Unrecognised languages and the unset default
     // pass every manifest fixture through untouched, matching the prior
     // (filterless) contract every other backend already relies on.
-    let lang_filter = match language {
-        Some(s) => Some(s.parse::<Language>().unwrap_or_else(|_| {
+    let lang_filter = language.map(|s| {
+        s.parse::<Language>().unwrap_or_else(|_| {
             cli_exit(CliError::UnknownLanguage {
                 lang: s.to_string(),
             })
-        })),
-        None => None,
-    };
+        })
+    });
     // RFC §5.B B2-test-vector: when `--has-test-vectors` is passed,
     // restrict the listing to algorithm fixtures whose SCXML carries at
     // least one `<sce:test-vector>` element. The cmake harness uses
