@@ -149,6 +149,7 @@ fn rand_suffix() -> String {
 ///       * Kotlin / Python: comment-form (Kotlin has no directive
 ///         equivalent; Python lacks one too — both backends share the
 ///         module-level shape for per-function placement).
+///
 /// The count includes both shapes so Atomic 0c's per-function emission
 /// surfaces alongside Atomic 0b's module-level baseline.
 fn count_markers(path: &Path, fixture_name: &str) -> usize {

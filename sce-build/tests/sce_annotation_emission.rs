@@ -129,7 +129,7 @@ fn assert_all_backends_emit_annotations(scratch: &Path) {
         ];
         for tok in expected_tokens {
             assert!(
-                joined.contains(&format!("sce:req:"))
+                joined.contains("sce:req:")
                     && joined.contains(tok),
                 "backend {lang}: generated source missing requirement id {tok}\noutput excerpt:\n{}",
                 joined

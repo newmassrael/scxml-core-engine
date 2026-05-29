@@ -65,8 +65,8 @@ const BRAKE_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 
 /// Spawn `sce-codegen generate` with `--deploy` and the JSON error format.
 fn run_with_deploy(
-    scxml: &PathBuf,
-    deploy: &PathBuf,
+    scxml: &std::path::Path,
+    deploy: &std::path::Path,
     out_dir: &std::path::Path,
 ) -> std::process::Output {
     Command::new(sce_codegen_bin())
@@ -170,7 +170,7 @@ topology:
     assert!(
         rec["fix"]["candidates"]
             .as_array()
-            .map_or(false, |a| !a.is_empty()),
+            .is_some_and(|a| !a.is_empty()),
         "fix.candidates must be populated: {rec}"
     );
     assert!(
