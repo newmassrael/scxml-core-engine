@@ -313,6 +313,25 @@ impl<'a> CodecTransportEnvelopeVariant<'a> {
 }
 
 #[cfg(feature = "alloc")]
+impl CodecTransportEnvelopeOwnedVariant {
+    /// Re-borrow this owned variant body back into its borrowed mirror —
+    /// the inverse of `into_owned`. Reuses the borrowed view's single
+    /// `encode`; the owned form deliberately carries no encode of its own.
+    pub fn as_borrowed(&self) -> CodecTransportEnvelopeVariant<'_> {
+        match self {
+            CodecTransportEnvelopeOwnedVariant::CodecZenohInitBody(_b) => CodecTransportEnvelopeVariant::CodecZenohInitBody(_b.as_borrowed()),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohOpenBody(_b) => CodecTransportEnvelopeVariant::CodecZenohOpenBody(_b.as_borrowed()),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohClose(_b) => CodecTransportEnvelopeVariant::CodecZenohClose(_b.clone()),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohKeepAlive(_b) => CodecTransportEnvelopeVariant::CodecZenohKeepAlive(_b.clone()),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohFrame(_b) => CodecTransportEnvelopeVariant::CodecZenohFrame(_b.as_borrowed()),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohFragment(_b) => CodecTransportEnvelopeVariant::CodecZenohFragment(_b.as_borrowed()),
+            CodecTransportEnvelopeOwnedVariant::CodecZenohJoin(_b) => CodecTransportEnvelopeVariant::CodecZenohJoin(_b.as_borrowed()),
+            CodecTransportEnvelopeOwnedVariant::Default { tag, body } => CodecTransportEnvelopeVariant::Default { tag: *tag, body: body.clone() },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
 impl<'a> CodecTransportEnvelope<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecTransportEnvelopeOwned`] (alloc). Call at a decode boundary when
@@ -324,6 +343,21 @@ impl<'a> CodecTransportEnvelope<'a> {
         CodecTransportEnvelopeOwned {
             header: self.header,
             body: self.body.into_owned(),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl CodecTransportEnvelopeOwned {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// view (the owned form is read-only), so an owned consumer reaches it
+    /// via `as_borrowed` then `encode` / `encode_to_vec`. Each
+    /// field is projected by reference — a cheap re-borrow, not a copy.
+    pub fn as_borrowed(&self) -> CodecTransportEnvelope<'_> {
+        CodecTransportEnvelope {
+            header: self.header,
+            body: self.body.as_borrowed(),
         }
     }
 }

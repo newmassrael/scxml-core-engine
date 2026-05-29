@@ -269,6 +269,21 @@ impl<'a> CodecZenohExtEntryVariant<'a> {
 }
 
 #[cfg(feature = "alloc")]
+impl CodecZenohExtEntryOwnedVariant {
+    /// Re-borrow this owned variant body back into its borrowed mirror —
+    /// the inverse of `into_owned`. Reuses the borrowed view's single
+    /// `encode`; the owned form deliberately carries no encode of its own.
+    pub fn as_borrowed(&self) -> CodecZenohExtEntryVariant<'_> {
+        match self {
+            CodecZenohExtEntryOwnedVariant::CodecZenohExtUnit(_b) => CodecZenohExtEntryVariant::CodecZenohExtUnit(_b.clone()),
+            CodecZenohExtEntryOwnedVariant::CodecZenohExtZint(_b) => CodecZenohExtEntryVariant::CodecZenohExtZint(_b.clone()),
+            CodecZenohExtEntryOwnedVariant::CodecZenohExtZbuf(_b) => CodecZenohExtEntryVariant::CodecZenohExtZbuf(_b.as_borrowed()),
+            CodecZenohExtEntryOwnedVariant::Default { tag, body } => CodecZenohExtEntryVariant::Default { tag: *tag, body: body.clone() },
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
 impl<'a> CodecZenohExtEntry<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
     /// [`CodecZenohExtEntryOwned`] (alloc). Call at a decode boundary when
@@ -280,6 +295,21 @@ impl<'a> CodecZenohExtEntry<'a> {
         CodecZenohExtEntryOwned {
             header: self.header,
             body: self.body.into_owned(),
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl CodecZenohExtEntryOwned {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// view (the owned form is read-only), so an owned consumer reaches it
+    /// via `as_borrowed` then `encode` / `encode_to_vec`. Each
+    /// field is projected by reference — a cheap re-borrow, not a copy.
+    pub fn as_borrowed(&self) -> CodecZenohExtEntry<'_> {
+        CodecZenohExtEntry {
+            header: self.header,
+            body: self.body.as_borrowed(),
         }
     }
 }

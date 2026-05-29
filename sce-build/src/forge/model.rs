@@ -1981,6 +1981,62 @@ impl CodecModel {
         })
     }
 
+    /// Owned→borrowed projection round — SSOT for "must this codec's
+    /// `{Codec}Owned::as_borrowed` projection be fallible
+    /// (`try_as_borrowed -> Result`) rather than infallible (`as_borrowed
+    /// -> {Codec}<'_>`)?". True iff it holds a bounded list field
+    /// (`<sce:repeat>` / `<sce:tlv-chain>`): the borrowed view spells the
+    /// list `heapless::Vec<_, N>` while the owned mirror is an unbounded
+    /// `Vec`, so projecting owned back to borrowed can exceed `N` and
+    /// raises `CodecError::TooManyElements` (same bound, same error decode
+    /// enforces — the system invariant is `<= N` end-to-end). It is also
+    /// fallible if it embeds / variant-dispatches a body codec whose own
+    /// projection is fallible.
+    ///
+    /// Mirrors [`is_borrowed_with`]: the body-codec query is the caller's
+    /// responsibility via `body_fallible(alias)` because the enrichment-
+    /// time recursion (`lib.rs::codec_as_borrowed_fallible_recursive`) and
+    /// the codegen-time check
+    /// (`generator.rs::codec_self_as_borrowed_fallible`) resolve it from
+    /// different sources but share THIS structural predicate so they can
+    /// never diverge. `body_fallible(alias)` is the body's *contribution*
+    /// — true only when the body is itself borrowed (else it is cloned
+    /// wholesale by the projection, which never fails) AND its own
+    /// projection is fallible.
+    ///
+    /// A scalar-only / string / option / embed-of-infallible-body codec
+    /// stays infallible — a uniform-`Result` API would graft a spurious
+    /// `Result` onto a projection that can never fail (the `TryFrom` /
+    /// `From` distinction; §4 policy).
+    pub(crate) fn is_as_borrowed_fallible_with(
+        &self,
+        mut body_fallible: impl FnMut(&str) -> bool,
+    ) -> bool {
+        // Direct bounded list field: owned `Vec` -> borrowed
+        // `heapless::Vec<_, N>` can overflow `N` at projection time.
+        if self.has_repeat_fields() || self.has_tlv_chain_fields() {
+            return true;
+        }
+        // Variant arm bodies (incl. the default arm).
+        if let Some(v) = &self.variant {
+            if v.arms
+                .iter()
+                .chain(v.default_arm.iter())
+                .any(|arm| body_fallible(&arm.body_alias))
+            {
+                return true;
+            }
+        }
+        // Embed body codecs (repeat / tlv-chain already short-circuited
+        // above; their fallibility is the bounded-list rule, not the body).
+        self.fields.iter().any(|f| {
+            f.is_embed()
+                && f.embed_body_alias
+                    .as_deref()
+                    .is_some_and(&mut body_fallible)
+        })
+    }
+
     /// Whether the codec has any repeat field (RFC §5.B B2). Forces
     /// the streaming decode/encode path because a repeat field's wire
     /// length is runtime-determined (count_ref or until-eof) and the

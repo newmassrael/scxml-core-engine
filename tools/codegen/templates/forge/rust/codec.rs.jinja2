@@ -675,6 +675,23 @@ impl{{ variant_lifetime }} {{ struct_name }}Variant{{ variant_lifetime }} {
         }
     }
 }
+
+#[cfg(feature = "alloc")]
+impl {{ struct_name }}OwnedVariant {
+    /// Re-borrow this owned variant body back into its borrowed mirror —
+    /// the inverse of `into_owned`. Reuses the borrowed view's single
+    /// `encode`; the owned form deliberately carries no encode of its own.
+    pub fn {{ variant_as_borrowed_fn }}(&self) -> {{ variant_as_borrowed_ret }} {
+        {{ variant_as_borrowed_ok_open }}match self {
+{% for arm in variant.arms %}
+            {{ struct_name }}OwnedVariant::{{ arm.variant_name }}(_b) => {{ struct_name }}Variant::{{ arm.variant_name }}({{ arm.as_borrowed_body }}),
+{% endfor %}
+{% if variant.default_arm %}
+            {{ struct_name }}OwnedVariant::{{ variant.default_arm.variant_name }} { tag, body } => {{ struct_name }}Variant::{{ variant.default_arm.variant_name }} { tag: *tag, {{ variant.default_arm.as_borrowed_body }} },
+{% endif %}
+        }{{ variant_as_borrowed_ok_close }}
+    }
+}
 {% endif %}
 
 #[cfg(feature = "alloc")]
@@ -694,6 +711,30 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
             body: self.body.into_owned(),
 {% endif %}
         }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl {{ struct_name }}Owned {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// view (the owned form is read-only), so an owned consumer reaches it
+    /// via `{{ as_borrowed_fn }}` then `encode` / `encode_to_vec`. Each
+    /// field is projected by reference — a cheap re-borrow, not a copy.
+{% if as_borrowed_ok_open %}
+    /// Fallible: a bounded `<sce:repeat>` / `<sce:tlv-chain>` list whose
+    /// owned `Vec` holds more than its declared `N` raises
+    /// `CodecError::TooManyElements` — the same bound decode enforces.
+{% endif %}
+    pub fn {{ as_borrowed_fn }}(&self) -> {{ as_borrowed_ret }} {
+        {{ as_borrowed_ok_open }}{{ struct_name }} {
+{% for field in fields %}
+            {{ field.id }}: {{ field.rs_as_borrowed_expr }},
+{% endfor %}
+{% if has_variant %}
+            body: self.body.{{ variant_as_borrowed_call }},
+{% endif %}
+        }{{ as_borrowed_ok_close }}
     }
 }
 {% endif %}
