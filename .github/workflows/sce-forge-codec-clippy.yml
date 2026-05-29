@@ -24,6 +24,7 @@ on:
     paths:
       - 'sce-forge-runtime/**'
       - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
+      - 'tools/codegen/templates/_macros/forge_rust_flag_accessors.jinja2'
       - 'sce-build/src/forge/generator.rs'
       - 'tests/forge/expected/codec_*.rs'
       - 'scripts/check_clippy_codec.sh'
@@ -34,6 +35,7 @@ on:
     paths:
       - 'sce-forge-runtime/**'
       - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
+      - 'tools/codegen/templates/_macros/forge_rust_flag_accessors.jinja2'
       - 'sce-build/src/forge/generator.rs'
       - 'tests/forge/expected/codec_*.rs'
       - 'scripts/check_clippy_codec.sh'
