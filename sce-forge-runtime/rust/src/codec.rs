@@ -85,6 +85,39 @@ pub enum CodecError {
     TooManyElements,
 }
 
+/// Project a borrowed slice of owned elements into the bounded inline
+/// list (`heapless::Vec<U, N>`) the borrowed codec view spells, applying
+/// `f` to each element by reference.
+///
+/// The owned mirror of a bounded list (`<sce:repeat>` / `<sce:tlv-chain>`)
+/// is an unbounded `Vec`, so the owned→borrowed projection
+/// (`{Codec}Owned::try_as_borrowed`) may carry more than `N` elements;
+/// this raises [`CodecError::TooManyElements`] — the same bound and error
+/// the decode path enforces, keeping the system invariant `<= N`
+/// end-to-end (encode must never emit wire its own decoder would reject).
+///
+/// SSOT for the owned→borrowed bounded-list step: every generated
+/// `try_as_borrowed` calls this rather than open-coding the capacity loop,
+/// so the bound semantics live in exactly one place. `f` is fallible so a
+/// nested fallible element projection (`_e.try_as_borrowed()`) threads its
+/// own error through; an infallible element projection passes
+/// `|_e| Ok(...)`.
+pub fn try_project_bounded<'s, T, U, const N: usize>(
+    src: &'s [T],
+    mut f: impl FnMut(&'s T) -> Result<U, CodecError>,
+) -> Result<crate::heapless::Vec<U, N>, CodecError> {
+    // `&'s T` (not a fresh higher-ranked `&T`) ties each element's borrow
+    // to the slice's lifetime, so a projected `U` that re-borrows the
+    // element (`_e.as_borrowed() -> Body<'s>`) is nameable — the HRTB form
+    // cannot express "return type borrows the closure argument".
+    let mut out = crate::heapless::Vec::new();
+    for item in src {
+        out.push(f(item)?)
+            .map_err(|_| CodecError::TooManyElements)?;
+    }
+    Ok(out)
+}
+
 /// Read-only cursor over a borrowed input slice. Decode bodies use
 /// `peek_slice` to bounds-check + read fixed-offset bytes positionally,
 /// then `advance` after the construction succeeds.

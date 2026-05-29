@@ -150,3 +150,18 @@ impl<'a> CodecZenohSourceInfoExt<'a> {
         }
     }
 }
+
+#[cfg(feature = "alloc")]
+impl CodecZenohSourceInfoExtOwned {
+    /// Re-borrow this owned value back into the zero-copy borrowed view —
+    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// view (the owned form is read-only), so an owned consumer reaches it
+    /// via `as_borrowed` then `encode` / `encode_to_vec`. Each
+    /// field is projected by reference — a cheap re-borrow, not a copy.
+    pub fn as_borrowed(&self) -> CodecZenohSourceInfoExt<'_> {
+        CodecZenohSourceInfoExt {
+            ext_size: self.ext_size,
+            info: self.info.as_borrowed(),
+        }
+    }
+}

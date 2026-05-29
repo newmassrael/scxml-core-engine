@@ -2909,6 +2909,81 @@ fn codec_is_borrowed_recursive(
     })
 }
 
+/// Owned→borrowed projection round: transitive `as_borrowed`-fallibility
+/// of a codec — whether its `{Codec}Owned::as_borrowed` must return a
+/// `Result` (`try_as_borrowed`). Enrichment-time twin of
+/// `codec_is_borrowed_recursive`, sharing `CodecModel::is_as_borrowed_with`'s
+/// structural predicate over the file-graph resolver so codegen-time
+/// (`generator.rs::codec_self_as_borrowed_fallible`) and this walk cannot
+/// diverge.
+fn codec_as_borrowed_fallible_recursive(
+    cm: &forge::model::CodecModel,
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    visited: &mut HashSet<PathBuf>,
+) -> bool {
+    // A single import alias's *contribution* to the parent's projection
+    // fallibility. A non-borrowed body is deep-cloned wholesale by the
+    // projection (never fails), so it contributes only when it is itself
+    // borrowed AND its own projection is fallible. `None` (missing / parse
+    // error / kind mismatch / cycle) contributes `false` — the same
+    // conservative skip as the borrowed-ness and max-bytes resolvers.
+    fn resolve_import_fallible(
+        alias: &str,
+        imports: &[forge::model::ForgeImport],
+        base_dir: &Path,
+        visited: &mut HashSet<PathBuf>,
+    ) -> Option<bool> {
+        let imp = imports.iter().find(|i| i.alias == alias)?;
+        let imp_path = base_dir.join(&imp.src);
+        let visit_key = imp_path.clone();
+        if !visited.insert(visit_key.clone()) {
+            return None;
+        }
+        let result = (|| -> Option<bool> {
+            let content = std::fs::read_to_string(&imp_path).ok()?;
+            let stem = imp_path.file_stem()?.to_str()?;
+            let basename = imp_path.file_name()?.to_str()?;
+            let label = DocumentLabel {
+                identifier: stem,
+                diagnostic_label: basename,
+            };
+            let parsed = forge::parser::parse_forge_with_imports(&content, label).ok()??;
+            let inner_cm = match parsed.document {
+                forge::model::ForgeDocument::Codec(c) => c,
+                _ => return None,
+            };
+            let inner_base = imp_path.parent()?.to_path_buf();
+            // Borrowed gate: a non-borrowed body has no `as_borrowed`
+            // projection (it is cloned), so it can never contribute
+            // fallibility regardless of its internal list fields.
+            let mut borrow_visited: HashSet<PathBuf> = HashSet::new();
+            borrow_visited.insert(visit_key.clone());
+            let borrowed = codec_is_borrowed_recursive(
+                &inner_cm,
+                &parsed.imports,
+                &inner_base,
+                &mut borrow_visited,
+            );
+            if !borrowed {
+                return Some(false);
+            }
+            Some(codec_as_borrowed_fallible_recursive(
+                &inner_cm,
+                &parsed.imports,
+                &inner_base,
+                visited,
+            ))
+        })();
+        visited.remove(&visit_key);
+        result
+    }
+
+    cm.is_as_borrowed_fallible_with(|alias| {
+        resolve_import_fallible(alias, imports, base_dir, visited).unwrap_or(false)
+    })
+}
+
 /// Validate and enrich `<sce:import>` declarations in a single pass.
 ///
 /// For each import, reads the file once and performs:
@@ -3046,6 +3121,24 @@ fn validate_and_enrich_imports(
                     &inner_base,
                     &mut borrow_visited,
                 );
+                // Owned→borrowed projection round: capture this import's
+                // *contribution* to a parent's `as_borrowed` fallibility —
+                // true only when it is borrowed (else cloned wholesale,
+                // never fails) AND its own projection is fallible (holds a
+                // bounded list, or embeds a fallible body). The parent
+                // reads this to decide whether to call `_b.as_borrowed()`
+                // or `_b.try_as_borrowed()?` on a field of this type, and
+                // whether its own projection must return `Result`.
+                ctx.codec_as_borrowed_fallible = ctx.codec_is_borrowed && {
+                    let mut fallible_visited: HashSet<PathBuf> = HashSet::new();
+                    fallible_visited.insert(src_path.clone());
+                    codec_as_borrowed_fallible_recursive(
+                        cm,
+                        &parsed.imports,
+                        &inner_base,
+                        &mut fallible_visited,
+                    )
+                };
                 // RFC Axis-1 inversion: capture the imported leaf
                 // codec's declared `<sce:flag-inputs>` so the parent-
                 // local cross-doc validator can confirm every input is
