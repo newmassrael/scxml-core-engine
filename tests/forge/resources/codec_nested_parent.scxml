@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: orthogonal-axis coverage for the owned->borrowed
+     projection (as_borrowed / try_as_borrowed). codec_nested_body is a
+     borrowed AND fallible body; this parent references it three ways so the
+     generated `{Codec}Owned::try_as_borrowed` exercises every transitive-
+     fallibility path — none of which any earlier fixture reached (fallible
+     bodies previously appeared only as variant arms):
+
+       - required_body  : always-present `<sce:embed>` of a fallible body
+                          -> `self.required_body.try_as_borrowed()?`
+       - optional_body  : `sce:present-if` `<sce:embed>` of a fallible body
+                          -> `..as_ref().map(|_v| _v.try_as_borrowed()).transpose()?`
+       - body_list      : `<sce:repeat>` whose ELEMENT body is fallible
+                          -> `try_project_bounded(.., |_e| _e.try_as_borrowed())?`
+
+     Wire shape (big-endian, streaming):
+       byte 0   : hdr           (uint8 flags; bit 0 = has_opt gate)
+       byte 1   : m             (uint8 count for body_list)
+       byte 2+  : required_body (codec_nested_body, always present)
+       byte 3+  : optional_body (codec_nested_body, present iff hdr.has_opt)
+       byte 4+  : body_list     (m x codec_nested_body) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_nested_parent">
+  <sce:import src="codec_nested_body.scxml" kind="codec" as="codec_nested_body"/>
+  <datamodel>
+    <sce:flags id="hdr" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_opt" bit="0"/>
+    </sce:flags>
+    <sce:field id="m" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:embed id="required_body" type="codec_nested_body" sce:byte="2"/>
+    <sce:embed id="optional_body" type="codec_nested_body" sce:byte="3"
+               sce:present-if="hdr.has_opt"/>
+    <sce:repeat id="body_list" type="codec_nested_body" sce:byte="4"
+                count="m" max-count="4"/>
+  </datamodel>
+</scxml>
