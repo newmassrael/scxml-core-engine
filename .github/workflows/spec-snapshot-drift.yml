@@ -1,0 +1,70 @@
+name: Spec Snapshot Drift (Mnemosyne adoption)
+
+# Drift guard for the vendored W3C SCXML Recommendation snapshot under
+# tools/mnemosyne-adoption/spec-snapshot/, the offline input to the A1
+# TOC->manifest converter. Two independent signals, kept in separate jobs so
+# the network-touching one never gates a build:
+#
+#   verify (offline, push/PR gate)
+#     - integrity: the snapshot's sha256 must equal PROVENANCE.fetched_sha256
+#       (catches a snapshot edited without updating its provenance, or vice
+#       versa) — the license-SSOT pattern applied to the spec mirror.
+#     - unit tests: the converter + drift-checker regression suites. The
+#       closed-loop mnemosyne-cli test self-skips when the CLI is absent.
+#     Deterministic, no network — safe as a normal merge gate.
+#
+#   upstream-drift (online, scheduled only)
+#     Re-fetches the upstream Recommendation and compares sha256 against the
+#     snapshot. A mismatch means W3C changed the document byte-for-byte and the
+#     snapshot must be refreshed (+ PROVENANCE + re-run A1). Runs on schedule /
+#     manual dispatch only, NOT on push/PR, so a transient network failure or
+#     an upstream change can never break the engine build or block a merge.
+#
+# This is adoption tooling, not the engine: it lives outside the engine crates
+# and pulls in no Rust/C++ toolchain (Python stdlib only).
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'tools/mnemosyne-adoption/**'
+      - '.github/workflows/spec-snapshot-drift.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'tools/mnemosyne-adoption/**'
+      - '.github/workflows/spec-snapshot-drift.yml'
+  schedule:
+    # Weekly upstream re-check (Mondays 04:17 UTC; off the hour to spread load).
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Snapshot integrity + tooling tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Snapshot integrity (offline)
+        run: python3 tools/mnemosyne-adoption/check_spec_drift.py --mode integrity
+      - name: Tooling regression tests
+        run: python3 -m unittest discover -s tools/mnemosyne-adoption/tests
+
+  upstream-drift:
+    name: Upstream spec drift (scheduled)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Compare upstream Recommendation against snapshot
+        run: python3 tools/mnemosyne-adoption/check_spec_drift.py --mode upstream
