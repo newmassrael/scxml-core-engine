@@ -93,7 +93,7 @@ struct InvokeSnapshot {
     std::string childSessionId;  // Child state machine session ID
     std::string type;            // Invoke type (e.g., "http://www.w3.org/TR/scxml")
     std::string scxmlContent;    // Child SCXML content (from src/srcexpr evaluation)
-    std::string finalizeScript;  // W3C SCXML 6.4.6: Finalize script for time-travel debugging
+    std::string finalizeScript;  // §scxml-6.5: Finalize script for time-travel debugging
     bool autoForward = false;    // §scxml-6.4: Autoforward flag for event forwarding to child
 
     // §scxml-3.11: Recursive child state machine configuration
@@ -122,7 +122,7 @@ struct StateSnapshot {
     // §scxml-3.13: Use vector to preserve document order for time-travel debugging (Test 570)
     std::vector<std::string> activeStates;
 
-    // Data model state (W3C SCXML 5.0)
+    // Data model state (§scxml-5)
     std::map<std::string, std::string> dataModel;  // Serialized JS values
 
     // Event queues (§scxml-3.2) - simplified for serialization

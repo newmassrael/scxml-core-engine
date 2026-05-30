@@ -1472,7 +1472,7 @@ void InvokeExecutor::captureInvokeState(std::vector<InvokeSnapshot> &out) const 
         snapshot.type = scxmlHandler->getType();
         snapshot.scxmlContent = scxmlHandler->getSCXMLContent();
         snapshot.finalizeScript = scxmlHandler->getFinalizeScriptForChildSession(
-            snapshot.childSessionId);                           // W3C SCXML 6.4.6: Capture finalize script (Test 233)
+            snapshot.childSessionId);                           // §scxml-6.5: Capture finalize script (Test 233)
         snapshot.autoForward = scxmlHandler->getAutoForward();  // W3C SCXML 6.4: Capture autoforward flag (Test 229)
 
         // Capture child state recursively
@@ -1529,7 +1529,7 @@ void InvokeExecutor::restoreInvokeState(const std::vector<InvokeSnapshot> &invok
         invokeNode->setContent(snapshot.scxmlContent);  // Use captured content directly
         invokeNode->setStateId(parentStateId);
         invokeNode->setType(snapshot.type);
-        invokeNode->setFinalize(snapshot.finalizeScript);  // W3C SCXML 6.4.6: Restore finalize script (Test 233)
+        invokeNode->setFinalize(snapshot.finalizeScript);  // §scxml-6.5: Restore finalize script (Test 233)
         invokeNode->setAutoForward(snapshot.autoForward);  // W3C SCXML 6.4: Restore autoforward flag (Test 229)
         // Leave src/srcexpr/contentexpr empty - startInvokeInternal will use content field
 

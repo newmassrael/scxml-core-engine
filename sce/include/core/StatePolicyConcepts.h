@@ -205,7 +205,7 @@ concept HasInvokeSupport = HasInvokeSupportTrait<P, Engine>::value;
 template <typename P, typename Engine>
 concept HasChildTick = HasChildTickTrait<P, Engine>::value;
 
-/// Policy supports autoforward to children (W3C SCXML 6.4.6)
+/// Policy supports autoforward to children (§scxml-6.4)
 template <typename P, typename Engine>
 concept HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
 
