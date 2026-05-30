@@ -20,7 +20,7 @@ namespace SCE::parsing {
 // C++ exception hierarchy for top-level SCXML parser-entry failures
 // thrown by `SCE::SCXMLParser::parseFile` / `parseContent` /
 // `parseAbstractDocument`, plus the underlying `IXMLParser`
-// implementation (`PugiXMLParser`) under RFC §W4 D1-C (typed-throw,
+// implementation (`PugiXMLParser`) under RFC §wire-W4 D1-C (typed-throw,
 // no nullptr-return + getLastError poll).
 //
 // Two of the leaves (`ParseFileNotFound`, `ParseWrongRootElement`)
@@ -32,7 +32,7 @@ namespace SCE::parsing {
 // those scenarios (Result-based, no exceptions, roxmltree always-
 // has-root). Wire-level consumers cannot distinguish the three
 // reused-code leaves from each other — only in-process C++ consumers
-// dispatch among them via `dynamic_cast`. RFC §W4 α-strict per
+// dispatch among them via `dynamic_cast`. RFC §wire-W4 α-strict per
 // `claudedocs/rfc-sce-diagnostic-wire-unification.md`.
 //
 // `ParseNullDocument` (sketched in the original starter inventory)
@@ -75,7 +75,7 @@ private:
 // `sce-build/src/forge/error.rs::XmlError::FileNotFound { path }`
 // and maps 1:1 to the Rust `xml/file-not-found` `DiagnosticCode`.
 // Thrown by `PugiXMLParser::parseFile` when `std::filesystem::exists`
-// returns false (D1-C typed-throw refit per RFC §W4 Stage C).
+// returns false (D1-C typed-throw refit per RFC §wire-W4 Stage C).
 class ParseFileNotFound : public ParseError {
 public:
     using ParseError::ParseError;
@@ -113,7 +113,7 @@ public:
 // distinguishing surface. Thrown by `SCXMLParser::parseFile` /
 // `parseContent` from the catch-all `std::exception&` arm.
 //
-// Per RFC §W4 D4 (α-strict): does NOT carry `typeid(ex).name()` —
+// Per RFC §wire-W4 D4 (α-strict): does NOT carry `typeid(ex).name()` —
 // type-name is implementation-defined per `[lib.type.info]` and
 // would emit different strings on libstdc++ / libc++ / MSVC. The
 // `what()` text is the only payload.

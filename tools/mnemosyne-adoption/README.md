@@ -30,6 +30,7 @@ network-touching step isolated to a dedicated CI job.
 | `apply_excerpts.py` | **R2** driver: feed excerpts JSON into a workspace via `set-section-normative-excerpt` |
 | `migrate_citations.py` | **R3**: rewrite prose `W3C SCXML <n>.<m>` citations in source comments to the `§scxml-<id>` form |
 | `sce_mesh_md_to_manifest.py` | **C**: SCE_MESH.md markdown headings -> Mnemosyne manifest for the `mesh` design-ledger namespace |
+| `sce_wire_rfc_to_manifest.py` | **C**: Wire RFC milestone waves (W0..W5) -> Mnemosyne manifest for the `wire` design-ledger namespace |
 
 ## A1 — TOC to manifest
 
@@ -150,8 +151,8 @@ Note on namespaces: SCE code also cites its own design specs
 workspace declares `section_namespace = "<ns>"`, so `validate-code-refs` checks
 only that workspace's own `§<ns>-...` cites and skips foreign ones by the token
 itself (Mnemosyne R376) — which lets a module mixing `§scxml-` and `§mesh-` cites
-be gated by both ledgers. The mesh design-ledger (below) owns the `mesh`
-namespace; the Wire RFC ledger (`wire`) follows.
+be gated by both ledgers. The design ledgers below own the `mesh` (SCE_MESH.md)
+and `wire` (Wire RFC) namespaces.
 
 The rollout is **one directory at a time**: migrate a directory, add it to
 `paths` in `docs/spec/scxml/mnemosyne.toml`'s `[plugins.set_equality_validator]`,
@@ -188,15 +189,38 @@ source being an internal markdown doc rather than a vendored HTML standard:
   is skeleton only (no `normative_excerpt`): the ledger exists to make `§mesh-<n>`
   cites resolve for the gate, not to render a vendored quote.
 
-`docs/sce-ledger/mesh/mnemosyne.toml` declares `section_namespace = "mesh"`, so
-once the mesh citations are migrated from bare `§<n>` to `§mesh-<n>` (a later
-increment), the mesh/parsing/common/... modules — which mix W3C and SCE-internal
-cites — can be gated here while their `§scxml-` cites stay gated by the scxml
-workspace.
+`docs/sce-ledger/mesh/mnemosyne.toml` declares `section_namespace = "mesh"`. The
+mesh citations are migrated from bare `§<n>` to `§mesh-<n>` with
+`migrate_citations.py --namespace mesh` (the bare-sigil path, guarded by ledger
+membership, a cross-namespace ambiguity check against the scxml ledger, and a
+foreign-standard marker — see "R3" above). The mesh/common/static modules, which
+mix W3C and SCE-internal cites, are then gated here for their `§mesh-` cites
+while their `§scxml-` cites stay gated by the scxml workspace.
+
+## C — Wire RFC design-ledger workspace (`wire` namespace)
+
+The Wire RFC (`claudedocs/rfc-sce-diagnostic-wire-unification.md`) defines a
+commit-series of milestone waves W0..W5 (plus the half-wave W4.5). SCE code in
+`parsing/` and `runtime/` cites them as `§W<n>` ("RFC §W4", "§W5 D5"); the `wire`
+namespace gives those cites their own ledger under `docs/sce-ledger/wire`.
+
+```bash
+python3 tools/mnemosyne-adoption/sce_wire_rfc_to_manifest.py --manifest out/wire-manifest.json
+cd docs/sce-ledger/wire && mnemosyne-cli import-sections --manifest out/wire-manifest.json
+```
+
+`sce_wire_rfc_to_manifest.py` extracts the `### W<n>` wave headings (skipping the
+retained "RFC (legacy section header ...)" duplicate of each), keeping the wave
+label verbatim (`W4.5 -> wire-W4.5`; the dot is digit-flanked so the extractor
+reads it whole). Migration uses `migrate_citations.py --namespace wire`: wire
+labels (`W<n>`) are unique, so no cross-namespace guard is needed, and a hyphen
+range like `§W3-5` (waves W3 through W5) is refused by the glued-suffix guard
+rather than corrupted into one id. The parsing/runtime modules are then gated
+here for their `§wire-` cites alongside their `§scxml-` cites in the scxml gate.
 
 ### A note on `[commit_ledger]`
 
-Both SCE workspaces set `[commit_ledger] severity = "warn"`. Mnemosyne's
+All three SCE workspaces set `[commit_ledger] severity = "warn"`. Mnemosyne's
 commit↔ledger drift gate (R293/R301) scans recent commit subjects for `(R<n>)`
 round labels and expects a matching `Round <n>` changelog entry. SCE's `(R<n>)`
 are **adoption-round counters**, not Mnemosyne changelog rounds, so the gate is

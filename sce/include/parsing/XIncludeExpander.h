@@ -38,7 +38,7 @@
 // the matching `xml/xinclude-*` wire string. Catch sites can bind
 // `XIncludeExpansionError const &` for the legacy string surface
 // or upcast through `Diagnostic` for the typed surface; both work
-// against any subtype. RFC §W3 in
+// against any subtype. RFC §wire-W3 in
 // `claudedocs/rfc-sce-diagnostic-wire-unification.md`.
 
 namespace SCE::parsing {

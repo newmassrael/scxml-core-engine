@@ -23,7 +23,7 @@ bool XIncludeProcessor::process(std::shared_ptr<IXMLDocument> doc) {
     if (!doc) {
         return false;
     }
-    // RFC §W4.5 D1: processXInclude returns PositionMap directly and
+    // RFC §wire-W4.5 D1: processXInclude returns PositionMap directly and
     // throws on failure. Preserve this stub's bool return contract by
     // catching the typed throws and folding into false.
     try {

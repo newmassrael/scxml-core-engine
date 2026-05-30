@@ -33,7 +33,7 @@
 //
 // `addError(string)` on `SCXMLParser` continues to coexist (Q4-B); the
 // typed surface here is opt-in for consumers that want structured
-// diagnostics without re-parsing log text. RFC §W1 contract.
+// diagnostics without re-parsing log text. RFC §wire-W1 contract.
 
 namespace SCE::parsing {
 
@@ -63,7 +63,7 @@ public:
     // — no whitespace, no key-order coupling to the
     // `nlohmann::ordered_json` insertion order on the producer side.
     // Matches the canonicalisation Rust output is expected to round-
-    // trip through for any cross-side byte-diff consumer (RFC §W2
+    // trip through for any cross-side byte-diff consumer (RFC §wire-W2
     // deliverable item #3 / RFC §4 risk row "canonicalisation hides
     // semantic divergence" — only key order and whitespace are
     // normalised, never field names or values).
@@ -77,7 +77,7 @@ public:
     // workaround for slicing through a base-class copy ctor; each leaf
     // returns `std::make_unique<Self>(*this)` so the dynamic type is
     // preserved and `to_json()` keeps dispatching to the right override.
-    // RFC §W1 audit finding #1 closure (W2 deliverable).
+    // RFC §wire-W1 audit finding #1 closure (W2 deliverable).
     virtual std::unique_ptr<Diagnostic> clone() const = 0;
 };
 

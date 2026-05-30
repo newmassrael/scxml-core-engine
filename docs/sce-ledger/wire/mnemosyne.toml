@@ -1,0 +1,62 @@
+# Wire RFC design-ledger workspace (Mnemosyne adoption, `wire` namespace).
+#
+# Like docs/sce-ledger/mesh, this mirrors an *internal* SCE design document —
+# the Wire RFC (claudedocs/rfc-sce-diagnostic-wire-unification.md), whose §3
+# milestone roadmap defines the commit-series waves W0..W5 (and the half-wave
+# W4.5). There is no external upstream (no [workspace.spec_source]) and no
+# vendored snapshot: the SSOT is the RFC, and the wave sections are regenerated
+# from it by tools/mnemosyne-adoption/sce_wire_rfc_to_manifest.py and loaded via
+# `import-sections`.
+#
+# The ledger exists so code comments citing the diagnostic-wire waves ("RFC §W4",
+# "§W5 D5") resolve to a real section, letting the set_equality_validator gate
+# the parsing/runtime modules that carry them. Citations take the form §wire-W<n>;
+# the `wire` namespace segment (before the first hyphen) is what section_namespace
+# scoping keys on, so a parsing file may carry §scxml-<n> (W3C), §wire-W<n>, and
+# §mesh-<n> cites at once without collision.
+#
+[workspace]
+docs = ["GENERATED.md"]
+default_doc = "GENERATED.md"
+
+[atomic]
+sidecar_path = ".atomic/workspace.atomic.json"
+output_path = "GENERATED.md"
+
+[schema]
+changelog_titles = ["Revision History"]
+entry_id_prefix = "Rev "
+anchor_convention = "section_number"
+medium_name = "design_ledger"
+
+# SCE's `(R<n>)` commit-subject labels are adoption-round counters, not Mnemosyne
+# changelog rounds, so the commit↔ledger drift gate (Mnemosyne R293/R301) is
+# advisory here rather than a hard reject (opt-out added in Mnemosyne R377/R378).
+[commit_ledger]
+severity = "warn"
+
+# Code-citation defense (validate-code-refs). Paths are workspace-root relative;
+# this workspace lives three levels down (docs/sce-ledger/wire). The §W<n>
+# citations were migrated to the §wire-W<n> form by
+# tools/mnemosyne-adoption/migrate_citations.py --namespace wire.
+#
+#   section_namespace = "wire"   only §wire-W<n> tokens are checked; §scxml-<n>
+#                                (W3C) and §mesh-<n> in the same files are skipped
+#                                by the token itself, so these MIXED parsing /
+#                                runtime modules can be gated here for their wire
+#                                cites while scxml gates their W3C cites.
+#   severity_missing = "reject"  hallucination gate: a §wire-W<n> with no ledger
+#                                section fails the run (the migrator only emits
+#                                ledger-present ids).
+#   severity_binding = "warn"    Path B (Section.implementations) is a later
+#                                round; advisory so unbacked cites pass.
+[plugins.set_equality_validator]
+paths = [
+    "../../../sce/include/parsing",
+    "../../../sce/src/parsing",
+    "../../../sce/src/runtime",
+]
+severity_missing = "reject"
+severity_binding = "warn"
+comment_only = true
+section_namespace = "wire"

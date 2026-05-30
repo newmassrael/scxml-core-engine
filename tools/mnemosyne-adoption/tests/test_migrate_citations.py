@@ -386,5 +386,57 @@ class MeshNamespace(unittest.TestCase):
         self.assertEqual(migs, [])
 
 
+WIRE_LEDGER = {"wire-W0", "wire-W1", "wire-W2", "wire-W3", "wire-W4", "wire-W4.5", "wire-W5"}
+
+
+def wire_plan(text, name="f.h"):
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, name)
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        # wire needs no cross-namespace exclude (W<n> labels are unique).
+        return mc.plan_file(p, WIRE_LEDGER, namespace="wire")
+
+
+class WireNamespace(unittest.TestCase):
+    def test_wave_bare_sigil_migrated(self):
+        new, migs, _ = wire_plan("// §W4 typed-throw surface\n")
+        self.assertIn("§wire-W4", new)
+        self.assertEqual(migs[0]["id"], "wire-W4")
+
+    def test_rfc_marker_is_not_foreign_for_wire(self):
+        # "RFC §W4" is the Wire RFC, not the IETF "RFC <digits>" form.
+        new, migs, _ = wire_plan("// RFC §W4 D1-C typed surface\n")
+        self.assertIn("RFC §wire-W4 D1-C", new)
+        self.assertEqual(len(migs), 1)
+
+    def test_dotted_half_wave_kept_verbatim(self):
+        new, migs, _ = wire_plan("// §W4.5 debt repayment\n")
+        self.assertIn("§wire-W4.5", new)
+        self.assertEqual(migs[0]["id"], "wire-W4.5")
+
+    def test_space_suffix_preserved(self):
+        new, _, _ = wire_plan("// §W5 D5 typed-throw\n")
+        self.assertEqual(new, "// §wire-W5 D5 typed-throw\n")
+
+    def test_hyphen_range_refused(self):
+        # "§W3-5" (waves W3 through W5) would corrupt to §wire-W3-5; refuse it.
+        new, migs, skips = wire_plan("// RFC §W3-5: re-thrown downstream\n")
+        self.assertEqual(migs, [])
+        self.assertIn("§W3-5", new)
+        self.assertIn("glued suffix", skips[0]["reason"])
+
+    def test_hallucinated_wave_reported(self):
+        new, migs, skips = wire_plan("// §W9 invented wave\n")
+        self.assertEqual(migs, [])
+        self.assertIn("non-section", skips[0]["reason"])
+
+    def test_string_literal_untouched(self):
+        src = 'const char *k = "§W4";\n'
+        new, migs, _ = wire_plan(src)
+        self.assertEqual(new, src)
+        self.assertEqual(migs, [])
+
+
 if __name__ == "__main__":
     unittest.main()
