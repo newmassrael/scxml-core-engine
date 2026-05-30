@@ -131,6 +131,28 @@ class RustNesting(unittest.TestCase):
         self.assertEqual(ids, ["scxml-5.3", "scxml-6.2"])
 
 
+class SlashChain(unittest.TestCase):
+    def test_chain_each_member_migrated(self):
+        new, migs, _ = plan("// per W3C SCXML 3.13/5.10 both apply\n")
+        self.assertIn("§scxml-3.13 / §scxml-5.10", new)
+        self.assertEqual([m["id"] for m in migs], ["scxml-3.13", "scxml-5.10"])
+
+    def test_io_abbreviation_not_matched(self):
+        # "I/O" must not be read as a citation chain (I is not a label).
+        src = "// uses W3C SCXML I/O processor\n"
+        new, migs, skipped = plan(src)
+        self.assertEqual(new, src)
+        self.assertEqual(migs, [])
+        self.assertEqual(skipped, [])
+
+    def test_chain_with_one_missing_member_left_whole(self):
+        # 5.10 is in LEDGER, 9.99 is not -> whole chain stays prose, 9.99 reported.
+        new, migs, skipped = plan("// W3C SCXML 5.10/9.99 mixed\n")
+        self.assertIn("W3C SCXML 5.10/9.99", new)  # untouched
+        self.assertEqual(migs, [])
+        self.assertEqual([s["label"] for s in skipped], ["9.99"])
+
+
 class Idempotency(unittest.TestCase):
     def test_second_pass_is_noop(self):
         once, _, _ = plan("// W3C SCXML 6.2 and W3C SCXML C.2\n")
@@ -173,6 +195,7 @@ class ValidateClosedLoop(unittest.TestCase):
             f.write_text(
                 "// W3C SCXML 6.2: delayed send\n"
                 "// W3C SCXML C.2 BasicHTTP processor\n"
+                "// W3C SCXML 6.2/C.2 slash chain\n"
                 "// W3C SCXML specification compliance note\n",
                 encoding="utf-8",
             )
