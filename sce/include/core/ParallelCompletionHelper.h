@@ -23,7 +23,7 @@
 namespace SCE::Core {
 
 /**
- * @brief Helper for parallel state completion detection (§scxml-3.4, 3.7.1)
+ * @brief Helper for parallel state completion detection (§scxml-3.4, §scxml-3.7.1)
  *
  * Single Source of Truth for "all regions in final state" logic.
  * Shared between Interpreter and AOT engines following Zero Duplication Principle.

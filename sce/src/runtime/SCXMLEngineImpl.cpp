@@ -271,7 +271,7 @@ bool SCXMLEngineImpl::loadSCXMLFromString(const std::string &scxmlContent, const
                 }
             });
 
-        // W3C SCXML 6.2: Connect EventRaiser to EventScheduler for delayed event polling
+        // §scxml-6.2: Connect EventRaiser to EventScheduler for delayed event polling
         auto eventRaiserImpl = std::static_pointer_cast<EventRaiserImpl>(eventRaiser_);
         eventRaiserImpl->setScheduler(eventScheduler_);
 

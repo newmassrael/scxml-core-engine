@@ -137,7 +137,7 @@ HistoryStateAutoRegistrar::extractHistoryStatesFromModel(const std::shared_ptr<S
             // Get history type from state node
             info.historyType = stateNode->getHistoryType();
 
-            // W3C SCXML 3.6: Get default state from history state's transition
+            // §scxml-3.6: Get default state from history state's transition
             // History states specify their default via <transition target="..."/>
             // Note: initial attribute is NOT valid for history states per W3C spec
 
@@ -155,7 +155,7 @@ HistoryStateAutoRegistrar::extractHistoryStatesFromModel(const std::shared_ptr<S
                 }
             }
 
-            // W3C SCXML 3.6: History states without default transition will trigger error.platform at runtime
+            // §scxml-3.6: History states without default transition will trigger error.platform at runtime
             // This is allowed by the spec - default is optional, error handling is runtime responsibility
             if (info.defaultStateId.empty()) {
                 SCE_LOG_WARN("HistoryStateAutoRegistrar: History state '{}' has no default transition - will generate "
