@@ -85,7 +85,7 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
         return false;
     }
 
-    // W3C SCXML 5.5 + 5.6 + Appendix B.2.2:
+    // §scxml-5.5 + 5.6 + Appendix B.2.2:
     //   - `expr` attribute => Expression (evaluated against the datamodel).
     //   - Text body with ECMAScript datamodel => Expression (Appendix B.2.2:
     //     inline text is parsed as JSON; SCE delegates that parsing to the
