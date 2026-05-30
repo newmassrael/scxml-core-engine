@@ -156,7 +156,13 @@ def plan_file(path, ledger_ids, prefix):
         text = fh.read()
     mask = comment_mask(text, nested=(ext in NESTED_BLOCK))
 
-    pattern = re.compile(re.escape(prefix) + r"[ \t]+(" + LABEL_RE + r")")
+    # A citation may be a slash chain ("3.8/3.9" = sections 3.8 and 3.9). Each
+    # member is rewritten independently and rejoined with " / " (the spaces let
+    # the extractor see two separate §ids; "§a/§b" without them would read as a
+    # single id with a stray slash). "I/O" never matches: "I" alone is not a
+    # LABEL_RE label (it needs a .digit), so the chain cannot start.
+    chain = LABEL_RE + r"(?:/" + LABEL_RE + r")*"
+    pattern = re.compile(re.escape(prefix) + r"[ \t]+(" + chain + r")")
     migrations, skipped = [], []
 
     # Build line-start offsets for line-number reporting.
@@ -175,23 +181,28 @@ def plan_file(path, ledger_ids, prefix):
     for m in pattern.finditer(text):
         if not mask[m.start()]:
             continue  # outside a comment -> never touch
-        label = m.group(1)
-        sid = label_to_id(label)
+        labels = m.group(1).split("/")
+        ids = [label_to_id(lbl) for lbl in labels]
         ln = lineno(m.start())
-        if sid in ledger_ids:
+        if all(s in ledger_ids for s in ids):
             out.append(text[last : m.start()])
-            out.append("§" + sid)  # §scxml-...
+            out.append(" / ".join("§" + s for s in ids))  # §scxml-a / §scxml-b
             last = m.end()
-            migrations.append({"line": ln, "label": label, "id": sid})
+            for lbl, s in zip(labels, ids):
+                migrations.append({"line": ln, "label": lbl, "id": s})
         else:
-            skipped.append(
-                {
-                    "line": ln,
-                    "label": label,
-                    "id": sid,
-                    "reason": "id not in ledger (version-like or hallucinated)",
-                }
-            )
+            # Whole chain left as prose; report only the member(s) not in the
+            # ledger (version-like or hallucinated).
+            for lbl, s in zip(labels, ids):
+                if s not in ledger_ids:
+                    skipped.append(
+                        {
+                            "line": ln,
+                            "label": lbl,
+                            "id": s,
+                            "reason": "id not in ledger (version-like or hallucinated)",
+                        }
+                    )
     out.append(text[last:])
     return "".join(out), migrations, skipped
 

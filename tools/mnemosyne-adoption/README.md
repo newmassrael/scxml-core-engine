@@ -138,6 +138,19 @@ This is **not** a `sed`. Three rules keep it safe:
   Rust nested block comments) means string- and char-literal text is never
   touched, so no runtime string can change.
 
+A slash chain (`W3C SCXML 3.8/3.9`, meaning sections 3.8 and 3.9) becomes
+`§scxml-3.8 / §scxml-3.9` — each member rewritten and rejoined with `" / "` so
+the extractor sees two distinct ids. The whole chain stays prose if any member
+is absent from the ledger. `W3C SCXML I/O` is never matched (`I` is not a
+section label).
+
+Note on namespaces: SCE code also cites its own design specs
+(`RFC §W5`, `SCE_MESH.md §9.6`). Those are a different namespace and are **not**
+migrated by this tool — `validate-code-refs` checks every `§id` against the one
+scxml ledger, so a module mixing W3C and SCE-internal cites cannot be gated by
+this workspace. `paths` lists only citation-clean modules; mixed modules wait
+for a dedicated SCE design-ledger workspace.
+
 The rollout is **one directory at a time**: migrate a directory, add it to
 `paths` in `docs/spec/scxml/mnemosyne.toml`'s `[plugins.set_equality_validator]`,
 and confirm `validate-code-refs` is green. `severity_missing = "reject"` is the
