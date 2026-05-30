@@ -341,7 +341,7 @@ public:
      * `<donedata>` payload on `_event.data` of the synthesized
      * `done.invoke.<id>` event. W3C SCXML 5.5: the Processor MUST evaluate
      * donedata `<param>` / `<content>` children and place the resulting
-     * data in `_event.data`; §6.3.1 pairs this with `_event.invokeid`.
+     * data in `_event.data`; §scxml-5.10.1 pairs this with `_event.invokeid`.
      *
      * Shared across:
      *   - local invoke completion callback (`invoke_methods.jinja2`
