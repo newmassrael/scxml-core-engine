@@ -41,6 +41,14 @@ entry_id_prefix = "Rev "
 anchor_convention = "section_number"
 medium_name = "spec_mirror"
 
+# SCE's `(R<n>)` commit-subject labels are adoption-round counters, not
+# Mnemosyne changelog rounds. This workspace's history carries one such commit
+# ("… (R2)"), so the commit↔ledger drift gate (Mnemosyne R293/R301) is advisory
+# here rather than a hard reject (opt-out added in Mnemosyne R377/R378): the
+# drift line still prints, it just stops gating the exit code.
+[commit_ledger]
+severity = "warn"
+
 # Code-citation defense (validate-code-refs). Paths are workspace-root relative,
 # so they reach back up to the SCE source tree (this workspace lives three
 # levels down at docs/spec/scxml/). R3 expands `paths` one directory at a time
