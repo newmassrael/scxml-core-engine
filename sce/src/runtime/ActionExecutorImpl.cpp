@@ -50,7 +50,7 @@ ActionExecutorImpl::ActionExecutorImpl(const std::string &sessionId, IScriptEngi
 }
 
 ActionExecutorImpl::~ActionExecutorImpl() {
-    // W3C SCXML 6.2: Unregister from SessionRegistry EventDispatcher registry for proper cleanup
+    // §scxml-6.2: Unregister from SessionRegistry EventDispatcher registry for proper cleanup
     if (eventDispatcher_) {
         try {
             SessionRegistry::instance().unregisterEventDispatcher(sessionId_);
@@ -95,11 +95,11 @@ bool ActionExecutorImpl::executeScript(const std::string &script) {
 }
 
 bool ActionExecutorImpl::assignVariable(const std::string &location, const std::string &expr) {
-    // W3C SCXML 5.3, 5.4: Empty location check (shared with AOT via AssignHelper)
+    // §scxml-5.3, §scxml-5.4: Empty location check (shared with AOT via AssignHelper)
     // ARCHITECTURE.md: Zero Duplication - Use shared AssignHelper for cross-engine consistency
     if (!AssignHelper::isValidLocation(location)) {
         SCE_LOG_ERROR("W3C SCXML 5.3/5.4/B.2: {}", AssignHelper::getInvalidLocationErrorMessage(location));
-        // W3C SCXML 5.4: Raise error.execution for invalid location
+        // §scxml-5.4: Raise error.execution for invalid location
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", AssignHelper::getInvalidLocationErrorMessage(location));
         }
@@ -110,7 +110,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
     // Checks regex pattern for valid variable identifiers (not shared with AOT)
     if (!isValidLocation(location)) {
         SCE_LOG_ERROR("Invalid variable location: {}", location);
-        // W3C SCXML 5.4: Raise error.execution for invalid location
+        // §scxml-5.4: Raise error.execution for invalid location
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", "Invalid assignment location: " + location);
         }
@@ -119,7 +119,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
 
     if (!isSessionReady()) {
         SCE_LOG_ERROR("Session {} not ready for variable assignment", sessionId_);
-        // W3C SCXML 5.9: Raise error.execution for session not ready
+        // §scxml-5.9: Raise error.execution for session not ready
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", "Session not ready for assignment");
         }
@@ -131,11 +131,11 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
         std::string jsLocation = transformVariableName(location);
 
         // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
-        // W3C SCXML 5.3/5.10: Assignment execution with proper system variable handling
+        // §scxml-5.3 / §scxml-5.10: Assignment execution with proper system variable handling
         bool success = AssignmentExecutionHelper::executeAssignment(
             scriptEngine_, sessionId_, jsLocation, expr, [this, &location, &expr](const std::string &error) {
                 handleJSError("assignment execution", error);
-                // W3C SCXML 5.9: Raise error.execution for assignment failure
+                // §scxml-5.9: Raise error.execution for assignment failure
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution",
                                              "Assignment failed - location: " + location + ", expr: " + expr);
@@ -151,7 +151,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
 
     } catch (const std::exception &e) {
         handleJSError("variable assignment", e.what());
-        // W3C SCXML 5.9: Raise error.execution for assignment exception
+        // §scxml-5.9: Raise error.execution for assignment exception
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", std::string("Assignment exception: ") + e.what());
         }
@@ -182,7 +182,7 @@ std::string ActionExecutorImpl::evaluateExpression(const std::string &expression
         return jsResult;
     }
 
-    // W3C SCXML 6.2: If JavaScript evaluation fails (e.g., undefined variable in namelist),
+    // §scxml-6.2: If JavaScript evaluation fails (e.g., undefined variable in namelist),
     // throw exception to propagate error up the call stack (test 553)
     // This ensures send actions with invalid namelist are properly aborted
     SCE_LOG_ERROR("JavaScript evaluation failed for expression: '{}'", expression);
@@ -309,7 +309,7 @@ void ActionExecutorImpl::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaise
 }
 
 void ActionExecutorImpl::setImmediateMode(bool immediate) {
-    // W3C SCXML 3.13: Control immediate mode for event raising (test 404)
+    // §scxml-3.13: Control immediate mode for event raising (test 404)
     // Exit actions should queue events, not process them immediately
     if (eventRaiser_) {
         eventRaiser_->setImmediateMode(immediate);
@@ -318,7 +318,7 @@ void ActionExecutorImpl::setImmediateMode(bool immediate) {
 }
 
 void ActionExecutorImpl::setCurrentEvent(const EventMetadata &metadata) {
-    // W3C SCXML 5.10: Set all event metadata fields
+    // §scxml-5.10: Set all event metadata fields
     currentEventName_ = metadata.name;
     currentEventData_ = metadata.data;
     currentSendId_ = metadata.sendId;
@@ -327,7 +327,7 @@ void ActionExecutorImpl::setCurrentEvent(const EventMetadata &metadata) {
     currentOriginSessionId_ = metadata.originSessionId;
     currentTypedData_ = metadata.typedData;
 
-    // W3C SCXML 5.10.1: Auto-detect event type if not provided
+    // §scxml-5.10.1: Auto-detect event type if not provided
     // ARCHITECTURE.md: Zero Duplication - Uses EventTypeHelper for Single Source of Truth
     if (metadata.type.empty()) {
         // Default to false for isExternal since explicit type will be set by EventRaiser if needed
@@ -381,7 +381,7 @@ bool ActionExecutorImpl::isSessionReady() const {
 }
 
 void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher) {
-    // W3C SCXML 6.2: Unregister old EventDispatcher if one exists
+    // §scxml-6.2: Unregister old EventDispatcher if one exists
     if (eventDispatcher_) {
         try {
             SessionRegistry::instance().unregisterEventDispatcher(sessionId_);
@@ -394,7 +394,7 @@ void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> ev
     // Store new EventDispatcher
     eventDispatcher_ = std::move(eventDispatcher);
 
-    // W3C SCXML 6.2: Register new EventDispatcher with SessionRegistry for automatic delayed event cancellation
+    // §scxml-6.2: Register new EventDispatcher with SessionRegistry for automatic delayed event cancellation
     if (eventDispatcher_) {
         try {
             SessionRegistry::instance().registerEventDispatcher(sessionId_, eventDispatcher_);
@@ -449,7 +449,7 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
         }
 
         // Create Event object and use setCurrentEvent API
-        // W3C SCXML 5.10: Use the event type set by setCurrentEvent()
+        // §scxml-5.10: Use the event type set by setCurrentEvent()
         // This is separate from originType - eventType is "internal", "platform", or "external"
         // while originType is the processor URI
         std::string eventType = currentEventType_.empty() ? "internal" : currentEventType_;
@@ -461,12 +461,12 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
             event->setRawJsonData(currentEventData_);
         }
 
-        // W3C SCXML 5.10: Set typed event data if available (engine-agnostic, avoids JSON round-trip)
+        // §scxml-5.10: Set typed event data if available (engine-agnostic, avoids JSON round-trip)
         if (currentTypedData_.has_value()) {
             event->setTypedData(currentTypedData_.value());
         }
 
-        // W3C SCXML 5.10: Set event metadata using EventMetadataHelper (Single Source of Truth)
+        // §scxml-5.10: Set event metadata using EventMetadataHelper (Single Source of Truth)
         // ARCHITECTURE.md: Zero Duplication Principle - shared logic with AOT engine
         SCE::Common::EventMetadataHelper::setEventMetadata(*event,
                                                            currentOriginSessionId_,  // origin (test336)
@@ -523,7 +523,7 @@ bool ActionExecutorImpl::executeLogAction(const LogAction &action) {
     } catch (const std::exception &e) {
         SCE_LOG_ERROR("Failed to execute log action: {}", e.what());
 
-        // W3C SCXML 5.9: Raise error.execution event for expression evaluation failure
+        // §scxml-5.9: Raise error.execution event for expression evaluation failure
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", std::string("Log action failed: ") + e.what());
         }
@@ -621,7 +621,7 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
 }
 
 bool ActionExecutorImpl::evaluateCondition(const std::string &condition) {
-    // W3C SCXML 5.9: Conditional expressions in <if> elements
+    // §scxml-5.9: Conditional expressions in <if> elements
     // ARCHITECTURE.md: Zero Duplication - Use shared GuardHelper for conditional evaluation
     if (condition.empty()) {
         return true;  // Empty condition is always true
@@ -630,7 +630,7 @@ bool ActionExecutorImpl::evaluateCondition(const std::string &condition) {
     auto result = GuardHelper::evaluateGuard(scriptEngine_, sessionId_, condition);
 
     if (!result.has_value()) {
-        // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
+        // §scxml-5.9: Evaluation failed → raise error.execution AND return false
         SCE_LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", condition);
 
         if (eventRaiser_) {
@@ -649,13 +649,13 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // CRITICAL: Complete ALL script engine operations first to avoid deadlock
         // Evaluate all expressions before calling EventDispatcher
 
-        // W3C SCXML 5.10 & 6.2.4: Generate and store sendid BEFORE validation
+        // §scxml-5.10 & 6.2.4: Generate and store sendid BEFORE validation
         //
         // IMPORTANT DESIGN DECISION: sendid generation moved before event/type validation
         // Rationale:
-        //   1. W3C SCXML 5.10 requirement: error.execution events from failed sends
+        //   1. §scxml-5.10 requirement: error.execution events from failed sends
         //      MUST include the sendid field (test 332)
-        //   2. W3C SCXML 6.2.4 requirement: idlocation variable must be set even
+        //   2. §scxml-6.2.4 requirement: idlocation variable must be set even
         //      when send fails (test 332: compares idlocation sendid == _event.sendid)
         //   3. If we generate sendid AFTER validation, failed sends cannot include
         //      sendid in error events or idlocation variables
@@ -670,7 +670,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             sendId = generateUniqueSendId();
         }
 
-        // W3C SCXML 6.2.4: Store sendid in idlocation variable if specified
+        // §scxml-6.2.4: Store sendid in idlocation variable if specified
         // This happens BEFORE validation so the variable is set even if send fails
         if (!action.getIdLocation().empty()) {
             try {
@@ -682,10 +682,10 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             }
         }
 
-        // W3C SCXML 6.2 (test 174): Evaluate type or typeexpr for send action
+        // §scxml-6.2 (test 174): Evaluate type or typeexpr for send action
         std::string sendType = action.getType();
         if (sendType.empty() && !action.getTypeExpr().empty()) {
-            // W3C SCXML 6.2: typeexpr uses current datamodel value (not initial value)
+            // §scxml-6.2: typeexpr uses current datamodel value (not initial value)
             sendType = evaluateExpression(action.getTypeExpr());
             SCE_LOG_DEBUG("ActionExecutorImpl: Evaluated typeexpr '{}' to type: '{}'", action.getTypeExpr(), sendType);
         }
@@ -702,7 +702,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             eventName = evaluateExpression(action.getEventExpr());
             if (eventName.empty()) {
                 SCE_LOG_ERROR("Send action eventexpr evaluated to empty: {}", action.getEventExpr());
-                // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
+                // §scxml-5.10: Generate error.execution event with sendid for failed send
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution",
                                              "Send action eventexpr evaluated to empty: " + action.getEventExpr(),
@@ -711,13 +711,13 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 return false;
             }
         } else {
-            // W3C SCXML C.2: For HTTP event processors, event name is optional when content is provided
+            // §scxml-C-2: For HTTP event processors, event name is optional when content is provided
             // The content will be sent as the HTTP message body
 
             if (!isHttpEventProcessor) {
                 // For non-HTTP processors, event name is required
                 SCE_LOG_ERROR("Send action has no event or eventexpr");
-                // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
+                // §scxml-5.10: Generate error.execution event with sendid for failed send
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution", "Send action has no event or eventexpr", sendId,
                                              false /* overload discriminator for sendId variant */);
@@ -734,7 +734,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             target = evaluateExpression(action.getTargetExpr());
         }
 
-        // W3C SCXML 6.2 (tests 159, 194): Validate target format using shared helper
+        // §scxml-6.2 (tests 159, 194): Validate target format using shared helper
         // Invalid target values (e.g., starting with "!") must raise error.execution
         std::string targetErrorMsg;
         if (!SendHelper::validateTarget(target, targetErrorMsg)) {
@@ -746,7 +746,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             return false;
         }
 
-        // W3C SCXML C.1 (test 496): Check for unreachable target using SendHelper (ARCHITECTURE.md Zero Duplication)
+        // §scxml-C-1 (test 496): Check for unreachable target using SendHelper (ARCHITECTURE.md Zero Duplication)
         // Note: Only applies when targetexpr is explicitly set, not for normal internal sends
         if (!action.getTargetExpr().empty() && SendHelper::isUnreachableTarget(target)) {
             SCE_LOG_ERROR("ActionExecutorImpl: Send target evaluation resulted in invalid target: '{}'", target);
@@ -758,7 +758,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             return false;
         }
 
-        // W3C SCXML C.2 (test 577): Validate BasicHTTP send using SendHelper (Zero Duplication)
+        // §scxml-C-2 (test 577): Validate BasicHTTP send using SendHelper (Zero Duplication)
         std::string errorMsg;
         if (!SendHelper::validateBasicHttpSend(sendType, target, action.getTargetExpr(), errorMsg)) {
             SCE_LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
@@ -768,11 +768,11 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             return false;
         }
 
-        // W3C SCXML 6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
+        // §scxml-6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
         // ARCHITECTURE.md: Single Source of Truth - both Interpreter and AOT use SendHelper
         if (!SendHelper::isSupportedSendType(sendType)) {
             SCE_LOG_ERROR("ActionExecutorImpl: Unsupported send type: {}", sendType);
-            // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
+            // §scxml-5.10: Generate error.execution event with sendid for failed send
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.execution", "Unsupported send type: " + sendType, sendId,
                                          false /* overload discriminator for sendId variant */);
@@ -780,7 +780,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             return false;
         }
 
-        // W3C SCXML 6.2.4: All send actions without explicit target go to external queue
+        // §scxml-6.2.4: All send actions without explicit target go to external queue
         // The type attribute doesn't affect queue routing - it's for event processor selection
         // Only explicit target="#_internal" goes to internal queue
         if (target.empty()) {
@@ -799,7 +799,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             eventData = evaluateExpression(action.getData());
         }
 
-        // W3C SCXML C.1: Build event data from namelist and params (Test 354, 178)
+        // §scxml-C-1: Build event data from namelist and params (Test 354, 178)
         // W3C SCXML: Supports duplicate param names - all values must be included (Test 178)
         std::map<std::string, std::vector<std::string>> evaluatedParams;
         std::map<std::string, ScriptValue> typedParams;
@@ -812,7 +812,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             bool success = NamelistHelper::evaluateNamelist(scriptEngine_, sessionId_, namelist, evaluatedParams,
                                                             [this, &sendId](const std::string &errorMsg) {
                                                                 SCE_LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
-                                                                // W3C SCXML 6.2: If evaluation of send's arguments
+                                                                // §scxml-6.2: If evaluation of send's arguments
                                                                 // produces an error, the Processor MUST discard the
                                                                 // message without attempting to deliver it (test 553)
                                                                 if (eventRaiser_) {
@@ -883,12 +883,12 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             event.data = eventData;
             event.delay = delay;
             event.sendId = sendId;
-            event.sessionId = sessionId_;    // W3C SCXML 6.2: Track session for delayed event cancellation
+            event.sessionId = sessionId_;    // §scxml-6.2: Track session for delayed event cancellation
             event.params = evaluatedParams;        // W3C SCXML compliant: params evaluated at send time
             event.typedParams = typedParams;       // Engine-agnostic typed params (avoids JSON round-trip)
-            // W3C SCXML C.2: Set content for HTTP body
+            // §scxml-C-2: Set content for HTTP body
             event.content = action.getContent();
-            // W3C SCXML 5.10: Set event type for origintype field (test 253, 331, 352, 372)
+            // §scxml-5.10: Set event type for origintype field (test 253, 331, 352, 372)
             event.type = sendType.empty() ? Constants::SCXML_EVENT_PROCESSOR_TYPE : sendType;
 
             // [EVENT ROUTING] Log parent→child and child→parent event sending
@@ -900,7 +900,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             // Send via dispatcher (handles both immediate and delayed events)
             auto resultFuture = eventDispatcher_->sendEvent(event);
 
-            // W3C SCXML 6.2: Fire-and-forget send semantics with proper resource cleanup
+            // §scxml-6.2: Fire-and-forget send semantics with proper resource cleanup
             // CRITICAL: Must call get() to ensure thread cleanup and prevent WASM memory leak
             // The sendId is already set immediately by EventSchedulerImpl, so this won't block
             try {
@@ -927,7 +927,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             // SCXML 3.12.1: Generate error.execution event instead of throwing
             SCE_LOG_ERROR("ActionExecutorImpl: EventDispatcher not available for send action - generating error event");
 
-            // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
+            // §scxml-5.10: Generate error.execution event with sendid for failed send
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.execution", "EventDispatcher not available for send action", sendId,
                                          false /* overload discriminator for sendId variant */);
@@ -1005,7 +1005,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
     std::string itemVar = action.getItem();
     std::string indexVar = action.getIndex();
 
-    // W3C SCXML 4.6: Validate array and item attributes
+    // §scxml-4.6: Validate array and item attributes
     std::string validationError;
     if (!SCE::Validation::validateForeachAttributes(arrayExpr, itemVar, validationError)) {
         SCE_LOG_ERROR("Foreach validation failed: {}", validationError);
@@ -1018,7 +1018,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
     // Transform numeric variable names for array expression
     std::string jsArrayExpr = transformVariableName(arrayExpr);
 
-    // W3C SCXML 4.6: Use ForeachHelper as Single Source of Truth
+    // §scxml-4.6: Use ForeachHelper as Single Source of Truth
     // ARCHITECTURE.md: Zero Duplication Principle - shared logic between Interpreter and AOT engines
     bool success = Core::ForeachHelper::executeForeachWithActions(
         scriptEngine_, sessionId_, jsArrayExpr, transformVariableName(itemVar),
@@ -1033,7 +1033,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
                     if (eventRaiser_ && eventRaiser_->isReady()) {
                         eventRaiser_->raiseEvent("error.execution", "Failed to execute nested action in foreach");
                     }
-                    return false;  // W3C SCXML 4.6: Stop foreach execution on error
+                    return false;  // §scxml-4.6: Stop foreach execution on error
                 }
             }
             return true;  // Continue to next iteration

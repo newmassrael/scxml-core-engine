@@ -69,7 +69,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
     std::string src = item->getSrc();
     std::string content = item->getContent();
 
-    // W3C SCXML 6.4: Check if variable was pre-initialized (e.g., by invoke namelist/param)
+    // §scxml-6.4: Check if variable was pre-initialized (e.g., by invoke namelist/param)
     // Skip this check for late binding value assignment (assignValue=true with late binding)
     // because late binding creates variables as undefined first, then assigns values on state entry
     bool isLateBindingAssignment = assignValue && model_ && (model_->getBinding() == "late");
@@ -79,7 +79,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
         return;
     }
 
-    // W3C SCXML B.2.2: Late binding creates variables with undefined at init, assigns values on state entry
+    // §scxml-B-2-2: Late binding creates variables with undefined at init, assigns values on state entry
     if (!assignValue) {
         // Create variable with undefined value (both early and late binding)
         auto setVarFuture = scriptEngine_.setVariable(sessionId_, id, ScriptValue{});
@@ -103,7 +103,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
     // Early binding or late binding value assignment: Evaluate and assign
     if (!expr.empty()) {
         // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
-        // W3C SCXML B.2: For function expressions, use direct JavaScript assignment to preserve function type
+        // §scxml-B-2: For function expressions, use direct JavaScript assignment to preserve function type
         // Test 453: ECMAScript function literals must be stored as functions, not converted to C++
         bool isFunctionExpression = DataModelInitHelper::isFunctionExpression(expr);
 
@@ -126,11 +126,11 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             SCE_LOG_DEBUG("DataModelInitializer: Initialized function variable '{}' from expression '{}'", id, expr);
         } else {
             // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
-            // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
+            // §scxml-5.2 / §scxml-5.3: Use initializeVariableFromExpr for expr attribute
             // Test 277: expr evaluation failure must raise error.execution (no fallback)
             bool success = DataModelInitHelper::initializeVariableFromExpr(
                 scriptEngine_, sessionId_, id, expr, [this](const std::string &msg) {
-                    // W3C SCXML 5.3: Raise error.execution on initialization failure
+                    // §scxml-5.3: Raise error.execution on initialization failure
                     if (eventRaiser_) {
                         eventRaiser_->raiseEvent("error.execution", msg);
                     }
@@ -145,7 +145,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             }
         }
     } else if (!src.empty()) {
-        // W3C SCXML 5.3: Load data from external source (test 446)
+        // §scxml-5.3: Load data from external source (test 446)
         // ARCHITECTURE.MD: Zero Duplication - Use FileLoadingHelper (Single Source of Truth)
 
         std::string filePath = FileLoadingHelper::normalizePath(src);
@@ -176,9 +176,9 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             return;
         }
 
-        // W3C SCXML B.2: Check content type (XML/JSON/text) and handle appropriately
+        // §scxml-B-2: Check content type (XML/JSON/text) and handle appropriately
         if (isXMLContent(fileContent)) {
-            // W3C SCXML B.2 test 557: Parse XML content as DOM object
+            // §scxml-B-2 test 557: Parse XML content as DOM object
             SCE_LOG_DEBUG("DataModelInitializer: Parsing XML content from file '{}' as DOM for variable '{}'", filePath,
                       id);
 
@@ -199,7 +199,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
 
             SCE_LOG_DEBUG("DataModelInitializer: Set variable '{}' as XML DOM object from file '{}'", id, filePath);
         } else {
-            // W3C SCXML B.2: Try evaluating as JSON/JS first (test 446), fall back to text (test 558)
+            // §scxml-B-2: Try evaluating as JSON/JS first (test 446), fall back to text (test 558)
             auto future = scriptEngine_.evaluateExpression(sessionId_, fileContent);
             auto result = future.get();
 
@@ -222,7 +222,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
 
                 SCE_LOG_DEBUG("DataModelInitializer: Initialized variable '{}' from file '{}'", id, filePath);
             } else {
-                // W3C SCXML B.2 test 558: Non-JSON content - normalize whitespace and store as string
+                // §scxml-B-2 test 558: Non-JSON content - normalize whitespace and store as string
                 std::string normalized = normalizeWhitespace(fileContent);
 
                 auto setVarFuture =
@@ -246,7 +246,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             }
         }
     } else if (!content.empty()) {
-        // W3C SCXML B.2: Initialize with inline content
+        // §scxml-B-2: Initialize with inline content
         // ARCHITECTURE.md: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
         bool success = DataModelInitHelper::initializeVariable(
             scriptEngine_, sessionId_, id, content, [this](const std::string &msg) {
@@ -262,7 +262,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
 
         SCE_LOG_DEBUG("DataModelInitializer: Initialized variable '{}' from content", id);
     } else {
-        // W3C SCXML 5.3: No expression or content - create variable with undefined value (test 445)
+        // §scxml-5.3: No expression or content - create variable with undefined value (test 445)
         auto setVarFuture = scriptEngine_.setVariable(sessionId_, id, ScriptValue{});
         auto setResult = setVarFuture.get();
 
@@ -291,7 +291,7 @@ void DataModelInitializer::initializeAllDataItems(const std::string &binding) {
              allDataItems.size(), binding.empty() ? "early (default)" : binding);
 
     // Use BindingHelper to determine initialization strategy
-    // This ensures W3C SCXML 5.3 compliance through shared logic with AOT engine
+    // This ensures §scxml-5.3 compliance through shared logic with AOT engine
     bool shouldAssignValue = BindingHelper::shouldAssignValueAtDocumentLoad(binding);
 
     for (const auto &dataInfo : allDataItems) {

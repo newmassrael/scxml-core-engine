@@ -13,7 +13,7 @@
 
 namespace SCE {
 
-// W3C SCXML 5.10: Consolidated thread-local event context for callback execution
+// §scxml-5.10: Consolidated thread-local event context for callback execution
 thread_local EventRaiserImpl::EventContext EventRaiserImpl::currentEventContext_;
 
 EventRaiserImpl::EventRaiserImpl(EventCallback callback)
@@ -64,7 +64,7 @@ size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionI
 
     std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
 
-    // W3C SCXML 6.4.4: Remove all queued events from the specified session
+    // §scxml-6.4.4: Remove all queued events from the specified session
     // priority_queue doesn't support direct removal, so we need to rebuild it
     std::vector<QueuedEvent> remaining;
     size_t cancelledCount = 0;
@@ -153,7 +153,7 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
 }
 
 bool EventRaiserImpl::raiseInternalEvent(const std::string &eventName, const std::string &eventData) {
-    // W3C SCXML 3.13: Internal events have higher priority than external events
+    // §scxml-3.13: Internal events have higher priority than external events
     return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, "", "", "");
 }
 
@@ -161,25 +161,25 @@ bool EventRaiserImpl::raiseExternalEvent(const std::string &eventName, const std
     // [EVENT ROUTING] Log when external event is raised (child receives event from parent)
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser receiving EXTERNAL event '{}' with data '{}'", eventName, eventData);
 
-    // W3C SCXML 5.10: External events have lower priority than internal events (test 510)
+    // §scxml-5.10: External events have lower priority than internal events (test 510)
     return raiseEventWithPriority(eventName, eventData, EventPriority::EXTERNAL, "", "", "");
 }
 
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData,
                                  const std::string &originSessionId) {
-    // W3C SCXML 6.4: Raise event with origin tracking for finalize support
+    // §scxml-6.4: Raise event with origin tracking for finalize support
     return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, originSessionId, "", "");
 }
 
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData, const std::string &sendId,
                                  bool) {
-    // W3C SCXML 5.10: Raise error event with sendid from failed send element
+    // §scxml-5.10: Raise error event with sendid from failed send element
     return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, "", sendId, "");
 }
 
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData,
                                  const std::string &originSessionId, const std::string &invokeId) {
-    // W3C SCXML 5.10 test 338: Raise event with both origin and invoke ID tracking
+    // §scxml-5.10 test 338: Raise event with both origin and invoke ID tracking
     return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, originSessionId, "", invokeId, "");
 }
 
@@ -191,7 +191,7 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
              "originType='{}', EventRaiser instance={}",
              eventName, originSessionId, invokeId, originType, (void *)this);
 
-    // W3C SCXML 5.10: Raise event with full metadata (origin, invoke ID, and origintype)
+    // §scxml-5.10: Raise event with full metadata (origin, invoke ID, and origintype)
     // W3C SCXML Test 230: Platform events (done.*, error.*) must be queued, not processed immediately
     // This prevents nested processing issues when child completes during parent transition
     // W3C SCXML Test 252: Events from other sessions (e.g., child->parent) must use EXTERNAL priority
@@ -199,7 +199,7 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
     if (isPlatformEvent(eventName)) {
         priority = EventPriority::EXTERNAL;  // Force queueing for platform events
     } else if (!originSessionId.empty()) {
-        // W3C SCXML 5.10.1: Events from other SCXML sessions are EXTERNAL
+        // §scxml-5.10.1: Events from other SCXML sessions are EXTERNAL
         // This ensures correct event priority ordering (FIFO within same priority)
         priority = EventPriority::EXTERNAL;
     }
@@ -215,7 +215,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                                              const std::string &sendId, const std::string &invokeId,
                                              const std::string &originType, int64_t timestampNs,
                                              std::optional<ScriptValue> typedData) {
-    // W3C SCXML B.2: Parse JSON eventData to ScriptValue at pipeline level (engine-agnostic)
+    // §scxml-B-2: Parse JSON eventData to ScriptValue at pipeline level (engine-agnostic)
     // Covers all entry points: EventTargets, HTTP callbacks, AOT, DoneData
     if (!typedData.has_value() && !eventData.empty()) {
         typedData = EventDataHelper::jsonStringToScriptValue(eventData);
@@ -241,9 +241,9 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     // W3C SCXML compliance: Check if immediate mode is enabled
     // W3C SCXML Test 230: Platform events (done.*, error.*) must ALWAYS be queued
     // to prevent nested processing issues when child completes during parent transition
-    // W3C SCXML 3.13: In interactive debugging, scheduler MANUAL mode overrides immediate mode
+    // §scxml-3.13: In interactive debugging, scheduler MANUAL mode overrides immediate mode
     // All events must be queued for step-by-step execution, even if immediate mode is enabled
-    // W3C SCXML 5.9.2: EXTERNAL events must NOT bypass INTERNAL events in the queue
+    // §scxml-5.9.2: EXTERNAL events must NOT bypass INTERNAL events in the queue
     // EXTERNAL events can use immediate mode only if no INTERNAL events are queued (Test 422)
     bool isSchedulerManual = scheduler_ && (scheduler_->getMode() == SchedulerMode::MANUAL);
     bool isPlatform = isPlatformEvent(eventName);
@@ -251,7 +251,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     bool hasInternalEvents = hasQueuedInternalEvents();
 
     if (immediateMode_.load() && !isPlatform && !isSchedulerManual) {
-        // W3C SCXML 5.9.2: INTERNAL events always use immediate mode
+        // §scxml-5.9.2: INTERNAL events always use immediate mode
         // EXTERNAL events use immediate mode only when INTERNAL queue is empty
         bool canProcessImmediately = isInternal || !hasInternalEvents;
 
@@ -275,7 +275,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
 
             if (callback) {
                 try {
-                    // W3C SCXML 5.10: RAII guard sets all event context fields and clears on scope exit
+                    // §scxml-5.10: RAII guard sets all event context fields and clears on scope exit
                     EventContext ctx;
                     ctx.originSessionId = originSessionId;
                     ctx.sendId = sendId;
@@ -301,11 +301,11 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     }  // end if (immediateMode_.load() && !isPlatform && !isSchedulerManual)
 
     // SCXML compliance: Use synchronous queue when immediate mode is disabled
-    // W3C SCXML 5.9.2: EXTERNAL events queued when INTERNAL events are pending
+    // §scxml-5.9.2: EXTERNAL events queued when INTERNAL events are pending
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
 
-        // W3C SCXML 3.13: Restore original timestamp for snapshot restoration (FIFO order preservation)
+        // §scxml-3.13: Restore original timestamp for snapshot restoration (FIFO order preservation)
         std::chrono::steady_clock::time_point timestamp;
         if (timestampNs > 0) {
             // Restore from snapshot: use original timestamp
@@ -390,7 +390,7 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
     try {
         SCE_LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data: {}", event.eventName, event.eventData);
 
-        // W3C SCXML 5.10: RAII guard sets all event context fields and clears on scope exit
+        // §scxml-5.10: RAII guard sets all event context fields and clears on scope exit
         bool isExternal = (event.priority == EventPriority::EXTERNAL);
         EventContext ctx;
         ctx.originSessionId = event.origin;
@@ -420,7 +420,7 @@ void EventRaiserImpl::processQueuedEvents() {
     // state-machine events, not event-loop plumbing.
     SCE_LOG_TRACE("EventRaiserImpl: Processing all queued events synchronously");
 
-    // W3C SCXML 6.2: Poll EventScheduler for ready delayed events (platform-transparent)
+    // §scxml-6.2: Poll EventScheduler for ready delayed events (platform-transparent)
     // Platform-specific behavior: WASM polls, Native no-op (background thread handles it)
     if (platformHelper_) {
         platformHelper_->pollScheduler();
@@ -469,7 +469,7 @@ void EventRaiserImpl::processQueuedEvents() {
 bool EventRaiserImpl::processNextQueuedEvent() {
     SCE_LOG_DEBUG("EventRaiserImpl: Processing ONE queued event (W3C SCXML compliance)");
 
-    // W3C SCXML 6.4: Get event from queue but DON'T remove yet
+    // §scxml-6.4: Get event from queue but DON'T remove yet
     // Finalize handler must execute BEFORE removing event from queue
     QueuedEvent eventToProcess{"", "", EventPriority::EXTERNAL};
     bool hasEvent = false;
@@ -495,10 +495,10 @@ bool EventRaiserImpl::processNextQueuedEvent() {
         return false;
     }
 
-    // W3C SCXML 6.4: Execute callback (including finalize) BEFORE removing from queue
+    // §scxml-6.4: Execute callback (including finalize) BEFORE removing from queue
     bool success = executeEventCallback(eventToProcess);
 
-    // W3C SCXML 6.4: Only NOW remove event from queue (after finalize executed)
+    // §scxml-6.4: Only NOW remove event from queue (after finalize executed)
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
         if (!synchronousQueue_.empty() && synchronousQueue_.top().eventName == eventToProcess.eventName) {
@@ -527,7 +527,7 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         SCE_LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data '{}' from origin '{}'", event.eventName,
                   event.eventData, event.origin);
 
-        // W3C SCXML 5.10: RAII guard sets all event context fields and clears on scope exit
+        // §scxml-5.10: RAII guard sets all event context fields and clears on scope exit
         bool isExternal = (event.priority == EventPriority::EXTERNAL);
         EventContext ctx;
         ctx.originSessionId = event.origin;
@@ -538,7 +538,7 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         ctx.typedData = event.typedData;
         EventContextGuard guard(ctx);
 
-        // W3C SCXML 3.13: Store last processed event for time-travel debugging
+        // §scxml-3.13: Store last processed event for time-travel debugging
         {
             std::lock_guard<std::mutex> lock(lastProcessedEventMutex_);
             lastProcessedEventName_ = event.eventName;
@@ -560,7 +560,7 @@ bool EventRaiserImpl::hasQueuedEvents() const {
 }
 
 bool EventRaiserImpl::hasQueuedInternalEvents() const {
-    // W3C SCXML 5.9.2: Check if INTERNAL priority events are in the queue
+    // §scxml-5.9.2: Check if INTERNAL priority events are in the queue
     // This is used to enforce event priority - EXTERNAL events should not bypass
     // INTERNAL events that are already queued
     std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
@@ -581,7 +581,7 @@ void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
     outInternal.clear();
     outExternal.clear();
 
-    // W3C SCXML 3.13: Internal queue has higher priority than external queue
+    // §scxml-3.13: Internal queue has higher priority than external queue
     // Copy synchronousQueue_ and separate by priority
     std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
 
@@ -595,8 +595,8 @@ void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
     }
 
     // Separate by priority (INTERNAL vs EXTERNAL)
-    // W3C SCXML 5.10.1: Capture complete event metadata for _event object restoration
-    // W3C SCXML 3.13: Preserve timestamps for FIFO ordering during snapshot restore
+    // §scxml-5.10.1: Capture complete event metadata for _event object restoration
+    // §scxml-3.13: Preserve timestamps for FIFO ordering during snapshot restore
     for (const auto &event : allEvents) {
         // Convert timestamp to nanoseconds since epoch for serialization
         int64_t timestampNs =
@@ -636,7 +636,7 @@ void EventRaiserImpl::clearQueue() {
 }
 
 bool EventRaiserImpl::getLastProcessedEvent(std::string &outEventName, std::string &outEventData) const {
-    // W3C SCXML 3.13: Retrieve last processed event for time-travel debugging
+    // §scxml-3.13: Retrieve last processed event for time-travel debugging
     std::lock_guard<std::mutex> lock(lastProcessedEventMutex_);
 
     if (lastProcessedEventName_.empty()) {
