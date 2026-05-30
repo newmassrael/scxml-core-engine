@@ -601,23 +601,7 @@ case "$GIT_DIR" in
   *) GIT_DIR="${CWD:-$PWD}/$GIT_DIR" ;;
 esac
 
-MARKER="$GIT_DIR/.claude-commit-audit-sha"
 HEAD_SHA="$(git -C "${CWD:-.}" rev-parse --verify HEAD 2>/dev/null || echo none)"
-
-# Marker key binds both the current HEAD and the exact command bytes.
-# Storing just HEAD was unsafe: any incidental invocation of this hook
-# (diagnostic probes, other shells, manual runs) at the same HEAD
-# would write HEAD as the marker and then let the *next* real commit
-# pass silently, because HEAD match alone was enough. By hashing in
-# the command, a real `git commit -m ...` retry preserves its own
-# marker while an unrelated invocation produces a different marker
-# that does not unlock anybody else's commit.
-MARKER_KEY="$(printf '%s\n%s' "$HEAD_SHA" "$CMD" | sha1sum | awk '{print $1}')"
-
-if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$MARKER_KEY" ]; then
-  # Already audited at this (HEAD, command). Let the commit through.
-  exit 0
-fi
 
 # Discover plan memos that might name YAGNI-adjacent work for this
 # project. Memory dirs follow the slug `<leading-slash>path-with-
@@ -829,17 +813,57 @@ if [ -n "$MEMO_ERRORS" ]; then
   exit 2
 fi
 
-# Record the marker *before* blocking so that the retry picks it up.
-printf '%s' "$MARKER_KEY" > "$MARKER"
+# ── Self-audit gate: pre-written answer file (1-pass) ────────────
+#
+# Previously this hook blocked the FIRST attempt of every commit
+# (exit 2), printed the questions, wrote a HEAD+command marker, and
+# let the RETRY pass. Two costs: (1) the first-attempt exit 2, when
+# the commit shared a tool batch with sibling calls, made the harness
+# cancel every sibling — a transcript flood on every commit; (2) the
+# retry passed with NO check that the questions were actually answered
+# (the marker was content-blind, honor-system only).
+#
+# 1-pass design: the answers must be WRITTEN TO A FILE before the
+# commit. The key binds HEAD + the staged diff, so it survives commit-
+# message rewrites and invalidates only when the staged content
+# changes. A present, non-trivial answer file lets the commit pass on
+# the FIRST attempt — no block, no batch cancellation — and leaves a
+# durable audit trail. Absence blocks with the exact path to write,
+# which happens only when the audit was genuinely skipped, not on every
+# commit. Strictly stronger than the old marker: that verified nothing;
+# this requires real written content keyed to this diff.
+AUDIT_DIR="$GIT_DIR/.claude-commit-audit"
+mkdir -p "$AUDIT_DIR" 2>/dev/null || true
+STAGED_DIFF="$(git -C "${CWD:-.}" diff --cached --no-color 2>/dev/null || true)"
+AUDIT_KEY="$(printf '%s\n%s' "$HEAD_SHA" "$STAGED_DIFF" | sha1sum | awk '{print $1}')"
+AUDIT_FILE="$AUDIT_DIR/$AUDIT_KEY.md"
+
+# Accept when a freshly-keyed answer file clears a length floor. The
+# key (HEAD + staged diff) guarantees freshness, so a file copied from
+# another commit cannot satisfy this one. A length floor is the forcing
+# function — deliberately not a brittle content regex, so a real answer
+# never loops.
+if [ -f "$AUDIT_FILE" ]; then
+  CHARS="$(wc -m < "$AUDIT_FILE" 2>/dev/null | tr -d ' ')"
+  if [ "${CHARS:-0}" -ge 400 ]; then
+    exit 0
+  fi
+fi
 
 {
-  echo "=== COMMIT SELF-AUDIT (hook-mandated, answer then retry) ==="
+  echo "=== COMMIT SELF-AUDIT (write the answer file, then commit) ==="
   echo ""
-  echo "This commit has not been audited yet (keyed on HEAD + command)."
-  echo "Answer the five questions below, then re-run the exact same"
-  echo "commit command. The retry passes because of the marker at"
-  echo "$MARKER — which is a hash of HEAD + command, so diagnostic"
-  echo "probes, other shells, and manual runs cannot unlock it."
+  echo "This staged diff has no audit answer yet. Write your answers to"
+  echo "the five questions below to EXACTLY this path, then run the"
+  echo "commit — it passes on the first attempt, no retry, no batch"
+  echo "cancellation:"
+  echo ""
+  echo "    $AUDIT_FILE"
+  echo ""
+  echo "The path is keyed to HEAD + the staged diff: re-staging new"
+  echo "content needs a fresh answer, but rewording the commit message"
+  echo "does not. Minimum 400 characters (a real consideration, not a"
+  echo "stamp). The file lives under .git/ so it is never committed."
   echo ""
   echo "1. Textbook quality: does this diff contain format coupling,"
   echo "   hardcoded magic numbers, invariants without drift guards,"
@@ -901,8 +925,9 @@ printf '%s' "$MARKER_KEY" > "$MARKER"
     echo "     (plan memo directory is empty or absent: $MEMORY_DIR)"
   fi
   echo ""
-  echo "Write your audit answers in the reply, then re-run the same"
-  echo "git commit command."
+  echo "Write the five answers to the audit file path above (>= 400"
+  echo "chars), then run the commit. No reply-then-retry — the file IS"
+  echo "the audit record."
 } >&2
 
 # Exit 2 = block tool call, pass stderr to Claude as reason
