@@ -1,0 +1,1168 @@
+{
+  "sections": {
+    "scxml-1": {
+      "title": "Terminology",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-2": {
+      "title": "Overview",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-3": {
+      "title": "Core Constructs",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-3.1": {
+      "title": "Introduction",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.1.1": {
+      "title": "Basic State Machine Notation",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.1",
+      "decision_status": "active"
+    },
+    "scxml-3.1.2": {
+      "title": "Compound States",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.1",
+      "decision_status": "active"
+    },
+    "scxml-3.1.3": {
+      "title": "Parallel States",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.1",
+      "decision_status": "active"
+    },
+    "scxml-3.1.4": {
+      "title": "Initial, Final, and History States",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.1",
+      "decision_status": "active"
+    },
+    "scxml-3.1.5": {
+      "title": "'Type' and Transitions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.1",
+      "decision_status": "active"
+    },
+    "scxml-3.10": {
+      "title": "<history>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.10.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.10",
+      "decision_status": "active"
+    },
+    "scxml-3.10.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.10",
+      "decision_status": "active"
+    },
+    "scxml-3.11": {
+      "title": "Legal State Configurations and Specifications",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.12": {
+      "title": "SCXML Events",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.12.1": {
+      "title": "Event Descriptors",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.12",
+      "decision_status": "active"
+    },
+    "scxml-3.12.2": {
+      "title": "Errors",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.12",
+      "decision_status": "active"
+    },
+    "scxml-3.12.3": {
+      "title": "List of Errors and Events",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.12",
+      "decision_status": "active"
+    },
+    "scxml-3.13": {
+      "title": "Selecting and Executing Transitions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.14": {
+      "title": "IDs",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.2": {
+      "title": "<scxml>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.2.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.2",
+      "decision_status": "active"
+    },
+    "scxml-3.2.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.2",
+      "decision_status": "active"
+    },
+    "scxml-3.3": {
+      "title": "<state>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.3.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.3",
+      "decision_status": "active"
+    },
+    "scxml-3.3.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.3",
+      "decision_status": "active"
+    },
+    "scxml-3.4": {
+      "title": "<parallel>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.4.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.4",
+      "decision_status": "active"
+    },
+    "scxml-3.4.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.4",
+      "decision_status": "active"
+    },
+    "scxml-3.5": {
+      "title": "<transition>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.5.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.5",
+      "decision_status": "active"
+    },
+    "scxml-3.5.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.5",
+      "decision_status": "active"
+    },
+    "scxml-3.6": {
+      "title": "<initial>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.6.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.6",
+      "decision_status": "active"
+    },
+    "scxml-3.6.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.6",
+      "decision_status": "active"
+    },
+    "scxml-3.7": {
+      "title": "<final>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.7.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.7",
+      "decision_status": "active"
+    },
+    "scxml-3.7.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.7",
+      "decision_status": "active"
+    },
+    "scxml-3.8": {
+      "title": "<onentry>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.8.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.8",
+      "decision_status": "active"
+    },
+    "scxml-3.8.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.8",
+      "decision_status": "active"
+    },
+    "scxml-3.9": {
+      "title": "<onexit>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3",
+      "decision_status": "active"
+    },
+    "scxml-3.9.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.9",
+      "decision_status": "active"
+    },
+    "scxml-3.9.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-3.9",
+      "decision_status": "active"
+    },
+    "scxml-4": {
+      "title": "Executable Content",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-4.1": {
+      "title": "Introduction",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-4.10": {
+      "title": "Extensibility of Executable Content",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-4.2": {
+      "title": "<raise>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-4.2.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.2",
+      "decision_status": "active"
+    },
+    "scxml-4.2.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.2",
+      "decision_status": "active"
+    },
+    "scxml-4.3": {
+      "title": "<if>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-4.3.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.3",
+      "decision_status": "active"
+    },
+    "scxml-4.3.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.3",
+      "decision_status": "active"
+    },
+    "scxml-4.4": {
+      "title": "<elseif>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-4.4.1": {
+      "title": "Overview",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.4",
+      "decision_status": "active"
+    },
+    "scxml-4.5": {
+      "title": "<else>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-4.5.1": {
+      "title": "Overview",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.5",
+      "decision_status": "active"
+    },
+    "scxml-4.5.2": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.5",
+      "decision_status": "active"
+    },
+    "scxml-4.6": {
+      "title": "<foreach>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-4.6.1": {
+      "title": "Overview",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.6",
+      "decision_status": "active"
+    },
+    "scxml-4.6.2": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.6",
+      "decision_status": "active"
+    },
+    "scxml-4.6.3": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.6",
+      "decision_status": "active"
+    },
+    "scxml-4.7": {
+      "title": "<log>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-4.7.1": {
+      "title": "Overview",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.7",
+      "decision_status": "active"
+    },
+    "scxml-4.7.2": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.7",
+      "decision_status": "active"
+    },
+    "scxml-4.7.3": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4.7",
+      "decision_status": "active"
+    },
+    "scxml-4.8": {
+      "title": "Other Executable Content",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-4.9": {
+      "title": "Evaluation of Executable Content",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-4",
+      "decision_status": "active"
+    },
+    "scxml-5": {
+      "title": "Data Model and Data Manipulation",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-5.1": {
+      "title": "Introduction",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.10": {
+      "title": "System Variables",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.10.1": {
+      "title": "The Internal Structure of Events",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.10",
+      "decision_status": "active"
+    },
+    "scxml-5.2": {
+      "title": "<datamodel>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.2.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.2",
+      "decision_status": "active"
+    },
+    "scxml-5.2.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.2",
+      "decision_status": "active"
+    },
+    "scxml-5.3": {
+      "title": "<data>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.3.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.3",
+      "decision_status": "active"
+    },
+    "scxml-5.3.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.3",
+      "decision_status": "active"
+    },
+    "scxml-5.3.3": {
+      "title": "Data Binding",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.3",
+      "decision_status": "active"
+    },
+    "scxml-5.4": {
+      "title": "<assign>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.4.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.4",
+      "decision_status": "active"
+    },
+    "scxml-5.4.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.4",
+      "decision_status": "active"
+    },
+    "scxml-5.5": {
+      "title": "<donedata>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.5.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.5",
+      "decision_status": "active"
+    },
+    "scxml-5.5.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.5",
+      "decision_status": "active"
+    },
+    "scxml-5.6": {
+      "title": "<content>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.6.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.6",
+      "decision_status": "active"
+    },
+    "scxml-5.6.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.6",
+      "decision_status": "active"
+    },
+    "scxml-5.7": {
+      "title": "<param>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.7.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.7",
+      "decision_status": "active"
+    },
+    "scxml-5.7.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.7",
+      "decision_status": "active"
+    },
+    "scxml-5.8": {
+      "title": "<script>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.8.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.8",
+      "decision_status": "active"
+    },
+    "scxml-5.8.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.8",
+      "decision_status": "active"
+    },
+    "scxml-5.9": {
+      "title": "Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5",
+      "decision_status": "active"
+    },
+    "scxml-5.9.1": {
+      "title": "Conditional Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.9",
+      "decision_status": "active"
+    },
+    "scxml-5.9.2": {
+      "title": "Location Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.9",
+      "decision_status": "active"
+    },
+    "scxml-5.9.3": {
+      "title": "Legal Data Values and Value Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.9",
+      "decision_status": "active"
+    },
+    "scxml-5.9.4": {
+      "title": "Errors in Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.9",
+      "decision_status": "active"
+    },
+    "scxml-6": {
+      "title": "External Communications",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-6.1": {
+      "title": "Introduction",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6",
+      "decision_status": "active"
+    },
+    "scxml-6.2": {
+      "title": "<send>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6",
+      "decision_status": "active"
+    },
+    "scxml-6.2.1": {
+      "title": "Overview",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.2",
+      "decision_status": "active"
+    },
+    "scxml-6.2.2": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.2",
+      "decision_status": "active"
+    },
+    "scxml-6.2.3": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.2",
+      "decision_status": "active"
+    },
+    "scxml-6.2.4": {
+      "title": "The Target of Send",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.2",
+      "decision_status": "active"
+    },
+    "scxml-6.2.5": {
+      "title": "The Type of Send",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.2",
+      "decision_status": "active"
+    },
+    "scxml-6.2.6": {
+      "title": "Message Content",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.2",
+      "decision_status": "active"
+    },
+    "scxml-6.3": {
+      "title": "<cancel>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6",
+      "decision_status": "active"
+    },
+    "scxml-6.3.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.3",
+      "decision_status": "active"
+    },
+    "scxml-6.3.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.3",
+      "decision_status": "active"
+    },
+    "scxml-6.4": {
+      "title": "<invoke>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6",
+      "decision_status": "active"
+    },
+    "scxml-6.4.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.4",
+      "decision_status": "active"
+    },
+    "scxml-6.4.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.4",
+      "decision_status": "active"
+    },
+    "scxml-6.4.3": {
+      "title": "Implementation of <invoke>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.4",
+      "decision_status": "active"
+    },
+    "scxml-6.4.4": {
+      "title": "Data Sharing",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.4",
+      "decision_status": "active"
+    },
+    "scxml-6.5": {
+      "title": "<finalize>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6",
+      "decision_status": "active"
+    },
+    "scxml-6.5.1": {
+      "title": "Attribute Details",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.5",
+      "decision_status": "active"
+    },
+    "scxml-6.5.2": {
+      "title": "Children",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.5",
+      "decision_status": "active"
+    },
+    "scxml-A": {
+      "title": "Conformance",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-A-1": {
+      "title": "Conforming Documents",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-A",
+      "decision_status": "active"
+    },
+    "scxml-A-2": {
+      "title": "Conforming Processors",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-A",
+      "decision_status": "active"
+    },
+    "scxml-B": {
+      "title": "Data Models",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-B-1": {
+      "title": "The Null Data Model",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B",
+      "decision_status": "active"
+    },
+    "scxml-B-1-1": {
+      "title": "Data Model",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-1",
+      "decision_status": "active"
+    },
+    "scxml-B-1-2": {
+      "title": "Conditional Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-1",
+      "decision_status": "active"
+    },
+    "scxml-B-1-3": {
+      "title": "Location Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-1",
+      "decision_status": "active"
+    },
+    "scxml-B-1-4": {
+      "title": "Value Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-1",
+      "decision_status": "active"
+    },
+    "scxml-B-1-5": {
+      "title": "Scripting",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-1",
+      "decision_status": "active"
+    },
+    "scxml-B-1-6": {
+      "title": "System Variables",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-1",
+      "decision_status": "active"
+    },
+    "scxml-B-1-7": {
+      "title": "Unsupported Elements",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-1",
+      "decision_status": "active"
+    },
+    "scxml-B-2": {
+      "title": "The ECMAScript Data Model",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B",
+      "decision_status": "active"
+    },
+    "scxml-B-2-1": {
+      "title": "Data Model",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-10": {
+      "title": "Scripting",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-11": {
+      "title": "<foreach>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-2": {
+      "title": "Scoping",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-3": {
+      "title": "Conditional Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-4": {
+      "title": "Location Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-5": {
+      "title": "Value Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-6": {
+      "title": "<content>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-7": {
+      "title": "<assign>",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-8": {
+      "title": "System Variables",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-B-2-9": {
+      "title": "Serialization",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-B-2",
+      "decision_status": "active"
+    },
+    "scxml-C": {
+      "title": "Event I/O Processors",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-C-1": {
+      "title": "SCXML Event I/O Processor",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-C",
+      "decision_status": "active"
+    },
+    "scxml-C-1-1": {
+      "title": "_ioprocessors Value",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-C-1",
+      "decision_status": "active"
+    },
+    "scxml-C-1-2": {
+      "title": "Examples",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-C-1",
+      "decision_status": "active"
+    },
+    "scxml-C-2": {
+      "title": "Basic HTTP Event I/O Processor",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-C",
+      "decision_status": "active"
+    },
+    "scxml-C-2-1": {
+      "title": "Receiving Events",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-C-2",
+      "decision_status": "active"
+    },
+    "scxml-C-2-2": {
+      "title": "Sending Events",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-C-2",
+      "decision_status": "active"
+    },
+    "scxml-C-2-3": {
+      "title": "_ioprocessors Value",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-C-2",
+      "decision_status": "active"
+    },
+    "scxml-D": {
+      "title": "Algorithm for SCXML Interpretation",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-D-Algorithm": {
+      "title": "Algorithm",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D",
+      "decision_status": "active"
+    },
+    "scxml-D-Datatypes": {
+      "title": "Datatypes",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-Algorithm",
+      "decision_status": "active"
+    },
+    "scxml-D-GlobalVariables": {
+      "title": "Global variables",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-Algorithm",
+      "decision_status": "active"
+    },
+    "scxml-D-InformalSemantics": {
+      "title": "Informal Semantics",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D",
+      "decision_status": "active"
+    },
+    "scxml-D-Predicates": {
+      "title": "Predicates",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-Algorithm",
+      "decision_status": "active"
+    },
+    "scxml-D-PrelimaryDefinitions": {
+      "title": "Preliminary definitions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-InformalSemantics",
+      "decision_status": "active"
+    },
+    "scxml-D-PrinciplesandConstraints": {
+      "title": "Principles and Constraints",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-InformalSemantics",
+      "decision_status": "active"
+    },
+    "scxml-D-ProceduresandFunctions": {
+      "title": "Procedures and Functions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-Algorithm",
+      "decision_status": "active"
+    },
+    "scxml-D-addAncestorStatesToEnter": {
+      "title": "procedure addAncestorStatesToEnter(state, ancestor, statesToEnter, statesForDefaultEntry, defaultHistoryContent)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-addDescendantStatesToEnter": {
+      "title": "procedure addDescendantStatesToEnter(state,statesToEnter,statesForDefaultEntry, defaultHistoryContent)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-computeEntrySet": {
+      "title": "procedure computeEntrySet(transitions, statesToEnter, statesForDefaultEntry, defaultHistoryContent)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-computeExitSet": {
+      "title": "procedure computeExitSet(enabledTransitions)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-enterStates": {
+      "title": "procedure enterStates(enabledTransitions)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-executeTransitionContent": {
+      "title": "procedure executeTransitionContent(enabledTransitions)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-exitInterpreter": {
+      "title": "procedure exitInterpreter()",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-exitStates": {
+      "title": "procedure exitStates(enabledTransitions)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-findLCCA": {
+      "title": "function findLCCA(stateList)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-getChildStates": {
+      "title": "function getChildStates(state1)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-getEffectiveTargetStates": {
+      "title": "function getEffectiveTargetStates(transition)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-getProperAncestors": {
+      "title": "function getProperAncestors(state1, state2)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-getTransitionDomain": {
+      "title": "function getTransitionDomain(transition)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-interpret": {
+      "title": "procedure interpret(scxml,id)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-isDescendant": {
+      "title": "function isDescendant(state1, state2)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-isInFinalState": {
+      "title": "procedure isInFinalState(s)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-mainEventLoop": {
+      "title": "procedure mainEventLoop()",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-microstepProcedure": {
+      "title": "procedure microstep(enabledTransitions)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-removeConflictingTransitions": {
+      "title": "function removeConflictingTransitions(enabledTransitions)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-selectEventlessTransitions": {
+      "title": "function selectEventlessTransitions()",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-D-selectTransitions": {
+      "title": "function selectTransitions(event)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-D-ProceduresandFunctions",
+      "decision_status": "active"
+    },
+    "scxml-E": {
+      "title": "Schema",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-F": {
+      "title": "Related Work",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-G": {
+      "title": "Examples",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-G-1": {
+      "title": "Language Overview",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-G",
+      "decision_status": "active"
+    },
+    "scxml-G-2": {
+      "title": "Microwave Example",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-G",
+      "decision_status": "active"
+    },
+    "scxml-G-3": {
+      "title": "Microwave Example (Using parallel)",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-G",
+      "decision_status": "active"
+    },
+    "scxml-G-4": {
+      "title": "Calculator Example",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-G",
+      "decision_status": "active"
+    },
+    "scxml-G-5": {
+      "title": "Examples of Invoke and finalize",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-G",
+      "decision_status": "active"
+    },
+    "scxml-G-6": {
+      "title": "Inline Content and Namespaces",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-G",
+      "decision_status": "active"
+    },
+    "scxml-G-7": {
+      "title": "Custom Action Elements",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-G",
+      "decision_status": "active"
+    },
+    "scxml-H": {
+      "title": "MIME Type",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-H-1": {
+      "title": "Registration of MIME media type application/scxml+xml",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-H",
+      "decision_status": "active"
+    },
+    "scxml-H-2": {
+      "title": "Fragment Identifiers",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-H",
+      "decision_status": "active"
+    },
+    "scxml-I": {
+      "title": "References",
+      "parent_doc": "docs/GENERATED.md",
+      "decision_status": "active"
+    },
+    "scxml-I-1": {
+      "title": "Normative References",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-I",
+      "decision_status": "active"
+    },
+    "scxml-I-2": {
+      "title": "Informative References",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-I",
+      "decision_status": "active"
+    }
+  },
+  "changelog_entries": {},
+  "inventory_entries": {},
+  "schema_version": 4
+}

@@ -1,0 +1,39 @@
+# W3C SCXML Recommendation spec-mirror workspace (Mnemosyne adoption).
+#
+# One workspace per external namespace (SCHEMA_GUIDE "External-spec mirror"):
+# this tree mirrors https://www.w3.org/TR/scxml/ so SCE code citations stay
+# honest against the spec graph. Sibling workspaces (IRP catalog, SCE design
+# ledger) live under their own mnemosyne.toml trees.
+#
+# Sections are generated from the vendored snapshot by the A1 converter
+# (tools/mnemosyne-adoption/scxml_toc_to_manifest.py) and loaded via
+# `import-sections`. The atomic store (.atomic/workspace.atomic.json) is the
+# canonical ledger going forward; GENERATED.md is its rendered view.
+#
+# [plugins.set_equality_validator] (code-citation defense over SCE source) is
+# intentionally deferred: it is wired once the existing "W3C SCXML <n>.<m>"
+# citations are migrated to the §scxml-<n>.<m> form.
+
+[workspace]
+docs = ["GENERATED.md"]
+default_doc = "GENERATED.md"
+
+# Drift provenance (B2 validate-spec-drift). url/revision/fetched_sha256 mirror
+# tools/mnemosyne-adoption/spec-snapshot/PROVENANCE.json (the B1 drift source).
+[workspace.spec_source]
+url = "https://www.w3.org/TR/scxml/"
+revision = "REC-scxml-20150901"
+fetched_sha256 = "25da59a4a475e9751ad855b639c933b2d465911bb7eed7d33ffd600196e2a209"
+fetched_at = "2026-05-30"
+
+# Flatten the store + rendered doc directly under this workspace root (no
+# nested docs/ level).
+[atomic]
+sidecar_path = ".atomic/workspace.atomic.json"
+output_path = "GENERATED.md"
+
+[schema]
+changelog_titles = ["Revision History"]
+entry_id_prefix = "Rev "
+anchor_convention = "section_number"
+medium_name = "spec_mirror"
