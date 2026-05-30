@@ -17,7 +17,7 @@ namespace {
 // Every `validation/*` and `scxml/*` `DiagnosticCode` shares the
 // `validation` Stage in the Rust authority (see
 // `DiagnosticCode::stage()` in `sce-build/src/forge/diagnostic.rs`
-// and RFC §W5 D2's Stage::Validation reuse). Mirrors `kParseStage`
+// and RFC §wire-W5 D2's Stage::Validation reuse). Mirrors `kParseStage`
 // in `ParseError.cpp` and `kXIncludeStage` in `XIncludeError.cpp`;
 // stage constant stays file-local for the same reason — Rust
 // prefix→stage table is not 1:1 (`mesh/deploy-*` map to

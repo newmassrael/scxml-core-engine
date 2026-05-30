@@ -331,7 +331,7 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
     // regions resolve to the included file. Phase X RFC §3 B2; see
     // claudedocs/rfc-sce-template-phase-x.md.
     //
-    // Failure surface (RFC §W4.5):
+    // Failure surface (RFC §wire-W4.5):
     //   - `XIncludeExpansionError` subtypes (typed leaves from W3)
     //     propagate untouched.
     //   - Reparse failure of the spliced text throws
@@ -340,7 +340,7 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
     //     `XIncludeMalformed` (D3: reuse `xml/xinclude-malformed`).
     //
     // The previous `if (!doc_)` defensive branch was dropped under
-    // RFC §W4.5: PugiXMLParser typed-throw (W4 D1-C) never produces
+    // RFC §wire-W4.5: PugiXMLParser typed-throw (W4 D1-C) never produces
     // a wrapped null doc, so the branch was unreachable.
 
     // Fast path: documents whose captured source contains no
@@ -411,7 +411,7 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
         // Reparse-failure throws (`ParseXmlFailed` from the inline
         // throw above) propagate untouched so the typed leaf reaches
         // `SCXMLParser::parseFile` / `parseContent`'s parser-entry
-        // catch arm (RFC §W4.5 D2). The arm is here so the
+        // catch arm (RFC §wire-W4.5 D2). The arm is here so the
         // std::exception fallback below does NOT fold a typed
         // ParseError into XIncludeMalformed.
         throw;
@@ -425,7 +425,7 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
         // it from the rendered message text would be lossy.
         throw;
     } catch (const std::exception &ex) {
-        // RFC §W4.5 D3: non-typed expander failure (e.g.
+        // RFC §wire-W4.5 D3: non-typed expander failure (e.g.
         // std::bad_alloc propagating through expandStringX) folds
         // into the `xml/xinclude-malformed` family — the catch-all
         // for "expansion failed for an unspecified reason".
@@ -448,14 +448,14 @@ SCE::parsing::PositionMap PugiXMLDocument::processSceTemplate(
     // map so diagnostic byte lookups resolve through both
     // preprocessor stages (Phase X RFC §1 Q2).
     //
-    // Failure surface (RFC §W4.5):
+    // Failure surface (RFC §wire-W4.5):
     //   - `TemplateError` subtypes (typed leaves from W1) thrown by
     //     `expandString` propagate untouched.
     //   - Reparse failure of the spliced text throws
     //     `ParseXmlFailed` (D2: reuse `xml/parse`).
     //
     // The previous `if (!doc_)` defensive branch was dropped under
-    // RFC §W4.5: PugiXMLParser typed-throw (W4 D1-C) never produces
+    // RFC §wire-W4.5: PugiXMLParser typed-throw (W4 D1-C) never produces
     // a wrapped null doc, so the branch was unreachable.
 
     // Fast path: documents whose captured source contains no
@@ -563,7 +563,7 @@ bool PugiXMLDocument::isValid() const {
 // PugiXMLParser implementation
 // ============================================================================
 
-// RFC §W4 D1-C: typed-throw replaces the historical nullptr-return
+// RFC §wire-W4 D1-C: typed-throw replaces the historical nullptr-return
 // + lastError_ poll. Callers (SCXMLParser::parseFile / parseContent)
 // observe parser-entry failures via typed `SCE::parsing::ParseError`
 // subtypes caught at the parser boundary. `lastError_` is no longer

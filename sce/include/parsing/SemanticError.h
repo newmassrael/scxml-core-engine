@@ -19,7 +19,7 @@
 namespace SCE::parsing {
 
 // SCXML semantic-validation typed exception family thrown by
-// `SCE::SCXMLParser::parseScxmlNode` and `validateModel` under RFC §W5
+// `SCE::SCXMLParser::parseScxmlNode` and `validateModel` under RFC §wire-W5
 // D1 (typed-throw, mirror of W4 D1-C). Each leaf carries a typed
 // payload — `SCXMLParser::parseFile` / `parseContent` catch it on the
 // `SemanticError` base and surface the typed instance via
@@ -43,16 +43,16 @@ namespace SCE::parsing {
 // The fourth leaf, `SemanticTopLevelScriptUnloaded`, carries a NEW
 // wire code `scxml/top-level-script-unloaded` because §scxml-5.8
 // has no forge analog — the rejection rule is unique to SCXML's
-// document-loading semantics. RFC §W5 D2 documents the 1-NEW + 3-
+// document-loading semantics. RFC §wire-W5 D2 documents the 1-NEW + 3-
 // REUSE breakdown.
 //
 // Stage = "validation" for ALL four leaves: SCXML semantic validation
 // IS post-parse semantic validation, the same analytical stage as
 // forge `validation/*`. Adding a `Stage::ScxmlSemantic` for separate-
 // stage routing is a future decision driven by a real consumer ask
-// (RFC §W5 anti-pattern #7).
+// (RFC §wire-W5 anti-pattern #7).
 //
-// RFC §W5 α-strict per
+// RFC §wire-W5 α-strict per
 // `claudedocs/rfc-sce-diagnostic-wire-unification.md` line 1755+.
 
 class SemanticError : public std::runtime_error, public Diagnostic {
@@ -193,14 +193,14 @@ public:
 // Top-level `<script>` element rejected per §scxml-5.8 — either
 // (a) empty content AND empty `src`, (b) `src` set but file failed to
 // load, or (c) script body parse failure. The 1 NEW wire code RFC
-// §W5 D2 introduces; emits `spec` field with `"W3C SCXML §5.8"`.
+// §wire-W5 D2 introduces; emits `spec` field with `"W3C SCXML §5.8"`.
 //
 // Payload `index` is the 1-based script element ordinal (parser-path
 // captures it; analyzer-path leaves it empty); `src` is the offending
 // `src` attribute value when set. Both are optional because the
 // analyzer-side Rust producer (`analyzer::can_generate_static`) emits
 // without parser-captured detail — the wire code identity holds
-// across the asymmetry per RFC §W5 anti-pattern #5.
+// across the asymmetry per RFC §wire-W5 anti-pattern #5.
 class SemanticTopLevelScriptUnloaded : public SemanticError {
 public:
     SemanticTopLevelScriptUnloaded(std::string message,

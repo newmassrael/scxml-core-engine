@@ -28,11 +28,11 @@ public:
      * @param filename Absolute path to XML file
      * @return Parsed document on success
      * @throws SCE::parsing::ParseFileNotFound when the file does not exist
-     *         or cannot be opened (RFC §W4 D1-C typed-throw refit).
+     *         or cannot be opened (RFC §wire-W4 D1-C typed-throw refit).
      * @throws SCE::parsing::ParseXmlFailed when the underlying parser
      *         (pugixml) reports a malformed-XML failure.
      *
-     * @note Pre-RFC §W4, this method returned `nullptr` on failure
+     * @note Pre-RFC §wire-W4, this method returned `nullptr` on failure
      *       and the caller polled `getLastError()`. The poll contract
      *       is deprecated; consumers should catch
      *       `SCE::parsing::ParseError&` instead. See the W4 closure

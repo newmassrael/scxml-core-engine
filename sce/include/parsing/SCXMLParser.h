@@ -96,7 +96,7 @@ public:
      * Populated when the parse hits a typed throw site that the
      * boundary flatten in `parseFile`/`parseContent` recognises —
      * presently the 8 `SCE::parsing::TemplateError` subtypes
-     * (RFC §W1 audit finding #1 closure / W2 deliverable). Returns
+     * (RFC §wire-W1 audit finding #1 closure / W2 deliverable). Returns
      * empty vector for parse paths that surface only string errors.
      */
     const std::vector<std::unique_ptr<SCE::parsing::Diagnostic>> &

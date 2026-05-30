@@ -74,6 +74,10 @@ DEFAULT_LEDGER = os.path.join(
 DEFAULT_MESH_LEDGER = os.path.join(
     REPO_ROOT, "docs", "sce-ledger", "mesh", ".atomic", "workspace.atomic.json"
 )
+DEFAULT_WIRE_LEDGER = os.path.join(
+    REPO_ROOT, "docs", "sce-ledger", "wire", ".atomic", "workspace.atomic.json"
+)
+_NS_DEFAULT_LEDGER = {"mesh": DEFAULT_MESH_LEDGER, "wire": DEFAULT_WIRE_LEDGER}
 
 # A citation label: a numeric path (digits + dotted digits) or a lettered
 # appendix path (single uppercase letter + at least one dotted-digit group).
@@ -86,6 +90,14 @@ LABEL_RE = r"(?:[0-9]+(?:\.[0-9]+)*|[A-Z](?:\.[0-9]+)+)"
 # a marked one, so the bare path leans on three guards (see _plan_bare): ledger
 # membership, a cross-namespace ambiguity check, and a foreign-marker denylist.
 MESH_LABEL_RE = r"[0-9]+(?:\.[0-9]+)*"
+
+# The wire namespace (Wire RFC) labels its commit-series waves W0..W5 and the
+# half-wave W4.5. The label starts with a letter and keeps its dot verbatim
+# (W4.5 -> wire-W4.5; the dot is digit-flanked so the extractor reads it whole).
+# A wire label is unique to this namespace (scxml/mesh never start a label with
+# 'W'), so the cross-namespace and foreign-marker guards are harmless no-ops for
+# it -- "RFC §W4" is the Wire RFC, not the IETF "RFC <digits>" form.
+WIRE_LABEL_RE = r"W[0-9]+(?:\.[0-9]+)?"
 
 # An external-standard marker that DIRECTLY precedes the sigil (anchored to the
 # end of the line-so-far) names a non-mesh citation the bare-sigil migrator must
@@ -176,10 +188,16 @@ def comment_mask(text, nested):
     return mask
 
 
+def _leaf(label, namespace):
+    """The id leaf (the part after '<ns>-'). wire keeps its wave label verbatim
+    (W4.5); scxml/mesh apply the A1 policy (numeric dots / lettered hyphens)."""
+    return label if namespace == "wire" else label_to_leaf(label)
+
+
 def label_to_id(label, namespace="scxml"):
-    """'6.2' -> 'scxml-6.2' ; 'C.2' -> 'scxml-C-2' (A1 policy). The namespace
-    segment defaults to scxml; the mesh path passes namespace='mesh'."""
-    return f"{namespace}-" + label_to_leaf(label)
+    """'6.2' -> 'scxml-6.2' ; 'C.2' -> 'scxml-C-2' (A1 policy) ; 'W4.5' ->
+    'wire-W4.5'. The namespace segment defaults to scxml."""
+    return f"{namespace}-" + _leaf(label, namespace)
 
 
 def _line_offsets(text):
@@ -296,7 +314,8 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
     A reported (skipped) citation stays bare, which the namespace-scoped gate
     skips anyway — so leaving it is safe; the report is the manual-review surface.
     """
-    chain = MESH_LABEL_RE + r"(?:/" + MESH_LABEL_RE + r")*"
+    label_re = WIRE_LABEL_RE if namespace == "wire" else MESH_LABEL_RE
+    chain = label_re + r"(?:/" + label_re + r")*"
     pattern = re.compile(r"§[ \t]*(?P<barechain>" + chain + r")")
     migrations, skipped = [], []
     out, last = [], 0
@@ -349,7 +368,7 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
             continue
         reasons = []
         for lbl, sid in zip(labels, ids):
-            leaf = label_to_leaf(lbl)
+            leaf = _leaf(lbl, namespace)
             if sid not in target_ids:
                 reasons.append((lbl, sid, f"id not in {namespace} ledger (non-section)"))
             elif ("scxml-" + leaf) in exclude_ids:
@@ -393,8 +412,9 @@ def main(argv=None):
     ap.add_argument(
         "--namespace",
         default="scxml",
-        choices=["scxml", "mesh"],
-        help="scxml: W3C-marked cites (default); mesh: bare §<n> SCE_MESH.md cites",
+        choices=["scxml", "mesh", "wire"],
+        help="scxml: W3C-marked cites (default); mesh: bare §<n> SCE_MESH.md "
+        "cites; wire: bare §W<n> Wire RFC wave cites",
     )
     ap.add_argument(
         "--ledger",
@@ -412,10 +432,11 @@ def main(argv=None):
     ap.add_argument("--json", action="store_true", help="machine-readable report")
     args = ap.parse_args(argv)
 
-    ledger_path = args.ledger or (
-        DEFAULT_MESH_LEDGER if args.namespace == "mesh" else DEFAULT_LEDGER
-    )
+    ledger_path = args.ledger or _NS_DEFAULT_LEDGER.get(args.namespace, DEFAULT_LEDGER)
     ledger_ids = load_ledger_ids(ledger_path)
+    # The cross-namespace guard only applies to mesh (whose numeric labels can
+    # collide with W3C section numbers). wire labels (W<n>) are unique, so no
+    # sibling ledger is loaded.
     exclude_ids = set()
     if args.namespace == "mesh":
         exclude_ids = load_ledger_ids(args.exclude_ledger or DEFAULT_LEDGER)
