@@ -13,14 +13,14 @@ namespace SCE {
 class IDataModelItem;
 
 /**
- * @brief Class storing information for <donedata> element (W3C SCXML 5.5).
+ * @brief Class storing information for <donedata> element (§scxml-5.5).
  *
  * Represents the inline `<content>` semantic as a kind-tagged value:
  *
  *   - None       — `<content>` absent.
  *   - Expression — `<content expr="X"/>`; X MUST be evaluated against the
  *                  datamodel at runtime (requires a script engine).
- *   - Literal    — `<content>inline text</content>`; per W3C §5.5 the
+ *   - Literal    — `<content>inline text</content>`; per §scxml-5.5 the
  *                  children are used **as the content value** — no
  *                  evaluation, no script engine required.
  *
@@ -36,13 +36,13 @@ public:
     DoneData() = default;
     ~DoneData() = default;
 
-    /// W3C §5.5: `<content expr="X"/>` — evaluate X against the datamodel.
+    /// §scxml-5.5: `<content expr="X"/>` — evaluate X against the datamodel.
     void setContentExpression(const std::string &expr) {
         content_ = expr;
         contentKind_ = ContentKind::Expression;
     }
 
-    /// W3C §5.5: `<content>inline text</content>` — children are the value.
+    /// §scxml-5.5: `<content>inline text</content>` — children are the value.
     void setContentLiteral(const std::string &literal) {
         content_ = literal;
         contentKind_ = ContentKind::Literal;

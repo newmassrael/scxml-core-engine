@@ -70,18 +70,18 @@ template<typename P> struct has_pendingEventName<P, std::void_t<decltype(std::de
 }  // namespace detail
 
 /**
- * @brief Helper for W3C SCXML 5.10 event metadata management
+ * @brief Helper for §scxml-5.10 event metadata management
  *
  * Provides Single Source of Truth for event metadata operations across
  * Interpreter and AOT (Static) engines, following ARCHITECTURE.md Zero Duplication Principle.
  *
- * W3C SCXML 5.10: The System Variables (_event object)
- * W3C SCXML 5.10.1: Event Descriptor fields (name, data, type, sendid, origin, origintype, invokeid)
+ * §scxml-5.10: The System Variables (_event object)
+ * §scxml-5.10.1: Event Descriptor fields (name, data, type, sendid, origin, origintype, invokeid)
  *
  * Related Helpers:
- * - SendHelper: W3C SCXML 6.2 send action support
- * - ForeachHelper: W3C SCXML 5.9 foreach iteration
- * - GuardHelper: W3C SCXML 3.12.1 conditional guard evaluation
+ * - SendHelper: §scxml-6.2 send action support
+ * - ForeachHelper: §scxml-5.9 foreach iteration
+ * - GuardHelper: §scxml-3.12.1 conditional guard evaluation
  *
  * @example Interpreter Engine Usage
  * @code
@@ -105,39 +105,39 @@ template<typename P> struct has_pendingEventName<P, std::void_t<decltype(std::de
 class EventMetadataHelper {
 public:
     /**
-     * @brief Set all W3C SCXML 5.10.1 event metadata fields on Event object
+     * @brief Set all §scxml-5.10.1 event metadata fields on Event object
      *
      * Used by Interpreter engine to populate Event Descriptor fields.
-     * Follows W3C SCXML 5.10.1 specification for event metadata structure.
+     * Follows §scxml-5.10.1 specification for event metadata structure.
      *
      * @param event Event object to populate (must be valid reference)
-     * @param origin W3C SCXML 5.10.1: URL for bidirectional communication (test336)
-     * @param originType W3C SCXML 5.10.1: Event processor type (e.g.,
+     * @param origin §scxml-5.10.1: URL for bidirectional communication (test336)
+     * @param originType §scxml-5.10.1: Event processor type (e.g.,
      * "http://www.w3.org/TR/scxml/#SCXMLEventProcessor")
-     * @param sendId W3C SCXML 5.10.1: Send action identifier (test332)
-     * @param invokeId W3C SCXML 5.10.1: Invoke element identifier
+     * @param sendId §scxml-5.10.1: Send action identifier (test332)
+     * @param invokeId §scxml-5.10.1: Invoke element identifier
      *
      * @note Empty strings are allowed for optional fields
      * @note This is a Single Source of Truth for metadata setting across engines
      */
     static void setEventMetadata(Event &event, const std::string &origin = "", const std::string &originType = "",
                                  const std::string &sendId = "", const std::string &invokeId = "") {
-        // W3C SCXML 5.10.1: Set origin if provided (test336)
+        // §scxml-5.10.1: Set origin if provided (test336)
         if (!origin.empty()) {
             event.setOrigin(origin);
         }
 
-        // W3C SCXML 5.10.1: Set originType if provided
+        // §scxml-5.10.1: Set originType if provided
         if (!originType.empty()) {
             event.setOriginType(originType);
         }
 
-        // W3C SCXML 5.10.1: Set sendId if provided (test332)
+        // §scxml-5.10.1: Set sendId if provided (test332)
         if (!sendId.empty()) {
             event.setSendId(sendId);
         }
 
-        // W3C SCXML 5.10.1: Set invokeId if provided
+        // §scxml-5.10.1: Set invokeId if provided
         if (!invokeId.empty()) {
             event.setInvokeId(invokeId);
         }
@@ -147,7 +147,7 @@ public:
      * @brief Populate AOT engine policy from EventWithMetadata wrapper
      *
      * Used by AOT (Static) engine to extract metadata from queue and store in policy
-     * for _event variable binding. Follows W3C SCXML 5.10 event descriptor semantics.
+     * for _event variable binding. Follows §scxml-5.10 event descriptor semantics.
      *
      * This method uses type traits to check if policy has the required fields,
      * allowing it to work with policies that may not have all metadata fields.
@@ -171,37 +171,37 @@ public:
     static void
     populatePolicyFromMetadata(Policy &policy,
                                const typename SCE::Static::StaticExecutionEngine<Policy>::EventWithMetadata &metadata) {
-        // W3C SCXML 5.10: Set pending event data for _event.data access (test176)
+        // §scxml-5.10: Set pending event data for _event.data access (test176)
         if constexpr (detail::has_pendingEventData<Policy>::value) {
             policy.pendingEventData_ = metadata.data;
         }
 
-        // W3C SCXML 5.10.1: Set pending event origin for _event.origin access (test336)
+        // §scxml-5.10.1: Set pending event origin for _event.origin access (test336)
         if constexpr (detail::has_pendingEventOrigin<Policy>::value) {
             policy.pendingEventOrigin_ = metadata.origin;
         }
 
-        // W3C SCXML 5.10.1: Set pending event sendId for _event.sendid access (test332)
+        // §scxml-5.10.1: Set pending event sendId for _event.sendid access (test332)
         if constexpr (detail::has_pendingEventSendId<Policy>::value) {
             policy.pendingEventSendId_ = metadata.sendId;
         }
 
-        // W3C SCXML 5.10.1: Set pending event type for _event.type access (test331)
+        // §scxml-5.10.1: Set pending event type for _event.type access (test331)
         if constexpr (detail::has_pendingEventType<Policy>::value) {
             policy.pendingEventType_ = metadata.type;
         }
 
-        // W3C SCXML 5.10.1: Set pending event originType for _event.origintype access
+        // §scxml-5.10.1: Set pending event originType for _event.origintype access
         if constexpr (detail::has_pendingEventOriginType<Policy>::value) {
             policy.pendingEventOriginType_ = metadata.originType;
         }
 
-        // W3C SCXML 5.10.1: Set pending event invokeId for _event.invokeid access
+        // §scxml-5.10.1: Set pending event invokeId for _event.invokeid access
         if constexpr (detail::has_pendingEventInvokeId<Policy>::value) {
             policy.pendingEventInvokeId_ = metadata.invokeId;
         }
 
-        // W3C SCXML B.2: Set typed event data -- from explicit typedData or JSON parsing
+        // §scxml-B-2: Set typed event data -- from explicit typedData or JSON parsing
         if constexpr (detail::has_pendingEventTypedData<Policy>::value) {
             if (metadata.typedData.has_value()) {
                 policy.pendingEventTypedData_ = metadata.typedData;
@@ -212,10 +212,10 @@ public:
     }
 
     /**
-     * @brief Clear all metadata fields in policy (W3C SCXML 5.10)
+     * @brief Clear all metadata fields in policy (§scxml-5.10)
      *
      * Called at the end of processTransition to clear _event binding for next cycle.
-     * Follows W3C SCXML 5.10 semantics: _event is bound only during transition processing.
+     * Follows §scxml-5.10 semantics: _event is bound only during transition processing.
      *
      * @tparam Policy AOT engine policy type
      * @param policy Policy instance to clear
@@ -230,49 +230,49 @@ public:
      * @endcode
      */
     template <typename Policy> static void clearPolicyMetadata(Policy &policy) {
-        // W3C SCXML 5.10: Clear event name for next cycle
+        // §scxml-5.10: Clear event name for next cycle
         if constexpr (detail::has_pendingEventName<Policy>::value) {
             policy.pendingEventName_.clear();
         }
 
-        // W3C SCXML 5.10: Clear event data for next cycle
+        // §scxml-5.10: Clear event data for next cycle
         if constexpr (detail::has_pendingEventData<Policy>::value) {
             policy.pendingEventData_.clear();
         }
 
-        // W3C SCXML 5.10.1: Clear event type for next cycle (test331)
+        // §scxml-5.10.1: Clear event type for next cycle (test331)
         if constexpr (detail::has_pendingEventType<Policy>::value) {
             policy.pendingEventType_.clear();
         }
 
-        // W3C SCXML 5.10.1: Clear event sendId for next cycle (test332)
+        // §scxml-5.10.1: Clear event sendId for next cycle (test332)
         if constexpr (detail::has_pendingEventSendId<Policy>::value) {
             policy.pendingEventSendId_.clear();
         }
 
-        // W3C SCXML 5.10.1: Clear event origin for next cycle (test336)
+        // §scxml-5.10.1: Clear event origin for next cycle (test336)
         if constexpr (detail::has_pendingEventOrigin<Policy>::value) {
             policy.pendingEventOrigin_.clear();
         }
 
-        // W3C SCXML 5.10.1: Clear event originType for next cycle
+        // §scxml-5.10.1: Clear event originType for next cycle
         if constexpr (detail::has_pendingEventOriginType<Policy>::value) {
             policy.pendingEventOriginType_.clear();
         }
 
-        // W3C SCXML 5.10.1: Clear event invokeId for next cycle
+        // §scxml-5.10.1: Clear event invokeId for next cycle
         if constexpr (detail::has_pendingEventInvokeId<Policy>::value) {
             policy.pendingEventInvokeId_.clear();
         }
 
-        // W3C SCXML 5.5: Clear typed event data for next cycle
+        // §scxml-5.5: Clear typed event data for next cycle
         if constexpr (detail::has_pendingEventTypedData<Policy>::value) {
             policy.pendingEventTypedData_.reset();
         }
     }
 
     /**
-     * @brief W3C SCXML 6.3.1: Create done.invoke event with invokeId
+     * @brief §scxml-6.3.1: Create done.invoke event with invokeId
      *
      * Single Source of Truth for done.invoke event metadata construction.
      * Complements InvokeHelper::createDoneInvokeEventName() (event name)
@@ -280,19 +280,19 @@ public:
      *
      * ARCHITECTURE.md Compliance:
      * - Zero Duplication: Shared event metadata construction
-     * - Single Source of Truth: W3C SCXML 6.3.1 _event.invokeid requirement
+     * - Single Source of Truth: §scxml-6.3.1 _event.invokeid requirement
      * - Helper Pattern: Follows SendHelper, InvokeHelper, DoneDataHelper
      *
      * @tparam EventEnum Event enumeration type (e.g., State machine's Event enum)
      * @tparam MetadataType EventWithMetadata structure type
      * @param event Event enum value (e.g., Event::Done_invoke, Event::Done_invoke_foo)
-     * @param invokeId Invoke ID to populate _event.invokeid (W3C SCXML 6.3.1)
+     * @param invokeId Invoke ID to populate _event.invokeid (§scxml-6.3.1)
      * @return EventWithMetadata with invokeId populated, all other fields empty
      *
      * @note All metadata fields except event and invokeId are empty strings
      * @note This is the canonical way to create done.invoke events across engines
      *
-     * W3C SCXML 6.3.1: "The 'invokeid' field of the event is set to the invoke id
+     * §scxml-6.3.1: "The 'invokeid' field of the event is set to the invoke id
      * of the invocation that was finished"
      *
      * @example AOT Static invoke completion callback
@@ -323,23 +323,23 @@ public:
      */
     template <typename EventEnum, typename MetadataType>
     static MetadataType createDoneInvokeEvent(EventEnum event, const std::string &invokeId) {
-        return MetadataType(event,     // event - W3C SCXML 6.3.1: done.invoke or done.invoke.id
+        return MetadataType(event,     // event - §scxml-6.3.1: done.invoke or done.invoke.id
                             "",        // data - empty (no donedata from child)
                             "",        // origin - empty (child completion doesn't specify origin)
                             "",        // sendId - empty (not a send event)
                             "",        // type - empty (internal event, not external)
                             "",        // originType - empty (not external event)
-                            invokeId,  // invokeId - W3C SCXML 6.3.1: _event.invokeid field
+                            invokeId,  // invokeId - §scxml-6.3.1: _event.invokeid field
                             ""         // target - empty (not a send event)
         );
     }
 
     /**
-     * @brief W3C SCXML 5.5 + 6.3.1: Create done.invoke event carrying donedata
+     * @brief §scxml-5.5 + 6.3.1: Create done.invoke event carrying donedata
      *
      * Overload of `createDoneInvokeEvent` that surfaces the child's
      * `<donedata>` payload on `_event.data` of the synthesized
-     * `done.invoke.<id>` event. W3C SCXML 5.5: the Processor MUST evaluate
+     * `done.invoke.<id>` event. §scxml-5.5: the Processor MUST evaluate
      * donedata `<param>` / `<content>` children and place the resulting
      * data in `_event.data`; §scxml-5.10.1 pairs this with `_event.invokeid`.
      *
@@ -362,13 +362,13 @@ public:
                                               const std::string &invokeId,
                                               const std::string &data,
                                               std::optional<ScriptValue> typedData = std::nullopt) {
-        MetadataType metadata(event,     // event - W3C SCXML 6.3.1
-                              data,      // data - W3C SCXML 5.5 donedata payload
+        MetadataType metadata(event,     // event - §scxml-6.3.1
+                              data,      // data - §scxml-5.5 donedata payload
                               "",        // origin
                               "",        // sendId
                               "",        // type
                               "",        // originType
-                              invokeId,  // invokeId - W3C SCXML 6.3.1
+                              invokeId,  // invokeId - §scxml-6.3.1
                               ""         // target
         );
         metadata.typedData = std::move(typedData);

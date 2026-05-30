@@ -184,7 +184,7 @@ public:
         return dataString_.empty() ? "null" : dataString_;
     }
 
-    // W3C SCXML 5.10: Typed event data for engine-agnostic consumption
+    // §scxml-5.10: Typed event data for engine-agnostic consumption
     // When present, engines use this directly instead of parsing JSON strings.
     // Coexists with string data for backward compatibility and cross-process serialization.
     void setTypedData(const ScriptValue &data) {

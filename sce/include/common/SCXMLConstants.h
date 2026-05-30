@@ -14,11 +14,11 @@
 namespace SCE::Constants {
 
 // ============================================================================
-// W3C SCXML Event Processor URIs (W3C SCXML C.1, C.2)
+// W3C SCXML Event Processor URIs (§scxml-C-1, C.2)
 // ============================================================================
 
 /**
- * @brief W3C SCXML C.1: SCXML Event I/O Processor type URL
+ * @brief §scxml-C-1: SCXML Event I/O Processor type URL
  *
  * Canonical URL for the SCXML Event I/O Processor.
  * Used for _event.origintype in parent-child communication,
@@ -29,7 +29,7 @@ namespace SCE::Constants {
 constexpr const char *SCXML_EVENT_PROCESSOR_TYPE = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
 
 /**
- * @brief W3C SCXML C.2: Basic HTTP Event Processor URI
+ * @brief §scxml-C-2: Basic HTTP Event Processor URI
  *
  * Event processor for HTTP-based external communication.
  * Requires target attribute for destination URL.
@@ -39,11 +39,11 @@ constexpr const char *SCXML_EVENT_PROCESSOR_TYPE = "http://www.w3.org/TR/scxml/#
 constexpr const char *BASIC_HTTP_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
 
 // ============================================================================
-// W3C SCXML Invoke Processor URIs (W3C SCXML 6.4)
+// W3C SCXML Invoke Processor URIs (§scxml-6.4)
 // ============================================================================
 
 /**
- * @brief W3C SCXML 6.4: Standard SCXML Invoke Processor URI
+ * @brief §scxml-6.4: Standard SCXML Invoke Processor URI
  *
  * Default invoke processor for SCXML sub-documents.
  * Platforms MUST support this type for invoke elements.

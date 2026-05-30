@@ -18,7 +18,7 @@
 // When the number of completed regions reaches the `<parallel>`'s total
 // region count, the tracker invokes the `onComplete` callback once. The
 // generated SM's callback raises `Event::Done_state_<parallel_id>` into
-// the machine's own external queue — preserving W3C §3.7 semantics.
+// the machine's own external queue — preserving §scxml-3.7 semantics.
 //
 // Re-entry of the `<parallel>` (via `<history>` or a fresh enter-set
 // computation that re-activates the parallel) is handled by calling

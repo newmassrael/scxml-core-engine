@@ -67,7 +67,7 @@ public:
      */
     virtual bool isDeepHistory() const = 0;
 
-    // W3C SCXML 3.8/3.9: Block-based action methods for proper onentry/onexit handler isolation
+    // §scxml-3.8 / §scxml-3.9: Block-based action methods for proper onentry/onexit handler isolation
     virtual void addEntryActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) = 0;
     virtual const std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> &getEntryActionBlocks() const = 0;
     virtual void addExitActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) = 0;
@@ -88,7 +88,7 @@ public:
     virtual DoneData &getDoneData() = 0;
 
     /**
-     * @brief Set `<donedata><content expr="X"/>` (W3C §5.5 evaluated path)
+     * @brief Set `<donedata><content expr="X"/>` (§scxml-5.5 evaluated path)
      *
      * X will be evaluated against the active datamodel at runtime. Pass
      * an empty string to clear any previously-set content (used by the
@@ -97,9 +97,9 @@ public:
     virtual void setDoneDataContentExpression(const std::string &expr) = 0;
 
     /**
-     * @brief Set `<donedata><content>inline text</content>` (W3C §5.5 literal path)
+     * @brief Set `<donedata><content>inline text</content>` (§scxml-5.5 literal path)
      *
-     * Per W3C §5.5 the children of `<content>` are used **as the content
+     * Per §scxml-5.5 the children of `<content>` are used **as the content
      * value** — no evaluation, no script engine required.
      */
     virtual void setDoneDataContentLiteral(const std::string &literal) = 0;

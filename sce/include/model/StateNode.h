@@ -134,25 +134,25 @@ public:
     virtual const std::string &getOnExit() const override;
 
     /**
-     * @brief W3C SCXML 3.8: Add entry action block (each onentry handler is a separate block)
+     * @brief §scxml-3.8: Add entry action block (each onentry handler is a separate block)
      * @param block Action node block
      */
     void addEntryActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) override;
 
     /**
-     * @brief W3C SCXML 3.8: Get entry action blocks
+     * @brief §scxml-3.8: Get entry action blocks
      * @return Entry action blocks
      */
     const std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> &getEntryActionBlocks() const override;
 
     /**
-     * @brief W3C SCXML 3.9: Add exit action block (each onexit handler is a separate block)
+     * @brief §scxml-3.9: Add exit action block (each onexit handler is a separate block)
      * @param block Action node block
      */
     void addExitActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) override;
 
     /**
-     * @brief W3C SCXML 3.9: Get exit action blocks
+     * @brief §scxml-3.9: Get exit action blocks
      * @return Exit action blocks
      */
     const std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> &getExitActionBlocks() const override;
@@ -243,7 +243,7 @@ private:
 
     // New action system (IActionNode-based)
 
-    // W3C SCXML 3.8/3.9: Block-based action storage for proper handler isolation
+    // §scxml-3.8 / §scxml-3.9: Block-based action storage for proper handler isolation
     std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> entryActionBlocks_;
     std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> exitActionBlocks_;
 

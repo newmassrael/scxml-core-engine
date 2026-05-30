@@ -22,7 +22,7 @@
 namespace SCE::InPredicateHelper {
 
 /**
- * @brief W3C SCXML 5.9.2: Check if state is active (Single Source of Truth)
+ * @brief §scxml-5.9.2: Check if state is active (Single Source of Truth)
  *
  * ARCHITECTURE.md Zero Duplication Principle: Shared logic for In() predicate
  * between Interpreter and AOT engines. Both engines must use this Helper to
@@ -43,7 +43,7 @@ namespace SCE::InPredicateHelper {
 template <typename StateType, typename StateGetter>
 inline bool isStateActive(const std::vector<StateType> &activeStates, StateGetter getStateName,
                           const std::string &stateId) {
-    // W3C SCXML 5.9.2: In(stateId) returns true if stateId is in active state configuration
+    // §scxml-5.9.2: In(stateId) returns true if stateId is in active state configuration
     for (const auto &state : activeStates) {
         if (getStateName(state) == stateId) {
             return true;

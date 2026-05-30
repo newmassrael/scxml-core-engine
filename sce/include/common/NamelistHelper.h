@@ -39,7 +39,7 @@ namespace SCE {
  *
  * ARCHITECTURE.md Compliance:
  * - Zero Duplication Principle (lines 493, 560-564)
- * - Single Source of Truth for W3C SCXML C.1 semantics
+ * - Single Source of Truth for §scxml-C-1 semantics
  * - Helper Function Pattern (lines 605-690)
  */
 class NamelistHelper {
@@ -47,11 +47,11 @@ public:
     /**
      * @brief Evaluate namelist variables and populate params map
      *
-     * Single Source of Truth for namelist evaluation (W3C SCXML C.1).
+     * Single Source of Truth for namelist evaluation (§scxml-C-1).
      * Parses space-separated variable names, evaluates each via JSEngine,
      * and stores results in params map for event data construction.
      *
-     * W3C SCXML 6.2: If evaluation of namelist variables produces an error,
+     * §scxml-6.2: If evaluation of namelist variables produces an error,
      * the Processor MUST discard the message (raise error.execution).
      *
      * @tparam JSEngineType JSEngine type (SCE::JSEngine)
@@ -92,12 +92,12 @@ public:
             return true;  // No namelist to evaluate
         }
 
-        // W3C SCXML C.1: Parse space/tab/newline-separated variable names
+        // §scxml-C-1: Parse space/tab/newline-separated variable names
         std::istringstream namelistStream(namelist);
         std::string varName;
 
         while (namelistStream >> varName) {
-            // W3C SCXML 6.2: Namelist variables must be declared in the datamodel.
+            // §scxml-6.2: Namelist variables must be declared in the datamodel.
             // Check existence first to bridge Lua's nil-for-undeclared semantic gap.
             // In JavaScript, accessing an undeclared variable throws ReferenceError;
             // in Lua, it silently returns nil. hasVariable() uses the declaredVars set.
@@ -111,7 +111,7 @@ public:
             auto varResult = jsEngine.getVariable(sessionId, varName).get();
 
             if (!ScriptResultUtils::isSuccess(varResult)) {
-                // W3C SCXML 6.2: Evaluation error → raise error.execution
+                // §scxml-6.2: Evaluation error → raise error.execution
                 std::string errorMsg = "Failed to evaluate namelist variable '" + varName + "'";
                 errorHandler(errorMsg);
                 return false;  // Stop processing on first error
@@ -121,7 +121,7 @@ public:
             std::string varValue = ScriptResultUtils::resultToString(varResult);
             params[varName].push_back(varValue);
 
-            // W3C SCXML C.1: Preserve typed value for engine-agnostic ScriptValue pipeline
+            // §scxml-C-1: Preserve typed value for engine-agnostic ScriptValue pipeline
             if (outTypedParams) {
                 (*outTypedParams)[varName] = varResult.getInternalValue();
             }
