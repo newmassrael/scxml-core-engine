@@ -63,7 +63,7 @@ struct Response {
  * - Platform Abstraction: Native (cpp-httplib) vs WASM (Emscripten Fetch API)
  * - All-or-Nothing: Pure Native or Pure WASM, no mixing
  *
- * W3C SCXML C.2 BasicHTTP Event I/O Processor:
+ * §scxml-C-2 BasicHTTP Event I/O Processor:
  * - Sends HTTP POST requests to external servers
  * - Receives HTTP responses and converts to SCXML events
  * - Client-only functionality (no server in SCXML engine)

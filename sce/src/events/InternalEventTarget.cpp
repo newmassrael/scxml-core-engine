@@ -55,7 +55,7 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
         auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
         bool queueSuccess = false;
 
-        // W3C SCXML 5.10: Pass origintype from EventDescriptor (test 253, 331, 352, 372)
+        // §scxml-5.10: Pass origintype from EventDescriptor (test 253, 331, 352, 372)
         std::string originType = event.type.empty() ? Constants::SCXML_EVENT_PROCESSOR_TYPE : event.type;
 
         if (eventRaiserImpl) {
@@ -63,7 +63,7 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
             auto priority =
                 isExternal_ ? EventRaiserImpl::EventPriority::EXTERNAL : EventRaiserImpl::EventPriority::INTERNAL;
 
-            // W3C SCXML 3.13: Convert logicalExecuteTime to nanoseconds for FIFO preservation in MANUAL mode
+            // §scxml-3.13: Convert logicalExecuteTime to nanoseconds for FIFO preservation in MANUAL mode
             int64_t timestampNs = 0;
             if (event.logicalExecuteTime.count() > 0) {
                 timestampNs = std::chrono::duration_cast<std::chrono::nanoseconds>(event.logicalExecuteTime).count();
@@ -155,7 +155,7 @@ std::string InternalEventTarget::resolveEventName(const EventDescriptor &event) 
 }
 
 std::string InternalEventTarget::buildEventData(const EventDescriptor &event) const {
-    // W3C SCXML B.2 test 561: Content element takes precedence over data attribute
+    // §scxml-B-2 test 561: Content element takes precedence over data attribute
     if (!event.content.empty()) {
         return event.content;
     }
@@ -172,7 +172,7 @@ std::string InternalEventTarget::buildEventData(const EventDescriptor &event) co
         return event.data;
     }
 
-    // W3C SCXML 5.10: Build event data from params (Single Source of Truth)
+    // §scxml-5.10: Build event data from params (Single Source of Truth)
     // Use EventDataHelper for consistent JSON construction (Interpreter + AOT)
     if (event.data.empty() && !event.params.empty()) {
         return EventDataHelper::buildJsonFromParams(event.params);

@@ -21,7 +21,7 @@ namespace SCE {
  * - Platform Abstraction: Native-specific implementation
  * - All-or-Nothing: Pure Native (no WASM mixing)
  *
- * W3C SCXML C.2 BasicHTTP Event I/O Processor:
+ * §scxml-C-2 BasicHTTP Event I/O Processor:
  * - Sends HTTP POST to external servers
  * - Supports HTTP/HTTPS with SSL verification
  */

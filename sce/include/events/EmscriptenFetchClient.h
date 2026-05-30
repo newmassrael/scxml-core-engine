@@ -20,7 +20,7 @@ namespace SCE {
  * - Platform Abstraction: WASM-specific implementation
  * - All-or-Nothing: Pure WASM (no Native mixing)
  *
- * W3C SCXML C.2 BasicHTTP Event I/O Processor:
+ * §scxml-C-2 BasicHTTP Event I/O Processor:
  * - Sends HTTP POST via browser Fetch API
  * - CORS-compliant (browser handles automatically)
  *

@@ -64,8 +64,8 @@ public:
     }
 
     void pollScheduler() override {
-        // W3C SCXML 6.2: Poll EventScheduler for ready delayed events (WASM synchronous mode)
-        // W3C SCXML 3.13: Scheduler always polls automatically (timeout → queue)
+        // §scxml-6.2: Poll EventScheduler for ready delayed events (WASM synchronous mode)
+        // §scxml-3.13: Scheduler always polls automatically (timeout → queue)
         //                 Queue processing is controlled by EventRaiser immediate mode
         if (scheduler_) {
 #ifdef __EMSCRIPTEN__
@@ -85,7 +85,7 @@ public:
  *
  * Zero Duplication: Native platform logic isolated in this class
  *
- * W3C SCXML 5.3: Thread-safe asynchronous event processing for concurrent state machine instances
+ * §scxml-5.3: Thread-safe asynchronous event processing for concurrent state machine instances
  *
  * Architecture:
  * - Main thread: Queues events via EventRaiserImpl::raiseEvent()
@@ -164,7 +164,7 @@ public:
 
     void pollScheduler() override {
         // Native: No-op - background timer thread handles scheduling automatically
-        // W3C SCXML 6.2: EventScheduler timer thread processes delayed events asynchronously
+        // §scxml-6.2: EventScheduler timer thread processes delayed events asynchronously
     }
 };
 
