@@ -6,7 +6,7 @@
 
 namespace SCE {
 
-// W3C SCXML B.2: Helper function to normalize whitespace in text content
+// §scxml-B-2: Helper function to normalize whitespace in text content
 std::string normalizeWhitespace(const std::string &text) {
     std::string trimmed = text;
 
@@ -46,7 +46,7 @@ std::string normalizeWhitespace(const std::string &text) {
     return result;
 }
 
-// W3C SCXML B.2: Helper function to detect if content is XML
+// §scxml-B-2: Helper function to detect if content is XML
 bool isXMLContent(const std::string &content) {
     if (content.empty()) {
         return false;

@@ -57,11 +57,12 @@ medium_name = "spec_mirror"
 #   comment_only     = true      only citations inside comments are scanned;
 #                                string-literal text is ignored.
 # Only citation-clean modules are listed: those whose source comments carry W3C
-# cites exclusively. Modules that also cite SCE-internal specs (mesh §<n>,
-# Wire-RFC §W<n>) are a different namespace — validate-code-refs checks every
-# §id against this one ledger, so a non-W3C §id reads as a missing section.
-# Those modules (mesh, parsing, static, common, src/runtime) join once their
-# SCE-internal cites move to a dedicated design-ledger workspace.
+# cites exclusively, plus modules whose sole non-W3C cites are Wire-RFC ones
+# absorbed by external_section_prefixes_bare below. Modules that also cite the
+# SCE mesh spec (bare mesh §<n>, no absorbable prefix) are a different namespace
+# — validate-code-refs checks every §id against this one ledger, so a mesh §id
+# reads as a missing section. Those (mesh, parsing, static, common, include
+# /model) join once their SCE-internal cites move to a design-ledger workspace.
 [plugins.set_equality_validator]
 paths = [
     "../../../sce/include/events",
@@ -70,6 +71,7 @@ paths = [
     "../../../sce/src/actions",
     "../../../sce/include/core",
     "../../../sce/include/runtime",
+    "../../../sce/src/runtime",
     "../../../sce/include/scripting",
     "../../../sce/src/scripting",
     "../../../sce/include/states",
@@ -80,3 +82,11 @@ paths = [
 severity_missing = "reject"
 severity_binding = "warn"
 comment_only = true
+
+# SCE's own Wire RFC is a separate spec cited as "RFC §W<n>" (e.g. the parser's
+# "RFC §W4 D1-C"). Registering the "RFC" doc-name prefix makes the validator
+# skip those bare §ids instead of checking them against this W3C ledger, which
+# lets src/runtime (whose only non-W3C cite is one RFC §W4) be gated here. It
+# does not help bare mesh §<n> cites, which carry no prefix immediately before
+# the sigil.
+external_section_prefixes_bare = ["RFC"]

@@ -59,18 +59,18 @@ public:
     };
 
     /**
-     * @brief Thread-local event context for W3C SCXML 5.10 metadata passing
+     * @brief Thread-local event context for §scxml-5.10 metadata passing
      *
      * Consolidates all thread-local variables into a single struct.
      * Set before event callback execution, cleared after callback returns.
      * StateMachine reads this during processEvent() to populate _event fields.
      */
     struct EventContext {
-        std::string originSessionId;  // W3C SCXML 6.4: _event.origin
-        std::string sendId;           // W3C SCXML 5.10: _event.sendid
-        std::string invokeId;         // W3C SCXML 5.10: _event.invokeid
-        std::string originType;       // W3C SCXML 5.10: _event.origintype
-        std::string eventType;        // W3C SCXML 5.10: "internal"/"platform"/"external"
+        std::string originSessionId;  // §scxml-6.4: _event.origin
+        std::string sendId;           // §scxml-5.10: _event.sendid
+        std::string invokeId;         // §scxml-5.10: _event.invokeid
+        std::string originType;       // §scxml-5.10: _event.origintype
+        std::string eventType;        // §scxml-5.10: "internal"/"platform"/"external"
         std::optional<ScriptValue> typedData;  // Engine-agnostic typed data (avoids JSON round-trip)
 
         void clear() {
@@ -104,10 +104,10 @@ public:
     struct QueuedEvent {
         std::string eventName;
         std::string eventData;
-        std::string origin;      // W3C SCXML 5.10.1: _event.origin - Session that originated this event
-        std::string sendId;      // W3C SCXML 5.10.1: _event.sendid - sendid from send element
-        std::string invokeId;    // W3C SCXML 5.10.1: _event.invokeid - invokeid from invoked child process
-        std::string originType;  // W3C SCXML 5.10.1: _event.origintype - event processor type
+        std::string origin;      // §scxml-5.10.1: _event.origin - Session that originated this event
+        std::string sendId;      // §scxml-5.10.1: _event.sendid - sendid from send element
+        std::string invokeId;    // §scxml-5.10.1: _event.invokeid - invokeid from invoked child process
+        std::string originType;  // §scxml-5.10.1: _event.origintype - event processor type
         std::chrono::steady_clock::time_point timestamp;
         EventPriority priority;
         std::optional<ScriptValue> typedData;  // Engine-agnostic typed data (avoids JSON round-trip)
@@ -167,7 +167,7 @@ public:
     /**
      * @brief Set EventScheduler for delayed event polling (WASM support)
      *
-     * W3C SCXML 6.2: Enable delayed send element support by providing scheduler access.
+     * §scxml-6.2: Enable delayed send element support by providing scheduler access.
      * Platform-specific behavior handled by PlatformEventRaiserHelper.
      *
      * @param scheduler Shared pointer to EventScheduler instance
@@ -179,7 +179,7 @@ public:
     /**
      * @brief Get EventScheduler for scheduler mode access
      *
-     * W3C SCXML 3.13: Enable parent-child scheduler mode inheritance for interactive debugging.
+     * §scxml-3.13: Enable parent-child scheduler mode inheritance for interactive debugging.
      * Allows parent state machine to propagate MANUAL mode to child invoke sessions.
      *
      * @return Shared pointer to EventScheduler instance, or nullptr if not set
@@ -187,7 +187,7 @@ public:
     std::shared_ptr<IEventScheduler> getScheduler() const override;
 
     /**
-     * @brief Cancel all queued events from a specific session (W3C SCXML 6.4.4 compliance)
+     * @brief Cancel all queued events from a specific session (§scxml-6.4.4 compliance)
      *
      * Removes all events in the synchronous queue that originated from the specified session.
      * This is required when cancelling invokes to prevent processing events from cancelled children.
@@ -231,7 +231,7 @@ public:
     /**
      * @brief Get information about the last processed event (for time-travel debugging)
      *
-     * W3C SCXML 3.13: Enable interactive visualizer to track internal events from raise actions.
+     * §scxml-3.13: Enable interactive visualizer to track internal events from raise actions.
      * This allows step backward to replay internal events correctly.
      *
      * @param outEventName Output parameter for event name (empty if no event processed yet)
@@ -249,7 +249,7 @@ public:
     /**
      * @brief Check if there are INTERNAL priority events in the queue
      *
-     * W3C SCXML 5.9.2: Used to enforce event priority - EXTERNAL events should not
+     * §scxml-5.9.2: Used to enforce event priority - EXTERNAL events should not
      * use immediate mode when INTERNAL events are queued, ensuring INTERNAL events
      * are processed first.
      *
@@ -260,7 +260,7 @@ public:
     /**
      * @brief Get snapshot of current event queues for visualization/debugging
      *
-     * W3C SCXML 3.13: Retrieves current contents of internal and external event queues
+     * §scxml-3.13: Retrieves current contents of internal and external event queues
      * for use in interactive visualization and time-travel debugging.
      *
      * @param outInternal Output vector for internal queue events
@@ -307,7 +307,7 @@ private:
     /**
      * @brief Execute callback for a queued event (synchronous processing)
      *
-     * W3C SCXML 3.13: Event processing result indicates whether state transition occurred.
+     * §scxml-3.13: Event processing result indicates whether state transition occurred.
      * The return value reflects the callback's transition success, not just execution status.
      *
      * @param event Event to process
@@ -318,13 +318,13 @@ private:
     // Event callback
     EventCallback eventCallback_;
 
-    // W3C SCXML 5.10: Consolidated thread-local event context for callback execution
+    // §scxml-5.10: Consolidated thread-local event context for callback execution
     static thread_local EventContext currentEventContext_;
 
 public:
     /**
      * @brief Get the current thread-local event context
-     * Set during event callback execution, contains all W3C SCXML 5.10 event metadata.
+     * Set during event callback execution, contains all §scxml-5.10 event metadata.
      * StateMachine reads this during processEvent() to populate _event fields.
      */
     static const EventContext &getCurrentEventContext() {
@@ -344,7 +344,7 @@ public:
     // Platform-specific event processing helper (Zero Duplication Principle)
     std::unique_ptr<PlatformEventRaiserHelper> platformHelper_;
 
-    // W3C SCXML 6.2: EventScheduler for delayed event polling (WASM support)
+    // §scxml-6.2: EventScheduler for delayed event polling (WASM support)
     std::shared_ptr<IEventScheduler> scheduler_;
 
     // Asynchronous processing infrastructure
@@ -359,7 +359,7 @@ public:
     std::priority_queue<QueuedEvent, std::vector<QueuedEvent>, QueuedEventComparator> synchronousQueue_;
     mutable std::mutex synchronousQueueMutex_;
 
-    // W3C SCXML 3.13: Time-travel debugging support - track last processed event
+    // §scxml-3.13: Time-travel debugging support - track last processed event
     std::string lastProcessedEventName_;
     std::string lastProcessedEventData_;
     mutable std::mutex lastProcessedEventMutex_;

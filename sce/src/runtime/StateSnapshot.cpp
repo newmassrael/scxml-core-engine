@@ -27,7 +27,7 @@ void SnapshotManager::captureSnapshot(
     snapshot.lastEventName = lastEvent;
     snapshot.schedulerLogicalTimeMs = schedulerLogicalTimeMs;
 
-    // W3C SCXML 3.13: Set incoming transition (how we arrived at this state)
+    // §scxml-3.13: Set incoming transition (how we arrived at this state)
     snapshot.incomingTransitionSource = transitionSource;
     snapshot.incomingTransitionTarget = transitionTarget;
     snapshot.incomingTransitionEvent = lastEvent;
@@ -83,7 +83,7 @@ bool SnapshotManager::hasSnapshot(int stepNumber) const {
 
 bool SnapshotManager::updateSnapshotOutgoing(int stepNumber, const std::string &source, const std::string &target,
                                              const std::string &event) {
-    // W3C SCXML 3.13: Update outgoing transition for step backward visualization
+    // §scxml-3.13: Update outgoing transition for step backward visualization
     // This enables UI to show "cancelled transition" when stepping back
     for (auto &snapshot : snapshots_) {
         if (snapshot.stepNumber == stepNumber) {

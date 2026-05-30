@@ -73,7 +73,7 @@ public:
     void setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) override;
 
     /**
-     * @brief Set immediate mode for event raising (W3C SCXML 3.13 compliance - test 404)
+     * @brief Set immediate mode for event raising (§scxml-3.13 compliance - test 404)
      * @param immediate true for immediate processing, false for queuing
      */
     void setImmediateMode(bool immediate);
@@ -88,7 +88,7 @@ public:
     void setCurrentEvent(const EventMetadata &metadata);
 
     /**
-     * @brief Get current event metadata (W3C SCXML 5.10 _event protection during nested processing)
+     * @brief Get current event metadata (§scxml-5.10 _event protection during nested processing)
      * @return Current event metadata
      */
     EventMetadata getCurrentEvent() const;
@@ -115,12 +115,12 @@ private:
     std::string sessionId_;
     std::string currentEventName_;
     std::string currentEventData_;
-    std::string currentEventType_;        // W3C SCXML 5.10.1: _event.type ("internal", "platform", "external")
-    std::string currentSendId_;           // W3C SCXML 5.10.1: _event.sendid from send element
-    std::string currentInvokeId_;         // W3C SCXML 5.10.1: _event.invokeid from invoked child process
-    std::string currentOriginType_;       // W3C SCXML 5.10.1: _event.origintype from event processor
-    std::string currentOriginSessionId_;               // W3C SCXML 5.10.1: _event.origin session ID
-    std::optional<ScriptValue> currentTypedData_;      // W3C SCXML 5.10: Typed event data (engine-agnostic)
+    std::string currentEventType_;        // §scxml-5.10.1: _event.type ("internal", "platform", "external")
+    std::string currentSendId_;           // §scxml-5.10.1: _event.sendid from send element
+    std::string currentInvokeId_;         // §scxml-5.10.1: _event.invokeid from invoked child process
+    std::string currentOriginType_;       // §scxml-5.10.1: _event.origintype from event processor
+    std::string currentOriginSessionId_;               // §scxml-5.10.1: _event.origin session ID
+    std::optional<ScriptValue> currentTypedData_;      // §scxml-5.10: Typed event data (engine-agnostic)
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
 

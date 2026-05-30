@@ -68,7 +68,7 @@ bool HistoryValidator::validateRegistrationWithDefault(const std::string &histor
             return false;
         }
 
-        // W3C SCXML 3.6: Check if default state is valid for history type
+        // §scxml-3.6: Check if default state is valid for history type
         auto parentState = stateProvider_(parentStateId);
         if (parentState) {
             bool isValid = false;

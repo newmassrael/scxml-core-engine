@@ -62,7 +62,7 @@ bool TransitionDomainCalculator::isDescendant(const std::string &stateId, const 
 }
 
 int TransitionDomainCalculator::getStateDocumentPosition(const std::string &stateId) const {
-    // W3C SCXML 3.13: Get document order position for state
+    // §scxml-3.13: Get document order position for state
     // Uses depth-first pre-order traversal to assign positions
     if (!model_) {
         return -1;
@@ -110,7 +110,7 @@ std::string TransitionDomainCalculator::findLCA(const std::string &sourceStateId
     }
 
     // ARCHITECTURE.md: Zero Duplication - delegate to HierarchicalStateHelper
-    // W3C SCXML 3.12: Find Least Common Ancestor for hierarchical transitions
+    // §scxml-3.12: Find Least Common Ancestor for hierarchical transitions
     auto getParent = [this](const std::string &stateId) -> std::optional<std::string> {
         auto node = model_->findStateById(stateId);
         if (!node || !node->getParent()) {
@@ -216,15 +216,15 @@ TransitionDomainCalculator::computeExitSet(const std::string &sourceStateId, con
         return result;
     }
 
-    // W3C SCXML 3.13: Find LCA (Lowest Common Ancestor) once
+    // §scxml-3.13: Find LCA (Lowest Common Ancestor) once
     result.lca = findLCA(sourceStateId, targetStateId);
 
-    // W3C SCXML 3.13: Exit set = "all active states that are proper descendants of LCCA"
+    // §scxml-3.13: Exit set = "all active states that are proper descendants of LCCA"
     // This must include ALL active descendants, not just the source->LCA chain (test 505)
     // Use helper method to build exit set (reduces code duplication)
     result.states = buildExitSetForDescendants(result.lca, true);
 
-    // W3C SCXML 3.10 (test 579): Ancestor transition (target == LCA)
+    // §scxml-3.10 (test 579): Ancestor transition (target == LCA)
     // When transitioning to an ancestor state, the target must also be exited and re-entered
     // This ensures onexit/onentry are executed, allowing data changes (e.g., Var1++)
     if (targetStateId == result.lca && hierarchyManager_ && hierarchyManager_->isStateActive(targetStateId)) {
@@ -232,7 +232,7 @@ TransitionDomainCalculator::computeExitSet(const std::string &sourceStateId, con
         SCE_LOG_DEBUG("W3C SCXML: Ancestor transition detected, including target '{}' in exit set", targetStateId);
     }
 
-    // W3C SCXML 3.10 (test 580): History state transition
+    // §scxml-3.10 (test 580): History state transition
     // When transitioning to a history state whose parent is active, exit and re-enter the parent
     // This ensures onexit/onentry actions execute (e.g., Var1++ in onexit)
     auto targetNode = model_->findStateById(targetStateId);
