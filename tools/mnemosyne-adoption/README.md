@@ -25,6 +25,9 @@ network-touching step isolated to a dedicated CI job.
 | `spec-snapshot/scxml-REC-20150901.html` | Vendored W3C SCXML Recommendation snapshot (offline input) |
 | `spec-snapshot/PROVENANCE.json` | URL + revision + `fetched_sha256` + date for the snapshot |
 | `scxml_toc_to_manifest.py` | **A1**: vendored spec HTML -> Mnemosyne bulk-section-create manifest + anchor map |
+| `check_spec_drift.py` | **B1**: snapshot integrity (offline) + upstream re-fetch (online) drift check |
+| `scxml_extract_excerpts.py` | **R2**: vendored spec HTML -> per-section normative excerpt JSON |
+| `apply_excerpts.py` | **R2** driver: feed excerpts JSON into a workspace via `set-section-normative-excerpt` |
 
 ## A1 — TOC to manifest
 
@@ -79,10 +82,29 @@ self-consistency invariant over the full snapshot, with no Mnemosyne dependency.
 The closed-loop test (skipped when `mnemosyne-cli` is not on PATH) delegates
 citation-safety to Mnemosyne's extractor.
 
-## Snapshot drift (B1, not yet wired)
+## B1 — snapshot drift (`.github/workflows/spec-snapshot-drift.yml`)
 
-The live CI drift-check job re-fetches `spec-snapshot/PROVENANCE.json`'s `url`,
-recomputes sha256 (format `^[0-9a-f]{64}$`, supplied to Mnemosyne's `B2`
-rev-diff scan), and compares against the recorded `fetched_sha256`. It runs as a
-**separate job** so an upstream change or network failure never breaks the
-engine build/test.
+`check_spec_drift.py --mode integrity` (offline) checks the snapshot's sha256
+against `PROVENANCE.fetched_sha256` and runs as a push/PR gate. `--mode upstream`
+(online) re-fetches the URL and compares; it runs only on schedule / manual
+dispatch, so an upstream change or network failure never breaks the engine
+build. The `fetched_sha256` format (`^[0-9a-f]{64}$`) is the value Mnemosyne's
+`B2` rev-diff scan consumes.
+
+## R2 — normative excerpts
+
+```bash
+# extract one excerpt per section (vendored HTML -> JSON), then apply to a workspace
+python3 tools/mnemosyne-adoption/scxml_extract_excerpts.py --out out/scxml-excerpts.json
+cd docs/spec/scxml
+python3 ../../../tools/mnemosyne-adoption/apply_excerpts.py --excerpts out/scxml-excerpts.json
+```
+
+A section's excerpt is its **direct body text** (between its heading and the
+next heading of any level); container sections with no direct prose are omitted.
+The extractor imports A1 so the section-id mapping stays single-source. The apply
+driver calls `set-section-normative-excerpt` per section (`--no-regenerate`, one
+final render); `normative_excerpt` is frozen after first set, so it runs once on
+the skeleton. For the vendored snapshot this yields 191 excerpts over the 196
+sections. The result is the vendored quote Mnemosyne renders (B3 read-path) and
+anchors for drift (B2).
