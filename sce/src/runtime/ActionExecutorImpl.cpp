@@ -690,7 +690,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Evaluated typeexpr '{}' to type: '{}'", action.getTypeExpr(), sendType);
         }
 
-        // W3C SCXML 5.10.2 (test 577): Check if this is HTTP event processor (needed for validation)
+        // §scxml-C-2 (test 577): Check if this is HTTP event processor (needed for validation)
         bool isHttpEventProcessor = (sendType.find("BasicHTTPEventProcessor") != std::string::npos ||
                                      sendType == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor");
 
