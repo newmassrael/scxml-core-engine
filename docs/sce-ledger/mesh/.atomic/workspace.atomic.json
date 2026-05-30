@@ -1,0 +1,626 @@
+{
+  "sections": {
+    "mesh-1": {
+      "title": "Vision",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-10": {
+      "title": "Event Ordering and Concurrency",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-10.1": {
+      "title": "Ordering Guarantees",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-10.10": {
+      "title": "`OutboundBuffer` — readiness-gated outbound admit",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-10.2": {
+      "title": "Backpressure and Flow Control",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-10.3": {
+      "title": "Thread Safety Model",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-10.4": {
+      "title": "Transport Contract",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-10.4.1": {
+      "title": "Transport Lifecycle Invariants",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10.4",
+      "decision_status": "active"
+    },
+    "mesh-10.4.2": {
+      "title": "Transport Descriptor Interface",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10.4",
+      "decision_status": "active"
+    },
+    "mesh-10.4.3": {
+      "title": "Conformance Verification",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10.4",
+      "decision_status": "active"
+    },
+    "mesh-10.5": {
+      "title": "Duplicate Suppression",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-10.6": {
+      "title": "Sequence Ordering Buffer",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-10.6.1": {
+      "title": "deploy.yaml schema",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10.6",
+      "decision_status": "active"
+    },
+    "mesh-10.6.2": {
+      "title": "Dispatch decision",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10.6",
+      "decision_status": "active"
+    },
+    "mesh-10.6.3": {
+      "title": "Sequence stamping",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10.6",
+      "decision_status": "active"
+    },
+    "mesh-10.6.4": {
+      "title": "Receiver buffer",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10.6",
+      "decision_status": "active"
+    },
+    "mesh-10.7": {
+      "title": "`_event` Field Wiring for Distributed Events",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-10.7.1": {
+      "title": "Structured `_event.data` for `error.*` events",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10.7",
+      "decision_status": "active"
+    },
+    "mesh-10.8": {
+      "title": "Delayed Send + Cancel (Cross-Process)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-10.9": {
+      "title": "Origin Identity — `source` vs `routing_id`",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-10",
+      "decision_status": "active"
+    },
+    "mesh-11": {
+      "title": "Performance Characteristics",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-11.1": {
+      "title": "AOT State Machine Cost (Local, No Transport)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-11",
+      "decision_status": "active"
+    },
+    "mesh-11.2": {
+      "title": "Transport Overhead (Added to Local Cost)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-11",
+      "decision_status": "active"
+    },
+    "mesh-11.3": {
+      "title": "Throughput at 60Hz Game Tick (16.6ms)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-11",
+      "decision_status": "active"
+    },
+    "mesh-11.4": {
+      "title": "Memory per Instance",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-11",
+      "decision_status": "active"
+    },
+    "mesh-11.5": {
+      "title": "Interpreter vs AOT Comparison",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-11",
+      "decision_status": "active"
+    },
+    "mesh-12": {
+      "title": "Example: Same SCXML, Three Domains",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-13": {
+      "title": "Roadmap",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-14": {
+      "title": "deploy.yaml Schema",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-14.4": {
+      "title": "Binding value-field placeholders",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-14",
+      "decision_status": "active"
+    },
+    "mesh-14.5": {
+      "title": "Cross-transport auto-bridging — rejected",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-14",
+      "decision_status": "active"
+    },
+    "mesh-15": {
+      "title": "Zenoh Transport Template Specification",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-15.1": {
+      "title": "Key Expression Mapping",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-15",
+      "decision_status": "active"
+    },
+    "mesh-15.2": {
+      "title": "Session Management",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-15",
+      "decision_status": "active"
+    },
+    "mesh-15.3": {
+      "title": "QoS Configuration (deploy.yaml → Generated Code)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-15",
+      "decision_status": "active"
+    },
+    "mesh-15.4": {
+      "title": "Deployment Topology",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-15",
+      "decision_status": "active"
+    },
+    "mesh-15.5": {
+      "title": "Zenoh SHM and `shm_transport` Template Relationship",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-15",
+      "decision_status": "active"
+    },
+    "mesh-15.6": {
+      "title": "SCXML Concept → Zenoh Primitive Mapping",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-15",
+      "decision_status": "active"
+    },
+    "mesh-15.7": {
+      "title": "Build Dependencies",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-15",
+      "decision_status": "active"
+    },
+    "mesh-15.8": {
+      "title": "Example: Complete Automotive deploy.yaml with Zenoh",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-15",
+      "decision_status": "active"
+    },
+    "mesh-16": {
+      "title": "Distributed W3C SCXML Conformance",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-16.1": {
+      "title": "Conformance claim",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-16.10": {
+      "title": "Relationship to W3C SCXML 1.0 Normative Text",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-16.2": {
+      "title": "Distributed equivalence (weak)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-16.3": {
+      "title": "Parallel region distributability rule",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-16.4": {
+      "title": "Cross-region transition auto-merge",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-16.5": {
+      "title": "Parallel `<final>` barrier",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-16.6": {
+      "title": "`<history>` in distributed parallel",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-16.7": {
+      "title": "`error.communication` raise policy",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-16.8": {
+      "title": "Conformance test harness",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-16.8.1": {
+      "title": "Harness architecture",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16.8",
+      "decision_status": "active"
+    },
+    "mesh-16.8.2": {
+      "title": "IRP distributable subset",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16.8",
+      "decision_status": "active"
+    },
+    "mesh-16.8.3": {
+      "title": "Transport selection for harness",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16.8",
+      "decision_status": "active"
+    },
+    "mesh-16.8.4": {
+      "title": "Harness build integration",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16.8",
+      "decision_status": "active"
+    },
+    "mesh-16.9": {
+      "title": "Incremental delivery: Sessions E1, E2, F",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-16",
+      "decision_status": "active"
+    },
+    "mesh-17": {
+      "title": "Distributed-Friendly SCXML Design Principles",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-17.1": {
+      "title": "Why design matters for AOT + distributed",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-17",
+      "decision_status": "active"
+    },
+    "mesh-17.2": {
+      "title": "Five principles",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-17",
+      "decision_status": "active"
+    },
+    "mesh-17.3": {
+      "title": "Good vs bad patterns",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-17",
+      "decision_status": "active"
+    },
+    "mesh-17.4": {
+      "title": "Data locality rules of thumb",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-17",
+      "decision_status": "active"
+    },
+    "mesh-17.5": {
+      "title": "When to pick `<parallel>` vs `<invoke>`",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-17",
+      "decision_status": "active"
+    },
+    "mesh-17.6": {
+      "title": "Design checklist before distribution",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-17",
+      "decision_status": "active"
+    },
+    "mesh-17.7": {
+      "title": "Heterogeneous deployment as a first-class use case",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-17",
+      "decision_status": "active"
+    },
+    "mesh-2": {
+      "title": "Architecture",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-3": {
+      "title": "Three Abstraction Axes",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-3.1": {
+      "title": "Scheduler — When to Execute",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-3",
+      "decision_status": "active"
+    },
+    "mesh-3.2": {
+      "title": "Transport Codegen — How to Deliver",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-3",
+      "decision_status": "active"
+    },
+    "mesh-3.3": {
+      "title": "Discovery — Where to Find",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-3",
+      "decision_status": "active"
+    },
+    "mesh-4": {
+      "title": "Discovery Modes and Conflict Resolution",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-4.1": {
+      "title": "Static Mode (Build-Time Resolved)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-4",
+      "decision_status": "active"
+    },
+    "mesh-4.2": {
+      "title": "Scoped Mode (Domain-Partitioned)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-4",
+      "decision_status": "active"
+    },
+    "mesh-4.3": {
+      "title": "Dynamic Mode (Priority-Based Resolution)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-4",
+      "decision_status": "active"
+    },
+    "mesh-4.4": {
+      "title": "Event Deduplication",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-4",
+      "decision_status": "active"
+    },
+    "mesh-4.5": {
+      "title": "Instance Lifecycle",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-4",
+      "decision_status": "active"
+    },
+    "mesh-5": {
+      "title": "QoS Model: Deploy-Time Realization",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-6": {
+      "title": "Build Profiles",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-6.1": {
+      "title": "Vehicle Profile",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-6",
+      "decision_status": "active"
+    },
+    "mesh-6.2": {
+      "title": "IntraECU Profile",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-6",
+      "decision_status": "active"
+    },
+    "mesh-6.3": {
+      "title": "DDS Profile (Full QoS)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-6",
+      "decision_status": "active"
+    },
+    "mesh-6.4": {
+      "title": "Custom Transport",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-6",
+      "decision_status": "active"
+    },
+    "mesh-7": {
+      "title": "Build Pipeline",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-7.1": {
+      "title": "Inputs",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-7",
+      "decision_status": "active"
+    },
+    "mesh-7.2": {
+      "title": "Build Tool Analysis",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-7",
+      "decision_status": "active"
+    },
+    "mesh-7.3": {
+      "title": "Outputs",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-7",
+      "decision_status": "active"
+    },
+    "mesh-7.4": {
+      "title": "Generated Transport Code",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-7",
+      "decision_status": "active"
+    },
+    "mesh-7.5": {
+      "title": "Generated Event Serialization",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-7",
+      "decision_status": "active"
+    },
+    "mesh-7.6": {
+      "title": "What Developers Write",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-7",
+      "decision_status": "active"
+    },
+    "mesh-7.7": {
+      "title": "Build-Time Verification",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-7",
+      "decision_status": "active"
+    },
+    "mesh-8": {
+      "title": "Protocol Mapping",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-8.1": {
+      "title": "Communication Pattern Semantics",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-8",
+      "decision_status": "active"
+    },
+    "mesh-8.2": {
+      "title": "Transport Capability Matrix",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-8",
+      "decision_status": "active"
+    },
+    "mesh-8.3": {
+      "title": "Realization Status (2026-04-13)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-8",
+      "decision_status": "active"
+    },
+    "mesh-9": {
+      "title": "Remote Invoke Semantics",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "mesh-9.1": {
+      "title": "Local vs Remote Invoke",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9",
+      "decision_status": "active"
+    },
+    "mesh-9.2": {
+      "title": "Session ID Management",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9",
+      "decision_status": "active"
+    },
+    "mesh-9.3": {
+      "title": "Remote Invoke Lifecycle",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9",
+      "decision_status": "active"
+    },
+    "mesh-9.4": {
+      "title": "Limitations",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9",
+      "decision_status": "active"
+    },
+    "mesh-9.5": {
+      "title": "`<invoke type=\"sce:mesh-rpc\">` — short-lived RPC",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9",
+      "decision_status": "active"
+    },
+    "mesh-9.6": {
+      "title": "`<invoke type=\"scxml\">` — full remote SCXML session (Session F)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9",
+      "decision_status": "active"
+    },
+    "mesh-9.6.1": {
+      "title": "Session establishment",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9.6",
+      "decision_status": "active"
+    },
+    "mesh-9.6.2": {
+      "title": "Envelope extensions for full remote invoke",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9.6",
+      "decision_status": "active"
+    },
+    "mesh-9.6.3": {
+      "title": "`_event` field wiring (W3C §5.10.2 compliance)",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9.6",
+      "decision_status": "active"
+    },
+    "mesh-9.6.4": {
+      "title": "`<finalize>` semantics preserved",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9.6",
+      "decision_status": "active"
+    },
+    "mesh-9.6.5": {
+      "title": "`autoforward=\"true\"` semantics",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9.6",
+      "decision_status": "active"
+    },
+    "mesh-9.6.6": {
+      "title": "Inline `<content>` and child SCXML precompilation",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9.6",
+      "decision_status": "active"
+    },
+    "mesh-9.6.7": {
+      "title": "Foreign processor compatibility",
+      "parent_doc": "GENERATED.md",
+      "parent_section": "mesh-9.6",
+      "decision_status": "active"
+    }
+  },
+  "changelog_entries": {},
+  "inventory_entries": {},
+  "schema_version": 4
+}
