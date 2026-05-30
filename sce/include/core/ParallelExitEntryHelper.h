@@ -27,8 +27,8 @@ namespace SCE::Core {
 /**
  * @brief Helper functions for parallel state exit/entry order computation
  *
- * W3C SCXML 3.13: Exit order (children before parents, reverse document order for ties)
- * W3C SCXML 3.4: Parallel states exit all children simultaneously (in proper order)
+ * §scxml-3.13: Exit order (children before parents, reverse document order for ties)
+ * §scxml-3.4: Parallel states exit all children simultaneously (in proper order)
  *
  * Shared between Interpreter and AOT engines following Zero Duplication Principle.
  */
@@ -37,7 +37,7 @@ public:
     /**
      * @brief Compute exit order for states
      *
-     * W3C SCXML 3.13: States are exited in exit order:
+     * §scxml-3.13: States are exited in exit order:
      * 1. Children before parents
      * 2. Reverse document order for tie-breaking (states appearing later exit first)
      *
@@ -121,7 +121,7 @@ public:
     /**
      * @brief Compute entry order for states
      *
-     * W3C SCXML 3.13: States are entered in entry order:
+     * §scxml-3.13: States are entered in entry order:
      * 1. Parents before children
      * 2. Document order for tie-breaking (states appearing earlier enter first)
      *
@@ -189,7 +189,7 @@ public:
     /**
      * @brief Compute exit order for parallel state children
      *
-     * W3C SCXML 3.13 + 3.4: When exiting a parallel state, all child regions exit
+     * §scxml-3.13 + 3.4: When exiting a parallel state, all child regions exit
      * in reverse document order (children of later regions exit first).
      *
      * This is specifically for test 404 scenario where parallel state has multiple
@@ -222,7 +222,7 @@ private:
     /**
      * @brief Check if state1 is an ancestor of state2
      *
-     * W3C SCXML 3.3: Traverse parent chain of state2 to check if state1 appears
+     * §scxml-3.3: Traverse parent chain of state2 to check if state1 appears
      */
 #if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType> static bool isAncestor(StateType state1, StateType state2) {

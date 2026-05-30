@@ -7,7 +7,7 @@
 
 namespace SCE {
 
-// W3C SCXML B.2: Helper functions for data content processing
+// §scxml-B-2: Helper functions for data content processing
 
 // Normalize whitespace in text content (test 558)
 std::string normalizeWhitespace(const std::string &text);

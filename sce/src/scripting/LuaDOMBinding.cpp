@@ -24,7 +24,7 @@ struct LuaDOMElementUD {
 // === Reset Hook ===
 
 void LuaDOMBinding::resetClassId() {
-    // W3C SCXML B.2: No-op for Lua — metatables are per-lua_State and
+    // §scxml-B-2: No-op for Lua — metatables are per-lua_State and
     // automatically cleaned up on lua_close(). Provided for API consistency
     // with DOMBinding::resetClassId() (QuickJS runtime class IDs).
 }

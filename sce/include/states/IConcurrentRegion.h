@@ -113,7 +113,7 @@ public:
     virtual std::vector<std::string> validate() const = 0;
 
     /**
-     * @brief Set callback for invoke deferring (W3C SCXML 6.4 compliance)
+     * @brief Set callback for invoke deferring (§scxml-6.4 compliance)
      *
      * This callback allows the region to delegate invoke execution timing
      * to the StateMachine, ensuring proper SCXML semantics via dependency inversion.
@@ -130,7 +130,7 @@ public:
     virtual void setConditionEvaluator(std::function<bool(const std::string &)> evaluator) = 0;
 
     /**
-     * @brief Set done state callback for done.state.{id} event generation (W3C SCXML 3.4)
+     * @brief Set done state callback for done.state.{id} event generation (§scxml-3.4)
      *
      * Lifecycle:
      * 1. StateMachine calls this during setupParallelStateCallbacks() initialization
@@ -151,7 +151,7 @@ public:
     virtual void setExecutionContext(std::shared_ptr<IExecutionContext> executionContext) = 0;
 
     /**
-     * @brief Set desired initial child state from parent's initial attribute (W3C SCXML 3.3)
+     * @brief Set desired initial child state from parent's initial attribute (§scxml-3.3)
      *
      * When a parent compound state specifies deep initial targets, this method
      * sets the target state for this region, overriding the region's default initial state.
@@ -167,13 +167,13 @@ public:
     virtual const std::string &getCurrentState() const = 0;
 
     /**
-     * @brief Directly set current state (for W3C SCXML 3.3 deep initial targets)
+     * @brief Directly set current state (for §scxml-3.3 deep initial targets)
      * @param stateId The state ID to set as current
      */
     virtual void setCurrentState(const std::string &stateId) = 0;
 
     /**
-     * @brief Enable/disable restoration mode for snapshot restoration (W3C SCXML 3.13)
+     * @brief Enable/disable restoration mode for snapshot restoration (§scxml-3.13)
      *
      * When enabled, prevents side effects like doneStateCallback from being triggered
      * during snapshot restoration. This ensures time-travel debugging doesn't generate

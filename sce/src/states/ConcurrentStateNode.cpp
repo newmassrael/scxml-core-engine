@@ -153,7 +153,7 @@ bool ConcurrentStateNode::isDeepHistory() const {
     return historyType_ == HistoryType::DEEP;
 }
 
-// W3C SCXML 3.8/3.9: Block-based action methods
+// §scxml-3.8 / §scxml-3.9: Block-based action methods
 void ConcurrentStateNode::addEntryActionBlock(std::vector<std::shared_ptr<IActionNode>> block) {
     if (!block.empty()) {
         entryActionBlocks_.push_back(std::move(block));
@@ -317,7 +317,7 @@ ConcurrentOperationResult ConcurrentStateNode::enterParallelState() {
 ConcurrentOperationResult ConcurrentStateNode::exitParallelState(std::shared_ptr<IExecutionContext> executionContext) {
     SCE_LOG_DEBUG("Exiting parallel state: {}", id_);
 
-    // W3C SCXML 3.13: Exit regions FIRST (children before parent) - test 404
+    // §scxml-3.13: Exit regions FIRST (children before parent) - test 404
     auto results = deactivateAllRegions(executionContext);
 
     // Log warnings for any deactivation issues but continue (exit should not fail)
@@ -327,7 +327,7 @@ ConcurrentOperationResult ConcurrentStateNode::exitParallelState(std::shared_ptr
         }
     }
 
-    // W3C SCXML 3.13: Execute parallel state's own exit actions AFTER regions (test 404)
+    // §scxml-3.13: Execute parallel state's own exit actions AFTER regions (test 404)
     const auto &exitActionBlocks = getExitActionBlocks();
     if (!exitActionBlocks.empty() && executionContext && executionContext->isValid()) {
         auto &actionExecutor = executionContext->getActionExecutor();
@@ -397,7 +397,7 @@ ConcurrentStateNode::deactivateAllRegions(std::shared_ptr<IExecutionContext> exe
 
     SCE_LOG_DEBUG("Deactivating {} regions in {}", regions_.size(), id_);
 
-    // W3C SCXML 3.13: Exit in reverse document order (test 404)
+    // §scxml-3.13: Exit in reverse document order (test 404)
     for (auto it = regions_.rbegin(); it != regions_.rend(); ++it) {
         auto &region = *it;
         auto result = region->deactivate(executionContext);
@@ -450,13 +450,13 @@ bool ConcurrentStateNode::hasNotifiedCompletion() const {
 }
 
 bool ConcurrentStateNode::generateDoneStateEventIfComplete() {
-    // W3C SCXML 3.4/3.7: Single Source of Truth for done.state event generation
+    // §scxml-3.4 / §scxml-3.7: Single Source of Truth for done.state event generation
     // ARCHITECTURE.md Zero Duplication: Encapsulates completion detection and callback invocation
 
     // Check if all regions are in final states
     bool isComplete = areAllRegionsComplete();
 
-    // W3C SCXML 3.4: Generate done.state event exactly once when completion is detected
+    // §scxml-3.4: Generate done.state event exactly once when completion is detected
     if (isComplete && !hasNotifiedCompletion_ && completionCallback_) {
         hasNotifiedCompletion_ = true;
         SCE_LOG_DEBUG("W3C SCXML 3.4: All regions complete for '{}', generating done.state event", id_);
@@ -467,7 +467,7 @@ bool ConcurrentStateNode::generateDoneStateEventIfComplete() {
     }
 
     // Reset notification flag if state is no longer complete
-    // W3C SCXML 3.4: Allows re-notification if state completes again after leaving final configuration
+    // §scxml-3.4: Allows re-notification if state completes again after leaving final configuration
     if (!isComplete && hasNotifiedCompletion_) {
         hasNotifiedCompletion_ = false;
         SCE_LOG_DEBUG("W3C SCXML 3.4: Reset completion notification for '{}' (no longer complete)", id_);
@@ -511,7 +511,7 @@ std::vector<ConcurrentOperationResult> ConcurrentStateNode::processEventInAllReg
         }
     }
 
-    // W3C SCXML 3.4: Check for parallel state completion and generate done.state event if needed
+    // §scxml-3.4: Check for parallel state completion and generate done.state event if needed
     // "When all of the children reach final states, the <parallel> element itself is considered to be in a final state"
     // ARCHITECTURE.md Zero Duplication: Single Source of Truth for done.state generation
     if (areAllRegionsInFinalState()) {

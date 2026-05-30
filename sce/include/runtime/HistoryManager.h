@@ -91,7 +91,7 @@ class IHistoryValidator;
 /**
  * @brief Main history manager implementation
  *
- * W3C SCXML 3.11: Manages history state operations using shared HistoryHelper
+ * §scxml-3.11: Manages history state operations using shared HistoryHelper
  * for filtering logic (Zero Duplication with AOT engine)
  *
  * Responsibilities:
@@ -105,7 +105,7 @@ public:
     /**
      * @brief Constructor with dependency injection
      *
-     * W3C SCXML 3.11: Uses shared HistoryHelper for filtering (Zero Duplication with AOT)
+     * §scxml-3.11: Uses shared HistoryHelper for filtering (Zero Duplication with AOT)
      *
      * @param stateProvider Function to get state by ID
      * @param validator Validator for history operations

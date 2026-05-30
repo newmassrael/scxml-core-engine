@@ -24,14 +24,14 @@
 namespace SCE::Core {
 
 /**
- * @brief Single Source of Truth for W3C SCXML 6.4 invoke lifecycle management
+ * @brief Single Source of Truth for §scxml-6.4 invoke lifecycle management
  *
  * ARCHITECTURE.md Compliance:
  * - Zero Duplication: Shared between Interpreter and AOT engines
- * - Single Source of Truth: W3C SCXML 6.4 defer/cancel/execute algorithm
+ * - Single Source of Truth: §scxml-6.4 defer/cancel/execute algorithm
  * - Helper Function Pattern: Follows SendHelper, ForeachHelper, GuardHelper
  *
- * W3C SCXML 6.4: Invoke elements in states entered-but-not-exited during a macrostep
+ * §scxml-6.4: Invoke elements in states entered-but-not-exited during a macrostep
  * are executed at the end of that macrostep. This ensures correct timing:
  * 1. Entry: Defer invoke (add to pending list)
  * 2. Exit: Cancel pending invoke (remove from pending list)
@@ -44,7 +44,7 @@ namespace SCE::Core {
 class InvokeHelper {
 public:
     /**
-     * @brief W3C SCXML 6.4: Defer invoke execution until macrostep end
+     * @brief §scxml-6.4: Defer invoke execution until macrostep end
      *
      * Template parameters:
      * @tparam PendingContainer Container type (std::vector<PendingInvoke>)
@@ -75,7 +75,7 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 6.4: Cancel pending invokes for exited state
+     * @brief §scxml-6.4: Cancel pending invokes for exited state
      *
      * When a state is exited during a macrostep, its pending invokes must be cancelled
      * to ensure only entered-and-not-exited states have their invokes executed.
@@ -113,7 +113,7 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 6.4: Execute all pending invokes at macrostep end
+     * @brief §scxml-6.4: Execute all pending invokes at macrostep end
      *
      * After a macrostep completes (stable configuration reached), all invokes that
      * were deferred during entry actions are executed. This ensures correct W3C SCXML
@@ -161,7 +161,7 @@ public:
 
         SCE_LOG_DEBUG("InvokeHelper: Executing {} pending invokes", pending.size());
 
-        // W3C SCXML 6.4: Copy pending list to prevent iterator invalidation
+        // §scxml-6.4: Copy pending list to prevent iterator invalidation
         // Child state machines may raise events during initialization
         auto invokesToExecute = pending;
         pending.clear();
@@ -180,7 +180,7 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 6.4: Get count of pending invokes
+     * @brief §scxml-6.4: Get count of pending invokes
      *
      * Utility for monitoring and debugging.
      *
@@ -193,7 +193,7 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 6.4: Check if specific invoke is pending
+     * @brief §scxml-6.4: Check if specific invoke is pending
      *
      * Utility for debugging and assertions.
      *
@@ -209,17 +209,17 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 6.3.1: Create done.invoke event name
+     * @brief §scxml-6.3.1: Create done.invoke event name
      *
      * Single Source of Truth for done.invoke event naming logic.
      * Used by both Interpreter and AOT engines.
      *
-     * W3C SCXML 6.3.1: When an invoked child process completes, it generates
+     * §scxml-6.3.1: When an invoked child process completes, it generates
      * a done.invoke.{invokeid} event where invokeid is the ID of the invoke element.
      *
      * ARCHITECTURE.md Compliance:
      * - Zero Duplication: Shared naming logic between Interpreter and AOT
-     * - Single Source of Truth: W3C SCXML 6.3.1 event naming specification
+     * - Single Source of Truth: §scxml-6.3.1 event naming specification
      *
      * @param invokeId Invoke element identifier
      * @return Event name in "done.invoke.{invokeid}" format
@@ -235,24 +235,24 @@ public:
      * @endcode
      */
     static std::string createDoneInvokeEventName(const std::string &invokeId) {
-        // W3C SCXML 6.3.1: done.invoke.{invokeid} event naming
+        // §scxml-6.3.1: done.invoke.{invokeid} event naming
         return "done.invoke." + invokeId;
     }
 
     /**
-     * @brief W3C SCXML 3.12.1: Validate invoke ID format
+     * @brief §scxml-3.12.1: Validate invoke ID format
      *
      * Single Source of Truth for invoke ID validation.
      * Used by both Interpreter and AOT engines.
      *
-     * W3C SCXML 3.12.1: Invoke IDs must be unique within the session.
+     * §scxml-3.12.1: Invoke IDs must be unique within the session.
      * Format can be:
      * - User-provided ID (e.g., "foo", "myInvoke")
      * - Auto-generated ID (e.g., "stateid.platformid.index" format)
      *
      * ARCHITECTURE.md Compliance:
      * - Zero Duplication: Shared validation logic
-     * - Single Source of Truth: W3C SCXML 3.12.1 ID requirements
+     * - Single Source of Truth: §scxml-3.12.1 ID requirements
      *
      * @param invokeId Invoke element identifier to validate
      * @return true if valid (non-empty), false otherwise
@@ -261,7 +261,7 @@ public:
      * @code
      * // Validate user-provided ID
      * if (!InvokeHelper::isValidInvokeId(userProvidedId)) {
-     *     throw std::invalid_argument("W3C SCXML 3.12.1: Invoke ID must not be empty");
+     *     throw std::invalid_argument("§scxml-3.12.1: Invoke ID must not be empty");
      * }
      *
      * // Validate auto-generated ID
@@ -270,7 +270,7 @@ public:
      * @endcode
      */
     static bool isValidInvokeId(const std::string &invokeId) {
-        // W3C SCXML 3.12.1: Invoke ID must not be empty
+        // §scxml-3.12.1: Invoke ID must not be empty
         // Both user-provided and auto-generated IDs must satisfy this requirement
         return !invokeId.empty();
     }

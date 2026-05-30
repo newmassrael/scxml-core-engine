@@ -11,14 +11,14 @@
 namespace SCE {
 
 /**
- * W3C SCXML B.2: QuickJS bindings for XML DOM API
+ * §scxml-B-2: QuickJS bindings for XML DOM API
  * Creates JavaScript-accessible DOM objects with getElementsByTagName() and getAttribute()
  */
 class DOMBinding {
 public:
     /**
      * Reset DOM class ID (must be called when JSEngine is reset/shutdown)
-     * W3C SCXML B.2: Ensures DOM class ID is reinitialized for new QuickJS runtime
+     * §scxml-B-2: Ensures DOM class ID is reinitialized for new QuickJS runtime
      */
     static void resetClassId();
 

@@ -16,7 +16,7 @@ namespace SCE {
 class IScriptEngine;
 
 /**
- * @brief W3C SCXML 5.3: Data model initialization with binding mode support
+ * @brief §scxml-5.3: Data model initialization with binding mode support
  *
  * Handles all data model variable lifecycle:
  * - Collecting data items from document (top-level + state-level)
@@ -31,7 +31,7 @@ class IScriptEngine;
 class DataModelInitializer {
 public:
     /**
-     * @brief W3C SCXML 5.3: Data item descriptor with containing state
+     * @brief §scxml-5.3: Data item descriptor with containing state
      */
     struct DataItemInfo {
         std::string stateId;  // Empty for top-level datamodel, state ID for state-level data
@@ -67,7 +67,7 @@ public:
     std::vector<DataItemInfo> collectAllDataItems() const;
 
     /**
-     * @brief W3C SCXML 5.3: Initialize a single data item
+     * @brief §scxml-5.3: Initialize a single data item
      *
      * Handles expr (expression evaluation), src (file loading),
      * content (inline content), and undefined (no value).
@@ -78,7 +78,7 @@ public:
     void initializeDataItem(const std::shared_ptr<IDataModelItem> &item, bool assignValue);
 
     /**
-     * @brief W3C SCXML 5.3: Initialize all data items at document load time
+     * @brief §scxml-5.3: Initialize all data items at document load time
      *
      * Uses BindingHelper to determine early vs late binding strategy.
      *
@@ -87,7 +87,7 @@ public:
     void initializeAllDataItems(const std::string &binding);
 
     /**
-     * @brief W3C SCXML 5.3: Initialize state data on first entry (late binding)
+     * @brief §scxml-5.3: Initialize state data on first entry (late binding)
      *
      * Called from enterState() to assign values when state is entered for the first time.
      * Uses BindingHelper to determine if values should be assigned.
@@ -102,7 +102,7 @@ private:
     std::string sessionId_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
 
-    // W3C SCXML 5.3: Track which states have initialized their data (for late binding)
+    // §scxml-5.3: Track which states have initialized their data (for late binding)
     std::set<std::string> initializedStates_;
 };
 

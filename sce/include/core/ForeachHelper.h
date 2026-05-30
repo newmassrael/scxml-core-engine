@@ -25,7 +25,7 @@
 namespace SCE::Core {
 
 /**
- * @brief Helper for W3C SCXML 4.6 foreach loop variable handling
+ * @brief Helper for §scxml-4.6 foreach loop variable handling
  *
  * Single Source of Truth for foreach variable setting logic shared between engines.
  * Ensures proper variable declaration and type preservation.
@@ -43,7 +43,7 @@ namespace SCE::Core {
 class ForeachHelper {
 public:
     /**
-     * @brief Sets a loop variable with proper W3C SCXML 4.6 compliance
+     * @brief Sets a loop variable with proper §scxml-4.6 compliance
      *
      * Handles variable declaration and type preservation for foreach loop variables.
      * If the variable doesn't exist, it will be declared with 'var' keyword.
@@ -59,7 +59,7 @@ public:
      */
     /**
      * @brief Validate that a variable name is a legal ECMAScript identifier
-     * W3C SCXML B.2: Legal values for 'item' attribute are legal ECMAScript variable names
+     * §scxml-B-2: Legal values for 'item' attribute are legal ECMAScript variable names
      */
     static inline bool isLegalVariableName(const std::string &name) {
         if (name.empty()) return false;
@@ -77,7 +77,7 @@ public:
     /**
      * @brief Set a loop variable directly from a ScriptValue (no string round-trip)
      *
-     * W3C SCXML 4.6: Preserves type information for objects, arrays, and all primitive types.
+     * §scxml-4.6: Preserves type information for objects, arrays, and all primitive types.
      */
     template <typename JSEngineType>
     static inline bool setLoopVariable(JSEngineType &jsEngine, const std::string &sessionId, const std::string &varName,
@@ -143,7 +143,7 @@ public:
     /**
      * @brief Evaluates a foreach array expression using script engine
      *
-     * W3C SCXML 5.4: The 'array' attribute must evaluate to an iterable collection,
+     * §scxml-5.4: The 'array' attribute must evaluate to an iterable collection,
      * specifically objects that satisfy instanceof(Array) in ECMAScript.
      * Non-array values (numbers, strings, booleans, objects) must raise error.execution.
      *
@@ -156,7 +156,7 @@ public:
     template <typename JSEngineType>
     static inline std::optional<std::vector<ScriptValue>>
     evaluateForeachArray(JSEngineType &jsEngine, const std::string &sessionId, const std::string &arrayExpr) {
-        // W3C SCXML 4.6: Array expression must be non-empty
+        // §scxml-4.6: Array expression must be non-empty
         if (arrayExpr.empty()) {
             SCE_LOG_ERROR("Foreach array attribute is missing or empty");
             return std::nullopt;
@@ -169,7 +169,7 @@ public:
             return std::nullopt;
         }
 
-        // W3C SCXML 5.4: Validate that the value is an array
+        // §scxml-5.4: Validate that the value is an array
         if (!arrayResult.isArray()) {
             // Empty Lua table converts to ScriptObject with no properties — treat as empty array
             const auto &val = arrayResult.getInternalValue();
@@ -190,7 +190,7 @@ public:
             }
         }
 
-        // W3C SCXML 4.6: Extract elements as ScriptValue directly (no string round-trip)
+        // §scxml-4.6: Extract elements as ScriptValue directly (no string round-trip)
         return ScriptResultUtils::resultToScriptValueArray(arrayResult, &jsEngine, sessionId, arrayExpr);
     }
 
@@ -233,7 +233,7 @@ public:
      * @brief Executes a foreach loop without iteration body (for variable declaration only)
      *
      * Used when foreach is used solely for declaring variables without executing actions
-     * (W3C SCXML 4.6 allows empty foreach for variable declaration)
+     * (§scxml-4.6 allows empty foreach for variable declaration)
      *
      * @tparam JSEngineType Script engine type (deduced from jsEngine argument)
      * @param jsEngine Reference to script engine instance
@@ -253,7 +253,7 @@ public:
         }
         auto &arrayValues = arrayValuesOpt.value();
 
-        // W3C SCXML 4.6: Declare item and index variables even for empty arrays
+        // §scxml-4.6: Declare item and index variables even for empty arrays
         if (!setLoopVariable(jsEngine, sessionId, itemVar, ScriptValue(ScriptUndefined{}))) {
             SCE_LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
             return false;
@@ -280,7 +280,7 @@ public:
      * This is the Single Source of Truth for foreach error handling logic,
      * eliminating code duplication between Interpreter and AOT engines.
      *
-     * W3C SCXML 4.6 Compliance:
+     * §scxml-4.6 Compliance:
      * "If the evaluation of any child element of foreach causes an error,
      * the processor MUST cease execution of the foreach element and the block that contains it."
      *
@@ -341,7 +341,7 @@ public:
         }
         auto &arrayValues = arrayValuesOpt.value();
 
-        // W3C SCXML 4.6: Declare item and index variables BEFORE iteration
+        // §scxml-4.6: Declare item and index variables BEFORE iteration
         if (!setLoopVariable(jsEngine, sessionId, itemVar, ScriptValue(ScriptUndefined{}))) {
             SCE_LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
             return false;
@@ -354,14 +354,14 @@ public:
             }
         }
 
-        // W3C SCXML 4.6: Execute foreach loop with error handling
+        // §scxml-4.6: Execute foreach loop with error handling
         for (size_t i = 0; i < arrayValues.size(); ++i) {
             if (!setForeachIterationVariables(jsEngine, sessionId, itemVar, arrayValues[i], indexVar, i)) {
                 return false;
             }
 
             // Execute body actions for this iteration
-            // W3C SCXML 4.6: If body returns false (error), stop loop execution
+            // §scxml-4.6: If body returns false (error), stop loop execution
             if (!executeBody(i)) {
                 SCE_LOG_DEBUG("Foreach loop stopped at iteration {} due to error (W3C SCXML 4.6)", i);
                 return false;  // Single Source of Truth for W3C 4.6 compliance

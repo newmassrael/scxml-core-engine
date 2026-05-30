@@ -142,7 +142,7 @@ JSValue createElementObjectImpl(JSContext *ctx, std::shared_ptr<XMLElement> elem
 }  // anonymous namespace
 
 void DOMBinding::resetClassId() {
-    // W3C SCXML B.2: Reset DOM class ID when JSEngine is reset/shutdown
+    // §scxml-B-2: Reset DOM class ID when JSEngine is reset/shutdown
     // QuickJS class IDs are runtime-specific and must be reinitialized for new runtimes
     js_dom_element_class_id = 0;
 }

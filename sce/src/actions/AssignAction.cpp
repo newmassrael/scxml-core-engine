@@ -16,7 +16,7 @@ bool AssignAction::execute(IExecutionContext &context) {
         return false;
     }
 
-    // W3C SCXML 5.4: Delegate location validation to ActionExecutor
+    // §scxml-5.4: Delegate location validation to ActionExecutor
     // which will raise error.execution event for invalid locations
     try {
         return context.getActionExecutor().assignVariable(location_, expr_);

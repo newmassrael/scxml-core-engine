@@ -115,7 +115,7 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
     assert(executionContext->isValid() && "SCXML violation: execution context must be valid");
 
     try {
-        // W3C SCXML 3.13: Set immediate mode to false for exit actions (test 404)
+        // §scxml-3.13: Set immediate mode to false for exit actions (test 404)
         // Events raised in exit actions should be queued, not processed immediately
         auto &actionExecutor = executionContext->getActionExecutor();
         auto *actionExecutorImpl = dynamic_cast<ActionExecutorImpl *>(&actionExecutor);
@@ -123,10 +123,10 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
             actionExecutorImpl->setImmediateMode(false);
         }
 
-        // W3C SCXML 3.9: Get exit action blocks
+        // §scxml-3.9: Get exit action blocks
         const auto &exitActionBlocks = state->getExitActionBlocks();
 
-        // W3C SCXML 3.9: Execute exit actions in document order, block by block
+        // §scxml-3.9: Execute exit actions in document order, block by block
         for (const auto &actionBlock : exitActionBlocks) {
             for (const auto &exitAction : actionBlock) {
                 if (exitAction) {
@@ -134,18 +134,18 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
 
                     // Using injected ActionExecutor for SCXML-compliant execution
                     try {
-                        // W3C SCXML 3.9: Execute the exit action through the execution context
+                        // §scxml-3.9: Execute the exit action through the execution context
                         logExitAction(state->getId(),
                                       std::format("Executing exit action: {}", exitAction->getActionType()));
 
-                        // W3C SCXML 3.9: Execute the action
+                        // §scxml-3.9: Execute the action
                         bool actionResult = exitAction->execute(*executionContext);
 
                         if (!actionResult) {
                             SCE_LOG_WARN("W3C SCXML 3.9: Exit action failed for state: {}, stopping remaining actions in "
                                      "THIS block only",
                                      state->getId());
-                            break;  // W3C SCXML 3.9: stop remaining actions in this block
+                            break;  // §scxml-3.9: stop remaining actions in this block
                         }
 
                         logExitAction(state->getId(), "Successfully executed SCXML exit action node");
@@ -154,7 +154,7 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
                         SCE_LOG_ERROR("SCXML violation: {}", actionException.what());
                         assert(false && "SCXML violation: exit actions must not throw exceptions");
 
-                        // W3C SCXML 3.13: Restore immediate mode even on error
+                        // §scxml-3.13: Restore immediate mode even on error
                         if (actionExecutorImpl) {
                             actionExecutorImpl->setImmediateMode(true);
                         }
@@ -164,7 +164,7 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
             }
         }
 
-        // W3C SCXML 3.13: Restore immediate mode after exit actions (test 404)
+        // §scxml-3.13: Restore immediate mode after exit actions (test 404)
         if (actionExecutorImpl) {
             actionExecutorImpl->setImmediateMode(true);
         }

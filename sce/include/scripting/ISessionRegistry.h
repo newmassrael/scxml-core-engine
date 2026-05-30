@@ -15,7 +15,7 @@ class IEventDispatcher;
  *
  * Provides engine-agnostic session registry services: invoke mappings,
  * file path resolution, event dispatcher management, and session ID generation.
- * Separated from script execution to enable pluggable script engines (W3C SCXML 6.2).
+ * Separated from script execution to enable pluggable script engines (§scxml-6.2).
  */
 class ISessionRegistry {
 public:
@@ -49,7 +49,7 @@ public:
 
     /**
      * @brief Get invoke ID for a child session (reverse lookup)
-     * W3C SCXML 5.10 test 338: Enables setting invokeid field on events from invoked children
+     * §scxml-5.10 test 338: Enables setting invokeid field on events from invoked children
      * @param childSessionId Child session ID to lookup
      * @return Invoke ID that created this child session, or empty string if not found
      */
@@ -57,7 +57,7 @@ public:
 
     /**
      * @brief Register parent-child session relationship
-     * W3C SCXML 6.4: Enables child-to-parent event routing without script engine coupling
+     * §scxml-6.4: Enables child-to-parent event routing without script engine coupling
      * @param childSessionId Child session ID
      * @param parentSessionId Parent session ID
      */
@@ -71,7 +71,7 @@ public:
 
     /**
      * @brief Get parent session ID for a child session
-     * W3C SCXML 6.4: Enables child-to-parent event routing without script engine coupling
+     * §scxml-6.4: Enables child-to-parent event routing without script engine coupling
      * @param childSessionId Child session ID to lookup
      * @return Parent session ID, or empty string if not found
      */
@@ -99,7 +99,7 @@ public:
      */
     virtual void unregisterSessionFilePath(const std::string &sessionId) = 0;
 
-    // === Event Dispatcher Management (W3C SCXML 6.2) ===
+    // === Event Dispatcher Management (§scxml-6.2) ===
 
     /**
      * @brief Register EventDispatcher for session-aware delayed event cancellation
@@ -117,7 +117,7 @@ public:
 
     /**
      * @brief Cleanup session resources: cancel delayed events + unregister file path
-     * W3C SCXML 6.2: Called during session destruction for proper resource cleanup
+     * §scxml-6.2: Called during session destruction for proper resource cleanup
      * @param sessionId Session identifier to clean up
      */
     virtual void cleanupSession(const std::string &sessionId) = 0;

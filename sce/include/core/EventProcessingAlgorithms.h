@@ -25,7 +25,7 @@ namespace SCE::Core {
 class EventProcessingAlgorithms {
 public:
     /**
-     * @brief W3C SCXML 3.12.1: Process internal event queue (FIFO)
+     * @brief §scxml-3.12.1: Process internal event queue (FIFO)
      *
      * Exhaust all internal events in FIFO order when macrostep completes.
      * Both Interpreter and AOT engines use the same algorithm.
@@ -60,7 +60,7 @@ public:
     template <typename EventQueue, typename EventHandler>
 #endif
     static void processInternalEventQueue(EventQueue &queue, EventHandler &&handler) {
-        // W3C SCXML 3.12.1: Process all internal events in FIFO order
+        // §scxml-3.12.1: Process all internal events in FIFO order
         while (queue.hasEvents()) {
             auto event = queue.popNext();
 
@@ -73,7 +73,7 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 3.13: Check eventless transitions
+     * @brief §scxml-3.13: Check eventless transitions
      *
      * Check transitions that execute automatically without events after state entry.
      * Includes maximum iteration limit to prevent infinite loops.
@@ -106,7 +106,7 @@ public:
         while (iterations++ < maxIterations) {
             auto oldState = sm.getCurrentState();
 
-            // W3C SCXML 3.13: Attempt eventless transition
+            // §scxml-3.13: Attempt eventless transition
             if (sm.processEventlessTransition()) {
                 auto newState = sm.getCurrentState();
 
@@ -139,7 +139,7 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 3.3 / D.1: Process complete macrostep
+     * @brief §scxml-3.3 / D.1: Process complete macrostep
      *
      * External event processing → Exhaust internal events → Eventless transitions.
      * Core event processing pattern for Interpreter and AOT engines.
@@ -164,7 +164,7 @@ public:
                                  InternalEventProcessor &&processInternalEvent, bool checkEventless = true) {
         auto oldState = sm.getCurrentState();
 
-        // 1. W3C SCXML 3.12: Attempt transition with external event
+        // 1. §scxml-3.12: Attempt transition with external event
         if (sm.processTransition(event)) {
             auto newState = sm.getCurrentState();
 
@@ -173,10 +173,10 @@ public:
                 sm.executeOnExit(oldState);
                 sm.executeOnEntry(newState);
 
-                // 3. W3C SCXML 3.12.1: Process all internal events
+                // 3. §scxml-3.12.1: Process all internal events
                 processInternalEventQueue(queue, processInternalEvent);
 
-                // 4. W3C SCXML 3.13: Eventless transitions
+                // 4. §scxml-3.13: Eventless transitions
                 if (checkEventless) {
                     checkEventlessTransitions(sm, queue, processInternalEvent);
                 }

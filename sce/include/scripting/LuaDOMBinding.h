@@ -13,7 +13,7 @@ struct lua_State;
 namespace SCE {
 
 /**
- * @brief Lua bindings for W3C SCXML B.2 XML DOM API
+ * @brief Lua bindings for §scxml-B-2 XML DOM API
  *
  * Creates Lua userdata objects wrapping XMLDocument/XMLElement with
  * getElementsByTagName() and getAttribute() methods exposed via metatables.
@@ -30,7 +30,7 @@ public:
     /**
      * @brief Reset DOM binding state for engine reset/shutdown
      *
-     * W3C SCXML B.2: Mirrors DOMBinding::resetClassId() for API consistency.
+     * §scxml-B-2: Mirrors DOMBinding::resetClassId() for API consistency.
      * Lua metatables are per-lua_State and auto-cleaned on lua_close(),
      * so this is currently a no-op.
      */

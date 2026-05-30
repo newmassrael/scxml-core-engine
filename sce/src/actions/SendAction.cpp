@@ -192,12 +192,12 @@ std::vector<std::string> SendAction::validateSpecific() const {
         errors.push_back("Send action cannot have both 'delay' and 'delayexpr' attributes");
     }
 
-    // W3C SCXML 6.2: Cannot have both type and typeexpr
+    // §scxml-6.2: Cannot have both type and typeexpr
     if (!type_.empty() && !typeExpr_.empty()) {
         errors.push_back("Send action cannot have both 'type' and 'typeexpr' attributes");
     }
 
-    // W3C SCXML 5.10: Cannot have both content and contentexpr
+    // §scxml-5.10: Cannot have both content and contentexpr
     if (!content_.empty() && !contentExpr_.empty()) {
         errors.push_back("Send action cannot have both 'content' and 'contentexpr' attributes");
     }
@@ -210,7 +210,7 @@ std::vector<std::string> SendAction::validateSpecific() const {
         }
     }
 
-    // W3C SCXML C.2: Validate content size to prevent DoS attacks
+    // §scxml-C-2: Validate content size to prevent DoS attacks
     if (!content_.empty()) {
         constexpr size_t MAX_CONTENT_SIZE = 10485760;  // 10MB
         if (content_.size() > MAX_CONTENT_SIZE) {
@@ -256,7 +256,7 @@ std::string SendAction::getSpecificDescription() const {
         desc += " params=" + std::to_string(paramsWithExpr_.size());
     }
 
-    // W3C SCXML C.2: Include content information for debugging
+    // §scxml-C-2: Include content information for debugging
     if (!content_.empty()) {
         std::string contentPreview = content_.substr(0, 50);
         if (content_.size() > 50) {

@@ -81,7 +81,7 @@ public:
  *
  * Zero Duplication: Native platform logic isolated in this class
  *
- * W3C SCXML 5.3: Thread-safe execution for concurrent state machine instances
+ * §scxml-5.3: Thread-safe execution for concurrent state machine instances
  *
  * Architecture:
  * - Main thread: Queues operations via executeAsync()

@@ -738,7 +738,7 @@ std::string EcmaScriptToLuaTransformer::transformOperators(const std::string &in
         result = std::move(temp);
     }
 
-    // W3C SCXML B.2 (test 459): Parenthesize operands of bitwise OR/AND/XOR
+    // §scxml-B-2 (test 459): Parenthesize operands of bitwise OR/AND/XOR
     result = parenthesizeBitwiseOperands(result);
 
     return result;
@@ -805,7 +805,7 @@ std::string EcmaScriptToLuaTransformer::transformArrayLiterals(const std::string
                 size_t closePos = findMatchingClose(input, i, '[', ']');
                 std::string contents = input.substr(i + 1, closePos - i - 1);
                 contents = transformArrayLiterals(contents);
-                // W3C SCXML 4.6: Replace null/undefined with sentinels at array element level only.
+                // §scxml-4.6: Replace null/undefined with sentinels at array element level only.
                 // Nested structures ({key: null}, function calls) are left unchanged.
                 contents = replaceWordAtTopLevel(contents, "null", "_NULL");
                 contents = replaceWordAtTopLevel(contents, "undefined", "_UNDEFINED");
@@ -1016,7 +1016,7 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
                 while (j < result.size() && std::isspace(static_cast<unsigned char>(result[j]))) ++j;
 
                 if (j < result.size() && result[j] == '{') {
-                    // W3C SCXML 5.3: Detect JS constructor pattern
+                    // §scxml-5.3: Detect JS constructor pattern
                     bool isConstructor = false;
                     int checkDepth = 1;
                     for (size_t k = j + 1; k < result.size() && checkDepth > 0; ++k) {
