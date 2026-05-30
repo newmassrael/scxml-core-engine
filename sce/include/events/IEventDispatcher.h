@@ -79,7 +79,7 @@ public:
     virtual void shutdown() = 0;
 
     /**
-     * @brief Cancel all events for a specific session (W3C SCXML 6.2 compliance)
+     * @brief Cancel all events for a specific session (§scxml-6.2 compliance)
      * @param sessionId Session whose events should be cancelled
      * @return Number of events cancelled
      */
@@ -92,7 +92,7 @@ public:
  * Used by interactive debugger to display pending delayed events.
  * Includes complete EventDescriptor fields for accurate snapshot restoration.
  *
- * W3C SCXML 6.2: Contains all information needed to recreate scheduled event.
+ * §scxml-6.2: Contains all information needed to recreate scheduled event.
  */
 struct ScheduledEventInfo {
     std::string eventName;
@@ -101,12 +101,12 @@ struct ScheduledEventInfo {
     std::chrono::milliseconds originalDelay;  // Original delay for step backward restoration
     std::string sessionId;
 
-    // W3C SCXML 6.2: Complete EventDescriptor fields for restoration
+    // §scxml-6.2: Complete EventDescriptor fields for restoration
     std::string targetUri;                                   // Target URI from EventDescriptor
     std::string eventType;                                   // Event type (scxml, platform, etc.)
     std::string eventData;                                   // Event data payload
-    std::string content;                                     // HTTP body content (W3C SCXML C.2)
-    std::map<std::string, std::vector<std::string>> params;  // W3C SCXML 6.2: param name-value pairs
+    std::string content;                                     // HTTP body content (§scxml-C-2)
+    std::map<std::string, std::vector<std::string>> params;  // §scxml-6.2: param name-value pairs
 };
 
 /**
@@ -118,7 +118,7 @@ struct ScheduledEventInfo {
 /**
  * @brief Scheduler execution mode for Interactive vs Normal operation
  *
- * W3C SCXML 3.13: Interactive mode requires manual control of event processing
+ * §scxml-3.13: Interactive mode requires manual control of event processing
  * for time-travel debugging, while normal mode uses automatic timer-based execution.
  */
 enum class SchedulerMode {
@@ -197,7 +197,7 @@ public:
     /**
      * @brief Set scheduler execution mode
      *
-     * W3C SCXML 3.13: Interactive mode disables automatic polling to support
+     * §scxml-3.13: Interactive mode disables automatic polling to support
      * time-travel debugging. Normal mode enables automatic timer-based polling.
      *
      * @param mode AUTOMATIC for normal execution, MANUAL for interactive debugging
@@ -214,7 +214,7 @@ public:
     /**
      * @brief Force poll scheduled events regardless of mode (for interactive debugging)
      *
-     * W3C SCXML 3.13: In MANUAL mode, automatic polling is disabled via poll().
+     * §scxml-3.13: In MANUAL mode, automatic polling is disabled via poll().
      * Interactive debugger uses forcePoll() to explicitly step through scheduled events.
      *
      * @return Number of events processed

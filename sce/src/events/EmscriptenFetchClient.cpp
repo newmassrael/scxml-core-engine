@@ -11,7 +11,7 @@
 #include <sstream>
 #include <vector>
 
-// EM_JS functions for Node.js HTTP support (W3C SCXML C.2 BasicHTTP via Node.js)
+// EM_JS functions for Node.js HTTP support (§scxml-C-2 BasicHTTP via Node.js)
 
 // Runtime environment detection: returns 1 if Node.js, 0 if browser
 // clang-format off
@@ -22,7 +22,7 @@ EM_JS(int, em_is_nodejs, (), {
 });
 // clang-format on
 
-// W3C SCXML C.2: Node.js HTTP request via EM_ASYNC_JS (returns Promise)
+// §scxml-C-2: Node.js HTTP request via EM_ASYNC_JS (returns Promise)
 // ASYNCIFY automatically pauses/resumes execution to wait for Promise resolution
 // MEMORY LEAK FIX: Use stack-based stringToUTF8 instead of heap-based allocateUTF8
 // clang-format off
@@ -132,7 +132,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
     bool isNodeJs = em_is_nodejs();
 
     if (isNodeJs) {
-        // W3C SCXML C.2: Use Node.js HTTP module via EM_ASYNC_JS
+        // §scxml-C-2: Use Node.js HTTP module via EM_ASYNC_JS
         // ASYNCIFY automatically pauses execution until Promise resolves
         SCE_LOG_DEBUG("EmscriptenFetchClient: Using Node.js http module (EM_ASYNC_JS)");
 
@@ -156,7 +156,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
 
         headersJson << "}";
 
-        // W3C SCXML C.2: Call EM_ASYNC_JS - appears synchronous but yields to event loop via ASYNCIFY
+        // §scxml-C-2: Call EM_ASYNC_JS - appears synchronous but yields to event loop via ASYNCIFY
         // MEMORY LEAK FIX: Reuse static buffer to eliminate heap fragmentation
         // W3C test responses are typically small JSON (< 1KB), 4KB is sufficient
         // WASM: Single-threaded, safe to reuse static buffer across requests
@@ -196,7 +196,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
     // Browser environment: use emscripten_fetch (callback-based, requires context)
     SCE_LOG_DEBUG("EmscriptenFetchClient: Using browser Fetch API");
 
-    // W3C SCXML C.2: Browser-only context for emscripten_fetch callbacks
+    // §scxml-C-2: Browser-only context for emscripten_fetch callbacks
     struct BrowserFetchContext {
         std::shared_ptr<std::promise<HttpClient::Response>> promise;
         std::string requestUrl;
@@ -217,7 +217,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
     strncpy(attr.requestMethod, request.method.c_str(), sizeof(attr.requestMethod) - 1);
     attr.requestMethod[sizeof(attr.requestMethod) - 1] = '\0';
 
-    // W3C SCXML C.2: Store request body in context to keep alive
+    // §scxml-C-2: Store request body in context to keep alive
     context->requestBody = request.body;
     attr.requestData = context->requestBody.c_str();
     attr.requestDataSize = context->requestBody.size();
@@ -241,13 +241,13 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
 
     attr.requestHeaders = context->headerPtrs.data();
 
-    // W3C SCXML C.2: Use synchronous mode for Node.js compatibility with ASYNCIFY
+    // §scxml-C-2: Use synchronous mode for Node.js compatibility with ASYNCIFY
     attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY | EMSCRIPTEN_FETCH_SYNCHRONOUS;
     attr.timeoutMSecs = static_cast<unsigned long>(timeout_.count());
 
     // Success callback
     attr.onsuccess = [](emscripten_fetch_t *fetch) {
-        // W3C SCXML C.2: Reconstruct context type for callback
+        // §scxml-C-2: Reconstruct context type for callback
         struct BrowserFetchContext {
             std::shared_ptr<std::promise<HttpClient::Response>> promise;
             std::string requestUrl;
@@ -328,7 +328,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
 
     attr.userData = context;
 
-    // W3C SCXML C.2: Synchronous fetch blocks until complete (with ASYNCIFY support)
+    // §scxml-C-2: Synchronous fetch blocks until complete (with ASYNCIFY support)
     emscripten_fetch_t *fetch = emscripten_fetch(&attr, request.url.c_str());
 
     // Check if fetch completed successfully

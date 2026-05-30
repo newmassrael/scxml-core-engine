@@ -45,7 +45,7 @@ std::future<SendResult> ParentEventTarget::send(const EventDescriptor &event) {
         // Schedule the event for delayed execution
         auto sendIdFuture = scheduler_->scheduleEvent(event, event.delay, sharedThis, event.sendId, event.sessionId);
 
-        // W3C SCXML 6.2: Convert sendId future to SendResult future synchronously (WASM memory leak prevention)
+        // §scxml-6.2: Convert sendId future to SendResult future synchronously (WASM memory leak prevention)
         // Process result synchronously to ensure thread cleanup
         std::promise<SendResult> resultPromise;
         try {
@@ -136,13 +136,13 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
             eventData = JsonUtils::toCompactString(eventDataJson);
         }
 
-        // W3C SCXML 5.10 test 338: Get invoke ID for this child session
+        // §scxml-5.10 test 338: Get invoke ID for this child session
         std::string invokeId = SessionRegistry::instance().getInvokeIdForChildSession(actualChildSessionId);
 
         // Raise event in parent session using parent's EventRaiser with origin and invoke tracking
-        // W3C SCXML 6.4: Pass child session ID as originSessionId for finalize support
-        // W3C SCXML 5.10: Pass invoke ID for event.invokeid field (test 338)
-        // W3C SCXML 5.10: Pass origintype as SCXML processor type (test 253, 331, 352, 372)
+        // §scxml-6.4: Pass child session ID as originSessionId for finalize support
+        // §scxml-5.10: Pass invoke ID for event.invokeid field (test 338)
+        // §scxml-5.10: Pass origintype as SCXML processor type (test 253, 331, 352, 372)
         // ARCHITECTURE.md: Use SCXMLConstants for Single Source of Truth
         std::string originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
         SCE_LOG_DEBUG("ParentEventTarget::sendImmediately() - Calling parent EventRaiser->raiseEvent('{}', '{}', origin: "
@@ -215,7 +215,7 @@ std::string ParentEventTarget::getDebugInfo() const {
 }
 
 std::string ParentEventTarget::findParentSessionId(const std::string &childSessionId) const {
-    // W3C SCXML 6.4: Use SessionRegistry for parent-child relationship lookup
+    // §scxml-6.4: Use SessionRegistry for parent-child relationship lookup
     // Engine-agnostic: No dependency on specific script engine implementation
     std::string parentSessionId = SessionRegistry::instance().getParentSessionId(childSessionId);
 

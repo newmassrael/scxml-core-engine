@@ -11,8 +11,11 @@
 # canonical ledger going forward; GENERATED.md is its rendered view.
 #
 # [plugins.set_equality_validator] (code-citation defense over SCE source) is
-# intentionally deferred: it is wired once the existing "W3C SCXML <n>.<m>"
-# citations are migrated to the §scxml-<n>.<m> form.
+# wired at the bottom of this file. It is rolled out one source directory at a
+# time (R3): a directory's "W3C SCXML <n>.<m>" prose citations are migrated to
+# the §scxml-<n>.<m> form (tools/mnemosyne-adoption/migrate_citations.py) and
+# then added to `paths` below, so validate-code-refs checks each migrated
+# citation against this ledger's section set.
 
 [workspace]
 docs = ["GENERATED.md"]
@@ -37,3 +40,27 @@ changelog_titles = ["Revision History"]
 entry_id_prefix = "Rev "
 anchor_convention = "section_number"
 medium_name = "spec_mirror"
+
+# Code-citation defense (validate-code-refs). Paths are workspace-root relative,
+# so they reach back up to the SCE source tree (this workspace lives three
+# levels down at docs/spec/scxml/). R3 expands `paths` one directory at a time
+# as its citations are migrated to the §scxml-<id> form.
+#
+#   severity_missing = "reject"  the hallucination gate: a §scxml-<id> citation
+#                                with no matching ledger section fails the run.
+#                                This is R3's real value, strict from the start
+#                                because the migrator only emits ledger-present
+#                                ids (tools/mnemosyne-adoption/migrate_citations).
+#   severity_binding = "warn"    Path B (Spec <-> Code bidirectional binding via
+#                                Section.implementations) is a later round; keep
+#                                it advisory so unbacked citations do not fail.
+#   comment_only     = true      only citations inside comments are scanned;
+#                                string-literal text is ignored.
+[plugins.set_equality_validator]
+paths = [
+    "../../../sce/include/events",
+    "../../../sce/src/events",
+]
+severity_missing = "reject"
+severity_binding = "warn"
+comment_only = true

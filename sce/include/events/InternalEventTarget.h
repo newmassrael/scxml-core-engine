@@ -22,7 +22,7 @@ public:
      * @brief Construct internal event target
      * @param eventRaiser Event raiser for raising internal events
      * @param isExternal true for external queue priority, false for internal queue priority
-     * @param sessionId Session ID for setting _event.origin (W3C SCXML 5.10, test 336)
+     * @param sessionId Session ID for setting _event.origin (§scxml-5.10, test 336)
      */
     explicit InternalEventTarget(std::shared_ptr<IEventRaiser> eventRaiser, bool isExternal = false,
                                  const std::string &sessionId = "");
@@ -42,7 +42,7 @@ public:
 private:
     std::shared_ptr<IEventRaiser> eventRaiser_;
     bool isExternal_;        // W3C SCXML: true for external queue priority, false for internal
-    std::string sessionId_;  // W3C SCXML 5.10: Session ID for _event.origin (test 336)
+    std::string sessionId_;  // §scxml-5.10: Session ID for _event.origin (test 336)
 
     /**
      * @brief Resolve dynamic event name from expression

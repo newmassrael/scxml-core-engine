@@ -80,7 +80,7 @@ private:
     /**
      * @brief Internal structure for scheduled events
      *
-     * Note: No 'cancelled' flag - W3C SCXML 6.3 compliance via ACTUAL deletion
+     * Note: No 'cancelled' flag - §scxml-6.3 compliance via ACTUAL deletion
      */
     struct ScheduledEvent {
         EventDescriptor event;
@@ -145,7 +145,7 @@ private:
     std::chrono::steady_clock::time_point nextEventTime_{std::chrono::steady_clock::time_point::max()};
     std::atomic<size_t> queueSize_{0};
 
-    // Event storage: std::map for O(log n) actual deletion (W3C SCXML 6.3 compliance)
+    // Event storage: std::map for O(log n) actual deletion (§scxml-6.3 compliance)
     // Zero Duplication: Same pattern as SchedulerQueueCore
     ExecutionQueueType executionQueue_;
     std::unordered_map<std::string, QueueIterator> sendIdIndex_;

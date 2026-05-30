@@ -31,7 +31,7 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
 
 #ifdef SCE_ENABLE_HTTP
     // Register HTTP target creator (both native and WASM)
-    // W3C SCXML C.2: BasicHTTP Event I/O Processor
+    // §scxml-C-2: BasicHTTP Event I/O Processor
     // Native: Uses cpp-httplib, WASM: Uses EmscriptenFetchClient
     registerTargetType("http", [](const std::string &targetUri) {
         SCE_LOG_DEBUG("EventTargetFactoryImpl: Creating HTTP target for URI: {}", targetUri);
@@ -68,7 +68,7 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createTarget(const std::st
         return createExternalTarget(sessionId);
     }
 
-    // W3C SCXML C.1: Handle special internal target URI
+    // §scxml-C-1: Handle special internal target URI
     // ARCHITECTURE.md: Zero Duplication - use SendHelper (Single Source of Truth)
     if (SendHelper::isInternalTarget(targetUri)) {
         return createInternalTarget(targetUri, sessionId);
@@ -80,13 +80,13 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createTarget(const std::st
         return createParentTarget(targetUri, sessionId);
     }
 
-    // W3C SCXML C.1 (test 190, 350): #_scxml_sessionid → external queue
+    // §scxml-C-1 (test 190, 350): #_scxml_sessionid → external queue
     if (targetUri.starts_with("#_scxml_")) {
         SCE_LOG_DEBUG("EventTargetFactoryImpl::createTarget() - #_scxml_sessionid → external queue");
         return createExternalTarget(sessionId);
     }
 
-    // W3C SCXML 6.4 (test192): Handle child invoke target (#_<invokeid>)
+    // §scxml-6.4 (test192): Handle child invoke target (#_<invokeid>)
     // ARCHITECTURE.md Zero Duplication: Uses SendHelper (Single Source of Truth)
     if (SendHelper::isChildInvokeTarget(targetUri)) {
         std::string invokeId = SendHelper::extractInvokeId(targetUri);
@@ -228,7 +228,7 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createInternalTarget(const
             }
         }
 
-        // W3C SCXML 5.10: Pass sessionId for _event.origin (test 336)
+        // §scxml-5.10: Pass sessionId for _event.origin (test 336)
         auto target =
             std::make_shared<InternalEventTarget>(targetEventRaiser, false, sessionId);  // Internal queue priority
 
@@ -260,7 +260,7 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createExternalTarget(const
         }
 
         // W3C SCXML compliance: External target uses EXTERNAL priority for proper queue ordering
-        // W3C SCXML 5.10: Pass sessionId for _event.origin (test 336)
+        // §scxml-5.10: Pass sessionId for _event.origin (test 336)
         auto target =
             std::make_shared<InternalEventTarget>(targetEventRaiser, true, sessionId);  // External queue priority
 
@@ -277,7 +277,7 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createExternalTarget(const
 std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createParentTarget(const std::string &targetUri,
                                                                                    const std::string &sessionId) {
     try {
-        // W3C SCXML 6.4: Use provided sessionId for parent-child relationship tracking
+        // §scxml-6.4: Use provided sessionId for parent-child relationship tracking
         // Session ID should always be provided during invoke creation
         if (sessionId.empty()) {
             SCE_LOG_ERROR("EventTargetFactoryImpl: Empty sessionId for parent target creation - cannot route events");

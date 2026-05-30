@@ -111,7 +111,7 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
     auto future = scheduledEvent->sendIdPromise.get_future();
     scheduledEvent->sendIdPromise.set_value(actualSendId);
 
-    // W3C SCXML 6.3: ACTUAL removal of existing event (Zero Duplication pattern)
+    // §scxml-6.3: ACTUAL removal of existing event (Zero Duplication pattern)
     {
         std::unique_lock<std::shared_mutex> lock(mutex_);
 
@@ -158,7 +158,7 @@ bool EventSchedulerImpl::cancelEvent(const std::string &sendId, const std::strin
 
     auto it = sendIdIndex_.find(sendId);
     if (it != sendIdIndex_.end()) {
-        // W3C SCXML 6.3: Cross-session isolation
+        // §scxml-6.3: Cross-session isolation
         if (!sessionId.empty() && it->second->second->sessionId != sessionId) {
             SCE_LOG_DEBUG("EventSchedulerImpl: Cross-session cancel blocked - event from '{}', cancel from '{}'",
                       it->second->second->sessionId, sessionId);
@@ -167,7 +167,7 @@ bool EventSchedulerImpl::cancelEvent(const std::string &sendId, const std::strin
 
         SCE_LOG_DEBUG("EventSchedulerImpl: Cancelling event with sendId: {}", sendId);
 
-        // W3C SCXML 6.3: ACTUAL removal (Zero Duplication pattern)
+        // §scxml-6.3: ACTUAL removal (Zero Duplication pattern)
         executionQueue_.erase(it->second);  // ACTUAL removal from queue!
         sendIdIndex_.erase(it);
         queueSize_.fetch_sub(1, std::memory_order_release);
@@ -200,7 +200,7 @@ size_t EventSchedulerImpl::cancelEventsForSession(const std::string &sessionId) 
         }
     }
 
-    // W3C SCXML 6.3: ACTUAL removal for each event
+    // §scxml-6.3: ACTUAL removal for each event
     for (const auto &sendId : sendIdsToCancel) {
         auto indexIt = sendIdIndex_.find(sendId);
         if (indexIt != sendIdIndex_.end()) {
@@ -343,7 +343,7 @@ size_t EventSchedulerImpl::processReadyEvents() {
         auto it = executionQueue_.begin();
         auto &scheduledEvent = it->second;
 
-        // W3C SCXML 3.13: Check event readiness based on scheduler mode
+        // §scxml-3.13: Check event readiness based on scheduler mode
         if (mode_.load(std::memory_order_acquire) == SchedulerMode::AUTOMATIC) {
             if (it->first.executeAt > now) {
                 break;  // Event not ready yet
