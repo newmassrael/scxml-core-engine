@@ -219,7 +219,7 @@ std::string PugiXMLElement::serializeChildContent() const {
         return "";
     }
 
-    // W3C SCXML B.2: Full XML serialization preserving structure.
+    // §scxml-B-2: Full XML serialization preserving structure.
     // Use pugixml's print() to serialize each child node compactly.
     //
     // Namespace propagation across the serialization boundary:

@@ -272,7 +272,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
 
     // Create specific action objects by action type
     if (elementName == "script") {
-        // W3C SCXML 5.8: Check for external script source
+        // §scxml-5.8: Check for external script source
         std::string content;
 
         if (actionElement->hasAttribute("src")) {
@@ -281,7 +281,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             std::string errorMsg;
 
             // ARCHITECTURE.md Zero Duplication: Use FileLoadingHelper
-            // W3C SCXML 5.8: Load external script with security validation
+            // §scxml-5.8: Load external script with security validation
             if (!FileLoadingHelper::loadExternalScript(srcPath, scxmlBasePath_, content, errorMsg)) {
                 SCE_LOG_ERROR("ActionParser: {}", errorMsg);
                 return nullptr;
@@ -418,12 +418,12 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             sendAction->setType(actionElement->getAttribute("type"));
         }
 
-        // W3C SCXML 6.2: Parse typeexpr attribute for dynamic type evaluation (Test 174)
+        // §scxml-6.2: Parse typeexpr attribute for dynamic type evaluation (Test 174)
         if (actionElement->hasAttribute("typeexpr")) {
             sendAction->setTypeExpr(actionElement->getAttribute("typeexpr"));
         }
 
-        // W3C SCXML C.1: Parse namelist attribute for event data
+        // §scxml-C-1: Parse namelist attribute for event data
         if (actionElement->hasAttribute("namelist")) {
             sendAction->setNamelist(actionElement->getAttribute("namelist"));
         }
@@ -433,19 +433,19 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             sendAction->setSendId(actionElement->getAttribute("id"));
         }
 
-        // W3C SCXML 5.10 & C.2: Parse content child element for event data
+        // §scxml-5.10 & C.2: Parse content child element for event data
         auto contentElements = ParsingCommon::findChildElements(actionElement, "content");
         if (!contentElements.empty()) {
             auto contentElement = contentElements[0];
 
-            // W3C SCXML 5.10: Check for expr attribute (dynamic content evaluation)
+            // §scxml-5.10: Check for expr attribute (dynamic content evaluation)
             if (contentElement->hasAttribute("expr")) {
                 // Use expr attribute for dynamic content
                 std::string contentExpr = contentElement->getAttribute("expr");
                 sendAction->setContentExpr(contentExpr);
                 SCE_LOG_DEBUG("ActionParser: Parsed send content expr: '{}'", contentExpr);
             } else {
-                // W3C SCXML 5.10: Use child content as literal
+                // §scxml-5.10: Use child content as literal
                 // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
                 std::string contentText = XmlSerializationHelper::serializeContent(contentElement);
 

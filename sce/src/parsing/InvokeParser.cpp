@@ -25,7 +25,7 @@ SCE::InvokeParser::parseInvokeNode(const std::shared_ptr<IXMLElement> &invokeEle
         return nullptr;
     }
 
-    // W3C SCXML 6.4: Parse id attribute if present, otherwise leave empty for runtime generation
+    // §scxml-6.4: Parse id attribute if present, otherwise leave empty for runtime generation
     std::string id;
     if (invokeElement->hasAttribute("id")) {
         id = invokeElement->getAttribute("id");
@@ -109,7 +109,7 @@ void SCE::InvokeParser::parseFinalizeElement(const std::shared_ptr<IXMLElement> 
         return;
     }
 
-    // W3C SCXML 6.4: Finalize can contain executable content
+    // §scxml-6.4: Finalize can contain executable content
     // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
     std::string finalizeContent = XmlSerializationHelper::serializeContent(finalizeElement);
     invokeNode->setFinalize(finalizeContent);

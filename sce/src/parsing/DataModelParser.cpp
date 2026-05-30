@@ -122,7 +122,7 @@ void SCE::DataModelParser::parseDataContent(const std::shared_ptr<IXMLElement> &
         return;
     }
 
-    // W3C SCXML B.2: Serialize data element content
+    // §scxml-B-2: Serialize data element content
     // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
     std::string textContent = XmlSerializationHelper::serializeContent(dataNode);
 
@@ -193,12 +193,12 @@ bool SCE::DataModelParser::matchNodeName(const std::string &nodeName, const std:
 }
 
 void SCE::DataModelParser::loadExternalContent(const std::string &src, std::shared_ptr<IDataModelItem> dataItem) {
-    // W3C SCXML 5.2.2: Load data from external sources
+    // §scxml-5.2.2: Load data from external sources
     // ARCHITECTURE.MD: Zero Duplication - Use FileLoadingHelper (Single Source of Truth)
 
     SCE_LOG_DEBUG("Loading content from: {}", src);
 
-    // W3C SCXML 5.2.2: Handle file:// or file: URIs
+    // §scxml-5.2.2: Handle file:// or file: URIs
     if (src.find("file://") == 0 || src.find("file:") == 0 || src.find("/") == 0 || src.find("./") == 0) {
         std::string content;
         bool success = FileLoadingHelper::loadFromSrc(src, content);

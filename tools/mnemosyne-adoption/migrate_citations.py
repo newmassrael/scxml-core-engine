@@ -3,10 +3,19 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 """
-Migrate SCE's prose spec citations (``W3C SCXML <label>``) in source *comments*
-to the Mnemosyne citation form (``§scxml-<id>``) so that the Mnemosyne
-``set_equality_validator`` (validate-code-refs) can check every code citation
-against the vendored spec-mirror ledger (docs/spec/scxml).
+Migrate SCE's W3C spec citations in source *comments* to the Mnemosyne citation
+form (``§scxml-<id>``) so that the Mnemosyne ``set_equality_validator``
+(validate-code-refs) can check every code citation against the vendored
+spec-mirror ledger (docs/spec/scxml). Two source shapes are recognized:
+
+  * prose:      ``W3C SCXML <label>``     (digits follow the prefix)
+  * bare-sigil: ``W3C §<label>`` / ``W3C SCXML §<label>``  (a ``§`` sigil was
+                written by hand, without the Mnemosyne ``scxml-`` namespace)
+
+Both collapse to the same canonical ``§scxml-<id>``. A bare ``§`` *without* a
+W3C marker (``RFC §3``, ``SCE_FORGE.md §3.1``) is an SCE-internal design-doc
+reference, not a W3C citation, and is left untouched for the design-ledger
+workspace.
 
 This is *adoption tooling*, not part of the SCE engine. It is deterministic and
 uses only the Python standard library.
@@ -162,7 +171,18 @@ def plan_file(path, ledger_ids, prefix):
     # single id with a stray slash). "I/O" never matches: "I" alone is not a
     # LABEL_RE label (it needs a .digit), so the chain cannot start.
     chain = LABEL_RE + r"(?:/" + LABEL_RE + r")*"
-    pattern = re.compile(re.escape(prefix) + r"[ \t]+(" + chain + r")")
+    # Two citation shapes, both comment-only and ledger-gated, both rewritten to
+    # the canonical "§scxml-<id>" (the prefix words and any hand-written § are
+    # dropped):
+    #   prose:      W3C SCXML 5.10            (digits directly after the prefix)
+    #   bare-sigil: W3C §5.5 / W3C SCXML §3.3 (a § sigil already present)
+    # The sigil branch is tried first so "W3C SCXML §3.3" is read as sigil, not
+    # as a prose miss. A bare "§3" with no W3C marker (e.g. "RFC §3",
+    # "SCE_FORGE.md §3.1") is never matched -> SCE-internal design-doc refs are
+    # left for the design-ledger workspace.
+    sig_re = r"(?:W3C[ \t]+SCXML|W3C)[ \t]*§[ \t]*(?P<sigchain>" + chain + r")"
+    prose_re = re.escape(prefix) + r"[ \t]+(?P<prosechain>" + chain + r")"
+    pattern = re.compile(sig_re + r"|" + prose_re)
     migrations, skipped = [], []
 
     # Build line-start offsets for line-number reporting.
@@ -181,9 +201,26 @@ def plan_file(path, ledger_ids, prefix):
     for m in pattern.finditer(text):
         if not mask[m.start()]:
             continue  # outside a comment -> never touch
-        labels = m.group(1).split("/")
-        ids = [label_to_id(lbl) for lbl in labels]
+        is_sig = m.group("sigchain") is not None
+        chain_text = m.group("sigchain") if is_sig else m.group("prosechain")
         ln = lineno(m.start())
+        # A quoted W3C citation ("W3C SCXML §5.8") is a runtime *string value*
+        # shown inside a comment, not a section citation. Rewriting it would
+        # desync the comment from the literal the code emits, so leave it
+        # verbatim and report it for human review.
+        if is_sig and m.start() > 0 and text[m.start() - 1] == '"':
+            for lbl in chain_text.split("/"):
+                skipped.append(
+                    {
+                        "line": ln,
+                        "label": lbl,
+                        "id": label_to_id(lbl),
+                        "reason": "quoted spec-string value (runtime literal); left verbatim",
+                    }
+                )
+            continue
+        labels = chain_text.split("/")
+        ids = [label_to_id(lbl) for lbl in labels]
         if all(s in ledger_ids for s in ids):
             out.append(text[last : m.start()])
             out.append(" / ".join("§" + s for s in ids))  # §scxml-a / §scxml-b
