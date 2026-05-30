@@ -164,7 +164,7 @@ using ScxmlInvokeCancelCallback =
  * Key SCXML standards implemented:
  * - Internal event queue with FIFO ordering (W3C SCXML 3.12.1)
  * - Entry/exit action execution (W3C SCXML 3.7, 3.8)
- * - Event processing loop (W3C SCXML D.1)
+ * - Event processing loop (§scxml-D-mainEventLoop)
  *
  * @tparam StatePolicy Policy class providing state-specific implementations.
  *         Must satisfy SCE::Core::EventNamingPolicy concept (C++20) or duck typing (C++17).
@@ -571,7 +571,7 @@ public:
                        const std::string &target = "") {
         // W3C SCXML C.1: Enqueue event with metadata (origin, data, sendid, type, originType, target)
         // Delegates to the full-metadata overload so that SCE Mesh target
-        // routing and W3C SCXML 6.4.6 autoforward both see the event. Prior
+        // routing and §scxml-6.4 autoforward both see the event. Prior
         // to this delegation the simple (datamodel="null") codepath dropped
         // the target attribute, which meant mesh-declared targets silently
         // hit the external queue instead of the mesh callback.
@@ -582,7 +582,7 @@ public:
     }
 
     /**
-     * @brief Raise external event by name (W3C SCXML 6.4.6)
+     * @brief Raise external event by name (§scxml-6.4)
      *
      * Used for autoforward - converts event name string to Event enum and raises.
      * If event name doesn't match any enum value, silently ignores (child may not have that event).
@@ -641,7 +641,7 @@ public:
         SCE_LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
                   static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
 
-        // W3C SCXML 6.4.6: Autoforward - forward external events to children with autoforward=true
+        // §scxml-6.4: Autoforward - forward external events to children with autoforward=true
         // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
         SCE_LOG_DEBUG("AOT raiseExternal: About to check autoforward capability");
         if constexpr (SCE::Core::HasAutoforward<StatePolicy, StaticExecutionEngine>) {
@@ -788,7 +788,7 @@ protected:
     }
 
     /**
-     * @brief Process both internal and external event queues (W3C SCXML D.1 Algorithm)
+     * @brief Process both internal and external event queues (§scxml-D-mainEventLoop)
      *
      * Processes all queued internal and external events in priority order.
      * Internal events are processed first (high priority), then external events.

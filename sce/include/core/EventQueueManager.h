@@ -35,12 +35,12 @@ namespace SCE::Core {
  *
  * W3C SCXML References:
  * - Section 3.12.1: Internal Events
- * - Appendix D.1: Algorithm for SCXML Interpretation
+ * - §scxml-D: Algorithm for SCXML Interpretation
  */
 template <typename EventType = std::string> class EventQueueManager {
 public:
     /**
-     * @brief Raise an internal event (W3C SCXML 3.14.1)
+     * @brief Raise an internal event (§scxml-D-mainEventLoop)
      *
      * Internal events are placed at the back of the internal event queue.
      * They are processed before external events but after currently queued
@@ -118,7 +118,7 @@ public:
     }
 
     /**
-     * @brief Process all internal events with a handler (W3C SCXML D.1)
+     * @brief Process all internal events with a handler (§scxml-D-mainEventLoop)
      *
      * Processes all queued internal events in FIFO order. This implements
      * the macrostep completion logic where all internal events generated
