@@ -1,0 +1,45 @@
+# SCE Mesh design-ledger workspace (Mnemosyne adoption, `mesh` namespace).
+#
+# Unlike docs/spec/scxml (which mirrors an *external* standard, the W3C SCXML
+# Recommendation), this workspace mirrors SCE's *own* design document,
+# SCE_MESH.md, tracked in this repo. There is therefore no external upstream to
+# drift against (no [workspace.spec_source]) and no vendored snapshot: the SSOT
+# is SCE_MESH.md itself, and sections are regenerated from it by
+# tools/mnemosyne-adoption/sce_mesh_md_to_manifest.py and loaded via
+# `import-sections`.
+#
+# The ledger exists so SCE code comments that cite the mesh design ("§16.7",
+# "§9.6.2") resolve to a real section, which lets the set_equality_validator gate
+# the mesh/parsing/common/... modules whose SCE-internal cites the scxml
+# workspace cannot check. Citations take the form §mesh-<n>; the `mesh` namespace
+# segment (before the first hyphen) is what section_namespace scoping keys on, so
+# a file may carry both §scxml-<n> (W3C) and §mesh-<n> cites without collision.
+#
+# [plugins.set_equality_validator] is added once the mesh citations are migrated
+# from bare §<n> to the §mesh-<n> form (a later increment); this first increment
+# stands up the ledger only.
+
+[workspace]
+docs = ["GENERATED.md"]
+default_doc = "GENERATED.md"
+
+# Flatten the store + rendered doc directly under this workspace root (no nested
+# docs/ level), matching docs/spec/scxml.
+[atomic]
+sidecar_path = ".atomic/workspace.atomic.json"
+output_path = "GENERATED.md"
+
+[schema]
+changelog_titles = ["Revision History"]
+entry_id_prefix = "Rev "
+anchor_convention = "section_number"
+medium_name = "design_ledger"
+
+# SCE's `(R<n>)` commit-subject labels are adoption-round counters, not
+# Mnemosyne changelog rounds, so the commit↔ledger drift gate (Mnemosyne
+# R293/R301) is advisory here rather than a hard reject (opt-out added in
+# Mnemosyne R377/R378). The R377 path-scope already keeps a sibling workspace's
+# `(R<n>)` labels from bleeding in; this declares intent for any future
+# `(R<n>)` commit that does touch this subtree.
+[commit_ledger]
+severity = "warn"

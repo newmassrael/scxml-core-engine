@@ -29,6 +29,7 @@ network-touching step isolated to a dedicated CI job.
 | `scxml_extract_excerpts.py` | **R2**: vendored spec HTML -> per-section normative excerpt JSON |
 | `apply_excerpts.py` | **R2** driver: feed excerpts JSON into a workspace via `set-section-normative-excerpt` |
 | `migrate_citations.py` | **R3**: rewrite prose `W3C SCXML <n>.<m>` citations in source comments to the `§scxml-<id>` form |
+| `sce_mesh_md_to_manifest.py` | **C**: SCE_MESH.md markdown headings -> Mnemosyne manifest for the `mesh` design-ledger namespace |
 
 ## A1 — TOC to manifest
 
@@ -145,11 +146,12 @@ is absent from the ledger. `W3C SCXML I/O` is never matched (`I` is not a
 section label).
 
 Note on namespaces: SCE code also cites its own design specs
-(`RFC §W5`, `SCE_MESH.md §9.6`). Those are a different namespace and are **not**
-migrated by this tool — `validate-code-refs` checks every `§id` against the one
-scxml ledger, so a module mixing W3C and SCE-internal cites cannot be gated by
-this workspace. `paths` lists only citation-clean modules; mixed modules wait
-for a dedicated SCE design-ledger workspace.
+(`§W5` Wire RFC, `§16.7` SCE Mesh). Those are different namespaces. Each
+workspace declares `section_namespace = "<ns>"`, so `validate-code-refs` checks
+only that workspace's own `§<ns>-...` cites and skips foreign ones by the token
+itself (Mnemosyne R376) — which lets a module mixing `§scxml-` and `§mesh-` cites
+be gated by both ledgers. The mesh design-ledger (below) owns the `mesh`
+namespace; the Wire RFC ledger (`wire`) follows.
 
 The rollout is **one directory at a time**: migrate a directory, add it to
 `paths` in `docs/spec/scxml/mnemosyne.toml`'s `[plugins.set_equality_validator]`,
@@ -159,3 +161,45 @@ hallucination gate (strict from the start — the migrator only emits ledger ids
 until a later round registers `Section.implementations`. The closed-loop test
 (skipped without `mnemosyne-cli`) proves migrate -> validate is green and that a
 hallucinated `§scxml-9.99` fails the reject gate.
+
+## C — SCE Mesh design-ledger workspace (`mesh` namespace)
+
+`docs/spec/scxml` mirrors an **external** standard (the W3C SCXML Recommendation).
+SCE code also cites SCE's **own** design document, `SCE_MESH.md` (`§16.7`,
+`§9.6.2`), which the scxml ledger cannot resolve. The `mesh` namespace gives
+those cites their own ledger under `docs/sce-ledger/mesh`.
+
+```bash
+python3 tools/mnemosyne-adoption/sce_mesh_md_to_manifest.py --manifest out/mesh-manifest.json
+cd docs/sce-ledger/mesh && mnemosyne-cli import-sections --manifest out/mesh-manifest.json
+```
+
+The converter is the markdown sibling of A1. Differences that follow from the
+source being an internal markdown doc rather than a vendored HTML standard:
+
+- **Markdown ATX headings**, not HTML. `## N.` / `### N.M` / `#### N.M.K` map to
+  `mesh-<n>`; the numeric labels keep their dots, matching A1's numeric policy
+  (`§mesh-16.7`). Un-numbered headings (`### Problem`, `### Rationale`) carry no
+  number, so no `§mesh-<n>` cite can target them — they are skipped.
+- **Fenced code blocks are skipped**, so a `#### 99.`-shaped line inside a
+  ```` ``` ```` block is never mistaken for a heading.
+- **No external upstream**: `SCE_MESH.md` is tracked in this repo, so there is no
+  vendored snapshot, no `[workspace.spec_source]`, and no drift CI. The manifest
+  is skeleton only (no `normative_excerpt`): the ledger exists to make `§mesh-<n>`
+  cites resolve for the gate, not to render a vendored quote.
+
+`docs/sce-ledger/mesh/mnemosyne.toml` declares `section_namespace = "mesh"`, so
+once the mesh citations are migrated from bare `§<n>` to `§mesh-<n>` (a later
+increment), the mesh/parsing/common/... modules — which mix W3C and SCE-internal
+cites — can be gated here while their `§scxml-` cites stay gated by the scxml
+workspace.
+
+### A note on `[commit_ledger]`
+
+Both SCE workspaces set `[commit_ledger] severity = "warn"`. Mnemosyne's
+commit↔ledger drift gate (R293/R301) scans recent commit subjects for `(R<n>)`
+round labels and expects a matching `Round <n>` changelog entry. SCE's `(R<n>)`
+are **adoption-round counters**, not Mnemosyne changelog rounds, so the gate is
+advisory here (the drift line still prints; it just does not gate the exit code).
+Mnemosyne R377 also path-scopes the scan to each workspace's subtree so a sibling
+workspace's labels no longer bleed in.
