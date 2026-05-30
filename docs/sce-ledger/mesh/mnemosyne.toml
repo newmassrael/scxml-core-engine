@@ -15,10 +15,6 @@
 # segment (before the first hyphen) is what section_namespace scoping keys on, so
 # a file may carry both §scxml-<n> (W3C) and §mesh-<n> cites without collision.
 #
-# [plugins.set_equality_validator] is added once the mesh citations are migrated
-# from bare §<n> to the §mesh-<n> form (a later increment); this first increment
-# stands up the ledger only.
-
 [workspace]
 docs = ["GENERATED.md"]
 default_doc = "GENERATED.md"
@@ -43,3 +39,32 @@ medium_name = "design_ledger"
 # `(R<n>)` commit that does touch this subtree.
 [commit_ledger]
 severity = "warn"
+
+# Code-citation defense (validate-code-refs). Paths are workspace-root relative;
+# this workspace lives three levels down (docs/sce-ledger/mesh), so they reach
+# back up to the SCE source tree. The mesh citations were migrated from bare
+# §<n> to the §mesh-<n> form by
+# tools/mnemosyne-adoption/migrate_citations.py --namespace mesh.
+#
+#   section_namespace = "mesh"   only §mesh-<n> tokens are checked; §scxml-<n>
+#                                (W3C, checked by docs/spec/scxml), §W* (Wire
+#                                RFC), and any still-bare §<n> are skipped by
+#                                the token itself — which is what lets these
+#                                MIXED modules (mesh/common/static cite both W3C
+#                                and SCE-mesh) be gated here at all.
+#   severity_missing = "reject"  hallucination gate: a §mesh-<n> with no ledger
+#                                section fails the run. Strict from the start —
+#                                the migrator only emits ledger-present ids.
+#   severity_binding = "warn"    Path B (Section.implementations binding) is a
+#                                later round; advisory so unbacked cites pass.
+[plugins.set_equality_validator]
+paths = [
+    "../../../sce/include/mesh",
+    "../../../sce/src/mesh",
+    "../../../sce/include/common",
+    "../../../sce/include/static",
+]
+severity_missing = "reject"
+severity_binding = "warn"
+comment_only = true
+section_namespace = "mesh"

@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §9.6.2 Session 5 — Zenoh cross-device scxml-invoke endpoint.
+// SCE Mesh §mesh-9.6.2 Session 5 — Zenoh cross-device scxml-invoke endpoint.
 //
 // ─── Why a shared zenoh::Session (Zenoh diverges from SOME/IP here) ────────
-// §9.6 cross-device `<invoke type="scxml" src="#peer">` traffic on Zenoh
+// §mesh-9.6 cross-device `<invoke type="scxml" src="#peer">` traffic on Zenoh
 // rides the SAME `zenoh_session_` that ordinary `<send>` zenoh targets use,
 // not a dedicated one. The Session 4b SOME/IP rationale for a dedicated
 // `<machine>_scxml_invoke_app_` does NOT carry over:
 //
-//   1. No §13 OEM boundary on the Zenoh side. vsomeip.json `applications[*]`
+//   1. No §mesh-13 OEM boundary on the Zenoh side. vsomeip.json `applications[*]`
 //      is OEM-owned territory; Zenoh has no equivalent OEM-allocated
 //      identifier whose registration must stay outside SCE-named spaces.
-//      The SCE-reserved §9.6 namespace is carved out via key-expression
+//      The SCE-reserved §mesh-9.6 namespace is carved out via key-expression
 //      prefix (`SCXML_INVOKE_KEY_PREFIX = "sce/scxml_invoke"`), not
 //      via session identity, so an OEM zenoh.json5 cannot collide with
-//      §9.6 traffic regardless of which session carries it.
+//      §mesh-9.6 traffic regardless of which session carries it.
 //   2. No 128-ID counter or service_id collision domain. SOME/IP's
 //      RFC F.X-1 hybrid (counter + author-pin) allocator carves out a
 //      bounded sub-range [0x8100, 0x817F] whose ceiling is observable
@@ -26,25 +26,25 @@
 //      direction is encoded in the key-expression (`p2c/...` vs
 //      `c2p/...`), and pattern dispatch happens off the CBOR
 //      `MeshEnvelope::pattern` field on receive.
-//   3. Failure isolation. A §9.6 peer disconnect or handler exception
+//   3. Failure isolation. A §mesh-9.6 peer disconnect or handler exception
 //      surfaces on the Zenoh runtime callback thread that already
 //      handles `<send>` traffic. Sharing the session here matches the
 //      existing `zenoh_subscribers_` map, which also dispatches on the
 //      same callback thread without isolating per-pattern.
 //
-// Reliability: §9.6 wire-14/18 lifecycle is reliable-required (a dropped
+// Reliability: §mesh-9.6 wire-14/18 lifecycle is reliable-required (a dropped
 // wire-14 means the invoke never starts; a dropped wire-18 leaves the
 // parent waiting indefinitely on `done.invoke.<id>`). The Publisher is
 // declared with `CongestionControl::Block` (default for
 // `declare_publisher` is push-default which may or may not be Block in
 // the C ABI; we set it explicitly so a C-side default flip cannot
-// silently downgrade §9.6 reliability) and `Priority::Data`. Zenoh's
+// silently downgrade §mesh-9.6 reliability) and `Priority::Data`. Zenoh's
 // reliable transport for TCP-backed sessions then guarantees in-order
 // delivery to a connected subscriber; the runtime DedupRouter still
 // runs on receive because the Zenoh router fabric may reorder envelopes
 // across multi-hop peers (transport.rs `supplies_dedup: false`).
 //
-// Wire shape (SCE_MESH.md §9.6.2 Session 5):
+// Wire shape (SCE_MESH.md §mesh-9.6.2 Session 5):
 //   * Per-direction key-expression. Each peer has TWO keys:
 //       - P2C: parent → child (wire-14 InvokeStart, wire-17 ParentEvent,
 //         wire-19 InvokeCancel)
@@ -62,7 +62,7 @@
 // thread and must hand off to the engine via the mechanism codegen
 // wires (parent: `dispatchToSession(env, 0)`, worker: per-peer staging
 // queue + pump-thread drain). Same strategy-pattern split as
-// `SomeipScxmlInvokeEndpoint` (SCE_MESH.md §14.4 callback-thread
+// `SomeipScxmlInvokeEndpoint` (SCE_MESH.md §mesh-14.4 callback-thread
 // dispatch convention).
 //
 // Lifecycle: the helper does NOT own the `zenoh::Session` — codegen
@@ -94,14 +94,14 @@
 
 namespace SCE::Mesh::Zenoh {
 
-// ── SCE-reserved §9.6 namespace constants ───────────────────────────────────
+// ── SCE-reserved §mesh-9.6 namespace constants ───────────────────────────────────
 
-/// SCE-reserved §9.6 scxml-invoke key-expression prefix. All §9.6
+/// SCE-reserved §mesh-9.6 scxml-invoke key-expression prefix. All §mesh-9.6
 /// cross-device traffic over Zenoh travels under
 /// `sce/scxml_invoke/...`; SCE-managed namespaces stay disjoint from
 /// any author-supplied `<send>` zenoh `key:` value (which by SCE
 /// convention does not begin with `sce/`). A future deploy-time
-/// validator can grep author keys for this prefix to reject §9.6
+/// validator can grep author keys for this prefix to reject §mesh-9.6
 /// reservation collisions.
 inline constexpr std::string_view SCXML_INVOKE_KEY_PREFIX = "sce/scxml_invoke";
 
@@ -157,21 +157,21 @@ inline std::string keyExprC2P(std::string_view child_machine,
 /// thread once per successfully decoded envelope. The callback owns
 /// dispatch into the engine; this layer does no policy interpretation.
 /// Mirrors `SCE::Mesh::Someip::ScxmlInvokeEndpoint::ReceiveCallback`
-/// and `SCE::Mesh::CustomTcp::ReceiveCallback` (SCE_MESH.md §14.4
+/// and `SCE::Mesh::CustomTcp::ReceiveCallback` (SCE_MESH.md §mesh-14.4
 /// callback-thread dispatch convention).
 using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
 
 /// Decode-error callback signature: invoked on the Zenoh runtime
 /// callback thread once per inbound sample whose CBOR decode failed.
 /// Codegen wires this to `raiseCommunicationError(ENVELOPE_CORRUPT,
-/// transport="zenoh")` so the §16.7 row 4 catalog row fires at this
+/// transport="zenoh")` so the §mesh-16.7 row 4 catalog row fires at this
 /// hand-written endpoint tier the same way codegen `decodeEnvelope`
 /// sites do. The callback runs on the same thread the subscriber's
-/// on_sample fires on; per §14.4 callback-thread dispatch, it MUST
+/// on_sample fires on; per §mesh-14.4 callback-thread dispatch, it MUST
 /// be cheap and re-entrant.
 using DecodeErrorCallback = std::function<void()>;
 
-/// Per-peer §9.6 Zenoh endpoint. Declares ONE Publisher on the
+/// Per-peer §mesh-9.6 Zenoh endpoint. Declares ONE Publisher on the
 /// own-direction key (so we can publish wires the local role emits)
 /// and ONE Subscriber on the peer-direction key (so we receive wires
 /// the peer emits). Pattern discrimination happens off
@@ -229,7 +229,7 @@ public:
         on_receive_ = std::move(handler);
     }
 
-    /// Install the decode-error handler (§16.7 row 4). Invoked on a
+    /// Install the decode-error handler (§mesh-16.7 row 4). Invoked on a
     /// Zenoh runtime callback thread per inbound sample whose CBOR
     /// decode fails. Caller wires this to
     /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="zenoh")`.
@@ -241,7 +241,7 @@ public:
     }
 
     /// Declare the Publisher on `own_pub_key_` (with reliability
-    /// options pinned for §9.6 lifecycle traffic) and the Subscriber
+    /// options pinned for §mesh-9.6 lifecycle traffic) and the Subscriber
     /// on `peer_sub_key_`. Idempotent — second call is a no-op
     /// (`started_` guards). Returns false if no receive handler was
     /// installed (caller programming error). Throws `zenoh::ZException`
@@ -252,10 +252,10 @@ public:
         if (!on_receive_) return false;
         if (started_) return true;
 
-        // Declare publisher with reliability options pinned for §9.6
+        // Declare publisher with reliability options pinned for §mesh-9.6
         // lifecycle. `Z_CONGESTION_CONTROL_BLOCK` keeps publish calls
         // back-pressured against a slow subscriber rather than dropping
-        // wire-14/18 envelopes — §9.6 cannot recover from a silent drop
+        // wire-14/18 envelopes — §mesh-9.6 cannot recover from a silent drop
         // because there is no resend protocol on the parent/child
         // staging queues. `Z_PRIORITY_DATA` is the default data-class
         // priority; raising to `_HIGH` would compete with author-side
@@ -263,7 +263,7 @@ public:
         // premature. The defaults come from
         // `::z_internal_congestion_control_default_push()` in zenoh-c
         // — we set explicitly so a future C-ABI default flip cannot
-        // silently downgrade §9.6 reliability.
+        // silently downgrade §mesh-9.6 reliability.
         ::zenoh::Session::PublisherOptions pub_opts =
             ::zenoh::Session::PublisherOptions::create_default();
         pub_opts.congestion_control = Z_CONGESTION_CONTROL_BLOCK;
@@ -287,7 +287,7 @@ public:
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
-                    // §16.7 row 4: malformed CBOR. Surface via
+                    // §mesh-16.7 row 4: malformed CBOR. Surface via
                     // on_decode_error_ before dropping the sample so
                     // SCXML authors observe the catalog row instead
                     // of a silent drop.

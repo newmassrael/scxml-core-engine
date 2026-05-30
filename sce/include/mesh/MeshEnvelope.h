@@ -47,7 +47,7 @@ struct MeshEnvelope {
     /// migrated to stamp this field — self-filter callers MUST require both
     /// `has_value()` AND equality against the local `routing_id_`, so an
     /// unstamped envelope never collides with the local session. Document
-    /// identity invariant lives in SCE_MESH.md §10.9.
+    /// identity invariant lives in SCE_MESH.md §mesh-10.9.
     std::optional<std::array<uint8_t, 16>> routing_id;
     std::optional<RpcStatus>               rpc_status;          // RpcReply only (absent ⇒ Ok)
     std::optional<std::string>             rpc_error_message;   // RpcReply non-Ok detail
@@ -59,7 +59,7 @@ struct MeshEnvelope {
     std::optional<QosHints>                qos;
     /// Per-(source, target) monotonic sequence number stamped by the
     /// sender's mesh-send-callback when the route requires ordering. Wire
-    /// serialization is CBOR integer key 14 (SCE_MESH.md §10.6.3). Absent
+    /// serialization is CBOR integer key 14 (SCE_MESH.md §mesh-10.6.3). Absent
     /// on envelopes whose sending route has `ordering: none` or runs on a
     /// transport that `supplies_ordering=true`; receivers with an active
     /// OrderingBuffer drop envelopes missing this field and raise
@@ -67,7 +67,7 @@ struct MeshEnvelope {
     /// backward-compat shim).
     std::optional<std::uint64_t>           sequence_no;
 
-    /// SCE_MESH.md §16.5 wire-21 region routing — replaces the earlier
+    /// SCE_MESH.md §mesh-16.5 wire-21 region routing — replaces the earlier
     /// `subject = "parallel_id/region_id"` string-concat subject field.
     /// The non-root partition's `sendParallelRegionDone` sets BOTH fields
     /// on every wire-21 envelope; the root partition's `onParallelRegionDone`
@@ -79,12 +79,12 @@ struct MeshEnvelope {
     std::optional<std::string>             parallel_id;
     std::optional<std::string>             region_id;
 
-    /// SCE_MESH.md §9.6.2 wire-15 `InvokeStarted` — carries the child
-    /// session's URI endpoint back to the parent. Format per §9.6.1 L1410:
+    /// SCE_MESH.md §mesh-9.6.2 wire-15 `InvokeStarted` — carries the child
+    /// session's URI endpoint back to the parent. Format per §mesh-9.6.1 L1410:
     /// `<parent_device>:<parent_machine>:<invoke_id>`. The parent stashes
     /// this string into `activeInvokes_[invoke_id].sessionId` so that
     /// (a) subsequent wire-16 `ChildEvent` envelopes stamp `_event.origin`
-    /// with it (§9.6.3), and (b) finalize/autoforward matching against
+    /// with it (§mesh-9.6.3), and (b) finalize/autoforward matching against
     /// the child's identity survives across process boundaries. Absent on
     /// every other wire. CBOR integer key 18.
     std::optional<std::string>             child_session_id;

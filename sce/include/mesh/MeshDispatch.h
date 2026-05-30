@@ -17,48 +17,48 @@
 //   Outbound-only (reject):      EventSubscribe, EventUnsubscribe, InvokeStart,
 //                                ParentEvent, InvokeCancel
 //
-// SCE_MESH.md §9.6.2 wire 14 (`InvokeStart`), wire 17 (`ParentEvent`), and
+// SCE_MESH.md §mesh-9.6.2 wire 14 (`InvokeStart`), wire 17 (`ParentEvent`), and
 // wire 19 (`InvokeCancel`) flow parent→child. They are consumed by the
 // worker's transport router's inbound path (via `WorkerSessionHost`) before
 // reaching this helper. If one arrives here it means the upstream branch
 // did not catch it and we drop fail-closed (same shape as the
 // EventSubscribe echo guard).
 //
-// SCE_MESH.md §9.6.2 wire 15 (`InvokeStarted`): parent-side receiver. The
+// SCE_MESH.md §mesh-9.6.2 wire 15 (`InvokeStarted`): parent-side receiver. The
 // envelope carries `invoke_id` and `child_session_id`. Dispatch invokes
 // `engine.onInvokeStarted(env)` (SFINAE-gated) which stamps the child
 // session URI into `activeInvokes_[invoke_id].sessionId` so subsequent
 // wire-16 ChildEvent envelopes match the child's identity for finalize
 // and autoforward routing.
 //
-// SCE_MESH.md §9.6.2 wire 16 (`ChildEvent`): parent-side receiver. Same
+// SCE_MESH.md §mesh-9.6.2 wire 16 (`ChildEvent`): parent-side receiver. Same
 // `raiseExternal` path as FireForget but additionally sets
 // `_event.origin = child_session_id`, `_event.invokeid = invoke_id`, and
-// `_event.origintype` to the W3C SCXML processor URI (§9.6.3 L1463-1466).
+// `_event.origintype` to the W3C SCXML processor URI (§mesh-9.6.3 L1463-1466).
 // The parent engine's `<finalize>` matching (invoke_methods.jinja2)
 // compares `activeInvokes_[id].sessionId == meta.origin`, inherited
 // unchanged from the local-invoke path.
 //
-// SCE_MESH.md §9.6.2 wire 18 (`InvokeDone`): parent-side receiver. The
+// SCE_MESH.md §mesh-9.6.2 wire 18 (`InvokeDone`): parent-side receiver. The
 // envelope carries `invoke_id` and donedata in `data`. Dispatch invokes
 // `engine.onInvokeDone(env)` (SFINAE-gated) which raises
 // `done.invoke.<id>` and releases `activeInvokes_[invoke_id]`. Machines
 // without authored invokes do not generate the hook; envelope is dropped.
 //
-// SCE_MESH.md §9.6.2 wire 20 (`InvokeError`): parent-side receiver. The
+// SCE_MESH.md §mesh-9.6.2 wire 20 (`InvokeError`): parent-side receiver. The
 // envelope carries `invoke_id`, `rpc_status`, and `rpc_error_message`; this
 // dispatch raises `error.execution` on the parent engine with the
 // `rpc_error_message` carried through `EventWithMetadata::data` so authors'
 // `<transition event="error.execution">` observes the same raise shape as the
-// transport-absent local fallback (SCE_MESH.md §9.6 line 1396).
+// transport-absent local fallback (SCE_MESH.md §mesh-9.6 line 1396).
 //
-// FieldRead/FieldWrite are inbound on the server role (SCE_MESH.md §8.3):
+// FieldRead/FieldWrite are inbound on the server role (SCE_MESH.md §mesh-8.3):
 // the server's queryable / `register_message_handler` receives the
 // getter/setter request and dispatches it to the engine, which fires the
 // matching `<transition event="field.get.X">` / `<transition event="field.set.X">`.
 //
 // RpcRequest is inbound on the receiver side: the sender's
-// `<invoke type="sce:mesh-rpc">` (SCE_MESH.md §9.5) emits an envelope whose
+// `<invoke type="sce:mesh-rpc">` (SCE_MESH.md §mesh-9.5) emits an envelope whose
 // `type` is the request event name (e.g. `service.request.compute_force`),
 // which is enqueued on the receiver engine just like any FireForget event.
 // The correlation UUID in `env.invoke_id` is surfaced to the receiver SCXML
@@ -168,7 +168,7 @@ bool tryDeliverInvokeDone(const MeshEnvelope& /*env*/, Engine& /*engine*/,
 /// guard). Returns false for an unresolved event name to signal the caller
 /// the envelope could not be delivered.
 ///
-/// SCE_MESH.md §16.5 `ParallelRegionDone` (wire 21): bypasses `raiseExternal`
+/// SCE_MESH.md §mesh-16.5 `ParallelRegionDone` (wire 21): bypasses `raiseExternal`
 /// and routes to `engine.onParallelRegionDone(env)` when present. Machines
 /// without the hook drop the envelope — they could not have authored a
 /// distributed `<parallel>` root that expected one.
@@ -197,7 +197,7 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     // event group subscription) but the engine dispatch is identical.
     case PatternKind::EventNotify:
     case PatternKind::FieldNotify:
-    // SCE_MESH.md §9.5 request: sender's <invoke type="sce:mesh-rpc"> emits an
+    // SCE_MESH.md §mesh-9.5 request: sender's <invoke type="sce:mesh-rpc"> emits an
     // envelope whose `type` carries the request event name. Receiver engine
     // enqueues it identically to FireForget; the correlation UUID in
     // env.invoke_id stays with the transport layer for reply matching and is
@@ -209,7 +209,7 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     case PatternKind::RpcReply:
     // FieldRead/FieldWrite on the server role: inbound request that fires the
     // matching `<transition event="field.get.X">` / `<transition event="field.set.X">`
-    // on the server-side engine (SCE_MESH.md §8.3).
+    // on the server-side engine (SCE_MESH.md §mesh-8.3).
     case PatternKind::FieldRead:
     case PatternKind::FieldWrite: {
         auto ev = Policy::getEventFromName(env.type.c_str());
@@ -223,10 +223,10 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
         engine.raiseExternal(std::move(meta));
         return true;
     }
-    // SCE_MESH.md §9.6.2 wire 16 (ChildEvent): parent receives an event
+    // SCE_MESH.md §mesh-9.6.2 wire 16 (ChildEvent): parent receives an event
     // emitted by a remote child session via `<send target="#_parent">` or
     // via W3C §5.10 auto-raise. Event name is `env.type`; metadata fields
-    // are wired per §9.6.3 L1463-1466:
+    // are wired per §mesh-9.6.3 L1463-1466:
     //   _event.type        = "external"
     //   _event.origin      = child's session URI (env.child_session_id)
     //   _event.origintype  = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
@@ -255,13 +255,13 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
         engine.raiseExternal(std::move(meta));
         return true;
     }
-    // SCE_MESH.md §9.6.2 wire 20 (InvokeError): parent receives a child-
+    // SCE_MESH.md §mesh-9.6.2 wire 20 (InvokeError): parent receives a child-
     // instantiation or transport-unavailable failure and translates it into
     // a local `error.execution` raise. The reason text lives in
     // `rpc_error_message`; we surface it via `EventWithMetadata::data` so
     // authors read the same payload shape the transport-absent local raise
     // produces. The structured `_event.data.reason` JSON is a separate
-    // landing at §10.7.1 once an SCXML consumer exists.
+    // landing at §mesh-10.7.1 once an SCXML consumer exists.
     case PatternKind::InvokeError: {
         auto ev = Policy::getEventFromName("error.execution");
         if (!ev) return false;

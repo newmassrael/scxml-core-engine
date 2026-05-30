@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §16.8.3 reference transport: TCP loopback with length-prefixed
+// SCE Mesh §mesh-16.8.3 reference transport: TCP loopback with length-prefixed
 // CBOR envelope framing. Zero external dependencies — POSIX sockets only.
 //
 // Wire format (per direction, every envelope):
 //   [4 bytes payload_length, network byte order]
 //   [payload_length bytes CBOR-encoded MeshEnvelope]
 //
-// Conformance (SCE Mesh §10.4):
+// Conformance (SCE Mesh §mesh-10.4):
 //   * Per-sender FIFO     — TCP stream guarantees, single connection per sender
 //   * At-least-once       — TCP reliable delivery
 //   * Duplicate tolerance — single TCP stream cannot duplicate; supplies_dedup
@@ -65,7 +65,7 @@ using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
 /// Decode-error callback signature: invoked on a per-connection read
 /// thread when an inbound frame's CBOR decode fails. Codegen wires
 /// this to `raiseCommunicationError(ENVELOPE_CORRUPT,
-/// transport="custom_tcp")` so the §16.7 row 4 catalog row fires at
+/// transport="custom_tcp")` so the §mesh-16.7 row 4 catalog row fires at
 /// this hand-written endpoint tier the same way codegen
 /// `decodeEnvelope` sites do. Distinct from a stream-level fault
 /// (`ReadResult::SocketClosed`) which tears down the connection
@@ -96,7 +96,7 @@ namespace detail {
 /// cleanly (no peer listens on 0), so Client::connect returns false
 /// without a silent fault. Caller is responsible for ensuring the host
 /// portion is an IPv4 dotted quad — the harness reference transport is
-/// loopback-only by design (SCE_MESH.md §16.8.3).
+/// loopback-only by design (SCE_MESH.md §mesh-16.8.3).
 ///
 /// Strict numeric parsing: `from_chars` requires the entire port slice
 /// to be consumed, so `"127.0.0.1:8080abc"` and `"127.0.0.1:8080 "` are
@@ -174,7 +174,7 @@ inline bool write_exact(int fd, const void* buf, std::size_t n) {
 /// Three-state result for an inbound frame attempt: a successful decode
 /// (continue the loop), a clean socket close (exit the loop, no error),
 /// or a CBOR decode failure on a successfully-read frame (continue the
-/// loop AFTER raising §16.7 row 4 ENVELOPE_CORRUPT). The
+/// loop AFTER raising §mesh-16.7 row 4 ENVELOPE_CORRUPT). The
 /// SocketClosed/StreamFramingError split lets the read loop continue
 /// on a recoverable decode error rather than dropping the connection,
 /// while keeping the catalog-row raise distinguishable from a peer
@@ -360,7 +360,7 @@ private:
             auto result = detail::read_envelope(fd, env, scratch);
             if (result == detail::ReadResult::SocketClosed) break;
             if (result == detail::ReadResult::DecodeError) {
-                // §16.7 row 4: malformed CBOR on a successfully-read
+                // §mesh-16.7 row 4: malformed CBOR on a successfully-read
                 // frame. Raise then keep the connection alive — a
                 // single bad envelope is recoverable; only a framing-
                 // level fault (reported as SocketClosed) tears down
@@ -375,7 +375,7 @@ private:
     }
 
 public:
-    /// Install the decode-error handler (§16.7 row 4). Invoked on
+    /// Install the decode-error handler (§mesh-16.7 row 4). Invoked on
     /// per-connection read threads when an inbound frame decodes
     /// to malformed CBOR. Caller wires this to
     /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="custom_tcp")`.
@@ -498,7 +498,7 @@ private:
             auto result = detail::read_envelope(fd_snapshot, env, scratch);
             if (result == detail::ReadResult::SocketClosed) break;
             if (result == detail::ReadResult::DecodeError) {
-                // §16.7 row 4: malformed CBOR on a successfully-read
+                // §mesh-16.7 row 4: malformed CBOR on a successfully-read
                 // frame. Raise then keep the connection alive — see
                 // Server::readLoop for the same rationale.
                 if (on_decode_error_) on_decode_error_();
@@ -511,7 +511,7 @@ private:
     }
 
 public:
-    /// Install the decode-error handler (§16.7 row 4). Invoked on the
+    /// Install the decode-error handler (§mesh-16.7 row 4). Invoked on the
     /// reader thread when an inbound frame's CBOR decode fails.
     /// Wires to `raiseCommunicationError(ENVELOPE_CORRUPT,
     /// transport="custom_tcp")`. Must be installed BEFORE any

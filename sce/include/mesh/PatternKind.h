@@ -6,8 +6,8 @@
 // Values are IMMUTABLE once shipped. Range 1-9 is in use; 10-13 is reserved
 // for future Stream patterns — wire-layer optimizations on EventSubscribe /
 // EventNotification that pair an initial state snapshot with delta-encoded
-// change events (SCE_MESH.md §8.1). 14-20 cover the full remote invoke
-// lifecycle (§9.6.2, Session F) — all seven wires are active and carry
+// change events (SCE_MESH.md §mesh-8.1). 14-20 cover the full remote invoke
+// lifecycle (§mesh-9.6.2, Session F) — all seven wires are active and carry
 // the parent/child session lifecycle: wire 14 `InvokeStart` (P→C) starts
 // a child session, wire 15 `InvokeStarted` (C→P) stashes the child's
 // session endpoint, wire 16 `ChildEvent` (C→P) carries child→parent
@@ -15,9 +15,9 @@
 // events, wire 18 `InvokeDone` (C→P) signals child final-state completion
 // with donedata, wire 19 `InvokeCancel` (P→C) terminates the child
 // session, and wire 20 `InvokeError` (bidirectional) reports instantiation
-// or transport-unavailable failures (SCE_MESH.md §9.6 L1396). 21 is
+// or transport-unavailable failures (SCE_MESH.md §mesh-9.6 L1396). 21 is
 // `ParallelRegionDone` — the distributed parallel-final barrier envelope
-// (§16.5) whose consumer is the `ParallelCompletionTracker` on the root
+// (§mesh-16.5) whose consumer is the `ParallelCompletionTracker` on the root
 // partition. Adding a variant requires a new wire value — never reuse.
 // Serialized into MeshEnvelope key 3 as CBOR uint16.
 
@@ -37,8 +37,8 @@ enum class PatternKind : uint16_t {
     FieldRead          = 7,
     FieldWrite         = 8,
     FieldNotify        = 9,
-    // 10-13 RESERVED for Stream* variants (snapshot + delta wire-layer optimization, SCE_MESH.md §8.1). Do not assign.
-    // SCE_MESH.md §9.6.2 — full remote invoke lifecycle (Session F). All
+    // 10-13 RESERVED for Stream* variants (snapshot + delta wire-layer optimization, SCE_MESH.md §mesh-8.1). Do not assign.
+    // SCE_MESH.md §mesh-9.6.2 — full remote invoke lifecycle (Session F). All
     // seven wires (14-20) are active; each carries one edge of the W3C
     // §6.4 parent/child session lifecycle over same-device shm.
     InvokeStart        = 14,
@@ -48,7 +48,7 @@ enum class PatternKind : uint16_t {
     InvokeDone         = 18,
     InvokeCancel       = 19,
     InvokeError        = 20,
-    ParallelRegionDone = 21,  // SCE_MESH.md §16.5 — distributed parallel-final barrier envelope.
+    ParallelRegionDone = 21,  // SCE_MESH.md §mesh-16.5 — distributed parallel-final barrier envelope.
 };
 
 /// Wire-value guards. Any reorder or renumber breaks cross-machine

@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §9.6.2 Session 4b — SOME/IP cross-device scxml-invoke endpoint.
+// SCE Mesh §mesh-9.6.2 Session 4b — SOME/IP cross-device scxml-invoke endpoint.
 //
 // ─── Why a dedicated SCE-namespaced vsomeip application (RFC F.X-2) ────────
-// This helper runs §9.6 cross-device <invoke type="scxml" src="#peer">
+// This helper runs §mesh-9.6 cross-device <invoke type="scxml" src="#peer">
 // traffic on a vsomeip application named `<machine>[_<partition>]_sce` that
 // is SEPARATE from the per-`<send>`-target applications generated for
 // ordinary SOME/IP method/event/field bindings. The split is the
 // SCE-vs-OEM boundary, not a per-subsystem split inside SCE: every
-// SCE-reserved subsystem on this binary (today §9.6 invoke; F.X-3
+// SCE-reserved subsystem on this binary (today §mesh-9.6 invoke; F.X-3
 // region-liveness; F.X-4 row 8 machine-level liveness; possible future
 // SCE subsystems) shares the single `<machine>[_<partition>]_sce` app.
 // Three rationales survive consolidation under RFC F.X-2:
 //
-//   1. §13 OEM boundary protection. vsomeip.json `applications[*]` is OEM-
+//   1. §mesh-13 OEM boundary protection. vsomeip.json `applications[*]` is OEM-
 //      owned territory. SCE does not register SCE-reserved services
 //      (0x8100..0x81FF + 0x8280..0x82FF — see SCXML_INVOKE_SERVICE_BASE
 //      and the F.X-4 machine-liveness reservation) inside an OEM-
@@ -22,7 +22,7 @@
 //      keeps SCE's service registrations on an SCE-named application that
 //      the OEM explicitly declares for that purpose, preserving the
 //      bidirectional contract.
-//   2. Failure isolation against `<send>` traffic. A §9.6 peer disconnect
+//   2. Failure isolation against `<send>` traffic. A §mesh-9.6 peer disconnect
 //      or handler exception is contained inside the SCE app's callback
 //      thread and cannot block the `<send>` SOME/IP path that may carry
 //      safety-relevant traffic (e.g. brake control). vsomeip's
@@ -34,8 +34,8 @@
 //      prevents one subsystem's handler from starving siblings via an
 //      escaped exception.
 //   3. Service/instance ID responsibility split. SCE-reserved range
-//      (0x8100..0x81FF for §9.6 invoke + §16.4 region-liveness;
-//      0x8280..0x82FF for §16.7 row 8 machine-liveness, RFC F.X-4)
+//      (0x8100..0x81FF for §mesh-9.6 invoke + §mesh-16.4 region-liveness;
+//      0x8280..0x82FF for §mesh-16.7 row 8 machine-liveness, RFC F.X-4)
 //      collision detection is SCE codegen's responsibility (RFC F.X-1
 //      hybrid allocator extracted at F.X-4 D2 to share across all three
 //      sub-ranges). OEM service ID collision detection is OEM
@@ -52,8 +52,8 @@
 // SCE app.
 // ──────────────────────────────────────────────────────────────────────────
 //
-// Wire shape (SCE_MESH.md §9.6.2 Session 4b L1393):
-//   * fireAndForget method calls (MT_REQUEST_NO_RETURN). Each §9.6 wire
+// Wire shape (SCE_MESH.md §mesh-9.6.2 Session 4b L1393):
+//   * fireAndForget method calls (MT_REQUEST_NO_RETURN). Each §mesh-9.6 wire
 //     direction is an independent method dispatch — wire-14 (P→C InvokeStart)
 //     and wire-15 (C→P InvokeStarted) carry no request/response coupling at
 //     the SOME/IP layer; the round-trip is two unrelated method calls.
@@ -66,9 +66,9 @@
 //     [0x8100, 0x817F]; deploy-time validator rejects overflow / pin out
 //     of range / pin collision before codegen.
 //   * Instance: 0x0001 (single-instance MVP — SOME/IP server pool support is
-//     scoped to ordinary `<send>` paths via §14.4 Gap 7 and is not extended
-//     to §9.6 endpoints in this session).
-//   * Method IDs: hex digits encode the §9.6 wire number for vsomeip-trace
+//     scoped to ordinary `<send>` paths via §mesh-14.4 Gap 7 and is not extended
+//     to §mesh-9.6 endpoints in this session).
+//   * Method IDs: hex digits encode the §mesh-9.6 wire number for vsomeip-trace
 //     readability — wire-14 → 0x0014, wire-20 → 0x0020. NOT a numeric
 //     identity with `PatternKind` enum values (0x0014 = 20 decimal, not
 //     14); the mapping is `PatternKind::InvokeStart..InvokeError` →
@@ -81,7 +81,7 @@
 // and must hand off to the engine via the mechanism codegen wires
 // (parent: `dispatchToSession(env, 0)`, worker: `worker_session_host_`
 // staging path). This helper does not interpret pattern semantics — same
-// strategy-pattern split as Custom_tcp::Server (SCE_MESH.md §14.4
+// strategy-pattern split as Custom_tcp::Server (SCE_MESH.md §mesh-14.4
 // callback-thread dispatch convention).
 //
 // Lifecycle: the helper does NOT own the vsomeip::application — codegen
@@ -111,14 +111,14 @@
 
 namespace SCE::Mesh::Someip {
 
-// ── SCE-reserved §9.6 namespace constants ───────────────────────────────────
+// ── SCE-reserved §mesh-9.6 namespace constants ───────────────────────────────────
 
-/// Base of the SCE-reserved §9.6 scxml-invoke service ID range.
+/// Base of the SCE-reserved §mesh-9.6 scxml-invoke service ID range.
 /// SCE-managed services occupy `[SCXML_INVOKE_SERVICE_BASE,
 /// SCXML_INVOKE_SERVICE_BASE + 0x80)` (0x8100..0x817F) under RFC F.X-1
 /// subsystem range partitioning; the upper half `[0x8180, 0x81FF]` is
-/// the §16.4 region-liveness sub-range (RFC F.X-3) and the disjoint
-/// `[0x8280, 0x82FF]` sub-range is the §16.7 row 8 machine-liveness
+/// the §mesh-16.4 region-liveness sub-range (RFC F.X-3) and the disjoint
+/// `[0x8280, 0x82FF]` sub-range is the §mesh-16.7 row 8 machine-liveness
 /// sub-range (RFC F.X-4) with an intentional `[0x8200, 0x827F]` gap
 /// reserved for a future fourth SCE subsystem. OEM services are
 /// required to stay outside the full SCE-reserved namespace
@@ -133,20 +133,20 @@ namespace SCE::Mesh::Someip {
 inline constexpr vsomeip::service_t SCXML_INVOKE_SERVICE_BASE =
     static_cast<vsomeip::service_t>(0x8100);
 
-/// Inclusive ceiling of the §9.6 invoke sub-range under RFC F.X-1.
+/// Inclusive ceiling of the §mesh-9.6 invoke sub-range under RFC F.X-1.
 /// `[SCXML_INVOKE_SERVICE_BASE, SCXML_INVOKE_SERVICE_CEILING]` is the
 /// allocator's output domain — 128 slots; the upper half of the
-/// SCE-reserved range is reserved for §16.4 region-liveness.
+/// SCE-reserved range is reserved for §mesh-16.4 region-liveness.
 inline constexpr vsomeip::service_t SCXML_INVOKE_SERVICE_CEILING =
     static_cast<vsomeip::service_t>(0x817F);
 
-/// Single-instance MVP for §9.6 endpoints. Extending §9.6 to multi-
-/// instance pool requires lifting §14.4 Gap 7 plumbing into the helper
+/// Single-instance MVP for §mesh-9.6 endpoints. Extending §mesh-9.6 to multi-
+/// instance pool requires lifting §mesh-14.4 Gap 7 plumbing into the helper
 /// here; not in this session (consumer-driven, no fixture demands it).
 inline constexpr vsomeip::instance_t SCXML_INVOKE_INSTANCE_ID =
     static_cast<vsomeip::instance_t>(0x0001);
 
-/// Per-wire method IDs. The low byte equals the SCE_MESH.md §9.6.2 wire
+/// Per-wire method IDs. The low byte equals the SCE_MESH.md §mesh-9.6.2 wire
 /// number (14..20), matching `PatternKind` enum values for InvokeStart..
 /// InvokeError. Identity mapping keeps wire dumps human-readable.
 inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE14_INVOKE_START   = 0x0014;
@@ -157,7 +157,7 @@ inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE    = 0
 inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL  = 0x0019;
 inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR   = 0x0020;
 
-/// Maps a §9.6 wire pattern to its SOME/IP method ID. Returns 0 for any
+/// Maps a §mesh-9.6 wire pattern to its SOME/IP method ID. Returns 0 for any
 /// `PatternKind` outside the wire-14..20 range — codegen filters before
 /// this call, so the zero-return path is a defence-in-depth fallback,
 /// not an expected runtime branch.
@@ -198,17 +198,17 @@ static_assert(methodForPattern(PatternKind::ParallelRegionDone) == 0);
 /// Receive callback signature: invoked on a vsomeip callback thread once
 /// per successfully decoded envelope. The callback owns dispatch into the
 /// engine; this layer does no policy interpretation. Mirrors
-/// `SCE::Mesh::CustomTcp::ReceiveCallback` (SCE_MESH.md §14.4
+/// `SCE::Mesh::CustomTcp::ReceiveCallback` (SCE_MESH.md §mesh-14.4
 /// callback-thread dispatch convention).
 using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
 
 /// Decode-error callback signature: invoked on the vsomeip callback
 /// thread once per inbound message whose CBOR decode failed. Codegen
 /// wires this to `raiseCommunicationError(ENVELOPE_CORRUPT,
-/// transport="someip")` so the §16.7 row 4 catalog row fires at this
+/// transport="someip")` so the §mesh-16.7 row 4 catalog row fires at this
 /// hand-written endpoint tier the same way codegen `decodeEnvelope`
 /// sites do. The callback runs on the same vsomeip thread the
-/// message handler does; per §14.4, it MUST be cheap and re-entrant.
+/// message handler does; per §mesh-14.4, it MUST be cheap and re-entrant.
 using DecodeErrorCallback = std::function<void()>;
 
 /// RFC F.X-2 D8: defense-in-depth try-catch at the vsomeip → SCE callback
@@ -239,8 +239,8 @@ inline void invokeReceiveSafely(const ReceiveCallback& on_receive,
 }
 
 /// RFC F.X-3 D8: D8 boundary for `register_availability_handler`-driven
-/// raises. Today serves both §16.4 region-partition liveness (row 13
-/// REGION_PARTITIONED) and §16.7 row 8 machine-level liveness
+/// raises. Today serves both §mesh-16.4 region-partition liveness (row 13
+/// REGION_PARTITIONED) and §mesh-16.7 row 8 machine-level liveness
 /// (PEER_PARTITIONED, RFC F.X-4) — the helper is reason-agnostic and
 /// callers wrap whichever raise their availability handler emits.
 /// vsomeip's `register_availability_handler` fires on a callback thread
@@ -253,7 +253,7 @@ inline void invokeReceiveSafely(const ReceiveCallback& on_receive,
 /// helper that takes a nullary callable.
 ///
 /// Same `noexcept` + log-and-return contract as `invokeReceiveSafely`,
-/// so a §16.4 / §16.7 raise that throws under memory pressure (e.g.
+/// so a §mesh-16.4 / §mesh-16.7 raise that throws under memory pressure (e.g.
 /// allocating the `CommunicationError` payload) does not propagate into
 /// vsomeip.
 inline void availabilityChangeSafely(const std::function<void()>& on_change) noexcept {
@@ -267,13 +267,13 @@ inline void availabilityChangeSafely(const std::function<void()>& on_change) noe
     }
 }
 
-/// Per-peer §9.6 SOME/IP endpoint. Offers the local machine's service so
+/// Per-peer §mesh-9.6 SOME/IP endpoint. Offers the local machine's service so
 /// the peer can dispatch wire envelopes to us (`offer_service` +
 /// `register_message_handler`), and requests the peer's service so we can
 /// dispatch wire envelopes to them (`request_service` + `send`).
 ///
 /// The vsomeip::application is owned by codegen (one per machine,
-/// `<machine>_scxml_invoke_app_`) and shared across all §9.6 peers on
+/// `<machine>_scxml_invoke_app_`) and shared across all §mesh-9.6 peers on
 /// that machine — see Q5 in the Session 4b design notes. The endpoint
 /// holds a non-owning reference to the application; the caller MUST
 /// keep the application alive for the endpoint's lifetime and call
@@ -328,7 +328,7 @@ public:
         on_receive_ = std::move(handler);
     }
 
-    /// Install the decode-error handler (§16.7 row 4). Invoked on the
+    /// Install the decode-error handler (§mesh-16.7 row 4). Invoked on the
     /// vsomeip callback thread per inbound message whose CBOR decode
     /// fails. Caller wires this to
     /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="someip")`.
@@ -386,11 +386,11 @@ public:
         // fireAndForget: response is not coupled to this dispatch. The
         // reverse-direction wire (e.g. wire-15 reply to wire-14) is an
         // independent method call from the peer back to us, not a
-        // SOME/IP response. SCE_MESH.md §9.6.2 Session 4b L1393.
+        // SOME/IP response. SCE_MESH.md §mesh-9.6.2 Session 4b L1393.
         request->set_message_type(vsomeip::message_type_e::MT_REQUEST_NO_RETURN);
         // vsomeip's `message_base_impl` defaults `is_reliable_` to false,
         // which routes outbound traffic to the UDP endpoint of the remote
-        // service. §9.6 ScxmlInvokeEndpoint declares its service with a
+        // service. §mesh-9.6 ScxmlInvokeEndpoint declares its service with a
         // `reliable.port` only (no UDP), so without this set_reliable(true)
         // the routing manager calls `find_or_create_remote_client(svc, inst,
         // false)`, finds no UDP endpoint in `remote_service_info_`, and
@@ -399,7 +399,7 @@ public:
         // because in-process routing dispatches via local IPC regardless of
         // reliability, but the cross-host SD-driven path requires the TCP
         // selection here. Mirror the wire-14/15/18 framing requirement
-        // (§9.6.2: "no resend protocol on staging queues") by always
+        // (§mesh-9.6.2: "no resend protocol on staging queues") by always
         // demanding the reliable transport variant.
         request->set_reliable(true);
 
@@ -427,7 +427,7 @@ private:
                         payload->get_data(),
                         static_cast<std::size_t>(payload->get_length()),
                         env)) {
-                    // §16.7 row 4: malformed CBOR. Surface via
+                    // §mesh-16.7 row 4: malformed CBOR. Surface via
                     // on_decode_error_ before dropping so SCXML
                     // authors observe the catalog row instead of a
                     // silent drop. Callback may be unset in fixtures

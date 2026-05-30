@@ -189,10 +189,10 @@ bool readU64(CborValue *it, uint64_t &out) {
 // ── Enum range validators ───────────────────────────────────────────────
 
 bool isValidPatternKind(uint64_t v) {
-    // 1-9 in-use; 14-20 are the full §9.6 remote-invoke lifecycle
-    // (SCE_MESH.md §9.6.2): InvokeStart, InvokeStarted, ChildEvent,
+    // 1-9 in-use; 14-20 are the full §mesh-9.6 remote-invoke lifecycle
+    // (SCE_MESH.md §mesh-9.6.2): InvokeStart, InvokeStarted, ChildEvent,
     // ParentEvent, InvokeDone, InvokeCancel, InvokeError. 21 is
-    // ParallelRegionDone (SCE_MESH.md §16.5). Values 10-13 remain
+    // ParallelRegionDone (SCE_MESH.md §mesh-16.5). Values 10-13 remain
     // reserved for Stream wire-layer optimizations.
     return (v >= 1 && v <= 9) || (v >= 14 && v <= 21);
 }
