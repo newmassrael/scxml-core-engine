@@ -633,7 +633,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     std::string xmlWrapper =
                         "<finalize xmlns=\"http://www.w3.org/2005/07/scxml\">" + finalizeScript + "</finalize>";
 
-                    // RFC §W4 D1-C: parseContent throws
+                    // RFC §wire-W4 D1-C: parseContent throws
                     // `SCE::parsing::ParseXmlFailed` on malformed input;
                     // the outer `catch (std::exception&)` arm catches
                     // the typed leaf via base-class slicing.

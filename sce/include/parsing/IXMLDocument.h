@@ -42,7 +42,7 @@ public:
      * Throws on failure: `SCE::parsing::XIncludeExpansionError`
      * (typed subtypes from `sce/include/parsing/XIncludeError.h`)
      * for expansion failures, `SCE::parsing::ParseXmlFailed` for
-     * reparse failures of the spliced text. RFC §W4.5 D2/D3.
+     * reparse failures of the spliced text. RFC §wire-W4.5 D2/D3.
      */
     virtual SCE::parsing::PositionMap processXInclude() = 0;
 
@@ -67,7 +67,7 @@ public:
      * Throws on failure: `SCE::parsing::TemplateError` (typed
      * subtypes from `sce/include/parsing/TemplateError.h`) for
      * expansion failures, `SCE::parsing::ParseXmlFailed` for
-     * reparse failures. RFC §W4.5 D2.
+     * reparse failures. RFC §wire-W4.5 D2.
      */
     virtual SCE::parsing::PositionMap processSceTemplate(
         const SCE::parsing::PositionMap &upstream) = 0;

@@ -32,12 +32,12 @@ namespace SCE::parsing {
 // as red rather than silent cross-language drift. Mirrors the W1
 // `TemplateError` pattern in `parsing/TemplateError.h`.
 //
-// W3 (`claudedocs/rfc-sce-diagnostic-wire-unification.md` §W3) makes
+// W3 (`claudedocs/rfc-sce-diagnostic-wire-unification.md` §wire-W3) makes
 // `XIncludeExpansionError` implement `SCE::parsing::Diagnostic`. Each
 // subtype overrides `code()` with its `xml/xinclude-*` wire string;
 // the shared base contributes `location()` (currently always
 // `nullopt` — expander throw sites do not stamp source locations
-// today; deferred until a consumer asks per RFC §W3 design pin) and
+// today; deferred until a consumer asks per RFC §wire-W3 design pin) and
 // `to_json()` (the v1 schema NDJSON record). Subtype field shape is
 // unchanged — the existing message-string ctor stays the throw-site
 // API so the 10 expander throw sites read as before.
@@ -50,7 +50,7 @@ public:
     // Attach a `SourcePos` to this error. Currently unused by the
     // expander throw sites — the `<xi:include>` element's pre-
     // expansion (row, col) is embedded in the message text only.
-    // Reserved for the location-stamping milestone (RFC §W3 design
+    // Reserved for the location-stamping milestone (RFC §wire-W3 design
     // pin "(ii) stamps with the throw-site's pre-expansion outer-
     // document (row, col)") so consumers do not need to reparse
     // message text for coordinates once stamping lands.

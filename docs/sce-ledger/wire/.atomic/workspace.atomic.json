@@ -1,0 +1,42 @@
+{
+  "sections": {
+    "wire-W0": {
+      "title": "contract (this RFC; commit-series contract; prerequisite for W1)",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "wire-W1": {
+      "title": "contract (this RFC; commit-series contract)",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "wire-W2": {
+      "title": "scope sketch — library API only (no CLI)",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "wire-W3": {
+      "title": "scope sketch",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "wire-W4": {
+      "title": "LANDED 2026-04-26 (α-strict, D1-C typed-throw)",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "wire-W4.5": {
+      "title": "LANDED 2026-04-26 (debt repayment, polling surface removed)",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    },
+    "wire-W5": {
+      "title": "LANDED 2026-04-26 (semantic family typed-throw, test-as-consumer + dead-code cleanup)",
+      "parent_doc": "GENERATED.md",
+      "decision_status": "active"
+    }
+  },
+  "changelog_entries": {},
+  "inventory_entries": {},
+  "schema_version": 4
+}
