@@ -41,7 +41,7 @@ public:
      * @brief Raise an event with origin tracking for W3C SCXML finalize support
      *
      * Events are queued for asynchronous processing with origin session information.
-     * This enables proper finalize handler execution as specified by W3C SCXML 6.4.
+     * This enables proper finalize handler execution as specified by §scxml-6.4.
      *
      * @param eventName Name of the event to raise
      * @param eventData Data associated with the event
@@ -52,7 +52,7 @@ public:
                             const std::string &originSessionId) = 0;
 
     /**
-     * @brief Raise an error event with sendid for W3C SCXML 5.10 compliance
+     * @brief Raise an error event with sendid for §scxml-5.10 compliance
      *
      * When send actions fail, error events must include the sendid of the failed send element.
      * This enables test 332 compliance where error.execution event must contain sendid.
@@ -71,10 +71,10 @@ public:
                             bool unused) = 0;
 
     /**
-     * @brief Raise an event with origin and invoke tracking for W3C SCXML 5.10 test 338
+     * @brief Raise an event with origin and invoke tracking for §scxml-5.10 test 338
      *
      * Events from invoked children are queued with both origin and invoke ID information.
-     * This enables proper event.invokeid field setting as specified by W3C SCXML 5.10.
+     * This enables proper event.invokeid field setting as specified by §scxml-5.10.
      *
      * @param eventName Name of the event to raise
      * @param eventData Data associated with the event
@@ -86,7 +86,7 @@ public:
                             const std::string &originSessionId, const std::string &invokeId) = 0;
 
     /**
-     * @brief Raise an event with origin, invoke, and origintype for W3C SCXML 5.10 compliance
+     * @brief Raise an event with origin, invoke, and origintype for §scxml-5.10 compliance
      *
      * Events are queued with origin, invoke ID, and origintype information for full W3C compliance.
      * This enables proper event metadata (test 253, 331, 352, 372: origintype field).
@@ -143,7 +143,7 @@ public:
     virtual bool hasQueuedEvents() const = 0;
 
     /**
-     * @brief Raise an internal event (W3C SCXML 3.13: higher priority than external events)
+     * @brief Raise an internal event (§scxml-3.13: higher priority than external events)
      *
      * Internal events are raised by <raise> elements and have higher priority than
      * external events. This ensures proper event queue ordering as specified by W3C SCXML.
@@ -167,7 +167,7 @@ public:
     virtual bool raiseInternalEvent(const std::string &eventName, const std::string &eventData) = 0;
 
     /**
-     * @brief Raise an external event (W3C SCXML 5.10: lower priority than internal events)
+     * @brief Raise an external event (§scxml-5.10: lower priority than internal events)
      *
      * External events come from external I/O processors (HTTP, WebSocket, etc.) and have
      * lower priority than internal events. This ensures proper event queue ordering for
@@ -182,7 +182,7 @@ public:
     /**
      * @brief Get EventScheduler for scheduler mode access
      *
-     * W3C SCXML 3.13: Enable parent-child scheduler mode inheritance for interactive debugging.
+     * §scxml-3.13: Enable parent-child scheduler mode inheritance for interactive debugging.
      * Allows parent state machine to propagate MANUAL mode to child invoke sessions.
      *
      * @return Shared pointer to EventScheduler instance, or nullptr if not set
@@ -190,9 +190,9 @@ public:
     virtual std::shared_ptr<class IEventScheduler> getScheduler() const = 0;
 
     /**
-     * @brief Cancel all queued events from a specific session (W3C SCXML 6.4.4 compliance)
+     * @brief Cancel all queued events from a specific session (§scxml-6.4.4 compliance)
      *
-     * W3C SCXML 6.4.4: "Once it cancels an invoked session, the Processor MUST NOT insert
+     * §scxml-6.4.4: "Once it cancels an invoked session, the Processor MUST NOT insert
      * any events it receives from the invoked session into the external event queue"
      *
      * This method removes all queued events that originated from the specified session.

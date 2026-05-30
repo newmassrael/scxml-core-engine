@@ -40,7 +40,7 @@ const std::string &SCE::SCXMLModel::getName() const {
 void SCE::SCXMLModel::setInitialState(const std::string &initialState) {
     SCE_LOG_DEBUG("Setting initial state: {}", initialState);
 
-    // W3C SCXML 3.3: Parse space-separated initial state IDs
+    // §scxml-3.3: Parse space-separated initial state IDs
     initialStates_.clear();
     std::istringstream iss(initialState);
     std::string stateId;
@@ -218,7 +218,7 @@ bool SCE::SCXMLModel::validateStateRelationships() const {
             if (state->getChildren().empty()) {
                 SCE_LOG_WARN("State '{}' has initialState but no children", state->getId());
             } else {
-                // W3C SCXML 3.3: Validate space-separated initial state list
+                // §scxml-3.3: Validate space-separated initial state list
                 std::istringstream iss(state->getInitialState());
                 std::string initialStateId;
 

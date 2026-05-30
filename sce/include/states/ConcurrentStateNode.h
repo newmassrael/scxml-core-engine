@@ -96,7 +96,7 @@ public:
     bool isShallowHistory() const override;
     bool isDeepHistory() const override;
 
-    // W3C SCXML 3.8/3.9: Block-based action methods
+    // §scxml-3.8 / §scxml-3.9: Block-based action methods
     void addEntryActionBlock(std::vector<std::shared_ptr<IActionNode>> block) override;
     const std::vector<std::vector<std::shared_ptr<IActionNode>>> &getEntryActionBlocks() const override;
     void addExitActionBlock(std::vector<std::shared_ptr<IActionNode>> block) override;
@@ -180,7 +180,7 @@ public:
     /**
      * @brief Check if completion notification has been sent
      *
-     * W3C SCXML 3.4/3.7: Prevents duplicate done.state event generation
+     * §scxml-3.4 / §scxml-3.7: Prevents duplicate done.state event generation
      * when parallel state completion is detected multiple times.
      *
      * @return true if done.state event has already been generated for current completion
@@ -190,7 +190,7 @@ public:
     /**
      * @brief Generate done.state event if all regions complete and not yet notified
      *
-     * W3C SCXML 3.4/3.7: Single Source of Truth for done.state.{id} event generation.
+     * §scxml-3.4 / §scxml-3.7: Single Source of Truth for done.state.{id} event generation.
      * Encapsulates completion detection, duplicate prevention, and callback invocation.
      *
      * ARCHITECTURE.md Zero Duplication: Eliminates duplicate done.state generation logic
@@ -281,7 +281,7 @@ private:
     std::string onExit_;
     std::string initialState_;
 
-    // W3C SCXML 3.8/3.9: Block-based action storage
+    // §scxml-3.8 / §scxml-3.9: Block-based action storage
     std::vector<std::vector<std::shared_ptr<IActionNode>>> entryActionBlocks_;
     std::vector<std::vector<std::shared_ptr<IActionNode>>> exitActionBlocks_;
 

@@ -14,7 +14,7 @@ namespace SCE {
 class StateHierarchyManager;
 
 /**
- * @brief W3C SCXML 3.12/3.13: State tree geometry calculations
+ * @brief §scxml-3.12 / §scxml-3.13: State tree geometry calculations
  *
  * Single Source of Truth for all transition domain computations:
  * LCA calculation, exit set computation, document position,
@@ -28,7 +28,7 @@ class StateHierarchyManager;
 class TransitionDomainCalculator {
 public:
     /**
-     * @brief W3C SCXML 3.13: Exit set computation result
+     * @brief §scxml-3.13: Exit set computation result
      *
      * Returns both the exit set and the LCA to avoid duplicate computation.
      */
@@ -50,7 +50,7 @@ public:
     TransitionDomainCalculator(std::shared_ptr<SCXMLModel> model, StateHierarchyManager *hierarchyManager);
 
     /**
-     * @brief W3C SCXML 3.12: Find Least Common Ancestor of two states
+     * @brief §scxml-3.12: Find Least Common Ancestor of two states
      *
      * Delegates to HierarchicalAlgorithms (Zero Duplication).
      *
@@ -61,7 +61,7 @@ public:
     std::string findLCA(const std::string &sourceStateId, const std::string &targetStateId) const;
 
     /**
-     * @brief W3C SCXML 3.13: Compute exit set for a transition
+     * @brief §scxml-3.13: Compute exit set for a transition
      *
      * @param sourceStateId Source state of transition
      * @param targetStateId Target state of transition
@@ -80,7 +80,7 @@ public:
                                                         bool excludeParallelChildren = true) const;
 
     /**
-     * @brief W3C SCXML 3.13: Get document order position for a state
+     * @brief §scxml-3.13: Get document order position for a state
      *
      * Uses depth-first pre-order traversal to assign positions.
      *
@@ -90,7 +90,7 @@ public:
     int getStateDocumentPosition(const std::string &stateId) const;
 
     /**
-     * @brief W3C SCXML 3.12: Get all proper ancestors of a state
+     * @brief §scxml-3.12: Get all proper ancestors of a state
      *
      * @param stateId State to get ancestors for
      * @return Ancestors from immediate parent to root
@@ -98,7 +98,7 @@ public:
     std::vector<std::string> getProperAncestors(const std::string &stateId) const;
 
     /**
-     * @brief W3C SCXML 3.12: Check if a state is a descendant of another
+     * @brief §scxml-3.12: Check if a state is a descendant of another
      *
      * @param stateId Potential descendant state
      * @param ancestorId Potential ancestor state

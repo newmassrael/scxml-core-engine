@@ -46,7 +46,7 @@ std::string resultToString(const ScriptResult &result, IScriptEngine *engine, co
     } else if (std::holds_alternative<bool>(value)) {
         return result.getValue<bool>() ? "true" : "false";
     } else if (std::holds_alternative<ScriptUndefined>(value)) {
-        // W3C SCXML C.1: undefined evaluates to empty string for target expressions
+        // §scxml-C-1: undefined evaluates to empty string for target expressions
         // Ensures isUnreachableTarget() works correctly across all script engines
         return "";
     } else if (std::holds_alternative<ScriptNull>(value)) {
@@ -130,7 +130,7 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
         SCE_LOG_DEBUG("resultToStringArray: Processing array using JSON approach");
 
         try {
-            // W3C SCXML B.2 (test 457): Validate that value is actually an array
+            // §scxml-B-2 (test 457): Validate that value is actually an array
             std::string arrayCheckExpr = originalExpression + " instanceof Array";
             SCE_LOG_DEBUG("resultToStringArray: Validating array type with expression: '{}'", arrayCheckExpr);
             auto arrayCheckResult = engine->evaluateExpression(sessionId, arrayCheckExpr).get();

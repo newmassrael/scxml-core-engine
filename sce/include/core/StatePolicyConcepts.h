@@ -209,7 +209,7 @@ concept HasChildTick = HasChildTickTrait<P, Engine>::value;
 template <typename P, typename Engine>
 concept HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
 
-/// Policy supports finalize handler execution (W3C SCXML 6.5)
+/// Policy supports finalize handler execution (§scxml-6.5)
 template <typename P, typename EventMeta, typename Engine>
 concept HasFinalize = HasFinalizeTrait<P, EventMeta, Engine>::value;
 

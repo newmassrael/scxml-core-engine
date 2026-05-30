@@ -95,7 +95,7 @@ ConcurrentOperationResult ConcurrentRegion::deactivate(std::shared_ptr<IExecutio
         return ConcurrentOperationResult::success(id_);
     }
 
-    // W3C SCXML 3.13: If activeStates_ is already empty, region was exited via exit set
+    // §scxml-3.13: If activeStates_ is already empty, region was exited via exit set
     // Skip exitAllStates to avoid duplicate exit action execution (test 504)
     if (activeStates_.empty()) {
         SCE_LOG_DEBUG("Region {} activeStates already empty, skipping exitAllStates", id_);
@@ -167,7 +167,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
     // This allows StateMachine to apply conflict resolution across all regions
     ConcurrentOperationResult result = ConcurrentOperationResult::success(id_);
 
-    // W3C SCXML 3.13: Hierarchical event bubbling - check from current state up through parent hierarchy
+    // §scxml-3.13: Hierarchical event bubbling - check from current state up through parent hierarchy
     if (!currentState_.empty()) {
         // Find current state node
         std::shared_ptr<IStateNode> stateNode = nullptr;
@@ -185,7 +185,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
         }
 
         if (stateNode) {
-            // W3C SCXML 3.12: Hierarchical event bubbling (innermost to outermost)
+            // §scxml-3.12: Hierarchical event bubbling (innermost to outermost)
             // Check from current active state up through parent hierarchy
             IStateNode *checkStatePtr = stateNode.get();  // Use raw pointer for hierarchy traversal
             int transitionIndex = 0;
@@ -193,9 +193,9 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
             while (checkStatePtr) {
                 const auto &transitions = checkStatePtr->getTransitions();
 
-                // W3C SCXML 3.13: Find first enabled transition in document order
+                // §scxml-3.13: Find first enabled transition in document order
                 for (const auto &transition : transitions) {
-                    // W3C SCXML 3.13: Wildcard event matching - "*" matches any event
+                    // §scxml-3.13: Wildcard event matching - "*" matches any event
                     std::string transitionEvent = transition->getEvent();
                     bool eventMatches = (transitionEvent == event.eventName) || (transitionEvent == "*");
 
@@ -239,7 +239,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                               checkStatePtr->getId(), checkStatePtr->getId(), targetState, transitionEvent, isInternal,
                               hasActions);
 
-                    // W3C SCXML 3.13: Check if transition exits the parallel state
+                    // §scxml-3.13: Check if transition exits the parallel state
                     // External: transition target is OUTSIDE the parallel state (e.g., p0s3 -> s1)
                     // Internal: transition target is INSIDE the parallel state (e.g., p0s2 -> p0s1)
                     IStateNode *parallelStatePtr = rootState_->getParent();
@@ -293,10 +293,10 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                               descriptor.transitionIndex, descriptor.isExternal);
 
                     result.enabledTransitions.push_back(descriptor);
-                    return result;  // W3C SCXML 3.13: First enabled transition wins in hierarchy
+                    return result;  // §scxml-3.13: First enabled transition wins in hierarchy
                 }
 
-                // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling
+                // §scxml-3.12: Move to parent state for hierarchical event bubbling
                 // But STOP at region boundary - don't bubble beyond the region's root state
                 // This prevents regions from collecting transitions from the parallel state's ancestors
                 if (checkStatePtr == rootState_.get()) {
@@ -411,7 +411,7 @@ const std::string &ConcurrentRegion::getCurrentState() const {
 }
 
 void ConcurrentRegion::setCurrentState(const std::string &stateId) {
-    // W3C SCXML 3.3: Validate that state belongs to this region
+    // §scxml-3.3: Validate that state belongs to this region
     // This is called during deep initial target synchronization
     if (!stateId.empty() && rootState_) {
         // Validate the state is within this region's scope
@@ -425,24 +425,24 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
 
     SCE_LOG_DEBUG("ConcurrentRegion: Setting currentState for region {} to: {}", id_, stateId);
 
-    // W3C SCXML 3.13: Detect if this is a state change or just a refresh (e.g., during snapshot restore)
+    // §scxml-3.13: Detect if this is a state change or just a refresh (e.g., during snapshot restore)
     // Only trigger callbacks on actual state transitions, not on redundant setCurrentState calls
     bool isStateChange = (currentState_ != stateId);
 
     currentState_ = stateId;
 
-    // W3C SCXML 3.4: Update isInFinalState_ flag when currentState changes
+    // §scxml-3.4: Update isInFinalState_ flag when currentState changes
     // This is crucial for parallel state completion detection
     isInFinalState_ = determineIfInFinalState();
 
     // Update region status to FINAL if we entered a final state
-    // W3C SCXML 3.13: Only trigger callback on actual state transitions (not during snapshot restore)
+    // §scxml-3.13: Only trigger callback on actual state transitions (not during snapshot restore)
     // Skip callback during restoration to prevent spurious event generation
     if (isInFinalState_ && status_ != ConcurrentRegionStatus::FINAL && isStateChange && !isRestoringSnapshot_) {
         status_ = ConcurrentRegionStatus::FINAL;
         SCE_LOG_DEBUG("ConcurrentRegion: Region {} entered final state '{}', updating status to FINAL", id_, stateId);
 
-        // W3C SCXML 3.13: Generate done.state.{regionId} event when compound state enters final
+        // §scxml-3.13: Generate done.state.{regionId} event when compound state enters final
         // test570: When p0s1 (compound region) reaches p0s1final, generate done.state.p0s1
         if (doneStateCallback_) {
             SCE_LOG_DEBUG("ConcurrentRegion: Calling doneStateCallback for region {}", id_);
@@ -452,11 +452,11 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
 }
 
 void ConcurrentRegion::setActiveForRestore() {
-    // W3C SCXML 3.13: Set region to ACTIVE status without executing entry actions
+    // §scxml-3.13: Set region to ACTIVE status without executing entry actions
     // This is used during time-travel debugging snapshot restoration
     status_ = ConcurrentRegionStatus::ACTIVE;
 
-    // W3C SCXML 3.13: Synchronize activeStates_ with currentState_
+    // §scxml-3.13: Synchronize activeStates_ with currentState_
     // activeStates_ tracks which states within the region are active
     // Without this, the region thinks it has no active states, causing incorrect exit behavior
     activeStates_.clear();
@@ -469,7 +469,7 @@ void ConcurrentRegion::setActiveForRestore() {
 }
 
 void ConcurrentRegion::setRestoringSnapshot(bool restoring) {
-    // W3C SCXML 3.13: Enable/disable restoration mode for time-travel debugging
+    // §scxml-3.13: Enable/disable restoration mode for time-travel debugging
     // When enabled, prevents side effects (callbacks, event generation) during snapshot restoration
     isRestoringSnapshot_ = restoring;
     SCE_LOG_DEBUG("Region '{}' restoration mode: {} [isRestoringSnapshot_={}]", id_, restoring ? "ENABLED" : "DISABLED",
@@ -728,7 +728,7 @@ bool ConcurrentRegion::determineIfInFinalState() const {
         "ConcurrentRegion::determineIfInFinalState - Region {} checking final state. Status: {}, currentState: '{}'",
         id_, static_cast<int>(status_), currentState_);
 
-    // W3C SCXML 3.4: Check final state even if status is already FINAL
+    // §scxml-3.4: Check final state even if status is already FINAL
     // This handles cases where setCurrentState() is called multiple times (e.g., during hierarchyManager sync)
     if (!rootState_) {
         SCE_LOG_DEBUG("Region {} has no root state", id_);
@@ -776,7 +776,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
     if (executionContext_) {
         SCE_LOG_DEBUG("Executing entry actions for: {}", rootState_->getId());
 
-        // W3C SCXML 3.8: Execute entry action blocks
+        // §scxml-3.8: Execute entry action blocks
         const auto &entryBlocks = rootState_->getEntryActionBlocks();
         if (!entryBlocks.empty()) {
             for (const auto &actionBlock : entryBlocks) {
@@ -801,7 +801,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
     activeStates_.clear();
     activeStates_.push_back(currentState_);
 
-    // W3C SCXML 6.4: Check and defer invoke elements for root state itself
+    // §scxml-6.4: Check and defer invoke elements for root state itself
     const auto &rootInvokes = rootState_->getInvoke();
     SCE_LOG_INFO("ConcurrentRegion: Root state {} has {} invokes, callback is {}", rootState_->getId(), rootInvokes.size(),
              invokeCallback_ ? "set" : "null");
@@ -814,7 +814,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
     // Check if we need to enter child states
     const auto &children = rootState_->getChildren();
     if (!children.empty()) {
-        // W3C SCXML 3.3: Priority order for initial state selection
+        // §scxml-3.3: Priority order for initial state selection
         std::string initialChild;
 
         // Priority 1: Parent state's deep initial target (e.g., s1 initial="s11p112 s11p122")
@@ -850,7 +850,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                                            });
 
             if (childState != children.end() && *childState) {
-                // W3C SCXML 3.10: History states never end up part of the configuration
+                // §scxml-3.10: History states never end up part of the configuration
                 // If initial child is a history state, it will be handled by StateHierarchyManager
                 // Do NOT add history state to activeStates_ - it must remain transparent
                 if ((*childState)->getType() == Type::HISTORY) {
@@ -868,7 +868,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
 
                 // Execute entry actions for child state and handle recursive nesting
                 if (executionContext_) {
-                    // W3C SCXML 3.8: Execute child state's entry action blocks
+                    // §scxml-3.8: Execute child state's entry action blocks
                     const auto &childEntryBlocks = (*childState)->getEntryActionBlocks();
                     for (const auto &actionBlock : childEntryBlocks) {
                         for (const auto &actionNode : actionBlock) {
@@ -877,13 +877,13 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                                 if (!executeActionNode(actionNode, "enterInitialState")) {
                                     SCE_LOG_WARN("W3C SCXML 3.8: Child entry action failed, stopping remaining actions in "
                                              "THIS block only");
-                                    break;  // W3C SCXML 3.8: stop remaining actions in this block
+                                    break;  // §scxml-3.8: stop remaining actions in this block
                                 }
                             }
                         }
                     }
 
-                    // W3C SCXML 6.4: Invoke elements must be processed after state entry
+                    // §scxml-6.4: Invoke elements must be processed after state entry
                     // Delegate to StateHierarchyManager via callback pattern for proper timing
                     const auto &childInvokes = (*childState)->getInvoke();
                     if (!childInvokes.empty() && invokeCallback_) {
@@ -915,7 +915,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                                              });
 
                             if (grandchildState != grandchildren.end() && *grandchildState) {
-                                // W3C SCXML 3.8: Execute grandchild entry action blocks
+                                // §scxml-3.8: Execute grandchild entry action blocks
                                 const auto &grandchildEntryBlocks = (*grandchildState)->getEntryActionBlocks();
                                 for (const auto &actionBlock : grandchildEntryBlocks) {
                                     for (const auto &actionNode : actionBlock) {
@@ -926,7 +926,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                                             if (!executeActionNode(actionNode, "enterInitialState")) {
                                                 SCE_LOG_WARN("W3C SCXML 3.8: Grandchild entry action failed, stopping "
                                                          "remaining actions in THIS block only");
-                                                break;  // W3C SCXML 3.8: stop remaining actions in this block
+                                                break;  // §scxml-3.8: stop remaining actions in this block
                                             }
                                         }
                                     }
@@ -962,7 +962,7 @@ ConcurrentOperationResult ConcurrentRegion::exitAllStates(std::shared_ptr<IExecu
         bool exitActionsSuccess = true;
 
         if (exitHandler_ && !activeStates_.empty()) {
-            // W3C SCXML 3.13: Execute exit actions for all active states in document order
+            // §scxml-3.13: Execute exit actions for all active states in document order
             // Note: activeStates_ already includes rootState_, so no need to execute it separately (test 504)
             SCE_LOG_DEBUG("Executing exit actions for active states");
 

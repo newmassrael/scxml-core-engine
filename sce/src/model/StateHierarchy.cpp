@@ -139,7 +139,7 @@ bool SCE::StateHierarchy::validateRelationships() const {
             }
         }
 
-        // W3C SCXML 3.3: Check if initial state(s) exist - supports space-separated list
+        // §scxml-3.3: Check if initial state(s) exist - supports space-separated list
         if (!state->getInitialState().empty()) {
             std::istringstream iss(state->getInitialState());
             std::string initialStateId;

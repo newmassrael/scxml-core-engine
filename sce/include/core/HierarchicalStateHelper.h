@@ -46,7 +46,7 @@ inline constexpr bool IsParallelStatePolicy = IsParallelStatePolicyTrait<P>::val
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Unified Hierarchical Algorithms (Single Source of Truth)
-// W3C SCXML 3.3/3.12: Shared by AOT engine (enum states) and Interpreter (string states)
+// §scxml-3.3 / §scxml-3.12: Shared by AOT engine (enum states) and Interpreter (string states)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -63,7 +63,7 @@ inline constexpr bool IsParallelStatePolicy = IsParallelStatePolicyTrait<P>::val
 struct HierarchicalAlgorithms {
 
     /**
-     * @brief Find Least Common Ancestor of two states (W3C SCXML 3.12)
+     * @brief Find Least Common Ancestor of two states (§scxml-3.12)
      *
      * @tparam StateType State identifier type (enum for AOT, std::string for Interpreter)
      * @tparam GetParentFn Callable: (const StateType&) -> std::optional<StateType>
@@ -76,7 +76,7 @@ struct HierarchicalAlgorithms {
             return state1;
         }
 
-        // W3C SCXML 3.13: Build ancestor chain starting from state1's parent (test 504)
+        // §scxml-3.13: Build ancestor chain starting from state1's parent (test 504)
         std::vector<StateType> ancestors1;
         ancestors1.reserve(8);
 
@@ -112,7 +112,7 @@ struct HierarchicalAlgorithms {
     }
 
     /**
-     * @brief Build exit chain from state up to ancestor (W3C SCXML 3.12)
+     * @brief Build exit chain from state up to ancestor (§scxml-3.12)
      *
      * @return Exit chain in child → parent order (excluding stopBeforeState)
      */
@@ -137,7 +137,7 @@ struct HierarchicalAlgorithms {
     }
 
     /**
-     * @brief Build entry chain from ancestor down to target (W3C SCXML 3.12)
+     * @brief Build entry chain from ancestor down to target (§scxml-3.12)
      *
      * @return Entry chain in parent → child order (excluding ancestorState)
      */
@@ -183,7 +183,7 @@ struct HierarchicalAlgorithms {
 };
 
 /**
- * @brief AOT engine wrapper for hierarchical state operations (W3C SCXML 3.3)
+ * @brief AOT engine wrapper for hierarchical state operations (§scxml-3.3)
  *
  * Single Source of Truth for hierarchical state logic shared between:
  * - StaticExecutionEngine (AOT engine)
@@ -207,7 +207,7 @@ public:
     using State = typename StatePolicy::State;
 
 private:
-    // W3C SCXML 3.4: Add parallel region children to entry chain if StatePolicy supports parallel states
+    // §scxml-3.4: Add parallel region children to entry chain if StatePolicy supports parallel states
     static void addParallelRegions(std::vector<State> &chain, State leafState) {
         if constexpr (IsParallelStatePolicy<StatePolicy>) {
             SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Checking if leafState {} is parallel",
@@ -242,7 +242,7 @@ public:
      * @brief Build entry chain from leaf state to root
      *
      * @details
-     * W3C SCXML 3.3 requires hierarchical state entry from ancestor to descendant.
+     * §scxml-3.3 requires hierarchical state entry from ancestor to descendant.
      * This method builds the complete entry chain for a target state.
      *
      * The implementation includes safety checks for cyclic parent relationships
@@ -317,10 +317,10 @@ public:
             throw std::runtime_error("Cyclic parent relationship detected in state hierarchy");
         }
 
-        // Reverse to get root-to-leaf order (entry order per W3C SCXML 3.3)
+        // Reverse to get root-to-leaf order (entry order per §scxml-3.3)
         std::reverse(chain.begin(), chain.end());
 
-        // W3C SCXML 3.3: If leaf is compound state, add initial child hierarchy
+        // §scxml-3.3: If leaf is compound state, add initial child hierarchy
         // This ensures S01 (compound) automatically enters S011 (initial child)
         State leafToCheck = leafState;
         depth = 0;
@@ -334,7 +334,7 @@ public:
             ++depth;
         }
 
-        // W3C SCXML 3.4: Do NOT add parallel regions here
+        // §scxml-3.4: Do NOT add parallel regions here
         // Let executeEntryActions() handle parallel regions automatically for consistent behavior
         // This avoids duplication between buildEntryChain and executeEntryActions
 
@@ -342,7 +342,7 @@ public:
     }
 
     /**
-     * @brief Build entry chain with history restoration support (W3C SCXML 3.11)
+     * @brief Build entry chain with history restoration support (§scxml-3.11)
      *
      * @details
      * History-aware version that checks stored history before using static initial children.
@@ -389,7 +389,7 @@ public:
         // Reverse to root-to-leaf order
         std::reverse(chain.begin(), chain.end());
 
-        // W3C SCXML 3.11: Add initial or history-restored children
+        // §scxml-3.11: Add initial or history-restored children
         State leafToCheck = leafState;
         depth = 0;
         while (depth < MAX_DEPTH && StatePolicy::isCompoundState(leafToCheck)) {
@@ -460,7 +460,7 @@ public:
      * @brief Build exit chain from current state up to (excluding) ancestor
      *
      * @details
-     * W3C SCXML 3.12 requires hierarchical state exit from descendant to ancestor.
+     * §scxml-3.12 requires hierarchical state exit from descendant to ancestor.
      * This method builds the complete exit chain for a state transition.
      *
      * Exit order is child -> parent, matching Interpreter's buildExitSetForDescendants().
@@ -490,7 +490,7 @@ public:
      * }
      * @endcode
      *
-     * @par W3C SCXML 3.12 Compliance
+     * @par §scxml-3.12 Compliance
      * Matches Interpreter's buildExitSetForDescendants() behavior:
      * - Builds exit set from active state up to (but not including) LCA
      * - Maintains child -> parent exit order
@@ -505,7 +505,7 @@ public:
      * @brief Build entry chain from parent down to target state
      *
      * @details
-     * W3C SCXML 3.12: After finding LCA, enter states from LCA down to target.
+     * §scxml-3.12: After finding LCA, enter states from LCA down to target.
      * This method builds the entry chain excluding the parent (LCA) itself.
      *
      * Entry order is parent -> child, matching Interpreter's hierarchical entry.
@@ -535,7 +535,7 @@ public:
      * }
      * @endcode
      *
-     * @par W3C SCXML 3.12 Compliance
+     * @par §scxml-3.12 Compliance
      * Matches Interpreter's hierarchical entry after LCA calculation.
      */
     static std::vector<State> buildEntryChainFromParent(State targetState, State parentState) {
@@ -547,7 +547,7 @@ public:
      * @brief Find Least Common Ancestor (LCA) of two states
      *
      * @details
-     * W3C SCXML 3.12: External transitions exit states up to the LCA,
+     * §scxml-3.12: External transitions exit states up to the LCA,
      * then enter states from LCA down to target.
      *
      * The LCA is the deepest common ancestor in the state hierarchy.
@@ -574,7 +574,7 @@ public:
      * // Returns: State::S011 (state is its own LCA)
      * @endcode
      *
-     * @par W3C SCXML 3.12 Compliance
+     * @par §scxml-3.12 Compliance
      * Matches Interpreter's findLCA() behavior for external transitions.
      */
     static std::optional<State> findLCA(State state1, State state2) {

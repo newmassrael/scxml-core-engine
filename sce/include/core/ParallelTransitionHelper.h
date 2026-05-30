@@ -44,11 +44,11 @@ public:
         std::vector<StateType> targets;         // Target states
         std::unordered_set<StateType> exitSet;  // States exited by this transition
 
-        // W3C SCXML 3.13: Additional metadata for AOT engine compatibility
+        // §scxml-3.13: Additional metadata for AOT engine compatibility
         int transitionIndex = 0;    // Index for executeTransitionActions
         bool hasActions = false;    // Whether transition has executable content
-        bool isInternal = false;    // W3C SCXML 3.13: Whether transition is type="internal"
-        bool isTargetless = false;  // W3C SCXML 5.9.2: Whether transition has no target (consumes event only)
+        bool isInternal = false;    // §scxml-3.13: Whether transition is type="internal"
+        bool isTargetless = false;  // §scxml-5.9.2: Whether transition has no target (consumes event only)
 
         Transition() = default;
 
@@ -64,7 +64,7 @@ public:
     /**
      * @brief Compute exit set for a transition
      *
-     * W3C SCXML 3.13: Exit set = all states exited when taking this transition
+     * §scxml-3.13: Exit set = all states exited when taking this transition
      * = source state + ancestors up to (but not including) LCA with targets
      *
      * @tparam StateType State enum or identifier type
@@ -80,13 +80,13 @@ public:
     static std::unordered_set<StateType> computeExitSet(const Transition<StateType> &transition) {
         std::unordered_set<StateType> exitSet;
 
-        // W3C SCXML 5.9.2: Targetless internal transitions (consumes event only, no exit/enter)
+        // §scxml-5.9.2: Targetless internal transitions (consumes event only, no exit/enter)
         // These transitions execute actions but do not change state - empty exit set
         if (transition.isTargetless) {
             return exitSet;  // Empty exit set for targetless transition
         }
 
-        // W3C SCXML 3.13: Internal transition to compound descendant - source stays active
+        // §scxml-3.13: Internal transition to compound descendant - source stays active
         if (transition.isInternal) {
             bool allTargetsAreDescendants = true;
             for (const auto &target : transition.targets) {
@@ -142,7 +142,7 @@ public:
      * W3C SCXML Algorithm C.1: Two transitions conflict if their exit sets intersect
      * (they would exit the same state, which is invalid).
      *
-     * W3C SCXML 3.13: Special case for parallel states - if a transition exits a parallel state,
+     * §scxml-3.13: Special case for parallel states - if a transition exits a parallel state,
      * it conflicts with any transition whose source is a descendant of that parallel state,
      * even if their exit sets don't explicitly intersect (because exiting the parallel state
      * implicitly exits all its child regions).
@@ -165,7 +165,7 @@ public:
             }
         }
 
-        // W3C SCXML 3.13: Parallel state conflict detection
+        // §scxml-3.13: Parallel state conflict detection
         // If t1 exits a parallel state, it conflicts with any transition whose source is a descendant of that parallel
         // state
         for (const auto &exitState : t1.exitSet) {
@@ -280,7 +280,7 @@ public:
      *
      * ARCHITECTURE.MD: Zero Duplication Principle - Shared exit computation logic
      * W3C SCXML Appendix D.2 Step 1: Collect unique source states from transitions
-     * W3C SCXML 3.13: Sort by reverse document order (deepest/rightmost first)
+     * §scxml-3.13: Sort by reverse document order (deepest/rightmost first)
      *
      * @tparam StateType State enum or identifier type
      * @tparam PolicyType Policy class with getDocumentOrder()
@@ -300,7 +300,7 @@ public:
         // W3C SCXML Appendix D.2: For each transition, compute LCA-based exit set
         // Exit set = all active states that are descendants of LCA (excluding LCA itself)
         for (const auto &trans : transitions) {
-            // W3C SCXML 5.9.2: Targetless transitions do not exit any states
+            // §scxml-5.9.2: Targetless transitions do not exit any states
             // These transitions execute actions but do not change state configuration
             if (trans.isTargetless) {
                 continue;  // Skip exit computation for targetless transition
@@ -312,7 +312,7 @@ public:
             }
 
             for (const auto &target : trans.targets) {
-                // W3C SCXML 3.13: Compute effective LCA considering internal transition semantics
+                // §scxml-3.13: Compute effective LCA considering internal transition semantics
                 auto lca = computeEffectiveLCA<StateType, PolicyType>(trans.source, target, trans.isInternal);
 
                 if (!lca.has_value()) {
@@ -336,13 +336,13 @@ public:
                         current = parent.value();
                     }
                 } else {
-                    // W3C SCXML 3.13: Collect all active descendants of LCA
+                    // §scxml-3.13: Collect all active descendants of LCA
                     // External transitions must exit source state even if source == LCA
                     bool shouldExitSource = !trans.isInternal && trans.source == lca.value();
 
                     for (const auto &activeState : activeStates) {
                         if (activeState == lca.value()) {
-                            // W3C SCXML 3.13: For external transitions where source == LCA, include source
+                            // §scxml-3.13: For external transitions where source == LCA, include source
                             if (!shouldExitSource) {
                                 continue;  // Exclude LCA from exit set (internal or source != LCA)
                             }
@@ -384,7 +384,7 @@ public:
             }
         }
 
-        // W3C SCXML 3.13: Sort by REVERSE document order (exit deepest/rightmost first)
+        // §scxml-3.13: Sort by REVERSE document order (exit deepest/rightmost first)
         std::sort(statesToExit.begin(), statesToExit.end(), [](StateType a, StateType b) {
             return PolicyType::getDocumentOrder(a) > PolicyType::getDocumentOrder(b);
         });
@@ -448,7 +448,7 @@ public:
      * @brief Sort states for exit by depth and document order
      *
      * ARCHITECTURE.MD: Zero Duplication Principle - Shared exit ordering logic
-     * W3C SCXML 3.13: States exit in order (deepest first, then reverse document order)
+     * §scxml-3.13: States exit in order (deepest first, then reverse document order)
      * Shared between Interpreter and AOT engines.
      *
      * @tparam StateType State identifier type (string or enum)
@@ -463,7 +463,7 @@ public:
     static std::vector<StateType> sortStatesForExit(std::vector<StateType> states, GetDepthFunc getDepth,
                                                     GetDocOrderFunc getDocOrder) {
         std::sort(states.begin(), states.end(), [&](const StateType &a, const StateType &b) {
-            // W3C SCXML 3.13: Primary sort by depth (deepest first)
+            // §scxml-3.13: Primary sort by depth (deepest first)
             int depthA = getDepth(a);
             int depthB = getDepth(b);
 
@@ -471,7 +471,7 @@ public:
                 return depthA > depthB;  // Deeper states exit first
             }
 
-            // W3C SCXML 3.13: Secondary sort by reverse document order
+            // §scxml-3.13: Secondary sort by reverse document order
             return getDocOrder(a) > getDocOrder(b);  // Later states exit first
         });
 
@@ -511,7 +511,7 @@ private:
     /**
      * @brief Check if a transition qualifies as internal-to-descendant
      *
-     * W3C SCXML 3.13: An internal transition does NOT exit its source state when:
+     * §scxml-3.13: An internal transition does NOT exit its source state when:
      * 1. The source is a compound state (NOT parallel, NOT atomic)
      * 2. The target is a proper descendant of the source
      *
@@ -535,7 +535,7 @@ private:
     /**
      * @brief Compute effective LCA for a (source, target) pair considering internal transition semantics
      *
-     * W3C SCXML 3.13: For internal transitions where the source is compound and
+     * §scxml-3.13: For internal transitions where the source is compound and
      * the target is a proper descendant, the effective LCA is the source itself
      * (source stays active). For all other cases, standard LCA via hierarchy traversal.
      *

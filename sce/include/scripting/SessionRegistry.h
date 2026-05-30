@@ -74,12 +74,12 @@ private:
     mutable std::mutex sessionFilePathsMutex_;
 
     // === Parent-Child Session Relationships ===
-    // W3C SCXML 6.4: Maps child_session_id -> parent_session_id
+    // §scxml-6.4: Maps child_session_id -> parent_session_id
     std::unordered_map<std::string, std::string> parentChildMappings_;
     mutable std::mutex parentChildMutex_;
 
     // === Event Dispatchers ===
-    // W3C SCXML 6.2: EventDispatcher registry for automatic delayed event cancellation
+    // §scxml-6.2: EventDispatcher registry for automatic delayed event cancellation
     std::unordered_map<std::string, std::weak_ptr<class IEventDispatcher>> eventDispatchers_;
     mutable std::mutex eventDispatchersMutex_;
 };

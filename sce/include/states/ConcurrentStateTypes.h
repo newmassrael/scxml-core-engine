@@ -27,9 +27,9 @@ struct TransitionDescriptorString {
     std::string event;                 // Event name that triggered this transition
     std::vector<std::string> exitSet;  // States to be exited (computed by region)
     int transitionIndex = 0;           // Document order index for preemption
-    bool hasActions = false;           // W3C SCXML 3.13: Whether transition has action nodes
-    bool isInternal = false;           // W3C SCXML 3.13: Whether transition is type="internal"
-    bool isExternal = false;           // W3C SCXML 3.13: Whether transition exits parallel state
+    bool hasActions = false;           // §scxml-3.13: Whether transition has action nodes
+    bool isInternal = false;           // §scxml-3.13: Whether transition is type="internal"
+    bool isExternal = false;           // §scxml-3.13: Whether transition exits parallel state
 
     TransitionDescriptorString() = default;
 
@@ -52,7 +52,7 @@ struct ConcurrentOperationResult {
     std::string errorMessage;
     std::string regionId;
 
-    // W3C SCXML 3.4: External transition discovered by region
+    // §scxml-3.4: External transition discovered by region
     // When a region finds a transition to a state outside the region,
     // it returns this information so the parent StateMachine can handle it
     std::string externalTransitionTarget;  // Empty if no external transition

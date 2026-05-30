@@ -5,7 +5,7 @@
 
 #include "core/LogMacros.h"
 #include "core/HierarchicalStateHelper.h"
-#include "core/InvokeHelper.h"  // W3C SCXML 6.4: Shared invoke lifecycle logic (Zero Duplication)
+#include "core/InvokeHelper.h"  // §scxml-6.4: Shared invoke lifecycle logic (Zero Duplication)
 #include "events/IEventDispatcher.h"
 #include "model/IStateNode.h"
 #include "model/SCXMLModel.h"
@@ -79,7 +79,7 @@ public:
     };
 
     /**
-     * @brief W3C SCXML 3.13: Transition information for microstep execution
+     * @brief §scxml-3.13: Transition information for microstep execution
      *
      * Holds all information needed to execute a transition as part of a microstep.
      * Multiple transitions execute atomically: exit all → execute all → enter all.
@@ -96,7 +96,7 @@ public:
     };
 
     /**
-     * @brief W3C SCXML 3.13: Exit set computation result
+     * @brief §scxml-3.13: Exit set computation result
      *
      * Type alias to TransitionDomainCalculator::ExitSetResult (Single Source of Truth).
      */
@@ -152,7 +152,7 @@ public:
     /**
      * @brief Create StateMachine instance from SCXML string (factory method)
      *
-     * W3C SCXML 6.4: Hybrid invoke support - AOT parent creates Interpreter child at runtime
+     * §scxml-6.4: Hybrid invoke support - AOT parent creates Interpreter child at runtime
      * ARCHITECTURE.md: Hybrid Strategy - contentexpr evaluates to SCXML string, this creates child
      *
      * @param scxmlContent SCXML content as string
@@ -263,7 +263,7 @@ public:
     /**
      * @brief Get source state of last executed transition
      *
-     * W3C SCXML 3.13: Interactive visualizer support for transition tracking
+     * §scxml-3.13: Interactive visualizer support for transition tracking
      * Returns the source state of the most recently executed transition,
      * including eventless transitions.
      *
@@ -274,7 +274,7 @@ public:
     /**
      * @brief Get target state of last executed transition
      *
-     * W3C SCXML 3.13: Interactive visualizer support for transition tracking
+     * §scxml-3.13: Interactive visualizer support for transition tracking
      * Returns the target state of the most recently executed transition,
      * including eventless transitions.
      *
@@ -307,7 +307,7 @@ public:
     /**
      * @brief Restore active states directly without executing onentry actions
      *
-     * W3C SCXML 3.13: Time-travel debugging support for InteractiveTestRunner
+     * §scxml-3.13: Time-travel debugging support for InteractiveTestRunner
      * Restores state configuration from snapshot without side effects.
      *
      * ARCHITECTURE.md: Zero Duplication - Uses StateHierarchyManager infrastructure
@@ -408,7 +408,7 @@ public:
     void setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher);
 
     /**
-     * @brief W3C SCXML 6.5: Set completion callback for top-level final state notification
+     * @brief §scxml-6.5: Set completion callback for top-level final state notification
      *
      * This callback is invoked when the StateMachine reaches a top-level final state,
      * AFTER all onexit handlers have been executed. Used by invoke mechanism to
@@ -420,7 +420,7 @@ public:
     void setCompletionCallback(CompletionCallback callback);
 
     /**
-     * @brief W3C SCXML 5.5 + 6.3.1: JSON payload from the reached top-level
+     * @brief §scxml-5.5 + 6.3.1: JSON payload from the reached top-level
      *        `<final>`'s `<donedata>`. Empty when no donedata was authored,
      *        donedata evaluation failed, or the machine has not reached a
      *        top-level final yet. Mirror of
@@ -433,7 +433,7 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 5.5 + B.2: Structured donedata paired with
+     * @brief §scxml-5.5 + B.2: Structured donedata paired with
      *        `donedataAtFinal()`. Skipping the JSON round-trip when the
      *        parent is in-process would require an impl-specific
      *        `raiseEventWithPriority` path; the public `IEventRaiser`
@@ -496,7 +496,7 @@ public:
     /**
      * @brief Restore state machine from snapshot (complete restoration)
      *
-     * W3C SCXML 3.13: Time-travel debugging support for InteractiveTestRunner
+     * §scxml-3.13: Time-travel debugging support for InteractiveTestRunner
      * Handles all restoration requirements internally in correct order:
      * 1. JavaScript environment initialization
      * 2. State configuration restoration
@@ -518,7 +518,7 @@ public:
     bool restoreFromSnapshot(const std::vector<std::string> &states);
 
     /**
-     * @brief Set restoration mode on all parallel regions (W3C SCXML 3.13)
+     * @brief Set restoration mode on all parallel regions (§scxml-3.13)
      *
      * When enabled, prevents side effects (callbacks, event generation) during
      * snapshot restoration. This ensures time-travel debugging maintains strict
@@ -611,7 +611,7 @@ private:
         bool &transitionFlag_;
     };
 
-    // W3C SCXML 3.3: RAII guard for batch processing to prevent recursive auto-processing
+    // §scxml-3.3: RAII guard for batch processing to prevent recursive auto-processing
     struct BatchProcessingGuard {
         bool &flag_;
 
@@ -637,11 +637,11 @@ private:
     bool isProcessingEvent_ = false;               // Track event processing context
     bool autoProcessQueuedEvents_ = true;          // Interactive mode: disable auto-batch processing
     bool isBatchProcessing_ = false;               // Track batch event processing to prevent recursive auto-processing
-    bool isEnteringInitialConfiguration_ = false;  // W3C SCXML 3.3: Track initial configuration entry
+    bool isEnteringInitialConfiguration_ = false;  // §scxml-3.3: Track initial configuration entry
     bool inTransition_ = false;                    // Track if we're in a transition context (for history recording)
     std::string initialState_;
 
-    // W3C SCXML 3.13: Last executed transition tracking (for interactive visualizer)
+    // §scxml-3.13: Last executed transition tracking (for interactive visualizer)
     std::string lastTransitionSource_{};
     std::string lastTransitionTarget_{};
 
@@ -685,10 +685,10 @@ private:
     // EventRaiser for SCXML compliance mode control
     std::shared_ptr<IEventRaiser> eventRaiser_;
 
-    // W3C SCXML 6.5: Completion callback for invoke done.invoke event
+    // §scxml-6.5: Completion callback for invoke done.invoke event
     CompletionCallback completionCallback_;
 
-    // W3C SCXML 5.5 + 6.3.1: donedata payload captured when the machine
+    // §scxml-5.5 + 6.3.1: donedata payload captured when the machine
     // enters a top-level `<final>`. Populated once per invocation by
     // `enterState` before `completionCallback_` fires, mirroring
     // `StaticExecutionEngine::stashDonedataAtFinal` on the AOT side.
@@ -697,7 +697,7 @@ private:
     std::string pendingDonedataAtFinal_;
     std::optional<ScriptValue> pendingTypedDonedataAtFinal_;
 
-    // W3C SCXML 6.4: Pending invoke execution (deferred until macrostep end)
+    // §scxml-6.4: Pending invoke execution (deferred until macrostep end)
     // Uses InvokeHelper for shared logic with AOT engine (ARCHITECTURE.md Zero Duplication)
     struct PendingInvoke {
         std::string invokeId;                 // Invoke ID (for InvokeHelper logging)
@@ -723,7 +723,7 @@ private:
 
     // Helper methods
 
-    // W3C SCXML 5.3: Data model initialization (delegated to DataModelInitializer)
+    // §scxml-5.3: Data model initialization (delegated to DataModelInitializer)
     using DataItemInfo = DataModelInitializer::DataItemInfo;
     std::unique_ptr<DataModelInitializer> dataModelInit_;
 
@@ -736,13 +736,13 @@ private:
     void setupParallelStateCallbacks();
 
     /**
-     * @brief Generate and queue done.state.{stateId} event (W3C SCXML 3.4)
+     * @brief Generate and queue done.state.{stateId} event (§scxml-3.4)
      * @param stateId State ID for which to generate the done event
      */
     void generateDoneStateEvent(const std::string &stateId);
 
     /**
-     * @brief Setup and activate parallel state regions (W3C SCXML 3.3/3.4 compliance)
+     * @brief Setup and activate parallel state regions (§scxml-3.3 / §scxml-3.4 compliance)
      *
      * Configures region callbacks and activates regions for proper event processing.
      * This ensures regions can defer invokes, evaluate guards, and execute actions.
@@ -776,7 +776,7 @@ private:
     bool executeTransitionDirect(IStateNode *sourceState, std::shared_ptr<ITransitionNode> transition);
 
     /**
-     * @brief W3C SCXML 3.13: Execute transitions as a microstep
+     * @brief §scxml-3.13: Execute transitions as a microstep
      *
      * Executes multiple transitions atomically with proper phasing:
      * 1. Exit all source states (executing onexit actions)
@@ -825,12 +825,12 @@ private:
     // Helper method to reduce code duplication between isInFinalState() and isInitialStateFinal()
     bool isStateInFinalState(const std::string &stateId) const;
 
-    // W3C SCXML 3.7 & 5.5: Compound state done.state event generation
+    // §scxml-3.7 & 5.5: Compound state done.state event generation
     void handleCompoundStateFinalChild(const std::string &finalStateId);
     bool evaluateDoneData(const std::string &finalStateId, std::string &outEventData,
                           std::optional<ScriptValue> &outTypedData);
 
-    // W3C SCXML 5.5: Helper methods moved to DoneDataHelper (Zero Duplication)
+    // §scxml-5.5: Helper methods moved to DoneDataHelper (Zero Duplication)
 };
 
 }  // namespace SCE

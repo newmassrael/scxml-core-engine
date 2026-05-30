@@ -26,7 +26,7 @@ namespace SCE::Core {
 /**
  * @brief Helper functions for parallel state configuration tracking
  *
- * W3C SCXML 3.4: Parallel states require tracking multiple active states simultaneously.
+ * §scxml-3.4: Parallel states require tracking multiple active states simultaneously.
  * This helper provides configuration management shared between Interpreter and AOT engines.
  *
  * Configuration: Set of active atomic states (one per region in parallel states)
@@ -119,7 +119,7 @@ public:
     /**
      * @brief Initialize configuration for entering a parallel state
      *
-     * W3C SCXML 3.4: When entering a parallel state, all child regions are entered
+     * §scxml-3.4: When entering a parallel state, all child regions are entered
      * simultaneously to their initial states.
      *
      * @tparam StateType State enum or identifier type
@@ -149,7 +149,7 @@ public:
     /**
      * @brief Exit a parallel state by clearing all region states
      *
-     * W3C SCXML 3.4: When exiting a parallel state, all child regions are exited.
+     * §scxml-3.4: When exiting a parallel state, all child regions are exited.
      *
      * @tparam StateType State enum or identifier type
      * @tparam PolicyType Policy class with parallel state information

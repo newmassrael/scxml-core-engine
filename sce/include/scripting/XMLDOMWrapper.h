@@ -17,7 +17,7 @@ class XMLElement;
 class XMLDocument;
 
 /**
- * W3C SCXML B.2: XML DOM wrapper for XML integration
+ * §scxml-B-2: XML DOM wrapper for XML integration
  * Provides JavaScript-accessible DOM API for XML content
  *
  * Unified implementation: pugixml-based for all platforms
@@ -49,7 +49,7 @@ private:
 };
 
 /**
- * W3C SCXML B.2: XML Document wrapper
+ * §scxml-B-2: XML Document wrapper
  * Root object for XML DOM tree
  */
 class XMLDocument {

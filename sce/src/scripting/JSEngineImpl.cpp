@@ -103,7 +103,7 @@ ScriptResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, 
     }
 
     // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with Interpreter/AOT)
-    // W3C SCXML B.2: If it failed and the expression starts with 'function', try wrapping in parentheses for function
+    // §scxml-B-2: If it failed and the expression starts with 'function', try wrapping in parentheses for function
     // expressions Test 453: ECMAScript function literals must be accepted as value expressions
     if (JS_IsException(result) && DataModelInitHelper::isFunctionExpression(expression)) {
         SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
@@ -266,7 +266,7 @@ ScriptResult JSEngine::setVariableInternal(const std::string &sessionId, const s
     int result = JS_SetPropertyStr(ctx, global, name.c_str(), qjsValue);
 
     if (result < 0) {
-        // W3C SCXML 5.10: Check if this is a read-only system variable error
+        // §scxml-5.10: Check if this is a read-only system variable error
         ::JSValue exc = JS_GetException(ctx);
         if (!JS_IsNull(exc)) {
             // Get error message to check if it's a read-only error
@@ -357,7 +357,7 @@ ScriptResult JSEngine::getVariableInternal(const std::string &sessionId, const s
     return ScriptResult::createSuccess(result);
 }
 
-// W3C SCXML B.2: Helper function to parse event data as JSON, XML DOM, or space-normalized string
+// §scxml-B-2: Helper function to parse event data as JSON, XML DOM, or space-normalized string
 static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
     // Skip leading whitespace for XML detection
     size_t firstNonWhitespace = dataStr.find_first_not_of(" \t\r\n");
@@ -374,7 +374,7 @@ static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
         return jsonValue;
     }
 
-    // W3C SCXML B.2 test 562: If not XML or JSON, create space-normalized string
+    // §scxml-B-2 test 562: If not XML or JSON, create space-normalized string
     // "processor creates space normalized string when receiving anything other than KVPs or XML"
     JS_FreeValue(ctx, jsonValue);  // Free the exception
 
@@ -453,7 +453,7 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
         session->currentEvent.reset();
     }
 
-    // W3C SCXML 5.10: Lazy initialization of _event on first event
+    // §scxml-5.10: Lazy initialization of _event on first event
     ::JSValue eventDataProperty;
     if (!session->eventObjectInitialized) {
         SCE_LOG_DEBUG("JSEngine: First event detected - initializing _event object per W3C SCXML 5.10 for session: {}",
@@ -506,7 +506,7 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
             // W3C SCXML testing extension: _event.raw for manual inspection
             // Used by W3C test 178 (manual visual verification of duplicate param keys)
             // Contains raw event data string (pre-parsing) for debugging and test validation
-            // Not part of W3C SCXML 5.10 specification - implementation-specific extension
+            // Not part of §scxml-5.10 specification - implementation-specific extension
             JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, dataStr.c_str()));
             SCE_LOG_DEBUG("JSEngine: Set _event.raw = '{}'", dataStr);
         } else {
@@ -547,10 +547,10 @@ ScriptResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId
     ::JSValue queueErrorFunc = JS_NewCFunction(ctx, queueErrorEventWrapper, "_queueErrorEvent", 2);
     JS_SetPropertyStr(ctx, global, "_queueErrorEvent", queueErrorFunc);
 
-    // W3C SCXML 5.10: System variables must be read-only and raise error.execution on modification attempts
+    // §scxml-5.10: System variables must be read-only and raise error.execution on modification attempts
     // Use JavaScript code to define read-only properties with error handlers (tests 322, 326, 346)
 
-    // W3C SCXML C.1: Prepare _ioprocessors as object with location fields (test 500)
+    // §scxml-C-1: Prepare _ioprocessors as object with location fields (test 500)
     // _ioprocessors['scxml']['location'] must exist for SCXML Event I/O Processor
     std::string ioProcessorsJson = "{";
     for (size_t i = 0; i < ioProcessors.size(); ++i) {

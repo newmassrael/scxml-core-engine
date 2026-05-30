@@ -10,7 +10,7 @@
 namespace SCE::Core {
 
 /**
- * @brief Event metadata container for W3C SCXML 5.10 compliance
+ * @brief Event metadata container for §scxml-5.10 compliance
  *
  * Single Source of Truth for event metadata shared between:
  * - Interpreter engine (StateMachine)
@@ -19,7 +19,7 @@ namespace SCE::Core {
  * Consolidates all event-related metadata into a single structure to simplify
  * API and reduce parameter coupling. All fields are optional (empty string = not set).
  *
- * W3C SCXML 5.10 Event Object Fields:
+ * §scxml-5.10 Event Object Fields:
  * - name: Event name (required)
  * - type: Event type ("internal", "platform", "external")
  * - sendid: Send ID from <send> element

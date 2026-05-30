@@ -124,7 +124,7 @@ const std::string &SCE::InvokeNode::getContentExpr() const {
     return contentExpr_;
 }
 
-// W3C SCXML 6.4: State ID for invoke ID generation in "stateid.platformid" format (test 224)
+// §scxml-6.4: State ID for invoke ID generation in "stateid.platformid" format (test 224)
 void SCE::InvokeNode::setStateId(const std::string &stateId) {
     stateId_ = stateId;
     SCE_LOG_DEBUG("InvokeNode: Set state ID to '{}'", stateId);

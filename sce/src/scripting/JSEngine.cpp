@@ -89,7 +89,7 @@ void JSEngine::shutdown() {
         platformExecutor_->shutdown();
     }
 
-    // W3C SCXML B.2: Reset DOM class ID before freeing runtime
+    // §scxml-B-2: Reset DOM class ID before freeing runtime
     DOMBinding::resetClassId();
 
     // Note: Runtime will be freed by PlatformExecutionHelper (shutdown already called)
@@ -148,7 +148,7 @@ void JSEngine::reset() {
     // Clear SessionRegistry (invoke mappings, file paths, event dispatchers)
     SessionRegistry::instance().reset();
 
-    // W3C SCXML B.2: Reset DOM class ID for new QuickJS runtime
+    // §scxml-B-2: Reset DOM class ID for new QuickJS runtime
     DOMBinding::resetClassId();
 
     // Reinitialize
@@ -273,7 +273,7 @@ std::future<ScriptResult> JSEngine::setVariableAsDOM(const std::string &sessionI
                                                  const std::string &xmlContent) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync([this, sessionId, name, xmlContent]() {
-        // W3C SCXML B.2: Set variable to XML DOM object
+        // §scxml-B-2: Set variable to XML DOM object
         SessionContext *session = getSession(sessionId);
         if (!session || !session->jsContext) {
             return ScriptResult::createError("Session not found");
@@ -312,19 +312,19 @@ std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId
     if (!args.eventData.empty()) {
         event->setRawJsonData(args.eventData);
     }
-    // W3C SCXML 5.10.1: Set sendid if provided (test332)
+    // §scxml-5.10.1: Set sendid if provided (test332)
     if (!args.sendId.empty()) {
         event->setSendId(args.sendId);
     }
-    // W3C SCXML 5.10.1: Set origin if provided (test336)
+    // §scxml-5.10.1: Set origin if provided (test336)
     if (!args.origin.empty()) {
         event->setOrigin(args.origin);
     }
-    // W3C SCXML 5.10.1: Set originType if provided (test352)
+    // §scxml-5.10.1: Set originType if provided (test352)
     if (!args.originType.empty()) {
         event->setOriginType(args.originType);
     }
-    // W3C SCXML 5.10.1: Set invokeid if provided (test338)
+    // §scxml-5.10.1: Set invokeid if provided (test338)
     if (!args.invokeId.empty()) {
         event->setInvokeId(args.invokeId);
     }
@@ -416,7 +416,7 @@ bool JSEngine::createSessionInternal(const std::string &sessionId, const std::st
 
     sessions_[sessionId] = std::move(session);
 
-    // W3C SCXML 6.4: Register parent-child relationship in SessionRegistry
+    // §scxml-6.4: Register parent-child relationship in SessionRegistry
     // Enables engine-agnostic parent session lookup for event routing
     if (!parentSessionId.empty()) {
         SessionRegistry::instance().registerParentChild(sessionId, parentSessionId);
@@ -435,9 +435,9 @@ bool JSEngine::destroySessionInternal(const std::string &sessionId) {
         return false;
     }
 
-    // W3C SCXML 6.4: Unregister parent-child relationship
+    // §scxml-6.4: Unregister parent-child relationship
     SessionRegistry::instance().unregisterParentChild(sessionId);
-    // W3C SCXML 6.2: Delegate session cleanup to SessionRegistry
+    // §scxml-6.2: Delegate session cleanup to SessionRegistry
     SessionRegistry::instance().cleanupSession(sessionId);
 
     if (it->second.jsContext) {
@@ -514,7 +514,7 @@ void JSEngine::setupSCXMLBuiltins(JSContext *ctx, [[maybe_unused]] const std::st
     // Setup system variables
     setupSystemVariables(ctx);
 
-    // W3C SCXML 5.10: _event is bound lazily on first event (see JSEngineImpl::setCurrentEventInternal)
+    // §scxml-5.10: _event is bound lazily on first event (see JSEngineImpl::setCurrentEventInternal)
 
     // Bind all registered global functions
     {
@@ -810,7 +810,7 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
 bool JSEngine::checkStateActive(const std::string &stateName) const {
     std::lock_guard<std::mutex> lock(stateMachinesMutex_);
 
-    // W3C SCXML 5.9.2: In() predicate function
+    // §scxml-5.9.2: In() predicate function
     // First check callback-based state queries (for static AOT engines)
     for (const auto &pair : stateQueryCallbacks_) {
         const auto &callback = pair.second;
@@ -1036,7 +1036,7 @@ bool JSEngine::isSuccess(const ScriptResult &result) noexcept {
 }
 
 bool JSEngine::hasVariable(const std::string &sessionId, const std::string &variableName) const {
-    // W3C SCXML 4.6: Check if variable exists in session scope
+    // §scxml-4.6: Check if variable exists in session scope
     std::string checkExpr;
     auto dotPos = variableName.find('.');
     if (dotPos != std::string::npos) {
