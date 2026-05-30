@@ -78,15 +78,20 @@ paths = [
     "../../../sce/src/states",
     "../../../sce/include/wrappers",
     "../../../sce/src/model",
+    "../../../sce/include/parsing",
+    "../../../sce/src/parsing",
 ]
 severity_missing = "reject"
 severity_binding = "warn"
 comment_only = true
 
-# SCE's own Wire RFC is a separate spec cited as "RFC §W<n>" (e.g. the parser's
-# "RFC §W4 D1-C"). Registering the "RFC" doc-name prefix makes the validator
-# skip those bare §ids instead of checking them against this W3C ledger, which
-# lets src/runtime (whose only non-W3C cite is one RFC §W4) be gated here. It
-# does not help bare mesh §<n> cites, which carry no prefix immediately before
-# the sigil.
-external_section_prefixes_bare = ["RFC"]
+# This workspace owns the `scxml-` namespace (W3C SCXML spec mirror). A citation's
+# namespace is the segment of its §id before the first hyphen, so §scxml-6.2 is
+# ours while §W4 (Wire RFC), §16.7 (SCE Mesh), and any other §<id> belong to a
+# different ledger. section_namespace makes the validator check only scxml- cites
+# and skip every foreign one by the token itself — no reliance on the word that
+# happens to precede the sigil. This is what lets MIXED modules (parsing etc.,
+# which cite both §scxml- and §W*/§<n>) be gated here: their W3C cites are
+# verified, their mesh/wire cites wait for the docs/sce-ledger/{mesh,wire}
+# workspaces that will own the `mesh`/`wire` namespaces. (Mnemosyne R376.)
+section_namespace = "scxml"
