@@ -28,6 +28,7 @@ network-touching step isolated to a dedicated CI job.
 | `check_spec_drift.py` | **B1**: snapshot integrity (offline) + upstream re-fetch (online) drift check |
 | `scxml_extract_excerpts.py` | **R2**: vendored spec HTML -> per-section normative excerpt JSON |
 | `apply_excerpts.py` | **R2** driver: feed excerpts JSON into a workspace via `set-section-normative-excerpt` |
+| `migrate_citations.py` | **R3**: rewrite prose `W3C SCXML <n>.<m>` citations in source comments to the `§scxml-<id>` form |
 
 ## A1 — TOC to manifest
 
@@ -108,3 +109,40 @@ final render); `normative_excerpt` is frozen after first set, so it runs once on
 the skeleton. For the vendored snapshot this yields 191 excerpts over the 196
 sections. The result is the vendored quote Mnemosyne renders (B3 read-path) and
 anchors for drift (B2).
+
+## R3 — migrate code citations to `§scxml-<id>`
+
+Once the ledger exists (A1 skeleton + R2 excerpts), SCE's code still cites the
+spec in prose form (`// W3C SCXML 6.2: ...`). R3 migrates that prose to the
+`§scxml-<id>` form so Mnemosyne's `set_equality_validator` (validate-code-refs)
+can check every citation against the ledger and reject hallucinated ones.
+
+```bash
+# dry-run: print the plan (default), then apply
+python3 tools/mnemosyne-adoption/migrate_citations.py sce/include/events sce/src/events
+python3 tools/mnemosyne-adoption/migrate_citations.py sce/include/events sce/src/events --apply
+```
+
+This is **not** a `sed`. Three rules keep it safe:
+
+- **Only real section labels migrate.** Numeric (`6.2`, `5.10.1`) and lettered
+  appendix (`C.2`, `B.2`) labels are rewritten; word-led mentions
+  (`W3C SCXML BasicHTTPEventProcessor`, `... specification`) are prose and left
+  alone. Normalization reuses A1's `label_to_leaf` (the SSOT), so numeric keeps
+  dots and lettered turns dots into hyphens.
+- **Only ledger-present ids migrate.** A label whose normalized id is not a
+  section — the spec *version* `1.0`, or a typo'd/hallucinated number — is left
+  as prose and **reported**. That report is the human-review surface for the
+  cutover: versions stay prose, genuine citation errors get fixed at the source.
+- **Only comments are edited.** A per-file comment scanner (`//`, `/* */`, and
+  Rust nested block comments) means string- and char-literal text is never
+  touched, so no runtime string can change.
+
+The rollout is **one directory at a time**: migrate a directory, add it to
+`paths` in `docs/spec/scxml/mnemosyne.toml`'s `[plugins.set_equality_validator]`,
+and confirm `validate-code-refs` is green. `severity_missing = "reject"` is the
+hallucination gate (strict from the start — the migrator only emits ledger ids);
+`severity_binding = "warn"` keeps the Path B Spec↔Code binding axis advisory
+until a later round registers `Section.implementations`. The closed-loop test
+(skipped without `mnemosyne-cli`) proves migrate -> validate is green and that a
+hallucinated `§scxml-9.99` fails the reject gate.
