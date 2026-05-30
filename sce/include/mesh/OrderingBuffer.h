@@ -4,7 +4,7 @@
 // SCE Mesh OrderingBuffer — per-sender sequence-ordered admit layer for
 // transports that do not supply native per-source FIFO.
 //
-// SCE_MESH.md §10.6: bindings that declare `ordering: required` on a
+// SCE_MESH.md §mesh-10.6: bindings that declare `ordering: required` on a
 // transport whose `supplies_ordering=false` (Zenoh, SOME/IP-UDP, DDS)
 // stamp outbound envelopes with a monotonic `sequence_no` and route
 // inbound envelopes through this buffer before reaching the engine.
@@ -23,14 +23,14 @@
 //   * No buffering for unstamped envelopes. The generated admit path
 //     drops envelopes that reach an active OrderingBuffer without a
 //     `sequence_no` and raises `error.communication.missing_sequence`
-//     (SCE_MESH.md §10.6.3). Topology guarantees all senders on an
+//     (SCE_MESH.md §mesh-10.6.3). Topology guarantees all senders on an
 //     ordered route stamp the field; a missing value signals an
 //     out-of-sync sender, not a legitimate unordered message.
 //   * No eviction of sender state. `deploy.yaml` pins the machine
 //     roster, so `state_` is bounded by the number of sender
 //     machines that actually send on an ordered route. Same argument
 //     as `DedupRouter`.
-//   * No interaction with §10.5 dedup. The codegen pipes admit paths
+//   * No interaction with §mesh-10.5 dedup. The codegen pipes admit paths
 //     as dedup → ordering → dispatch; each layer is independent.
 //
 // Thread-safety: transport callback threads may call `admit()` and
@@ -60,7 +60,7 @@ namespace SCE::Mesh {
 /// fast-forwarded past because the head envelope had been blocked
 /// longer than `gap_timeout_`. Reported alongside released envelopes
 /// so the caller can raise `error.communication` with reason
-/// `ORDERING_GAP` (SCE_MESH.md §16.7 row 12) outside the buffer mutex.
+/// `ORDERING_GAP` (SCE_MESH.md §mesh-16.7 row 12) outside the buffer mutex.
 struct OrderingGapEvent {
     std::string source;
     std::uint64_t lost_lo;
@@ -97,7 +97,7 @@ public:
 
     /// Construct with an explicit gap timeout. The buffer carries no
     /// fallback constant: the value comes from deploy.yaml
-    /// `machines.<name>.ordering.gap_timeout_ms` (SCE_MESH.md §10.6.1)
+    /// `machines.<name>.ordering.gap_timeout_ms` (SCE_MESH.md §mesh-10.6.1)
     /// — single source of truth — and the generated `TransportRouter`
     /// initializes the buffer with that value verbatim. Tests pass the
     /// timeout explicitly (e.g. 5 ms) to keep runtime short.
@@ -113,7 +113,7 @@ public:
     ///
     /// Pre-condition: `env.sequence_no.has_value()`. Unstamped
     /// envelopes are rejected by the generated admit path before
-    /// reaching here (SCE_MESH.md §10.6.3) — this class does not
+    /// reaching here (SCE_MESH.md §mesh-10.6.3) — this class does not
     /// re-check because the router's branch already guarantees the
     /// invariant.
     [[nodiscard]] std::vector<MeshEnvelope>

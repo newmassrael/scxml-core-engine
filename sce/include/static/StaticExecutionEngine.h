@@ -95,7 +95,7 @@ using MeshInvokeCallback = std::function<bool(const std::string& target,
 /// Mesh-rpc cancel callback signature: (target, fieldSuffix) → accepted.
 ///
 /// Fires from onexit when a state with a pending mesh-rpc invoke is left
-/// before the reply arrives. SCE_MESH.md §9.5: `<cancel>` semantics for
+/// before the reply arrives. SCE_MESH.md §mesh-9.5: `<cancel>` semantics for
 /// mesh-rpc erase the correlation entry without raising `done`/`error`.
 /// Takes `(target, fieldSuffix)` — the router's `active_invokes_` map
 /// translates the pair to the UUID of the latest registration so the
@@ -106,18 +106,18 @@ using MeshCancelCallback = std::function<bool(const std::string& target,
 /// SCXML remote-invoke start callback signature: (target, invokeId, data) → accepted.
 ///
 /// Fires from onentry when a state with `<invoke type="scxml" src="#peer">`
-/// is entered and the classifier marked it as remote-mesh (SCE_MESH.md §9.6).
+/// is entered and the classifier marked it as remote-mesh (SCE_MESH.md §mesh-9.6).
 /// Returns true when the TransportRouter accepted the wire-14 `InvokeStart`
 /// envelope for outbound dispatch; false when no callback is installed
 /// (document rendered without TransportRouter wiring) so the generated code
-/// can fall through to the transport-absent local raise per §9.6 line 1396.
+/// can fall through to the transport-absent local raise per §mesh-9.6 line 1396.
 /// * `target`         — deploy.yaml machine name (e.g. `"worker_session_f"`)
 /// * `invokeIdString` — SCXML-side invoke id (W3C 3.12.1 `stateid.ptr.index`),
 ///                      preserved so the eventual `error.execution` raise
 ///                      can surface it via `_event.invokeid` when wire-15
 ///                      `InvokeStarted` / wire-20 `InvokeError` reply.
 /// * `data`           — opaque payload bytes the parent wants the child to
-///                      receive at session creation (reserved for the §9.6.2
+///                      receive at session creation (reserved for the §mesh-9.6.2
 ///                      inner `{src, params, content, namelist, autoforward}`
 ///                      CBOR map once wires 15-19 activate consumers).
 using ScxmlInvokeStartCallback = std::function<bool(const std::string& target,
@@ -125,7 +125,7 @@ using ScxmlInvokeStartCallback = std::function<bool(const std::string& target,
                                                     const std::string& data)>;
 
 /// SCXML remote-invoke parent-event callback signature: wire-17 `ParentEvent`
-/// per SCE_MESH.md §9.6.2. Fires from the parent engine's autoforward path
+/// per SCE_MESH.md §mesh-9.6.2. Fires from the parent engine's autoforward path
 /// (`forwardToAutoforwardChildren` in invoke_methods.jinja2) when an
 /// external event must be forwarded to an active remote invoke's child.
 /// Returns true when the TransportRouter accepted the wire-17 envelope for
@@ -136,7 +136,7 @@ using ScxmlInvokeStartCallback = std::function<bool(const std::string& target,
 /// * `invokeIdString` — SCXML-side invoke id (identifies the child session)
 /// * `eventName`      — event being forwarded (per W3C §6.4.6 verbatim)
 /// * `data`           — event data payload (JSON-encoded when present)
-/// * `sendId`         — original sendId (preserved per §9.6.3); empty when
+/// * `sendId`         — original sendId (preserved per §mesh-9.6.3); empty when
 ///                      the forwarded event had no explicit sendid.
 using ScxmlInvokeParentEventCallback =
     std::function<bool(const std::string& target,
@@ -146,7 +146,7 @@ using ScxmlInvokeParentEventCallback =
                        const std::string& sendId)>;
 
 /// SCXML remote-invoke cancel callback signature: wire-19 `InvokeCancel`
-/// per SCE_MESH.md §9.6.2. Fires when the parent exits the invoking state
+/// per SCE_MESH.md §mesh-9.6.2. Fires when the parent exits the invoking state
 /// of a still-active remote invoke. Returns true when the TransportRouter
 /// accepted the wire-19 envelope for outbound dispatch; false when no
 /// callback is installed.
@@ -500,12 +500,12 @@ private:
     std::function<void()> completionCallback_;  // W3C SCXML 6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // W3C SCXML C.2: BasicHTTP callback
     MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
-    MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §9.5: <invoke type="sce:mesh-rpc"> entry hook
-    MeshCancelCallback onMeshCancel_;  // SCE Mesh §9.5: mesh-rpc exit / cancel hook
-    ScxmlInvokeStartCallback onScxmlInvokeStart_;  // SCE Mesh §9.6.2 wire-14: <invoke type="scxml" src="#peer"> entry hook
-    ScxmlInvokeParentEventCallback onScxmlInvokeParentEvent_;  // SCE Mesh §9.6.2 wire-17: autoforward outbound hook
-    ScxmlInvokeCancelCallback onScxmlInvokeCancel_;  // SCE Mesh §9.6.2 wire-19: remote invoke cancel hook
-    // SCE Mesh §16.5 (rule 12) — `<parallel>` partition role hooks. Set
+    MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §mesh-9.5: <invoke type="sce:mesh-rpc"> entry hook
+    MeshCancelCallback onMeshCancel_;  // SCE Mesh §mesh-9.5: mesh-rpc exit / cancel hook
+    ScxmlInvokeStartCallback onScxmlInvokeStart_;  // SCE Mesh §mesh-9.6.2 wire-14: <invoke type="scxml" src="#peer"> entry hook
+    ScxmlInvokeParentEventCallback onScxmlInvokeParentEvent_;  // SCE Mesh §mesh-9.6.2 wire-17: autoforward outbound hook
+    ScxmlInvokeCancelCallback onScxmlInvokeCancel_;  // SCE Mesh §mesh-9.6.2 wire-19: remote invoke cancel hook
+    // SCE Mesh §mesh-16.5 (rule 12) — `<parallel>` partition role hooks. Set
     // by the derived SM ctor when codegen materializes a Root or NonRoot
     // tracker / sender for a hosted `<parallel>`. The Policy invokes
     // them via `triggerParallelRegionLocalComplete` /
@@ -520,14 +520,14 @@ private:
     std::function<void(const std::string& parallel_id, const std::string& region_id,
                        const std::string& donedata)>
         onParallelRegionRemoteSend_;
-    std::string currentEventInvokeId_;  // SCE Mesh §9.5: invokeId of event being processed
+    std::string currentEventInvokeId_;  // SCE Mesh §mesh-9.5: invokeId of event being processed
     SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
 
     // W3C SCXML 5.5 + 6.3.1: donedata payload stashed at top-level <final> entry.
     // Consumed by:
     //   - local invoke completion callback (invoke_methods.jinja2) to populate
     //     `done.invoke.<id>._event.data`;
-    //   - SCE Mesh ChildSessionAdapter::getDonedata() (§9.6.2 wire-18) to carry
+    //   - SCE Mesh ChildSessionAdapter::getDonedata() (§mesh-9.6.2 wire-18) to carry
     //     the payload to the parent peer.
     // Shared single source of truth — no local vs remote divergence. Empty
     // string / nullopt when the top-level final had no `<donedata>` child.
@@ -616,7 +616,7 @@ public:
         // transport leave onMeshSend_ unset and the event falls through to
         // the external queue (legacy behavior, preserves W3C conformance).
         if (::SCE::SendHelper::isMeshTarget(eventWithMetadata.target)) {
-            // SCE_MESH.md §9.5: the metadata's invokeId is authoritative
+            // SCE_MESH.md §mesh-9.5: the metadata's invokeId is authoritative
             // when set (send.jinja2 full-metadata path calls
             // engine.currentEventInvokeId() explicitly). The engine-level
             // field fills the gap for the simple raiseExternal(Event, ...)
@@ -1156,7 +1156,7 @@ public:
      * short-circuit in `tick()`, queue-processing bail-out in
      * `processEventQueues()`, external `done.invoke` notification.
      *
-     * See SCE_MESH.md §16.5 L3500 for the concrete case that motivated
+     * See SCE_MESH.md §mesh-16.5 L3500 for the concrete case that motivated
      * the split: a `<parallel>` whose local region has reached its
      * regional `<final>` ahead of a remote sibling's wire-21 arrival
      * still needs the scheduler pumped so the barrier-timeout event
@@ -1179,7 +1179,7 @@ public:
      * between the local invoke completion path (read by
      * `invoke_methods.jinja2`'s completionCallback to populate
      * `done.invoke.<id>._event.data`) and the SCE Mesh worker (read by
-     * `ChildSessionAdapter::getDonedata()` to ship wire-18 per §9.6.2). Called
+     * `ChildSessionAdapter::getDonedata()` to ship wire-18 per §mesh-9.6.2). Called
      * at most once per invocation — the final state is terminal.
      */
     void stashDonedataAtFinal(std::string data, std::optional<ScriptValue> typedData) {
@@ -1190,7 +1190,7 @@ public:
     /// W3C SCXML 5.5 + 6.3.1: JSON/literal string payload from the reached
     /// top-level `<final>`'s `<donedata>`. Empty when no donedata was authored
     /// or the machine has not reached a top-level final yet. Consumed by both
-    /// local invoke completion and SCE Mesh §9.6.2 wire-18.
+    /// local invoke completion and SCE Mesh §mesh-9.6.2 wire-18.
     const std::string& donedataAtFinal() const { return pendingDonedataAtFinal_; }
 
     /// W3C SCXML 5.5 + B.2: Structured donedata (engine-agnostic ScriptValue)
@@ -1269,7 +1269,7 @@ public:
         // as a whole, so we must not short-circuit the scheduler pump
         // when only a region has completed. `isGlobalFinalState()`
         // encodes the parent-presence check that `isInFinalState()`
-        // (leaf semantics) deliberately omits; see SCE_MESH.md §16.5
+        // (leaf semantics) deliberately omits; see SCE_MESH.md §mesh-16.5
         // L3500 for the barrier-timeout case that surfaces this.
         if (isGlobalFinalState()) {
             if (completionCallback_) {
@@ -1374,7 +1374,7 @@ public:
     }
 
     /**
-     * @brief Register a mesh-rpc invoke callback (SCE_MESH.md §9.5)
+     * @brief Register a mesh-rpc invoke callback (SCE_MESH.md §mesh-9.5)
      *
      * Installed by the generated TransportRouter ctor when any target's
      * `invoke_sites` is non-empty. The callback receives (target,
@@ -1404,7 +1404,7 @@ public:
     }
 
     /**
-     * @brief Register a mesh-rpc cancel callback (SCE_MESH.md §9.5)
+     * @brief Register a mesh-rpc cancel callback (SCE_MESH.md §mesh-9.5)
      *
      * Installed alongside `setMeshInvokeCallback`. Applications typically
      * do not call this directly.
@@ -1429,7 +1429,7 @@ public:
     }
 
     /**
-     * @brief Register the SCXML remote-invoke start callback (SCE_MESH.md §9.6.2 wire 14)
+     * @brief Register the SCXML remote-invoke start callback (SCE_MESH.md §mesh-9.6.2 wire 14)
      *
      * Installed by the generated TransportRouter ctor when any target machine
      * has a distinct-peer `<invoke type="scxml" src="#peer">` entry classified
@@ -1449,7 +1449,7 @@ public:
      * rendered without TransportRouter wiring for the remote peer; the caller
      * (codegen) falls through to the transport-absent local
      * `error.execution` raise carrying SESSION_F_NOT_IMPLEMENTED per
-     * SCE_MESH.md §9.6 line 1396.
+     * SCE_MESH.md §mesh-9.6 line 1396.
      */
     bool performScxmlInvokeStart(const std::string& target,
                                  const std::string& invokeIdString,
@@ -1462,7 +1462,7 @@ public:
 
     /**
      * @brief Register the SCXML remote-invoke parent-event callback
-     *        (SCE_MESH.md §9.6.2 wire 17, autoforward).
+     *        (SCE_MESH.md §mesh-9.6.2 wire 17, autoforward).
      *
      * Installed by the generated TransportRouter ctor when any target machine
      * hosts a remote `<invoke autoforward="true">`. Applications typically
@@ -1493,7 +1493,7 @@ public:
 
     /**
      * @brief Register the SCXML remote-invoke cancel callback
-     *        (SCE_MESH.md §9.6.2 wire 19).
+     *        (SCE_MESH.md §mesh-9.6.2 wire 19).
      *
      * Installed by the generated TransportRouter ctor for every remote
      * invoke target. Fires when the parent exits the invoking state before
@@ -1521,7 +1521,7 @@ public:
     }
 
     /**
-     * @brief Register the local-region completion callback (SCE_MESH.md §16.5).
+     * @brief Register the local-region completion callback (SCE_MESH.md §mesh-16.5).
      *
      * Installed by the derived SM ctor when the codegen materialized a Root
      * tracker for a hosted `<parallel>`. The closure dispatches on `parallel_id`
@@ -1535,7 +1535,7 @@ public:
     }
 
     /**
-     * @brief Invoke the local-region completion hook (SCE_MESH.md §16.5).
+     * @brief Invoke the local-region completion hook (SCE_MESH.md §mesh-16.5).
      *
      * Called from the generated `mesh/cpp/parallel_final.jinja2` Root branch
      * when a region hosted in this partition enters its `<final>`. No-op when
@@ -1549,7 +1549,7 @@ public:
     }
 
     /**
-     * @brief Register the remote-region wire-21 send callback (SCE_MESH.md §16.5).
+     * @brief Register the remote-region wire-21 send callback (SCE_MESH.md §mesh-16.5).
      *
      * Installed by the derived SM ctor when the codegen materialized a NonRoot
      * sender for a hosted `<parallel>`. The closure builds the
@@ -1565,13 +1565,13 @@ public:
     }
 
     /**
-     * @brief Invoke the remote-region wire-21 send hook (SCE_MESH.md §16.5).
+     * @brief Invoke the remote-region wire-21 send hook (SCE_MESH.md §mesh-16.5).
      *
      * Called from the generated `mesh/cpp/parallel_final.jinja2` NonRoot branch
      * when a region hosted in this partition enters its `<final>`. The closure
      * is responsible for failing loudly when no transport-side callback was
      * installed by the TransportRouter — a missing wire-up must surface as a
-     * fatal exception rather than a silent drop (SCE_MESH.md §14 L2844).
+     * fatal exception rather than a silent drop (SCE_MESH.md §mesh-14 L2844).
      */
     void triggerParallelRegionRemoteSend(const std::string& parallel_id,
                                          const std::string& region_id,

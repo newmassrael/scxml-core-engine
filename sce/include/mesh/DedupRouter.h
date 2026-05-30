@@ -4,7 +4,7 @@
 // SCE Mesh DedupRouter — per-envelope duplicate suppression for inbound
 // transport callbacks.
 //
-// SCE_MESH.md §10.5: transports that cannot guarantee at-most-once
+// SCE_MESH.md §mesh-10.5: transports that cannot guarantee at-most-once
 // envelope delivery (Zenoh's reliable mode can still reorder across
 // routers, broadcast buses can bridge duplicates) need an
 // application-level filter. Each receiving TransportRouter holds one
@@ -27,7 +27,7 @@
 //     fan-in would need an eviction policy layered on top.
 //   * No cross-session replay defence. An envelope that arrives more
 //     than 256 events after its first delivery will pass the filter.
-//     §10.5 calls this out — the DedupWindow is a correctness guard
+//     §mesh-10.5 calls this out — the DedupWindow is a correctness guard
 //     against transport-level re-delivery, not against a malicious
 //     replay attacker.
 //   * No interaction with RPC correlation. The mesh-rpc reply path
@@ -87,14 +87,14 @@ namespace SCE::Mesh {
 /// regardless of its value.
 class DedupWindow {
 public:
-    /// Capacity is fixed at 256 per §10.5. Exposed as a constant so
+    /// Capacity is fixed at 256 per §mesh-10.5. Exposed as a constant so
     /// tests can assert the "257th distinct id evicts the first"
     /// invariant without a magic number.
     static constexpr std::size_t kCapacity = 256;
 
     using Id = std::array<std::uint8_t, 16>;
 
-    /// SCE_MESH.md §16.7 row 7 — distinguishes "novel id, fresh slot"
+    /// SCE_MESH.md §mesh-16.7 row 7 — distinguishes "novel id, fresh slot"
     /// from "novel id, evicted an existing entry". The DEDUP_WINDOW_OVERFLOW
     /// raise condition the catalog defines maps to NovelWithEviction
     /// — the runtime has no oracle for "leaked duplicate older than
@@ -147,7 +147,7 @@ private:
 
 /// Per-sender DedupWindow registry. One instance lives on a receiving
 /// TransportRouter when at least one of its bound transports declares
-/// `supplies_dedup: false` (SCE_MESH.md §10.5; see
+/// `supplies_dedup: false` (SCE_MESH.md §mesh-10.5; see
 /// `sce-build::mesh::transport::TransportDescriptor::supplies_dedup`).
 ///
 /// Generated TransportRouter code calls `admit(env.source, env.id)`
@@ -166,7 +166,7 @@ public:
         return admitWithSignal(source, id) != DedupWindow::Result::Duplicate;
     }
 
-    /// Rich variant — surfaces the §16.7 row 7 DEDUP_WINDOW_OVERFLOW
+    /// Rich variant — surfaces the §mesh-16.7 row 7 DEDUP_WINDOW_OVERFLOW
     /// signal (NovelWithEviction). Codegen call sites that own a
     /// `raiseCommunicationError` helper switch on this enum to
     /// (a) drop on Duplicate, (b) proceed silently on Novel,

@@ -3,13 +3,13 @@
 //
 // SCE Mesh — shared 16-byte UUID v7 key type and FNV-1a hash.
 //
-// `MeshEnvelope.invoke_id` (§9.5 mesh-rpc) and `MeshEnvelope.id` (§10.10
+// `MeshEnvelope.invoke_id` (§mesh-9.5 mesh-rpc) and `MeshEnvelope.id` (§mesh-10.10
 // envelope id used by the retrying-dispatcher backoff layer) are both
 // 16-byte UUID v7 values from disjoint generators. Multiple SCE mesh
 // runtime components key per-envelope state by these values:
-//   • InvokeCorrelation (§9.5 mesh-rpc correlation table)
+//   • InvokeCorrelation (§mesh-9.5 mesh-rpc correlation table)
 //   • MeshDeadlineScheduler (deadline timer registry shared by mesh-rpc,
-//     §13 server query timeout, and retry backoff)
+//     §mesh-13 server query timeout, and retry backoff)
 //   • RetryingDispatcher (per-envelope retry attempt counter)
 //
 // Before this header existed each consumer redeclared its own

@@ -2,11 +2,11 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // SCE Mesh ParallelCompletionTracker — distributed `<parallel>`-final
-// barrier tracker (SCE_MESH.md §16.5).
+// barrier tracker (SCE_MESH.md §mesh-16.5).
 //
 // The root partition of a distributed `<parallel>` owns one tracker per
 // `<parallel>` element it claims via deploy.yaml
-// `partitions.<name>.hosts_parallel_roots:` (§14 rule 12). The tracker
+// `partitions.<name>.hosts_parallel_roots:` (§mesh-14 rule 12). The tracker
 // aggregates:
 //   1. Local region completions (regions that live in the root partition's
 //      own address space) — reported via `onLocalRegionComplete(region_id)`
@@ -22,11 +22,11 @@
 //
 // Re-entry of the `<parallel>` (via `<history>` or a fresh enter-set
 // computation that re-activates the parallel) is handled by calling
-// `reset()` at `<parallel>` entry in the generated SM — §16.5 L3498:
+// `reset()` at `<parallel>` entry in the generated SM — §mesh-16.5 L3498:
 // "Re-entry of the parallel via history or new enter-set computation
 // resets the tracker and starts a fresh activation."
 //
-// Barrier-timeout (§16.5 L3500):
+// Barrier-timeout (§mesh-16.5 L3500):
 //   When the owning partition declares `barrier_timeout_ms:` in
 //   deploy.yaml, the generated SM ctor populates [`TimerHooks`] so the
 //   tracker can arm a finite timer at the first region completion of
@@ -37,7 +37,7 @@
 //   forestalls). Cancels at threshold so the done.state raise wins the
 //   race. Fires `TimerHooks::onTimeout` (installed closure) when the
 //   timer elapses before threshold — that closure then raises
-//   `error.communication` (reason `PARALLEL_BARRIER_TIMEOUT`, §16.7
+//   `error.communication` (reason `PARALLEL_BARRIER_TIMEOUT`, §mesh-16.7
 //   row 6) via the SM's PullScheduler. Absent `TimerHooks` (W3C
 //   normative infinity) the tracker never arms a timer.
 //
@@ -57,7 +57,7 @@
 //     onto the SM thread before invoking `onRemoteRegionComplete`. The
 //     `PullScheduler` is likewise pulled from the SM step — timer fire
 //     never races threshold cancellation on the same thread.
-//   * Single-shot per region activation (§16.5 L3498): a duplicate
+//   * Single-shot per region activation (§mesh-16.5 L3498): a duplicate
 //     region id is silently ignored so that at-least-once transport
 //     redelivery does not over-count completions.
 //
@@ -84,7 +84,7 @@ public:
     using OnCompleteCallback = std::function<void()>;
 
     /// Invoked on every completion *before threshold* to (re-)arm the
-    /// §16.5 barrier timer. Receives the author-declared timeout and a
+    /// §mesh-16.5 barrier timer. Receives the author-declared timeout and a
     /// freshly-computed `missing_regions` vector so the captured
     /// `_event.data.missing_regions` matches the tracker's current
     /// state. Implementation routes to the SM's `PullScheduler`.
@@ -93,11 +93,11 @@ public:
                            std::vector<std::string> missing_regions)>;
 
     /// Invoked at threshold and at `reset()` to cancel any pending
-    /// §16.5 barrier timer. Safe to call when no timer is armed (the
+    /// §mesh-16.5 barrier timer. Safe to call when no timer is armed (the
     /// scheduler's `cancelEvent` returns false for unknown send ids).
     using CancelTimerCallback = std::function<void()>;
 
-    /// Hook bundle for the §16.5 barrier-timeout runtime (L3500).
+    /// Hook bundle for the §mesh-16.5 barrier-timeout runtime (L3500).
     /// Default-constructed instance disables the timer entirely — the
     /// tracker behaves exactly like the pre-L3500 threshold-only
     /// primitive. Emitted only when deploy.yaml declares
@@ -135,7 +135,7 @@ public:
     };
 
     /// Construct a threshold-only tracker — no barrier-timeout timer
-    /// (W3C normative infinity). Matches the pre-§16.5-L3500 primitive
+    /// (W3C normative infinity). Matches the pre-§mesh-16.5 L3500 primitive
     /// that every existing unit test and every partition without
     /// `barrier_timeout_ms:` relies on.
     ///
@@ -154,7 +154,7 @@ public:
           fired_(false),
           timer_armed_(false) {}
 
-    /// Construct a tracker with §16.5 L3500 barrier-timeout hooks. The
+    /// Construct a tracker with §mesh-16.5 L3500 barrier-timeout hooks. The
     /// SM ctor passes a populated [`TimerHooks`] when deploy.yaml
     /// declares `barrier_timeout_ms:` on the root-claiming partition.
     ///
@@ -191,7 +191,7 @@ public:
         onRegionComplete(region_id);
     }
 
-    /// Reset for a fresh `<parallel>` activation (§16.5 L3498). Called
+    /// Reset for a fresh `<parallel>` activation (§mesh-16.5 L3498). Called
     /// from the generated SM's `<parallel>` entry branch before any
     /// region can report completion. Cancels any barrier timer still
     /// armed from a prior activation. Re-seeds `missing_` from the
@@ -219,10 +219,10 @@ private:
     /// *before* `on_complete_` fires, so the `done.state.<parallel>`
     /// raise always precedes any timer-driven `error.communication`.
     /// The degenerate `expected_count_ == 0` input is preserved from
-    /// the pre-§16.5-L3500 primitive — any completion call immediately
+    /// the pre-§mesh-16.5 L3500 primitive — any completion call immediately
     /// satisfies the threshold and fires `on_complete_`.
     void onRegionComplete(const std::string &region_id) {
-        // §16.5 L3498 single-shot: duplicate inserts are a no-op.
+        // §mesh-16.5 L3498 single-shot: duplicate inserts are a no-op.
         completed_.insert(region_id);
         // Mirror into the incremental missing-set so re-arm is O(log N)
         // rather than O(N) per completion (was O(N²) over a full barrier

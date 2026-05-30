@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh RetryingDispatcher — §16.7 row 3 DELIVERY_EXHAUSTED retry layer.
+// SCE Mesh RetryingDispatcher — §mesh-16.7 row 3 DELIVERY_EXHAUSTED retry layer.
 //
 // Sits above the OutboundBuffer's dispatcher boundary (RFC Q1=(a)
 // wrap-above): the generated TransportRouter constructs this class
@@ -33,12 +33,12 @@
 //     `attempts=1`. The author can branch on `_event.data.attempts==1`
 //     vs `>1` to distinguish "config error" from "tried and gave up".
 //   * `cancelEnvelopeRetry(envelope_id)` (Q7) erases pending state
-//     and the scheduler entry — used by §9.5 deadline preemption so
+//     and the scheduler entry — used by §mesh-9.5 deadline preemption so
 //     a mid-backoff envelope does not race the deadline's own
 //     `error.invoke.<id>` raise.
 //   * Same envelope id across attempts (Q5): retries reuse the
 //     stashed `MeshEnvelope` verbatim — including the UUID v7 `id`
-//     — so receiver-side §10.5 dedup correctly drops at-most-once.
+//     — so receiver-side §mesh-10.5 dedup correctly drops at-most-once.
 //
 // Backoff schedule (per RFC §Q2):
 //   * Attempt 1 fails ⇒ wait `initial_backoff`
@@ -105,7 +105,7 @@ public:
 
     /// Policy carrying the deploy.yaml-derived retry parameters.
     /// `transport` and `target` are baked here so the DELIVERY_EXHAUSTED
-    /// raise can populate the §16.7 row 3 extras without the runtime
+    /// raise can populate the §mesh-16.7 row 3 extras without the runtime
     /// having to re-derive them from the envelope.
     struct Policy {
         std::uint32_t max_retries;
@@ -167,7 +167,7 @@ public:
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             // If a prior retry chain for this same envelope id is
-            // still in flight (the §10.5 envelope id is meant to be
+            // still in flight (the §mesh-10.5 envelope id is meant to be
             // unique per envelope, so this should not happen — but
             // be robust to a buggy caller), refuse to re-enter and
             // surface the original failure so SEND_FAILED fires.
@@ -196,7 +196,7 @@ public:
     }
 
     /// Cancel a pending retry for `envelope_id` (RFC Q7 — used by
-    /// §9.5 deadline preemption so a mid-backoff envelope is not
+    /// §mesh-9.5 deadline preemption so a mid-backoff envelope is not
     /// raced by the deadline's own `error.invoke.<id>` raise).
     /// Idempotent: returns `true` when an entry was erased, `false`
     /// when the id was never registered or already exhausted/fired.
@@ -287,7 +287,7 @@ private:
         const bool scheduled = scheduler_.registerDeadline(
             key, next_backoff, [this, key]() { onRetryFire(key); });
         if (!scheduled) {
-            // Scheduler is shutting down. Drop state — §9.5 "benign
+            // Scheduler is shutting down. Drop state — §mesh-9.5 "benign
             // drop" matches MeshDeadlineScheduler::shutdown semantics.
             std::lock_guard<std::mutex> lock(state_mutex_);
             state_.erase(key);
