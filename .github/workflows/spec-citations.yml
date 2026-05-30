@@ -1,0 +1,79 @@
+name: Spec Citations (Mnemosyne adoption)
+
+# Citation gate for the Mnemosyne design/spec ledgers. Each workspace owns one
+# namespace and checks only its own §<ns>-<id> cites (section_namespace scoping):
+#
+#   docs/spec/scxml     §scxml-<n>   W3C SCXML Recommendation mirror
+#   docs/sce-ledger/mesh §mesh-<n>   SCE_MESH.md design ledger
+#   docs/sce-ledger/wire §wire-W<n>  Wire RFC design ledger
+#
+# `validate-code-refs` fails (severity_missing = "reject") on any §<ns>-<id>
+# citation with no matching ledger section — the hallucination gate. The
+# commit↔ledger drift surface and the Path-B binding axis are advisory
+# ([commit_ledger]/severity_binding = "warn") and do not gate the exit code.
+# `validate-workspace` additionally checks the committed GENERATED.md ↔ atomic
+# store round-trip, so a hand-edited ledger view cannot drift silently.
+#
+# mnemosyne-cli is an external Rust binary (separate repo, intentionally not
+# vendored), so it is installed at a pinned revision via `cargo install --git
+# --rev --locked` and cached by that rev — the consumer CI pattern from
+# Mnemosyne's SCHEMA_GUIDE. Bump MNEMOSYNE_REV deliberately, re-validating the
+# three workspaces locally against the new rev before committing the change.
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'sce/**'
+      - 'docs/spec/scxml/**'
+      - 'docs/sce-ledger/**'
+      - '.github/workflows/spec-citations.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce/**'
+      - 'docs/spec/scxml/**'
+      - 'docs/sce-ledger/**'
+      - '.github/workflows/spec-citations.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pin to a Mnemosyne commit, never a branch; --locked builds against its
+  # committed Cargo.lock for a reproducible binary. R381 (7db5a1e).
+  MNEMOSYNE_REV: 7db5a1e18d6ce2fd0f72944e29d902de61341440
+
+jobs:
+  citations:
+    name: Validate spec citations (per workspace)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore cached mnemosyne-cli (pinned rev)
+        id: cli-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/mnemosyne-cli
+          key: mnemosyne-cli-${{ env.MNEMOSYNE_REV }}
+
+      - name: Install mnemosyne-cli (pinned revision)
+        if: steps.cli-cache.outputs.cache-hit != 'true'
+        run: |
+          cargo install --git https://github.com/newmassrael/mnemosyne \
+            --rev "${MNEMOSYNE_REV}" --locked mnemosyne-cli
+
+      - name: Validate citations + ledger round-trip (per workspace)
+        run: |
+          set -euo pipefail
+          for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire; do
+            echo "::group::${ws}"
+            ( cd "${ws}" && mnemosyne-cli validate-workspace && mnemosyne-cli validate-code-refs )
+            echo "::endgroup::"
+          done
