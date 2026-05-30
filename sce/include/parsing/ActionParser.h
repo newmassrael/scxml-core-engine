@@ -74,7 +74,7 @@ public:
      * @brief Set SCXML file base path for external script loading
      * @param basePath Base directory path of the SCXML file
      *
-     * W3C SCXML 5.8: External scripts (src attribute) are resolved
+     * §scxml-5.8: External scripts (src attribute) are resolved
      * relative to the SCXML file location
      */
     void setScxmlBasePath(const std::string &basePath);
@@ -122,7 +122,7 @@ private:
 
     /**
      * @brief Base directory path of the SCXML file (for resolving external script src attributes)
-     * W3C SCXML 5.8: External scripts are resolved relative to SCXML file location
+     * §scxml-5.8: External scripts are resolved relative to SCXML file location
      */
     std::string scxmlBasePath_;
 };

@@ -41,7 +41,7 @@ namespace SCE::parsing {
 // payload access.
 //
 // The fourth leaf, `SemanticTopLevelScriptUnloaded`, carries a NEW
-// wire code `scxml/top-level-script-unloaded` because W3C SCXML §5.8
+// wire code `scxml/top-level-script-unloaded` because §scxml-5.8
 // has no forge analog — the rejection rule is unique to SCXML's
 // document-loading semantics. RFC §W5 D2 documents the 1-NEW + 3-
 // REUSE breakdown.
@@ -173,7 +173,7 @@ private:
 };
 
 // SCXML document parsed successfully but contains no top-level
-// `<state>`, `<parallel>`, or `<final>` child. W3C SCXML §3.2 requires
+// `<state>`, `<parallel>`, or `<final>` child. §scxml-3.2 requires
 // at least one root state — mirrors Rust `ScxmlSemanticError::NoStates`.
 // Folded onto `validation/empty-collection` per W4 D4 (concept
 // identity with forge "kind requires at least one X" failures).
@@ -190,7 +190,7 @@ public:
     }
 };
 
-// Top-level `<script>` element rejected per W3C SCXML §5.8 — either
+// Top-level `<script>` element rejected per §scxml-5.8 — either
 // (a) empty content AND empty `src`, (b) `src` set but file failed to
 // load, or (c) script body parse failure. The 1 NEW wire code RFC
 // §W5 D2 introduces; emits `spec` field with `"W3C SCXML §5.8"`.

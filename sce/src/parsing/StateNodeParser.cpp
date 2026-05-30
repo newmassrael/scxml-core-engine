@@ -244,7 +244,7 @@ void SCE::StateNodeParser::parseInvokeElements(const std::shared_ptr<IXMLElement
     for (const auto &invokeElement : invokeElements) {
         auto invokeNode = invokeParser_->parseInvokeNode(invokeElement);
         if (invokeNode) {
-            // W3C SCXML 6.4: Set parent state ID for invoke ID generation (test 224)
+            // §scxml-6.4: Set parent state ID for invoke ID generation (test 224)
             invokeNode->setStateId(state->getId());
 
             // Add invoke node to state
@@ -305,7 +305,7 @@ void SCE::StateNodeParser::parseInitialElement(const std::shared_ptr<IXMLElement
             // Call directly through IStateNode interface
             state->setInitialTransition(transition);
 
-            // Set initialState_ (W3C SCXML 3.3: space-separated targets for parallel regions)
+            // Set initialState_ (§scxml-3.3: space-separated targets for parallel regions)
             if (!transition->getTargets().empty()) {
                 std::string allTargets;
                 for (size_t i = 0; i < transition->getTargets().size(); ++i) {
@@ -329,7 +329,7 @@ void SCE::StateNodeParser::parseEntryExitActionNodes(const std::shared_ptr<IXMLE
         return;
     }
 
-    // W3C SCXML 3.8: Process onentry elements - each onentry is a separate block
+    // §scxml-3.8: Process onentry elements - each onentry is a separate block
     auto onentryElements = SCE::ParsingCommon::findChildElements(parentElement, "onentry");
     for (const auto &onentryElement : onentryElements) {
         std::vector<std::shared_ptr<SCE::IActionNode>> actionBlock;
@@ -341,7 +341,7 @@ void SCE::StateNodeParser::parseEntryExitActionNodes(const std::shared_ptr<IXMLE
         }
     }
 
-    // W3C SCXML 3.9: Process onexit elements - each onexit is a separate block
+    // §scxml-3.9: Process onexit elements - each onexit is a separate block
     auto onexitElements = SCE::ParsingCommon::findChildElements(parentElement, "onexit");
     for (const auto &onexitElement : onexitElements) {
         std::vector<std::shared_ptr<SCE::IActionNode>> actionBlock;

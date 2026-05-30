@@ -234,5 +234,67 @@ class ValidateClosedLoop(unittest.TestCase):
             self.assertEqual(bad_report["section_missing_count"], 1)
 
 
+class TestBareSigilForm(unittest.TestCase):
+    """The bare-sigil shape: a § sigil already present after a W3C marker."""
+
+    def test_w3c_sigil_migrated(self):
+        new, migs, skips = plan("// W3C §5.10 inline\n")
+        self.assertIn("§scxml-5.10", new)
+        self.assertEqual(len(migs), 1)
+        self.assertEqual(migs[0]["id"], "scxml-5.10")
+
+    def test_w3c_scxml_sigil_migrated(self):
+        new, migs, skips = plan("// W3C SCXML §6.2 requires\n")
+        self.assertIn("§scxml-6.2", new)
+        self.assertNotIn("W3C", new)
+        self.assertEqual(len(migs), 1)
+
+    def test_sigil_drops_marker(self):
+        new, migs, skips = plan("// per W3C SCXML §6.2 x\n")
+        self.assertEqual(new, "// per §scxml-6.2 x\n")
+
+    def test_rfc_sigil_not_touched(self):
+        # A bare § with no W3C marker is an SCE-internal design-doc ref.
+        new, migs, skips = plan("// per RFC §3 design\n")
+        self.assertEqual(len(migs), 0)
+        self.assertEqual(len(skips), 0)
+        self.assertIn("RFC §3", new)
+
+    def test_design_doc_sigil_not_touched(self):
+        new, migs, skips = plan("// see `SCE_FORGE.md` §3.1 policy\n")
+        self.assertEqual(len(migs), 0)
+        self.assertNotIn("scxml-3", new)
+
+    def test_quoted_sigil_left_verbatim(self):
+        # A quoted W3C citation inside a comment is a runtime string value
+        # being shown, not a section citation -> leave verbatim, report it.
+        new, migs, skips = plan('// emits "W3C SCXML §6.2" field\n')
+        self.assertEqual(len(migs), 0)
+        self.assertEqual(len(skips), 1)
+        self.assertIn('"W3C SCXML §6.2"', new)
+
+    def test_sigil_in_string_literal_untouched(self):
+        new, migs, skips = plan('const char* s = "W3C SCXML §6.2";\n')
+        self.assertEqual(len(migs), 0)
+        self.assertIn('"W3C SCXML §6.2"', new)
+
+    def test_sigil_ledger_miss_left_as_prose(self):
+        new, migs, skips = plan("// W3C §9.99 bogus\n")
+        self.assertEqual(len(migs), 0)
+        self.assertEqual(len(skips), 1)
+
+    def test_sigil_slash_chain(self):
+        # 3.13 and 5.10 are both in the test LEDGER above.
+        new, migs, skips = plan("// W3C SCXML §3.13/5.10 pair\n")
+        self.assertIn("§scxml-3.13 / §scxml-5.10", new)
+        self.assertEqual(len(migs), 2)
+
+    def test_prose_and_sigil_coexist(self):
+        new, migs, skips = plan("// W3C SCXML 6.2 and W3C §5.10\n")
+        self.assertIn("§scxml-6.2", new)
+        self.assertIn("§scxml-5.10", new)
+        self.assertEqual(len(migs), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

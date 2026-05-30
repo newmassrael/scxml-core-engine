@@ -59,7 +59,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
 
         SCE_LOG_INFO("Parsing SCXML file: {}", filename);
 
-        // W3C SCXML 5.8: Set base path for external script resolution
+        // §scxml-5.8: Set base path for external script resolution
         std::filesystem::path scxmlPath(filename);
         std::string basePath = scxmlPath.parent_path().string();
         actionParser_->setScxmlBasePath(basePath);
@@ -321,7 +321,7 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
         std::string datamodelType = scxmlNode->getAttribute("datamodel");
         model->setDatamodel(datamodelType);
         context.setDatamodelType(datamodelType);
-        // W3C §5.5 + Appendix B.2.2: `<donedata><content>text</content>`
+        // §scxml-5.5 + Appendix B.2.2: `<donedata><content>text</content>`
         // semantics are datamodel-dependent. Propagate the root attribute
         // so `DoneDataParser` can pick Expression vs Literal per document.
         if (doneDataParser_) {
@@ -374,7 +374,7 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
 
     addSystemVariables(model);
 
-    // W3C SCXML 5.8: Parse top-level <script> elements
+    // §scxml-5.8: Parse top-level <script> elements
     auto scriptElements = SCE::ParsingCommon::findChildElements(scxmlNode, "script");
     if (!scriptElements.empty()) {
         SCE_LOG_DEBUG("Parsing {} root script element(s) (W3C SCXML 5.8)", scriptElements.size());
@@ -588,7 +588,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
         availableStateIds.push_back(s->getId());
     }
 
-    // 2. Validate initial states (W3C SCXML §3.3 — root-level initial)
+    // 2. Validate initial states (§scxml-3.3 — root-level initial)
     const auto &initialStates = model->getInitialStates();
     if (!initialStates.empty()) {
         for (const auto &initialStateId : initialStates) {
@@ -623,7 +623,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
     // attaches state to parent in the same operation) and no
     // wire-code mapping. Removed per `feedback_silently_broken_hooks.md`.
     for (const auto &state : model->getAllStates()) {
-        // Validate transition target states (W3C SCXML §3.5)
+        // Validate transition target states (§scxml-3.5)
         for (const auto &transition : state->getTransitions()) {
             const auto &targets = transition->getTargets();
             for (const auto &target : targets) {
@@ -642,7 +642,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
             }
         }
 
-        // W3C SCXML 3.3: Validate compound-state initial state(s)
+        // §scxml-3.3: Validate compound-state initial state(s)
         if (!state->getInitialState().empty() && state->getChildren().size() > 0) {
             std::istringstream iss(state->getInitialState());
             std::string initialStateId;
@@ -725,6 +725,6 @@ void SCE::SCXMLParser::addSystemVariables(std::shared_ptr<SCXMLModel> model) {
     model->addSystemVariable(ioProcessorsItem);
     SCE_LOG_DEBUG("Added system variable: _ioprocessors");
 
-    // W3C SCXML 5.10: _event is bound lazily on first event
+    // §scxml-5.10: _event is bound lazily on first event
     SCE_LOG_DEBUG("Skipping _event initialization per W3C SCXML 5.10 (bound only after first event)");
 }

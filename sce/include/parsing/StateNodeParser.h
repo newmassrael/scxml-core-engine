@@ -46,11 +46,11 @@ private:
     // Parse transition elements
     void parseTransitions(const std::shared_ptr<IXMLElement> &parentElement, std::shared_ptr<IStateNode> state);
 
-    // W3C SCXML 3.8/3.9: Parse onentry/onexit elements as IActionNode block-based
+    // §scxml-3.8 / §scxml-3.9: Parse onentry/onexit elements as IActionNode block-based
     void parseEntryExitActionNodes(const std::shared_ptr<IXMLElement> &parentElement,
                                    std::shared_ptr<IStateNode> state);
 
-    // W3C SCXML 3.8/3.9: Block-based executable content parsing
+    // §scxml-3.8 / §scxml-3.9: Block-based executable content parsing
     void parseExecutableContentBlock(const std::shared_ptr<IXMLElement> &parentElement,
                                      std::vector<std::shared_ptr<SCE::IActionNode>> &actionBlock);
 
