@@ -36,7 +36,7 @@ namespace SCE::Wrappers {
  * - Automatic event generation on timer expiration
  * - Built on existing EventScheduler infrastructure
  *
- * W3C SCXML 6.2: Implements delayed send pattern with timer semantics
+ * §scxml-6.2: Implements delayed send pattern with timer semantics
  *
  * @note Thread Safety: NOT thread-safe. Per W3C SCXML specification, state machines
  *       process events sequentially within a single thread. Each state machine instance
@@ -127,7 +127,7 @@ public:
      * Maps a timer ID to an event that will be raised when the timer expires.
      * Must be called before startTimer().
      *
-     * W3C SCXML 6.2: Establishes timer -> delayed send mapping
+     * §scxml-6.2: Establishes timer -> delayed send mapping
      *
      * @param timerID Timer identifier (from generated TimerID enum)
      * @param event Event to raise on timer expiration
@@ -148,7 +148,7 @@ public:
      * Schedules the timer's associated event for future delivery.
      * For periodic timers, automatically reschedules after each expiration.
      *
-     * W3C SCXML 6.2: Uses scheduleEvent() with delay
+     * §scxml-6.2: Uses scheduleEvent() with delay
      *
      * @param timerID Timer to start (must be registered first)
      * @param interval Delay before timer expiration
@@ -177,7 +177,7 @@ public:
         std::string baseSendId = generateTimerSendId(timerID);
         TimerInfo info{interval, periodic, baseSendId, true, now, 0};
 
-        // W3C SCXML 6.2: Schedule delayed event with sequence number for consistency
+        // §scxml-6.2: Schedule delayed event with sequence number for consistency
         std::string uniqueSendId = baseSendId + "_" + std::to_string(info.sequenceCounter);
         stateMachine_.scheduleEvent(event, interval, uniqueSendId);
         ++info.sequenceCounter;  // Increment BEFORE storing in map
@@ -190,7 +190,7 @@ public:
      *
      * Cancels the timer's scheduled event. For periodic timers, prevents future recurrence.
      *
-     * W3C SCXML 6.2.5: Uses cancelEvent() with sendId
+     * §scxml-6.2.5: Uses cancelEvent() with sendId
      *
      * @param timerID Timer to stop
      * @return true if timer was running and stopped, false if not running
@@ -208,7 +208,7 @@ public:
             return false;
         }
 
-        // W3C SCXML 6.2.5: Cancel scheduled event
+        // §scxml-6.2.5: Cancel scheduled event
         // For periodic timers, cancel the currently scheduled event (sequenceCounter - 1)
         // For one-shot timers, cancel the only scheduled event (sequenceCounter - 1)
         if (it->second.sequenceCounter > 0) {
@@ -291,7 +291,7 @@ public:
      * variations may occur due to polling intervals and system load, but the
      * implementation maintains stable long-term periodicity.
      *
-     * W3C SCXML 6.2: Implements periodic timer semantics on top of one-shot delayed send
+     * §scxml-6.2: Implements periodic timer semantics on top of one-shot delayed send
      *
      * @note Requires using sm.tick() (not sm.step()) to consume scheduled events
      * @note Not needed when using runUntilCompletion() - timers handled automatically
@@ -418,7 +418,7 @@ private:
     /**
      * @brief Generate unique sendId for timer
      *
-     * W3C SCXML 6.2.5: SendId format for timer identification
+     * §scxml-6.2.5: SendId format for timer identification
      *
      * @param timerID Timer identifier
      * @return Unique sendId string

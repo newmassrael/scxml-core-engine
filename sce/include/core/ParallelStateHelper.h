@@ -24,7 +24,7 @@
 namespace SCE::Core {
 
 /**
- * @brief Helper functions for parallel state operations (W3C SCXML 3.4)
+ * @brief Helper functions for parallel state operations (§scxml-3.4)
  *
  * Shared between Interpreter and AOT engines following Zero Duplication Principle.
  * Provides utilities for parallel state structure analysis and document order.
@@ -50,7 +50,7 @@ public:
     /**
      * @brief Get all child regions of a parallel state
      *
-     * W3C SCXML 3.4: Parallel states have multiple child regions that are active simultaneously.
+     * §scxml-3.4: Parallel states have multiple child regions that are active simultaneously.
      *
      * @tparam StateType State enum or identifier type
      * @tparam PolicyType Policy class with state hierarchy information
@@ -69,7 +69,7 @@ public:
     /**
      * @brief Get document order index for a state
      *
-     * W3C SCXML 3.13: Document order is used for tie-breaking in exit order.
+     * §scxml-3.13: Document order is used for tie-breaking in exit order.
      * States appearing earlier in SCXML document have lower indices.
      *
      * @tparam StateType State enum or identifier type
@@ -88,7 +88,7 @@ public:
     /**
      * @brief Compare two states by document order
      *
-     * W3C SCXML 3.13: Used for exit order tie-breaking (reverse document order).
+     * §scxml-3.13: Used for exit order tie-breaking (reverse document order).
      *
      * @tparam StateType State enum or identifier type
      * @tparam PolicyType Policy class with document order information
@@ -108,7 +108,7 @@ public:
     /**
      * @brief Get initial states for all child regions of a parallel state
      *
-     * W3C SCXML 3.4: When entering a parallel state, all child regions are entered
+     * §scxml-3.4: When entering a parallel state, all child regions are entered
      * simultaneously, each to their initial state.
      *
      * @tparam StateType State enum or identifier type
@@ -142,7 +142,7 @@ public:
     /**
      * @brief Check if all child regions of a parallel state are in final states
      *
-     * W3C SCXML 3.4: A parallel state is considered complete when all its child
+     * §scxml-3.4: A parallel state is considered complete when all its child
      * regions are in final states.
      *
      * @tparam StateType State enum or identifier type

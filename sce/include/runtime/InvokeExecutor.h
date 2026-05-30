@@ -46,7 +46,7 @@ public:
      * @param parentSessionId Parent session ID for hierarchical sessions
      * @param eventDispatcher Event dispatcher for communication
      * @param childSessionId Pre-allocated child session ID to ensure mapping consistency
-     * @param isRestoration W3C SCXML 3.11: If true, skip completion callback and start() (restoration without side
+     * @param isRestoration §scxml-3.11: If true, skip completion callback and start() (restoration without side
      * effects)
      * @return Generated invokeid for tracking (should match invoke ID)
      */
@@ -106,7 +106,7 @@ public:
     std::vector<std::shared_ptr<StateMachine>> getAutoForwardSessions(const std::string &parentSessionId);
 
     /**
-     * @brief Get all active invoke sessions for visualization (W3C SCXML 6.3)
+     * @brief Get all active invoke sessions for visualization (§scxml-6.3)
      * @param parentSessionId Parent session ID
      * @return Vector of child StateMachine shared_ptrs regardless of autoForward setting
      */
@@ -135,7 +135,7 @@ public:
     /**
      * @brief Capture child state machine state for snapshot
      *
-     * W3C SCXML 3.11: Child state is part of invoke configuration
+     * §scxml-3.11: Child state is part of invoke configuration
      * Zero Duplication: Delegates to child StateMachine for state capture
      *
      * @return Shared pointer to child StateSnapshot, or nullptr if not applicable
@@ -145,7 +145,7 @@ public:
     /**
      * @brief Restore child state machine from snapshot
      *
-     * W3C SCXML 3.11: Restore child configuration without side effects
+     * §scxml-3.11: Restore child configuration without side effects
      *
      * @param childSnapshot Child state to restore
      * @param childSessionId Pre-allocated child session ID
@@ -167,7 +167,7 @@ public:
     /**
      * @brief Get autoForward flag for active invoke
      *
-     * W3C SCXML 6.4: Autoforward determines if parent forwards events to child
+     * §scxml-6.4: Autoforward determines if parent forwards events to child
      *
      * @return true if autoForward enabled, false otherwise
      */
@@ -185,7 +185,7 @@ private:
         bool isActive = true;
         bool autoForward = false;
         std::string finalizeScript;  // W3C SCXML: finalize handler script to execute before processing child events
-        std::string scxmlContent;    // W3C SCXML 3.11: SCXML content for snapshot restoration
+        std::string scxmlContent;    // §scxml-3.11: SCXML content for snapshot restoration
     };
 
     std::unordered_map<std::string, InvokeSession> activeSessions_;
@@ -224,7 +224,7 @@ private:
      * @param eventDispatcher Event dispatcher for communication
      * @param childSessionId Child session ID (either generated or pre-allocated)
      * @param sessionAlreadyExists Whether the child session was pre-created
-     * @param isRestoration W3C SCXML 3.11: If true, skip completion callback and start() (restoration without side
+     * @param isRestoration §scxml-3.11: If true, skip completion callback and start() (restoration without side
      * effects)
      * @return Generated invokeid for tracking
      */
@@ -345,7 +345,7 @@ public:
     std::vector<std::shared_ptr<StateMachine>> getAutoForwardSessions(const std::string &parentSessionId);
 
     /**
-     * @brief Get all active invoke sessions for visualization (W3C SCXML 6.3)
+     * @brief Get all active invoke sessions for visualization (§scxml-6.3)
      * @param parentSessionId Parent session ID
      * @return Vector of child StateMachine shared_ptrs regardless of autoForward setting
      *
@@ -371,7 +371,7 @@ public:
     /**
      * @brief Capture state of all active invocations for snapshot
      *
-     * W3C SCXML 3.11: Invocations are part of configuration
+     * §scxml-3.11: Invocations are part of configuration
      * Zero Duplication: Single Source of Truth for invoke state
      *
      * Collects all active invoke IDs, child sessions, and child state machine states
@@ -384,7 +384,7 @@ public:
     /**
      * @brief Restore active invocations from snapshot
      *
-     * W3C SCXML 3.11: Restore invoke configuration without side effects
+     * §scxml-3.11: Restore invoke configuration without side effects
      * Zero Duplication: Delegates to IInvokeHandler for actual restoration
      *
      * Creates child state machines and restores their states using
@@ -399,7 +399,7 @@ private:
     IScriptEngine &scriptEngine_;
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
 
-    // W3C SCXML 6.5: Parent StateMachine weak_ptr for completion callback state checking (thread-safe)
+    // §scxml-6.5: Parent StateMachine weak_ptr for completion callback state checking (thread-safe)
     std::weak_ptr<StateMachine> parentStateMachine_;
 
     // Track invoke sessions by parent session (for cancellation on state exit)

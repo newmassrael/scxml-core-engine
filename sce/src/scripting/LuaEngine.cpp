@@ -25,7 +25,7 @@ extern "C" {
 namespace {
 
 // ECMAScript null/undefined sentinel tags for Lua lightuserdata
-// Used to preserve null vs undefined distinction in Lua arrays (W3C SCXML 4.6)
+// Used to preserve null vs undefined distinction in Lua arrays (§scxml-4.6)
 char NULL_SENTINEL_TAG;
 char UNDEFINED_SENTINEL_TAG;
 
@@ -189,7 +189,7 @@ void LuaEngine::shutdown() {
         observers_.clear();
     }
 
-    // W3C SCXML B.2: Reset DOM binding state (mirrors JSEngine::shutdown behavior)
+    // §scxml-B-2: Reset DOM binding state (mirrors JSEngine::shutdown behavior)
     LuaDOMBinding::resetClassId();
 
     initialized_ = false;
@@ -261,7 +261,7 @@ bool LuaEngine::createSession(const std::string &sessionId, const std::string &p
     registerBuiltins(ctx->L, sessionId);
     sessions_[sessionId] = std::move(ctx);
 
-    // W3C SCXML 6.4: Register parent-child relationship in SessionRegistry
+    // §scxml-6.4: Register parent-child relationship in SessionRegistry
     // Enables engine-agnostic parent session lookup for event routing
     if (!parentSessionId.empty()) {
         SessionRegistry::instance().registerParentChild(sessionId, parentSessionId);
@@ -294,9 +294,9 @@ bool LuaEngine::destroySession(const std::string &sessionId) {
         return false;
     }
 
-    // W3C SCXML 6.4: Unregister parent-child relationship
+    // §scxml-6.4: Unregister parent-child relationship
     SessionRegistry::instance().unregisterParentChild(sessionId);
-    // W3C SCXML 6.2: Delegate session cleanup to SessionRegistry
+    // §scxml-6.2: Delegate session cleanup to SessionRegistry
     SessionRegistry::instance().cleanupSession(sessionId);
 
     if (it->second->L) {
@@ -381,7 +381,7 @@ lua_State *LuaEngine::createLuaState() {
     // Open standard libraries
     luaL_openlibs(L);
 
-    // Register DOM metatables (W3C SCXML B.2)
+    // Register DOM metatables (§scxml-B-2)
     LuaDOMBinding::registerMetatable(L);
 
     return L;
@@ -400,7 +400,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
 
     // === Register SCXML built-in functions ===
 
-    // W3C SCXML 4.6: null/undefined sentinels for array element preservation
+    // §scxml-4.6: null/undefined sentinels for array element preservation
     lua_pushlightuserdata(L, &NULL_SENTINEL_TAG);
     lua_setglobal(L, "_NULL");
     lua_pushlightuserdata(L, &UNDEFINED_SENTINEL_TAG);
@@ -413,7 +413,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
             lua_pushboolean(Ls, 0);
             return 1;
         }
-        // W3C SCXML 4.6: null/undefined sentinels are falsy
+        // §scxml-4.6: null/undefined sentinels are falsy
         if (lua_islightuserdata(Ls, 1)) {
             void *p = lua_touserdata(Ls, 1);
             if (p == &NULL_SENTINEL_TAG || p == &UNDEFINED_SENTINEL_TAG) {
@@ -442,7 +442,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
         if (lua_isnil(Ls, 1)) {
             lua_pushstring(Ls, "undefined");
         } else if (lua_islightuserdata(Ls, 1)) {
-            // W3C SCXML 4.6: typeof null === "object", typeof undefined === "undefined"
+            // §scxml-4.6: typeof null === "object", typeof undefined === "undefined"
             void *p = lua_touserdata(Ls, 1);
             lua_pushstring(Ls, (p == &NULL_SENTINEL_TAG) ? "object" : "undefined");
         } else if (lua_isboolean(Ls, 1)) {
@@ -484,7 +484,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
 
     // _indexOf(obj, value): ECMAScript Array.indexOf / String.indexOf (0-based, returns -1 if not found)
     lua_pushcfunction(L, [](lua_State *Ls) -> int {
-        // W3C SCXML B.2: String.prototype.indexOf(searchString)
+        // §scxml-B-2: String.prototype.indexOf(searchString)
         if (lua_isstring(Ls, 1) && lua_isstring(Ls, 2)) {
             const char *haystack = lua_tostring(Ls, 1);
             const char *needle = lua_tostring(Ls, 2);
@@ -567,7 +567,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
     });
     lua_setglobal(L, "parseFloat");
 
-    // In(stateId): W3C SCXML 5.9.2 In() predicate
+    // In(stateId): §scxml-5.9.2 In() predicate
     // Uses C++ state query callbacks
     lua_pushcfunction(L, [](lua_State *Ls) -> int {
         const char *stateId = luaL_checkstring(Ls, 1);
@@ -644,7 +644,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
         end
     )LUA");
 
-    // W3C SCXML B.2: JSON.stringify / JSON.parse (Single Source of Truth)
+    // §scxml-B-2: JSON.stringify / JSON.parse (Single Source of Truth)
     // Shared with Rust sce-rust-lua via sce/include/scripting/json_builtins.lua
     // CMake generates json_builtins_lua.h with the Lua source as a C++ raw string literal
     #include "json_builtins_lua.h"
@@ -823,7 +823,7 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
     std::string firstError = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
     lua_pop(L, 1);
 
-    // W3C SCXML 5.9: Only try statement fallback for assignment-like expressions.
+    // §scxml-5.9: Only try statement fallback for assignment-like expressions.
     // Bare keywords like "return" are valid Lua chunks but invalid as JS expressions
     // (JavaScript's eval("return") throws SyntaxError — W3C test 344).
     bool looksLikeAssignment = false;
@@ -905,7 +905,7 @@ ScriptResult LuaEngine::setVariableInternal(const std::string &sessionId, const 
     it->second->declaredVars.insert(name);
 
     // Track pre-initialized variables for invoke param/namelist support
-    // W3C SCXML 6.4.2: DataModelInitializer skips re-initialization of pre-initialized variables
+    // §scxml-6.4.2: DataModelInitializer skips re-initialization of pre-initialized variables
     it->second->preInitializedVars.insert(name);
 
     return ScriptResult::createSuccess(true);
@@ -928,7 +928,7 @@ ScriptResult LuaEngine::getVariableInternal(const std::string &sessionId, const 
 
 std::future<ScriptResult> LuaEngine::setVariableAsDOM(const std::string &sessionId, const std::string &name,
                                                         const std::string &xmlContent) {
-    // W3C SCXML B.2: XML DOM as Lua userdata with getElementsByTagName/getAttribute methods
+    // §scxml-B-2: XML DOM as Lua userdata with getElementsByTagName/getAttribute methods
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
@@ -1077,7 +1077,7 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
         return p.get_future();
     }
 
-    // W3C SCXML 5.10: Engine-agnostic ScriptValue pipeline. When typedData is
+    // §scxml-5.10: Engine-agnostic ScriptValue pipeline. When typedData is
     // present, `EventRaiserImpl::raiseEventWithPriority` has already parsed the
     // JSON eventData at pipeline entry (sce/src/runtime/EventRaiserImpl.cpp:220).
     // Routing through the 8-arg overload would re-parse eventData via
@@ -1127,7 +1127,7 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
     }
 
     // No typedData — delegate to string overload's full data parsing path
-    // (XML DOM / Lua expression / JSON / plain text, W3C SCXML B.2).
+    // (XML DOM / Lua expression / JSON / plain text, §scxml-B-2).
     return setCurrentEvent(sessionId, SetCurrentEventArgs{event->getName(), event->getDataAsString(),
                                                           event->getType(), event->getSendId(), event->getOrigin(),
                                                           event->getOriginType(), event->getInvokeId()});
@@ -1173,14 +1173,14 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
     lua_pushstring(L, invokeId.c_str());
     lua_setfield(L, -2, "invokeid");
 
-    // W3C SCXML B.2: Parse event data as XML DOM, JSON/Lua table, or string
+    // §scxml-B-2: Parse event data as XML DOM, JSON/Lua table, or string
     if (!eventData.empty()) {
         // Check if XML content
         size_t firstNonWS = eventData.find_first_not_of(" \t\r\n");
         bool isXML = firstNonWS != std::string::npos && eventData[firstNonWS] == '<';
 
         if (isXML) {
-            // Parse as DOM object (W3C SCXML B.2)
+            // Parse as DOM object (§scxml-B-2)
             LuaDOMBinding::pushDOMObject(L, eventData);
             lua_setfield(L, -2, "data");
         } else {
@@ -1190,14 +1190,14 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
                 lua_setfield(L, -2, "data");
             } else {
                 lua_pop(L, 1); // Pop error
-                // W3C SCXML B.2: Try JSON parsing for structured event data
+                // §scxml-B-2: Try JSON parsing for structured event data
                 // JSON syntax ({"key":"value"}) is not valid Lua, requires explicit conversion
                 auto parsed = EventDataHelper::jsonStringToScriptValue(eventData);
                 if (parsed.has_value()) {
                     pushScriptValue(L, parsed.value());
                     lua_setfield(L, -2, "data");
                 } else {
-                    // W3C SCXML B.2 (test 562): Space-normalize plain text content
+                    // §scxml-B-2 (test 562): Space-normalize plain text content
                     std::string normalized = normalizeWhitespace(eventData);
                     lua_pushstring(L, normalized.c_str());
                     lua_setfield(L, -2, "data");
@@ -1350,7 +1350,7 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
         if constexpr (std::is_same_v<T, ScriptUndefined>) {
             lua_pushnil(L);
         } else if constexpr (std::is_same_v<T, ScriptNull>) {
-            // W3C SCXML 4.6: Push null sentinel to preserve typeof semantics
+            // §scxml-4.6: Push null sentinel to preserve typeof semantics
             lua_pushlightuserdata(L, &NULL_SENTINEL_TAG);
         } else if constexpr (std::is_same_v<T, bool>) {
             lua_pushboolean(L, val ? 1 : 0);
@@ -1364,7 +1364,7 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
             lua_newtable(L);
             if (val) {
                 for (size_t i = 0; i < val->elements.size(); ++i) {
-                    // W3C SCXML 4.6: Use undefined sentinel in arrays to prevent nil holes
+                    // §scxml-4.6: Use undefined sentinel in arrays to prevent nil holes
                     if (std::holds_alternative<ScriptUndefined>(val->elements[i])) {
                         lua_pushlightuserdata(L, &UNDEFINED_SENTINEL_TAG);
                     } else {
@@ -1424,7 +1424,7 @@ ScriptValue LuaEngine::luaToScriptValue(lua_State *L, int index) {
             return ScriptValue(obj);
         }
         case LUA_TLIGHTUSERDATA: {
-            // W3C SCXML 4.6: Convert null/undefined sentinels back to ScriptValue types
+            // §scxml-4.6: Convert null/undefined sentinels back to ScriptValue types
             void *p = lua_touserdata(L, index);
             if (p == &NULL_SENTINEL_TAG) {
                 return ScriptNull{};

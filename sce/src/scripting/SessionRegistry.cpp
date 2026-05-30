@@ -84,7 +84,7 @@ void SessionRegistry::unregisterInvokeMapping(const std::string &parentSessionId
 std::string SessionRegistry::getInvokeIdForChildSession(const std::string &childSessionId) const {
     std::lock_guard<std::mutex> lock(invokeMappingsMutex_);
 
-    // W3C SCXML 5.10 test 338: Reverse lookup childSessionId -> invokeId
+    // §scxml-5.10 test 338: Reverse lookup childSessionId -> invokeId
     for (const auto &parentEntry : invokeMappings_) {
         for (const auto &invokeEntry : parentEntry.second) {
             if (invokeEntry.second == childSessionId) {
@@ -115,7 +115,7 @@ void SessionRegistry::unregisterParentChild(const std::string &childSessionId) {
 }
 
 std::string SessionRegistry::getParentSessionId(const std::string &childSessionId) const {
-    // W3C SCXML 6.4: Direct lookup from parent-child mapping
+    // §scxml-6.4: Direct lookup from parent-child mapping
     {
         std::lock_guard<std::mutex> lock(parentChildMutex_);
         auto it = parentChildMappings_.find(childSessionId);
@@ -198,7 +198,7 @@ void SessionRegistry::unregisterEventDispatcher(const std::string &sessionId) {
 }
 
 void SessionRegistry::cleanupSession(const std::string &sessionId) {
-    // W3C SCXML 6.2: Cancel delayed events for terminating session
+    // §scxml-6.2: Cancel delayed events for terminating session
     {
         std::lock_guard<std::mutex> lock(eventDispatchersMutex_);
         auto dispatcherIt = eventDispatchers_.find(sessionId);

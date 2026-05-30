@@ -141,7 +141,7 @@ public:
     const std::string &getCurrentState() const override;
 
     /**
-     * @brief Directly set current state (for W3C SCXML 3.3 deep initial targets)
+     * @brief Directly set current state (for §scxml-3.3 deep initial targets)
      *
      * Used when deep initial targets bypass normal region initialization.
      * Updates region's currentState to match the actual active configuration.
@@ -151,10 +151,10 @@ public:
     void setCurrentState(const std::string &stateId) override;
 
     /**
-     * @brief W3C SCXML 3.13: Mark region as active for time-travel debugging restoration
+     * @brief §scxml-3.13: Mark region as active for time-travel debugging restoration
      *
      * Used during snapshot restoration to mark the region as active without executing
-     * entry actions. This is part of W3C SCXML 3.13 "Selecting and Executing Transitions"
+     * entry actions. This is part of §scxml-3.13 "Selecting and Executing Transitions"
      * requirement that state restoration must not trigger side effects.
      *
      * @note This should ONLY be called during snapshot restoration, not during normal operation
@@ -189,7 +189,7 @@ public:
     void setExecutionContext(std::shared_ptr<IExecutionContext> executionContext) override;
 
     /**
-     * @brief Set callback for invoke deferring (W3C SCXML 6.4 compliance)
+     * @brief Set callback for invoke deferring (§scxml-6.4 compliance)
      *
      * This callback allows the region to delegate invoke execution timing
      * to the StateMachine via StateHierarchyManager, ensuring proper SCXML semantics.
@@ -210,7 +210,7 @@ public:
     void setConditionEvaluator(std::function<bool(const std::string &)> evaluator) override;
 
     /**
-     * @brief Set callback for done.state event generation (W3C SCXML 3.4 compliance)
+     * @brief Set callback for done.state event generation (§scxml-3.4 compliance)
      *
      * Lifecycle:
      * 1. StateMachine calls this during setupParallelStateCallbacks() initialization
@@ -227,7 +227,7 @@ public:
     void setDoneStateCallback(std::function<void(const std::string &)> callback) override;
 
     /**
-     * @brief Set desired initial child state from parent's initial attribute (W3C SCXML 3.3)
+     * @brief Set desired initial child state from parent's initial attribute (§scxml-3.3)
      *
      * When a parent compound state specifies deep initial targets (e.g., initial="s11p112 s11p122"),
      * this method sets the target state for this region, overriding the region's default initial state.
@@ -241,7 +241,7 @@ public:
     void setDesiredInitialChild(const std::string &childStateId) override;
 
     /**
-     * @brief Enable/disable restoration mode for snapshot restoration (W3C SCXML 3.13)
+     * @brief Enable/disable restoration mode for snapshot restoration (§scxml-3.13)
      *
      * When enabled, prevents side effects like doneStateCallback from being triggered
      * during snapshot restoration. This ensures time-travel debugging doesn't generate
@@ -267,21 +267,21 @@ private:
     // Depends on IStateExitHandler abstraction, not concrete implementation
     std::shared_ptr<IStateExitHandler> exitHandler_;
 
-    // W3C SCXML 6.4: Invoke defer callback for proper timing (dependency inversion)
+    // §scxml-6.4: Invoke defer callback for proper timing (dependency inversion)
     std::function<void(const std::string &, const std::vector<std::shared_ptr<IInvokeNode>> &)> invokeCallback_;
 
     // W3C SCXML: Condition evaluation callback for transition guard evaluation (dependency inversion)
     std::function<bool(const std::string &)> conditionEvaluator_;
 
-    // W3C SCXML 3.4: Done state callback for done.state.{id} event generation (dependency inversion)
+    // §scxml-3.4: Done state callback for done.state.{id} event generation (dependency inversion)
     std::function<void(const std::string &)> doneStateCallback_;
 
-    // W3C SCXML 3.3: Desired initial child from parent state's initial attribute
+    // §scxml-3.3: Desired initial child from parent state's initial attribute
     // Used when parent compound state specifies deep initial targets (e.g., initial="s11p112 s11p122")
     // This overrides the region's own default initial state
     std::string desiredInitialChild_;
 
-    // W3C SCXML 3.13: Restoration mode flag for time-travel debugging
+    // §scxml-3.13: Restoration mode flag for time-travel debugging
     // When true, prevents side effects (callbacks, event generation) during snapshot restoration
     // Thread-safe atomic flag for future multi-threaded support
     std::atomic<bool> isRestoringSnapshot_{false};

@@ -17,13 +17,13 @@ namespace SCE {
 class Event;  // Forward declaration for Event-based setCurrentEvent overload
 
 /**
- * @brief Parameter object for the W3C SCXML 5.10 `setCurrentEvent` boundary.
+ * @brief Parameter object for the §scxml-5.10 `setCurrentEvent` boundary.
  *
  * Bundles the seven `_event.*` metadata fields (name + 6 metadata) that every
  * script engine impl must surface before guard evaluation / action execution.
  * The cross-language sibling in `sce-rust-runtime` is `SetCurrentEventArgs`;
  * Kotlin / Python / Go ports mirror the same field set. The `eventType` default
- * follows W3C SCXML 5.10.1 ("internal" for `<raise>`-style events; senders
+ * follows §scxml-5.10.1 ("internal" for `<raise>`-style events; senders
  * override to "external" / "platform" as needed).
  */
 struct SetCurrentEventArgs {
@@ -93,7 +93,7 @@ public:
     virtual std::future<ScriptResult> getVariable(const std::string &sessionId, const std::string &name) = 0;
 
     /**
-     * @brief Set a variable to an XML DOM object (W3C SCXML B.2)
+     * @brief Set a variable to an XML DOM object (§scxml-B-2)
      * @param sessionId Target session context
      * @param name Variable name
      * @param xmlContent XML string to parse as DOM
@@ -108,7 +108,7 @@ public:
      * @param variableName Variable name to check
      * @return true if variable has been declared (even if value is undefined/nil)
      *
-     * W3C SCXML 4.6: Foreach must distinguish between declared and undeclared variables.
+     * §scxml-4.6: Foreach must distinguish between declared and undeclared variables.
      * Engine-agnostic replacement for ECMAScript-specific "'name' in this" check.
      */
     virtual bool hasVariable(const std::string &sessionId, const std::string &variableName) const = 0;
@@ -134,7 +134,7 @@ public:
                                                        const std::vector<std::string> &ioProcessors) = 0;
 
     /**
-     * @brief Set current event from Event object (W3C SCXML 5.10)
+     * @brief Set current event from Event object (§scxml-5.10)
      * @param sessionId Target session context
      * @param event Event object containing all event fields
      * @return Future indicating success/failure
@@ -143,7 +143,7 @@ public:
                                                       const std::shared_ptr<Event> &event) = 0;
 
     /**
-     * @brief Set current event from individual fields (W3C SCXML 5.10)
+     * @brief Set current event from individual fields (§scxml-5.10)
      * @param sessionId Target session context
      * @param args SetCurrentEventArgs bundling eventName + 6 metadata fields
      * @return Future indicating success/failure
@@ -200,7 +200,7 @@ public:
 
     // Session lifecycle (createSession, destroySession, hasSession) inherited from ISessionLifecycle
 
-    // === State Query Callback (W3C SCXML 5.9.2 In() predicate) ===
+    // === State Query Callback (§scxml-5.9.2 In() predicate) ===
 
     using StateQueryCallback = std::function<bool(const std::string &)>;
 

@@ -116,7 +116,7 @@ public:
     void setOnEntryCallback(std::function<void(const std::string &)> callback);
 
     /**
-     * @brief Set callback for invoke deferring (W3C SCXML 6.4 compliance)
+     * @brief Set callback for invoke deferring (§scxml-6.4 compliance)
      *
      * This callback is called when a state with invoke elements is entered,
      * allowing the StateMachine to defer invoke execution until after state entry completes.
@@ -148,7 +148,7 @@ public:
     void setExecutionContext(std::shared_ptr<IExecutionContext> context);
 
     /**
-     * @brief Set callback for initial transition action execution (W3C SCXML 3.13 compliance)
+     * @brief Set callback for initial transition action execution (§scxml-3.13 compliance)
      *
      * This callback is called when a compound state with an initial transition
      * needs to execute the transition's actions AFTER parent onentry and BEFORE child entry.
@@ -161,7 +161,7 @@ public:
     /**
      * @brief Set callback for entering states via StateMachine
      *
-     * W3C SCXML 3.10: When entering initial child states, delegate to StateMachine::enterState
+     * §scxml-3.10: When entering initial child states, delegate to StateMachine::enterState
      * to ensure history states are properly restored instead of re-executing defaults
      *
      * @param callback Function to call to enter a state (returns success/failure)
@@ -171,7 +171,7 @@ public:
     /**
      * @brief Set history manager for direct history restoration
      *
-     * W3C SCXML 3.10: Allows StateHierarchyManager to handle history restoration
+     * §scxml-3.10: Allows StateHierarchyManager to handle history restoration
      * without triggering EnterStateGuard issues from reentrant calls
      *
      * @param historyManager History manager instance
@@ -181,7 +181,7 @@ public:
     /**
      * @brief Enter a state along with all its ancestors up to a parent
      *
-     * W3C SCXML 3.3: When initial attribute specifies deep descendants,
+     * §scxml-3.3: When initial attribute specifies deep descendants,
      * all ancestor states must be entered from top to bottom.
      * Properly handles parallel states in the ancestor chain.
      *
@@ -235,7 +235,7 @@ private:
     void collectDescendantStates(const std::string &parentId, std::vector<std::string> &collector);
 
     /**
-     * @brief W3C SCXML 3.3: Update parallel region currentState for deep initial targets
+     * @brief §scxml-3.3: Update parallel region currentState for deep initial targets
      *
      * When deep initial targets bypass default region initialization, we must synchronize
      * each region's currentState with the actual active configuration. This function
@@ -254,22 +254,22 @@ private:
     // W3C SCXML onentry callback
     std::function<void(const std::string &)> onEntryCallback_;
 
-    // W3C SCXML 6.4: Invoke defer callback for proper timing
+    // §scxml-6.4: Invoke defer callback for proper timing
     std::function<void(const std::string &, const std::vector<std::shared_ptr<IInvokeNode>> &)> invokeDeferCallback_;
     std::function<bool(const std::string &)> conditionEvaluator_;
 
     // Execution context for concurrent region action execution (403c fix)
     std::shared_ptr<IExecutionContext> executionContext_;
 
-    // W3C SCXML 3.13: Initial transition action callback for proper event queuing
+    // §scxml-3.13: Initial transition action callback for proper event queuing
     std::function<void(const std::vector<std::shared_ptr<IActionNode>> &)> initialTransitionCallback_;
 
-    // W3C SCXML 3.10: State entry callback for history restoration
+    // §scxml-3.10: State entry callback for history restoration
     // When entering initial child states, delegate to StateMachine::enterState
     // to ensure history states are properly restored instead of re-executing defaults
     std::function<bool(const std::string &)> enterStateCallback_;
 
-    // W3C SCXML 3.10: History manager for direct history restoration (test 579)
+    // §scxml-3.10: History manager for direct history restoration (test 579)
     HistoryManager *historyManager_;
 
     /**

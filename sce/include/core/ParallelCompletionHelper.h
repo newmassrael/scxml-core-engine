@@ -23,15 +23,15 @@
 namespace SCE::Core {
 
 /**
- * @brief Helper for parallel state completion detection (W3C SCXML 3.4, 3.7.1)
+ * @brief Helper for parallel state completion detection (§scxml-3.4, 3.7.1)
  *
  * Single Source of Truth for "all regions in final state" logic.
  * Shared between Interpreter and AOT engines following Zero Duplication Principle.
  *
- * W3C SCXML 3.4: "When all of the children reach final states,
+ * §scxml-3.4: "When all of the children reach final states,
  * the <parallel> element itself is considered to be in a final state"
  *
- * W3C SCXML 3.7.1: "done.state.id event is generated upon completion"
+ * §scxml-3.7.1: "done.state.id event is generated upon completion"
  *
  * ARCHITECTURE.md Compliance:
  * - Zero Duplication: Single implementation shared by both engines
@@ -42,7 +42,7 @@ public:
     /**
      * @brief Check if all child regions of a parallel state are in final states
      *
-     * W3C SCXML 3.4: Parallel state is complete when ALL child regions
+     * §scxml-3.4: Parallel state is complete when ALL child regions
      * have at least one active final state.
      *
      * Algorithm:
@@ -65,7 +65,7 @@ public:
     template <typename StateType, typename PolicyType>
 #endif
     static bool areAllRegionsInFinal(StateType parallelState, const std::vector<StateType> &activeStates) {
-        // W3C SCXML 3.4: Get all child regions of this parallel state
+        // §scxml-3.4: Get all child regions of this parallel state
         auto regions = PolicyType::getParallelRegions(parallelState);
 
         if (regions.empty()) {
@@ -79,7 +79,7 @@ public:
 
             // Check if any final state child of this region is currently active
             for (const auto &activeState : activeStates) {
-                // W3C SCXML 3.4: A region is complete if any of its final children are active
+                // §scxml-3.4: A region is complete if any of its final children are active
                 if (PolicyType::getParent(activeState) == region && PolicyType::isFinalState(activeState)) {
                     regionHasFinalState = true;
                     break;
@@ -92,7 +92,7 @@ public:
             }
         }
 
-        // W3C SCXML 3.4: All regions have final states active
+        // §scxml-3.4: All regions have final states active
         return true;
     }
 };

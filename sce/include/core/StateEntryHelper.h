@@ -26,12 +26,12 @@
 namespace SCE::Core {
 
 /**
- * @brief W3C SCXML 3.6: Deep initial state entry logic (Zero Duplication Principle)
+ * @brief §scxml-3.6: Deep initial state entry logic (Zero Duplication Principle)
  *
  * Single Source of Truth for ancestor path calculation and optimized entry order.
  * Shared between Interpreter engine and AOT generated code.
  *
- * W3C SCXML 3.6 allows space-separated descendant state IDs in the initial attribute:
+ * §scxml-3.6 allows space-separated descendant state IDs in the initial attribute:
  *   <state id="s1" initial="s11p112 s11p122">
  *
  * The processor must enter all specified states by:
@@ -47,7 +47,7 @@ namespace SCE::Core {
 class StateEntryHelper {
 public:
     /**
-     * @brief W3C SCXML 3.6: Calculate ancestor path for deep initial target
+     * @brief §scxml-3.6: Calculate ancestor path for deep initial target
      *
      * Returns ancestor path from parent+1 to target (inclusive) in top-to-bottom order.
      *
@@ -112,7 +112,7 @@ public:
                                      std::to_string(MAX_DEPTH) + " levels.");
         }
 
-        // W3C SCXML 3.13: Reverse to get document order (top-to-bottom)
+        // §scxml-3.13: Reverse to get document order (top-to-bottom)
         std::reverse(ancestors.begin(), ancestors.end());
         ancestors.push_back(target);
 
@@ -120,7 +120,7 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 3.6: Optimize entry order across multiple deep targets
+     * @brief §scxml-3.6: Optimize entry order across multiple deep targets
      *
      * Deduplicates common ancestors while preserving document order.
      *
@@ -142,7 +142,7 @@ public:
         std::vector<StateType> optimized;
         std::set<StateType> seen;
 
-        // W3C SCXML 3.13: Preserve document order
+        // §scxml-3.13: Preserve document order
         for (const auto &path : paths) {
             for (const auto &state : path) {
                 if (seen.find(state) == seen.end()) {
@@ -156,7 +156,7 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 3.6: Enter deep initial targets with optimized traversal
+     * @brief §scxml-3.6: Enter deep initial targets with optimized traversal
      *
      * Single Source of Truth for deep state entry logic.
      * Shared between Interpreter engine and AOT generated code.
@@ -198,7 +198,7 @@ public:
             return;
         }
 
-        // W3C SCXML 3.6: Calculate ancestor paths for all targets
+        // §scxml-3.6: Calculate ancestor paths for all targets
         std::vector<std::vector<StateType>> allPaths;
 
         for (const auto &target : targets) {
@@ -206,10 +206,10 @@ public:
             allPaths.push_back(path);
         }
 
-        // W3C SCXML 3.6: Optimize entry order (deduplicate ancestors)
+        // §scxml-3.6: Optimize entry order (deduplicate ancestors)
         auto optimizedOrder = optimizeEntryOrder(allPaths);
 
-        // W3C SCXML 3.8: Execute entry actions in optimized order
+        // §scxml-3.8: Execute entry actions in optimized order
         for (const auto &state : optimizedOrder) {
             executeEntry(state);
         }

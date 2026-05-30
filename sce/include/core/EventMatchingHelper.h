@@ -22,12 +22,12 @@
 namespace SCE::Core::EventMatchingHelper {
 
 /**
- * @brief W3C SCXML 5.9.3: Event descriptor matching algorithm
+ * @brief §scxml-5.9.3: Event descriptor matching algorithm
  *
  * This is the Single Source of Truth for event matching logic shared between
  * Interpreter and AOT engines.
  *
- * Event Matching Rules (W3C SCXML 5.9.3):
+ * Event Matching Rules (§scxml-5.9.3):
  * 1. Event descriptor may contain multiple tokens separated by spaces
  * 2. Each token is matched against the event name using prefix matching
  * 3. Prefix matching uses dot (.) as token separator
@@ -49,7 +49,7 @@ namespace SCE::Core::EventMatchingHelper {
  * matchesEventDescriptor("anything", "*")       → true  (universal wildcard)
  */
 inline bool matchesEventDescriptor(const std::string &eventName, const std::string &descriptor) {
-    // W3C SCXML 5.9.3: Split descriptor into space-separated tokens
+    // §scxml-5.9.3: Split descriptor into space-separated tokens
     std::vector<std::string> tokens;
     size_t start = 0;
     size_t end = descriptor.find(' ');
@@ -70,14 +70,14 @@ inline bool matchesEventDescriptor(const std::string &eventName, const std::stri
         return false;
     }
 
-    // W3C SCXML 5.9.3: Event matches if it matches ANY token
+    // §scxml-5.9.3: Event matches if it matches ANY token
     for (const auto &token : tokens) {
-        // W3C SCXML 5.9.3: Universal wildcard "*" matches any event
+        // §scxml-5.9.3: Universal wildcard "*" matches any event
         if (token == "*") {
             return true;
         }
 
-        // W3C SCXML 5.9.3: Wildcard suffix "foo.*" matches "foo.xxx"
+        // §scxml-5.9.3: Wildcard suffix "foo.*" matches "foo.xxx"
         if (token.length() >= 2 && token.substr(token.length() - 2) == ".*") {
             std::string prefix = token.substr(0, token.length() - 1);  // "foo."
             if (eventName.length() >= prefix.length() && eventName.substr(0, prefix.length()) == prefix) {
@@ -85,12 +85,12 @@ inline bool matchesEventDescriptor(const std::string &eventName, const std::stri
             }
         }
 
-        // W3C SCXML 5.9.3: Exact match
+        // §scxml-5.9.3: Exact match
         if (eventName == token) {
             return true;
         }
 
-        // W3C SCXML 5.9.3: Prefix match with dot separator
+        // §scxml-5.9.3: Prefix match with dot separator
         // "foo" matches "foo.bar" but NOT "foobar"
         if (eventName.length() > token.length() && eventName[token.length()] == '.' &&
             eventName.substr(0, token.length()) == token) {

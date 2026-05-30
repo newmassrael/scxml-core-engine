@@ -69,7 +69,7 @@ std::vector<std::shared_ptr<XMLElement>> XMLElement::getElementsByTagName(const 
 // XMLDocument implementation
 
 XMLDocument::XMLDocument(const std::string &xmlContent) {
-    // W3C SCXML B.2: Parse XML string into DOM structure
+    // §scxml-B-2: Parse XML string into DOM structure
     pugi::xml_parse_result parseResult = doc_.load_string(xmlContent.c_str());
 
     if (!parseResult) {

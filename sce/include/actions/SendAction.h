@@ -162,7 +162,7 @@ public:
     const std::string &getType() const;
 
     /**
-     * @brief Set type expression for dynamic type evaluation (W3C SCXML 6.2 typeexpr attribute)
+     * @brief Set type expression for dynamic type evaluation (§scxml-6.2 typeexpr attribute)
      * @param typeExpr Expression to evaluate for event type at send time
      */
     void setTypeExpr(const std::string &typeExpr);
@@ -214,7 +214,7 @@ public:
     void clearParams();
 
     /**
-     * @brief Set the content for the send action (W3C SCXML C.2)
+     * @brief Set the content for the send action (§scxml-C-2)
      * @param content The content to send as HTTP body
      * @note When content is set, it takes priority over data attribute for HTTP transmission.
      *       Maximum recommended size: 10MB (enforced by validation).
@@ -265,10 +265,10 @@ private:
     std::string sendId_;                     // Sender ID for tracking
     std::string idLocation_;                 // Variable name to store sendid (W3C SCXML idlocation)
     std::string type_;                       // Event type (empty by default per W3C SCXML)
-    std::string typeExpr_;                   // Type expression for dynamic type evaluation (W3C SCXML 6.2)
-    std::string namelist_;                   // Space-separated list of variables for event data (W3C SCXML C.1)
+    std::string typeExpr_;                   // Type expression for dynamic type evaluation (§scxml-6.2)
+    std::string namelist_;                   // Space-separated list of variables for event data (§scxml-C-1)
     std::vector<SendParam> paramsWithExpr_;  // W3C SCXML compliant params with expr
-    std::string content_;                    // Content to send as HTTP body (W3C SCXML C.2)
+    std::string content_;                    // Content to send as HTTP body (§scxml-C-2)
     std::string contentExpr_;                // Content expression for dynamic evaluation (W3C SCXML expr attribute)
 };
 

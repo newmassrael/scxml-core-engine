@@ -12,7 +12,7 @@ namespace SCE {
 /**
  * @brief RAII guard for managing EventRaiser immediate mode
  *
- * @details W3C SCXML 3.13 compliance requirement:
+ * @details §scxml-3.13 compliance requirement:
  * When processing events in parallel states, immediate mode must be temporarily disabled
  * to prevent re-entrancy bugs. This guard ensures immediate mode is restored even if
  * exceptions occur during event processing.

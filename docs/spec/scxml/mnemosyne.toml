@@ -56,10 +56,26 @@ medium_name = "spec_mirror"
 #                                it advisory so unbacked citations do not fail.
 #   comment_only     = true      only citations inside comments are scanned;
 #                                string-literal text is ignored.
+# Only citation-clean modules are listed: those whose source comments carry W3C
+# cites exclusively. Modules that also cite SCE-internal specs (mesh §<n>,
+# Wire-RFC §W<n>) are a different namespace — validate-code-refs checks every
+# §id against this one ledger, so a non-W3C §id reads as a missing section.
+# Those modules (mesh, parsing, static, common, src/runtime) join once their
+# SCE-internal cites move to a dedicated design-ledger workspace.
 [plugins.set_equality_validator]
 paths = [
     "../../../sce/include/events",
     "../../../sce/src/events",
+    "../../../sce/include/actions",
+    "../../../sce/src/actions",
+    "../../../sce/include/core",
+    "../../../sce/include/runtime",
+    "../../../sce/include/scripting",
+    "../../../sce/src/scripting",
+    "../../../sce/include/states",
+    "../../../sce/src/states",
+    "../../../sce/include/wrappers",
+    "../../../sce/src/model",
 ]
 severity_missing = "reject"
 severity_binding = "warn"

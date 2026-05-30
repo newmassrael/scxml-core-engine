@@ -21,7 +21,7 @@
 namespace SCE {
 
 /**
- * @brief Helper functions for W3C SCXML 5.3 binding mode processing
+ * @brief Helper functions for §scxml-5.3 binding mode processing
  *
  * Single Source of Truth for data binding semantics shared between:
  * - Interpreter engine (StateMachine)
@@ -36,7 +36,7 @@ public:
     /**
      * @brief Check if binding mode is early binding
      *
-     * W3C SCXML 5.3: Early binding is the default when binding attribute
+     * §scxml-5.3: Early binding is the default when binding attribute
      * is absent or explicitly set to "early".
      *
      * @param bindingMode Binding mode string from <scxml binding="...">
@@ -49,7 +49,7 @@ public:
     /**
      * @brief Check if binding mode is late binding
      *
-     * W3C SCXML 5.3: Late binding defers value assignment to state entry.
+     * §scxml-5.3: Late binding defers value assignment to state entry.
      *
      * @param bindingMode Binding mode string from <scxml binding="...">
      * @return true if late binding, false otherwise
@@ -63,7 +63,7 @@ public:
      *
      * Single Source of Truth for initialization timing logic.
      *
-     * W3C SCXML 5.3 / B.2.2 Rules:
+     * §scxml-5.3 / B.2.2 Rules:
      * - Early binding: ALL variables initialized with values at document load
      * - Late binding: ALL variables created with undefined at document load
      *
@@ -78,7 +78,7 @@ public:
         }
 
         // Late binding: never assign values at document load
-        // W3C SCXML B.2.2: "MUST create data model elements at initialization time"
+        // §scxml-B-2-2: "MUST create data model elements at initialization time"
         // but "MUST assign the specified initial values to data elements only when
         // the state containing them is first entered"
         return false;
@@ -89,7 +89,7 @@ public:
      *
      * Single Source of Truth for state entry initialization logic.
      *
-     * W3C SCXML 5.3 / B.2.2 Rules:
+     * §scxml-5.3 / B.2.2 Rules:
      * - Early binding: NO initialization on state entry (already done at load)
      * - Late binding: Initialize ALL variables on first state entry
      *
@@ -105,14 +105,14 @@ public:
         }
 
         // Late binding: assign values on first entry only
-        // W3C SCXML B.2.2: "only when the state containing them is first entered"
+        // §scxml-B-2-2: "only when the state containing them is first entered"
         return isLateBinding(bindingMode) && isFirstEntry && hasExpr;
     }
 
     /**
      * @brief Get default binding mode
      *
-     * W3C SCXML 5.3: Default binding mode is "early" when not specified.
+     * §scxml-5.3: Default binding mode is "early" when not specified.
      *
      * @return Default binding mode string ("early")
      */

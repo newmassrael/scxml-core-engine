@@ -24,7 +24,7 @@
 namespace SCE::Core {
 
 /**
- * @brief Helper for onentry/onexit block execution (W3C SCXML 3.8/3.9)
+ * @brief Helper for onentry/onexit block execution (§scxml-3.8 / §scxml-3.9)
  *
  * Single Source of Truth for block-based entry/exit action execution shared between:
  * - StaticExecutionEngine (AOT engine)
@@ -33,7 +33,7 @@ namespace SCE::Core {
  * ARCHITECTURE.md Compliance:
  * - Zero Duplication Principle: Shared block orchestration logic (lines 311-373)
  * - Single Source of Truth: All block execution centralized in this Helper (lines 320-329)
- * - W3C SCXML 3.8/3.9: Independent onentry/onexit handler execution with error isolation
+ * - §scxml-3.8 / §scxml-3.9: Independent onentry/onexit handler execution with error isolation
  *
  * W3C SCXML References:
  * - 3.8: Each <onentry> element is a separate executable content handler
@@ -80,7 +80,7 @@ public:
     /**
      * @brief Execute onentry action blocks with error isolation
      *
-     * W3C SCXML 3.8: "Each <onentry> element is a separate executable content handler.
+     * §scxml-3.8: "Each <onentry> element is a separate executable content handler.
      * If an error occurs during execution of an <onentry> handler, the processor MUST
      * cease execution of that handler but MUST continue processing remaining <onentry> handlers."
      *
@@ -88,7 +88,7 @@ public:
      * - Each block is a lambda function wrapping one <onentry> element's actions
      * - If a block raises error.execution and returns, execution stops for THAT block only
      * - Subsequent blocks continue executing (error isolation via lambda scope)
-     * - Block execution order: Document order (per W3C SCXML 3.13)
+     * - Block execution order: Document order (per §scxml-3.13)
      *
      * @param blocks Vector of block executors (each block = one <onentry> element)
      * @param engine Execution engine for event raising and state management
@@ -111,30 +111,30 @@ public:
      * - Single Source of Truth: Block orchestration centralized in this method
      * - Helper Pattern: Static template method, no state, policy-based types
      *
-     * @see executeExitBlocks() for onexit handler execution (W3C SCXML 3.9)
+     * @see executeExitBlocks() for onexit handler execution (§scxml-3.9)
      * @see StateMachine::executeOnEntryActions() for Interpreter implementation (future refactoring target)
      * @see entry_exit_actions.jinja2 for AOT code generation template
      */
     static void executeEntryBlocks(const std::vector<std::function<void()>> &blocks, [[maybe_unused]] Engine &engine,
                                    const std::string &stateId = "") {
-        // W3C SCXML 3.8: Log block execution for debugging
+        // §scxml-3.8: Log block execution for debugging
         if (!stateId.empty()) {
             SCE_LOG_DEBUG("W3C SCXML 3.8: Executing {} onentry blocks for state: {}", blocks.size(), stateId);
         } else {
             SCE_LOG_DEBUG("W3C SCXML 3.8: Executing {} onentry blocks", blocks.size());
         }
 
-        // W3C SCXML 3.8: Execute each block independently
-        // Block order: Document order (W3C SCXML 3.13)
+        // §scxml-3.8: Execute each block independently
+        // Block order: Document order (§scxml-3.13)
         for (size_t i = 0; i < blocks.size(); ++i) {
             SCE_LOG_DEBUG("W3C SCXML 3.8: Executing onentry block {}/{}", i + 1, blocks.size());
 
-            // W3C SCXML 3.8: Block lambda handles error isolation
+            // §scxml-3.8: Block lambda handles error isolation
             // If block raises error.execution and returns, next block still executes
             // Lambda scope provides natural error boundary (return stops THIS block only)
             blocks[i]();
 
-            // W3C SCXML 3.8: Continue with next block even if previous block had errors
+            // §scxml-3.8: Continue with next block even if previous block had errors
             // This implements "remaining handlers MUST still execute" requirement
         }
 
@@ -146,14 +146,14 @@ public:
     /**
      * @brief Execute onexit action blocks with error isolation
      *
-     * W3C SCXML 3.9: "Each <onexit> element is a separate executable content handler."
-     * Same semantics as onentry (W3C SCXML 3.8): Independent block execution with error isolation.
+     * §scxml-3.9: "Each <onexit> element is a separate executable content handler."
+     * Same semantics as onentry (§scxml-3.8): Independent block execution with error isolation.
      *
      * Implementation Details:
      * - Identical logic to executeEntryBlocks() but for onexit handlers
      * - Each block is a lambda function wrapping one <onexit> element's actions
      * - Error isolation: Block failure stops THAT block only, not subsequent blocks
-     * - Block execution order: Document order (per W3C SCXML 3.13)
+     * - Block execution order: Document order (per §scxml-3.13)
      *
      * @param blocks Vector of block executors (each block = one <onexit> element)
      * @param engine Execution engine for event raising and state management
@@ -174,28 +174,28 @@ public:
      * - Single Source of Truth: Block orchestration centralized in this method
      * - Helper Pattern: Static template method, no state, policy-based types
      *
-     * @see executeEntryBlocks() for onentry handler execution (W3C SCXML 3.8)
+     * @see executeEntryBlocks() for onentry handler execution (§scxml-3.8)
      * @see StateExitExecutor::executeExit() for Interpreter implementation (future refactoring target)
      * @see entry_exit_actions.jinja2 for AOT code generation template
      */
     static void executeExitBlocks(const std::vector<std::function<void()>> &blocks, [[maybe_unused]] Engine &engine,
                                   const std::string &stateId = "") {
-        // W3C SCXML 3.9: Log block execution for debugging
+        // §scxml-3.9: Log block execution for debugging
         if (!stateId.empty()) {
             SCE_LOG_DEBUG("W3C SCXML 3.9: Executing {} onexit blocks for state: {}", blocks.size(), stateId);
         } else {
             SCE_LOG_DEBUG("W3C SCXML 3.9: Executing {} onexit blocks", blocks.size());
         }
 
-        // W3C SCXML 3.9: Execute each block independently
-        // Same logic as onentry blocks (W3C SCXML 3.8)
+        // §scxml-3.9: Execute each block independently
+        // Same logic as onentry blocks (§scxml-3.8)
         for (size_t i = 0; i < blocks.size(); ++i) {
             SCE_LOG_DEBUG("W3C SCXML 3.9: Executing onexit block {}/{}", i + 1, blocks.size());
 
-            // W3C SCXML 3.9: Block lambda handles error isolation
+            // §scxml-3.9: Block lambda handles error isolation
             blocks[i]();
 
-            // W3C SCXML 3.9: Continue with next block even if previous block had errors
+            // §scxml-3.9: Continue with next block even if previous block had errors
         }
 
         if (!stateId.empty()) {

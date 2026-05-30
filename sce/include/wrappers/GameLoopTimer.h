@@ -35,7 +35,7 @@ namespace SCE::Wrappers {
  *
  * Designed for integration with game engines like DOOM (35 tics/sec = 28.57ms/tic).
  *
- * W3C SCXML 6.2: Implements delayed send with game-synchronized timing
+ * §scxml-6.2: Implements delayed send with game-synchronized timing
  *
  * Thread Safety: NOT thread-safe. Call from game loop thread only.
  *
@@ -150,7 +150,7 @@ public:
     /**
      * @brief Schedule event by milliseconds
      *
-     * W3C SCXML 6.2 compliant delay scheduling.
+     * §scxml-6.2 compliant delay scheduling.
      * Converts milliseconds to logical time for scheduling.
      *
      * @param event Event to schedule
@@ -172,7 +172,7 @@ public:
     /**
      * @brief Cancel a scheduled event
      *
-     * W3C SCXML 6.2.5: <cancel sendidexpr="..."/>
+     * §scxml-6.2.5: <cancel sendidexpr="..."/>
      *
      * @param sendId The sendid of the event to cancel
      * @return true if sendid recorded for cancellation

@@ -57,10 +57,10 @@ struct ConflictResolutionAlgorithms {
         StateType target{};
         std::vector<StateType> exitSet;
         int transitionIndex = 0;
-        bool hasActions = false;    // W3C SCXML 3.13: Transition action metadata
-        bool isInternal = false;    // W3C SCXML 3.13: Whether transition is type="internal"
-        bool isTargetless = false;  // W3C SCXML 5.9.2: Whether transition has no target attribute
-        bool isExternal = false;    // W3C SCXML 3.13: Whether transition exits parallel state
+        bool hasActions = false;    // §scxml-3.13: Transition action metadata
+        bool isInternal = false;    // §scxml-3.13: Whether transition is type="internal"
+        bool isTargetless = false;  // §scxml-5.9.2: Whether transition has no target attribute
+        bool isExternal = false;    // §scxml-3.13: Whether transition exits parallel state
 
         TransitionDescriptor() = default;
 
@@ -126,7 +126,7 @@ struct ConflictResolutionAlgorithms {
                     }
                 }
 
-                // W3C SCXML 3.13: Parallel state conflict detection
+                // §scxml-3.13: Parallel state conflict detection
                 if (!hasConflict && !(t2.isInternal && t2.source == t2.target)) {
                     for (const auto &exitState : t1.exitSet) {
                         if (isParallelState(exitState)) {
@@ -239,8 +239,8 @@ public:
         typename ParallelTransitionHelper::Transition<State> trans;
         trans.source = source;
         trans.targets = {target};
-        trans.isInternal = isInternal;      // W3C SCXML 3.13: Pass internal transition type
-        trans.isTargetless = isTargetless;  // W3C SCXML 5.9.2: Pass targetless transition flag
+        trans.isInternal = isInternal;      // §scxml-3.13: Pass internal transition type
+        trans.isTargetless = isTargetless;  // §scxml-5.9.2: Pass targetless transition flag
 
         // W3C SCXML Appendix D.2: Use shared Helper for exit set computation
         auto exitSetUnordered = ParallelTransitionHelper::computeExitSet<State, StatePolicy>(trans);
