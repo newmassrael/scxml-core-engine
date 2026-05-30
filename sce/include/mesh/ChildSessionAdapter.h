@@ -95,7 +95,7 @@ public:
                        const std::string& /*sendId*/) override {
         if (cancelled_) return false;
         // Engine's string-based raiseExternal handles graceful-degrade for
-        // unknown events (W3C §6.4.6) and converts to the Event enum via
+        // unknown events (§scxml-6.4) and converts to the Event enum via
         // PolicyType::getEventFromName. sendId preservation parity with
         // local invoke is documented in IChildSession.h.
         engine_.raiseExternal(eventName, data);

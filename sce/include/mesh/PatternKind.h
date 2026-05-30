@@ -39,8 +39,8 @@ enum class PatternKind : uint16_t {
     FieldNotify        = 9,
     // 10-13 RESERVED for Stream* variants (snapshot + delta wire-layer optimization, SCE_MESH.md §mesh-8.1). Do not assign.
     // SCE_MESH.md §mesh-9.6.2 — full remote invoke lifecycle (Session F). All
-    // seven wires (14-20) are active; each carries one edge of the W3C
-    // §6.4 parent/child session lifecycle over same-device shm.
+    // seven wires (14-20) are active; each carries one edge of the
+    // §scxml-6.4 parent/child session lifecycle over same-device shm.
     InvokeStart        = 14,
     InvokeStarted      = 15,
     ChildEvent         = 16,

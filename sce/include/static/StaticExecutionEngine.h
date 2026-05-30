@@ -134,7 +134,7 @@ using ScxmlInvokeStartCallback = std::function<bool(const std::string& target,
 ///
 /// * `target`         — child's deploy.yaml machine name
 /// * `invokeIdString` — SCXML-side invoke id (identifies the child session)
-/// * `eventName`      — event being forwarded (per W3C §6.4.6 verbatim)
+/// * `eventName`      — event being forwarded (per §scxml-6.4 verbatim)
 /// * `data`           — event data payload (JSON-encoded when present)
 /// * `sendId`         — original sendId (preserved per §mesh-9.6.3); empty when
 ///                      the forwarded event had no explicit sendid.
@@ -485,7 +485,7 @@ private:
         // terminated. `isGlobalFinalState()` (parent-presence check on top
         // of the leaf `isFinalState`) excludes regional `<final>` inside a
         // `<parallel>`, whose sibling regions may still be running — the
-        // done.invoke contract in §6.4 fires at top-level-final only.
+        // done.invoke contract in §scxml-6.4 fires at top-level-final only.
         if (stateChanged && isGlobalFinalState() && completionCallback_) {
             completionCallback_();
         }
@@ -1498,7 +1498,7 @@ public:
      * Installed by the generated TransportRouter ctor for every remote
      * invoke target. Fires when the parent exits the invoking state before
      * the child reaches `<final>`, so the worker can tear down the child
-     * session cleanly per W3C §6.4.5.
+     * session cleanly per §scxml-6.4.
      */
     void setScxmlInvokeCancelCallback(ScxmlInvokeCancelCallback callback) {
         onScxmlInvokeCancel_ = std::move(callback);

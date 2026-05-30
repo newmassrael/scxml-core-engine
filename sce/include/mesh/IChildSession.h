@@ -42,7 +42,7 @@ public:
 
     /// Deliver a parent→child event (wire-17 `ParentEvent`) into the child's
     /// external queue. Returns false when the event name is not declared on
-    /// the child's machine (graceful degrade per W3C §6.4.6 — child silently
+    /// the child's machine (graceful degrade per §scxml-6.4 — child silently
     /// ignores autoforwarded events it does not recognize).
     ///
     /// The `sendId` parameter is reserved for future `_event.sendid`
