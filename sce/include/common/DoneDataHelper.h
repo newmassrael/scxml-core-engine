@@ -29,15 +29,15 @@
 namespace SCE {
 
 /**
- * @brief Single Source of Truth for donedata evaluation (W3C SCXML 5.5, 5.7)
+ * @brief Single Source of Truth for donedata evaluation (§scxml-5.5, 5.7)
  *
  * Shared by Interpreter engine and Static Code Generator to ensure Zero Duplication.
  *
- * W3C SCXML 5.5: "In cases where the SCXML Processor generates a 'done' event upon
+ * §scxml-5.5: "In cases where the SCXML Processor generates a 'done' event upon
  * entry into the final state, it MUST evaluate the donedata elements param or content
  * children and place the resulting data in the _event.data field."
  *
- * W3C SCXML 5.7: "If the processor cannot create an ECMAScript object for some reason,
+ * §scxml-5.7: "If the processor cannot create an ECMAScript object for some reason,
  * the processor must place the error error.execution in the internal event queue."
  */
 class DoneDataHelper {
@@ -45,7 +45,7 @@ public:
     /**
      * @brief Evaluate donedata content expression to _event.data value
      *
-     * W3C SCXML 5.5: <content> sets the entire _event.data value
+     * §scxml-5.5: <content> sets the entire _event.data value
      *
      * @param jsEngine JSEngine instance for expression evaluation
      * @param sessionId Session ID for JSEngine context
@@ -70,9 +70,9 @@ public:
      * ```
      */
     /**
-     * @brief Emit a literal `<content>` body as _event.data (W3C SCXML 5.5)
+     * @brief Emit a literal `<content>` body as _event.data (§scxml-5.5)
      *
-     * W3C SCXML 5.5 specifies that when the `<content>` element has no
+     * §scxml-5.5 specifies that when the `<content>` element has no
      * `expr` attribute, "the children are used as the content value".
      * No evaluation happens — the inline text is the value itself.
      *
@@ -108,13 +108,13 @@ public:
             return true;
         }
 
-        // W3C SCXML 5.5: Evaluate content as expression
+        // §scxml-5.5: Evaluate content as expression
         auto future = jsEngine.evaluateExpression(sessionId, contentExpr);
         auto result = future.get();
 
         if (result.isSuccess()) {
             const auto &value = result.getInternalValue();
-            // W3C SCXML 5.5 + B.2: ship canonical JSON so the wire path
+            // §scxml-5.5 + B.2: ship canonical JSON so the wire path
             // (mesh §mesh-9.6.2 wire-18) and the local fallback parse in
             // `EventRaiserImpl::raiseEventWithPriority` can round-trip
             // through `EventDataHelper::jsonStringToScriptValue`.
@@ -123,19 +123,19 @@ public:
             // types — no `null`-then-falls-back-to-source-expression hack.
             outEventData = EventDataHelper::scriptValueToJsonString(value);
 
-            // W3C SCXML 5.5: Preserve typed data for engine-agnostic pipeline
+            // §scxml-5.5: Preserve typed data for engine-agnostic pipeline
             if (outTypedData) {
                 *outTypedData = value;
             }
             return true;
         }
 
-        // W3C SCXML 5.10: Raise error.execution event for expression evaluation failure
+        // §scxml-5.10: Raise error.execution event for expression evaluation failure
         if (onError) {
             onError(result.getErrorMessage());
         }
 
-        // W3C SCXML 5.5: Return empty data (not literal content) when evaluation fails
+        // §scxml-5.5: Return empty data (not literal content) when evaluation fails
         outEventData = "";
         return true;
     }
@@ -143,8 +143,8 @@ public:
     /**
      * @brief Evaluate donedata params to JSON object
      *
-     * W3C SCXML 5.5: <param> elements create object with name:value pairs
-     * W3C SCXML 5.7: Empty param location raises error.execution
+     * §scxml-5.5: <param> elements create object with name:value pairs
+     * §scxml-5.7: Empty param location raises error.execution
      *
      * @param jsEngine JSEngine instance for expression evaluation
      * @param sessionId Session ID for JSEngine context
@@ -183,11 +183,11 @@ public:
             return true;
         }
 
-        // W3C SCXML 5.5: <param> elements create an object with name:value pairs
+        // §scxml-5.5: <param> elements create an object with name:value pairs
         std::ostringstream jsonBuilder;
         jsonBuilder << "{";
 
-        // W3C SCXML 5.5: Build ScriptObject for engine-agnostic typed data pipeline
+        // §scxml-5.5: Build ScriptObject for engine-agnostic typed data pipeline
         std::shared_ptr<ScriptObject> typedObj;
         if (outTypedData) {
             typedObj = std::make_shared<ScriptObject>();
@@ -198,13 +198,13 @@ public:
             const std::string &paramName = param.first;
             const std::string &paramExpr = param.second;
 
-            // W3C SCXML 5.7: Empty location is invalid (structural error)
+            // §scxml-5.7: Empty location is invalid (structural error)
             // Must raise error.execution and prevent done.state event generation
             if (paramExpr.empty()) {
                 if (onError) {
                     onError("Empty param location or expression: " + paramName);
                 }
-                // W3C SCXML 5.7: Return false to skip done.state event generation
+                // §scxml-5.7: Return false to skip done.state event generation
                 return false;
             }
 
@@ -213,14 +213,14 @@ public:
             auto result = future.get();
 
             if (result.isSuccess()) {
-                // W3C SCXML 5.7: Successfully evaluated param
+                // §scxml-5.7: Successfully evaluated param
                 if (!first) {
                     jsonBuilder << ",";
                 }
                 first = false;
 
                 const auto &value = result.getInternalValue();
-                // W3C SCXML 5.5 + B.2: Use canonical JSON serializer so nested
+                // §scxml-5.5 + B.2: Use canonical JSON serializer so nested
                 // ScriptObject/ScriptArray param values round-trip through the
                 // wire / local JSON-fallback paths identically to typedData.
                 jsonBuilder << "\"" << escapeJsonString(paramName) << "\":"
@@ -231,7 +231,7 @@ public:
                     typedObj->properties[paramName] = value;
                 }
             } else {
-                // W3C SCXML 5.7: Invalid location or expression (runtime error)
+                // §scxml-5.7: Invalid location or expression (runtime error)
                 // Must raise error.execution and ignore this param, but continue with others
                 if (onError) {
                     onError("Invalid param location or expression: " + paramName + " = " + paramExpr);
@@ -243,7 +243,7 @@ public:
         jsonBuilder << "}";
         outEventData = jsonBuilder.str();
 
-        // W3C SCXML 5.5: Store typed data for done.state event
+        // §scxml-5.5: Store typed data for done.state event
         if (outTypedData && typedObj) {
             *outTypedData = typedObj;
         }

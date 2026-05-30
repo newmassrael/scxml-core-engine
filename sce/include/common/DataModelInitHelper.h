@@ -23,7 +23,7 @@
 /**
  * @brief Helper for initializing datamodel variables with XML DOM support
  *
- * W3C SCXML B.2: ECMAScript datamodel must convert XML content to DOM structures
+ * §scxml-B-2: ECMAScript datamodel must convert XML content to DOM structures
  * ARCHITECTURE.MD: Zero Duplication - Shared by Interpreter and AOT engines
  *
  * This helper provides a unified way to initialize datamodel variables:
@@ -60,7 +60,7 @@ public:
      * @param expr Expression to check
      * @return true if expr is function literal (function() {...} or () => ...)
      *
-     * W3C SCXML B.2: Function expressions must preserve function type
+     * §scxml-B-2: Function expressions must preserve function type
      * Test 453: ECMAScript function literals stored as functions, not converted
      */
     static bool isFunctionExpression(const std::string &expr);
@@ -75,11 +75,11 @@ public:
      * @param errorCallback Function to call on error (receives error message)
      * @return true if initialization succeeded, false otherwise
      *
-     * W3C SCXML 5.2.2: content, src, and expr are mutually exclusive
+     * §scxml-5.2.2: content, src, and expr are mutually exclusive
      * - If content is non-empty and starts with '<', create DOM object
      * - Otherwise, evaluate content as JavaScript expression
      *
-     * W3C SCXML 5.3: Raises error.execution if initialization fails
+     * §scxml-5.3: Raises error.execution if initialization fails
      */
     static bool initializeVariable(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &varId,
                                    const std::string &content, std::function<void(const std::string &)> errorCallback);
@@ -94,7 +94,7 @@ public:
      * @param errorCallback Error callback
      * @return true if initialization succeeded, false otherwise
      *
-     * W3C SCXML 5.2.2: Load content from external source and initialize
+     * §scxml-5.2.2: Load content from external source and initialize
      */
     static bool initializeVariableFromSrc(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &varId,
                                           const std::string &src, const std::string &basePath,
@@ -110,7 +110,7 @@ public:
      * @param errorCallback Error callback
      * @return true if initialization succeeded, false otherwise
      *
-     * W3C SCXML 5.2.2: Evaluate expr and assign to variable
+     * §scxml-5.2.2: Evaluate expr and assign to variable
      */
     static bool initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &varId,
                                            const std::string &expr,

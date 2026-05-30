@@ -45,7 +45,7 @@ public:
      * Single Source of Truth for event data JSON construction.
      * Used by both Interpreter and AOT engines to ensure consistent behavior.
      *
-     * W3C SCXML 5.10: Construct event data from params.
+     * §scxml-5.10: Construct event data from params.
      * W3C Test 178: Support duplicate param names - multiple values stored as array.
      *
      * @param params Map of param names to values (vector supports duplicates)
@@ -76,7 +76,7 @@ public:
     /**
      * @brief Build type-preserving JSON string from typed params
      *
-     * W3C SCXML 5.10: Constructs JSON that preserves all ScriptValue types:
+     * §scxml-5.10: Constructs JSON that preserves all ScriptValue types:
      * - Primitives: int/double remain unquoted, bool as true/false, string as quoted
      * - Structures: ScriptArray as JSON array, ScriptObject as JSON object (recursive)
      * - Nullish: ScriptNull and ScriptUndefined both map to JSON null
@@ -110,7 +110,7 @@ public:
     /**
      * @brief Convert ScriptValue to JSON string
      *
-     * W3C SCXML B.2: Recursive ScriptValue -> JSON string conversion.
+     * §scxml-B-2: Recursive ScriptValue -> JSON string conversion.
      * Symmetric counterpart to jsonStringToScriptValue.
      * Handles all ScriptValue types including nested ScriptArray/ScriptObject.
      *
@@ -127,7 +127,7 @@ public:
     /**
      * @brief Parse JSON string into ScriptValue (engine-agnostic)
      *
-     * W3C SCXML B.2: Converts JSON event data to typed ScriptValue at the pipeline level,
+     * §scxml-B-2: Converts JSON event data to typed ScriptValue at the pipeline level,
      * avoiding engine-specific JSON parsing workarounds.
      *
      * Used when typedParams are unavailable (e.g., content elements, HTTP responses).

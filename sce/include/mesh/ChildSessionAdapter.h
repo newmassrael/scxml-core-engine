@@ -107,7 +107,7 @@ public:
     }
 
     std::string getDonedata() override {
-        // W3C SCXML 5.5 + 6.3.1: surface the `<donedata>` payload that the
+        // §scxml-5.5 + 6.3.1: surface the `<donedata>` payload that the
         // child stashed at top-level `<final>` entry. Shared single source
         // of truth with the local-invoke path — both read from
         // `StaticExecutionEngine::donedataAtFinal`, populated by the

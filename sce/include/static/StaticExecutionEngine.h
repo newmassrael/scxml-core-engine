@@ -43,7 +43,7 @@
 
 namespace SCE::Static {
 
-/// W3C SCXML C.2: HTTP send request data for BasicHTTPEventProcessor callback.
+/// §scxml-C-2: HTTP send request data for BasicHTTPEventProcessor callback.
 /// Matches Kotlin HttpSendRequest — transport-agnostic data struct passed to onHttpSend callback.
 struct HttpSendRequest {
     std::string target;
@@ -60,10 +60,10 @@ struct HttpSendRequest {
 /// envelope concerns in the mesh layer where they belong.
 ///
 /// `invokeId` carries `_event.invokeid` verbatim from the triggering event's
-/// metadata (W3C SCXML 5.10.1). The mesh lambda parses it as a UUID and
+/// metadata (§scxml-5.10.1). The mesh lambda parses it as a UUID and
 /// stamps `MeshEnvelope.invoke_id` only for patterns that carry correlation
 /// (`RpcReply`); for every other pattern the invokeId is ignored. This
-/// mirrors W3C SCXML 6.4.1's auto-propagation of `_event.invokeid` from
+/// mirrors §scxml-6.4.1's auto-propagation of `_event.invokeid` from
 /// child-to-parent sends and extends the same semantics to mesh-rpc replies.
 using MeshSendCallback = std::function<bool(const std::string& target,
                                             const std::string& eventName,
@@ -162,8 +162,8 @@ using ScxmlInvokeCancelCallback =
  * StatePolicy template parameter.
  *
  * Key SCXML standards implemented:
- * - Internal event queue with FIFO ordering (W3C SCXML 3.12.1)
- * - Entry/exit action execution (W3C SCXML 3.7, 3.8)
+ * - Internal event queue with FIFO ordering (§scxml-3.12.1)
+ * - Entry/exit action execution (§scxml-3.7, 3.8)
  * - Event processing loop (§scxml-D-mainEventLoop)
  *
  * @tparam StatePolicy Policy class providing state-specific implementations.
@@ -193,7 +193,7 @@ public:
     using Event = typename StatePolicy::Event;
 
     /**
-     * @brief Event with metadata for W3C SCXML 5.10 compliance
+     * @brief Event with metadata for §scxml-5.10 compliance
      *
      * Wraps Event enum with metadata (origin, sendid, data, type) to support
      * _event.origin, _event.sendid, _event.data, _event.type fields.
@@ -216,13 +216,13 @@ public:
     struct EventWithMetadata {
         Event event;
         std::string data;
-        std::string origin;      // W3C SCXML 5.10.1: _event.origin
-        std::string sendId;      // W3C SCXML 5.10.1: _event.sendid
-        std::string type;        // W3C SCXML 5.10.1: _event.type
-        std::string originType;  // W3C SCXML 5.10.1: _event.origintype
-        std::string invokeId;    // W3C SCXML 5.10.1: _event.invokeid
-        std::string target;      // W3C SCXML C.2: HTTP POST target URL
-        std::optional<ScriptValue> typedData;  // W3C SCXML 5.5: Engine-agnostic typed event data
+        std::string origin;      // §scxml-5.10.1: _event.origin
+        std::string sendId;      // §scxml-5.10.1: _event.sendid
+        std::string type;        // §scxml-5.10.1: _event.type
+        std::string originType;  // §scxml-5.10.1: _event.origintype
+        std::string invokeId;    // §scxml-5.10.1: _event.invokeid
+        std::string target;      // §scxml-C-2: HTTP POST target URL
+        std::optional<ScriptValue> typedData;  // §scxml-5.5: Engine-agnostic typed event data
 
         // Default constructor for aggregate initialization
         EventWithMetadata() = default;
@@ -240,7 +240,7 @@ private:
      *
      * @details
      * ARCHITECTURE.md: Extract duplicate code from processEventQueues
-     * W3C SCXML 3.12: Compute LCA and execute hierarchical exit/entry
+     * §scxml-3.12: Compute LCA and execute hierarchical exit/entry
      *
      * @param oldState State before transition
      * @param newState State after transition
@@ -255,28 +255,28 @@ private:
         SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Transition {} -> {}", static_cast<int>(oldState),
                   static_cast<int>(newState));
 
-        // W3C SCXML 5.9.2: Determine LCA based on transition type
+        // §scxml-5.9.2: Determine LCA based on transition type
         std::optional<State> lca;
         if (policy_.lastTransitionIsInternal_) {
-            // W3C SCXML 5.9.2: Internal transitions whose target is NOT a proper descendant behave as external
+            // §scxml-5.9.2: Internal transitions whose target is NOT a proper descendant behave as external
             bool isSelfTransition = (oldState == newState);
             bool isProperDescendant =
                 !isSelfTransition &&
                 SCE::Core::HierarchicalStateHelper<StatePolicy>::isDescendantOf(newState, oldState);
 
-            // W3C SCXML 3.13: Check if source is compound state (test 533)
+            // §scxml-3.13: Check if source is compound state (test 533)
             // Parallel states and atomic states are NOT compound - internal transitions from them behave as external
             bool isSourceCompound = StatePolicy::isCompoundState(oldState);
 
             if (isProperDescendant && isSourceCompound) {
-                // W3C SCXML 3.13: Internal transition to proper descendant in compound state - source is LCA (don't
+                // §scxml-3.13: Internal transition to proper descendant in compound state - source is LCA (don't
                 // exit source)
                 lca = oldState;  // Source is the LCA - don't exit it
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (proper descendant, compound source) "
                           "- source {} is LCA",
                           static_cast<int>(oldState));
             } else {
-                // W3C SCXML 3.13/5.9.2: Non-compound source or non-descendant - behaves as external
+                // §scxml-3.13 / §scxml-5.9.2: Non-compound source or non-descendant - behaves as external
                 // Use normal LCA calculation, then target==LCA check handles exit/re-entry
                 lca = SCE::Core::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (non-compound source or "
@@ -285,12 +285,12 @@ private:
                           lca.has_value() ? static_cast<int>(lca.value()) : -1);
             }
         } else {
-            // W3C SCXML 3.12: External transition - find LCA normally
+            // §scxml-3.12: External transition - find LCA normally
             lca = SCE::Core::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
         }
 
         if (lca.has_value()) {
-            // W3C SCXML 3.13: First exit any active descendants of oldState (deepest first)
+            // §scxml-3.13: First exit any active descendants of oldState (deepest first)
             std::vector<State> descendantsToExit;
             for (const auto &activeState : preTransitionStates) {
                 if (activeState != oldState &&
@@ -308,14 +308,14 @@ private:
                 executeOnExit(descendant, preTransitionStates);
             }
 
-            // W3C SCXML 3.13: Exit states from oldState up to (but not including) LCA
+            // §scxml-3.13: Exit states from oldState up to (but not including) LCA
             auto exitChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildExitChain(oldState, lca.value());
             for (const auto &state : exitChain) {
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Hierarchical exit state {}", static_cast<int>(state));
                 executeOnExit(state, preTransitionStates);
             }
 
-            // W3C SCXML 3.10 (test 579): Ancestor transition (target == LCA)
+            // §scxml-3.10 (test 579): Ancestor transition (target == LCA)
             // When transitioning to self or ancestor, the target must also be exited and re-entered
             // This is how Interpreter handles internal self-transitions to satisfy W3C 5.9.2
             bool isTargetActive = std::find(preTransitionStates.begin(), preTransitionStates.end(), newState) !=
@@ -326,14 +326,14 @@ private:
                 executeOnExit(newState, preTransitionStates);
             }
 
-            // W3C SCXML 3.13: Execute transition actions AFTER exit, BEFORE entry
+            // §scxml-3.13: Execute transition actions AFTER exit, BEFORE entry
             SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Executing transition actions");
             transitionAction();
 
-            // W3C SCXML 3.13: Enter states from LCA down to newState (including initial children)
+            // §scxml-3.13: Enter states from LCA down to newState (including initial children)
             std::vector<State> entryChain;
 
-            // W3C SCXML 3.10: If target == LCA (ancestor/self transition), enter full subtree from target
+            // §scxml-3.10: If target == LCA (ancestor/self transition), enter full subtree from target
             if (newState == lca.value()) {
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Ancestor/self transition - enter target {} and its "
                           "initial children (W3C 3.10)",
@@ -358,7 +358,7 @@ private:
                 executeOnEntry(state);
             }
 
-            // W3C SCXML 3.11: Update currentState to deepest entered state
+            // §scxml-3.11: Update currentState to deepest entered state
             if (!entryChain.empty()) {
                 currentState_ = entryChain.back();
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Updated currentState_ to {}",
@@ -380,7 +380,7 @@ private:
                 current = parent.value();
             }
 
-            // W3C SCXML 3.13: Execute transition actions AFTER exit, BEFORE entry
+            // §scxml-3.13: Execute transition actions AFTER exit, BEFORE entry
             SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Executing transition actions (no LCA)");
             transitionAction();
 
@@ -391,7 +391,7 @@ private:
                 executeOnEntry(state);
             }
 
-            // W3C SCXML 3.11: Update currentState to deepest entered state
+            // §scxml-3.11: Update currentState to deepest entered state
             if (!entryChain.empty()) {
                 currentState_ = entryChain.back();
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Updated currentState_ to {}",
@@ -416,7 +416,7 @@ private:
     /**
      * @brief Execute a state transition with hierarchical exit/entry handling
      *
-     * W3C SCXML 3.12/3.13: Single Source of Truth for transition execution across all
+     * §scxml-3.12 / §scxml-3.13: Single Source of Truth for transition execution across all
      * processing paths (event queues, direct processEvent, eventless transitions).
      *
      * Callers customize two axes of variation via template callbacks:
@@ -441,19 +441,19 @@ private:
             return false;
         }
 
-        // W3C SCXML 3.13: Self-transitions (target = source) exit and re-enter the state
-        // W3C SCXML 5.9.2: Targetless transitions consume event only (no exit/enter)
+        // §scxml-3.13: Self-transitions (target = source) exit and re-enter the state
+        // §scxml-5.9.2: Targetless transitions consume event only (no exit/enter)
         bool isSelfTransition = (oldState == currentState_);
         bool needsHierarchicalHandling =
             (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
 
         if (!needsHierarchicalHandling) {
-            // W3C SCXML 3.4: Targetless transition - execute actions without state change
+            // §scxml-3.4: Targetless transition - execute actions without state change
             policy_.executeTransitionActions(*this);
             return false;
         }
 
-        // W3C SCXML 3.12: State transition requires hierarchical exit/entry
+        // §scxml-3.12: State transition requires hierarchical exit/entry
         if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
             handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
                                          [this] { policy_.executeTransitionActions(*this); });
@@ -469,7 +469,7 @@ private:
     /**
      * @brief Shared implementation for processEvent overloads
      *
-     * W3C SCXML 3.12: External event processing with full macrostep completion.
+     * §scxml-3.12: External event processing with full macrostep completion.
      *
      * @param event Event to process
      */
@@ -481,7 +481,7 @@ private:
                 executeOnEntry(currentState_);
             },
             [this] { processEventQueues(); });
-        // W3C SCXML 6.4: Notify parent only when the machine has globally
+        // §scxml-6.4: Notify parent only when the machine has globally
         // terminated. `isGlobalFinalState()` (parent-presence check on top
         // of the leaf `isFinalState`) excludes regional `<final>` inside a
         // `<parallel>`, whose sibling regions may still be running — the
@@ -493,12 +493,12 @@ private:
 
     State currentState_;
     SCE::Core::EventQueueManager<EventWithMetadata>
-        internalQueue_;  // W3C SCXML C.1: Internal event queue (high priority)
+        internalQueue_;  // §scxml-C-1: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata>
-        externalQueue_;  // W3C SCXML C.1: External event queue (low priority)
+        externalQueue_;  // §scxml-C-1: External event queue (low priority)
     bool isRunning_ = false;
-    std::function<void()> completionCallback_;  // W3C SCXML 6.4: Callback for done.invoke
-    std::function<void(const HttpSendRequest &)> onHttpSend_;  // W3C SCXML C.2: BasicHTTP callback
+    std::function<void()> completionCallback_;  // §scxml-6.4: Callback for done.invoke
+    std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
     MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
     MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §mesh-9.5: <invoke type="sce:mesh-rpc"> entry hook
     MeshCancelCallback onMeshCancel_;  // SCE Mesh §mesh-9.5: mesh-rpc exit / cancel hook
@@ -521,9 +521,9 @@ private:
                        const std::string& donedata)>
         onParallelRegionRemoteSend_;
     std::string currentEventInvokeId_;  // SCE Mesh §mesh-9.5: invokeId of event being processed
-    SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
+    SCE::PullScheduler<Event> scheduler_;       // §scxml-6.2: Delayed event scheduler
 
-    // W3C SCXML 5.5 + 6.3.1: donedata payload stashed at top-level <final> entry.
+    // §scxml-5.5 + 6.3.1: donedata payload stashed at top-level <final> entry.
     // Consumed by:
     //   - local invoke completion callback (invoke_methods.jinja2) to populate
     //     `done.invoke.<id>._event.data`;
@@ -539,37 +539,37 @@ protected:
 
 public:
     /**
-     * @brief Raise an internal event with metadata (W3C SCXML C.1)
+     * @brief Raise an internal event with metadata (§scxml-C-1)
      *
      * Places event on the internal queue with FIFO ordering.
      * Internal events have higher priority than external events.
      *
-     * @param metadata Complete event metadata including all W3C SCXML 5.10.1 fields
+     * @param metadata Complete event metadata including all §scxml-5.10.1 fields
      */
     void raise(EventWithMetadata metadata) {
-        // W3C SCXML C.1: Enqueue event with metadata
+        // §scxml-C-1: Enqueue event with metadata
         internalQueue_.raise(std::move(metadata));
     }
 
     /**
-     * @brief Raise an external event (W3C SCXML C.1, 6.2)
+     * @brief Raise an external event (§scxml-C-1, 6.2)
      *
      * External events are placed at the back of the external event queue.
      * They are processed after all internal events have been consumed.
      *
      * Used by:
-     * - <send> without target (W3C SCXML 6.2)
+     * - <send> without target (§scxml-6.2)
      * - <send> with external targets (not #_internal)
-     * - <send target="#_parent"> from child state machines (W3C SCXML 6.2)
+     * - <send target="#_parent"> from child state machines (§scxml-6.2)
      *
-     * W3C SCXML C.1 (test189): External queue has lower priority than internal queue.
+     * §scxml-C-1 (test189): External queue has lower priority than internal queue.
      *
      * @param event Event to raise externally
-     * @param eventData Optional event data as JSON string (W3C SCXML 5.10)
+     * @param eventData Optional event data as JSON string (§scxml-5.10)
      */
     void raiseExternal(Event event, const std::string &eventData = "", const std::string &origin = "",
                        const std::string &target = "") {
-        // W3C SCXML C.1: Enqueue event with metadata (origin, data, sendid, type, originType, target)
+        // §scxml-C-1: Enqueue event with metadata (origin, data, sendid, type, originType, target)
         // Delegates to the full-metadata overload so that SCE Mesh target
         // routing and §scxml-6.4 autoforward both see the event. Prior
         // to this delegation the simple (datamodel="null") codepath dropped
@@ -601,16 +601,16 @@ public:
     }
 
     /**
-     * @brief Raise external event with full metadata (W3C SCXML 6.4.1)
+     * @brief Raise external event with full metadata (§scxml-6.4.1)
      *
      * Used for child-to-parent communication where invokeid must be preserved.
-     * W3C SCXML 6.4.1 (test338): Events from child to parent must include invokeid.
+     * §scxml-6.4.1 (test338): Events from child to parent must include invokeid.
      *
      * @param eventWithMetadata Event with metadata (including invokeid)
      */
     void raiseExternal(const EventWithMetadata &eventWithMetadata) {
         // SCE Mesh: route cross-machine targets through the mesh callback before
-        // they reach the external queue. Matches the W3C SCXML C.2 BasicHTTP
+        // they reach the external queue. Matches the §scxml-C-2 BasicHTTP
         // split — HTTP targets are dispatched via performHttpSend(), mesh
         // targets via performMeshSend(). Applications that do not wire a mesh
         // transport leave onMeshSend_ unset and the event falls through to
@@ -624,7 +624,7 @@ public:
             // EventWithMetadata without invokeId. Stamping the engine
             // field into the metadata struct was rejected: it would leak
             // invokeId through self-sends that should carry empty
-            // _event.invokeid per W3C SCXML 5.10.1.
+            // _event.invokeid per §scxml-5.10.1.
             const auto& invokeId = eventWithMetadata.invokeId.empty()
                 ? currentEventInvokeId_
                 : eventWithMetadata.invokeId;
@@ -654,14 +654,14 @@ public:
 
         externalQueue_.raise(eventWithMetadata);
 
-        // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
+        // §scxml-5.10.1: Mark next event as external for _event.type (test331)
         if constexpr (SCE::Core::HasExternalEventFlag<StatePolicy>) {
             policy_.nextEventIsExternal_ = true;
         }
     }
 
     /**
-     * @brief Schedule an event for delayed delivery (W3C SCXML 6.2)
+     * @brief Schedule an event for delayed delivery (§scxml-6.2)
      *
      * Used by AOT-generated code for <send delay="..."> elements.
      *
@@ -677,7 +677,7 @@ public:
     }
 
     /**
-     * @brief Cancel a scheduled event (W3C SCXML 6.2.5)
+     * @brief Cancel a scheduled event (§scxml-6.2.5)
      *
      * @param sendId Send ID to cancel
      * @return true if event was cancelled
@@ -696,7 +696,7 @@ public:
     }
 
     /**
-     * @brief Run state machine until completion or timeout (W3C SCXML 6.2)
+     * @brief Run state machine until completion or timeout (§scxml-6.2)
      *
      * Convenience API for running state machines with delayed send operations.
      * Internally polls the event scheduler and processes events until the state
@@ -745,7 +745,7 @@ public:
             // Sleep briefly to allow scheduled events to become ready
             std::this_thread::sleep_for(pollInterval);
 
-            // W3C SCXML 6.2: Poll scheduler and process events
+            // §scxml-6.2: Poll scheduler and process events
             tick();
         }
 
@@ -756,7 +756,7 @@ public:
 
 protected:
     /**
-     * @brief Execute entry actions for a state (W3C SCXML 3.7)
+     * @brief Execute entry actions for a state (§scxml-3.7)
      *
      * Entry actions are executable content that runs when entering a state.
      * This includes <onentry> blocks which may contain <raise>, <assign>, etc.
@@ -772,7 +772,7 @@ protected:
     }
 
     /**
-     * @brief Execute exit actions for a state (W3C SCXML 3.8)
+     * @brief Execute exit actions for a state (§scxml-3.8)
      *
      * Exit actions are executable content that runs when exiting a state.
      * This includes <onexit> blocks.
@@ -793,7 +793,7 @@ protected:
      * Processes all queued internal and external events in priority order.
      * Internal events are processed first (high priority), then external events.
      *
-     * W3C SCXML C.1 (test189): Internal queue (#_internal target) has higher
+     * §scxml-C-1 (test189): Internal queue (#_internal target) has higher
      * priority than external queue (no target or external targets).
      *
      * Uses shared EventProcessingAlgorithms for W3C-compliant processing.
@@ -804,7 +804,7 @@ protected:
      */
     void processEventQueues() {
         SCE_LOG_DEBUG("AOT processEventQueues: Starting internal queue processing");
-        // W3C SCXML C.1: Process internal queue first (high priority)
+        // §scxml-C-1: Process internal queue first (high priority)
         SCE::Core::AOTEventQueue<EventWithMetadata> internalAdapter(internalQueue_);
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             internalAdapter, [this](const EventWithMetadata &eventWithMeta) {
@@ -816,7 +816,7 @@ protected:
                 SCE_LOG_DEBUG("AOT processEventQueues: Processing internal event, currentState={}",
                           static_cast<int>(currentState_));
 
-                // W3C SCXML 5.4.1: Stop processing events if TOP-LEVEL final state reached
+                // §scxml-5.4.1: Stop processing events if TOP-LEVEL final state reached
                 // (Zero Duplication: same top-level-final predicate as tick() — encapsulated
                 // in isGlobalFinalState() to keep regional `<final>` inside a `<parallel>`
                 // from mis-terminating the queue drain.)
@@ -835,7 +835,7 @@ protected:
                 return true;  // Continue processing
             });
 
-        // W3C SCXML C.1: Process external queue second (low priority)
+        // §scxml-C-1: Process external queue second (low priority)
         SCE::Core::AOTEventQueue<EventWithMetadata> externalAdapter(externalQueue_);
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             externalAdapter, [this](const EventWithMetadata &eventWithMeta) {
@@ -844,7 +844,7 @@ protected:
                 SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
 
-                // W3C SCXML 6.5: Execute finalize BEFORE processing child events
+                // §scxml-6.5: Execute finalize BEFORE processing child events
                 if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata,
                                                      StaticExecutionEngine<StatePolicy>>) {
                     policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
@@ -856,7 +856,7 @@ protected:
     }
 
     /**
-     * @brief Check for eventless transitions (W3C SCXML 3.13)
+     * @brief Check for eventless transitions (§scxml-3.13)
      *
      * Eventless transitions have no event attribute and are evaluated
      * immediately after entering a state. They are checked after all
@@ -873,19 +873,19 @@ protected:
         static const int MAX_ITERATIONS = 100;  // Safety limit
         int iterations = 0;
 
-        // W3C SCXML 3.13: Use shared algorithm (Single Source of Truth)
+        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
         // Note: Eventless transitions can raise new internal events, use internal queue
         SCE::Core::AOTEventQueue<EventWithMetadata> adapter(internalQueue_);
 
         while (iterations++ < MAX_ITERATIONS) {
             State oldState = currentState_;
-            std::vector<State> preTransitionStates = getActiveStates();  // W3C SCXML 3.11: Capture before transition
+            std::vector<State> preTransitionStates = getActiveStates();  // §scxml-3.11: Capture before transition
             SCE_LOG_DEBUG("AOT checkEventlessTransitions: Iteration {}, currentState={}", iterations,
                       static_cast<int>(currentState_));
 
             // Call processTransition with default event for eventless transitions
             if (policy_.processTransition(currentState_, Event(), *this)) {
-                // W3C SCXML 3.4: For parallel states, use actual transition source state
+                // §scxml-3.4: For parallel states, use actual transition source state
                 State actualSourceState = policy_.lastTransitionSourceState_;
                 SCE_LOG_DEBUG("AOT checkEventlessTransitions: Transition taken from {} to {} (actual source: {})",
                           static_cast<int>(oldState), static_cast<int>(currentState_),
@@ -895,8 +895,8 @@ protected:
                     // Only call handleHierarchicalTransition for non-parallel state machines
                     if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
                         // ARCHITECTURE.MD: Zero Duplication - use shared helper
-                        // W3C SCXML 3.13: Pass transition action callback for correct execution order
-                        // W3C SCXML 3.4: Use actualSourceState for correct hierarchical exit/entry
+                        // §scxml-3.13: Pass transition action callback for correct execution order
+                        // §scxml-3.4: Use actualSourceState for correct hierarchical exit/entry
                         handleHierarchicalTransition(actualSourceState, currentState_, preTransitionStates,
                                                      [this] { policy_.executeTransitionActions(*this); });
                     } else {
@@ -904,14 +904,14 @@ protected:
                                   "all transitions");
                     }
 
-                    // W3C SCXML C.1: Internal events are processed AFTER stable configuration is reached
+                    // §scxml-C-1: Internal events are processed AFTER stable configuration is reached
                     // Continue loop to check for more eventless transitions first
                 } else {
                     // Transition taken but state didn't change - stop
                     break;
                 }
             } else {
-                // W3C SCXML C.1: No eventless transition available - stable configuration reached
+                // §scxml-C-1: No eventless transition available - stable configuration reached
                 // Internal events will be processed by caller (processEventQueues or step)
                 break;
             }
@@ -925,7 +925,7 @@ protected:
             stop();
         }
 
-        // W3C SCXML 3.13: Check if we reached a top-level final state after eventless transitions
+        // §scxml-3.13: Check if we reached a top-level final state after eventless transitions
         // For parallel states, check if any active state is a top-level final state
         if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
             auto activeStates = getActiveStates();
@@ -956,7 +956,7 @@ public:
     StaticExecutionEngine() : currentState_(StatePolicy::initialState()) {}
 
     /**
-     * @brief Initialize state machine (W3C SCXML 3.2)
+     * @brief Initialize state machine (§scxml-3.2)
      *
      * Performs the initial configuration:
      * 1. Enter initial state (with hierarchical entry from root to leaf)
@@ -967,13 +967,13 @@ public:
     void initialize() {
         isRunning_ = true;
 
-        // W3C SCXML 5.3: Initialize datamodel before any state entry
+        // §scxml-5.3: Initialize datamodel before any state entry
         // This ensures error.execution events are raised immediately if initialization fails
         if constexpr (SCE::Core::HasDataModelInit<StatePolicy, StaticExecutionEngine>) {
             policy_.initializeDataModel(*this);
         }
 
-        // W3C SCXML 3.3: Use HierarchicalStateHelper for correct entry order
+        // §scxml-3.3: Use HierarchicalStateHelper for correct entry order
         auto entryChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(currentState_);
 
         // Execute entry actions from root to leaf (ancestor first)
@@ -981,7 +981,7 @@ public:
             executeOnEntry(state);
         }
 
-        // W3C SCXML C.1: Macrostep completion loop
+        // §scxml-C-1: Macrostep completion loop
         // Process eventless transitions and internal events until stable configuration
         SCE_LOG_DEBUG("AOT initialize: After entry actions, starting macrostep completion loop");
         while (true) {
@@ -999,12 +999,12 @@ public:
         }
         SCE_LOG_DEBUG("AOT initialize: Macrostep completion loop finished - stable configuration reached");
 
-        // W3C SCXML 6.4: Execute pending invokes after macrostep completes (ARCHITECTURE.md Zero Duplication)
+        // §scxml-6.4: Execute pending invokes after macrostep completes (ARCHITECTURE.md Zero Duplication)
         // Only invokes in entered-and-not-exited states execute (cancellation handled during state exits)
         if constexpr (SCE::Core::HasInvokeSupport<StatePolicy, StaticExecutionEngine>) {
             policy_.executePendingInvokes(*this);
 
-            // W3C SCXML 6.4: Process done.invoke events raised by immediately-completed children
+            // §scxml-6.4: Process done.invoke events raised by immediately-completed children
             // Child state machines may reach final state during initialization and raise done.invoke
             // These events must be processed to allow parent transitions (e.g., s1 -> pass)
             SCE_LOG_DEBUG("AOT initialize: Processing events raised by completed invokes");
@@ -1012,14 +1012,14 @@ public:
             checkEventlessTransitions();
         }
 
-        // W3C SCXML 6.4: Invoke completion callback if top-level final after initialization.
+        // §scxml-6.4: Invoke completion callback if top-level final after initialization.
         // Child state machines may reach the machine-done state immediately (e.g.,
         // initial="subFinal") and must notify parent. Regional `<final>` inside a
         // `<parallel>` is excluded by `isGlobalFinalState()` because the machine as a
         // whole is still running while sibling regions are active.
         if (isGlobalFinalState() && completionCallback_) {
             SCE_LOG_DEBUG("AOT initialize: Reached top-level final state during initialization, invoking completion callback");
-            // W3C SCXML 3.8: Execute onexit actions for final state before notifying parent
+            // §scxml-3.8: Execute onexit actions for final state before notifying parent
             std::vector<State> activeStates = getActiveStates();
             executeOnExit(currentState_, activeStates);
             completionCallback_();
@@ -1029,7 +1029,7 @@ public:
     /**
      * @brief Step the state machine (process pending events)
      *
-     * W3C SCXML 6.4: For parent-child communication, parents must explicitly
+     * §scxml-6.4: For parent-child communication, parents must explicitly
      * step child state machines after sending events to ensure synchronous processing.
      *
      * This method processes all pending events in both internal and external queues.
@@ -1038,7 +1038,7 @@ public:
         processEventQueues();
         checkEventlessTransitions();
 
-        // W3C SCXML 6.4: Invoke completion callback only at top-level final.
+        // §scxml-6.4: Invoke completion callback only at top-level final.
         // Leaf `isInFinalState()` would mis-fire on a regional `<final>` inside
         // a `<parallel>`; `isGlobalFinalState()` enforces the parent-presence
         // check that distinguishes "machine done" from "one region done".
@@ -1050,11 +1050,11 @@ public:
 
     /**
      * @brief Read `_event.invokeid` for the event currently being processed
-     *        (W3C SCXML 5.10.1)
+     *        (§scxml-5.10.1)
      *
      * Templates that emit cross-boundary dispatches (e.g. mesh `<send>`) call
      * this to auto-propagate the incoming event's invokeId onto the outgoing
-     * envelope — the same W3C SCXML 6.4.1 auto-propagation semantics that
+     * envelope — the same §scxml-6.4.1 auto-propagation semantics that
      * already govern child-to-parent sends, extended to mesh-rpc replies.
      *
      * Returns an empty string when the Policy was generated without the
@@ -1066,7 +1066,7 @@ public:
     }
 
     /**
-     * @brief Process an external event (W3C SCXML 3.12)
+     * @brief Process an external event (§scxml-3.12)
      *
      * External events are processed after all internal events have been
      * consumed. Each external event triggers a macrostep.
@@ -1082,7 +1082,7 @@ public:
     }
 
     /**
-     * @brief Process an external event with metadata (W3C SCXML 5.10)
+     * @brief Process an external event with metadata (§scxml-5.10)
      *
      * External events with metadata support originSessionId for invoke finalize.
      * Used when events come from child sessions via invoke.
@@ -1105,7 +1105,7 @@ public:
     }
 
     /**
-     * @brief Get all active states (W3C SCXML 3.11)
+     * @brief Get all active states (§scxml-3.11)
      *
      * For simple state machines (no parallel), returns vector with single current state hierarchy.
      * For parallel state machines, returns all active states across all parallel regions.
@@ -1115,25 +1115,25 @@ public:
      * @return Vector of currently active states
      */
     std::vector<State> getActiveStates() const {
-        // W3C SCXML 3.4: For parallel state machines, use policy's activeStates_ tracking
+        // §scxml-3.4: For parallel state machines, use policy's activeStates_ tracking
         if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
             if constexpr (SCE::Core::HasActiveStates<StatePolicy>) {
                 return policy_.getActiveStates();
             }
         }
 
-        // W3C SCXML 3.11: For non-parallel, use shared HistoryHelper for full active hierarchy (Zero Duplication
+        // §scxml-3.11: For non-parallel, use shared HistoryHelper for full active hierarchy (Zero Duplication
         // Principle) Returns [currentState, parent, grandparent, ...] for proper history recording
         return ::SCE::Core::HistoryHelper::getActiveHierarchy(currentState_,
                                                         [](State s) { return StatePolicy::getParent(s); });
     }
 
     /**
-     * @brief Check if in a final state (W3C SCXML 3.3)
+     * @brief Check if in a final state (§scxml-3.3)
      *
      * Leaf semantics: returns true for **any** `<final>`, including a
      * region-level `<final>` nested inside a `<parallel>` whose sibling
-     * regions are still running. Callers that need W3C §6.4 "machine
+     * regions are still running. Callers that need §scxml-6.4 "machine
      * has terminated" semantics (global-done detection, tick
      * short-circuit, external `done.invoke` propagation) must use
      * `isGlobalFinalState()` instead.
@@ -1146,7 +1146,7 @@ public:
 
     /**
      * @brief Check if the state machine has reached its **top-level**
-     *        final (W3C SCXML §3.7 / §6.4)
+     *        final (§scxml-3.7 / §6.4)
      *
      * Parallel-aware counterpart to `isInFinalState()`: returns true
      * only when `currentState_` is a final state **and** has no parent
@@ -1171,7 +1171,7 @@ public:
 
     /**
      * @brief Stash donedata evaluated at top-level `<final>` entry
-     *        (W3C SCXML 5.5 + 6.3.1).
+     *        (§scxml-5.5 + 6.3.1).
      *
      * Called by generated entry actions (`entry_exit_actions.jinja2`) after
      * `DoneDataHelper::evaluateParams` / `evaluateContent` / `emitContentLiteral`
@@ -1187,13 +1187,13 @@ public:
         pendingTypedDonedataAtFinal_ = std::move(typedData);
     }
 
-    /// W3C SCXML 5.5 + 6.3.1: JSON/literal string payload from the reached
+    /// §scxml-5.5 + 6.3.1: JSON/literal string payload from the reached
     /// top-level `<final>`'s `<donedata>`. Empty when no donedata was authored
     /// or the machine has not reached a top-level final yet. Consumed by both
     /// local invoke completion and SCE Mesh §mesh-9.6.2 wire-18.
     const std::string& donedataAtFinal() const { return pendingDonedataAtFinal_; }
 
-    /// W3C SCXML 5.5 + B.2: Structured donedata (engine-agnostic ScriptValue)
+    /// §scxml-5.5 + B.2: Structured donedata (engine-agnostic ScriptValue)
     /// paired with `donedataAtFinal()`. `setPolicyMetadata` consumes this to
     /// populate `_event.data` without a JSON round-trip when the child is
     /// local; on the wire-18 path the parent's `setPolicyMetadata` re-parses
@@ -1219,7 +1219,7 @@ public:
 
     /**
      * @brief Drain the delayed-send scheduler onto the external queue
-     *        (W3C SCXML §6.2).
+     *        (§scxml-6.2).
      *
      * Pops every scheduled event whose delay has elapsed (wall-clock)
      * and raises it onto the external queue via `raiseExternal`. Does
@@ -1249,7 +1249,7 @@ public:
     }
 
     /**
-     * @brief Tick scheduler and process ready internal events (W3C SCXML 6.2)
+     * @brief Tick scheduler and process ready internal events (§scxml-6.2)
      *
      * For single-threaded AOT engines with delayed send support.
      * This method polls the event scheduler and processes any ready scheduled events.
@@ -1264,7 +1264,7 @@ public:
             return;
         }
 
-        // W3C SCXML §6.4 — top-level final only: a regional `<final>`
+        // §scxml-6.4 — top-level final only: a regional `<final>`
         // inside a `<parallel>` is *not* a terminator for the machine
         // as a whole, so we must not short-circuit the scheduler pump
         // when only a region has completed. `isGlobalFinalState()`
@@ -1279,10 +1279,10 @@ public:
             return;
         }
 
-        // W3C SCXML 6.2: Check for ready scheduled events and raise them
+        // §scxml-6.2: Check for ready scheduled events and raise them
         pumpScheduledEvents();
 
-        // W3C SCXML 6.4: Tick child state machines to process their events
+        // §scxml-6.4: Tick child state machines to process their events
         // Children need to run independently during parent's event loop
         if constexpr (SCE::Core::HasChildTick<StatePolicy, StaticExecutionEngine>) {
             policy_.tickChildren(*this);
@@ -1292,7 +1292,7 @@ public:
         // step() handles: processEventQueues() + checkEventlessTransitions() + completionCallback_
         step();
 
-        // W3C SCXML 6.4: Execute pending invokes after stable configuration is reached
+        // §scxml-6.4: Execute pending invokes after stable configuration is reached
         // Macrostep has completed - entered-and-not-exited states ready for invoke execution
         if constexpr (SCE::Core::HasInvokeSupport<StatePolicy, StaticExecutionEngine>) {
             policy_.executePendingInvokes(*this);
@@ -1300,7 +1300,7 @@ public:
     }
 
     /**
-     * @brief Set completion callback for done.invoke event generation (W3C SCXML 6.4)
+     * @brief Set completion callback for done.invoke event generation (§scxml-6.4)
      *
      * This callback is invoked when the state machine reaches a final state.
      * Used by parent to generate done.invoke.{id} events.
@@ -1312,7 +1312,7 @@ public:
     }
 
     /**
-     * @brief Set HTTP send callback for BasicHTTPEventProcessor (W3C SCXML C.2)
+     * @brief Set HTTP send callback for BasicHTTPEventProcessor (§scxml-C-2)
      *
      * Matches Kotlin StateMachineEngine.onHttpSend pattern.
      * Generated code calls performHttpSend() which delegates to this callback.
@@ -1325,7 +1325,7 @@ public:
     }
 
     /**
-     * @brief Dispatch BasicHTTP send via callback (W3C SCXML C.2)
+     * @brief Dispatch BasicHTTP send via callback (§scxml-C-2)
      *
      * Called by AOT-generated code for BasicHTTPEventProcessor sends.
      * Delegates to onHttpSend_ callback set by test harness or application.
@@ -1392,7 +1392,7 @@ public:
      * `<invoke type="sce:mesh-rpc">`. Returns false when no callback is
      * installed — that is a deployment-time error (mesh-rpc document
      * rendered without TransportRouter wiring) and the generated code
-     * raises `error.execution` per W3C SCXML §6.4.1 graceful-degrade
+     * raises `error.execution` per §scxml-6.4.1 graceful-degrade
      * semantics.
      */
     bool performMeshInvoke(const std::string& target, const std::string& fieldSuffix,
@@ -1582,7 +1582,7 @@ public:
     }
 
     /**
-     * @brief Get access to policy for parameter passing (W3C SCXML 6.4)
+     * @brief Get access to policy for parameter passing (§scxml-6.4)
      *
      * Used by parent state machines to pass invoke parameters to child state machines.
      * Allows setting datamodel variables before calling initialize().

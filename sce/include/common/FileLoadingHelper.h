@@ -42,13 +42,13 @@ public:
      * @brief Normalize file path by removing URI prefix
      *
      * Single Source of Truth for path normalization.
-     * W3C SCXML 5.2.2: src attribute may use "file:" URI scheme.
+     * §scxml-5.2.2: src attribute may use "file:" URI scheme.
      *
      * @param srcPath Source path (may include "file:" prefix)
      * @return Normalized file path without URI prefix
      */
     static std::string normalizePath(const std::string &srcPath) {
-        // W3C SCXML 5.2.2: Remove "file:" or "file://" prefix
+        // §scxml-5.2.2: Remove "file:" or "file://" prefix
         if (srcPath.find("file://") == 0) {
             return srcPath.substr(7);  // Remove "file://"
         } else if (srcPath.find("file:") == 0) {
@@ -63,7 +63,7 @@ public:
      * Single Source of Truth for file loading logic.
      * Used by both Interpreter (runtime) and sce-codegen (build-time).
      *
-     * W3C SCXML 5.2.2: Content from external file via src attribute.
+     * §scxml-5.2.2: Content from external file via src attribute.
      *
      * @param filePath Path to file (already normalized)
      * @param content Output parameter for file content
@@ -80,7 +80,7 @@ public:
         buffer << file.rdbuf();
         content = buffer.str();
 
-        // W3C SCXML 5.2.2: Trim whitespace for consistency
+        // §scxml-5.2.2: Trim whitespace for consistency
         // Remove leading/trailing whitespace
         size_t start = content.find_first_not_of(" \t\r\n");
         size_t end = content.find_last_not_of(" \t\r\n");
@@ -109,16 +109,16 @@ public:
     }
 
     /**
-     * @brief W3C SCXML 6.4.3: Load SCXML file for invoke srcexpr
+     * @brief §scxml-6.4.3: Load SCXML file for invoke srcexpr
      *
      * Single Source of Truth for srcexpr invoke file loading shared between:
      * - Interpreter engine: StateMachine invoke processing
      * - AOT engine: Generated code for srcexpr invoke (entry_exit_actions.jinja2)
      *
      * ARCHITECTURE.md Zero Duplication: Removes inline file I/O from generated AOT code.
-     * This Helper method encapsulates the W3C SCXML 6.4.3 file loading logic.
+     * This Helper method encapsulates the §scxml-6.4.3 file loading logic.
      *
-     * W3C SCXML 6.4.3: srcexpr evaluates to URI that identifies the SCXML file to invoke.
+     * §scxml-6.4.3: srcexpr evaluates to URI that identifies the SCXML file to invoke.
      * Protocol stripping: "file:path" → "path" (W3C SCXML file: URI scheme)
      *
      * W3C SCXML Standard Behavior:
@@ -149,7 +149,7 @@ public:
      * @endcode
      */
     static std::string loadScxmlFile(const std::string &filePath, const std::string &parentScxmlPath = "") {
-        // W3C SCXML 6.4.3: Strip "file:" protocol prefix if present
+        // §scxml-6.4.3: Strip "file:" protocol prefix if present
         std::string actualPath = normalizePath(filePath);
 
         // Security validation: Reject empty paths
@@ -158,7 +158,7 @@ public:
             throw std::runtime_error("Empty SCXML file path");
         }
 
-        // W3C SCXML 6.4: Resolve child SCXML relative to parent SCXML location
+        // §scxml-6.4: Resolve child SCXML relative to parent SCXML location
         std::ifstream scxmlFile(actualPath);
 
         // If direct path fails and path is relative, resolve relative to parent
@@ -206,21 +206,21 @@ public:
     /**
      * @brief Load external script with security validation
      *
-     * Single Source of Truth for W3C SCXML 5.8 external script loading.
+     * Single Source of Truth for §scxml-5.8 external script loading.
      * Used by both sce-codegen and Interpreter engine.
      *
      * ARCHITECTURE.md Zero Duplication: Shared logic between:
      * - Code generator: sce-codegen (build-time)
      * - Interpreter engine (ActionParser.cpp:parseActionNode)
      *
-     * W3C SCXML 5.8: External scripts resolved relative to SCXML file location.
+     * §scxml-5.8: External scripts resolved relative to SCXML file location.
      * Security: Prevents path traversal attacks (e.g., "../../etc/passwd").
      *
      * Algorithm:
      * 1. Normalize src path (remove "file:" prefix)
      * 2. Resolve path relative to SCXML file base directory
      * 3. Security validation: ensure resolved path is within SCXML directory tree
-     * 4. Load file content or reject document (W3C SCXML 5.8 requirement)
+     * 4. Load file content or reject document (§scxml-5.8 requirement)
      *
      * @param srcPath Script source path (from src attribute)
      * @param scxmlBasePath Base directory of SCXML file
@@ -280,7 +280,7 @@ public:
 
         // Step 4: Load file content
         if (!loadFileContent(scriptPath.string(), content)) {
-            // W3C SCXML 5.8: Document MUST be rejected if script cannot be loaded
+            // §scxml-5.8: Document MUST be rejected if script cannot be loaded
             errorMsg = "W3C SCXML 5.8: External script file not found: '" + srcPath + "' (resolved to " +
                        scriptPath.string() + "). Document is non-conformant and MUST be rejected.";
             SCE_LOG_ERROR("FileLoadingHelper: {}", errorMsg);

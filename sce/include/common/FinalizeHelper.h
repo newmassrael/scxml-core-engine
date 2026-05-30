@@ -36,7 +36,7 @@ namespace SCE {
 class FinalizeHelper {
 public:
     /**
-     * @brief Execute finalize script with _event context (W3C SCXML 6.5)
+     * @brief Execute finalize script with _event context (§scxml-6.5)
      *
      * Single Source of Truth for finalize execution logic.
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
@@ -45,12 +45,12 @@ public:
      * - Interpreter: StateMachine::processEvent() (sce/src/runtime/StateMachine.cpp)
      * - AOT: executeFinalizeForChildEvent() (tools/codegen/templates/utility_methods.jinja2)
      *
-     * W3C SCXML 6.5 (test 233): "If there is a finalize handler in the instance of invoke
+     * §scxml-6.5 (test 233): "If there is a finalize handler in the instance of invoke
      * that created the service that generated the event, the SCXML Processor MUST execute
      * the code in that finalize handler right before it removes the event from the event
      * queue for processing."
      *
-     * W3C SCXML 5.10 (test 233): Finalize scripts have access to _event.data fields.
+     * §scxml-5.10 (test 233): Finalize scripts have access to _event.data fields.
      * The _event variable must be set BEFORE finalize execution.
      *
      * @param jsEngine JSEngine instance for script execution
@@ -71,7 +71,7 @@ public:
                                          const std::string &invokeId = "") {
         SCE_LOG_DEBUG("FinalizeHelper: Executing finalize for event '{}' with data: '{}'", eventName, eventData);
 
-        // W3C SCXML 6.5: Set _event BEFORE finalize execution
+        // §scxml-6.5: Set _event BEFORE finalize execution
         // Finalize scripts need access to _event.data.fieldName (test 233)
         jsEngine
             .setCurrentEvent(sessionId,
