@@ -15,12 +15,13 @@ spec-snapshot/PROVENANCE.json; this converter only ever reads the vendored
 snapshot.
 
 Section-id naming policy (this is SCE's own choice; the SSOT for it is this
-module):
-  * numeric labels keep their dots:        5.10      -> §scxml-5.10
-  * lettered/appendix labels use hyphens:  G.1       -> §scxml-G-1
+module). Ids are emitted BARE (no § sigil) because import-sections stores
+section_id literally; the § shown below is the citation form (code/render):
+  * numeric labels keep their dots:        5.10      -> scxml-5.10   (cite §scxml-5.10)
+  * lettered/appendix labels use hyphens:  G.1       -> scxml-G-1
   * unnumbered appendix content (e.g. the Appendix D algorithm helpers, which
     carry no spec number) synthesize an id from the appendix letter plus the
-    spec anchor:                           #interpret -> §scxml-D-interpret
+    spec anchor:                           #interpret -> scxml-D-interpret
 
 The policy is designed so every id is "citation-safe" under Mnemosyne's code
 citation extractor. That extractor's grammar is owned by Mnemosyne, not
@@ -167,10 +168,13 @@ def build_sections(headings):
                 if section_id != root:
                     parent_section = root
 
+        # Bare ids (no § sigil): import-sections stores section_id literally,
+        # so the canonical stored form must be bare. The § is only the citation
+        # sigil added in code/comments and on render (`### §scxml-5.10.`).
         sections.append(
             {
-                "section_id": f"§{section_id}",
-                "parent_section": f"§{parent_section}" if parent_section else None,
+                "section_id": section_id,
+                "parent_section": parent_section,
                 "title": title,
                 "anchor_url": f"{W3C_SCXML_URL}#{anchor}",
             }
@@ -241,7 +245,7 @@ def main(argv=None):
     if not args.manifest and not args.anchor_map:
         sys.stdout.write(manifest_json)
 
-    appendix = [s for s in manifest if re.match(r"§scxml-[A-Z]", s["section_id"])]
+    appendix = [s for s in manifest if re.match(r"scxml-[A-Z]", s["section_id"])]
     sys.stderr.write(
         "sections=%d (body=%d, appendix=%d)\n"
         % (len(manifest), len(manifest) - len(appendix), len(appendix))
