@@ -15,7 +15,7 @@ class IEventScheduler;
 /**
  * @brief Event target for routing events to parent sessions (#_parent)
  *
- * W3C SCXML 6.2: This target handles the special "#_parent" target used
+ * §scxml-6.2: This target handles the special "#_parent" target used
  * in invoke scenarios where child sessions need to send events to their
  * parent session.
  */

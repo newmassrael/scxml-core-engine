@@ -42,18 +42,18 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
             std::string payload;
             std::string contentType;
 
-            // W3C SCXML C.2: Use form-encoded format when event name or params exist (test 518, 534)
+            // §scxml-C-2: Use form-encoded format when event name or params exist (test 518, 534)
             // This ensures _scxmleventname is sent as a form parameter per W3C spec
             if (!event.eventName.empty() || !event.params.empty()) {
                 // Build form-encoded payload using UrlEncodingHelper (ARCHITECTURE.md: Zero Duplication)
-                // W3C SCXML C.2: Include event name as _scxmleventname parameter (test 518)
+                // §scxml-C-2: Include event name as _scxmleventname parameter (test 518)
                 // But don't add if event name is empty (test 531: params define event name)
                 // ARCHITECTURE.md: Zero Duplication - use SendHelper for HTTP POST body generation
                 payload = SendHelper::buildHttpPostBody(event.eventName, event.params);
                 contentType = "application/x-www-form-urlencoded";
                 SCE_LOG_DEBUG("HttpEventTarget: Form-encoded payload: {}", payload);
             } else {
-                // W3C SCXML C.2: Determine content type based on whether content is present
+                // §scxml-C-2: Determine content type based on whether content is present
                 payload = self->createJsonPayload(event);
                 contentType = event.content.empty() ? "application/json" : "text/plain";
                 SCE_LOG_DEBUG("HttpEventTarget: JSON payload: {}", payload);
@@ -79,11 +79,11 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
 
             auto future = httpClient->sendRequest(request);
 
-            // W3C SCXML C.2: External HTTP server mode (polyfill_pre.js manages standalone_http_server.js)
+            // §scxml-C-2: External HTTP server mode (polyfill_pre.js manages standalone_http_server.js)
             // Response JSON contains event data that must be delivered to state machine
             SCE_LOG_DEBUG("HttpEventTarget: Waiting for HTTP response from external server");
 
-            // W3C SCXML C.2: EM_ASYNC_JS automatically pauses execution until Promise resolves
+            // §scxml-C-2: EM_ASYNC_JS automatically pauses execution until Promise resolves
             // ASYNCIFY handles pause/resume transparently - future is already ready when returned
             auto response = future.get();
 
@@ -93,7 +93,7 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
                                          SendResult::ErrorType::NETWORK_ERROR);
             }
 
-            // W3C SCXML C.2: Parse response JSON to extract event name and data
+            // §scxml-C-2: Parse response JSON to extract event name and data
             // Expected format: {"status":"success","event":"eventName","sendId":"...","timestamp":...}
             SCE_LOG_DEBUG("HttpEventTarget: HTTP response body: {}", response.body);
 
@@ -123,7 +123,7 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
 
             SCE_LOG_INFO("HttpEventTarget: Delivering HTTP response as event '{}' to state machine", responseEventName);
 
-            // W3C SCXML 5.10: Deliver HTTP response as external event
+            // §scxml-5.10: Deliver HTTP response as external event
             // Use EventRaiserService to get session-specific EventRaiser
             auto eventRaiser = SCE::EventRaiserService::getInstance().getEventRaiser(event.sessionId);
             if (!eventRaiser) {
@@ -320,7 +320,7 @@ std::unique_ptr<httplib::Client> HttpEventTarget::createHttpClient() const {
 #endif  // __EMSCRIPTEN__
 
 std::string HttpEventTarget::createJsonPayload(const EventDescriptor &event) const {
-    // W3C SCXML C.2: If content is provided, use it as the HTTP body directly
+    // §scxml-C-2: If content is provided, use it as the HTTP body directly
     if (!event.content.empty()) {
         SCE_LOG_DEBUG("HttpEventTarget: Using content as HTTP body: '{}'", event.content);
         return event.content;
@@ -405,7 +405,7 @@ httplib::Result HttpEventTarget::performRequestWithRetry(httplib::Client &client
 
         SCE_LOG_DEBUG("HttpEventTarget: HTTP POST attempt {} to '{}' with payload: {}", attempts, path, payload);
 
-        // W3C SCXML C.2: Use appropriate Content-Type (passed as parameter)
+        // §scxml-C-2: Use appropriate Content-Type (passed as parameter)
         SCE_LOG_DEBUG("HttpEventTarget: Executing client.Post('{}', payload, '{}')", path, contentType);
         result = client.Post(path, payload, contentType);
 

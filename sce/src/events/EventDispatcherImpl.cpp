@@ -122,7 +122,7 @@ void EventDispatcherImpl::shutdown() {
 size_t EventDispatcherImpl::cancelEventsForSession(const std::string &sessionId) {
     SCE_LOG_DEBUG("EventDispatcherImpl: Cancelling all events for session: {}", sessionId);
 
-    // W3C SCXML 6.2: Cancel all scheduled events for the specified session
+    // §scxml-6.2: Cancel all scheduled events for the specified session
     if (scheduler_) {
         return scheduler_->cancelEventsForSession(sessionId);
     }
@@ -172,7 +172,7 @@ std::future<SendResult> EventDispatcherImpl::onScheduledEventExecution(const Eve
         // Execute the scheduled event on the target
         auto resultFuture = target->send(event);
 
-        // W3C SCXML 6.2: Synchronous scheduled event execution (WASM memory leak prevention)
+        // §scxml-6.2: Synchronous scheduled event execution (WASM memory leak prevention)
         // Process result synchronously to ensure thread cleanup
         std::promise<SendResult> wrappedPromise;
         try {

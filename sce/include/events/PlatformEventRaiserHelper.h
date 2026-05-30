@@ -24,7 +24,7 @@ class EventRaiserImpl;
  * - WASM (Emscripten): Synchronous immediate mode (no pthread support)
  * - Native (Linux/macOS): Pthread-based worker thread for async event processing
  *
- * W3C SCXML 5.3: Asynchronous event processing required for non-blocking state machine operations
+ * §scxml-5.3: Asynchronous event processing required for non-blocking state machine operations
  *
  * References:
  * - ARCHITECTURE.md Zero Duplication Principle: Shared logic through Helper functions
@@ -106,7 +106,7 @@ public:
      * - WASM: Calls scheduler->poll() to process delayed events synchronously
      * - Native: No-op (background timer thread handles scheduling automatically)
      *
-     * W3C SCXML 6.2: Delayed send element support across platforms
+     * §scxml-6.2: Delayed send element support across platforms
      *
      * Zero Duplication: Single Source of Truth for scheduler polling logic
      */
