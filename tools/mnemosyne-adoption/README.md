@@ -46,16 +46,19 @@ regenerable, neither committed):
 
 ### Section-id naming policy
 
-This is SCE's own policy (its SSOT is the converter module):
+This is SCE's own policy (its SSOT is the converter module). Ids in the manifest
+are **bare** (no § sigil) — `import-sections` stores `section_id` literally, so a
+§ would double on render (`§§scxml-1`). The § is the *citation* form used in code
+and in the rendered heading.
 
-| Spec heading | section id | Rule |
-|--------------|------------|------|
-| `5.10 System Variables` | `§scxml-5.10` | numeric: keep dots |
-| `6.2.6 Message Content` | `§scxml-6.2.6` | numeric |
-| `A.1 Conforming Documents` | `§scxml-A-1` | lettered: dots -> hyphens |
-| `B.2.11 <foreach>` | `§scxml-B-2-11` | lettered |
-| `D Algorithm ...` | `§scxml-D` | appendix root |
-| `procedure interpret(...)` (`#interpret`) | `§scxml-D-interpret` | unnumbered appendix-D helper -> letter + spec anchor |
+| Spec heading | stored id (manifest) | cited as | Rule |
+|--------------|----------------------|----------|------|
+| `5.10 System Variables` | `scxml-5.10` | `§scxml-5.10` | numeric: keep dots |
+| `6.2.6 Message Content` | `scxml-6.2.6` | `§scxml-6.2.6` | numeric |
+| `A.1 Conforming Documents` | `scxml-A-1` | `§scxml-A-1` | lettered: dots -> hyphens |
+| `B.2.11 <foreach>` | `scxml-B-2-11` | `§scxml-B-2-11` | lettered |
+| `D Algorithm ...` | `scxml-D` | `§scxml-D` | appendix root |
+| `procedure interpret(...)` (`#interpret`) | `scxml-D-interpret` | `§scxml-D-interpret` | unnumbered appendix-D helper -> letter + spec anchor |
 
 The policy is designed so every id is citation-safe under Mnemosyne's code
 citation extractor (which keeps a `.` in a citation token only when flanked by
