@@ -64,13 +64,12 @@ severity = "warn"
 #                                it advisory so unbacked citations do not fail.
 #   comment_only     = true      only citations inside comments are scanned;
 #                                string-literal text is ignored.
-# Only citation-clean modules are listed: those whose source comments carry W3C
-# cites exclusively, plus modules whose sole non-W3C cites are Wire-RFC ones
-# absorbed by external_section_prefixes_bare below. Modules that also cite the
-# SCE mesh spec (bare mesh §<n>, no absorbable prefix) are a different namespace
-# — validate-code-refs checks every §id against this one ledger, so a mesh §id
-# reads as a missing section. Those (mesh, parsing, static, common, include
-# /model) join once their SCE-internal cites move to a design-ledger workspace.
+# `section_namespace = "scxml"` (below) makes this gate check only §scxml-<id>
+# tokens and skip every foreign one (§mesh-<n>, §wire-W<n>, still-bare §<n>) by
+# the token itself, so a module that mixes W3C and SCE-internal cites can be
+# gated here for its W3C cites while its mesh/wire cites are gated by the
+# docs/sce-ledger/{mesh,wire} workspaces. That is why the mixed modules (common,
+# static, model, mesh) are now listed alongside the citation-clean ones.
 [plugins.set_equality_validator]
 paths = [
     "../../../sce/include/events",
@@ -88,6 +87,12 @@ paths = [
     "../../../sce/src/model",
     "../../../sce/include/parsing",
     "../../../sce/src/parsing",
+    "../../../sce/include/common",
+    "../../../sce/src/common",
+    "../../../sce/include/static",
+    "../../../sce/include/model",
+    "../../../sce/include/mesh",
+    "../../../sce/include/SCXMLTypes.h",
 ]
 severity_missing = "reject"
 severity_binding = "warn"

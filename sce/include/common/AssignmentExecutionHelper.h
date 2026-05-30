@@ -31,9 +31,9 @@ namespace SCE {
  * - Shared assignment execution strategy between Interpreter and AOT engines
  * - Single Source of Truth for system variable detection and assignment logic
  *
- * W3C SCXML 5.3: Data Model Assignment
- * W3C SCXML 5.10: System Variables (_event, _sessionid, _name, _ioprocessors, _x)
- * W3C SCXML B.2: System Variables are Read-Only (enforced by AssignHelper)
+ * §scxml-5.3: Data Model Assignment
+ * §scxml-5.10: System Variables (_event, _sessionid, _name, _ioprocessors, _x)
+ * §scxml-B-2: System Variables are Read-Only (enforced by AssignHelper)
  *
  * Usage Pattern:
  * 1. Validate location with AssignHelper::isValidLocation() (system variable protection)
@@ -45,7 +45,7 @@ public:
     /**
      * @brief Check if expression is a system variable reference
      *
-     * W3C SCXML 5.10: System variables that require special handling
+     * §scxml-5.10: System variables that require special handling
      * to preserve JavaScript object reference semantics.
      *
      * @param expr Expression to check
@@ -59,7 +59,7 @@ public:
      * @brief Execute assignment with appropriate strategy based on expression type
      *
      * ARCHITECTURE.md: Zero Duplication - Single Source of Truth for assignment execution
-     * Implements W3C SCXML 5.3 assignment semantics with proper JavaScript reference handling.
+     * Implements §scxml-5.3 assignment semantics with proper JavaScript reference handling.
      *
      * Strategy:
      * 1. System variable reference (e.g., "Var2 = _event") → executeScript (preserves references)
@@ -75,7 +75,7 @@ public:
      */
     static bool executeAssignment(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &location,
                                   const std::string &expr, std::function<void(const std::string &)> errorCallback) {
-        // W3C SCXML 5.10: System variable references require direct script execution
+        // §scxml-5.10: System variable references require direct script execution
         // This preserves JavaScript object references (critical for test 329: Var2 = _event)
         if (isSystemVariableReference(expr)) {
             std::string assignScript = location + " = " + expr + ";";
@@ -92,7 +92,7 @@ public:
             return true;
         }
 
-        // W3C SCXML 5.3: Standard evaluation + assignment strategy
+        // §scxml-5.3: Standard evaluation + assignment strategy
         // Step 1: Evaluate expression
         SCE_LOG_DEBUG("AssignmentExecutionHelper: Evaluating expression: {}", expr);
         auto evalResult = jsEngine.evaluateExpression(sessionId, expr).get();

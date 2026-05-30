@@ -196,7 +196,7 @@ public:
     /// Callers never touch raw bytes or the CBOR codec directly.
     ///
     /// Does NOT call `engine.step()` — macrostep timing is scheduler/application
-    /// responsibility (W3C SCXML 3.12, SCE_MESH.md Section 7.5).
+    /// responsibility (§scxml-3.12, SCE_MESH.md Section 7.5).
     ///
     /// Unknown event names (not in the receiver's enum) are silently dropped
     /// but still advance the arena tail to reclaim space.
@@ -240,7 +240,7 @@ public:
     /// codegen `decodeEnvelope` instrumentation).
     ///
     /// Does NOT call `engine.step()` — macrostep timing is scheduler /
-    /// application responsibility (W3C SCXML 3.12).
+    /// application responsibility (§scxml-3.12).
     ///
     /// @return Number of control entries drained
     template <typename Handler, typename OnDecodeError>

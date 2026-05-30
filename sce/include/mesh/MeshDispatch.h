@@ -62,7 +62,7 @@
 // `type` is the request event name (e.g. `service.request.compute_force`),
 // which is enqueued on the receiver engine just like any FireForget event.
 // The correlation UUID in `env.invoke_id` is surfaced to the receiver SCXML
-// as `_event.invokeid` (W3C SCXML 5.10.1) through the engine's metadata
+// as `_event.invokeid` (§scxml-5.10.1) through the engine's metadata
 // pipeline — dispatchEnvelope always constructs `Engine::EventWithMetadata`
 // and calls the metadata overload so test doubles observe the same path
 // production engines take (no SFINAE fallback that could silently diverge).
@@ -225,7 +225,7 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     }
     // SCE_MESH.md §mesh-9.6.2 wire 16 (ChildEvent): parent receives an event
     // emitted by a remote child session via `<send target="#_parent">` or
-    // via W3C §5.10 auto-raise. Event name is `env.type`; metadata fields
+    // via §scxml-5.10 auto-raise. Event name is `env.type`; metadata fields
     // are wired per §mesh-9.6.3 L1463-1466:
     //   _event.type        = "external"
     //   _event.origin      = child's session URI (env.child_session_id)

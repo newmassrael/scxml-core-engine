@@ -48,7 +48,7 @@ std::string SCE::DataModelInitHelper::resolveExecutableBasePath(const std::strin
 }
 
 bool SCE::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
-    // W3C SCXML B.2: Detect JavaScript function literals
+    // §scxml-B-2: Detect JavaScript function literals
     // Test 453: function() {...} or () => {...} patterns
 
     if (expr.empty()) {
@@ -80,10 +80,10 @@ bool SCE::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
 bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const std::string &sessionId,
                                                   const std::string &varId, const std::string &content,
                                                   std::function<void(const std::string &)> errorCallback) {
-    // W3C SCXML 5.2.2 & B.2: Initialize datamodel variable with inline content or expression
+    // §scxml-5.2.2 & B.2: Initialize datamodel variable with inline content or expression
 
     if (content.empty()) {
-        // W3C SCXML B.2.2 test 445: Empty content - create variable with undefined value
+        // §scxml-B-2-2 test 445: Empty content - create variable with undefined value
         // ARCHITECTURE.md Zero Duplication: Matches Interpreter (StateMachine.cpp:1597)
         // setVariable with empty ScriptValue creates undefined variable
         auto result = jsEngine.setVariable(sessionId, varId, ScriptValue{});
@@ -97,13 +97,13 @@ bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const
         return true;
     }
 
-    // W3C SCXML B.2: Detect XML content and create DOM object
+    // §scxml-B-2: Detect XML content and create DOM object
     // Match Interpreter behavior (StateMachine.cpp:1756) and JSEngine logic (JSEngineImpl.cpp:359)
     size_t firstNonWhitespace = content.find_first_not_of(" \t\r\n");
     bool isXML = firstNonWhitespace != std::string::npos && content[firstNonWhitespace] == '<';
 
     if (isXML) {
-        // W3C SCXML B.2: XML content → create DOM object using setVariableAsDOM
+        // §scxml-B-2: XML content → create DOM object using setVariableAsDOM
         // ARCHITECTURE.MD: Zero Duplication - Matches Interpreter (StateMachine.cpp:1756)
         auto result = jsEngine.setVariableAsDOM(sessionId, varId, content);
         result.wait();
@@ -118,7 +118,7 @@ bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const
         return true;
     }
 
-    // W3C SCXML B.2: Non-XML content - try evaluating as JavaScript expression first
+    // §scxml-B-2: Non-XML content - try evaluating as JavaScript expression first
     // ARCHITECTURE.md Zero Duplication: Matches StateMachine.cpp:1772-1778 (try eval first)
     auto evalResult = jsEngine.evaluateExpression(sessionId, content);
     evalResult.wait();
@@ -139,7 +139,7 @@ bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const
         return true;
     }
 
-    // W3C SCXML B.2 test 558: Evaluation failed - normalize whitespace and store as string
+    // §scxml-B-2 test 558: Evaluation failed - normalize whitespace and store as string
     // ARCHITECTURE.md Zero Duplication: Matches StateMachine.cpp:1793-1811 (fallback to whitespace normalization)
     std::string normalized = normalizeWhitespace(content);
 
@@ -160,7 +160,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine
                                                          const std::string &varId, const std::string &src,
                                                          const std::string &basePath,
                                                          std::function<void(const std::string &)> errorCallback) {
-    // W3C SCXML 5.2.2: Load content from external file
+    // §scxml-5.2.2: Load content from external file
     // ARCHITECTURE.MD: Zero Duplication - Use FileLoadingHelper (Single Source of Truth)
 
     std::string content;
@@ -183,7 +183,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine
 bool SCE::DataModelInitHelper::initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId,
                                                           const std::string &varId, const std::string &expr,
                                                           std::function<void(const std::string &)> errorCallback) {
-    // W3C SCXML 5.2/5.3: Evaluate expr attribute and assign to variable
+    // §scxml-5.2 / §scxml-5.3: Evaluate expr attribute and assign to variable
     // Test 277: expr evaluation failure must raise error.execution (no fallback to whitespace normalization)
     // ARCHITECTURE.md Zero Duplication: Matches AOT engine template (scriptengine_helpers.jinja2)
 
@@ -192,7 +192,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromExpr(IScriptEngine &jsEngin
     auto evalJsResult = evalResult.get();
 
     if (!evalJsResult.isSuccess()) {
-        // W3C SCXML 5.3: Evaluation failure raises error.execution, variable remains unbound
+        // §scxml-5.3: Evaluation failure raises error.execution, variable remains unbound
         errorCallback("Failed to evaluate expr for variable " + varId + ": " + expr);
         return false;
     }

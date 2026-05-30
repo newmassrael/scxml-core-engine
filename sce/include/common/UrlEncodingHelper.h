@@ -21,7 +21,7 @@
 namespace SCE {
 
 /**
- * @brief Helper for RFC 3986 URL encoding (W3C SCXML C.2 BasicHTTP)
+ * @brief Helper for RFC 3986 URL encoding (§scxml-C-2 BasicHTTP)
  *
  * ARCHITECTURE.md: Zero Duplication - Single Source of Truth for URL encoding logic.
  * Used by both Interpreter and AOT engines for HTTP event transmission.
@@ -30,7 +30,7 @@ namespace SCE {
  * - Interpreter: HttpEventTarget for BasicHTTP Event I/O Processor (sce/src/events/HttpEventTarget.cpp)
  * - AOT: Same HttpEventTarget shared infrastructure (no duplication)
  *
- * W3C SCXML C.2: BasicHTTP Event I/O Processor requires application/x-www-form-urlencoded
+ * §scxml-C-2: BasicHTTP Event I/O Processor requires application/x-www-form-urlencoded
  * format for event transmission. This helper implements RFC 3986 percent-encoding.
  *
  * ARCHITECTURE.md Zero Duplication Pattern:
@@ -43,7 +43,7 @@ public:
     /**
      * @brief Percent-encode string for application/x-www-form-urlencoded
      *
-     * W3C SCXML C.2: Form data encoding for BasicHTTP Event I/O Processor.
+     * §scxml-C-2: Form data encoding for BasicHTTP Event I/O Processor.
      * RFC 3986: Unreserved characters (A-Za-z0-9-._~) are not encoded.
      *
      * All other characters are percent-encoded as %XX where XX is the hexadecimal

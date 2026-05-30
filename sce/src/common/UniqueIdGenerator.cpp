@@ -32,7 +32,7 @@ std::string UniqueIdGenerator::generateSendId() {
 }
 
 std::string UniqueIdGenerator::generateInvokeId(const std::string &stateId) {
-    // W3C SCXML 6.4: Invoke ID format MUST be "stateid.platformid" (test 224)
+    // §scxml-6.4: Invoke ID format MUST be "stateid.platformid" (test 224)
     if (!stateId.empty()) {
         // Increment the specific counter for this ID type
         uint64_t typeCounter = invokeIdCount_.fetch_add(1);

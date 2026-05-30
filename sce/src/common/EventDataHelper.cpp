@@ -10,7 +10,7 @@ using json = nlohmann::json;
 namespace SCE {
 
 std::string EventDataHelper::buildJsonFromParams(const std::map<std::string, std::vector<std::string>> &params) {
-    // W3C SCXML 5.10: Build structured JSON object from params
+    // §scxml-5.10: Build structured JSON object from params
     json eventDataJson = json::object();
 
     // Add parameters (W3C SCXML: Support duplicate param names - Test 178)
@@ -36,7 +36,7 @@ ScriptValue EventDataHelper::buildScriptValueFromParams(const std::map<std::stri
     return obj;
 }
 
-// W3C SCXML B.2: Recursive ScriptValue → JSON conversion (inverse of jsonToScriptValue)
+// §scxml-B-2: Recursive ScriptValue → JSON conversion (inverse of jsonToScriptValue)
 // Note: ScriptUndefined → null (JSON lacks undefined); roundtrip yields ScriptNull
 static json scriptValueToJson(const ScriptValue &value) {
     return std::visit(
@@ -91,7 +91,7 @@ std::string EventDataHelper::scriptValueToJsonString(const ScriptValue &value) {
     return JsonUtils::toCompactString(scriptValueToJson(value));
 }
 
-// W3C SCXML B.2: Recursive JSON → ScriptValue conversion
+// §scxml-B-2: Recursive JSON → ScriptValue conversion
 static ScriptValue jsonToScriptValue(const json &j) {
     if (j.is_null()) {
         return ScriptNull{};

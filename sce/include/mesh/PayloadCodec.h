@@ -17,7 +17,7 @@ namespace SCE::Mesh {
 
 enum class PayloadCodec : uint8_t {
     None  = 0,  // payload absent (FireForget control messages)
-    Json  = 1,  // default; W3C SCXML 5.10 _event.data
+    Json  = 1,  // default; §scxml-5.10 _event.data
     Cbor  = 2,  // structured, smaller than JSON
     Typed = 3,  // codegen-emitted binary using event schema
     Raw   = 4,  // user-supplied encoder (escape hatch)

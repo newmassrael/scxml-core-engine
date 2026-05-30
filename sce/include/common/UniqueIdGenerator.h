@@ -46,7 +46,7 @@ public:
 
     /**
      * @brief Generate unique invoke ID for SCXML invoke operations
-     * @param stateId Parent state ID for W3C SCXML 6.4 compliance (test 224)
+     * @param stateId Parent state ID for §scxml-6.4 compliance (test 224)
      * @return Unique invoke ID in format: stateid.platformid (W3C) or invoke_timestamp_counter (legacy)
      */
     static std::string generateInvokeId(const std::string &stateId = "");

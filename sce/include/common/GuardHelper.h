@@ -25,7 +25,7 @@ namespace SCE::GuardHelper {
 /**
  * @brief Evaluates a guard expression using a JavaScript execution engine
  *
- * W3C SCXML 5.9: If a conditional expression cannot be evaluated as a boolean value
+ * §scxml-5.9: If a conditional expression cannot be evaluated as a boolean value
  * ('true' or 'false') or if its evaluation causes an error, the SCXML processor MUST
  * treat the expression as if it evaluated to 'false' AND place error.execution in
  * the internal event queue.
@@ -41,7 +41,7 @@ inline std::optional<bool> evaluateGuard(IScriptEngine &jsEngine, const std::str
     auto guardResult = jsEngine.evaluateExpression(sessionId, guardExpr).get();
 
     if (!guardResult.isSuccess()) {
-        // W3C SCXML 5.9: Evaluation errors → caller must raise error.execution
+        // §scxml-5.9: Evaluation errors → caller must raise error.execution
         SCE_LOG_WARN("W3C SCXML 5.9: Guard evaluation failed: {}", guardExpr);
         return std::nullopt;  // Signal evaluation failure
     }

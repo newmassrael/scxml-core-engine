@@ -41,7 +41,7 @@ public:
     /**
      * @brief Parse W3C SCXML delay string to milliseconds
      *
-     * W3C SCXML 6.2: Delay formats - "5s", "100ms", "2min", ".5s", "0.5s"
+     * §scxml-6.2: Delay formats - "5s", "100ms", "2min", ".5s", "0.5s"
      *
      * @param delayStr Delay specification (e.g., "5s", "100ms", "2min")
      * @return Delay in milliseconds, 0 if invalid or empty
@@ -83,7 +83,7 @@ public:
  * - AOT engine (PullScheduler): Direct delegation to this class
  *
  * Design Rationale - Why std::map over std::priority_queue:
- * - W3C SCXML 6.3 requires actual event cancellation, not lazy marking
+ * - §scxml-6.3 requires actual event cancellation, not lazy marking
  * - std::map supports O(log n) deletion by iterator
  * - std::priority_queue does NOT support deletion (only lazy cancellation workaround)
  *
@@ -137,8 +137,8 @@ public:
     /**
      * @brief Schedule an event for future delivery
      *
-     * W3C SCXML 6.2: Delayed send
-     * W3C SCXML 6.3: If sendId exists, REMOVES old event (not lazy marking!)
+     * §scxml-6.2: Delayed send
+     * §scxml-6.3: If sendId exists, REMOVES old event (not lazy marking!)
      *
      * @param event Event to schedule
      * @param fireTime When the event should fire
@@ -150,7 +150,7 @@ public:
                          EventDataType eventData = EventDataType{}) {
         std::string actualSendId = sendId.empty() ? generateUniqueSendId() : sendId;
 
-        // W3C SCXML 6.3: Cancel existing event with same sendId (ACTUAL removal)
+        // §scxml-6.3: Cancel existing event with same sendId (ACTUAL removal)
         cancel(actualSendId);
 
         // Create and insert new entry
@@ -168,7 +168,7 @@ public:
     /**
      * @brief Cancel a scheduled event by sendId
      *
-     * W3C SCXML 6.3: ACTUALLY REMOVES the event (not lazy marking!)
+     * §scxml-6.3: ACTUALLY REMOVES the event (not lazy marking!)
      *
      * @param sendId The sendId to cancel
      * @return true if found and removed

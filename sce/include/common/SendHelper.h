@@ -57,20 +57,20 @@ public:
      *
      * Single Source of Truth for target validation logic.
      * Used by AOT engine to determine if error.execution should be raised,
-     * which stops execution of subsequent executable content per W3C SCXML 5.10.
+     * which stops execution of subsequent executable content per §scxml-5.10.
      *
-     * W3C SCXML 6.2: Target values starting with "!" are invalid.
+     * §scxml-6.2: Target values starting with "!" are invalid.
      *
      * @param target Target to check
      * @return true if target is invalid (starts with '!')
      */
     static bool isInvalidTarget(const std::string &target) {
-        // W3C SCXML 6.2: Target values starting with "!" are invalid
+        // §scxml-6.2: Target values starting with "!" are invalid
         return !target.empty() && target[0] == '!';
     }
 
     /**
-     * @brief Check if target should use internal event queue (W3C SCXML C.1)
+     * @brief Check if target should use internal event queue (§scxml-C-1)
      *
      * Single Source of Truth for internal queue routing logic.
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
@@ -79,19 +79,19 @@ public:
      * - Interpreter: EventTargetFactoryImpl::createTarget() (sce/src/events/EventTargetFactoryImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
-     * W3C SCXML C.1 (test189, test495): Events with target="#_internal" must go to
+     * §scxml-C-1 (test189, test495): Events with target="#_internal" must go to
      * the internal event queue, which has higher priority than external queue.
      *
      * @param target Target to check
      * @return true if target is "#_internal" (internal queue), false otherwise (external queue)
      */
     static bool isInternalTarget(const std::string &target) {
-        // W3C SCXML C.1: #_internal indicates internal event queue
+        // §scxml-C-1: #_internal indicates internal event queue
         return target == "#_internal";
     }
 
     /**
-     * @brief Check if target is child invoke session (W3C SCXML 6.4)
+     * @brief Check if target is child invoke session (§scxml-6.4)
      *
      * Single Source of Truth for child invoke target detection logic.
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
@@ -100,7 +100,7 @@ public:
      * - Interpreter: EventTargetFactoryImpl::createTarget() (sce/src/events/EventTargetFactoryImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
-     * W3C SCXML 6.4 (test192): Events with target="#_<invokeid>" must be routed
+     * §scxml-6.4 (test192): Events with target="#_<invokeid>" must be routed
      * to the child state machine identified by <invokeid>.
      *
      * Examples:
@@ -113,7 +113,7 @@ public:
      * @return true if target is child invoke (#_<invokeid>), false otherwise
      */
     static bool isChildInvokeTarget(const std::string &target) {
-        // W3C SCXML 6.4: #_<invokeid> format indicates child invoke target
+        // §scxml-6.4: #_<invokeid> format indicates child invoke target
         // Must start with #_ but not be #_parent or #_internal
         if (!detail::starts_with(target, "#_")) {
             return false;
@@ -131,12 +131,12 @@ public:
     }
 
     /**
-     * @brief Extract invoke ID from child target (W3C SCXML 6.4)
+     * @brief Extract invoke ID from child target (§scxml-6.4)
      *
      * Single Source of Truth for invoke ID extraction logic.
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
      *
-     * W3C SCXML 6.4 (test192): Extract invokeid from target="#_<invokeid>".
+     * §scxml-6.4 (test192): Extract invokeid from target="#_<invokeid>".
      *
      * Example:
      * - "#_invokedChild" → "invokedChild"
@@ -146,7 +146,7 @@ public:
      * @return Invoke ID (substring after "#_")
      */
     static std::string extractInvokeId(const std::string &target) {
-        // W3C SCXML 6.4: Extract invokeid from #_<invokeid>
+        // §scxml-6.4: Extract invokeid from #_<invokeid>
         if (detail::starts_with(target, "#_")) {
             return target.substr(2);  // Skip "#_" prefix
         }
@@ -154,7 +154,7 @@ public:
     }
 
     /**
-     * @brief Check if target is HTTP URL (W3C SCXML C.2)
+     * @brief Check if target is HTTP URL (§scxml-C-2)
      *
      * Single Source of Truth for HTTP target detection logic.
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
@@ -163,7 +163,7 @@ public:
      * - Interpreter: EventTargetFactoryImpl::createTarget() (sce/src/events/EventTargetFactoryImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
-     * W3C SCXML C.2 (test509, test510, test513): BasicHTTP Event I/O Processor
+     * §scxml-C-2 (test509, test510, test513): BasicHTTP Event I/O Processor
      * accepts HTTP/HTTPS URLs as targets. Events sent to HTTP targets must:
      * - Use external event queue (not internal)
      * - Trigger HTTP POST request to target URL
@@ -179,7 +179,7 @@ public:
      * @return true if target is HTTP/HTTPS URL, false otherwise
      */
     static bool isHttpTarget(const std::string &target) {
-        // W3C SCXML C.2: HTTP/HTTPS URLs indicate BasicHTTP Event I/O Processor
+        // §scxml-C-2: HTTP/HTTPS URLs indicate BasicHTTP Event I/O Processor
         return detail::starts_with(target, "http://") || detail::starts_with(target, "https://");
     }
 
@@ -216,9 +216,9 @@ public:
     }
 
     /**
-     * @brief Validate send target according to W3C SCXML 6.2
+     * @brief Validate send target according to §scxml-6.2
      *
-     * W3C SCXML 6.2 (tests 159, 194): Invalid target values (e.g., starting with "!")
+     * §scxml-6.2 (tests 159, 194): Invalid target values (e.g., starting with "!")
      * must raise error.execution and stop subsequent executable content.
      *
      * This function reuses isInvalidTarget() to avoid code duplication.
@@ -236,7 +236,7 @@ public:
     }
 
     /**
-     * @brief Check if target is unreachable or inaccessible (W3C SCXML C.1)
+     * @brief Check if target is unreachable or inaccessible (§scxml-C-1)
      *
      * Single Source of Truth for unreachable target detection logic.
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
@@ -245,19 +245,19 @@ public:
      * - Interpreter: ActionExecutorImpl::executeSendAction() (sce/src/runtime/ActionExecutorImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
-     * W3C SCXML C.1 (test 496): Empty or "undefined" target evaluation results
+     * §scxml-C-1 (test 496): Empty or "undefined" target evaluation results
      * indicate unreachable or inaccessible target sessions, requiring error.communication.
      *
      * @param target Target string evaluated from targetexpr
      * @return true if target is unreachable (empty or "undefined"), false otherwise
      */
     static bool isUnreachableTarget(const std::string &target) {
-        // W3C SCXML C.1: Empty or "undefined" targets are unreachable
+        // §scxml-C-1: Empty or "undefined" targets are unreachable
         return target.empty() || target == "undefined";
     }
 
     /**
-     * @brief Check if send type requires target attribute (W3C SCXML C.2)
+     * @brief Check if send type requires target attribute (§scxml-C-2)
      *
      * Single Source of Truth for BasicHTTP target requirement validation.
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
@@ -266,19 +266,19 @@ public:
      * - Interpreter: ActionExecutorImpl::executeSendAction() (sce/src/runtime/ActionExecutorImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
-     * W3C SCXML C.2 (test 577): BasicHTTP Event I/O Processor requires
+     * §scxml-C-2 (test 577): BasicHTTP Event I/O Processor requires
      * target URL attribute. Missing target raises error.communication.
      *
      * @param sendType Event I/O Processor type URI
      * @return true if send type requires target attribute (BasicHTTP), false otherwise
      */
     static bool requiresTargetAttribute(const std::string &sendType) {
-        // W3C SCXML C.2: BasicHTTP Event I/O Processor requires target URL
+        // §scxml-C-2: BasicHTTP Event I/O Processor requires target URL
         return sendType == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
     }
 
     /**
-     * @brief Check if send type is supported (W3C SCXML 6.2)
+     * @brief Check if send type is supported (§scxml-6.2)
      *
      * Single Source of Truth for send type validation logic.
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
@@ -287,7 +287,7 @@ public:
      * - Interpreter: ActionExecutorImpl::executeSendAction() (sce/src/runtime/ActionExecutorImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
-     * W3C SCXML 6.2 (test 199): If the SCXML Processor does not support the type
+     * §scxml-6.2 (test 199): If the SCXML Processor does not support the type
      * that is specified in <send>, it MUST place the event error.execution on the
      * internal event queue.
      *
@@ -299,20 +299,20 @@ public:
      * @return true if send type is supported, false if unsupported (error.execution required)
      */
     static bool isSupportedSendType(const std::string &sendType) {
-        // W3C SCXML 6.2: Empty or default type is SCXMLEventProcessor (always supported)
+        // §scxml-6.2: Empty or default type is SCXMLEventProcessor (always supported)
         if (sendType.empty() || sendType == Constants::SCXML_EVENT_PROCESSOR_TYPE) {
             return true;
         }
-        // W3C SCXML C.2: BasicHTTP Event I/O Processor is supported
+        // §scxml-C-2: BasicHTTP Event I/O Processor is supported
         if (sendType == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor") {
             return true;
         }
-        // W3C SCXML 6.2: All other types are unsupported
+        // §scxml-6.2: All other types are unsupported
         return false;
     }
 
     /**
-     * @brief Validate BasicHTTP send parameters (W3C SCXML C.2)
+     * @brief Validate BasicHTTP send parameters (§scxml-C-2)
      *
      * Single Source of Truth for BasicHTTP validation logic.
      * Checks if required target attribute is present for event processors that require it.
@@ -338,7 +338,7 @@ public:
      * Used by both Interpreter and AOT engines to ensure consistent sendid format.
      * Delegates to centralized UniqueIdGenerator for thread-safe, collision-free IDs.
      *
-     * W3C SCXML 6.2: Each send action must have a unique sendid for tracking.
+     * §scxml-6.2: Each send action must have a unique sendid for tracking.
      *
      * @return Unique sendid string (format: "send_timestamp_counter")
      */
@@ -349,7 +349,7 @@ public:
     /**
      * @brief Send event to parent state machine (Single Source of Truth)
      *
-     * W3C SCXML 6.2: Handles <send target="#_parent"> semantics for child-to-parent
+     * §scxml-6.2: Handles <send target="#_parent"> semantics for child-to-parent
      * event communication in invoked state machines.
      *
      * Single Source of Truth for #_parent event routing shared between:
@@ -368,7 +368,7 @@ public:
     template <typename ParentStateMachine, typename EventType>
     static bool sendToParent(ParentStateMachine *parent, EventType event) {
         if (parent) {
-            // W3C SCXML 6.2: Send to parent's external event queue
+            // §scxml-6.2: Send to parent's external event queue
             parent->raiseExternal(event);
             return true;
         }
@@ -376,9 +376,9 @@ public:
     }
 
     /**
-     * @brief Send event to parent with invokeid metadata (W3C SCXML 6.4.1)
+     * @brief Send event to parent with invokeid metadata (§scxml-6.4.1)
      *
-     * W3C SCXML 6.4.1 (test338): When a child sends an event to its parent,
+     * §scxml-6.4.1 (test338): When a child sends an event to its parent,
      * the _event.invokeid field must be set to the invokeid of the invoke
      * that created the child.
      *
@@ -392,11 +392,11 @@ public:
         SCE_LOG_DEBUG("SendHelper::sendToParent called - parent={}, event={}, invokeId={}", (void *)parent,
                   static_cast<int>(event), invokeId);
         if (parent) {
-            // W3C SCXML 6.4.1: Create event with invokeid metadata
+            // §scxml-6.4.1: Create event with invokeid metadata
             typename ParentStateMachine::EventWithMetadata eventWithMetadata(event);
             eventWithMetadata.invokeId = invokeId;
 
-            // W3C SCXML 6.2: Send to parent's external event queue
+            // §scxml-6.2: Send to parent's external event queue
             SCE_LOG_DEBUG("SendHelper::sendToParent - calling parent->raiseExternal()");
             parent->raiseExternal(eventWithMetadata);
             SCE_LOG_DEBUG("SendHelper::sendToParent - parent->raiseExternal() completed");
@@ -407,9 +407,9 @@ public:
     }
 
     /**
-     * @brief Send event to parent state machine with origin (W3C SCXML 6.5 finalize)
+     * @brief Send event to parent state machine with origin (§scxml-6.5 finalize)
      *
-     * W3C SCXML 6.5: Set origin to child session ID for finalize execution.
+     * §scxml-6.5: Set origin to child session ID for finalize execution.
      * Finalize runs BEFORE the event is processed, with access to _event.data.
      *
      * @tparam ParentStateMachine Parent state machine type
@@ -427,16 +427,16 @@ public:
                   "eventData='{}'",
                   (void *)parent, static_cast<int>(event), invokeId, childSessionId, eventData);
         if (parent) {
-            // W3C SCXML 6.4.1: Create event with invokeid metadata
-            // W3C SCXML 6.5: Add origin (child session ID) for finalize support
-            // W3C SCXML 5.10: Add event data from params/namelist (test 233)
+            // §scxml-6.4.1: Create event with invokeid metadata
+            // §scxml-6.5: Add origin (child session ID) for finalize support
+            // §scxml-5.10: Add event data from params/namelist (test 233)
             typename ParentStateMachine::EventWithMetadata eventWithMetadata(event, eventData);
             eventWithMetadata.invokeId = invokeId;
-            eventWithMetadata.origin = childSessionId;  // W3C SCXML 6.5: For finalize matching
+            eventWithMetadata.origin = childSessionId;  // §scxml-6.5: For finalize matching
             eventWithMetadata.originType =
-                SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;  // W3C SCXML C.1: SCXML Event I/O Processor (test 253)
+                SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;  // §scxml-C-1: SCXML Event I/O Processor (test 253)
 
-            // W3C SCXML 6.2: Send to parent's external event queue
+            // §scxml-6.2: Send to parent's external event queue
             SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin - calling parent->raiseExternal()");
             parent->raiseExternal(eventWithMetadata);
             SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin - parent->raiseExternal() completed");
@@ -449,7 +449,7 @@ public:
     /**
      * @brief Store sendid in idlocation variable (Single Source of Truth)
      *
-     * W3C SCXML 6.2.4 (test 183): The idlocation attribute specifies a variable
+     * §scxml-6.2.4 (test 183): The idlocation attribute specifies a variable
      * where the generated sendid should be stored for later reference.
      *
      * This method encapsulates the idlocation storage logic shared between:
@@ -471,13 +471,13 @@ public:
 
 #ifdef SCE_ENABLE_HTTP
     /**
-     * @brief Build HTTP POST body with W3C SCXML C.2 compliance
+     * @brief Build HTTP POST body with §scxml-C-2 compliance
      *
      * Single Source of Truth for HTTP POST body generation shared between:
      * - Interpreter engine (HttpEventTarget::send)
      * - AOT engine (StaticExecutionEngine::raiseExternal)
      *
-     * W3C SCXML C.2 (test 531): Ensures "single instance" of _scxmleventname parameter.
+     * §scxml-C-2 (test 531): Ensures "single instance" of _scxmleventname parameter.
      * When eventName is present, it becomes the _scxmleventname parameter, and any
      * _scxmleventname in params is skipped to avoid duplication.
      *
@@ -495,7 +495,7 @@ public:
         std::string payload;
         bool firstParam = true;
 
-        // W3C SCXML C.2: Add event name as _scxmleventname parameter
+        // §scxml-C-2: Add event name as _scxmleventname parameter
         if (!eventName.empty()) {
             payload = "_scxmleventname=" + UrlEncodingHelper::urlEncode(eventName);
             firstParam = false;
@@ -504,7 +504,7 @@ public:
         // W3C SCXML: Support duplicate param names (Test 178)
         // Each value in the vector must be added as a separate param
         for (auto it = params.begin(); it != params.end(); ++it) {
-            // W3C SCXML C.2: Avoid duplicate _scxmleventname in HTTP POST body
+            // §scxml-C-2: Avoid duplicate _scxmleventname in HTTP POST body
             // Event name already added above via eventName parameter
             // W3C requires "single instance" of _scxmleventname parameter
             // Only skip if eventName is present (Zero Duplication with HttpEventTarget logic)

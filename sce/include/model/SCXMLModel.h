@@ -51,7 +51,7 @@ public:
     /**
      * @brief Set initial state ID(s) - supports space-separated multiple states for parallel regions
      *
-     * W3C SCXML 3.3: The 'initial' attribute can contain space-separated state IDs
+     * §scxml-3.3: The 'initial' attribute can contain space-separated state IDs
      * for parallel regions. This method parses the input string and stores all IDs.
      *
      * @param initialState Single state ID or space-separated list (e.g., "s1 s2 s3")
@@ -64,7 +64,7 @@ public:
     void setInitialState(const std::string &initialState);
 
     /**
-     * @brief Get initial state IDs (W3C SCXML 3.3 compliant)
+     * @brief Get initial state IDs (§scxml-3.3 compliant)
      *
      * Returns all initial state IDs parsed from 'initial' attribute.
      * For parallel regions, this vector contains multiple state IDs.
@@ -76,7 +76,7 @@ public:
     /**
      * @brief Get first initial state ID (backward compatibility only)
      *
-     * @deprecated Use getInitialStates() for W3C SCXML 3.3 compliance
+     * @deprecated Use getInitialStates() for §scxml-3.3 compliance
      * @return First initial state ID, or empty string if no initial states
      * @warning Only returns the first element. For parallel regions with multiple
      *          initial states, use getInitialStates() to avoid data loss.
@@ -212,13 +212,13 @@ public:
     const std::vector<std::shared_ptr<IDataModelItem>> &getSystemVariables() const;
 
     /**
-     * @brief Add top-level script (W3C SCXML 5.8)
+     * @brief Add top-level script (§scxml-5.8)
      * @param script Script action node
      */
     void addTopLevelScript(std::shared_ptr<IActionNode> script);
 
     /**
-     * @brief Get top-level scripts (W3C SCXML 5.8)
+     * @brief Get top-level scripts (§scxml-5.8)
      * @return Top-level scripts vector
      */
     const std::vector<std::shared_ptr<IActionNode>> &getTopLevelScripts() const;
@@ -255,7 +255,7 @@ private:
     // Member variables
     std::shared_ptr<IStateNode> rootState_;
     std::string name_;
-    std::vector<std::string> initialStates_;  // W3C SCXML 3.3: supports multiple initial states
+    std::vector<std::string> initialStates_;  // §scxml-3.3: supports multiple initial states
     std::string datamodel_;
     std::unordered_map<std::string, std::string> contextProperties_;
     std::unordered_map<std::string, std::string> injectPoints_;
@@ -265,7 +265,7 @@ private:
     std::vector<std::shared_ptr<IDataModelItem>> dataModelItems_;
     std::string binding_;
     std::vector<std::shared_ptr<IDataModelItem>> systemVariables_;
-    std::vector<std::shared_ptr<IActionNode>> topLevelScripts_;  // W3C SCXML 5.8
+    std::vector<std::shared_ptr<IActionNode>> topLevelScripts_;  // §scxml-5.8
 };
 
 }  // namespace SCE

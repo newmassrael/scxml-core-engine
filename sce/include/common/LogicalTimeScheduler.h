@@ -34,7 +34,7 @@ namespace SCE::Common {
  * - Deterministic replay: Same logical time sequence = same timer behavior
  * - Time scaling: Slow-motion or fast-forward by adjusting time advancement rate
  *
- * W3C SCXML 6.2: Implements delayed send pattern with logical time semantics
+ * §scxml-6.2: Implements delayed send pattern with logical time semantics
  *
  * Thread Safety: NOT thread-safe. Per W3C SCXML specification, state machines
  * process events sequentially within a single thread.
@@ -65,8 +65,8 @@ public:
     struct ScheduledEvent {
         EventType event;
         double fireTimeMs;      ///< Logical time when event should fire (milliseconds)
-        std::string sendId;     ///< W3C SCXML 6.2.5: Unique identifier for cancellation
-        std::string eventData;  ///< W3C SCXML 5.10: Event data from params
+        std::string sendId;     ///< §scxml-6.2.5: Unique identifier for cancellation
+        std::string eventData;  ///< §scxml-5.10: Event data from params
 
         ScheduledEvent(EventType evt, double fireTime, std::string id = "", std::string data = "")
             : event(evt), fireTimeMs(fireTime), sendId(std::move(id)), eventData(std::move(data)) {}
@@ -147,7 +147,7 @@ public:
             auto scheduledEvent = queue_.top();
             queue_.pop();
 
-            // W3C SCXML 6.2.5: Skip cancelled events
+            // §scxml-6.2.5: Skip cancelled events
             if (!scheduledEvent.sendId.empty() && isCancelled(scheduledEvent.sendId)) {
                 cancelledSendIds_.erase(scheduledEvent.sendId);  // Clean up
                 continue;
@@ -171,7 +171,7 @@ public:
     /**
      * @brief Cancel a scheduled event by sendid
      *
-     * W3C SCXML 6.2.5: <cancel sendidexpr="..."/> cancels pending delayed send
+     * §scxml-6.2.5: <cancel sendidexpr="..."/> cancels pending delayed send
      *
      * @param sendId The sendid of the event to cancel
      * @return true if sendid recorded for cancellation

@@ -35,7 +35,7 @@ public:
     virtual ~IChildSession() = default;
 
     /// Advance the child's macrostep once. Called from the worker's tick loop
-    /// at the parent's cadence (SCE_MESH.md §mesh-9.6.1, W3C §6.4.1). Implementation
+    /// at the parent's cadence (SCE_MESH.md §mesh-9.6.1, §scxml-6.4.1). Implementation
     /// delegates to Engine::tick() which drains the child's internal/external
     /// queues and runs entry/exit/transition actions.
     virtual void tick() = 0;
@@ -85,7 +85,7 @@ public:
     /// parent that originated the wire-14.
     virtual const std::string& parentPeer() const = 0;
 
-    /// SCXML-side invoke id from the parent (W3C §3.12.1 format,
+    /// SCXML-side invoke id from the parent (§scxml-3.12.1 format,
     /// `stateid.platformid.index`). Mirrored into every outbound wire-16/18
     /// envelope so the parent's `activeInvokes_[...]` lookup matches.
     virtual const std::string& invokeIdString() const = 0;
