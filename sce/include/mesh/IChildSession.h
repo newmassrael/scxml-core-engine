@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // SCE Mesh IChildSession — abstract interface for child state-machine
-// sessions hosted by a worker binary (SCE_MESH.md §9.6).
+// sessions hosted by a worker binary (SCE_MESH.md §mesh-9.6).
 //
 // Each remote `<invoke type="scxml" src="#peer">` round-trip creates one
 // IChildSession instance on the child's device. The session owns the
@@ -35,7 +35,7 @@ public:
     virtual ~IChildSession() = default;
 
     /// Advance the child's macrostep once. Called from the worker's tick loop
-    /// at the parent's cadence (SCE_MESH.md §9.6.1, W3C §6.4.1). Implementation
+    /// at the parent's cadence (SCE_MESH.md §mesh-9.6.1, W3C §6.4.1). Implementation
     /// delegates to Engine::tick() which drains the child's internal/external
     /// queues and runs entry/exit/transition actions.
     virtual void tick() = 0;
@@ -71,10 +71,10 @@ public:
     /// a parent may send wire-19 redundantly.
     virtual void cancel() = 0;
 
-    /// Child session URI (SCE_MESH.md §9.6.1 L1410:
+    /// Child session URI (SCE_MESH.md §mesh-9.6.1 L1410:
     /// `<parent_device>:<parent_machine>:<invoke_id>`). Stamped into every
     /// wire-16 envelope's `child_session_id` field for finalize / autoforward
-    /// matching on the parent (§9.6.3 L1463).
+    /// matching on the parent (§mesh-9.6.3 L1463).
     virtual const std::string& sessionId() const = 0;
 
     /// Deploy.yaml machine name hosted by this session.

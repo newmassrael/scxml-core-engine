@@ -3,7 +3,7 @@
 //
 // SCE Mesh OutboundBuffer — per-target readiness-gated outbound admit layer.
 //
-// SCE_MESH.md §10.10: transports whose peer may not yet be ready at the
+// SCE_MESH.md §mesh-10.10: transports whose peer may not yet be ready at the
 // moment of `route_send` (SOME/IP before `offer_service` completes,
 // Zenoh before any subscriber declares on a PUT-style keyexpr) silently
 // drop outbound envelopes with no `error.communication`. A buffer sits
@@ -13,20 +13,20 @@
 // Zenoh `Publisher::declare_matching_listener`), the buffer drains in
 // FIFO order.
 //
-// SCE_MESH.md §10.4.1 transport-lifecycle "Active → Disconnected"
+// SCE_MESH.md §mesh-10.4.1 transport-lifecycle "Active → Disconnected"
 // observer: the same readiness primitive that drives drain also
 // witnesses transport loss. When `markNotReady()` observes a true→false
 // transition (transport was Active and is now Disconnected — TCP RST,
 // SOME/IP availability=false, Zenoh peer-drop), the buffer raises
 // `error.communication` with `reason = "TRANSPORT_UNAVAILABLE"`
-// (§16.7 row 1). The initial Ready→Active anchor (the buffer's seed
+// (§mesh-16.7 row 1). The initial Ready→Active anchor (the buffer's seed
 // state is `ready_=false`, the first transition fires `markReady`) does
 // not emit because no Active lifecycle phase preceded it.
 //
 // Row 2 `SEND_FAILED` is emitted at every dispatcher-fail observation
 // point: the `admit` fast path (dispatcher under `ready=true ∧ queue
 // empty`) and the `markReady` drain loop (each queued envelope's
-// dispatch attempt). The §10.4.1 "Enqueued-but-unsent envelopes are
+// dispatch attempt). The §mesh-10.4.1 "Enqueued-but-unsent envelopes are
 // failed individually on Active→Disconnected" clause is satisfied by
 // construction in OutboundBuffer's design: `ready_=true` implies
 // `queue.empty()` (the fast path dispatches; the drain holds `mu_`
@@ -34,14 +34,14 @@
 // therefore no non-empty queue at the moment of `markNotReady`;
 // `markNotReady` emits Row 1 only. The dispatcher closure surfaces
 // the underlying transport-API decline through `SendResult` (whose
-// `transport_error` value populates the §16.7 row 2
+// `transport_error` value populates the §mesh-16.7 row 2
 // `CommunicationError::transport_error` field): SOME/IP stamps a
 // sentinel when `app.send()` returns false (vsomeip exposes no errno
 // equivalent), Zenoh stamps `ZException::what()` when
 // `Publisher::put` throws.
 //
 // OutboundBuffer is the third generic SCE mesh primitive, a sibling of
-// §10.5 `DedupRouter` (inbound duplicate suppression) and §10.6
+// §mesh-10.5 `DedupRouter` (inbound duplicate suppression) and §mesh-10.6
 // `OrderingBuffer` (inbound reorder). All three share the same shape:
 //   * generic SCE-owned header, consumed by codegen via jinja;
 //   * per-sender or per-target keying axis bounded by deploy.yaml roster;
@@ -52,19 +52,19 @@
 //   * No retry policy. Transport-level send failure observed at the
 //     dispatcher boundary (returning false from admit fast path or
 //     markReady drain) is surfaced as `error.communication` with
-//     `reason = "SEND_FAILED"` (§16.7 row 2) and the envelope is
+//     `reason = "SEND_FAILED"` (§mesh-16.7 row 2) and the envelope is
 //     considered consumed — the buffer does not re-enqueue or retry.
-//     SCE_MESH.md §16.7 row 3 `DELIVERY_EXHAUSTED` (retry-exhausted)
+//     SCE_MESH.md §mesh-16.7 row 3 `DELIVERY_EXHAUSTED` (retry-exhausted)
 //     is orthogonal and lives in a future retry-layer atomic.
 //   * No age-based drop. Overflow policy is fixed at
-//     `BACKPRESSURE_DROP` (§16.7 row 9) + drop-newest. Grammar
+//     `BACKPRESSURE_DROP` (§mesh-16.7 row 9) + drop-newest. Grammar
 //     additions (`max_age_ms`, `overflow: drop_oldest`) are deferred
 //     until a consumer lands.
 //   * No cross-target serialization. Each OutboundBuffer instance is
 //     per-target (deploy.yaml roster axis); admit + drain are
 //     serialized only within one target. A router with N opt-in
 //     targets holds N independent buffers.
-//   * No routing_id / sequence_no stamp. SCE_MESH.md §10.9 invariant 1
+//   * No routing_id / sequence_no stamp. SCE_MESH.md §mesh-10.9 invariant 1
 //     ("every envelope leaving a TransportRouter carries routing_id")
 //     is honored by the dispatch callback capturing the router's
 //     stamp path — a buffered envelope has not yet left the router,
@@ -102,7 +102,7 @@ namespace SCE::Mesh {
 
 /// Dispatcher result for an attempted outbound send.
 ///
-/// SCE_MESH.md §16.7 row 2 SEND_FAILED carries a `transport_error`
+/// SCE_MESH.md §mesh-16.7 row 2 SEND_FAILED carries a `transport_error`
 /// extra naming the underlying transport-API error surface so the
 /// SCXML author can correlate the loss with transport telemetry. The
 /// dispatcher closure populates `transport_error` on failure (vsomeip
@@ -111,7 +111,7 @@ namespace SCE::Mesh {
 /// OutboundBuffer relays it untouched into the
 /// `CommunicationError::transport_error` field at the raise site.
 ///
-/// SCE_MESH.md §16.7 row 3 DELIVERY_EXHAUSTED gates the
+/// SCE_MESH.md §mesh-16.7 row 3 DELIVERY_EXHAUSTED gates the
 /// `RetryingDispatcher` wrapper on `retryable`: dispatchers that
 /// classify their failure as TERMINAL (config error, unrecoverable
 /// codec failure, "closed session" with no auto-reconnect) stamp
@@ -134,7 +134,7 @@ struct SendResult {
     /// remains optional for future dispatchers that can't).
     std::optional<std::string> transport_error;
 
-    /// SCE_MESH.md §16.7 row 3 retry-layer classification. Only
+    /// SCE_MESH.md §mesh-16.7 row 3 retry-layer classification. Only
     /// meaningful when `!ok` and a `RetryingDispatcher` is installed
     /// (deploy.yaml `retry: { max_retries > 0 }`). Default `true` on
     /// failure preserves back-compat with Stage 2's `failure(string)`
@@ -179,7 +179,7 @@ public:
     /// Transport-specific send. Returns a `SendResult` whose `ok`
     /// flag indicates whether the transport accepted the envelope and
     /// whose `transport_error` (when present) names the underlying
-    /// API decline so the SCE_MESH.md §16.7 row 2 raise can populate
+    /// API decline so the SCE_MESH.md §mesh-16.7 row 2 raise can populate
     /// `CommunicationError::transport_error`. Called under the buffer
     /// mutex for FIFO preservation — see class-level thread-safety
     /// note.
@@ -211,11 +211,11 @@ public:
     ///   * ready + empty queue ⇒ dispatch immediately (fast path).
     ///   * not ready ⇒ enqueue (up to `max_pending`); on overflow,
     ///     raise `error.communication` with reason `BACKPRESSURE_DROP`
-    ///     (§16.7 row 9) and drop the newest envelope.
+    ///     (§mesh-16.7 row 9) and drop the newest envelope.
     ///   * ready + non-empty queue (transient mid-drain) ⇒ enqueue to
     ///     preserve FIFO; the in-progress drain will release it.
     ///
-    /// SCE_MESH.md §16.7 row 2: when the fast path's dispatcher
+    /// SCE_MESH.md §mesh-16.7 row 2: when the fast path's dispatcher
     /// returns a non-ok `SendResult`, `error.communication` with
     /// `reason = "SEND_FAILED"` is raised — the transport API said
     /// no, the envelope is gone, and the SCXML author must observe
@@ -281,13 +281,13 @@ public:
     /// order through the dispatcher. Idempotent: calling markReady on an
     /// already-ready buffer is a no-op (queue is empty by invariant).
     ///
-    /// SCE_MESH.md §16.7 row 2: each drained envelope whose dispatcher
+    /// SCE_MESH.md §mesh-16.7 row 2: each drained envelope whose dispatcher
     /// returns a non-ok `SendResult` raises `error.communication`
     /// with `reason = "SEND_FAILED"` and the dispatcher's
     /// `transport_error` (when populated) is relayed into the raised
     /// `CommunicationError::transport_error` field. The raises run
     /// OUTSIDE the buffer mutex (after the drain releases `mu_`),
-    /// preserving §10.10 lock-discipline; the per-envelope
+    /// preserving §mesh-10.10 lock-discipline; the per-envelope
     /// transport_error strings are captured into a vector under the
     /// mutex during the drain and the raises are emitted one-to-one
     /// in a single post-drain loop.
@@ -297,7 +297,7 @@ public:
     /// drain. See class-level thread-safety note for the rationale that
     /// this does not become a throughput bottleneck in practice.
     void markReady() {
-        // §10.10 lock-discipline: capture per-envelope transport_error
+        // §mesh-10.10 lock-discipline: capture per-envelope transport_error
         // strings under the mutex during drain, emit the raises after
         // the mutex releases. A vector<optional<string>> preserves the
         // "this envelope's API decline had a message" / "this one did
@@ -332,7 +332,7 @@ public:
     /// Transport readiness became false. Subsequent admits enqueue
     /// until the next `markReady`.
     ///
-    /// SCE_MESH.md §10.4.1 + §16.7 row 1: a `true → false` transition
+    /// SCE_MESH.md §mesh-10.4.1 + §mesh-16.7 row 1: a `true → false` transition
     /// is the "Active → Disconnected" lifecycle edge and raises
     /// `error.communication` with `reason = "TRANSPORT_UNAVAILABLE"`.
     /// Repeated `markNotReady` calls while already not-ready are
@@ -340,7 +340,7 @@ public:
     /// `ready_=false` therefore does NOT emit on the first call: no
     /// Active phase preceded it, so there is no transition.
     ///
-    /// The §10.4.1 disconnect-drain "Enqueued-but-unsent envelopes
+    /// The §mesh-10.4.1 disconnect-drain "Enqueued-but-unsent envelopes
     /// are failed individually" clause is satisfied vacuously:
     /// `ready_=true` implies `queue.empty()` in OutboundBuffer's
     /// design (admit fast-paths under ready+empty; markReady's drain
@@ -351,7 +351,7 @@ public:
     /// (`admit` fast path, `markReady` drain).
     ///
     /// The raise closure runs OUTSIDE the buffer mutex to preserve
-    /// §10.10 lock-discipline.
+    /// §mesh-10.10 lock-discipline.
     void markNotReady() {
         bool was_ready = false;
         {

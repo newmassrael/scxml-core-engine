@@ -206,10 +206,10 @@ public:
     /// @return Number of control entries drained
     template <typename Policy, typename Engine>
     std::size_t drain(Engine& engine) {
-        // Partition-internal wire-21 paths drive their own §16.7 row 4
+        // Partition-internal wire-21 paths drive their own §mesh-16.7 row 4
         // emit through codegen `decodeEnvelope` instrumentation, so the
         // decode-error callback is a no-op here — passing a non-empty
-        // handler at this layer would double-raise. The §9.6
+        // handler at this layer would double-raise. The §mesh-9.6
         // invoke-lifecycle path uses `drainWith` directly with a
         // non-no-op handler to opt into the catalog row.
         return drainWith(
@@ -219,7 +219,7 @@ public:
             []() noexcept {});
     }
 
-    /// SCE_MESH.md §9.6.2 wire-14/20 variant of `drain`: same CBOR decode
+    /// SCE_MESH.md §mesh-9.6.2 wire-14/20 variant of `drain`: same CBOR decode
     /// and arena-reclaim discipline, but routes each decoded envelope into
     /// the caller-supplied handler instead of `dispatchEnvelope`. Used by
     /// TransportRouter's invoke-lifecycle pumps, which need to observe
@@ -228,11 +228,11 @@ public:
     /// `void(const MeshEnvelope&)`; it MUST NOT throw (the arena slot is
     /// reclaimed after the call regardless).
     ///
-    /// SCE_MESH.md §16.7 row 4: malformed CBOR slots invoke
+    /// SCE_MESH.md §mesh-16.7 row 4: malformed CBOR slots invoke
     /// `on_decode_error()` (signature `void()`) instead of `handler` and
     /// still reclaim the arena slot. The caller wires this to
     /// `raiseCommunicationError(ENVELOPE_CORRUPT, transport="shm")` so
-    /// the §10.7.1 catalog row fires at this endpoint tier the same way
+    /// the §mesh-10.7.1 catalog row fires at this endpoint tier the same way
     /// codegen `decodeEnvelope` sites already do. Pass a no-op lambda
     /// if the caller does not need the signal (the convenience
     /// `drain<Policy, Engine>` overload below does this — partition-
@@ -255,7 +255,7 @@ public:
                     reinterpret_cast<const std::uint8_t*>(layout_->arena + slot.offset),
                     slot.length, env)) {
                 // Malformed CBOR — surface via on_decode_error then
-                // skip while reclaiming arena space. §16.7 row 4 raise
+                // skip while reclaiming arena space. §mesh-16.7 row 4 raise
                 // happens in the caller-supplied callback so the
                 // transport literal ("shm") is stamped at the right
                 // catalog row without coupling this primitive to

@@ -4,7 +4,7 @@
 // SCE Mesh MeshDeadlineScheduler — callback-based deadline timer for
 // `<invoke type="sce:mesh-rpc">` lifecycle bookkeeping.
 //
-// SCE_MESH.md §9.5 requires each mesh-rpc invoke to raise
+// SCE_MESH.md §mesh-9.5 requires each mesh-rpc invoke to raise
 // `error.invoke.<id>` with `rpc_status=DeadlineExceeded` when no reply
 // arrives before `_mesh_deadline_ms`. The AOT StaticExecutionEngine
 // scheduler accepts only typed `Event` enum values, not arbitrary
@@ -130,7 +130,7 @@ public:
     }
 
     /// Stop the scheduler thread. Pending deadlines are dropped without
-    /// firing their callbacks — §9.5 "benign drop" semantics: a router
+    /// firing their callbacks — §mesh-9.5 "benign drop" semantics: a router
     /// destroyed mid-flight cannot deliver any further events, so the
     /// observable effect matches cancel.
     void shutdown() {

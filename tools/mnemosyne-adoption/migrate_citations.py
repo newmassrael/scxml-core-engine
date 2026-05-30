@@ -71,11 +71,38 @@ REPO_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 DEFAULT_LEDGER = os.path.join(
     REPO_ROOT, "docs", "spec", "scxml", ".atomic", "workspace.atomic.json"
 )
+DEFAULT_MESH_LEDGER = os.path.join(
+    REPO_ROOT, "docs", "sce-ledger", "mesh", ".atomic", "workspace.atomic.json"
+)
 
 # A citation label: a numeric path (digits + dotted digits) or a lettered
 # appendix path (single uppercase letter + at least one dotted-digit group).
 # Bare single letters and word tokens are intentionally NOT matched.
 LABEL_RE = r"(?:[0-9]+(?:\.[0-9]+)*|[A-Z](?:\.[0-9]+)+)"
+
+# The mesh namespace (SCE_MESH.md) has purely numeric section labels; unlike the
+# scxml namespace there is no prose "W3C SCXML <n>" marker — the source always
+# writes a bare `§<n>` sigil. Matching a bare sigil is far less self-evident than
+# a marked one, so the bare path leans on three guards (see _plan_bare): ledger
+# membership, a cross-namespace ambiguity check, and a foreign-marker denylist.
+MESH_LABEL_RE = r"[0-9]+(?:\.[0-9]+)*"
+
+# An external-standard marker that DIRECTLY precedes the sigil (anchored to the
+# end of the line-so-far) names a non-mesh citation the bare-sigil migrator must
+# not claim:
+#   W3C / W3C SCXML -> a W3C SCXML cite (the marked path's namespace, scxml)
+#   RFC <digits>    -> an IETF RFC ("RFC 9562 §5.7" UUID, "RFC 8949 §4.2.1" CBOR)
+#   ISO/LGPL/MIT    -> a standard / licence section
+# Anchored to `$` (immediately before the §) on purpose: a foreign cite earlier
+# on the same line ("W3C §5.10 ... see §16.7") must not disqualify a later mesh
+# cite. Other-doc references ("rfc-...-phase-c.md §3", "Phase C P2 §3") and the
+# mesh doc's own name ("SCE_MESH.md §16.7") are deliberately NOT markers here:
+# the former all cite low §1-§6 numbers caught by the cross-namespace guard, and
+# the latter IS the mesh source — treating "SCE_MESH.md" as foreign would skip
+# the very citations this path exists to migrate.
+FOREIGN_MARKER_RE = re.compile(
+    r"(?:\bW3C(?:[ \t]+SCXML)?|\bRFC[ \t]+[0-9]+|\bISO|\bLGPL|\bMIT)[ \t]*$"
+)
 
 # File extensions we know how to tokenize for comments. Rust block comments
 # nest; C/C++ ones do not.
@@ -149,55 +176,67 @@ def comment_mask(text, nested):
     return mask
 
 
-def label_to_id(label):
-    """'6.2' -> 'scxml-6.2' ; 'C.2' -> 'scxml-C-2' (A1 policy)."""
-    return "scxml-" + label_to_leaf(label)
+def label_to_id(label, namespace="scxml"):
+    """'6.2' -> 'scxml-6.2' ; 'C.2' -> 'scxml-C-2' (A1 policy). The namespace
+    segment defaults to scxml; the mesh path passes namespace='mesh'."""
+    return f"{namespace}-" + label_to_leaf(label)
 
 
-def plan_file(path, ledger_ids, prefix):
+def _line_offsets(text):
+    line_starts = [0]
+    for m in re.finditer("\n", text):
+        line_starts.append(m.end())
+
+    def lineno(off):
+        import bisect
+
+        return bisect.bisect_right(line_starts, off)
+
+    return line_starts, lineno
+
+
+def plan_file(path, ledger_ids, prefix="W3C SCXML", namespace="scxml", exclude_ledger_ids=None):
     """Return (new_text, migrations, skipped) for one file without writing.
 
-    migrations: list of dicts {line, label, id, col}
+    migrations: list of dicts {line, label, id}
     skipped:    list of dicts {line, label, id, reason}
+
+    namespace="scxml" runs the *marked* path (prose "W3C SCXML <n>" / bare
+    "W3C §<n>"), unchanged. namespace="mesh" runs the *bare-sigil* path, where
+    exclude_ledger_ids is the sibling (scxml) ledger used by the cross-namespace
+    ambiguity guard in _plan_bare.
     """
     ext = os.path.splitext(path)[1]
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
     mask = comment_mask(text, nested=(ext in NESTED_BLOCK))
+    line_starts, lineno = _line_offsets(text)
 
+    if namespace == "scxml":
+        return _plan_marked(text, mask, ledger_ids, prefix, lineno)
+    return _plan_bare(text, mask, ledger_ids, exclude_ledger_ids or set(), namespace, lineno, line_starts)
+
+
+def _plan_marked(text, mask, ledger_ids, prefix, lineno):
+    """The scxml path: a W3C marker (prose or sigil) is required before the
+    label. See plan_file's module docstring for the two shapes."""
     # A citation may be a slash chain ("3.8/3.9" = sections 3.8 and 3.9). Each
     # member is rewritten independently and rejoined with " / " (the spaces let
     # the extractor see two separate §ids; "§a/§b" without them would read as a
     # single id with a stray slash). "I/O" never matches: "I" alone is not a
     # LABEL_RE label (it needs a .digit), so the chain cannot start.
     chain = LABEL_RE + r"(?:/" + LABEL_RE + r")*"
-    # Two citation shapes, both comment-only and ledger-gated, both rewritten to
-    # the canonical "§scxml-<id>" (the prefix words and any hand-written § are
-    # dropped):
     #   prose:      W3C SCXML 5.10            (digits directly after the prefix)
     #   bare-sigil: W3C §5.5 / W3C SCXML §3.3 (a § sigil already present)
     # The sigil branch is tried first so "W3C SCXML §3.3" is read as sigil, not
     # as a prose miss. A bare "§3" with no W3C marker (e.g. "RFC §3",
-    # "SCE_FORGE.md §3.1") is never matched -> SCE-internal design-doc refs are
-    # left for the design-ledger workspace.
+    # "SCE_FORGE.md §3.1") is never matched here -> SCE-internal design-doc refs
+    # are handled by the bare-sigil path under their own namespace.
     sig_re = r"(?:W3C[ \t]+SCXML|W3C)[ \t]*§[ \t]*(?P<sigchain>" + chain + r")"
     prose_re = re.escape(prefix) + r"[ \t]+(?P<prosechain>" + chain + r")"
     pattern = re.compile(sig_re + r"|" + prose_re)
     migrations, skipped = [], []
-
-    # Build line-start offsets for line-number reporting.
-    line_starts = [0]
-    for m in re.finditer("\n", text):
-        line_starts.append(m.end())
-
-    def lineno(off):
-        # binary-free: line_starts is sorted; find rightmost <= off
-        import bisect
-
-        return bisect.bisect_right(line_starts, off)
-
-    out = []
-    last = 0
+    out, last = [], 0
     for m in pattern.finditer(text):
         if not mask[m.start()]:
             continue  # outside a comment -> never touch
@@ -244,6 +283,90 @@ def plan_file(path, ledger_ids, prefix):
     return "".join(out), migrations, skipped
 
 
+def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_starts):
+    """The mesh path: a bare `§<n>` (no marker) is claimed for this namespace
+    only when three guards all pass:
+      1. ledger membership — `<ns>-<n>` is a real section in this ledger;
+      2. cross-namespace   — `scxml-<n>` is NOT also a section. A number in both
+         the mesh and scxml ledgers (e.g. §6.4: the W3C <invoke> section AND the
+         mesh Custom-Transport profile) is ambiguous from the number alone, so
+         it is reported for manual review rather than auto-claimed;
+      3. foreign marker    — the text immediately before the sigil is not a
+         W3C / RFC <digits> / ISO / licence marker (an external-standard cite).
+    A reported (skipped) citation stays bare, which the namespace-scoped gate
+    skips anyway — so leaving it is safe; the report is the manual-review surface.
+    """
+    chain = MESH_LABEL_RE + r"(?:/" + MESH_LABEL_RE + r")*"
+    pattern = re.compile(r"§[ \t]*(?P<barechain>" + chain + r")")
+    migrations, skipped = [], []
+    out, last = [], 0
+    for m in pattern.finditer(text):
+        if not mask[m.start()]:
+            continue
+        ln = lineno(m.start())
+        labels = m.group("barechain").split("/")
+        ids = [label_to_id(lbl, namespace) for lbl in labels]
+        # Quoted runtime string value shown in a comment -> leave verbatim.
+        if m.start() > 0 and text[m.start() - 1] == '"':
+            for lbl, sid in zip(labels, ids):
+                skipped.append(
+                    {
+                        "line": ln,
+                        "label": lbl,
+                        "id": sid,
+                        "reason": "quoted string value (runtime literal); left verbatim",
+                    }
+                )
+            continue
+        # A hyphen-glued suffix ("§16.5-L3500", a line back-reference) would fuse
+        # into the §id on render ("§mesh-16.5-L3500" reads as one bad id, since
+        # '-' is a section-id char). Refuse it; the source must space-separate the
+        # suffix ("§16.5 L3500") first.
+        tail = text[m.end() : m.end() + 2]
+        if len(tail) == 2 and tail[0] == "-" and tail[1].isalnum():
+            for lbl, sid in zip(labels, ids):
+                skipped.append(
+                    {
+                        "line": ln,
+                        "label": lbl,
+                        "id": sid,
+                        "reason": "hyphen-glued suffix would corrupt the §id; space-separate it",
+                    }
+                )
+            continue
+        # Same-line context before the sigil that marks another namespace.
+        line_prefix = text[line_starts[ln - 1] : m.start()]
+        if FOREIGN_MARKER_RE.search(line_prefix):
+            for lbl, sid in zip(labels, ids):
+                skipped.append(
+                    {
+                        "line": ln,
+                        "label": lbl,
+                        "id": sid,
+                        "reason": "foreign-standard marker before sigil (W3C/RFC/ISO/licence)",
+                    }
+                )
+            continue
+        reasons = []
+        for lbl, sid in zip(labels, ids):
+            leaf = label_to_leaf(lbl)
+            if sid not in target_ids:
+                reasons.append((lbl, sid, f"id not in {namespace} ledger (non-section)"))
+            elif ("scxml-" + leaf) in exclude_ids:
+                reasons.append((lbl, sid, "ambiguous: also a W3C section; manual review"))
+        if not reasons:
+            out.append(text[last : m.start()])
+            out.append(" / ".join("§" + s for s in ids))
+            last = m.end()
+            for lbl, sid in zip(labels, ids):
+                migrations.append({"line": ln, "label": lbl, "id": sid})
+        else:
+            for lbl, sid, reason in reasons:
+                skipped.append({"line": ln, "label": lbl, "id": sid, "reason": reason})
+    out.append(text[last:])
+    return "".join(out), migrations, skipped
+
+
 def load_ledger_ids(ledger_path):
     with open(ledger_path, "r", encoding="utf-8") as fh:
         store = json.load(fh)
@@ -267,17 +390,41 @@ def iter_source_files(paths):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("paths", nargs="+", help="files or directories to migrate")
-    ap.add_argument("--ledger", default=DEFAULT_LEDGER)
+    ap.add_argument(
+        "--namespace",
+        default="scxml",
+        choices=["scxml", "mesh"],
+        help="scxml: W3C-marked cites (default); mesh: bare §<n> SCE_MESH.md cites",
+    )
+    ap.add_argument(
+        "--ledger",
+        default=None,
+        help="target atomic store (default: the namespace's workspace ledger)",
+    )
+    ap.add_argument(
+        "--exclude-ledger",
+        default=None,
+        help="sibling ledger for the mesh cross-namespace guard "
+        "(default: the scxml ledger)",
+    )
     ap.add_argument("--prefix", default="W3C SCXML")
     ap.add_argument("--apply", action="store_true", help="write changes in place")
     ap.add_argument("--json", action="store_true", help="machine-readable report")
     args = ap.parse_args(argv)
 
-    ledger_ids = load_ledger_ids(args.ledger)
+    ledger_path = args.ledger or (
+        DEFAULT_MESH_LEDGER if args.namespace == "mesh" else DEFAULT_LEDGER
+    )
+    ledger_ids = load_ledger_ids(ledger_path)
+    exclude_ids = set()
+    if args.namespace == "mesh":
+        exclude_ids = load_ledger_ids(args.exclude_ledger or DEFAULT_LEDGER)
 
     report = {"migrations": [], "skipped": [], "files_changed": 0}
     for path in iter_source_files(args.paths):
-        new_text, migs, skips = plan_file(path, ledger_ids, args.prefix)
+        new_text, migs, skips = plan_file(
+            path, ledger_ids, args.prefix, args.namespace, exclude_ids
+        )
         rel = os.path.relpath(path, REPO_ROOT)
         for d in migs:
             report["migrations"].append({"file": rel, **d})
@@ -295,14 +442,14 @@ def main(argv=None):
     else:
         verb = "Rewrote" if args.apply else "Would rewrite"
         for d in report["migrations"]:
-            print(f"  {d['file']}:{d['line']}  W3C SCXML {d['label']} -> §{d['id']}")
+            print(f"  {d['file']}:{d['line']}  §{d['label']} -> §{d['id']}")
         if report["skipped"]:
-            print("\n-- left as prose (id absent from ledger; review) --")
+            print("\n-- left unchanged (review) --")
             for d in report["skipped"]:
-                print(f"  {d['file']}:{d['line']}  W3C SCXML {d['label']}  (-> {d['id']}?)")
+                print(f"  {d['file']}:{d['line']}  §{d['label']}  ({d['reason']})")
         print(
             f"\n{verb} {len(report['migrations'])} citation(s) in "
-            f"{report['files_changed']} file(s); {len(report['skipped'])} left as prose."
+            f"{report['files_changed']} file(s); {len(report['skipped'])} left unchanged."
         )
     return 0
 

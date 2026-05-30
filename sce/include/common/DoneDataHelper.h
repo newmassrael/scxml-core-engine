@@ -82,7 +82,7 @@ public:
      *
      * @param literal Inline text content from `<content>literal</content>`
      * @param outEventData _event.data output as a canonical JSON scalar so the
-     *                     wire path (mesh §9.6.2 wire-18) and the local fallback
+     *                     wire path (mesh §mesh-9.6.2 wire-18) and the local fallback
      *                     parse in `EventRaiserImpl::raiseEventWithPriority` —
      *                     which hydrates `typedData` via
      *                     `EventDataHelper::jsonStringToScriptValue` when typed
@@ -115,7 +115,7 @@ public:
         if (result.isSuccess()) {
             const auto &value = result.getInternalValue();
             // W3C SCXML 5.5 + B.2: ship canonical JSON so the wire path
-            // (mesh §9.6.2 wire-18) and the local fallback parse in
+            // (mesh §mesh-9.6.2 wire-18) and the local fallback parse in
             // `EventRaiserImpl::raiseEventWithPriority` can round-trip
             // through `EventDataHelper::jsonStringToScriptValue`.
             // `scriptValueToJsonString` handles ScriptArray/ScriptObject

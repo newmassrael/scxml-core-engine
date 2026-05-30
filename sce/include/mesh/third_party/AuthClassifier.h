@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §16.7 row 10 — auth-fail classifier shared between
+// SCE Mesh §mesh-16.7 row 10 — auth-fail classifier shared between
 // generated TransportRouters (via codegen template) and direct unit
 // tests. Keeps the classification rule in one place so the row-10
 // contract is auditable in isolation rather than locked inside a
@@ -26,7 +26,7 @@
 // what() payload reads `"Failed to open session(Error code: -4 )"`.
 // None of the manifest keywords match, so `isZenohAuthFailMessage`
 // always returns false in production — the row-10 emit path is dead
-// code under the current zenoh-cpp surface. The spec-side §16.7 row
+// code under the current zenoh-cpp surface. The spec-side §mesh-16.7 row
 // 10 contract remains valid (author-facing closure shipped in
 // `73087043`), but live production emission of UNAUTHORIZED awaits
 // zenoh-cpp upstream exposing a typed auth-failure discriminator that
@@ -60,7 +60,7 @@ inline constexpr std::array<std::string_view, 4> kZenohAuthFailKeywords{
     "handshake",
 };
 
-/// SCE_MESH.md §16.7 row 10 — case-insensitive substring scan against
+/// SCE_MESH.md §mesh-16.7 row 10 — case-insensitive substring scan against
 /// the four spec-named auth-fail keywords. Returns `true` iff the
 /// input contains any of `certificate`, `tls`, `auth`, or `handshake`
 /// (case-insensitive). Used by the generated zenoh ZException catch

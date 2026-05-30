@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // SCE Mesh ChildSessionAdapter — binds a concrete AOT-generated
-// StaticExecutionEngine to the IChildSession interface (SCE_MESH.md §9.6).
+// StaticExecutionEngine to the IChildSession interface (SCE_MESH.md §mesh-9.6).
 //
 // One instance per active remote invoke. Owned by WorkerSessionHost's
 // registry through std::unique_ptr<IChildSession>. The adapter:

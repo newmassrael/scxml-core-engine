@@ -296,5 +296,95 @@ class TestBareSigilForm(unittest.TestCase):
         self.assertEqual(len(migs), 2)
 
 
+MESH_LEDGER = {
+    "mesh-16.7",
+    "mesh-9.6",
+    "mesh-9.6.2",
+    "mesh-10.5",
+    "mesh-6.4",  # Custom Transport — collides with W3C §6.4 <invoke>
+    "mesh-6.3",
+    "mesh-1",
+    "mesh-3",
+}
+# Sibling scxml ledger for the cross-namespace ambiguity guard.
+MESH_EXCLUDE = {"scxml-6.4", "scxml-6.3", "scxml-1", "scxml-3", "scxml-5.5"}
+
+
+def mesh_plan(text, name="f.h"):
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, name)
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return mc.plan_file(
+            p, MESH_LEDGER, namespace="mesh", exclude_ledger_ids=MESH_EXCLUDE
+        )
+
+
+class MeshNamespace(unittest.TestCase):
+    def test_mesh_exclusive_bare_sigil_migrated(self):
+        new, migs, _ = mesh_plan("// see §9.6.2 envelope extensions\n")
+        self.assertIn("§mesh-9.6.2", new)
+        self.assertEqual(migs[0]["id"], "mesh-9.6.2")
+
+    def test_sce_mesh_md_is_not_foreign(self):
+        # SCE_MESH.md is the mesh source doc; ".md" before the sigil must NOT
+        # mark it foreign (the regression that whole-line matching caused).
+        new, migs, _ = mesh_plan("/// `SCE_MESH.md` §16.7 rows 1-13\n")
+        self.assertIn("§mesh-16.7", new)
+        self.assertEqual(len(migs), 1)
+
+    def test_w3c_marked_sigil_not_claimed_by_mesh(self):
+        # mesh-6.4 exists, but the W3C marker means this is a W3C cite.
+        new, migs, skips = mesh_plan("// per W3C §6.4 invoke contract\n")
+        self.assertEqual(migs, [])
+        self.assertIn("W3C §6.4", new)
+        self.assertTrue(skips[0]["reason"].startswith("foreign"))
+
+    def test_ietf_rfc_not_claimed(self):
+        new, migs, skips = mesh_plan("// RFC 9562 §5.7 layout (big-endian)\n")
+        self.assertEqual(migs, [])
+        self.assertIn("RFC 9562 §5.7", new)
+
+    def test_cross_namespace_ambiguous_reported_not_migrated(self):
+        # §6.4 with no marker: in BOTH ledgers -> ambiguous, manual review.
+        new, migs, skips = mesh_plan("// done.invoke contract fires in §6.4 only\n")
+        self.assertEqual(migs, [])
+        self.assertIn("§6.4", new)
+        self.assertEqual(len(skips), 1)
+        self.assertIn("ambiguous", skips[0]["reason"])
+
+    def test_proximity_earlier_foreign_cite_does_not_poison_later_mesh(self):
+        # An earlier "W3C §5.5" on the line must not disqualify the later mesh §9.6.
+        new, migs, skips = mesh_plan("// W3C §5.5 donedata and §9.6 remote invoke\n")
+        self.assertIn("§mesh-9.6", new)
+        self.assertEqual([m["id"] for m in migs], ["mesh-9.6"])
+        self.assertIn("W3C §5.5", new)  # the W3C cite stays bare for the scxml path
+
+    def test_hyphen_glued_suffix_refused(self):
+        # "§16.7-L3500" must not migrate: "§mesh-16.7-L3500" would read as one
+        # bad id. The source has to space-separate the line back-reference.
+        new, migs, skips = mesh_plan("// the pre-§16.7-L3500 primitive\n")
+        self.assertEqual(migs, [])
+        self.assertIn("§16.7-L3500", new)
+        self.assertIn("glued suffix", skips[0]["reason"])
+
+    def test_hallucinated_mesh_number_reported(self):
+        new, migs, skips = mesh_plan("// §16.99 invented section\n")
+        self.assertEqual(migs, [])
+        self.assertIn("non-section", skips[0]["reason"])
+
+    def test_string_literal_sigil_untouched(self):
+        src = 'const char *k = "§16.7";\n'
+        new, migs, _ = mesh_plan(src)
+        self.assertEqual(new, src)
+        self.assertEqual(migs, [])
+
+    def test_mesh_idempotent(self):
+        once, _, _ = mesh_plan("// §16.7 and §9.6\n")
+        twice, migs, _ = mesh_plan(once)
+        self.assertEqual(once, twice)
+        self.assertEqual(migs, [])
+
+
 if __name__ == "__main__":
     unittest.main()

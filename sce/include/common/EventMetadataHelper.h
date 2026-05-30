@@ -347,7 +347,7 @@ public:
      *   - local invoke completion callback (`invoke_methods.jinja2`
      *     `setCompletionCallback`), which reads the child's
      *     `donedataAtFinal()` / `typedDonedataAtFinal()`;
-     *   - SCE Mesh §9.6.2 wire-18 consumer (`onInvokeDone`), which rebuilds
+     *   - SCE Mesh §mesh-9.6.2 wire-18 consumer (`onInvokeDone`), which rebuilds
      *     the payload from the envelope's `data` bytes — `typedData` left
      *     empty so `setPolicyMetadata` re-parses via
      *     `EventDataHelper::jsonStringToScriptValue`.
