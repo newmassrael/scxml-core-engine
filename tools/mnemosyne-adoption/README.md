@@ -227,3 +227,16 @@ are **adoption-round counters**, not Mnemosyne changelog rounds, so the gate is
 advisory here (the drift line still prints; it just does not gate the exit code).
 Mnemosyne R377 also path-scopes the scan to each workspace's subtree so a sibling
 workspace's labels no longer bleed in.
+
+## CI enforcement (`.github/workflows/spec-citations.yml`)
+
+The citation gate runs in CI on every change to `sce/**` or a workspace, across
+all three namespaces. Because `mnemosyne-cli` is an external Rust binary (a
+separate repo, intentionally not vendored), the job installs it at a pinned
+Mnemosyne revision via `cargo install --git ... --rev <sha> --locked` and caches
+it by that rev — the consumer CI pattern from Mnemosyne's SCHEMA_GUIDE. It then
+runs `validate-workspace` + `validate-code-refs` in each workspace, so a
+hallucinated §<ns>-<id> citation (reject) or a hand-edited ledger view (round-trip
+drift) fails the build. Bump `MNEMOSYNE_REV` deliberately, re-validating the three
+workspaces locally against the new rev first; the closed-loop tooling tests
+(which self-skip without the CLI) cover the migrators' grammar contract.
