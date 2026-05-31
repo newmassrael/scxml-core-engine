@@ -509,6 +509,10 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/static/StaticExecutionEngine.h:processEvent
 - sce/include/static/StaticExecutionEngine.h:processEventImpl
 - sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::findLCA
+- sce/include/core/ConflictResolutionHelper.h:isTargetless
+- sce/include/core/ParallelTransitionHelper.h:isTargetless
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::hasQueuedInternalEvents
+- sce/src/runtime/EventRaiserImpl.h:hasQueuedInternalEvents
 
 
 
@@ -2296,6 +2300,12 @@ The child content of the <script> element represents the script code to be execu
 
 **Implementations**:
 - sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- sce/include/common/InPredicateHelper.h:SCE::InPredicateHelper
+- sce/include/common/InPredicateHelper.h:isStateActive
+- sce/include/scripting/IScriptEngine.h:IScriptEngine
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
+- sce/src/scripting/JSEngine.cpp:JSEngine::checkStateActive
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::registerBuiltins
 
 
 
@@ -2314,25 +2324,6 @@ Conditional expressions are used inside the 'cond' attribute of <transition>, <i
 
 
 
-
-
-**Implementations**:
-- sce/include/common/InPredicateHelper.h:SCE::InPredicateHelper
-- sce/include/common/InPredicateHelper.h:isStateActive
-- sce/include/core/ConflictResolutionHelper.h:computeExitSet
-- sce/include/core/ConflictResolutionHelper.h:isTargetless
-- sce/include/core/ParallelTransitionHelper.h:computeExitSet
-- sce/include/core/ParallelTransitionHelper.h:computeStatesToExit
-- sce/include/core/ParallelTransitionHelper.h:isTargetless
-- sce/include/scripting/IScriptEngine.h:IScriptEngine
-- sce/include/static/StaticExecutionEngine.h:executeTransition
-- sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
-- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::hasQueuedInternalEvents
-- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEventWithPriority
-- sce/src/runtime/EventRaiserImpl.h:hasQueuedInternalEvents
-- sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
-- sce/src/scripting/JSEngine.cpp:JSEngine::checkStateActive
-- sce/src/scripting/LuaEngine.cpp:LuaEngine::registerBuiltins
 
 
 

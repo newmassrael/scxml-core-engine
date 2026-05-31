@@ -255,10 +255,10 @@ private:
         SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Transition {} -> {}", static_cast<int>(oldState),
                   static_cast<int>(newState));
 
-        // §scxml-5.9.2: Determine LCA based on transition type
+        // §scxml-3.13: Determine LCA based on transition type
         std::optional<State> lca;
         if (policy_.lastTransitionIsInternal_) {
-            // §scxml-5.9.2: Internal transitions whose target is NOT a proper descendant behave as external
+            // §scxml-3.13: Internal transitions whose target is NOT a proper descendant behave as external
             bool isSelfTransition = (oldState == newState);
             bool isProperDescendant =
                 !isSelfTransition &&
@@ -276,7 +276,7 @@ private:
                           "- source {} is LCA",
                           static_cast<int>(oldState));
             } else {
-                // §scxml-3.13 / §scxml-5.9.2: Non-compound source or non-descendant - behaves as external
+                // §scxml-3.13: Non-compound source or non-descendant - behaves as external
                 // Use normal LCA calculation, then target==LCA check handles exit/re-entry
                 lca = SCE::Core::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (non-compound source or "
@@ -442,7 +442,7 @@ private:
         }
 
         // §scxml-3.13: Self-transitions (target = source) exit and re-enter the state
-        // §scxml-5.9.2: Targetless transitions consume event only (no exit/enter)
+        // §scxml-3.13: Targetless transitions consume event only (no exit/enter)
         bool isSelfTransition = (oldState == currentState_);
         bool needsHierarchicalHandling =
             (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);

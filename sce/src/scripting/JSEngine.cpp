@@ -810,7 +810,7 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
 bool JSEngine::checkStateActive(const std::string &stateName) const {
     std::lock_guard<std::mutex> lock(stateMachinesMutex_);
 
-    // §scxml-5.9.2: In() predicate function
+    // §scxml-5.9.1: In() predicate function
     // First check callback-based state queries (for static AOT engines)
     for (const auto &pair : stateQueryCallbacks_) {
         const auto &callback = pair.second;

@@ -48,7 +48,7 @@ public:
         int transitionIndex = 0;    // Index for executeTransitionActions
         bool hasActions = false;    // Whether transition has executable content
         bool isInternal = false;    // §scxml-3.13: Whether transition is type="internal"
-        bool isTargetless = false;  // §scxml-5.9.2: Whether transition has no target (consumes event only)
+        bool isTargetless = false;  // §scxml-3.13: Whether transition has no target (consumes event only)
 
         Transition() = default;
 
@@ -80,7 +80,7 @@ public:
     static std::unordered_set<StateType> computeExitSet(const Transition<StateType> &transition) {
         std::unordered_set<StateType> exitSet;
 
-        // §scxml-5.9.2: Targetless internal transitions (consumes event only, no exit/enter)
+        // §scxml-3.13: Targetless internal transitions (consumes event only, no exit/enter)
         // These transitions execute actions but do not change state - empty exit set
         if (transition.isTargetless) {
             return exitSet;  // Empty exit set for targetless transition
@@ -300,7 +300,7 @@ public:
         // W3C SCXML Appendix D.2: For each transition, compute LCA-based exit set
         // Exit set = all active states that are descendants of LCA (excluding LCA itself)
         for (const auto &trans : transitions) {
-            // §scxml-5.9.2: Targetless transitions do not exit any states
+            // §scxml-3.13: Targetless transitions do not exit any states
             // These transitions execute actions but do not change state configuration
             if (trans.isTargetless) {
                 continue;  // Skip exit computation for targetless transition

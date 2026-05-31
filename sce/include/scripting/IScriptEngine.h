@@ -200,7 +200,7 @@ public:
 
     // Session lifecycle (createSession, destroySession, hasSession) inherited from ISessionLifecycle
 
-    // === State Query Callback (§scxml-5.9.2 In() predicate) ===
+    // === State Query Callback (§scxml-5.9.1 In() predicate) ===
 
     using StateQueryCallback = std::function<bool(const std::string &)>;
 
