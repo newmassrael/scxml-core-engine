@@ -420,7 +420,7 @@ public:
     void setCompletionCallback(CompletionCallback callback);
 
     /**
-     * @brief §scxml-5.5 + 6.3.1: JSON payload from the reached top-level
+     * @brief §scxml-5.5 + 6.4.3: JSON payload from the reached top-level
      *        `<final>`'s `<donedata>`. Empty when no donedata was authored,
      *        donedata evaluation failed, or the machine has not reached a
      *        top-level final yet. Mirror of
@@ -688,7 +688,7 @@ private:
     // §scxml-6.5: Completion callback for invoke done.invoke event
     CompletionCallback completionCallback_;
 
-    // §scxml-5.5 + 6.3.1: donedata payload captured when the machine
+    // §scxml-5.5 + 6.4.3: donedata payload captured when the machine
     // enters a top-level `<final>`. Populated once per invocation by
     // `enterState` before `completionCallback_` fires, mirroring
     // `StaticExecutionEngine::stashDonedataAtFinal` on the AOT side.

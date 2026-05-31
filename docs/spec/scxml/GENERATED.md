@@ -1739,6 +1739,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - sce/src/runtime/EventRaiserImpl.h:originType
 - sce/src/runtime/EventRaiserImpl.h:sendId
 - sce/src/scripting/JSEngine.cpp:JSEngine::setCurrentEvent
+- sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
 
 
 
@@ -2640,12 +2641,6 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 
 
 
-**Implementations**:
-- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
-- sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
-- sce/include/core/InvokeHelper.h:createDoneInvokeEventName
-
-
 
 **Normative excerpt** (REC-scxml-20150901):
 Name Required Attribute Constraints Type Default Value Valid Values Description sendid false Must not occur with sendidexpr. IDREF none The sendid of a delayed event The ID of the event(s) to be cancelled. If multiple delayed events have this sendid, the Processor will cancel them all. sendidexpr false Must not occur with sendid. Value Expression none Any expression that evaluates to the ID of a delayed event A dynamic alternative to 'sendid'. If this attribute is present, the SCXML Processor MUST evaluate it when the parent <cancel> element is evaluated and treat the result as if it had been entered as the value of 'sendid'. A conformant SCXML document MUST specify exactly one of sendid or sendidexpr.
@@ -2835,6 +2830,9 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/include/common/DatamodelValidationHelper.h:DatamodelValidationHelper
 - sce/include/common/DatamodelValidationHelper.h:buildChildDatamodelSet
 - sce/include/common/DatamodelValidationHelper.h:isVariableDeclaredInChild
+- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- sce/include/core/InvokeHelper.h:createDoneInvokeEventName
+- sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
 
 
 
