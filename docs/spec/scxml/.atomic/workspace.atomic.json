@@ -2134,10 +2134,6 @@
           "symbol": "raiseExternal"
         },
         {
-          "file": "sce/src/actions/SendAction.cpp",
-          "symbol": "SendAction::validateSpecific"
-        },
-        {
           "file": "sce/src/common/EventDataHelper.cpp",
           "symbol": "EventDataHelper::buildJsonFromParams"
         },

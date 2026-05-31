@@ -197,7 +197,7 @@ std::vector<std::string> SendAction::validateSpecific() const {
         errors.push_back("Send action cannot have both 'type' and 'typeexpr' attributes");
     }
 
-    // §scxml-5.10: Cannot have both content and contentexpr
+    // §scxml-6.2: Cannot have both content and contentexpr
     if (!content_.empty() && !contentExpr_.empty()) {
         errors.push_back("Send action cannot have both 'content' and 'contentexpr' attributes");
     }
