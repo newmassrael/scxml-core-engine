@@ -151,11 +151,10 @@ public:
     void setCurrentState(const std::string &stateId) override;
 
     /**
-     * @brief §scxml-3.13: Mark region as active for time-travel debugging restoration
+     * @brief Mark region as active for time-travel debugging restoration
      *
      * Used during snapshot restoration to mark the region as active without executing
-     * entry actions. This is part of §scxml-3.13 "Selecting and Executing Transitions"
-     * requirement that state restoration must not trigger side effects.
+     * entry actions, so that state restoration does not trigger side effects.
      *
      * @note This should ONLY be called during snapshot restoration, not during normal operation
      */
@@ -241,7 +240,7 @@ public:
     void setDesiredInitialChild(const std::string &childStateId) override;
 
     /**
-     * @brief Enable/disable restoration mode for snapshot restoration (§scxml-3.13)
+     * @brief Enable/disable restoration mode for snapshot restoration
      *
      * When enabled, prevents side effects like doneStateCallback from being triggered
      * during snapshot restoration. This ensures time-travel debugging doesn't generate
@@ -281,7 +280,7 @@ private:
     // This overrides the region's own default initial state
     std::string desiredInitialChild_;
 
-    // §scxml-3.13: Restoration mode flag for time-travel debugging
+    // Restoration mode flag for time-travel debugging
     // When true, prevents side effects (callbacks, event generation) during snapshot restoration
     // Thread-safe atomic flag for future multi-threaded support
     std::atomic<bool> isRestoringSnapshot_{false};
