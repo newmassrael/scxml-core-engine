@@ -199,6 +199,14 @@ In the case of a transition located in a compound state, the 'type' attribute is
 - sce/src/runtime/HistoryValidator.cpp:HistoryValidator::validateRegistrationWithDefault
 - sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionMicrostep
 - sce/src/runtime/StateMachine.cpp:StateMachine::exitState
+- sce/include/core/HistoryHelper.h:filterShallowHistory
+- sce/include/core/HistoryHelper.h:filterDeepHistory
+- sce/include/core/HistoryHelper.h:getAncestorsToEnter
+- sce/include/core/HierarchicalStateHelper.h:buildEntryChain
+- sce/include/runtime/HistoryManager.h:HistoryManager
+- sce/src/runtime/HistoryManager.cpp:HistoryManager::recordHistory
+- sce/src/runtime/StateMachine.cpp:StateMachine::initializeHistoryManager
+- sce/include/core/HistoryHelper.h:SCE::Core::HistoryHelper
 
 
 
@@ -256,12 +264,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 **Implementations**:
-- sce/include/core/HierarchicalStateHelper.h:buildEntryChain
-- sce/include/core/HistoryHelper.h:SCE::Core::HistoryHelper
-- sce/include/core/HistoryHelper.h:filterDeepHistory
-- sce/include/core/HistoryHelper.h:filterShallowHistory
-- sce/include/core/HistoryHelper.h:getAncestorsToEnter
-- sce/include/runtime/HistoryManager.h:HistoryManager
 - sce/include/runtime/InvokeExecutor.h:captureChildState
 - sce/include/runtime/InvokeExecutor.h:captureInvokeState
 - sce/include/runtime/InvokeExecutor.h:restoreChildState
@@ -277,13 +279,12 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
 - sce/include/static/StaticExecutionEngine.h:getActiveStates
 - sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
-- sce/src/runtime/HistoryManager.cpp:HistoryManager::recordHistory
 - sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
 - sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
 - sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::captureChildState
 - sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
 - sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
-- sce/src/runtime/StateMachine.cpp:StateMachine::initializeHistoryManager
+- sce/include/core/HistoryHelper.h:SCE::Core::HistoryHelper
 
 
 

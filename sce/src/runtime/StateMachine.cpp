@@ -3708,10 +3708,10 @@ void StateMachine::initializeHistoryManager() {
         return nullptr;
     };
 
-    // §scxml-3.11: Create validator for history operations
+    // §scxml-3.10: Create validator for history operations
     auto validator = std::make_unique<HistoryValidator>(stateProvider);
 
-    // §scxml-3.11: Create HistoryManager using shared HistoryHelper (Zero Duplication with AOT)
+    // §scxml-3.10: Create HistoryManager using shared HistoryHelper (Zero Duplication with AOT)
     historyManager_ = std::make_unique<HistoryManager>(stateProvider, std::move(validator));
 
     SCE_LOG_INFO("StateMachine: History Manager initialized - using shared HistoryHelper");
