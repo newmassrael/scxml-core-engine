@@ -2974,10 +2974,6 @@ A SCXML 1.0 processor is a user agent that can parse and process Conforming SCXM
 
 
 
-**Implementations**:
-- sce/src/runtime/StateMachine.cpp:StateMachine::setupAndActivateParallelState
-
-
 
 **Normative excerpt** (REC-scxml-20150901):
 The value "null" for the 'datamodel' attribute results in an absent or empty data model. In particular:
@@ -3265,6 +3261,10 @@ The Processor MUST place all variables in a single global ECMAScript scope. Spec
 
 
 
+
+
+**Implementations**:
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupAndActivateParallelState
 
 
 
