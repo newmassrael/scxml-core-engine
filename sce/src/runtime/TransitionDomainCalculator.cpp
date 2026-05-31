@@ -110,7 +110,7 @@ std::string TransitionDomainCalculator::findLCA(const std::string &sourceStateId
     }
 
     // ARCHITECTURE.md: Zero Duplication - delegate to HierarchicalStateHelper
-    // §scxml-3.12: Find Least Common Ancestor for hierarchical transitions
+    // §scxml-3.13: Find Least Common Ancestor for hierarchical transitions
     auto getParent = [this](const std::string &stateId) -> std::optional<std::string> {
         auto node = model_->findStateById(stateId);
         if (!node || !node->getParent()) {

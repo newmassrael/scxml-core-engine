@@ -328,84 +328,8 @@
       "decision_status": "active",
       "implementations": [
         {
-          "file": "sce/include/core/EventProcessingAlgorithms.h",
-          "symbol": "processMacrostep"
-        },
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "HierarchicalAlgorithms"
-        },
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChainFromParent"
-        },
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildExitChain"
-        },
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "findLCA"
-        },
-        {
-          "file": "sce/include/mesh/ShmChannel.h",
-          "symbol": "ShmChannel"
-        },
-        {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "TransitionDomainCalculator"
-        },
-        {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "findLCA"
-        },
-        {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "getProperAncestors"
-        },
-        {
-          "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "isDescendant"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "StaticExecutionEngine"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeTransition"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "handleHierarchicalTransition"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEvent"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventImpl"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "SCE"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::initializeFromModel"
-        },
-        {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processStateTransitions"
-        },
-        {
-          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::findLCA"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::processEvent"
         }
       ],
       "normative_excerpt": {
@@ -912,6 +836,46 @@
         {
           "file": "sce/include/core/EventQueueManager.h",
           "symbol": "queue_"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "HierarchicalAlgorithms"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "buildEntryChainFromParent"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "buildExitChain"
+        },
+        {
+          "file": "sce/include/mesh/ShmChannel.h",
+          "symbol": "ShmChannel"
+        },
+        {
+          "file": "sce/include/runtime/TransitionDomainCalculator.h",
+          "symbol": "findLCA"
+        },
+        {
+          "file": "sce/include/runtime/TransitionDomainCalculator.h",
+          "symbol": "getProperAncestors"
+        },
+        {
+          "file": "sce/include/runtime/TransitionDomainCalculator.h",
+          "symbol": "isDescendant"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEvent"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEventImpl"
+        },
+        {
+          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
+          "symbol": "TransitionDomainCalculator::findLCA"
         }
       ],
       "normative_excerpt": {
