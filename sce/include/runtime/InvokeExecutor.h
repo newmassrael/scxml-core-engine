@@ -46,7 +46,7 @@ public:
      * @param parentSessionId Parent session ID for hierarchical sessions
      * @param eventDispatcher Event dispatcher for communication
      * @param childSessionId Pre-allocated child session ID to ensure mapping consistency
-     * @param isRestoration §scxml-3.11: If true, skip completion callback and start() (restoration without side
+     * @param isRestoration If true, skip completion callback and start() (restoration without side
      * effects)
      * @return Generated invokeid for tracking (should match invoke ID)
      */
@@ -135,7 +135,7 @@ public:
     /**
      * @brief Capture child state machine state for snapshot
      *
-     * §scxml-3.11: Child state is part of invoke configuration
+     * Child state is part of invoke configuration
      * Zero Duplication: Delegates to child StateMachine for state capture
      *
      * @return Shared pointer to child StateSnapshot, or nullptr if not applicable
@@ -145,7 +145,7 @@ public:
     /**
      * @brief Restore child state machine from snapshot
      *
-     * §scxml-3.11: Restore child configuration without side effects
+     * Restore child configuration without side effects
      *
      * @param childSnapshot Child state to restore
      * @param childSessionId Pre-allocated child session ID
@@ -185,7 +185,7 @@ private:
         bool isActive = true;
         bool autoForward = false;
         std::string finalizeScript;  // W3C SCXML: finalize handler script to execute before processing child events
-        std::string scxmlContent;    // §scxml-3.11: SCXML content for snapshot restoration
+        std::string scxmlContent;    // SCXML content for snapshot restoration
     };
 
     std::unordered_map<std::string, InvokeSession> activeSessions_;
@@ -224,7 +224,7 @@ private:
      * @param eventDispatcher Event dispatcher for communication
      * @param childSessionId Child session ID (either generated or pre-allocated)
      * @param sessionAlreadyExists Whether the child session was pre-created
-     * @param isRestoration §scxml-3.11: If true, skip completion callback and start() (restoration without side
+     * @param isRestoration If true, skip completion callback and start() (restoration without side
      * effects)
      * @return Generated invokeid for tracking
      */
@@ -371,7 +371,7 @@ public:
     /**
      * @brief Capture state of all active invocations for snapshot
      *
-     * §scxml-3.11: Invocations are part of configuration
+     * Invocations are part of invoke configuration
      * Zero Duplication: Single Source of Truth for invoke state
      *
      * Collects all active invoke IDs, child sessions, and child state machine states
@@ -384,7 +384,7 @@ public:
     /**
      * @brief Restore active invocations from snapshot
      *
-     * §scxml-3.11: Restore invoke configuration without side effects
+     * Restore invoke configuration without side effects
      * Zero Duplication: Delegates to IInvokeHandler for actual restoration
      *
      * Creates child state machines and restores their states using
