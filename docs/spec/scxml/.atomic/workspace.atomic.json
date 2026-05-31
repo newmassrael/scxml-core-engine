@@ -474,14 +474,6 @@
           "symbol": "optimizeEntryOrder"
         },
         {
-          "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "getEventQueues"
-        },
-        {
-          "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "getScheduler"
-        },
-        {
           "file": "sce/include/runtime/ImmediateModeGuard.h",
           "symbol": "ImmediateModeGuard"
         },
@@ -732,6 +724,10 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "hasQueuedInternalEvents"
+        },
+        {
+          "file": "sce/include/runtime/IEventRaiser.h",
+          "symbol": "raiseInternalEvent"
         }
       ],
       "normative_excerpt": {
