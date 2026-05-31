@@ -9,7 +9,7 @@
 namespace SCE::Core {
 
 /**
- * @brief §scxml-3.12.1: Event queue adapter contract
+ * @brief §scxml-3.13: Event queue adapter contract
  *
  * Formalizes the duck-typed interface required by EventProcessingAlgorithms.
  * Both AOT (AOTEventQueue) and Interpreter (InterpreterEventQueue) adapters

@@ -81,7 +81,7 @@ template<typename P> struct has_pendingEventName<P, std::void_t<decltype(std::de
  * Related Helpers:
  * - SendHelper: §scxml-6.2 send action support
  * - ForeachHelper: §scxml-5.9 foreach iteration
- * - GuardHelper: §scxml-3.12.1 conditional guard evaluation
+ * - GuardHelper: §scxml-5.9.1 conditional guard evaluation
  *
  * @example Interpreter Engine Usage
  * @code
