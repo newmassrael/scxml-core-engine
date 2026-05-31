@@ -30,7 +30,7 @@ struct EventDescriptor {
     std::map<std::string, ScriptValue> typedParams;          // Typed params preserving ScriptValue (engine-agnostic)
     std::string content;                                     // §scxml-C-2: Content for HTTP body
 
-    // §scxml-3.13: Logical execution time for MANUAL mode FIFO preservation (visualizer stepping)
+    // Logical execution time for MANUAL mode FIFO preservation (visualizer stepping)
     std::chrono::milliseconds logicalExecuteTime{0};  // Scheduled logical time (0 = not set, use current time)
 
     // Evaluation expressions (for dynamic values)
