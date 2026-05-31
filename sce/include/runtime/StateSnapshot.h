@@ -23,11 +23,11 @@ struct EventSnapshot {
     std::string name;
     std::string data;  // Serialized event data
 
-    // §scxml-5.10.1: Event metadata for _event object restoration
-    std::string sendid;      // §scxml-5.10.1: _event.sendid
-    std::string origintype;  // §scxml-5.10.1: _event.origintype
-    std::string origin;      // §scxml-5.10.1: _event.origin (session ID)
-    std::string invokeid;    // §scxml-5.10.1: _event.invokeid
+    // Event metadata for _event object restoration
+    std::string sendid;      // _event.sendid
+    std::string origintype;  // _event.origintype
+    std::string origin;      // _event.origin (session ID)
+    std::string invokeid;    // _event.invokeid
 
     // Timestamp for FIFO ordering preservation during snapshot restore
     // Stores nanoseconds since epoch for precise queue order restoration
@@ -49,21 +49,21 @@ struct EventSnapshot {
  * Captures scheduled event state for step backward restoration.
  * Contains event metadata without complex C++ objects (IEventTarget).
  *
- * §scxml-6.2: Stores complete send element information for accurate restoration.
+ * Stores complete send element information for accurate restoration.
  */
 struct ScheduledEventSnapshot {
     std::string eventName;
     std::string sendId;
-    int64_t originalDelayMs;  // Original delay in milliseconds (§scxml-6.2.3)
+    int64_t originalDelayMs;  // Original delay in milliseconds
     int64_t remainingTimeMs;  // Remaining time at snapshot capture (for accurate restoration)
     std::string sessionId;
 
-    // §scxml-6.2: Complete EventDescriptor fields for restoration
+    // Complete EventDescriptor fields for restoration
     std::string targetUri;                      // Target URI (empty = external queue, "#_internal" = internal)
     std::string eventType;                      // Event type (scxml, platform, etc.)
     std::string eventData;                      // Event data payload
-    std::string content;                        // HTTP body content (§scxml-C-2)
-    std::map<std::string, std::string> params;  // §scxml-6.2: param name-value pairs for _event.data restoration
+    std::string content;                        // HTTP body content
+    std::map<std::string, std::string> params;  // param name-value pairs for _event.data restoration
 
     ScheduledEventSnapshot() = default;
 
@@ -93,8 +93,8 @@ struct InvokeSnapshot {
     std::string childSessionId;  // Child state machine session ID
     std::string type;            // Invoke type (e.g., "http://www.w3.org/TR/scxml")
     std::string scxmlContent;    // Child SCXML content (from src/srcexpr evaluation)
-    std::string finalizeScript;  // §scxml-6.5: Finalize script for time-travel debugging
-    bool autoForward = false;    // §scxml-6.4: Autoforward flag for event forwarding to child
+    std::string finalizeScript;  // Finalize script for time-travel debugging
+    bool autoForward = false;    // Autoforward flag for event forwarding to child
 
     // Recursive child state machine configuration
     // Captures complete child state (active states, datamodel, queues, etc.)
@@ -115,24 +115,24 @@ struct InvokeSnapshot {
  * Captures complete state machine state at a specific execution step
  * to enable time-travel debugging in the interactive visualizer.
  *
- * W3C SCXML compliance: Preserves all runtime state per §scxml-3.1
+ * Preserves all captured runtime state for restoration
  */
 struct StateSnapshot {
     // Active configuration
     // Use vector to preserve document order for time-travel debugging (Test 570)
     std::vector<std::string> activeStates;
 
-    // Data model state (§scxml-5)
+    // Data model state
     std::map<std::string, std::string> dataModel;  // Serialized JS values
 
-    // Event queues (§scxml-3.2) - simplified for serialization
+    // Event queues - simplified for serialization
     std::vector<EventSnapshot> internalQueue;
     std::vector<EventSnapshot> externalQueue;
 
     // InteractiveTestRunner UI-added events (separate from engine queues)
     std::vector<EventSnapshot> pendingUIEvents;
 
-    // Scheduled events (§scxml-6.2) - delayed send operations
+    // Scheduled events - delayed send operations
     // Stores complete event info for recreation on step backward
     std::vector<ScheduledEventSnapshot> scheduledEvents;
 
@@ -186,7 +186,7 @@ public:
      * @param internalQueue Current internal event queue
      * @param externalQueue Current external event queue
      * @param pendingUIEvents UI-added events (separate from engine queues)
-     * @param scheduledEvents Scheduled events for step backward restoration (§scxml-6.2)
+     * @param scheduledEvents Scheduled events for step backward restoration
      * @param activeInvokes Active invocations
      * @param executedEvents Event execution history
      * @param stepNumber Current execution step number
