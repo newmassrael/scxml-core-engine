@@ -247,7 +247,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     session.autoForward = invoke->isAutoForward();
     session.finalizeScript =
         invoke->getFinalize();  // §scxml-6.5.2: Store finalize handler for execution before processing child events
-    session.scxmlContent = scxmlContent;  // §scxml-3.11: Store SCXML content for snapshot restoration
+    session.scxmlContent = scxmlContent;  // Store SCXML content for snapshot restoration
 
     // Build StateMachine with dependency injection, then wrap in RAII context
     // Inherit the parent's script engine — child invokes share the engine
@@ -517,7 +517,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Registered finalize script for child session: {}", childSessionId);
     }
 
-    // §scxml-3.11: Start child StateMachine or restore state based on mode
+    // Start child StateMachine or restore state based on mode
     if (!isRestoration) {
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Starting child StateMachine for invoke: {}", invokeid);
         if (!activeSession.smContext->get()->start()) {
@@ -1213,7 +1213,7 @@ std::string SCXMLInvokeHandler::getFinalizeScriptForChildSession(const std::stri
 }
 
 std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
-    // §scxml-3.11: Capture child state machine configuration
+    // Capture child state machine configuration
     // Find active session for this handler
     for (const auto &[invokeid, session] : activeSessions_) {
         if (!session.isActive || !session.smContext) {
@@ -1240,7 +1240,7 @@ std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
                       childSnapshot->internalQueue.size(), childSnapshot->externalQueue.size());
         }
 
-        // §scxml-3.11: Capture child's nested invocations recursively
+        // Capture child's nested invocations recursively
         auto childInvokeExecutor = childSM->getInvokeExecutor();
         if (childInvokeExecutor) {
             childInvokeExecutor->captureInvokeState(childSnapshot->activeInvokes);
@@ -1297,7 +1297,7 @@ std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
 }
 
 void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, const std::string &childSessionId) {
-    // §scxml-3.11: Restore child configuration without side effects
+    // Restore child configuration without side effects
     // ARCHITECTURE.md: Zero Duplication - delegates to StateMachine::restoreFromSnapshot()
 
     // Find session by child session ID
@@ -1346,7 +1346,7 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
             }
         }
 
-        // §scxml-3.11: Restore child's nested invocations recursively
+        // Restore child's nested invocations recursively
         auto childInvokeExecutor = childSM->getInvokeExecutor();
         if (childInvokeExecutor && !childSnapshot.activeInvokes.empty()) {
             // Get shared_ptr from StateMachineContext for nested invocation restoration
@@ -1449,7 +1449,7 @@ bool SCXMLInvokeHandler::getAutoForward() const {
 }
 
 void InvokeExecutor::captureInvokeState(std::vector<InvokeSnapshot> &out) const {
-    // §scxml-3.11: Capture all active invocations
+    // Capture all active invocations
     // Zero Duplication: Iterate through handlers and delegate to them
 
     for (const auto &[invokeid, handler] : invokeHandlers_) {
@@ -1489,7 +1489,7 @@ void InvokeExecutor::captureInvokeState(std::vector<InvokeSnapshot> &out) const 
 
 void InvokeExecutor::restoreInvokeState(const std::vector<InvokeSnapshot> &invokes,
                                         std::shared_ptr<StateMachine> parentSM) {
-    // §scxml-3.11: Restore invoke configuration without side effects
+    // Restore invoke configuration without side effects
     // Zero Duplication: Use captured SCXML content directly (no src/srcexpr re-evaluation)
 
     // CRITICAL FIX: Cancel ALL existing invokes before restoration (Test 192 reset bug)
@@ -1522,7 +1522,7 @@ void InvokeExecutor::restoreInvokeState(const std::vector<InvokeSnapshot> &invok
         // §scxml-6.4: Extract parent state ID from invoke ID format
         std::string parentStateId = extractParentStateIdFromInvokeId(snapshot.invokeId);
 
-        // §scxml-3.11: Create temporary InvokeNode with captured SCXML content
+        // Create temporary InvokeNode with captured SCXML content
         // This bypasses src/srcexpr evaluation which would fail in new parent session context
         // (new session after reset has no file path context)
         auto invokeNode = std::make_shared<InvokeNode>(snapshot.invokeId);
@@ -1540,7 +1540,7 @@ void InvokeExecutor::restoreInvokeState(const std::vector<InvokeSnapshot> &invok
         // Register handler
         invokeHandlers_[snapshot.invokeId] = handler;
 
-        // §scxml-3.11: Restore invoke with isRestoration=true (skip completion callback and start())
+        // Restore invoke with isRestoration=true (skip completion callback and start())
         handler->startInvokeWithSessionId(invokeNode,                // Temporary InvokeNode with captured content
                                           parentSM->getSessionId(),  // parentSessionId
                                           eventDispatcher_,          // eventDispatcher

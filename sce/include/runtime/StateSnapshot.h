@@ -81,7 +81,7 @@ struct StateSnapshot;
 /**
  * @brief Snapshot of active invoke state for time-travel debugging
  *
- * §scxml-3.11: Invocations are part of configuration
+ * Invocations are part of the captured snapshot
  * Zero Duplication: Captures invoke state without duplicating InvokeExecutor logic
  *
  * Contains complete invoke state including child state machine configuration
@@ -96,7 +96,7 @@ struct InvokeSnapshot {
     std::string finalizeScript;  // §scxml-6.5: Finalize script for time-travel debugging
     bool autoForward = false;    // §scxml-6.4: Autoforward flag for event forwarding to child
 
-    // §scxml-3.11: Recursive child state machine configuration
+    // Recursive child state machine configuration
     // Captures complete child state (active states, datamodel, queues, etc.)
     std::shared_ptr<StateSnapshot> childState;
 
@@ -118,7 +118,7 @@ struct InvokeSnapshot {
  * W3C SCXML compliance: Preserves all runtime state per §scxml-3.1
  */
 struct StateSnapshot {
-    // Active configuration (§scxml-3.11)
+    // Active configuration
     // Use vector to preserve document order for time-travel debugging (Test 570)
     std::vector<std::string> activeStates;
 
@@ -140,7 +140,7 @@ struct StateSnapshot {
     // Store all processed events to enable time-travel debugging
     std::vector<EventSnapshot> executedEvents;
 
-    // §scxml-3.11: Active invocations (part of configuration)
+    // Active invocations (part of the captured snapshot)
     // Zero Duplication: Enables complete state restoration without side effects
     std::vector<InvokeSnapshot> activeInvokes;
 
@@ -187,7 +187,7 @@ public:
      * @param externalQueue Current external event queue
      * @param pendingUIEvents UI-added events (separate from engine queues)
      * @param scheduledEvents Scheduled events for step backward restoration (§scxml-6.2)
-     * @param activeInvokes Active invocations (§scxml-3.11)
+     * @param activeInvokes Active invocations
      * @param executedEvents Event execution history
      * @param stepNumber Current execution step number
      * @param lastEvent Last processed event name

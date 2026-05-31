@@ -235,54 +235,6 @@
       "decision_status": "active",
       "implementations": [
         {
-          "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "captureChildState"
-        },
-        {
-          "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "captureInvokeState"
-        },
-        {
-          "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "restoreChildState"
-        },
-        {
-          "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "restoreInvokeState"
-        },
-        {
-          "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "scxmlContent"
-        },
-        {
-          "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "startInvokeInternal"
-        },
-        {
-          "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "startInvokeWithSessionId"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "InvokeSnapshot"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "activeInvokes"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "activeStates"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "captureSnapshot"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "childState"
-        },
-        {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "checkEventlessTransitions"
         },
@@ -293,26 +245,6 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "handleHierarchicalTransition"
-        },
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::captureInvokeState"
-        },
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::restoreInvokeState"
-        },
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::captureChildState"
-        },
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::restoreChildState"
-        },
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
         },
         {
           "file": "sce/include/core/HistoryHelper.h",
