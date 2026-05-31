@@ -478,18 +478,6 @@
           "symbol": "logicalExecuteTime"
         },
         {
-          "file": "sce/include/events/IEventDispatcher.h",
-          "symbol": "SchedulerMode"
-        },
-        {
-          "file": "sce/include/events/IEventDispatcher.h",
-          "symbol": "forcePoll"
-        },
-        {
-          "file": "sce/include/events/IEventDispatcher.h",
-          "symbol": "setMode"
-        },
-        {
           "file": "sce/include/runtime/IEventRaiser.h",
           "symbol": "getEventQueues"
         },
@@ -540,14 +528,6 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "setRestoringSnapshotOnAllRegions"
-        },
-        {
-          "file": "sce/include/runtime/StateMachineBuilder.h",
-          "symbol": "schedulerMode_"
-        },
-        {
-          "file": "sce/include/runtime/StateMachineBuilder.h",
-          "symbol": "withSchedulerMode"
         },
         {
           "file": "sce/include/runtime/StateSnapshot.h",
@@ -772,10 +752,6 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::~StateMachine"
-        },
-        {
-          "file": "sce/src/runtime/StateMachineBuilder.cpp",
-          "symbol": "StateMachineBuilder::build"
         },
         {
           "file": "sce/src/runtime/StateSnapshot.cpp",

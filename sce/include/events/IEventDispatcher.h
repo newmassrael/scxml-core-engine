@@ -118,7 +118,7 @@ struct ScheduledEventInfo {
 /**
  * @brief Scheduler execution mode for Interactive vs Normal operation
  *
- * §scxml-3.13: Interactive mode requires manual control of event processing
+ * Interactive mode requires manual control of event processing
  * for time-travel debugging, while normal mode uses automatic timer-based execution.
  */
 enum class SchedulerMode {
@@ -197,7 +197,7 @@ public:
     /**
      * @brief Set scheduler execution mode
      *
-     * §scxml-3.13: Interactive mode disables automatic polling to support
+     * Interactive mode disables automatic polling to support
      * time-travel debugging. Normal mode enables automatic timer-based polling.
      *
      * @param mode AUTOMATIC for normal execution, MANUAL for interactive debugging
@@ -214,7 +214,7 @@ public:
     /**
      * @brief Force poll scheduled events regardless of mode (for interactive debugging)
      *
-     * §scxml-3.13: In MANUAL mode, automatic polling is disabled via poll().
+     * In MANUAL mode, automatic polling is disabled via poll().
      * Interactive debugger uses forcePoll() to explicitly step through scheduled events.
      *
      * @return Number of events processed

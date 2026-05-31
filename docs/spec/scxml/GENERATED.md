@@ -409,9 +409,6 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/core/StateEntryHelper.h:calculateAncestorPath
 - sce/include/core/StateEntryHelper.h:optimizeEntryOrder
 - sce/include/events/EventDescriptor.h:logicalExecuteTime
-- sce/include/events/IEventDispatcher.h:SchedulerMode
-- sce/include/events/IEventDispatcher.h:forcePoll
-- sce/include/events/IEventDispatcher.h:setMode
 - sce/include/runtime/IEventRaiser.h:getEventQueues
 - sce/include/runtime/IEventRaiser.h:getScheduler
 - sce/include/runtime/ImmediateModeGuard.h:ImmediateModeGuard
@@ -425,8 +422,6 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/runtime/StateMachine.h:restoreActiveStatesDirectly
 - sce/include/runtime/StateMachine.h:restoreFromSnapshot
 - sce/include/runtime/StateMachine.h:setRestoringSnapshotOnAllRegions
-- sce/include/runtime/StateMachineBuilder.h:schedulerMode_
-- sce/include/runtime/StateMachineBuilder.h:withSchedulerMode
 - sce/include/runtime/StateSnapshot.h:activeStates
 - sce/include/runtime/StateSnapshot.h:executedEvents
 - sce/include/runtime/StateSnapshot.h:incomingTransitionSource
@@ -483,7 +478,6 @@ The following events are generated automatically by the SCXML implementation und
 - sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
 - sce/src/runtime/StateMachine.cpp:StateMachine::start
 - sce/src/runtime/StateMachine.cpp:StateMachine::~StateMachine
-- sce/src/runtime/StateMachineBuilder.cpp:StateMachineBuilder::build
 - sce/src/runtime/StateSnapshot.cpp:SnapshotManager::captureSnapshot
 - sce/src/runtime/StateSnapshot.cpp:SnapshotManager::updateSnapshotOutgoing
 - sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::computeExitSet
