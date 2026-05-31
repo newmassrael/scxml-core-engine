@@ -659,7 +659,11 @@ def read_status(path):
     for i in range(1, len(lines)):
         if lines[i] == "---":
             break
-        m = re.match(r"^status:\s*(\S+)", lines[i])
+        # Match status: at any indentation so the lifecycle contract is
+        # validated by its VALUE, not its YAML nesting: top-level (the
+        # original flat form) and under a metadata: block (the harness
+        # memory normalizer canonical form) are both accepted.
+        m = re.match(r"^\s*status:\s*(\S+)", lines[i])
         if m:
             return m.group(1).strip("\x27\x22"), None
     return None, "no status field"
