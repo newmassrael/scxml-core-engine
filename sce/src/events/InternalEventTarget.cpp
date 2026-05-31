@@ -63,7 +63,7 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
             auto priority =
                 isExternal_ ? EventRaiserImpl::EventPriority::EXTERNAL : EventRaiserImpl::EventPriority::INTERNAL;
 
-            // §scxml-3.13: Convert logicalExecuteTime to nanoseconds for FIFO preservation in MANUAL mode
+            // Convert logicalExecuteTime to nanoseconds for FIFO preservation in MANUAL mode
             int64_t timestampNs = 0;
             if (event.logicalExecuteTime.count() > 0) {
                 timestampNs = std::chrono::duration_cast<std::chrono::nanoseconds>(event.logicalExecuteTime).count();
