@@ -15,13 +15,19 @@
 # scoping keys on, so a parsing file may carry §scxml-<n> (W3C), §wire-W<n>, and
 # §mesh-<n> cites at once without collision.
 #
+# Rooted at the SCE repo root so cited/implemented code paths are
+# repo-relative (`sce/...`), not `../../../sce/...`: Section.implementations
+# forbids `..` traversal, so Path B binding needs the workspace root to be an
+# ancestor of the documented code. Ledger artifacts stay here via the
+# explicit repo-relative paths below ([workspace] root + R386 anchor resolve).
 [workspace]
-docs = ["GENERATED.md"]
-default_doc = "GENERATED.md"
+root = "../../.."
+docs = ["docs/sce-ledger/wire/GENERATED.md"]
+default_doc = "docs/sce-ledger/wire/GENERATED.md"
 
 [atomic]
-sidecar_path = ".atomic/workspace.atomic.json"
-output_path = "GENERATED.md"
+sidecar_path = "docs/sce-ledger/wire/.atomic/workspace.atomic.json"
+output_path = "docs/sce-ledger/wire/GENERATED.md"
 
 [schema]
 changelog_titles = ["Revision History"]
@@ -52,12 +58,20 @@ severity = "warn"
 #                                round; advisory so unbacked cites pass.
 [plugins.set_equality_validator]
 paths = [
-    "../../../sce/include/parsing",
-    "../../../sce/src/parsing",
-    "../../../sce/src/runtime",
+    "sce/include/parsing",
+    "sce/src/parsing",
+    "sce/src/runtime",
 ]
 severity_missing = "reject"
-severity_binding = "warn"
+# Path B curated: every §wire-W<n> cite is bound to a Section.implementations
+# (file, symbol) the maintainer ratified, so binding-class drift (a cite in an
+# unregistered file or a non-registered symbol) now fails the build.
+severity_binding = "reject"
+# Coverage (Active section with zero implementations) stays advisory: this is
+# a spec/RFC ledger where meta/contract sections (e.g. §wire-W0, the commit-
+# series contract) legitimately have no code citation. Enforcing coverage here
+# would demand a per-section non-code carve-out; the split keeps it honest.
+severity_coverage = "warn"
 comment_only = true
 section_namespace = "wire"
 
@@ -65,8 +79,8 @@ section_namespace = "wire"
 # extensions (.h/.cpp/.cc/...) to the `cpp` key; the in-process
 # tree-sitter-cpp backend resolves (file, line) to the enclosing symbol.
 # The symbol axis is opt-in per Section.implementations entry that records
-# a `symbol`, so this stays inert (file-only set-equality) until those are
-# registered; severity_binding above remains warn.
+# a `symbol`; the wire ledger has now curated those sets, so symbol-level
+# drift is enforced under severity_binding = reject above.
 [plugins.symbol_resolver.cpp]
 transport = "in-process"
 backend = "tree-sitter-cpp"

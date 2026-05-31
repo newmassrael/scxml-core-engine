@@ -43,9 +43,9 @@ concurrency:
 
 env:
   # Pin to a Mnemosyne commit, never a branch; --locked builds against its
-  # committed Cargo.lock for a reproducible binary. R382 (572d532) adds the
-  # in-tree tree-sitter-cpp SymbolResolver wired by [plugins.symbol_resolver.cpp].
-  MNEMOSYNE_REV: 572d532f57791c09a953783d7de9e5a2a6830443
+  # committed Cargo.lock for a reproducible binary. R386 (f1e8436) completes [workspace] root (anchor resolve) so subdir-rooted
+  # ledgers bind Path B impl paths repo-relative; +R382 tree-sitter-cpp resolver.
+  MNEMOSYNE_REV: f1e84368cab57018b65d2e64b6278c6344606d85
 
 jobs:
   citations:

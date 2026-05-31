@@ -8,32 +8,166 @@
     "wire-W1": {
       "title": "contract (this RFC; commit-series contract)",
       "parent_doc": "GENERATED.md",
-      "decision_status": "active"
+      "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/include/parsing/Diagnostic.h",
+          "symbol": "clone"
+        },
+        {
+          "file": "sce/include/parsing/SCXMLParser.h",
+          "symbol": "getDiagnostics"
+        }
+      ]
     },
     "wire-W2": {
       "title": "scope sketch — library API only (no CLI)",
       "parent_doc": "GENERATED.md",
-      "decision_status": "active"
+      "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/include/parsing/Diagnostic.h",
+          "symbol": "to_canonical_json_string"
+        },
+        {
+          "file": "sce/include/parsing/DiagnosticBatchFormatter.h"
+        },
+        {
+          "file": "sce/src/parsing/Diagnostic.cpp",
+          "symbol": "Diagnostic::to_canonical_json_string"
+        }
+      ]
     },
     "wire-W3": {
       "title": "scope sketch",
       "parent_doc": "GENERATED.md",
-      "decision_status": "active"
+      "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/include/parsing/XIncludeError.h",
+          "symbol": "SCE::parsing"
+        },
+        {
+          "file": "sce/include/parsing/XIncludeError.h",
+          "symbol": "setLocation"
+        },
+        {
+          "file": "sce/include/parsing/XIncludeExpander.h"
+        }
+      ]
     },
     "wire-W4": {
       "title": "LANDED 2026-04-26 (α-strict, D1-C typed-throw)",
       "parent_doc": "GENERATED.md",
-      "decision_status": "active"
+      "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/include/parsing/IXMLParser.h",
+          "symbol": "parseFile"
+        },
+        {
+          "file": "sce/include/parsing/ParseError.h",
+          "symbol": "ParseException"
+        },
+        {
+          "file": "sce/include/parsing/ParseError.h",
+          "symbol": "ParseFileNotFound"
+        },
+        {
+          "file": "sce/include/parsing/ParseError.h",
+          "symbol": "SCE::parsing"
+        },
+        {
+          "file": "sce/src/parsing/PugiXMLParser.cpp",
+          "symbol": "PugiXMLParser::parseFile"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseAbstractDocument"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseContent"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseFile"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent"
+        }
+      ]
     },
     "wire-W4.5": {
       "title": "LANDED 2026-04-26 (debt repayment, polling surface removed)",
       "parent_doc": "GENERATED.md",
-      "decision_status": "active"
+      "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/include/parsing/IXMLDocument.h",
+          "symbol": "processSceTemplate"
+        },
+        {
+          "file": "sce/include/parsing/IXMLDocument.h",
+          "symbol": "processXInclude"
+        },
+        {
+          "file": "sce/src/parsing/PugiXMLParser.cpp",
+          "symbol": "PugiXMLDocument::processSceTemplate"
+        },
+        {
+          "file": "sce/src/parsing/PugiXMLParser.cpp",
+          "symbol": "PugiXMLDocument::processXInclude"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseContent"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseFile"
+        },
+        {
+          "file": "sce/src/parsing/XIncludeProcessor.cpp",
+          "symbol": "XIncludeProcessor::process"
+        }
+      ]
     },
     "wire-W5": {
       "title": "LANDED 2026-04-26 (semantic family typed-throw, test-as-consumer + dead-code cleanup)",
       "parent_doc": "GENERATED.md",
-      "decision_status": "active"
+      "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/include/parsing/SemanticError.h",
+          "symbol": "SCE::parsing"
+        },
+        {
+          "file": "sce/include/parsing/SemanticError.h",
+          "symbol": "SemanticTopLevelScriptUnloaded"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseContent"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseFile"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseScxmlNode"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::validateModel"
+        },
+        {
+          "file": "sce/src/parsing/SemanticError.cpp",
+          "symbol": "SCE::parsing"
+        }
+      ]
     }
   },
   "changelog_entries": {},
