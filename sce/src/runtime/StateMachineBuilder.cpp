@@ -24,7 +24,7 @@ std::shared_ptr<StateMachine> StateMachineBuilder::build() {
     if (eventRaiser_) {
         stateMachine->setEventRaiser(eventRaiser_);
 
-        // §scxml-3.13: Apply scheduler mode for parent-child inheritance
+        // Apply scheduler mode for parent-child inheritance
         // Get scheduler from EventRaiser and set mode (MANUAL for interactive debugging)
         auto scheduler = eventRaiser_->getScheduler();
         if (scheduler) {
