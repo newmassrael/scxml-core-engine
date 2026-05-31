@@ -610,16 +610,8 @@
           "symbol": "handleHierarchicalTransition"
         },
         {
-          "file": "sce/src/events/EventSchedulerImpl.cpp",
-          "symbol": "EventSchedulerImpl::processReadyEvents"
-        },
-        {
           "file": "sce/src/events/InternalEventTarget.cpp",
           "symbol": "InternalEventTarget::send"
-        },
-        {
-          "file": "sce/src/events/PlatformEventRaiserHelper.cpp",
-          "symbol": "pollScheduler"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
@@ -3471,6 +3463,14 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::restoreChildState"
+        },
+        {
+          "file": "sce/src/events/EventSchedulerImpl.cpp",
+          "symbol": "EventSchedulerImpl::processReadyEvents"
+        },
+        {
+          "file": "sce/src/events/PlatformEventRaiserHelper.cpp",
+          "symbol": "pollScheduler"
         }
       ],
       "normative_excerpt": {

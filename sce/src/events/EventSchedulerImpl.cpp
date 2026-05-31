@@ -343,7 +343,7 @@ size_t EventSchedulerImpl::processReadyEvents() {
         auto it = executionQueue_.begin();
         auto &scheduledEvent = it->second;
 
-        // §scxml-3.13: Check event readiness based on scheduler mode
+        // §scxml-6.2.3: Check delayed-event readiness (dispatch only when delay interval elapses)
         if (mode_.load(std::memory_order_acquire) == SchedulerMode::AUTOMATIC) {
             if (it->first.executeAt > now) {
                 break;  // Event not ready yet
