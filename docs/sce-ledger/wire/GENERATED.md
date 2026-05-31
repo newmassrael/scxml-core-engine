@@ -2,7 +2,7 @@
 
 this file `mnemosyne-cli generate-docs` output — direct no edit. atomic store (`docs/.atomic/workspace.atomic.json`) in mutate primitive (`set-section-*` / `append-changelog-entry`) pass and then re-generate.
 
-Source: `.atomic/workspace.atomic.json`
+Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 
 ---
 
@@ -34,6 +34,11 @@ Source: `.atomic/workspace.atomic.json`
 
 
 
+**Implementations**:
+- sce/include/parsing/Diagnostic.h:clone
+- sce/include/parsing/SCXMLParser.h:getDiagnostics
+
+
 
 
 ### §wire-W2. scope sketch — library API only (no CLI)
@@ -46,6 +51,12 @@ Source: `.atomic/workspace.atomic.json`
 
 
 
+
+
+**Implementations**:
+- sce/include/parsing/Diagnostic.h:to_canonical_json_string
+- sce/include/parsing/DiagnosticBatchFormatter.h
+- sce/src/parsing/Diagnostic.cpp:Diagnostic::to_canonical_json_string
 
 
 
@@ -62,6 +73,12 @@ Source: `.atomic/workspace.atomic.json`
 
 
 
+**Implementations**:
+- sce/include/parsing/XIncludeError.h:SCE::parsing
+- sce/include/parsing/XIncludeError.h:setLocation
+- sce/include/parsing/XIncludeExpander.h
+
+
 
 
 ### §wire-W4. LANDED 2026-04-26 (α-strict, D1-C typed-throw)
@@ -74,6 +91,18 @@ Source: `.atomic/workspace.atomic.json`
 
 
 
+
+
+**Implementations**:
+- sce/include/parsing/IXMLParser.h:parseFile
+- sce/include/parsing/ParseError.h:ParseException
+- sce/include/parsing/ParseError.h:ParseFileNotFound
+- sce/include/parsing/ParseError.h:SCE::parsing
+- sce/src/parsing/PugiXMLParser.cpp:PugiXMLParser::parseFile
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseAbstractDocument
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
+- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
 
 
 
@@ -90,6 +119,16 @@ Source: `.atomic/workspace.atomic.json`
 
 
 
+**Implementations**:
+- sce/include/parsing/IXMLDocument.h:processSceTemplate
+- sce/include/parsing/IXMLDocument.h:processXInclude
+- sce/src/parsing/PugiXMLParser.cpp:PugiXMLDocument::processSceTemplate
+- sce/src/parsing/PugiXMLParser.cpp:PugiXMLDocument::processXInclude
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
+- sce/src/parsing/XIncludeProcessor.cpp:XIncludeProcessor::process
+
+
 
 
 ### §wire-W5. LANDED 2026-04-26 (semantic family typed-throw, test-as-consumer + dead-code cleanup)
@@ -102,6 +141,16 @@ Source: `.atomic/workspace.atomic.json`
 
 
 
+
+
+**Implementations**:
+- sce/include/parsing/SemanticError.h:SCE::parsing
+- sce/include/parsing/SemanticError.h:SemanticTopLevelScriptUnloaded
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseScxmlNode
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::validateModel
+- sce/src/parsing/SemanticError.cpp:SCE::parsing
 
 
 
