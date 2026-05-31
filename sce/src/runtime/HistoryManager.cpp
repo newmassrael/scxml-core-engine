@@ -85,7 +85,7 @@ bool HistoryManager::recordHistory(const std::string &parentStateId, const std::
     auto historyStatesForParent = findHistoryStatesForParent(parentStateId);
 
     for (const auto &historyInfo : historyStatesForParent) {
-        // §scxml-3.11: Use shared HistoryHelper (Zero Duplication with AOT)
+        // §scxml-3.10: Use shared HistoryHelper (Zero Duplication with AOT)
         // Create lambda adapter to convert IStateNode interface to getParent callback
         auto getParent = [this](const std::string &stateId) -> std::optional<std::string> {
             if (!stateProvider_) {

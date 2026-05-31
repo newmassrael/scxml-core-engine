@@ -166,6 +166,38 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::exitState"
+        },
+        {
+          "file": "sce/include/core/HistoryHelper.h",
+          "symbol": "filterShallowHistory"
+        },
+        {
+          "file": "sce/include/core/HistoryHelper.h",
+          "symbol": "filterDeepHistory"
+        },
+        {
+          "file": "sce/include/core/HistoryHelper.h",
+          "symbol": "getAncestorsToEnter"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "buildEntryChain"
+        },
+        {
+          "file": "sce/include/runtime/HistoryManager.h",
+          "symbol": "HistoryManager"
+        },
+        {
+          "file": "sce/src/runtime/HistoryManager.cpp",
+          "symbol": "HistoryManager::recordHistory"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::initializeHistoryManager"
+        },
+        {
+          "file": "sce/include/core/HistoryHelper.h",
+          "symbol": "SCE::Core::HistoryHelper"
         }
       ],
       "normative_excerpt": {
@@ -202,30 +234,6 @@
       "parent_section": "scxml-3",
       "decision_status": "active",
       "implementations": [
-        {
-          "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChain"
-        },
-        {
-          "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "SCE::Core::HistoryHelper"
-        },
-        {
-          "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "filterDeepHistory"
-        },
-        {
-          "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "filterShallowHistory"
-        },
-        {
-          "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "getAncestorsToEnter"
-        },
-        {
-          "file": "sce/include/runtime/HistoryManager.h",
-          "symbol": "HistoryManager"
-        },
         {
           "file": "sce/include/runtime/InvokeExecutor.h",
           "symbol": "captureChildState"
@@ -287,10 +295,6 @@
           "symbol": "handleHierarchicalTransition"
         },
         {
-          "file": "sce/src/runtime/HistoryManager.cpp",
-          "symbol": "HistoryManager::recordHistory"
-        },
-        {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "InvokeExecutor::captureInvokeState"
         },
@@ -311,8 +315,8 @@
           "symbol": "SCXMLInvokeHandler::startInvokeInternal"
         },
         {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::initializeHistoryManager"
+          "file": "sce/include/core/HistoryHelper.h",
+          "symbol": "SCE::Core::HistoryHelper"
         }
       ],
       "normative_excerpt": {

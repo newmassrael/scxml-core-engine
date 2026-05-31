@@ -342,7 +342,7 @@ public:
     }
 
     /**
-     * @brief Build entry chain with history restoration support (§scxml-3.11)
+     * @brief Build entry chain with history restoration support (§scxml-3.10)
      *
      * @details
      * History-aware version that checks stored history before using static initial children.
@@ -353,7 +353,7 @@ public:
      * @return Vector of states from root to leaf in entry order
      *
      * @par W3C SCXML Compliance
-     * - 3.11: History pseudo-state restoration
+     * - 3.10: History pseudo-state restoration
      * - 3.3: Hierarchical entry order (root to leaf)
      *
      * @par Thread Safety
@@ -389,7 +389,7 @@ public:
         // Reverse to root-to-leaf order
         std::reverse(chain.begin(), chain.end());
 
-        // §scxml-3.11: Add initial or history-restored children
+        // §scxml-3.10: Add initial or history-restored children
         State leafToCheck = leafState;
         depth = 0;
         while (depth < MAX_DEPTH && StatePolicy::isCompoundState(leafToCheck)) {
