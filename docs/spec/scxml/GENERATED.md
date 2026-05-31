@@ -408,7 +408,6 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/core/ParallelTransitionHelper.h:transitionIndex
 - sce/include/core/StateEntryHelper.h:calculateAncestorPath
 - sce/include/core/StateEntryHelper.h:optimizeEntryOrder
-- sce/include/events/EventDescriptor.h:logicalExecuteTime
 - sce/include/runtime/IEventRaiser.h:getEventQueues
 - sce/include/runtime/IEventRaiser.h:getScheduler
 - sce/include/runtime/ImmediateModeGuard.h:ImmediateModeGuard
@@ -422,12 +421,6 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/runtime/StateMachine.h:restoreActiveStatesDirectly
 - sce/include/runtime/StateMachine.h:restoreFromSnapshot
 - sce/include/runtime/StateMachine.h:setRestoringSnapshotOnAllRegions
-- sce/include/runtime/StateSnapshot.h:activeStates
-- sce/include/runtime/StateSnapshot.h:executedEvents
-- sce/include/runtime/StateSnapshot.h:incomingTransitionSource
-- sce/include/runtime/StateSnapshot.h:schedulerLogicalTimeMs
-- sce/include/runtime/StateSnapshot.h:timestampNs
-- sce/include/runtime/StateSnapshot.h:updateSnapshotOutgoing
 - sce/include/runtime/TransitionDomainCalculator.h:TransitionDomainCalculator
 - sce/include/runtime/TransitionDomainCalculator.h:computeExitSet
 - sce/include/runtime/TransitionDomainCalculator.h:getStateDocumentPosition
@@ -476,8 +469,6 @@ The following events are generated automatically by the SCXML implementation und
 - sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
 - sce/src/runtime/StateMachine.cpp:StateMachine::start
 - sce/src/runtime/StateMachine.cpp:StateMachine::~StateMachine
-- sce/src/runtime/StateSnapshot.cpp:SnapshotManager::captureSnapshot
-- sce/src/runtime/StateSnapshot.cpp:SnapshotManager::updateSnapshotOutgoing
 - sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::computeExitSet
 - sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::getStateDocumentPosition
 - sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::deactivate

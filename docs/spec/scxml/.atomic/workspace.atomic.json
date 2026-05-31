@@ -474,10 +474,6 @@
           "symbol": "optimizeEntryOrder"
         },
         {
-          "file": "sce/include/events/EventDescriptor.h",
-          "symbol": "logicalExecuteTime"
-        },
-        {
           "file": "sce/include/runtime/IEventRaiser.h",
           "symbol": "getEventQueues"
         },
@@ -528,30 +524,6 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "setRestoringSnapshotOnAllRegions"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "activeStates"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "executedEvents"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "incomingTransitionSource"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "schedulerLogicalTimeMs"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "timestampNs"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "updateSnapshotOutgoing"
         },
         {
           "file": "sce/include/runtime/TransitionDomainCalculator.h",
@@ -744,14 +716,6 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::~StateMachine"
-        },
-        {
-          "file": "sce/src/runtime/StateSnapshot.cpp",
-          "symbol": "SnapshotManager::captureSnapshot"
-        },
-        {
-          "file": "sce/src/runtime/StateSnapshot.cpp",
-          "symbol": "SnapshotManager::updateSnapshotOutgoing"
         },
         {
           "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
