@@ -425,7 +425,7 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
 
     SCE_LOG_DEBUG("ConcurrentRegion: Setting currentState for region {} to: {}", id_, stateId);
 
-    // §scxml-3.13: Detect if this is a state change or just a refresh (e.g., during snapshot restore)
+    // Detect if this is a state change or just a refresh (e.g., during snapshot restore)
     // Only trigger callbacks on actual state transitions, not on redundant setCurrentState calls
     bool isStateChange = (currentState_ != stateId);
 
@@ -436,7 +436,7 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
     isInFinalState_ = determineIfInFinalState();
 
     // Update region status to FINAL if we entered a final state
-    // §scxml-3.13: Only trigger callback on actual state transitions (not during snapshot restore)
+    // Only trigger callback on actual state transitions (not during snapshot restore)
     // Skip callback during restoration to prevent spurious event generation
     if (isInFinalState_ && status_ != ConcurrentRegionStatus::FINAL && isStateChange && !isRestoringSnapshot_) {
         status_ = ConcurrentRegionStatus::FINAL;
@@ -452,11 +452,11 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
 }
 
 void ConcurrentRegion::setActiveForRestore() {
-    // §scxml-3.13: Set region to ACTIVE status without executing entry actions
+    // Set region to ACTIVE status without executing entry actions
     // This is used during time-travel debugging snapshot restoration
     status_ = ConcurrentRegionStatus::ACTIVE;
 
-    // §scxml-3.13: Synchronize activeStates_ with currentState_
+    // Synchronize activeStates_ with currentState_
     // activeStates_ tracks which states within the region are active
     // Without this, the region thinks it has no active states, causing incorrect exit behavior
     activeStates_.clear();
@@ -469,7 +469,7 @@ void ConcurrentRegion::setActiveForRestore() {
 }
 
 void ConcurrentRegion::setRestoringSnapshot(bool restoring) {
-    // §scxml-3.13: Enable/disable restoration mode for time-travel debugging
+    // Enable/disable restoration mode for time-travel debugging
     // When enabled, prevents side effects (callbacks, event generation) during snapshot restoration
     isRestoringSnapshot_ = restoring;
     SCE_LOG_DEBUG("Region '{}' restoration mode: {} [isRestoringSnapshot_={}]", id_, restoring ? "ENABLED" : "DISABLED",
