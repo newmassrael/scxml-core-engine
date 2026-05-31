@@ -195,6 +195,10 @@ In the case of a transition located in a compound state, the 'type' attribute is
 - sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
 - sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::computeExitSet
 - sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
+- sce/src/runtime/HistoryStateAutoRegistrar.cpp:HistoryStateAutoRegistrar::extractHistoryStatesFromModel
+- sce/src/runtime/HistoryValidator.cpp:HistoryValidator::validateRegistrationWithDefault
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionMicrostep
+- sce/src/runtime/StateMachine.cpp:StateMachine::exitState
 
 
 
@@ -856,11 +860,6 @@ The children of <transition> are executable content that is run after all the <o
 **Implementations**:
 - sce/include/core/StateEntryHelper.h:StateEntryHelper
 - sce/include/core/StateEntryHelper.h:enterDeepTargets
-- sce/src/runtime/HistoryStateAutoRegistrar.cpp:HistoryStateAutoRegistrar::extractHistoryStatesFromModel
-- sce/src/runtime/HistoryValidator.cpp:HistoryValidator::validateRegistrationWithDefault
-- sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionMicrostep
-- sce/src/runtime/StateMachine.cpp:StateMachine::exitState
-- sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
 
 
 
