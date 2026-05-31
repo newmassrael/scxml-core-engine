@@ -449,7 +449,7 @@ public:
     /**
      * @brief Store sendid in idlocation variable (Single Source of Truth)
      *
-     * §scxml-6.2.4 (test 183): The idlocation attribute specifies a variable
+     * §scxml-6.2.3 (test 183): The idlocation attribute specifies a variable
      * where the generated sendid should be stored for later reference.
      *
      * This method encapsulates the idlocation storage logic shared between:

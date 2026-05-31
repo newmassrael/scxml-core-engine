@@ -2304,6 +2304,10 @@
         {
           "file": "sce/src/scripting/SessionRegistry.cpp",
           "symbol": "SessionRegistry::getInvokeIdForChildSession"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "originSessionId"
         }
       ],
       "normative_excerpt": {
@@ -3471,17 +3475,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
-      "normative_excerpt": {
-        "text": "<param>. The SCXML Processor MUST evaluate this element when the parent <send> element is evaluated and pass the resulting data to the external service when the message is delivered. Occurs 0 or more times. See 5.7 <param> for details. <content>. The SCXML Processor MUST evaluate this element when the parent <send> element is evaluated and pass the resulting data to the external service when the message is delivered. Occurs 0 or 1 times. See 5.6 <content> for details. A conformant SCXML document MUST specify exactly one of 'event', 'eventexpr' and <content>. A conformant document MUST NOT specify \"namelist\" or <param> with <content>. The SCXML Processor MUST include all attributes and values provided by <param> or 'namelist' even if duplicates occur. If 'idlocation' is present, the SCXML Processor MUST generate an id when the parent <send> element is evaluated and store it in this location. See 3.14 IDs for details. If a delay is specified via 'delay' or 'delayexpr', the SCXML Processor MUST interpret the character string as a time interval. It MUST dispatch the message only when the delay interval elapses. (Note that the evaluation of the send tag will return immediately.) The Processor MUST evaluate all arguments to <send> when the <send> element is evaluated, and not when the message is actually dispatched. If the evaluation of <send>'s arguments produces an error, the Processor MUST discard the message without attempting to deliver it. If the SCXML session terminates before the delay interval has elapsed, the SCXML Processor MUST discard the message without attempting to deliver it.",
-        "anchor_url": "https://www.w3.org/TR/scxml/#N10E20",
-        "source_revision": "REC-scxml-20150901"
-      }
-    },
-    "scxml-6.2.4": {
-      "title": "The Target of Send",
-      "parent_doc": "docs/GENERATED.md",
-      "parent_section": "scxml-6.2",
-      "decision_status": "active",
       "implementations": [
         {
           "file": "sce/include/common/SendHelper.h",
@@ -3498,6 +3491,23 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::restoreChildState"
+        }
+      ],
+      "normative_excerpt": {
+        "text": "<param>. The SCXML Processor MUST evaluate this element when the parent <send> element is evaluated and pass the resulting data to the external service when the message is delivered. Occurs 0 or more times. See 5.7 <param> for details. <content>. The SCXML Processor MUST evaluate this element when the parent <send> element is evaluated and pass the resulting data to the external service when the message is delivered. Occurs 0 or 1 times. See 5.6 <content> for details. A conformant SCXML document MUST specify exactly one of 'event', 'eventexpr' and <content>. A conformant document MUST NOT specify \"namelist\" or <param> with <content>. The SCXML Processor MUST include all attributes and values provided by <param> or 'namelist' even if duplicates occur. If 'idlocation' is present, the SCXML Processor MUST generate an id when the parent <send> element is evaluated and store it in this location. See 3.14 IDs for details. If a delay is specified via 'delay' or 'delayexpr', the SCXML Processor MUST interpret the character string as a time interval. It MUST dispatch the message only when the delay interval elapses. (Note that the evaluation of the send tag will return immediately.) The Processor MUST evaluate all arguments to <send> when the <send> element is evaluated, and not when the message is actually dispatched. If the evaluation of <send>'s arguments produces an error, the Processor MUST discard the message without attempting to deliver it. If the SCXML session terminates before the delay interval has elapsed, the SCXML Processor MUST discard the message without attempting to deliver it.",
+        "anchor_url": "https://www.w3.org/TR/scxml/#N10E20",
+        "source_revision": "REC-scxml-20150901"
+      }
+    },
+    "scxml-6.2.4": {
+      "title": "The Target of Send",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.2",
+      "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeSendAction"
         }
       ],
       "normative_excerpt": {
@@ -3545,10 +3555,6 @@
         {
           "file": "sce/include/common/SendSchedulingHelper.h",
           "symbol": "schedule"
-        },
-        {
-          "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "getAllInvokedSessions"
         },
         {
           "file": "sce/src/events/EventSchedulerImpl.cpp",
@@ -3824,18 +3830,6 @@
           "symbol": "DataModelInitializer::initializeDataItem"
         },
         {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::processNextQueuedEvent"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::raiseEvent"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "originSessionId"
-        },
-        {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "InvokeExecutor::captureInvokeState"
         },
@@ -3934,6 +3928,10 @@
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::enterInitialState"
+        },
+        {
+          "file": "sce/include/runtime/InvokeExecutor.h",
+          "symbol": "getAllInvokedSessions"
         }
       ],
       "normative_excerpt": {
@@ -4041,6 +4039,30 @@
         {
           "file": "sce/include/common/EventMetadataHelper.h",
           "symbol": "createDoneInvokeEvent"
+        },
+        {
+          "file": "sce/include/runtime/InvokeExecutor.h",
+          "symbol": "parentStateMachine_"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "StateMachine"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "completionCallback_"
+        },
+        {
+          "file": "sce/src/runtime/InvokeExecutor.cpp",
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::enterState"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::setCompletionCallback"
         }
       ],
       "normative_excerpt": {
@@ -4097,18 +4119,6 @@
           "symbol": "SCE::Core"
         },
         {
-          "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "parentStateMachine_"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "StateMachine"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "completionCallback_"
-        },
-        {
           "file": "sce/include/runtime/StateSnapshot.h",
           "symbol": "finalizeScript"
         },
@@ -4127,14 +4137,6 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setCompletionCallback"
         }
       ],
       "normative_excerpt": {
@@ -4148,12 +4150,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.5",
       "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
-        }
-      ],
       "normative_excerpt": {
         "text": "None.",
         "anchor_url": "https://www.w3.org/TR/scxml/#N110EA",
@@ -4165,6 +4161,24 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.5",
       "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/src/parsing/InvokeParser.cpp",
+          "symbol": "SCE::InvokeParser::parseFinalizeElement"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::processNextQueuedEvent"
+        },
+        {
+          "file": "sce/src/runtime/InvokeExecutor.cpp",
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent"
+        }
+      ],
       "normative_excerpt": {
         "text": "<finalize>'s children consist of 0 or more elements of executable content. In a conformant SCXML document, the executable content inside <finalize> MUST NOT raise events or invoke external actions. In particular, the <send> and <raise> elements MUST NOT occur. If one or more elements of executable content is specified, the SCXML Processor MUST execute them each time an event is received from the child process that was created by the parent <invoke> element. The Processor MUST execute them right before the event is pulled off the external event queue for processing. The Processor MUST NOT execute them at any other time or in response to any other events. If no executable content is specified, the SCXML Processor MUST update the data model each time an event is received from the child process that was created by the parent <invoke> element. Specifically if the parent <invoke> element contains a 'namelist' attribute or one or more <param> children containing 'location' attributes, then for each item in the 'namelist' attribute and each such <param> element, the Processor MUST update the corresponding location as if by <assign> with any return value that has a name that matches the 'namelist' item or the 'name' of the <param> element. Thus the effect of an <invoke> with an empty <finalize> element and either a 'namelist' attribute or a <param> element with a 'location' attribute is first to send the part of the data model specified by 'namelist' or 'location' to the invoked component and then to update that part of the data model with any returned values that have the same name. Note that the automatic update does not take place if the <finalize> element is absent as opposed to empty. In the example below, a state machine using an ECMAScript data model invokes a clock object that returns the current time in a ping event with an XML payload that includes the currentSecond, currentMinute, currentHour (1-12), and an isAm flag. <finalize> maps this data into an ECMAScript date object that is used in the condition of a transition. Thus <finalize> normalizes the data before the conditions on transitions are evaluated. <scxml version=\"1.0\" datamodel=\"ecmascript\"> .... <state id=”getTime”> <transition event=”ping” cond=”time.getHours() > 17 || time.getHours() < 9” target=”storeClosed”/> <transition event=”ping” target=”takeOrder”/> <datamodel> <data id=”time” expr=”new Date()”/> </datamodel> <invoke id=”timer” type=”x-clock” src=”clock.pl”> <finalize> <script> time.setSeconds(_event.data.currentSecond); time.setMinutes(_event.data.currentMinute); time.setHours(_event.data.currentHour + (_event.isAm ? 0 : 12) - 1); </script> </finalize> </invoke> </state> ....",
         "anchor_url": "https://www.w3.org/TR/scxml/#N110EF",

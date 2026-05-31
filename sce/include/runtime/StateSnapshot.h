@@ -54,7 +54,7 @@ struct EventSnapshot {
 struct ScheduledEventSnapshot {
     std::string eventName;
     std::string sendId;
-    int64_t originalDelayMs;  // Original delay in milliseconds (§scxml-6.2.4)
+    int64_t originalDelayMs;  // Original delay in milliseconds (§scxml-6.2.3)
     int64_t remainingTimeMs;  // Remaining time at snapshot capture (for accurate restoration)
     std::string sessionId;
 
