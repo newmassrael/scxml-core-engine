@@ -329,6 +329,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 **Implementations**:
 - sce/include/core/TransitionHelper.h:matchesAnyEventDescriptor
 - sce/include/core/TransitionHelper.h:matchesEventDescriptor
+- sce/include/core/EventMatchingHelper.h:matchesEventDescriptor
 
 
 
@@ -2333,12 +2334,6 @@ Location expressions are used to specify a location in the data model, e.g. as p
 
 
 
-
-
-**Implementations**:
-- sce/include/core/EventMatchingHelper.h:matchesEventDescriptor
-- sce/include/core/TransitionHelper.h:matchesAnyEventDescriptor
-- sce/include/core/TransitionHelper.h:matchesEventDescriptor
 
 
 
