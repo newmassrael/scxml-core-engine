@@ -222,7 +222,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // W3C SCXML: Create EventRaiser for #_parent target support
     auto childEventRaiser = std::make_shared<EventRaiserImpl>();
 
-    // §scxml-3.13: Share parent's EventScheduler with child for consistent scheduler mode
+    // Share parent's EventScheduler with child for consistent scheduler mode
     // Parent and child must use the same scheduler so child inherits MANUAL mode for interactive debugging
     if (auto parentSM = parentStateMachine_.lock()) {
         if (auto parentEventRaiser = parentSM->getEventRaiser()) {
@@ -1229,10 +1229,10 @@ std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
         // Create child snapshot
         auto childSnapshot = std::make_shared<StateSnapshot>();
 
-        // Capture active states (§scxml-3.13: preserve document order for time-travel debugging)
+        // Capture active states (preserve document order for time-travel debugging)
         childSnapshot->activeStates = childSM->getActiveStates();
 
-        // §scxml-3.13: Capture event queues from child's EventRaiser
+        // Capture event queues from child's EventRaiser
         auto childEventRaiser = childSM->getEventRaiser();
         if (childEventRaiser) {
             childEventRaiser->getEventQueues(childSnapshot->internalQueue, childSnapshot->externalQueue);
@@ -1311,7 +1311,7 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
             continue;
         }
 
-        // §scxml-3.13: Complete restoration using Template Method pattern
+        // Complete restoration using Template Method pattern
         // ARCHITECTURE.md: Single Source of Truth - StateMachine handles restoration lifecycle
         // This automatically handles: JS environment init, state restoration, running flag
         if (!childSM->restoreFromSnapshot(childSnapshot.activeStates)) {
@@ -1319,7 +1319,7 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
             return;
         }
 
-        // §scxml-3.13: Restore child's event queues
+        // Restore child's event queues
         auto childEventRaiser = childSM->getEventRaiser();
         if (childEventRaiser) {
             auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(childEventRaiser);
