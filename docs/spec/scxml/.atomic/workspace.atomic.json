@@ -30,12 +30,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "StateSnapshot"
-        }
-      ],
       "normative_excerpt": {
         "text": "[This section is informative.]",
         "anchor_url": "https://www.w3.org/TR/scxml/#CoreIntroduction",
@@ -720,10 +714,6 @@
         {
           "file": "sce/include/parsing/SemanticError.h",
           "symbol": "SemanticNoStates"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "internalQueue"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -1784,13 +1774,7 @@
     "scxml-5": {
       "title": "Data Model and Data Manipulation",
       "parent_doc": "docs/GENERATED.md",
-      "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "dataModel"
-        }
-      ]
+      "decision_status": "active"
     },
     "scxml-5.1": {
       "title": "Introduction",
@@ -2140,22 +2124,6 @@
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "invokeid"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "origin"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "origintype"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "sendid"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
@@ -3074,26 +3042,6 @@
           "symbol": "pollScheduler"
         },
         {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "ScheduledEventSnapshot"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "captureSnapshot"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "params"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "scheduledEvents"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "targetUri"
-        },
-        {
           "file": "sce/include/scripting/ISessionRegistry.h",
           "symbol": "ISessionRegistry"
         },
@@ -3271,10 +3219,6 @@
         {
           "file": "sce/include/common/SendHelper.h",
           "symbol": "SendHelper"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "originalDelayMs"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
@@ -3520,10 +3464,6 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "createFromSCXMLString"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "autoForward"
         },
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
@@ -3917,10 +3857,6 @@
         {
           "file": "sce/include/core/StatePolicyConcepts.h",
           "symbol": "SCE::Core"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "finalizeScript"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -4615,10 +4551,6 @@
         {
           "file": "sce/include/events/IHttpClient.h",
           "symbol": "IHttpClient"
-        },
-        {
-          "file": "sce/include/runtime/StateSnapshot.h",
-          "symbol": "content"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",

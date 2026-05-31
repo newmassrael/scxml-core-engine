@@ -70,10 +70,6 @@ The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RE
 
 
 
-**Implementations**:
-- sce/include/runtime/StateSnapshot.h:StateSnapshot
-
-
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is informative.]
@@ -503,7 +499,6 @@ The following events are generated automatically by the SCXML implementation und
 **Implementations**:
 - sce/include/parsing/DoneDataParser.h:datamodelType_
 - sce/include/parsing/SemanticError.h:SemanticNoStates
-- sce/include/runtime/StateSnapshot.h:internalQueue
 - sce/include/static/StaticExecutionEngine.h:initialize
 - sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
 - sce/src/runtime/StateMachine.cpp:StateMachine::start
@@ -1524,10 +1519,6 @@ None. The manner in which the message is displayed or logged is platform-depende
 
 
 
-**Implementations**:
-- sce/include/runtime/StateSnapshot.h:dataModel
-
-
 
 
 ### §scxml-5.1. Introduction
@@ -1662,10 +1653,6 @@ None. The manner in which the message is displayed or logged is platform-depende
 - sce/include/common/EventTypeHelper.h:EventTypeHelper
 - sce/include/common/EventTypeHelper.h:classifyEventType
 - sce/include/mesh/MeshDispatch.h
-- sce/include/runtime/StateSnapshot.h:invokeid
-- sce/include/runtime/StateSnapshot.h:origin
-- sce/include/runtime/StateSnapshot.h:origintype
-- sce/include/runtime/StateSnapshot.h:sendid
 - sce/include/scripting/IScriptEngine.h:SetCurrentEventArgs
 - sce/include/static/StaticExecutionEngine.h:currentEventInvokeId
 - sce/include/static/StaticExecutionEngine.h:invokeId
@@ -2375,11 +2362,6 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 - sce/include/events/IEventDispatcher.h:targetUri
 - sce/include/events/ParentEventTarget.h:ParentEventTarget
 - sce/include/events/PlatformEventRaiserHelper.h:pollScheduler
-- sce/include/runtime/StateSnapshot.h:ScheduledEventSnapshot
-- sce/include/runtime/StateSnapshot.h:captureSnapshot
-- sce/include/runtime/StateSnapshot.h:params
-- sce/include/runtime/StateSnapshot.h:scheduledEvents
-- sce/include/runtime/StateSnapshot.h:targetUri
 - sce/include/scripting/ISessionRegistry.h:ISessionRegistry
 - sce/include/scripting/ISessionRegistry.h:cleanupSession
 - sce/include/scripting/SessionRegistry.h:eventDispatchers_
@@ -2473,7 +2455,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 **Implementations**:
 - sce/include/common/SendHelper.h:SendHelper
-- sce/include/runtime/StateSnapshot.h:originalDelayMs
 - sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
 - sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
 - sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::processReadyEvents
@@ -2652,7 +2633,6 @@ None
 - sce/include/runtime/StateHierarchyManager.h:setInvokeDeferCallback
 - sce/include/runtime/StateMachine.h:StateMachine
 - sce/include/runtime/StateMachine.h:createFromSCXMLString
-- sce/include/runtime/StateSnapshot.h:autoForward
 - sce/include/scripting/ISessionRegistry.h:getParentSessionId
 - sce/include/scripting/ISessionRegistry.h:registerParentChild
 - sce/include/scripting/SessionRegistry.h:parentChildMappings_
@@ -2840,7 +2820,6 @@ The implementation of <invoke>, including communication between parent and child
 - sce/include/common/SendHelper.h:SendHelper
 - sce/include/common/SendHelper.h:sendToParentWithOrigin
 - sce/include/core/StatePolicyConcepts.h:SCE::Core
-- sce/include/runtime/StateSnapshot.h:finalizeScript
 - sce/include/static/StaticExecutionEngine.h:processEventQueues
 - sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
 - sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
@@ -3503,7 +3482,6 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 - sce/include/events/EventDescriptor.h:responseEventName
 - sce/include/events/IEventDispatcher.h:content
 - sce/include/events/IHttpClient.h:IHttpClient
-- sce/include/runtime/StateSnapshot.h:content
 - sce/include/static/StaticExecutionEngine.h:HttpSendRequest
 - sce/include/static/StaticExecutionEngine.h:onHttpSend_
 - sce/include/static/StaticExecutionEngine.h:performHttpSend
