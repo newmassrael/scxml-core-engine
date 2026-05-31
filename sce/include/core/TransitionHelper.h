@@ -21,12 +21,12 @@
 
 /**
  * @file TransitionHelper.h
- * @brief §scxml-5.9.3 Transition Matching Helper
+ * @brief §scxml-3.12.1 Transition Matching Helper
  *
  * Provides convenience wrappers for event descriptor matching logic.
  * ARCHITECTURE.md: Zero Duplication - delegates to EventMatchingHelper (Single Source of Truth)
  *
- * §scxml-5.9.3: Event descriptors can be:
+ * §scxml-3.12.1: Event descriptors can be:
  * - "*" (wildcard) - matches any event
  * - "foo" - exact match or prefix match for "foo.bar"
  * - "foo.*" - explicit wildcard pattern
@@ -59,7 +59,7 @@ namespace SCE::Core::TransitionHelper {
 /**
  * @brief Check if an event descriptor matches an event name
  *
- * §scxml-5.9.3 compliant event descriptor matching.
+ * §scxml-3.12.1 compliant event descriptor matching.
  * ARCHITECTURE.md: Zero Duplication - delegates to EventMatchingHelper (Single Source of Truth)
  *
  * @param descriptor Event descriptor from transition (e.g., "*", "foo", "foo.*", "foo bar")
@@ -75,7 +75,7 @@ namespace SCE::Core::TransitionHelper {
  * matchesEventDescriptor("bar", "foo") → false (no match)
  */
 inline bool matchesEventDescriptor(const std::string &descriptor, const std::string &eventName) {
-    // §scxml-5.9.3: Delegate to EventMatchingHelper (Single Source of Truth)
+    // §scxml-3.12.1: Delegate to EventMatchingHelper (Single Source of Truth)
     // ARCHITECTURE.md: Zero Duplication principle - both Interpreter and AOT use same logic
     return EventMatchingHelper::matchesEventDescriptor(eventName, descriptor);
 }
@@ -97,7 +97,7 @@ inline bool matchesEventDescriptor(const std::string &descriptor, const std::str
 /**
  * @brief Check if any event descriptor in a list matches an event name
  *
- * §scxml-5.9.3: A transition can have multiple event descriptors.
+ * §scxml-3.12.1: A transition can have multiple event descriptors.
  * The transition matches if at least one descriptor matches.
  * ARCHITECTURE.md: Zero Duplication - uses EventMatchingHelper for all matching
  *
@@ -110,7 +110,7 @@ inline bool matchesEventDescriptor(const std::string &descriptor, const std::str
  * matchesAnyEventDescriptor({"foo", "bar"}, "baz") → false
  */
 inline bool matchesAnyEventDescriptor(const std::vector<std::string> &descriptors, const std::string &eventName) {
-    // §scxml-5.9.3: Check if ANY descriptor matches
+    // §scxml-3.12.1: Check if ANY descriptor matches
     // ARCHITECTURE.md: Zero Duplication - uses EventMatchingHelper (Single Source of Truth)
     for (const auto &descriptor : descriptors) {
         if (EventMatchingHelper::matchesEventDescriptor(eventName, descriptor)) {
