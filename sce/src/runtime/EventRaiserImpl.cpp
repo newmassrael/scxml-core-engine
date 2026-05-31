@@ -243,7 +243,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     // to prevent nested processing issues when child completes during parent transition
     // §scxml-3.13: In interactive debugging, scheduler MANUAL mode overrides immediate mode
     // All events must be queued for step-by-step execution, even if immediate mode is enabled
-    // §scxml-5.9.2: EXTERNAL events must NOT bypass INTERNAL events in the queue
+    // §scxml-3.13: EXTERNAL events must NOT bypass INTERNAL events in the queue
     // EXTERNAL events can use immediate mode only if no INTERNAL events are queued (Test 422)
     bool isSchedulerManual = scheduler_ && (scheduler_->getMode() == SchedulerMode::MANUAL);
     bool isPlatform = isPlatformEvent(eventName);
@@ -251,7 +251,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     bool hasInternalEvents = hasQueuedInternalEvents();
 
     if (immediateMode_.load() && !isPlatform && !isSchedulerManual) {
-        // §scxml-5.9.2: INTERNAL events always use immediate mode
+        // §scxml-3.13: INTERNAL events always use immediate mode
         // EXTERNAL events use immediate mode only when INTERNAL queue is empty
         bool canProcessImmediately = isInternal || !hasInternalEvents;
 
@@ -301,7 +301,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     }  // end if (immediateMode_.load() && !isPlatform && !isSchedulerManual)
 
     // SCXML compliance: Use synchronous queue when immediate mode is disabled
-    // §scxml-5.9.2: EXTERNAL events queued when INTERNAL events are pending
+    // §scxml-3.13: EXTERNAL events queued when INTERNAL events are pending
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
 
@@ -560,7 +560,7 @@ bool EventRaiserImpl::hasQueuedEvents() const {
 }
 
 bool EventRaiserImpl::hasQueuedInternalEvents() const {
-    // §scxml-5.9.2: Check if INTERNAL priority events are in the queue
+    // §scxml-3.13: Check if INTERNAL priority events are in the queue
     // This is used to enforce event priority - EXTERNAL events should not bypass
     // INTERNAL events that are already queued
     std::lock_guard<std::mutex> lock(synchronousQueueMutex_);

@@ -876,6 +876,22 @@
         {
           "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
           "symbol": "TransitionDomainCalculator::findLCA"
+        },
+        {
+          "file": "sce/include/core/ConflictResolutionHelper.h",
+          "symbol": "isTargetless"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "isTargetless"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::hasQueuedInternalEvents"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.h",
+          "symbol": "hasQueuedInternalEvents"
         }
       ],
       "normative_excerpt": {
@@ -3112,20 +3128,7 @@
         {
           "file": "sce/include/common/EventMetadataHelper.h",
           "symbol": "EventMetadataHelper"
-        }
-      ],
-      "normative_excerpt": {
-        "text": "Conditional expressions are used inside the 'cond' attribute of <transition>, <if> and <elseif>. If a conditional expression cannot be evaluated as a boolean value ('true' or 'false') or if its evaluation causes an error, the SCXML Processor MUST treat the expression as if it evaluated to 'false' and MUST place the error 'error.execution' in the internal event queue. The set of operators in conditional expressions varies depending on the data model, but all data models MUST support the 'In()' predicate, which takes a state ID as its argument and returns true if the state machine is in that state. This predicate allows coordination among parallel regions. Conditional expressions in conformant SCXML documents SHOULD NOT have side effects.",
-        "anchor_url": "https://www.w3.org/TR/scxml/#ConditionalExpressions",
-        "source_revision": "REC-scxml-20150901"
-      }
-    },
-    "scxml-5.9.2": {
-      "title": "Location Expressions",
-      "parent_doc": "docs/GENERATED.md",
-      "parent_section": "scxml-5.9",
-      "decision_status": "active",
-      "implementations": [
+        },
         {
           "file": "sce/include/common/InPredicateHelper.h",
           "symbol": "SCE::InPredicateHelper"
@@ -3135,48 +3138,8 @@
           "symbol": "isStateActive"
         },
         {
-          "file": "sce/include/core/ConflictResolutionHelper.h",
-          "symbol": "computeExitSet"
-        },
-        {
-          "file": "sce/include/core/ConflictResolutionHelper.h",
-          "symbol": "isTargetless"
-        },
-        {
-          "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "computeExitSet"
-        },
-        {
-          "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "computeStatesToExit"
-        },
-        {
-          "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "isTargetless"
-        },
-        {
           "file": "sce/include/scripting/IScriptEngine.h",
           "symbol": "IScriptEngine"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeTransition"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "handleHierarchicalTransition"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::hasQueuedInternalEvents"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::raiseEventWithPriority"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "hasQueuedInternalEvents"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
@@ -3191,6 +3154,17 @@
           "symbol": "LuaEngine::registerBuiltins"
         }
       ],
+      "normative_excerpt": {
+        "text": "Conditional expressions are used inside the 'cond' attribute of <transition>, <if> and <elseif>. If a conditional expression cannot be evaluated as a boolean value ('true' or 'false') or if its evaluation causes an error, the SCXML Processor MUST treat the expression as if it evaluated to 'false' and MUST place the error 'error.execution' in the internal event queue. The set of operators in conditional expressions varies depending on the data model, but all data models MUST support the 'In()' predicate, which takes a state ID as its argument and returns true if the state machine is in that state. This predicate allows coordination among parallel regions. Conditional expressions in conformant SCXML documents SHOULD NOT have side effects.",
+        "anchor_url": "https://www.w3.org/TR/scxml/#ConditionalExpressions",
+        "source_revision": "REC-scxml-20150901"
+      }
+    },
+    "scxml-5.9.2": {
+      "title": "Location Expressions",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-5.9",
+      "decision_status": "active",
       "normative_excerpt": {
         "text": "Location expressions are used to specify a location in the data model, e.g. as part of the <assign>, <param>, <send> or <invoke> elements. The exact nature of a location depends on the data model. If a location expression cannot be evaluated to yield a valid location, the SCXML processor MUST place the error 'error.execution' in the internal event queue.",
         "anchor_url": "https://www.w3.org/TR/scxml/#LocationExpressions",

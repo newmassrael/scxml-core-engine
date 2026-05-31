@@ -249,7 +249,7 @@ public:
     /**
      * @brief Check if there are INTERNAL priority events in the queue
      *
-     * §scxml-5.9.2: Used to enforce event priority - EXTERNAL events should not
+     * §scxml-3.13: Used to enforce event priority - EXTERNAL events should not
      * use immediate mode when INTERNAL events are queued, ensuring INTERNAL events
      * are processed first.
      *
