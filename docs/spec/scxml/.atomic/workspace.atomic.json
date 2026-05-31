@@ -351,6 +351,10 @@
         {
           "file": "sce/include/core/TransitionHelper.h",
           "symbol": "matchesEventDescriptor"
+        },
+        {
+          "file": "sce/include/core/EventMatchingHelper.h",
+          "symbol": "matchesEventDescriptor"
         }
       ],
       "normative_excerpt": {
@@ -3150,20 +3154,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/include/core/EventMatchingHelper.h",
-          "symbol": "matchesEventDescriptor"
-        },
-        {
-          "file": "sce/include/core/TransitionHelper.h",
-          "symbol": "matchesAnyEventDescriptor"
-        },
-        {
-          "file": "sce/include/core/TransitionHelper.h",
-          "symbol": "matchesEventDescriptor"
-        }
-      ],
       "normative_excerpt": {
         "text": "A data model definition contains a specification of the underlying data structure. Such a specification of the data structure implicitly defines a set of \"legal data values\", namely the objects that can be part of such a data structure. In conjunction with this, the data model definition specifies a set of value expressions which can be evaluated at runtime to return legal data values. If a value expression does not return a legal data value, the SCXML Processor MUST place the error 'error.execution' in the internal event queue.",
         "anchor_url": "https://www.w3.org/TR/scxml/#ValueExpressions",
