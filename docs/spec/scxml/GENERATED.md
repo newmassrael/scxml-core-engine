@@ -2,7 +2,7 @@
 
 this file `mnemosyne-cli generate-docs` output — direct no edit. atomic store (`docs/.atomic/workspace.atomic.json`) in mutate primitive (`set-section-*` / `append-changelog-entry`) pass and then re-generate.
 
-Source: `.atomic/workspace.atomic.json`
+Source: `docs/spec/scxml/.atomic/workspace.atomic.json`
 
 ---
 
@@ -68,6 +68,10 @@ The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RE
 
 
 
+
+
+**Implementations**:
+- sce/include/runtime/StateSnapshot.h:StateSnapshot
 
 
 
@@ -178,6 +182,21 @@ In the case of a transition located in a compound state, the 'type' attribute is
 
 
 
+**Implementations**:
+- sce/include/runtime/StateHierarchyManager.h:enterStateCallback_
+- sce/include/runtime/StateHierarchyManager.h:historyManager_
+- sce/include/runtime/StateHierarchyManager.h:setEnterStateCallback
+- sce/include/runtime/StateHierarchyManager.h:setHistoryManager
+- sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
+- sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionDirect
+- sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
+- sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::computeExitSet
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 The <history> pseudo-state allows a state machine to remember its state configuration. A <transition> taking the <history> state as its target will return the state machine to this recorded configuration.
@@ -232,6 +251,37 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+**Implementations**:
+- sce/include/core/HierarchicalStateHelper.h:buildEntryChain
+- sce/include/core/HistoryHelper.h:SCE::Core::HistoryHelper
+- sce/include/core/HistoryHelper.h:filterDeepHistory
+- sce/include/core/HistoryHelper.h:filterShallowHistory
+- sce/include/core/HistoryHelper.h:getAncestorsToEnter
+- sce/include/runtime/HistoryManager.h:HistoryManager
+- sce/include/runtime/InvokeExecutor.h:captureChildState
+- sce/include/runtime/InvokeExecutor.h:captureInvokeState
+- sce/include/runtime/InvokeExecutor.h:restoreChildState
+- sce/include/runtime/InvokeExecutor.h:restoreInvokeState
+- sce/include/runtime/InvokeExecutor.h:scxmlContent
+- sce/include/runtime/InvokeExecutor.h:startInvokeInternal
+- sce/include/runtime/InvokeExecutor.h:startInvokeWithSessionId
+- sce/include/runtime/StateSnapshot.h:InvokeSnapshot
+- sce/include/runtime/StateSnapshot.h:activeInvokes
+- sce/include/runtime/StateSnapshot.h:activeStates
+- sce/include/runtime/StateSnapshot.h:captureSnapshot
+- sce/include/runtime/StateSnapshot.h:childState
+- sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
+- sce/include/static/StaticExecutionEngine.h:getActiveStates
+- sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
+- sce/src/runtime/HistoryManager.cpp:HistoryManager::recordHistory
+- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
+- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::captureChildState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/StateMachine.cpp:StateMachine::initializeHistoryManager
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] [Definition: A <state> or <parallel> element is active if it has been entered by a transition and has not subsequently been exited.] [Definition: The state configuration of a state machine is the set of currently active states. ] An SCXML document places the state machine in an initial state configuration at initialization time (via the 'initial' attribute of the <scxml> element). Each transition that the state machine takes thereafter places the state machine in another state configuration (which need not be distinct from the former one.) A conformant SCXML document MUST place the state machine only in legal state configurations, where a legal state configuration is one that meets the following conditions: The configuration contains exactly one child of the <scxml> element. The configuration contains one or more atomic states. When the configuration contains an atomic state, it contains all of its <state> and <parallel> ancestors. When the configuration contains a non-atomic <state>, it contains one and only one of the state's children. If the configuration contains a <parallel> state, it contains all of its children. It follows from this definition that if a state machine is in more than one atomic state, the atomic states can be traced back through a chain of <state> or <parallel> ancestors to a single <parallel> ancestor. The 'target' attribute of a <transition> (or the 'initial' attribute of a <state> or <scxml> element) do not in the general case specify a full legal state configuration since 1) they can contain <parallel> or non-atomic <state> elements 2) they do not contain the ancestors of the states in the list. We therefore define a legal state specification to be a set of states such that 1) no state is an ancestor of any other state on the list, and 2) a full legal state configuration results when all ancestors and default initial descendants have been added. (Note that the process of adding default initial descendants is recursive, since the 'initial' value may itself be non-atomic.) In a conformant SCXML document, the value of an 'initial' attribute or the 'target' of a <transition> MUST either be empty or contain a legal state specification. In a conformant SCXML document, there is an additional requirement on the value of the 'initial' attribute of a <state> and on the 'target' of a <transition> inside an <initial> or <history> element: all the states MUST be descendants of the containing <state> or <parallel> element.
@@ -250,6 +300,31 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+**Implementations**:
+- sce/include/core/EventProcessingAlgorithms.h:processMacrostep
+- sce/include/core/HierarchicalStateHelper.h:HierarchicalAlgorithms
+- sce/include/core/HierarchicalStateHelper.h:buildEntryChainFromParent
+- sce/include/core/HierarchicalStateHelper.h:buildExitChain
+- sce/include/core/HierarchicalStateHelper.h:findLCA
+- sce/include/core/TransitionHelper.h:matchesAnyEventDescriptor
+- sce/include/core/TransitionHelper.h:matchesEventDescriptor
+- sce/include/mesh/ShmChannel.h:ShmChannel
+- sce/include/runtime/TransitionDomainCalculator.h:TransitionDomainCalculator
+- sce/include/runtime/TransitionDomainCalculator.h:findLCA
+- sce/include/runtime/TransitionDomainCalculator.h:getProperAncestors
+- sce/include/runtime/TransitionDomainCalculator.h:isDescendant
+- sce/include/static/StaticExecutionEngine.h:StaticExecutionEngine
+- sce/include/static/StaticExecutionEngine.h:executeTransition
+- sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
+- sce/include/static/StaticExecutionEngine.h:processEvent
+- sce/include/static/StaticExecutionEngine.h:processEventImpl
+- sce/src/runtime/StateMachine.cpp:SCE
+- sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
+- sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
+- sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::findLCA
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::processEvent
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] Events are one of the basic concepts in SCXML since they drive most transitions. The internal structure of events is platform-specific as long as the following external interface is observed: The SCXML processor MUST make the data contained in an event accessible via the '_event' variable, as specified in 5.10 System Variables. The SCXML processor MUST make the event's name accessible via the '_event' variable, as specified in 5.10 System Variables. The SCXML processor MUST use this same name value to match against the 'event' attribute of transitions. For the most part, the set of events raised during the execution of an SCXML document is application-specific and generated under author control by use of the <raise> and <send> elements. However, certain events are mandatory and generated automatically by the interpreter. These are described in 3.12.3 List of Errors and Events. Platforms MAY extend the names of these automatically generated events by adding a suffix. For example, a platform could extend done.state.id with a timestamp suffix and generate done.state.id.timestamp instead. Because any prefix of done.state.id is also a prefix of done.state.id.timestamp, any transition that matches the former event will also match the latter.
@@ -266,6 +341,20 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+
+
+**Implementations**:
+- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- sce/include/core/EventProcessingAlgorithms.h:processInternalEventQueue
+- sce/include/core/EventProcessingAlgorithms.h:processMacrostep
+- sce/include/core/EventQueueConcept.h:SCE::Core
+- sce/include/core/EventQueueManager.h:SCE::Core
+- sce/include/core/EventQueueManager.h:queue_
+- sce/include/core/InvokeHelper.h:isValidInvokeId
+- sce/include/mesh/IChildSession.h:invokeIdString
+- sce/include/static/StaticExecutionEngine.h
+- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
+- sce/src/runtime/StateMachine.cpp:StateMachine::start
 
 
 
@@ -322,6 +411,118 @@ The following events are generated automatically by the SCXML implementation und
 
 
 
+**Implementations**:
+- sce/include/core/ConflictResolutionHelper.h:computeExitSet
+- sce/include/core/ConflictResolutionHelper.h:hasActions
+- sce/include/core/ConflictResolutionHelper.h:isExternal
+- sce/include/core/ConflictResolutionHelper.h:isInternal
+- sce/include/core/ConflictResolutionHelper.h:removeConflictingTransitions
+- sce/include/core/EntryExitHelper.h:executeEntryBlocks
+- sce/include/core/EntryExitHelper.h:executeExitBlocks
+- sce/include/core/EventProcessingAlgorithms.h:checkEventlessTransitions
+- sce/include/core/EventProcessingAlgorithms.h:processMacrostep
+- sce/include/core/HierarchicalStateHelper.h:findLCA
+- sce/include/core/ParallelExitEntryHelper.h
+- sce/include/core/ParallelStateHelper.h
+- sce/include/core/ParallelTransitionHelper.h:computeExitSet
+- sce/include/core/ParallelTransitionHelper.h:computeStatesToExit
+- sce/include/core/ParallelTransitionHelper.h:hasConflict
+- sce/include/core/ParallelTransitionHelper.h:isInternal
+- sce/include/core/ParallelTransitionHelper.h:sortStatesForExit
+- sce/include/core/ParallelTransitionHelper.h:transitionIndex
+- sce/include/core/StateEntryHelper.h:calculateAncestorPath
+- sce/include/core/StateEntryHelper.h:optimizeEntryOrder
+- sce/include/events/EventDescriptor.h:logicalExecuteTime
+- sce/include/events/IEventDispatcher.h:SchedulerMode
+- sce/include/events/IEventDispatcher.h:forcePoll
+- sce/include/events/IEventDispatcher.h:setMode
+- sce/include/runtime/IEventRaiser.h:getEventQueues
+- sce/include/runtime/IEventRaiser.h:getScheduler
+- sce/include/runtime/ImmediateModeGuard.h:ImmediateModeGuard
+- sce/include/runtime/StateHierarchyManager.h:initialTransitionCallback_
+- sce/include/runtime/StateHierarchyManager.h:setInitialTransitionCallback
+- sce/include/runtime/StateMachine.h:StateMachine
+- sce/include/runtime/StateMachine.h:executeTransitionMicrostep
+- sce/include/runtime/StateMachine.h:getLastTransitionSource
+- sce/include/runtime/StateMachine.h:getLastTransitionTarget
+- sce/include/runtime/StateMachine.h:lastTransitionSource_
+- sce/include/runtime/StateMachine.h:restoreActiveStatesDirectly
+- sce/include/runtime/StateMachine.h:restoreFromSnapshot
+- sce/include/runtime/StateMachine.h:setRestoringSnapshotOnAllRegions
+- sce/include/runtime/StateMachineBuilder.h:schedulerMode_
+- sce/include/runtime/StateMachineBuilder.h:withSchedulerMode
+- sce/include/runtime/StateSnapshot.h:activeStates
+- sce/include/runtime/StateSnapshot.h:executedEvents
+- sce/include/runtime/StateSnapshot.h:incomingTransitionSource
+- sce/include/runtime/StateSnapshot.h:schedulerLogicalTimeMs
+- sce/include/runtime/StateSnapshot.h:timestampNs
+- sce/include/runtime/StateSnapshot.h:updateSnapshotOutgoing
+- sce/include/runtime/TransitionDomainCalculator.h:TransitionDomainCalculator
+- sce/include/runtime/TransitionDomainCalculator.h:computeExitSet
+- sce/include/runtime/TransitionDomainCalculator.h:getStateDocumentPosition
+- sce/include/states/ConcurrentRegion.h:isRestoringSnapshot_
+- sce/include/states/ConcurrentRegion.h:setActiveForRestore
+- sce/include/states/ConcurrentRegion.h:setRestoringSnapshot
+- sce/include/states/ConcurrentStateTypes.h:hasActions
+- sce/include/states/ConcurrentStateTypes.h:isExternal
+- sce/include/states/ConcurrentStateTypes.h:isInternal
+- sce/include/states/IConcurrentRegion.h:setRestoringSnapshot
+- sce/include/static/StaticExecutionEngine.h:StaticExecutionEngine
+- sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
+- sce/include/static/StaticExecutionEngine.h:executeTransition
+- sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
+- sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::processReadyEvents
+- sce/src/events/InternalEventTarget.cpp:InternalEventTarget::send
+- sce/src/events/PlatformEventRaiserHelper.cpp:pollScheduler
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setImmediateMode
+- sce/src/runtime/ActionExecutorImpl.h:setImmediateMode
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::executeEventCallback
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::getEventQueues
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::getLastProcessedEvent
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEventWithPriority
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseInternalEvent
+- sce/src/runtime/EventRaiserImpl.h:executeEventCallback
+- sce/src/runtime/EventRaiserImpl.h:getEventQueues
+- sce/src/runtime/EventRaiserImpl.h:getLastProcessedEvent
+- sce/src/runtime/EventRaiserImpl.h:getScheduler
+- sce/src/runtime/EventRaiserImpl.h:lastProcessedEventName_
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::captureChildState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterState
+- sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::exitState
+- sce/src/runtime/StateMachine.cpp:SCE
+- sce/src/runtime/StateMachine.cpp:StateMachine::checkEventlessTransitions
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeExitActions
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionDirect
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionMicrostep
+- sce/src/runtime/StateMachine.cpp:StateMachine::exitState
+- sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
+- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
+- sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
+- sce/src/runtime/StateMachine.cpp:StateMachine::restoreActiveStatesDirectly
+- sce/src/runtime/StateMachine.cpp:StateMachine::restoreFromSnapshot
+- sce/src/runtime/StateMachine.cpp:StateMachine::setRestoringSnapshotOnAllRegions
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
+- sce/src/runtime/StateMachine.cpp:StateMachine::start
+- sce/src/runtime/StateMachine.cpp:StateMachine::~StateMachine
+- sce/src/runtime/StateMachineBuilder.cpp:StateMachineBuilder::build
+- sce/src/runtime/StateSnapshot.cpp:SnapshotManager::captureSnapshot
+- sce/src/runtime/StateSnapshot.cpp:SnapshotManager::updateSnapshotOutgoing
+- sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::computeExitSet
+- sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::getStateDocumentPosition
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::deactivate
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::exitAllStates
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::processEvent
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::setActiveForRestore
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::setCurrentState
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::setRestoringSnapshot
+- sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::deactivateAllRegions
+- sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::exitParallelState
+- sce/src/states/StateExitExecutor.cpp:StateExitExecutor::executeActionNodes
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] To simplify the following definitions, we introduce the event NULL. NULL has no name and is used only in these definitions. It never occurs in the event queues of an SCXML Processor. All other events have names and are distinct from NULL. (In effect, NULL is a pseudo-event that is used in these definitions as a trigger for eventless transitions.) [Definition: A transition T is enabled by named event E in atomic state S if a) T's source state is S or an ancestor of S,and b) T matches E's name (see 3.12.1 Event Descriptors) and c) T lacks a 'cond' attribute or its 'cond' attribute evaluates to "true". A transition is enabled by NULL in atomic state S if a) T lacks an 'event' attribute, and b) T's source state is S or an ancestor of S and c) T lacks an 'cond' attribute or its 'cond' attribute evaluates to "true". (Note that such a transition can never be enabled by any named event.)] [Definition: The source state of a transition is the <state> or <parallel> element that it occurs in. The effective target state(s) of the transition is the state or set of states specified by its 'target' attribute, with any history states being replaced by the corresponding stored state configuration or default stored state configuration. The complete target set of a transition consists of all the states that will be active after the transition is taken. It contains the effective target states of the transition plus all their ancestors, expanded by the recursive application of the following two operations: 1) if any <parallel> element is a member of the set, any of its children that are not members of the set must be added 2) if any compound <state> is in the set and none of its children is in the set, its default initial state(s) are added to the set. Any state whose child(ren) are added to the complete target set by clause 2 is called a default entry state. ] [Definition: The exit set of a transition in configuration C is the set of states that are exited when the transition is taken when the state machine is in C. If the transition does not contain a 'target', its exit set is empty. Otherwise (i.e., if the transition contains a 'target'), if its 'type' is "external", its exit set consists of all active states in C that are proper descendants of the Least Common Compound Ancestor (LCCA) of the source and target states. Otherwise, if the transition has 'type' "internal", its source state is a compound state, and all its target states are proper descendants of its source state, the exit set consists of all active states in C that are proper descendants of its source state. (If a transition has 'type' of "internal", but its source state is not compound or its target states are not all proper descendants of its source state, its exit set is defined as if it had 'type' of "external". The exit set of a set of transitions is the union of the exit sets of the individual transitions. ] [Definition: The entry set of a transition in configuration C is the set of states that are entered when the transition is taken. If a transition does not contain a 'target', its entry set is empty. Otherwise, it consists of all members of the transition's complete target set that that are not currently active or are in the exit set. (Thus the entry set consists of all members of the transition's complete target set that will not be active once the states in the exit set have been exited.) The entry set of a set of transitions is the union of the entry sets of the individual transitions.] [Definition: A transition T is optimally enabled by event E in atomic state S if a) T is enabled by E in S and b) no transition that precedes T in document order in T's source state is enabled by E in S and c) no transition is enabled by E in S in any descendant of T's source state.] [Definition: Two transitions T1 and T2 conflict in state configuration C if their exit sets in C have a non-null intersection.] N.B. If two transitions conflict, then taking them both may lead to an illegal configuration. Hence, only one of the transitions may safely be taken. In order to resolve conflicts between transitions, we assign priorities to transitions as follows: let transitions T1 and T2 conflict, where T1 is optimally enabled in atomic state S1, and T2 is optimally enabled in atomic state S2, where S1 and S2 are both active. We say that T1 has a higher priority than T2 if a) T1's source state is a descendant of T2's source state, or b) S1 precedes S2 in document order. [Definition: The optimal transition set enabled by event E in state configuration C is the largest set of transitions such that a) each transition in the set is optimally enabled by E in an atomic state in C b) no transition conflicts with another transition in the set c) there is no optimally enabled transition outside the set that has a higher priority than some member of the set. ] [Definition: A microstep consists of the execution of the transitions in an optimal enabled transition set.] [Definition: A macrostep is a series of one or more microsteps ending in a configuration where the internal event queue is empty and no transitions are enabled by NULL. ] To execute a microstep, the SCXML Processor MUST execute the transitions in the corresponding optimal enabled transition set. To execute a set of transitions, the SCXML Processor MUST first exit all the states in the transitions' exit set in exit order. It MUST then execute the executable content contained in the transitions in document order. It MUST then enter the states in the transitions' entry set in entry order. To exit a state, the SCXML Processor MUST execute the executable content in the state's <onexit> handler. Then it MUST cancel any ongoing invocations that were triggered by that state. Finally, the Processor MUST remove the state from the active state's list. To enter a state, the SCXML Processor MUST add the state to the active state's list. Then it MUST execute the executable content in the state's <onentry> handler. If the state is a default entry state and has an <initial> child, the SCXML Processor MUST then execute the executable content in the <initial> child's <transition>. At startup, the SCXML Processor MUST place the state machine in the configuration specified by the 'initial' attribute of the <scxml> element. After entering the initial configuration, and after executing each microstep, the SCXML Processor MUST check the state configuration for <final> states that it has entered during the microstep. If it has entered a <final> state that is a child of <scxml>, it MUST halt processing. If it has entered a <final> state that is a child of a compound state, it MUST generate the event done.state.id, where id is the id of the compound state. If the compound state is itself the child of a <parallel> element, and all the <parallel> element's other children are in final states, the Processor MUST generate the event done.state.id, where id is the id of the <parallel> elements. After checking the state configuration, the Processor MUST select the optimal transition set enabled by NULL in the current configuration. If the set is not empty, it MUST execute it as a microstep. If the set is empty, the Processor MUST remove events from the internal event queue until the queue is empty or it finds an event that enables a non-empty optimal transition set in the current configuration. If it finds such a set, the processor MUST then execute it as a microstep. (Otherwise the internal event queue is empty and the Processor has completed a macrostep.) After completing a macrostep, the SCXML Processor MUST execute in document order the <invoke> handlers in all states that have been entered since the completion of the last macrostep. Then the Processor MUST remove events from the external event queue, waiting till events appear if necessary, until it finds one that enables a non-empty optimal transition set in the current configuration. The Processor MUST then execute that set as a microstep.
@@ -356,6 +557,15 @@ The following events are generated automatically by the SCXML implementation und
 
 
 
+
+
+**Implementations**:
+- sce/include/parsing/DoneDataParser.h:datamodelType_
+- sce/include/parsing/SemanticError.h:SemanticNoStates
+- sce/include/runtime/StateSnapshot.h:internalQueue
+- sce/include/static/StaticExecutionEngine.h:initialize
+- sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
+- sce/src/runtime/StateMachine.cpp:StateMachine::start
 
 
 
@@ -412,6 +622,41 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+**Implementations**:
+- sce/include/core/EventProcessingAlgorithms.h
+- sce/include/core/HierarchicalStateHelper.h:buildEntryChain
+- sce/include/core/ParallelExitEntryHelper.h
+- sce/include/model/SCXMLModel.h:getInitialState
+- sce/include/model/SCXMLModel.h:getInitialStates
+- sce/include/model/SCXMLModel.h:initialStates_
+- sce/include/model/SCXMLModel.h:setInitialState
+- sce/include/runtime/StateHierarchyManager.h:enterStateWithAncestors
+- sce/include/runtime/StateHierarchyManager.h:updateParallelRegionCurrentStates
+- sce/include/runtime/StateMachine.h:StateMachine
+- sce/include/runtime/StateMachine.h:isEnteringInitialConfiguration_
+- sce/include/runtime/StateMachine.h:setupAndActivateParallelState
+- sce/include/states/ConcurrentRegion.h:desiredInitialChild_
+- sce/include/states/ConcurrentRegion.h:setCurrentState
+- sce/include/states/ConcurrentRegion.h:setDesiredInitialChild
+- sce/include/states/IConcurrentRegion.h:setCurrentState
+- sce/include/states/IConcurrentRegion.h:setDesiredInitialChild
+- sce/include/static/StaticExecutionEngine.h:initialize
+- sce/include/static/StaticExecutionEngine.h:isInFinalState
+- sce/src/model/SCXMLModel.cpp:SCE::SCXMLModel::setInitialState
+- sce/src/model/SCXMLModel.cpp:SCE::SCXMLModel::validateStateRelationships
+- sce/src/model/StateHierarchy.cpp:SCE::StateHierarchy::validateRelationships
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::validateModel
+- sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseInitialElement
+- sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterState
+- sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterStateWithAncestors
+- sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::updateParallelRegionCurrentStates
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
+- sce/src/runtime/StateMachine.cpp:StateMachine::start
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::setCurrentState
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] Holds the representation of a state.
@@ -428,6 +673,10 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+
+
+**Implementations**:
+- sce/src/runtime/StateMachine.cpp:StateMachine::isInFinalState
 
 
 
@@ -464,6 +713,39 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+
+
+**Implementations**:
+- sce/include/core/HierarchicalStateHelper.h:addParallelRegions
+- sce/include/core/HierarchicalStateHelper.h:buildEntryChain
+- sce/include/core/ParallelCompletionHelper.h:ParallelCompletionHelper
+- sce/include/core/ParallelCompletionHelper.h:areAllRegionsInFinal
+- sce/include/core/ParallelConfigurationHelper.h:ParallelConfigurationHelper
+- sce/include/core/ParallelExitEntryHelper.h
+- sce/include/core/ParallelStateHelper.h
+- sce/include/runtime/StateMachine.h:generateDoneStateEvent
+- sce/include/runtime/StateMachine.h:setupAndActivateParallelState
+- sce/include/states/ConcurrentRegion.h:doneStateCallback_
+- sce/include/states/ConcurrentRegion.h:setDoneStateCallback
+- sce/include/states/ConcurrentStateNode.h:generateDoneStateEventIfComplete
+- sce/include/states/ConcurrentStateNode.h:hasNotifiedCompletion
+- sce/include/states/ConcurrentStateTypes.h:externalTransitionTarget
+- sce/include/states/IConcurrentRegion.h:setDoneStateCallback
+- sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
+- sce/include/static/StaticExecutionEngine.h:executeTransition
+- sce/include/static/StaticExecutionEngine.h:getActiveStates
+- sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterStateWithAncestors
+- sce/src/runtime/StateMachine.cpp:StateMachine::checkEventlessTransitions
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::isInFinalState
+- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupAndActivateParallelState
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupParallelStateCallbacks
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::determineIfInFinalState
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::setCurrentState
+- sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::generateDoneStateEventIfComplete
+- sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::processEventInAllRegions
+- sce/src/states/ExternalTransitionHandler.cpp:ExternalTransitionHandler::registerParallelState
 
 
 
@@ -520,6 +802,11 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+**Implementations**:
+- sce/src/parsing/ParsingCommon.cpp:ParsingCommon::isScxmlNamespace
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::validateModel
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] Transitions between states are triggered by events and conditionalized via guard conditions. They may contain executable content, which is executed when the transition is taken.
@@ -572,6 +859,16 @@ The children of <transition> are executable content that is run after all the <o
 
 
 
+
+
+**Implementations**:
+- sce/include/core/StateEntryHelper.h:StateEntryHelper
+- sce/include/core/StateEntryHelper.h:enterDeepTargets
+- sce/src/runtime/HistoryStateAutoRegistrar.cpp:HistoryStateAutoRegistrar::extractHistoryStatesFromModel
+- sce/src/runtime/HistoryValidator.cpp:HistoryValidator::validateRegistrationWithDefault
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionMicrostep
+- sce/src/runtime/StateMachine.cpp:StateMachine::exitState
+- sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
 
 
 
@@ -628,6 +925,20 @@ None
 
 
 
+**Implementations**:
+- sce/include/mesh/ParallelCompletionTracker.h
+- sce/include/runtime/StateMachine.h:handleCompoundStateFinalChild
+- sce/include/states/ConcurrentStateNode.h:generateDoneStateEventIfComplete
+- sce/include/states/ConcurrentStateNode.h:hasNotifiedCompletion
+- sce/include/static/StaticExecutionEngine.h:executeOnEntry
+- sce/include/static/StaticExecutionEngine.h:isGlobalFinalState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/StateMachine.cpp:StateMachine::checkEventlessTransitions
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::handleCompoundStateFinalChild
+- sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::generateDoneStateEventIfComplete
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] <final> represents a final state of an <scxml> or compound <state> element.
@@ -644,6 +955,10 @@ None
 
 
 
+
+
+**Implementations**:
+- sce/include/core/ParallelCompletionHelper.h:ParallelCompletionHelper
 
 
 
@@ -680,6 +995,30 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+
+
+**Implementations**:
+- sce/include/core/EntryExitHelper.h:SCE::Core
+- sce/include/core/EntryExitHelper.h:executeEntryBlocks
+- sce/include/core/EntryExitHelper.h:executeExitBlocks
+- sce/include/core/StateEntryHelper.h:enterDeepTargets
+- sce/include/model/IStateNode.h:addEntryActionBlock
+- sce/include/model/StateNode.h:addEntryActionBlock
+- sce/include/model/StateNode.h:entryActionBlocks_
+- sce/include/model/StateNode.h:getEntryActionBlocks
+- sce/include/parsing/StateNodeParser.h:parseEntryExitActionNodes
+- sce/include/parsing/StateNodeParser.h:parseExecutableContentBlock
+- sce/include/states/ConcurrentStateNode.h:addEntryActionBlock
+- sce/include/states/ConcurrentStateNode.h:entryActionBlocks_
+- sce/include/static/StaticExecutionEngine.h:executeOnExit
+- sce/include/static/StaticExecutionEngine.h:initialize
+- sce/src/model/StateNode.cpp:SCE::StateNode::addEntryActionBlock
+- sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseEntryExitActionNodes
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeEntryActions
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeOnEntryActions
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupAndActivateParallelState
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
+- sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::addEntryActionBlock
 
 
 
@@ -734,6 +1073,25 @@ The children of the <onentry> handler consist of executable content as defined i
 
 
 
+
+
+**Implementations**:
+- sce/include/core/EntryExitHelper.h:SCE::Core
+- sce/include/core/EntryExitHelper.h:executeEntryBlocks
+- sce/include/core/EntryExitHelper.h:executeExitBlocks
+- sce/include/model/IStateNode.h:addEntryActionBlock
+- sce/include/model/StateNode.h:addExitActionBlock
+- sce/include/model/StateNode.h:entryActionBlocks_
+- sce/include/model/StateNode.h:getExitActionBlocks
+- sce/include/parsing/StateNodeParser.h:parseEntryExitActionNodes
+- sce/include/parsing/StateNodeParser.h:parseExecutableContentBlock
+- sce/include/states/ConcurrentStateNode.h:addEntryActionBlock
+- sce/include/states/ConcurrentStateNode.h:entryActionBlocks_
+- sce/src/model/StateNode.cpp:SCE::StateNode::addEntryActionBlock
+- sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseEntryExitActionNodes
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeExitActions
+- sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::addEntryActionBlock
+- sce/src/states/StateExitExecutor.cpp:StateExitExecutor::executeActionNodes
 
 
 
@@ -1038,6 +1396,23 @@ None.
 
 
 
+**Implementations**:
+- sce/include/common/ForeachValidator.h:validateForeachAttributes
+- sce/include/core/ForeachHelper.h:ForeachHelper
+- sce/include/core/ForeachHelper.h:evaluateForeachArray
+- sce/include/core/ForeachHelper.h:executeForeachWithActions
+- sce/include/core/ForeachHelper.h:executeForeachWithoutBody
+- sce/include/core/ForeachHelper.h:isLegalVariableName
+- sce/include/scripting/IScriptEngine.h:hasVariable
+- sce/include/scripting/ScriptResultUtils.h:ScriptResultUtils
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeForeachAction
+- sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformArrayLiterals
+- sce/src/scripting/JSEngine.cpp:JSEngine::hasVariable
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::luaToScriptValue
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::pushScriptValue
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::registerBuiltins
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.]
@@ -1218,6 +1593,10 @@ None. The manner in which the message is displayed or logged is platform-depende
 
 
 
+**Implementations**:
+- sce/include/runtime/StateSnapshot.h:dataModel
+
+
 
 
 ### §scxml-5.1. Introduction
@@ -1250,6 +1629,82 @@ None. The manner in which the message is displayed or logged is platform-depende
 
 
 
+**Implementations**:
+- sce/include/SCXMLTypes.h:setTypedData
+- sce/include/common/AssignmentExecutionHelper.h:AssignmentExecutionHelper
+- sce/include/common/AssignmentExecutionHelper.h:executeAssignment
+- sce/include/common/AssignmentExecutionHelper.h:isSystemVariableReference
+- sce/include/common/DoneDataHelper.h:evaluateContent
+- sce/include/common/EventDataHelper.h:buildJsonFromParams
+- sce/include/common/EventDataHelper.h:buildJsonFromTypedParams
+- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- sce/include/common/EventMetadataHelper.h:clearPolicyMetadata
+- sce/include/common/EventMetadataHelper.h:populatePolicyFromMetadata
+- sce/include/common/FinalizeHelper.h:executeFinalizeWithEvent
+- sce/include/common/LogicalTimeScheduler.h:eventData
+- sce/include/common/SendHelper.h:isInvalidTarget
+- sce/include/common/SendHelper.h:sendToParentWithOrigin
+- sce/include/core/EventMetadata.h:EventMetadata
+- sce/include/events/InternalEventTarget.h:InternalEventTarget
+- sce/include/events/InternalEventTarget.h:sessionId_
+- sce/include/mesh/MeshDispatch.h:dispatchEnvelope
+- sce/include/mesh/PayloadCodec.h:PayloadCodec
+- sce/include/runtime/IEventRaiser.h:raiseEvent
+- sce/include/runtime/IEventRaiser.h:raiseExternalEvent
+- sce/include/scripting/IScriptEngine.h:SetCurrentEventArgs
+- sce/include/scripting/IScriptEngine.h:setCurrentEvent
+- sce/include/scripting/ISessionRegistry.h:getInvokeIdForChildSession
+- sce/include/scripting/JSEngine.h:eventObjectInitialized
+- sce/include/scripting/JSEngine.h:setCurrentEvent
+- sce/include/static/StaticExecutionEngine.h:StaticExecutionEngine
+- sce/include/static/StaticExecutionEngine.h:processEvent
+- sce/include/static/StaticExecutionEngine.h:raiseExternal
+- sce/src/actions/SendAction.cpp:SendAction::validateSpecific
+- sce/src/common/EventDataHelper.cpp:EventDataHelper::buildJsonFromParams
+- sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::createExternalTarget
+- sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::createInternalTarget
+- sce/src/events/HttpEventTarget.cpp:HttpEventTarget::send
+- sce/src/events/InternalEventTarget.cpp:InternalEventTarget::buildEventData
+- sce/src/events/InternalEventTarget.cpp:InternalEventTarget::send
+- sce/src/events/InvokeEventTarget.cpp:InvokeEventTarget::send
+- sce/src/events/ParentEventTarget.cpp:ParentEventTarget::sendImmediately
+- sce/src/parsing/ActionParser.cpp:SCE::ActionParser::parseActionNode
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::addSystemVariables
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::assignVariable
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::ensureCurrentEventSet
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setCurrentEvent
+- sce/src/runtime/ActionExecutorImpl.h:currentTypedData_
+- sce/src/runtime/ActionExecutorImpl.h:getCurrentEvent
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::executeEventCallback
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processEvent
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEvent
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEventWithPriority
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseExternalEvent
+- sce/src/runtime/EventRaiserImpl.cpp:SCE
+- sce/src/runtime/EventRaiserImpl.h:EventRaiserImpl
+- sce/src/runtime/EventRaiserImpl.h:currentEventContext_
+- sce/src/runtime/EventRaiserImpl.h:eventType
+- sce/src/runtime/EventRaiserImpl.h:getCurrentEventContext
+- sce/src/runtime/EventRaiserImpl.h:invokeId
+- sce/src/runtime/EventRaiserImpl.h:originType
+- sce/src/runtime/EventRaiserImpl.h:sendId
+- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::executeInvoke
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/StateMachine.cpp:EventContextGuard
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionMicrostep
+- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
+- sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
+- sce/src/scripting/JSEngine.cpp:JSEngine::setupSCXMLBuiltins
+- sce/src/scripting/JSEngineImpl.cpp:JSEngine::setCurrentEventInternal
+- sce/src/scripting/JSEngineImpl.cpp:JSEngine::setVariableInternal
+- sce/src/scripting/JSEngineImpl.cpp:JSEngine::setupSystemVariablesInternal
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::setCurrentEvent
+- sce/src/scripting/SessionRegistry.cpp:SessionRegistry::getInvokeIdForChildSession
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] The SCXML Processor MUST maintain a protected portion of the data model containing information that can be useful to applications. We refer to the items in this special part of the data model as 'system variables'. Implementations MUST provide the following system variables, and MAY support others. _event. The SCXML Processor MUST use the variable '_event' to hold a structure containing the current event's name and any data contained in the event (see 5.10.1 The Internal Structure of Events. The exact nature of the structure depends on the data model being used. See B Data Models for details. The SCXML Processor MUST bind the _event variable when an event is pulled off the internal or external event queue to be processed, and MUST keep the variable bound to that event until another event is processed. (It follows that when an application is testing the 'cond' attribute of a <transition> element that contains an 'event' attribute, _event will be bound to the event that the transition is being matched against. If the transition is selected to be executed, _event will remain bound to that event in the <onexit> handlers of the states being exited, the executable content of the transition itself, and the <onentry> handlers of the states being entered. In the case of <transition> elements that do not contain an 'event' attribute and the <onexit> and <onentry> handlers of any states that are exited or entered by such transitions, the _event variable will not have a easily predictable value since the transition is not being driven by an event. In these cases, _event will be bound to the last event that was matched against a transition.) The SCXML Processor MUST NOT bind _event at initialization time until the first event is processed. Hence _event is unbound when the state machine starts up. If the data in the event is not a legal instance of the data model language, and the Processor cannot translate it into one, then the Processor MUST place the error 'error.execution' in the internal event queue at the point at which it attempts to bind _event. In this case, the Processor MUST leave the event data part of the _event structure unbound. (Note that the event's name will still be available, however and that processing of both the original event and the error event will proceed as usual.) _sessionid. The SCXML Processor MUST bind the variable _sessionid at load time to the system-generated id for the current SCXML session. (This is of type NMTOKEN.) The Processor MUST keep the variable bound to this value until the session terminates. _name. The SCXML Processor MUST bind the variable _name at load time to the value of the 'name' attribute of the <scxml> element. The Processor MUST keep the variable bound to this value until the session terminates. _ioprocessors. The SCXML Processor MUST bind the variable _ioprocessors to a set of values, one for each Event I/O Processor that it supports. The syntax to access it depends on the data model. See B Data Models for details. The nature of the values associated with the individual Event I/O Processors depends on the Event I/O Processor in question. See C Event I/O Processors for details. The Processor MUST keep the variable bound to this set of values until the session terminates. _x. The variable _x is the root element for platform-specific system variables. The Processor MUST place all platform-specific system variables underneath it. The exact structure of the platform-specific variables depends on the data model. For example, in the ECMAScript data model B.2 The ECMAScript Data Model, '_x' will be a top-level ECMAScript object and the platform-specific system variables will be its properties. The set of system variables may be expanded in future versions of this specification. Variable names beginning with '_' are reserved for system use. A conformant SCXML document MUST NOT contain ids beginning with '_' in the <data> element. Platforms MUST place all platform-specific system variables under the '_x' root. The concrete realization of these variables in a specific data model depends on the language used. The Processor MUST cause any attempt to change the value of a system variable to fail and MUST place the error 'error.execution' on the internal event queue when such an attempt is made.
@@ -1268,6 +1723,42 @@ None. The manner in which the message is displayed or logged is platform-depende
 
 
 
+**Implementations**:
+- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- sce/include/common/EventMetadataHelper.h:clearPolicyMetadata
+- sce/include/common/EventMetadataHelper.h:populatePolicyFromMetadata
+- sce/include/common/EventMetadataHelper.h:setEventMetadata
+- sce/include/common/EventTypeHelper.h:EventTypeHelper
+- sce/include/common/EventTypeHelper.h:classifyEventType
+- sce/include/mesh/MeshDispatch.h
+- sce/include/runtime/StateSnapshot.h:invokeid
+- sce/include/runtime/StateSnapshot.h:origin
+- sce/include/runtime/StateSnapshot.h:origintype
+- sce/include/runtime/StateSnapshot.h:sendid
+- sce/include/scripting/IScriptEngine.h:SetCurrentEventArgs
+- sce/include/static/StaticExecutionEngine.h:currentEventInvokeId
+- sce/include/static/StaticExecutionEngine.h:invokeId
+- sce/include/static/StaticExecutionEngine.h:origin
+- sce/include/static/StaticExecutionEngine.h:originType
+- sce/include/static/StaticExecutionEngine.h:raise
+- sce/include/static/StaticExecutionEngine.h:raiseExternal
+- sce/include/static/StaticExecutionEngine.h:sendId
+- sce/include/static/StaticExecutionEngine.h:type
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setCurrentEvent
+- sce/src/runtime/ActionExecutorImpl.h:currentEventType_
+- sce/src/runtime/ActionExecutorImpl.h:currentInvokeId_
+- sce/src/runtime/ActionExecutorImpl.h:currentOriginSessionId_
+- sce/src/runtime/ActionExecutorImpl.h:currentOriginType_
+- sce/src/runtime/ActionExecutorImpl.h:currentSendId_
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::getEventQueues
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEvent
+- sce/src/runtime/EventRaiserImpl.h:invokeId
+- sce/src/runtime/EventRaiserImpl.h:origin
+- sce/src/runtime/EventRaiserImpl.h:originType
+- sce/src/runtime/EventRaiserImpl.h:sendId
+- sce/src/scripting/JSEngine.cpp:JSEngine::setCurrentEvent
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 Events have an internal structure which is reflected in the _event variable. This variable can be accessed to condition transitions (via boolean expressions in the 'cond' attribute) or to update the data model (via <assign>), etc. The SCXML Processor MUST ensure that the following fields are present in all events, whether internal or external. name. This is a character string giving the name of the event. The SCXML Processor MUST set the name field to the name of this event. It is what is matched against the 'event' attribute of <transition>. Note that transitions can do additional tests by using the value of this field inside boolean expressions in the 'cond' attribute. type. This field describes the event type. The SCXML Processor MUST set it to: "platform" (for events raised by the platform itself, such as error events), "internal" (for events raised by <raise> and <send> with target '_internal') or "external" (for all other events). sendid. If the sending entity has specified a value for this, the Processor MUST set this field to that value (see C Event I/O Processors for details). Otherwise, in the case of error events triggered by a failed attempt to send an event, the Processor MUST set this field to the send id of the triggering <send> element. Otherwise it MUST leave it blank. origin. This is a URI, equivalent to the 'target' attribute on the <send> element. For external events, the SCXML Processor SHOULD set this field to a value which, when used as the value of 'target', will allow the receiver of the event to <send> a response back to the originating entity via the Event I/O Processor specified in 'origintype'. For internal and platform events, the Processor MUST leave this field blank. origintype. This is equivalent to the 'type' field on the <send> element. For external events, the SCXML Processor SHOULD set this field to a value which, when used as the value of 'type', will allow the receiver of the event to <send> a response back to the originating entity at the URI specified by 'origin'. For internal and platform events, the Processor MUST leave this field blank. invokeid. If this event is generated from an invoked child process, the SCXML Processor MUST set this field to the invoke id of the invocation that triggered the child process. Otherwise it MUST leave it blank. data. This field contains whatever data the sending entity chose to include in this event. The receiving SCXML Processor SHOULD reformat this data to match its data model, but MUST NOT otherwise modify it. If the conversion is not possible, the Processor MUST leave the field blank and MUST place an error 'error.execution' in the internal event queue.
@@ -1284,6 +1775,11 @@ Events have an internal structure which is reflected in the _event variable. Thi
 
 
 
+
+
+**Implementations**:
+- sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariableFromExpr
+- sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
 
 
 
@@ -1322,6 +1818,17 @@ None.
 
 
 
+**Implementations**:
+- sce/include/common/DataModelInitHelper.h:initializeVariable
+- sce/include/common/DataModelInitHelper.h:initializeVariableFromExpr
+- sce/include/common/DataModelInitHelper.h:initializeVariableFromSrc
+- sce/include/common/FileLoadingHelper.h:loadFileContent
+- sce/include/common/FileLoadingHelper.h:normalizePath
+- sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariable
+- sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariableFromSrc
+- sce/src/parsing/DataModelParser.cpp:SCE::DataModelParser::loadExternalContent
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 <data> Occurs 0 or more times. Each instance defines a named data element.
@@ -1338,6 +1845,39 @@ None.
 
 
 
+
+
+**Implementations**:
+- sce/include/common/AssignHelper.h:AssignHelper
+- sce/include/common/AssignHelper.h:getInvalidLocationErrorMessage
+- sce/include/common/AssignHelper.h:isValidLocation
+- sce/include/common/AssignmentExecutionHelper.h:AssignmentExecutionHelper
+- sce/include/common/AssignmentExecutionHelper.h:executeAssignment
+- sce/include/common/DataModelInitHelper.h:initializeVariable
+- sce/include/events/PlatformEventRaiserHelper.h:PlatformEventRaiserHelper
+- sce/include/runtime/BindingHelper.h:BindingHelper
+- sce/include/runtime/BindingHelper.h:getDefaultBinding
+- sce/include/runtime/BindingHelper.h:isEarlyBinding
+- sce/include/runtime/BindingHelper.h:isLateBinding
+- sce/include/runtime/BindingHelper.h:shouldAssignValueAtDocumentLoad
+- sce/include/runtime/BindingHelper.h:shouldAssignValueOnStateEntry
+- sce/include/runtime/DataModelInitializer.h:DataModelInitializer
+- sce/include/runtime/DataModelInitializer.h:initializeAllDataItems
+- sce/include/runtime/DataModelInitializer.h:initializeDataItem
+- sce/include/runtime/DataModelInitializer.h:initializeStateDataOnEntry
+- sce/include/runtime/DataModelInitializer.h:initializedStates_
+- sce/include/runtime/StateMachine.h:StateMachine
+- sce/include/scripting/PlatformExecutionHelper.h:PlatformExecutionHelper
+- sce/include/static/StaticExecutionEngine.h:initialize
+- sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariableFromExpr
+- sce/src/events/PlatformEventRaiserHelper.cpp:QueuedEventRaiserHelper
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::assignVariable
+- sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeAllDataItems
+- sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
+- sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformFunctionSyntax
+- sce/src/scripting/PlatformExecutionHelper.cpp:QueuedExecutionHelper
 
 
 
@@ -1412,6 +1952,16 @@ Authors control when the initial values are assigned to the data elements by mea
 
 
 
+**Implementations**:
+- sce/include/common/AssignHelper.h:AssignHelper
+- sce/include/common/AssignHelper.h:getInvalidLocationErrorMessage
+- sce/include/common/AssignHelper.h:isValidLocation
+- sce/include/core/ForeachHelper.h:ForeachHelper
+- sce/include/core/ForeachHelper.h:evaluateForeachArray
+- sce/src/actions/AssignAction.cpp:AssignAction::execute
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::assignVariable
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] The <assign> element is used to modify the data model.
@@ -1428,6 +1978,10 @@ Authors control when the initial values are assigned to the data elements by mea
 
 
 
+
+
+**Implementations**:
+- sce/include/static/StaticExecutionEngine.h:processEventQueues
 
 
 
@@ -1464,6 +2018,39 @@ The children of the <assign>element provide an in-line specification of the lega
 
 
 
+
+
+**Implementations**:
+- sce/include/common/DoneDataHelper.h:DoneDataHelper
+- sce/include/common/DoneDataHelper.h:emitContentLiteral
+- sce/include/common/DoneDataHelper.h:evaluateContent
+- sce/include/common/DoneDataHelper.h:evaluateParams
+- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- sce/include/common/EventMetadataHelper.h:clearPolicyMetadata
+- sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
+- sce/include/mesh/ChildSessionAdapter.h:getDonedata
+- sce/include/model/DoneData.h:DoneData
+- sce/include/model/DoneData.h:setContentExpression
+- sce/include/model/DoneData.h:setContentLiteral
+- sce/include/model/IStateNode.h:setDoneDataContentExpression
+- sce/include/model/IStateNode.h:setDoneDataContentLiteral
+- sce/include/parsing/DoneDataParser.h:setDatamodelType
+- sce/include/runtime/StateMachine.h:StateMachine
+- sce/include/runtime/StateMachine.h:donedataAtFinal
+- sce/include/runtime/StateMachine.h:pendingDonedataAtFinal_
+- sce/include/runtime/StateMachine.h:typedDonedataAtFinal
+- sce/include/static/StaticExecutionEngine.h:donedataAtFinal
+- sce/include/static/StaticExecutionEngine.h:pendingDonedataAtFinal_
+- sce/include/static/StaticExecutionEngine.h:stashDonedataAtFinal
+- sce/include/static/StaticExecutionEngine.h:typedData
+- sce/include/static/StaticExecutionEngine.h:typedDonedataAtFinal
+- sce/src/parsing/DoneDataParser.cpp:SCE::DoneDataParser::parseContent
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseScxmlNode
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/StateMachine.cpp:SCE
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::evaluateDoneData
+- sce/src/runtime/StateMachine.cpp:StateMachine::handleCompoundStateFinalChild
 
 
 
@@ -1574,6 +2161,11 @@ A conformant SCXML document MUST NOT specify both the 'expr' attribute and child
 
 
 
+**Implementations**:
+- sce/include/common/DoneDataHelper.h:DoneDataHelper
+- sce/include/common/DoneDataHelper.h:evaluateParams
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] The <param> tag provides a general way of identifying a key and a dynamically calculated value which can be passed to an external service or included in an event.
@@ -1626,6 +2218,21 @@ None.
 
 
 
+
+
+**Implementations**:
+- sce/include/common/FileLoadingHelper.h:loadExternalScript
+- sce/include/model/SCXMLModel.h:addTopLevelScript
+- sce/include/model/SCXMLModel.h:getTopLevelScripts
+- sce/include/model/SCXMLModel.h:topLevelScripts_
+- sce/include/parsing/ActionParser.h:scxmlBasePath_
+- sce/include/parsing/ActionParser.h:setScxmlBasePath
+- sce/include/parsing/SemanticError.h:SCE::parsing
+- sce/include/parsing/SemanticError.h:SemanticTopLevelScriptUnloaded
+- sce/src/parsing/ActionParser.cpp:SCE::ActionParser::parseActionNode
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
+- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseScxmlNode
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
 
 
 
@@ -1682,6 +2289,16 @@ The child content of the <script> element represents the script code to be execu
 
 
 
+**Implementations**:
+- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- sce/include/common/GuardHelper.h:evaluateGuard
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::assignVariable
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::evaluateCondition
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeLogAction
+- sce/src/runtime/StateMachine.cpp:StateMachine::evaluateCondition
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::evaluateExpressionInternal
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] SCXML contains three types of expressions, as described below. Different data models will support different languages for these expression types, but certain properties of the expressions are constant across languages and are defined here. When "late" data binding is used, accessing data substructure in expressions before the corresponding <data> element is loaded MUST yield the same execution-time behavior as accessing non-existent data substructure in a loaded <data> instance. Such behavior is defined by the data expression language in use.
@@ -1718,6 +2335,25 @@ Conditional expressions are used inside the 'cond' attribute of <transition>, <i
 
 
 
+**Implementations**:
+- sce/include/common/InPredicateHelper.h:SCE::InPredicateHelper
+- sce/include/common/InPredicateHelper.h:isStateActive
+- sce/include/core/ConflictResolutionHelper.h:computeExitSet
+- sce/include/core/ConflictResolutionHelper.h:isTargetless
+- sce/include/core/ParallelTransitionHelper.h:computeExitSet
+- sce/include/core/ParallelTransitionHelper.h:computeStatesToExit
+- sce/include/core/ParallelTransitionHelper.h:isTargetless
+- sce/include/scripting/IScriptEngine.h:IScriptEngine
+- sce/include/static/StaticExecutionEngine.h:executeTransition
+- sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::hasQueuedInternalEvents
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEventWithPriority
+- sce/src/runtime/EventRaiserImpl.h:hasQueuedInternalEvents
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
+- sce/src/scripting/JSEngine.cpp:JSEngine::checkStateActive
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::registerBuiltins
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 Location expressions are used to specify a location in the data model, e.g. as part of the <assign>, <param>, <send> or <invoke> elements. The exact nature of a location depends on the data model. If a location expression cannot be evaluated to yield a valid location, the SCXML processor MUST place the error 'error.execution' in the internal event queue.
@@ -1734,6 +2370,12 @@ Location expressions are used to specify a location in the data model, e.g. as p
 
 
 
+
+
+**Implementations**:
+- sce/include/core/EventMatchingHelper.h:matchesEventDescriptor
+- sce/include/core/TransitionHelper.h:matchesAnyEventDescriptor
+- sce/include/core/TransitionHelper.h:matchesEventDescriptor
 
 
 
@@ -1802,6 +2444,70 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 
 
 
+
+
+**Implementations**:
+- sce/include/actions/SendAction.h:setTypeExpr
+- sce/include/actions/SendAction.h:typeExpr_
+- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- sce/include/common/LogicalTimeScheduler.h:SCE::Common
+- sce/include/common/NamelistHelper.h:NamelistHelper
+- sce/include/common/NamelistHelper.h:evaluateNamelist
+- sce/include/common/SendHelper.h:SendHelper
+- sce/include/common/SendHelper.h:generateSendId
+- sce/include/common/SendHelper.h:isInvalidTarget
+- sce/include/common/SendHelper.h:isSupportedSendType
+- sce/include/common/SendHelper.h:sendToParent
+- sce/include/common/SendHelper.h:sendToParentWithOrigin
+- sce/include/common/SendHelper.h:validateTarget
+- sce/include/common/SendSchedulingHelper.h:parseDelayString
+- sce/include/common/SendSchedulingHelper.h:schedule
+- sce/include/events/IEventDispatcher.h:ScheduledEventInfo
+- sce/include/events/IEventDispatcher.h:cancelEventsForSession
+- sce/include/events/IEventDispatcher.h:params
+- sce/include/events/IEventDispatcher.h:targetUri
+- sce/include/events/ParentEventTarget.h:ParentEventTarget
+- sce/include/events/PlatformEventRaiserHelper.h:pollScheduler
+- sce/include/runtime/StateSnapshot.h:ScheduledEventSnapshot
+- sce/include/runtime/StateSnapshot.h:captureSnapshot
+- sce/include/runtime/StateSnapshot.h:params
+- sce/include/runtime/StateSnapshot.h:scheduledEvents
+- sce/include/runtime/StateSnapshot.h:targetUri
+- sce/include/scripting/ISessionRegistry.h:ISessionRegistry
+- sce/include/scripting/ISessionRegistry.h:cleanupSession
+- sce/include/scripting/SessionRegistry.h:eventDispatchers_
+- sce/include/static/StaticExecutionEngine.h:pumpScheduledEvents
+- sce/include/static/StaticExecutionEngine.h:raiseExternal
+- sce/include/static/StaticExecutionEngine.h:runUntilCompletion
+- sce/include/static/StaticExecutionEngine.h:scheduleEvent
+- sce/include/static/StaticExecutionEngine.h:scheduler_
+- sce/include/static/StaticExecutionEngine.h:tick
+- sce/include/wrappers/GameLoopTimer.h:SCE::Wrappers
+- sce/include/wrappers/GameLoopTimer.h:scheduleByMs
+- sce/include/wrappers/TimerManager.h:SCE::Wrappers
+- sce/include/wrappers/TimerManager.h:processExpiredTimers
+- sce/include/wrappers/TimerManager.h:registerTimer
+- sce/include/wrappers/TimerManager.h:startTimer
+- sce/src/actions/SendAction.cpp:SendAction::validateSpecific
+- sce/src/events/EventDispatcherImpl.cpp:EventDispatcherImpl::cancelEventsForSession
+- sce/src/events/EventDispatcherImpl.cpp:EventDispatcherImpl::onScheduledEventExecution
+- sce/src/events/ParentEventTarget.cpp:ParentEventTarget::send
+- sce/src/events/PlatformEventRaiserHelper.cpp:pollScheduler
+- sce/src/parsing/ActionParser.cpp:SCE::ActionParser::parseActionNode
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::evaluateExpression
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setEventDispatcher
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::~ActionExecutorImpl
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processQueuedEvents
+- sce/src/runtime/EventRaiserImpl.h:scheduler_
+- sce/src/runtime/EventRaiserImpl.h:setScheduler
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::captureChildState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/SCXMLEngineImpl.cpp:SCXMLEngineImpl::loadSCXMLFromString
+- sce/src/scripting/JSEngine.cpp:JSEngine::destroySessionInternal
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::destroySession
+- sce/src/scripting/SessionRegistry.cpp:SessionRegistry::cleanupSession
 
 
 
@@ -1876,6 +2582,13 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+**Implementations**:
+- sce/include/common/SendHelper.h:SendHelper
+- sce/include/runtime/StateSnapshot.h:originalDelayMs
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 The target of the <send> operation specifies the destination of the event. The target is defined by either the 'target' or the 'targetexpr' attribute. In most cases, the format of the target depends on the type of the target (for example a SIP URL for SIP-INFO messages or a HTTP URL for Web Services). If the value of the 'target' or 'targetexpr' attribute is not supported or invalid, the Processor MUST place the error error.execution on the internal event queue. If it is unable to dispatch the message, the Processor MUST place the error error.communication on the internal event queue.
@@ -1892,6 +2605,16 @@ The target of the <send> operation specifies the destination of the event. The t
 
 
 
+
+
+**Implementations**:
+- sce/include/common/LogicalTimeScheduler.h:cancelEvent
+- sce/include/common/LogicalTimeScheduler.h:popReadyEvent
+- sce/include/common/LogicalTimeScheduler.h:sendId
+- sce/include/static/StaticExecutionEngine.h:cancelEvent
+- sce/include/wrappers/GameLoopTimer.h:cancel
+- sce/include/wrappers/TimerManager.h:generateTimerSendId
+- sce/include/wrappers/TimerManager.h:stopTimer
 
 
 
@@ -1930,6 +2653,18 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 
 
 
+**Implementations**:
+- sce/include/common/SendSchedulingHelper.h:SCE
+- sce/include/common/SendSchedulingHelper.h:cancel
+- sce/include/common/SendSchedulingHelper.h:schedule
+- sce/include/runtime/InvokeExecutor.h:getAllInvokedSessions
+- sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::cancelEvent
+- sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::cancelEventsForSession
+- sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::scheduleEvent
+- sce/src/events/EventSchedulerImpl.h:EventSchedulerImpl
+- sce/src/events/EventSchedulerImpl.h:executionQueue_
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] The <cancel> element is used to cancel a delayed <send> event. The SCXML Processor MUST NOT allow <cancel> to affect events that were not raised in the same session. The Processor SHOULD make its best attempt to cancel all delayed events with the specified id. Note, however, that it can not be guaranteed to succeed, for example if the event has already been delivered by the time the <cancel> tag executes.
@@ -1946,6 +2681,12 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 
 
 
+
+
+**Implementations**:
+- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
+- sce/include/core/InvokeHelper.h:createDoneInvokeEventName
 
 
 
@@ -1966,6 +2707,12 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+**Implementations**:
+- sce/include/common/DatamodelValidationHelper.h:DatamodelValidationHelper
+- sce/include/common/DatamodelValidationHelper.h:buildChildDatamodelSet
+- sce/include/common/DatamodelValidationHelper.h:isVariableDeclaredInChild
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 None
@@ -1982,6 +2729,84 @@ None
 
 
 
+
+
+**Implementations**:
+- sce/include/common/FileLoadingHelper.h:loadScxmlFile
+- sce/include/common/SCXMLConstants.h:SCE::Constants
+- sce/include/common/SendHelper.h:extractInvokeId
+- sce/include/common/SendHelper.h:isChildInvokeTarget
+- sce/include/common/UniqueIdGenerator.h:generateInvokeId
+- sce/include/core/InvokeHelper.h:InvokeHelper
+- sce/include/core/InvokeHelper.h:executePendingInvokes
+- sce/include/core/StatePolicyConcepts.h:SCE::Core
+- sce/include/mesh/ChildSessionAdapter.h:raiseExternal
+- sce/include/mesh/IChildSession.h:raiseExternal
+- sce/include/mesh/PatternKind.h:PatternKind
+- sce/include/model/IInvokeNode.h:setStateId
+- sce/include/model/InvokeNode.h:setStateId
+- sce/include/model/InvokeNode.h:stateId_
+- sce/include/runtime/IEventRaiser.h:raiseEvent
+- sce/include/runtime/InvokeExecutor.h:getAutoForward
+- sce/include/runtime/StateHierarchyManager.h:invokeDeferCallback_
+- sce/include/runtime/StateHierarchyManager.h:setInvokeDeferCallback
+- sce/include/runtime/StateMachine.h:StateMachine
+- sce/include/runtime/StateMachine.h:createFromSCXMLString
+- sce/include/runtime/StateSnapshot.h:autoForward
+- sce/include/scripting/ISessionRegistry.h:getParentSessionId
+- sce/include/scripting/ISessionRegistry.h:registerParentChild
+- sce/include/scripting/SessionRegistry.h:parentChildMappings_
+- sce/include/states/ConcurrentRegion.h:invokeCallback_
+- sce/include/states/ConcurrentRegion.h:setInvokeCallback
+- sce/include/states/IConcurrentRegion.h:setInvokeCallback
+- sce/include/static/StaticExecutionEngine.h:completionCallback_
+- sce/include/static/StaticExecutionEngine.h:getPolicy
+- sce/include/static/StaticExecutionEngine.h:initialize
+- sce/include/static/StaticExecutionEngine.h:isInFinalState
+- sce/include/static/StaticExecutionEngine.h:processEventImpl
+- sce/include/static/StaticExecutionEngine.h:raiseExternal
+- sce/include/static/StaticExecutionEngine.h:setCompletionCallback
+- sce/include/static/StaticExecutionEngine.h:setScxmlInvokeCancelCallback
+- sce/include/static/StaticExecutionEngine.h:step
+- sce/include/static/StaticExecutionEngine.h:tick
+- sce/src/common/UniqueIdGenerator.cpp:UniqueIdGenerator::generateInvokeId
+- sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::createTarget
+- sce/src/events/EventTargetFactoryImpl.cpp:SCE::EventTargetFactoryImpl::createParentTarget
+- sce/src/events/ParentEventTarget.cpp:ParentEventTarget::findParentSessionId
+- sce/src/events/ParentEventTarget.cpp:ParentEventTarget::sendImmediately
+- sce/src/model/InvokeNode.cpp:SCE::InvokeNode::setStateId
+- sce/src/parsing/InvokeParser.cpp:SCE::InvokeParser::parseFinalizeElement
+- sce/src/parsing/InvokeParser.cpp:SCE::InvokeParser::parseInvokeNode
+- sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseInvokeElements
+- sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processNextQueuedEvent
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEvent
+- sce/src/runtime/EventRaiserImpl.h:originSessionId
+- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
+- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::executeInvoke
+- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::generateInvokeId
+- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::generateInvokeId
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::getAutoForward
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::getAutoForwardSessions
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::loadSCXMLFromFile
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/InvokeExecutor.cpp:extractParentStateIdFromInvokeId
+- sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterState
+- sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterStateWithAncestors
+- sce/src/runtime/StateMachine.cpp:StateMachine::deferInvokeExecution
+- sce/src/runtime/StateMachine.cpp:StateMachine::executePendingInvokes
+- sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
+- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
+- sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupAndActivateParallelState
+- sce/src/scripting/JSEngine.cpp:JSEngine::createSessionInternal
+- sce/src/scripting/JSEngine.cpp:JSEngine::destroySessionInternal
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::createSession
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::destroySession
+- sce/src/scripting/SessionRegistry.cpp:SessionRegistry::getParentSessionId
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
 
 
 
@@ -2002,6 +2827,16 @@ None
 
 
 
+**Implementations**:
+- sce/include/common/SendHelper.h:SendHelper
+- sce/include/common/SendHelper.h:sendToParent
+- sce/include/common/SendHelper.h:sendToParentWithOrigin
+- sce/include/mesh/IChildSession.h:tick
+- sce/include/static/StaticExecutionEngine.h:currentEventInvokeId
+- sce/include/static/StaticExecutionEngine.h:performMeshInvoke
+- sce/include/static/StaticExecutionEngine.h:raiseExternal
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 Name Required Attribute Constraints Type Default Value Valid Values Description type false Must not occur with the 'typeexpr' attribute. URI none http://www.w3.org/TR/scxml/, http://www.w3.org/TR/ccxml/, http://www.w3.org/TR/voicexml30/, http://www.w3.org/TR/voicexml21/ plus other platform-specific values. A URI specifying the type of the external service. See below for details. typeexpr false Must not occur with the 'type' attribute. value expression none Any value expression that evaluates to a URI that would be a valid value for 'type'. A dynamic alternative to 'type'. If this attribute is present, the SCXML Processor MUST evaluate it when the parent <invoke> element is evaluated and treat the result as if it had been entered as the value of 'type'. src false Must not occur with the 'srcexpr' attribute or the <content> element. URI None Any URI. A URI to be passed to the external service. See below for details. srcexpr false Must not occur with the 'src' attribute or the <content> element. Value expression None Any expression evaluating to a valid URI. A dynamic alternative to 'src'. If this attribute is present, the SCXML Processor MUST evaluate it when the parent <invoke> element is evaluated and treat the result as if it had been entered as the value of 'src'. id false Must not occur with the 'idlocation' attribute. ID none Any valid token A string literal to be used as the identifier for this instance of <invoke>. See 3.14 IDs for details. idlocation false Must not occur with the 'id' attribute. Location expression none Any valid location expression Any data model expression evaluating to a data model location. See 5.9.2 Location Expressions for details. namelist false Must not occur with the <param> element. List of location expressions none List of valid location expressions A space-separated list of one or more data model locations to be passed as attribute/value pairs to the invoked service. (The name of the location is the attribute and the value stored at the location is the value.) See 6.4.4 Data Sharing and 5.9.2 Location Expressions for details. autoforward false boolean false true or false A flag indicating whether to forward events to the invoked process. See below for details.
@@ -2018,6 +2853,10 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+
+
+**Implementations**:
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::setVariableInternal
 
 
 
@@ -2038,6 +2877,10 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+**Implementations**:
+- sce/include/common/FileLoadingHelper.h:loadScxmlFile
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 The implementation of <invoke>, including communication between parent and child processes, is platform-specific, but the following requirements hold in the case where the invoked process is itself an SCXML session: If the 'name' of a <param> element in the <invoke> matches the 'id' of a <data> element in the top-level data declarations of the invoked session, the SCXML Processor MUST use the value of the <param> element as the initial value of the corresponding <data> element. (The top-level data declarations are those that are contained in the <datamodel> element that is a child of <scxml>.) (Note that this means that any value specified in the <data> element is ignored.) The behavior of 'namelist' is similar. If the value of a key in the namelist matches the 'id' of a <data> element in the top-level data model of the invoked session, the SCXML Processor MUST use the value of the key as the initial value of the corresponding <data> element. If the names do not match, the Processor MUST NOT add the value of the <param> element or namelist key/value pair to the invoked session's data model. However the Processor MAY make the values available by some other platform-specific means. When the invoked state machine reaches a top-level final state, the Processor MUST place the event done.invoke.id on the external event queue of the invoking machine, where id is the invokeid for this invocation. Note that reaching a top level final state corresponds to normal termination of the machine and that it cannot generate or process any further events once it is in this state. As described above, if the invoking state machine exits the state containing the invocation before it receives the done.invoke.id event, it cancels the invoked session. The method for doing this is platform-specific. However, when it is cancelled, the invoked session MUST exit at the end of the next microstep. The Processor MUST execute the <onexit> handlers for all active states in the invoked session, but it MUST NOT generate the done.invoke.id event. Once it cancels the invoked session, the Processor MUST ignore any events it receives from that session. In particular it MUST NOT not insert them into the external event queue of the invoking session. The SCXML Processor MUST support the use of SCXML Event/IO processor (C.1 SCXML Event I/O Processor) to communicate between the invoking and the invoked sessions. The Processor MAY support the use of other Event/IO processors to communicate between the invoking and the invoked sessions.
@@ -2054,6 +2897,12 @@ The implementation of <invoke>, including communication between parent and child
 
 
 
+
+
+**Implementations**:
+- sce/include/runtime/IEventRaiser.h:cancelEventsForSession
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::cancelEventsForSession
+- sce/src/runtime/EventRaiserImpl.h:cancelEventsForSession
 
 
 
@@ -2074,6 +2923,23 @@ The implementation of <invoke>, including communication between parent and child
 
 
 
+**Implementations**:
+- sce/include/common/FinalizeHelper.h:executeFinalizeWithEvent
+- sce/include/common/SendHelper.h:SendHelper
+- sce/include/common/SendHelper.h:sendToParentWithOrigin
+- sce/include/core/StatePolicyConcepts.h:SCE::Core
+- sce/include/runtime/InvokeExecutor.h:parentStateMachine_
+- sce/include/runtime/StateMachine.h:StateMachine
+- sce/include/runtime/StateMachine.h:completionCallback_
+- sce/include/runtime/StateSnapshot.h:finalizeScript
+- sce/include/static/StaticExecutionEngine.h:processEventQueues
+- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
+- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::setCompletionCallback
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 [This section is normative.] The <finalize> element enables an invoking session to update its data model with data contained in events returned by the invoked session. <finalize> contains executable content that is executed whenever the external service returns an event after the <invoke> has been executed. This content is applied before the system looks for transitions that match the event. Within the executable content, the system variable '_event' can be used to refer to the data contained in the event which is being processed.In the case of parallel states, only the finalize code in the original invoking state is executed.
@@ -2090,6 +2956,10 @@ The implementation of <invoke>, including communication between parent and child
 
 
 
+
+
+**Implementations**:
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 
 
 
@@ -2198,6 +3068,10 @@ A SCXML 1.0 processor is a user agent that can parse and process Conforming SCXM
 
 
 
+
+
+**Implementations**:
+- sce/src/runtime/StateMachine.cpp:StateMachine::setupAndActivateParallelState
 
 
 
@@ -2344,6 +3218,54 @@ The <foreach> element and the elements defined in 5 Data Model and Data Manipula
 
 
 
+**Implementations**:
+- sce/include/common/AssignHelper.h:isValidLocation
+- sce/include/common/AssignmentExecutionHelper.h:AssignmentExecutionHelper
+- sce/include/common/DataModelInitHelper.h:isFunctionExpression
+- sce/include/common/EventDataHelper.h:jsonStringToScriptValue
+- sce/include/common/EventDataHelper.h:scriptValueToJsonString
+- sce/include/common/EventMetadataHelper.h:populatePolicyFromMetadata
+- sce/include/core/ForeachHelper.h:isLegalVariableName
+- sce/include/parsing/XmlSerializationHelper.h:XmlSerializationHelper
+- sce/include/runtime/DataContentHelpers.h:SCE
+- sce/include/scripting/DOMBinding.h:DOMBinding
+- sce/include/scripting/DOMBinding.h:resetClassId
+- sce/include/scripting/IScriptEngine.h:setVariableAsDOM
+- sce/include/scripting/JSEngine.h:isDOMObject
+- sce/include/scripting/JSEngine.h:setVariableAsDOM
+- sce/include/scripting/LuaDOMBinding.h:LuaDOMBinding
+- sce/include/scripting/LuaDOMBinding.h:resetClassId
+- sce/include/scripting/XMLDOMWrapper.h:XMLDocument
+- sce/include/scripting/XMLDOMWrapper.h:XMLElement
+- sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariable
+- sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::isFunctionExpression
+- sce/src/common/EventDataHelper.cpp:jsonToScriptValue
+- sce/src/common/EventDataHelper.cpp:scriptValueToJson
+- sce/src/events/InternalEventTarget.cpp:InternalEventTarget::buildEventData
+- sce/src/parsing/DataModelParser.cpp:SCE::DataModelParser::parseDataContent
+- sce/src/parsing/PugiXMLParser.cpp:PugiXMLElement::serializeChildContent
+- sce/src/runtime/DataContentHelpers.cpp:isXMLContent
+- sce/src/runtime/DataContentHelpers.cpp:normalizeWhitespace
+- sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEventWithPriority
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/scripting/DOMBinding.cpp:DOMBinding::resetClassId
+- sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformOperators
+- sce/src/scripting/JSEngine.cpp:JSEngine::reset
+- sce/src/scripting/JSEngine.cpp:JSEngine::setVariableAsDOM
+- sce/src/scripting/JSEngine.cpp:JSEngine::shutdown
+- sce/src/scripting/JSEngineImpl.cpp:JSEngine::evaluateExpressionInternal
+- sce/src/scripting/JSEngineImpl.cpp:parseEventData
+- sce/src/scripting/LuaDOMBinding.cpp:LuaDOMBinding::resetClassId
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::createLuaState
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::registerBuiltins
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::setCurrentEvent
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::setVariableAsDOM
+- sce/src/scripting/LuaEngine.cpp:LuaEngine::shutdown
+- sce/src/scripting/ScriptResultUtils.cpp:resultToStringArray
+- sce/src/scripting/XMLDOMWrapper.cpp:XMLDocument::XMLDocument
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 The value 'ecmascript' for the 'datamodel' attribute results in an ECMAScript data model. Implementations that support this value MUST support the third edition of ECMAScript [ECMASCRIPT-262]. Implementations MAY support JSON [RFC 4627] or ECMAScript for XML (E4X) [E4X].
@@ -2414,6 +3336,13 @@ In the ECMAScript data model, the SCXML Processor MUST support iteration over ob
 
 
 
+
+
+**Implementations**:
+- sce/include/runtime/BindingHelper.h:shouldAssignValueAtDocumentLoad
+- sce/include/runtime/BindingHelper.h:shouldAssignValueOnStateEntry
+- sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariable
+- sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
 
 
 
@@ -2578,6 +3507,28 @@ In certain circumstances, e.g. when including data in events sent via the BasicH
 
 
 
+**Implementations**:
+- sce/include/actions/SendAction.h:namelist_
+- sce/include/common/NamelistHelper.h:NamelistHelper
+- sce/include/common/NamelistHelper.h:evaluateNamelist
+- sce/include/common/SCXMLConstants.h:SCE::Constants
+- sce/include/common/SendHelper.h:isInternalTarget
+- sce/include/common/SendHelper.h:isUnreachableTarget
+- sce/include/common/SendHelper.h:sendToParentWithOrigin
+- sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
+- sce/include/static/StaticExecutionEngine.h:externalQueue_
+- sce/include/static/StaticExecutionEngine.h:initialize
+- sce/include/static/StaticExecutionEngine.h:internalQueue_
+- sce/include/static/StaticExecutionEngine.h:processEventQueues
+- sce/include/static/StaticExecutionEngine.h:raise
+- sce/include/static/StaticExecutionEngine.h:raiseExternal
+- sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::createTarget
+- sce/src/parsing/ActionParser.cpp:SCE::ActionParser::parseActionNode
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
+- sce/src/scripting/JSEngineImpl.cpp:JSEngine::setupSystemVariablesInternal
+- sce/src/scripting/ScriptResultUtils.cpp:resultToString
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 The SCXML Event I/O Processor is intended to transport messages between SCXML sessions. This specification defines the mapping between the parameters in the sending session and the event that is raised in the receiving session, but the transport mechanism is platform-specific. The sending and receiving SCXML Processors MUST maintain the following mappings: The 'name' field of the event raised in the receiving session MUST match the value of the 'event' attribute of the <send> element in the sending session. The 'origin' field of the event raised in the receiving session MUST match the value of the 'location' field inside the entry for the SCXML Event I/O Processor in the _ioprocessors system variable in the sending session. The 'sendid' field of the event raised in the receiving session MUST match the sendid in the sending session, if the author of the sending session specifies either the 'id' or 'idlocation' attribute. If the author does not specify either the 'id' or 'idlocation' attribute, the 'sendid' field MUST be left empty. The 'origintype' field of the event raised in the receiving session MUST have the value "scxml". The 'data' field of the event raised in the receiving session MUST contain a copy of the data specified in the 'namelist' attribute or in <param> or <content> elements in the sending session. The nature of the copy operation depends on the data model in question. However, the Processor MUST ensure that changes to the transmitted data in the receiving session do not affect the data in the sending session and vice-versa. The format of the 'data' field will depend on the data model of the receiving session. See B Data Models for details. If the data models in the sending and receiving sessions are different, the mapping between them is platform-specific. When using the SCXML Event I/O Processor, SCXML Processors MUST support the following special targets for <send>: #_internal. If the target is the special term '#_internal', the Processor MUST add the event to the internal event queue of the sending session. #_scxml_sessionid. If the target is the special term '#_scxml_sessionid', where sessionid is the id of an SCXML session that is accessible to the Processor, the Processor MUST add the event to the external queue of that session. The set of SCXML sessions that are accessible to a given SCXML Processor is platform-dependent. #_parent. If the target is the special term '#_parent', the Processor MUST add the event to the external event queue of the SCXML session that invoked the sending session, if there is one. See 6.4 <invoke> for details. #_invokeid. If the target is the special term '#_invokeid', where invokeid is the invokeid of an SCXML session that the sending session has created by <invoke>, the Processor MUST add the event to the external queue of that session. See 6.4 <invoke> for details. If neither the 'target' nor the 'targetexpr' attribute is specified, the SCXML Processor MUST add the event to the external event queue of the sending session. If the sending SCXML session specifies a session that does not exist or is inaccessible, the SCXML Processor MUST place the error error.communication on the internal event queue of the sending session. If the receiving Processor cannot handle the data format contained in the message, the receiving Processor MUST place the error error.communication in internal queue of the session for which the message was intended and MUST ignore the message. The Processor SHOULD also notify the sending processor of the error. If no errors occur, the receiving Processor MUST convert the message into an SCXML event, using the mapping defined above, and insert the event into the appropriate queue, as defined in 6.2.4 The Target of Send
@@ -2630,6 +3581,42 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 
 
 
+
+
+**Implementations**:
+- sce/include/actions/SendAction.h:content_
+- sce/include/actions/SendAction.h:setContent
+- sce/include/common/SCXMLConstants.h:SCE::Constants
+- sce/include/common/SendHelper.h:buildHttpPostBody
+- sce/include/common/SendHelper.h:isHttpTarget
+- sce/include/common/SendHelper.h:isSupportedSendType
+- sce/include/common/SendHelper.h:requiresTargetAttribute
+- sce/include/common/SendHelper.h:validateBasicHttpSend
+- sce/include/common/UrlEncodingHelper.h:UrlEncodingHelper
+- sce/include/common/UrlEncodingHelper.h:urlEncode
+- sce/include/events/CppHttplibClient.h:CppHttplibClient
+- sce/include/events/EmscriptenFetchClient.h:EmscriptenFetchClient
+- sce/include/events/EventDescriptor.h:content
+- sce/include/events/EventDescriptor.h:responseEventName
+- sce/include/events/IEventDispatcher.h:content
+- sce/include/events/IHttpClient.h:IHttpClient
+- sce/include/runtime/StateSnapshot.h:content
+- sce/include/static/StaticExecutionEngine.h:HttpSendRequest
+- sce/include/static/StaticExecutionEngine.h:onHttpSend_
+- sce/include/static/StaticExecutionEngine.h:performHttpSend
+- sce/include/static/StaticExecutionEngine.h:raiseExternal
+- sce/include/static/StaticExecutionEngine.h:setHttpSendCallback
+- sce/include/static/StaticExecutionEngine.h:target
+- sce/src/actions/SendAction.cpp:SendAction::getSpecificDescription
+- sce/src/actions/SendAction.cpp:SendAction::validateSpecific
+- sce/src/events/EmscriptenFetchClient.cpp:BrowserFetchContext
+- sce/src/events/EmscriptenFetchClient.cpp:EM_ASYNC_JS
+- sce/src/events/EmscriptenFetchClient.cpp:EmscriptenFetchClient::sendRequest
+- sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::EventTargetFactoryImpl
+- sce/src/events/HttpEventTarget.cpp:HttpEventTarget::createJsonPayload
+- sce/src/events/HttpEventTarget.cpp:HttpEventTarget::performRequestWithRetry
+- sce/src/events/HttpEventTarget.cpp:HttpEventTarget::send
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
 
 
 
@@ -2702,6 +3689,10 @@ SCXML Processors that support the BasicHTTP Event I/O Processor MUST maintain a 
 
 
 
+
+
+**Implementations**:
+- sce/include/core/EventQueueManager.h:SCE::Core
 
 
 
@@ -3152,6 +4143,12 @@ Return true if s is a compound <state> and one of its children is an active <fin
 
 
 
+
+
+**Implementations**:
+- sce/include/core/EventQueueManager.h:EventQueueManager
+- sce/include/core/EventQueueManager.h:raise
+- sce/include/static/StaticExecutionEngine.h:processEventQueues
 
 
 
