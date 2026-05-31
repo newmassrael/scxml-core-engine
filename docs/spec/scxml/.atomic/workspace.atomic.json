@@ -3633,20 +3633,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.3",
       "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/include/common/DatamodelValidationHelper.h",
-          "symbol": "DatamodelValidationHelper"
-        },
-        {
-          "file": "sce/include/common/DatamodelValidationHelper.h",
-          "symbol": "buildChildDatamodelSet"
-        },
-        {
-          "file": "sce/include/common/DatamodelValidationHelper.h",
-          "symbol": "isVariableDeclaredInChild"
-        }
-      ],
       "normative_excerpt": {
         "text": "None",
         "anchor_url": "https://www.w3.org/TR/scxml/#N10F46",
@@ -4041,6 +4027,18 @@
         {
           "file": "sce/include/common/FileLoadingHelper.h",
           "symbol": "loadScxmlFile"
+        },
+        {
+          "file": "sce/include/common/DatamodelValidationHelper.h",
+          "symbol": "DatamodelValidationHelper"
+        },
+        {
+          "file": "sce/include/common/DatamodelValidationHelper.h",
+          "symbol": "buildChildDatamodelSet"
+        },
+        {
+          "file": "sce/include/common/DatamodelValidationHelper.h",
+          "symbol": "isVariableDeclaredInChild"
         }
       ],
       "normative_excerpt": {
