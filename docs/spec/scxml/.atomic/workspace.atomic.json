@@ -579,15 +579,7 @@
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::executeEventCallback"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
           "symbol": "EventRaiserImpl::getEventQueues"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::getLastProcessedEvent"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
@@ -600,22 +592,6 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "executeEventCallback"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "getEventQueues"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "getLastProcessedEvent"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "getScheduler"
-        },
-        {
-          "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "lastProcessedEventName_"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",

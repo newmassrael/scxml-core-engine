@@ -241,7 +241,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     // W3C SCXML compliance: Check if immediate mode is enabled
     // W3C SCXML Test 230: Platform events (done.*, error.*) must ALWAYS be queued
     // to prevent nested processing issues when child completes during parent transition
-    // §scxml-3.13: In interactive debugging, scheduler MANUAL mode overrides immediate mode
+    // In interactive debugging, scheduler MANUAL mode overrides immediate mode
     // All events must be queued for step-by-step execution, even if immediate mode is enabled
     // §scxml-3.13: EXTERNAL events must NOT bypass INTERNAL events in the queue
     // EXTERNAL events can use immediate mode only if no INTERNAL events are queued (Test 422)
@@ -305,7 +305,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
 
-        // §scxml-3.13: Restore original timestamp for snapshot restoration (FIFO order preservation)
+        // Restore original timestamp for snapshot restoration (FIFO order preservation)
         std::chrono::steady_clock::time_point timestamp;
         if (timestampNs > 0) {
             // Restore from snapshot: use original timestamp
@@ -538,7 +538,7 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         ctx.typedData = event.typedData;
         EventContextGuard guard(ctx);
 
-        // §scxml-3.13: Store last processed event for time-travel debugging
+        // Store last processed event for time-travel debugging
         {
             std::lock_guard<std::mutex> lock(lastProcessedEventMutex_);
             lastProcessedEventName_ = event.eventName;
@@ -596,7 +596,7 @@ void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
 
     // Separate by priority (INTERNAL vs EXTERNAL)
     // §scxml-5.10.1: Capture complete event metadata for _event object restoration
-    // §scxml-3.13: Preserve timestamps for FIFO ordering during snapshot restore
+    // Preserve timestamps for FIFO ordering during snapshot restore
     for (const auto &event : allEvents) {
         // Convert timestamp to nanoseconds since epoch for serialization
         int64_t timestampNs =
@@ -636,7 +636,7 @@ void EventRaiserImpl::clearQueue() {
 }
 
 bool EventRaiserImpl::getLastProcessedEvent(std::string &outEventName, std::string &outEventData) const {
-    // §scxml-3.13: Retrieve last processed event for time-travel debugging
+    // Retrieve last processed event for time-travel debugging
     std::lock_guard<std::mutex> lock(lastProcessedEventMutex_);
 
     if (lastProcessedEventName_.empty()) {
