@@ -64,9 +64,9 @@ public:
     }
 
     void pollScheduler() override {
-        // §scxml-6.2: Poll EventScheduler for ready delayed events (WASM synchronous mode)
-        // §scxml-3.13: Scheduler always polls automatically (timeout → queue)
-        //                 Queue processing is controlled by EventRaiser immediate mode
+        // §scxml-6.2.3: Poll EventScheduler for ready delayed events (WASM synchronous mode);
+        //               dispatch occurs once the delay interval elapses. Queue processing
+        //               is controlled by EventRaiser immediate mode.
         if (scheduler_) {
 #ifdef __EMSCRIPTEN__
             size_t processedCount = static_cast<EventSchedulerImpl *>(scheduler_.get())->poll();
