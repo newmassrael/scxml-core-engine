@@ -664,6 +664,30 @@
         {
           "file": "sce/include/runtime/IEventRaiser.h",
           "symbol": "raiseInternalEvent"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "internalQueue_"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "externalQueue_"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raise"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raiseExternal"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEventQueues"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "initialize"
         }
       ],
       "normative_excerpt": {
@@ -4472,34 +4496,6 @@
         {
           "file": "sce/include/common/SendHelper.h",
           "symbol": "sendToParentWithOrigin"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "checkEventlessTransitions"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "externalQueue_"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "internalQueue_"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raise"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raiseExternal"
         },
         {
           "file": "sce/src/events/EventTargetFactoryImpl.cpp",

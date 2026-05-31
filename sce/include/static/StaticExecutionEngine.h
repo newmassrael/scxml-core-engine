@@ -493,9 +493,9 @@ private:
 
     State currentState_;
     SCE::Core::EventQueueManager<EventWithMetadata>
-        internalQueue_;  // §scxml-C-1: Internal event queue (high priority)
+        internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
     SCE::Core::EventQueueManager<EventWithMetadata>
-        externalQueue_;  // §scxml-C-1: External event queue (low priority)
+        externalQueue_;  // §scxml-3.13: External event queue (low priority)
     bool isRunning_ = false;
     std::function<void()> completionCallback_;  // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
@@ -539,7 +539,7 @@ protected:
 
 public:
     /**
-     * @brief Raise an internal event with metadata (§scxml-C-1)
+     * @brief Raise an internal event with metadata (§scxml-3.13)
      *
      * Places event on the internal queue with FIFO ordering.
      * Internal events have higher priority than external events.
@@ -547,12 +547,12 @@ public:
      * @param metadata Complete event metadata including all §scxml-5.10.1 fields
      */
     void raise(EventWithMetadata metadata) {
-        // §scxml-C-1: Enqueue event with metadata
+        // §scxml-3.13: Enqueue event with metadata
         internalQueue_.raise(std::move(metadata));
     }
 
     /**
-     * @brief Raise an external event (§scxml-C-1, 6.2)
+     * @brief Raise an external event (§scxml-3.13, 6.2)
      *
      * External events are placed at the back of the external event queue.
      * They are processed after all internal events have been consumed.
@@ -562,14 +562,14 @@ public:
      * - <send> with external targets (not #_internal)
      * - <send target="#_parent"> from child state machines (§scxml-6.2)
      *
-     * §scxml-C-1 (test189): External queue has lower priority than internal queue.
+     * §scxml-3.13 (test189): External queue has lower priority than internal queue.
      *
      * @param event Event to raise externally
      * @param eventData Optional event data as JSON string (§scxml-5.10)
      */
     void raiseExternal(Event event, const std::string &eventData = "", const std::string &origin = "",
                        const std::string &target = "") {
-        // §scxml-C-1: Enqueue event with metadata (origin, data, sendid, type, originType, target)
+        // §scxml-3.13: Enqueue event with metadata (origin, data, sendid, type, originType, target)
         // Delegates to the full-metadata overload so that SCE Mesh target
         // routing and §scxml-6.4 autoforward both see the event. Prior
         // to this delegation the simple (datamodel="null") codepath dropped
@@ -793,7 +793,7 @@ protected:
      * Processes all queued internal and external events in priority order.
      * Internal events are processed first (high priority), then external events.
      *
-     * §scxml-C-1 (test189): Internal queue (#_internal target) has higher
+     * §scxml-3.13 (test189): Internal queue (#_internal target) has higher
      * priority than external queue (no target or external targets).
      *
      * Uses shared EventProcessingAlgorithms for W3C-compliant processing.
@@ -804,7 +804,7 @@ protected:
      */
     void processEventQueues() {
         SCE_LOG_DEBUG("AOT processEventQueues: Starting internal queue processing");
-        // §scxml-C-1: Process internal queue first (high priority)
+        // §scxml-3.13: Process internal queue first (high priority)
         SCE::Core::AOTEventQueue<EventWithMetadata> internalAdapter(internalQueue_);
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             internalAdapter, [this](const EventWithMetadata &eventWithMeta) {
@@ -835,7 +835,7 @@ protected:
                 return true;  // Continue processing
             });
 
-        // §scxml-C-1: Process external queue second (low priority)
+        // §scxml-3.13: Process external queue second (low priority)
         SCE::Core::AOTEventQueue<EventWithMetadata> externalAdapter(externalQueue_);
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             externalAdapter, [this](const EventWithMetadata &eventWithMeta) {
@@ -904,14 +904,14 @@ protected:
                                   "all transitions");
                     }
 
-                    // §scxml-C-1: Internal events are processed AFTER stable configuration is reached
+                    // §scxml-3.13: Internal events are processed AFTER stable configuration is reached
                     // Continue loop to check for more eventless transitions first
                 } else {
                     // Transition taken but state didn't change - stop
                     break;
                 }
             } else {
-                // §scxml-C-1: No eventless transition available - stable configuration reached
+                // §scxml-3.13: No eventless transition available - stable configuration reached
                 // Internal events will be processed by caller (processEventQueues or step)
                 break;
             }
@@ -981,7 +981,7 @@ public:
             executeOnEntry(state);
         }
 
-        // §scxml-C-1: Macrostep completion loop
+        // §scxml-3.13: Macrostep completion loop
         // Process eventless transitions and internal events until stable configuration
         SCE_LOG_DEBUG("AOT initialize: After entry actions, starting macrostep completion loop");
         while (true) {

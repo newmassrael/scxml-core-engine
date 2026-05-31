@@ -456,6 +456,12 @@ The following events are generated automatically by the SCXML implementation und
 - sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::hasQueuedInternalEvents
 - sce/src/runtime/EventRaiserImpl.h:hasQueuedInternalEvents
 - sce/include/runtime/IEventRaiser.h:raiseInternalEvent
+- sce/include/static/StaticExecutionEngine.h:internalQueue_
+- sce/include/static/StaticExecutionEngine.h:externalQueue_
+- sce/include/static/StaticExecutionEngine.h:raise
+- sce/include/static/StaticExecutionEngine.h:raiseExternal
+- sce/include/static/StaticExecutionEngine.h:processEventQueues
+- sce/include/static/StaticExecutionEngine.h:initialize
 
 
 
@@ -3419,13 +3425,6 @@ In certain circumstances, e.g. when including data in events sent via the BasicH
 - sce/include/common/SendHelper.h:isInternalTarget
 - sce/include/common/SendHelper.h:isUnreachableTarget
 - sce/include/common/SendHelper.h:sendToParentWithOrigin
-- sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
-- sce/include/static/StaticExecutionEngine.h:externalQueue_
-- sce/include/static/StaticExecutionEngine.h:initialize
-- sce/include/static/StaticExecutionEngine.h:internalQueue_
-- sce/include/static/StaticExecutionEngine.h:processEventQueues
-- sce/include/static/StaticExecutionEngine.h:raise
-- sce/include/static/StaticExecutionEngine.h:raiseExternal
 - sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::createTarget
 - sce/src/parsing/ActionParser.cpp:SCE::ActionParser::parseActionNode
 - sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
