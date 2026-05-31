@@ -17,9 +17,14 @@
 # then added to `paths` below, so validate-code-refs checks each migrated
 # citation against this ledger's section set.
 
+# Rooted at the SCE repo root so cited/implemented code paths are canonical
+# sce/... (R386 anchor resolve); Section.implementations forbids `..`
+# traversal, so Path B binding needs the workspace root to be an ancestor of
+# the documented code. Ledger artifacts stay here via the repo-relative paths.
 [workspace]
-docs = ["GENERATED.md"]
-default_doc = "GENERATED.md"
+root = "../../.."
+docs = ["docs/spec/scxml/GENERATED.md"]
+default_doc = "docs/spec/scxml/GENERATED.md"
 
 # Drift provenance (B2 validate-spec-drift). url/revision/fetched_sha256 mirror
 # tools/mnemosyne-adoption/spec-snapshot/PROVENANCE.json (the B1 drift source).
@@ -32,8 +37,8 @@ fetched_at = "2026-05-30"
 # Flatten the store + rendered doc directly under this workspace root (no
 # nested docs/ level).
 [atomic]
-sidecar_path = ".atomic/workspace.atomic.json"
-output_path = "GENERATED.md"
+sidecar_path = "docs/spec/scxml/.atomic/workspace.atomic.json"
+output_path = "docs/spec/scxml/GENERATED.md"
 
 [schema]
 changelog_titles = ["Revision History"]
@@ -72,30 +77,36 @@ severity = "warn"
 # static, model, mesh) are now listed alongside the citation-clean ones.
 [plugins.set_equality_validator]
 paths = [
-    "../../../sce/include/events",
-    "../../../sce/src/events",
-    "../../../sce/include/actions",
-    "../../../sce/src/actions",
-    "../../../sce/include/core",
-    "../../../sce/include/runtime",
-    "../../../sce/src/runtime",
-    "../../../sce/include/scripting",
-    "../../../sce/src/scripting",
-    "../../../sce/include/states",
-    "../../../sce/src/states",
-    "../../../sce/include/wrappers",
-    "../../../sce/src/model",
-    "../../../sce/include/parsing",
-    "../../../sce/src/parsing",
-    "../../../sce/include/common",
-    "../../../sce/src/common",
-    "../../../sce/include/static",
-    "../../../sce/include/model",
-    "../../../sce/include/mesh",
-    "../../../sce/include/SCXMLTypes.h",
+    "sce/include/events",
+    "sce/src/events",
+    "sce/include/actions",
+    "sce/src/actions",
+    "sce/include/core",
+    "sce/include/runtime",
+    "sce/src/runtime",
+    "sce/include/scripting",
+    "sce/src/scripting",
+    "sce/include/states",
+    "sce/src/states",
+    "sce/include/wrappers",
+    "sce/src/model",
+    "sce/include/parsing",
+    "sce/src/parsing",
+    "sce/include/common",
+    "sce/src/common",
+    "sce/include/static",
+    "sce/include/model",
+    "sce/include/mesh",
+    "sce/include/SCXMLTypes.h",
 ]
 severity_missing = "reject"
-severity_binding = "warn"
+# Path B curated: every §scxml-<id> cite is bound to a ratified
+# Section.implementations (file, symbol), so binding-class drift now fails.
+severity_binding = "reject"
+# Coverage stays advisory — the W3C SCXML spec mirror has prose/semantics/
+# appendix sections (145 of 196 here) that legitimately carry no code cite;
+# the R385 split enforces binding without a per-section non-code carve-out.
+severity_coverage = "warn"
 comment_only = true
 
 # This workspace owns the `scxml-` namespace (W3C SCXML spec mirror). A citation's
@@ -113,8 +124,8 @@ section_namespace = "scxml"
 # extensions (.h/.cpp/.cc/...) to the `cpp` key; the in-process
 # tree-sitter-cpp backend resolves (file, line) to the enclosing symbol.
 # The symbol axis is opt-in per Section.implementations entry that records
-# a `symbol`, so this stays inert (file-only set-equality) until those are
-# registered; severity_binding above remains warn.
+# a `symbol`; the scxml ledger has now curated those sets, so symbol-level
+# drift is enforced under severity_binding = reject above.
 [plugins.symbol_resolver.cpp]
 transport = "in-process"
 backend = "tree-sitter-cpp"
