@@ -1073,10 +1073,6 @@
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::start"
         },
         {
@@ -1183,10 +1179,6 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "checkEventlessTransitions"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeTransition"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
