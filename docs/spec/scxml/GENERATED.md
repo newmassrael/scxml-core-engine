@@ -917,6 +917,7 @@ None
 - sce/src/runtime/StateMachine.cpp:StateMachine::handleCompoundStateFinalChild
 - sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::generateDoneStateEventIfComplete
 - sce/src/runtime/StateMachine.cpp:StateMachine::isInFinalState
+- sce/include/static/StaticExecutionEngine.h:processEventQueues
 
 
 
@@ -1835,7 +1836,6 @@ None.
 - sce/include/common/AssignmentExecutionHelper.h:AssignmentExecutionHelper
 - sce/include/common/AssignmentExecutionHelper.h:executeAssignment
 - sce/include/common/DataModelInitHelper.h:initializeVariable
-- sce/include/events/PlatformEventRaiserHelper.h:PlatformEventRaiserHelper
 - sce/include/runtime/BindingHelper.h:BindingHelper
 - sce/include/runtime/BindingHelper.h:getDefaultBinding
 - sce/include/runtime/BindingHelper.h:isEarlyBinding
@@ -1848,17 +1848,14 @@ None.
 - sce/include/runtime/DataModelInitializer.h:initializeStateDataOnEntry
 - sce/include/runtime/DataModelInitializer.h:initializedStates_
 - sce/include/runtime/StateMachine.h:StateMachine
-- sce/include/scripting/PlatformExecutionHelper.h:PlatformExecutionHelper
 - sce/include/static/StaticExecutionEngine.h:initialize
 - sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariableFromExpr
-- sce/src/events/PlatformEventRaiserHelper.cpp:QueuedEventRaiserHelper
 - sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::assignVariable
 - sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeAllDataItems
 - sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
 - sce/src/runtime/StateMachine.cpp:StateMachine::enterState
 - sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
 - sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformFunctionSyntax
-- sce/src/scripting/PlatformExecutionHelper.cpp:QueuedExecutionHelper
 
 
 
@@ -1937,8 +1934,6 @@ Authors control when the initial values are assigned to the data elements by mea
 - sce/include/common/AssignHelper.h:AssignHelper
 - sce/include/common/AssignHelper.h:getInvalidLocationErrorMessage
 - sce/include/common/AssignHelper.h:isValidLocation
-- sce/include/core/ForeachHelper.h:ForeachHelper
-- sce/include/core/ForeachHelper.h:evaluateForeachArray
 - sce/src/actions/AssignAction.cpp:AssignAction::execute
 - sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::assignVariable
 
@@ -1959,10 +1954,6 @@ Authors control when the initial values are assigned to the data elements by mea
 
 
 
-
-
-**Implementations**:
-- sce/include/static/StaticExecutionEngine.h:processEventQueues
 
 
 
