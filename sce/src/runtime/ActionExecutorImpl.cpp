@@ -655,7 +655,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // Rationale:
         //   1. §scxml-5.10 requirement: error.execution events from failed sends
         //      MUST include the sendid field (test 332)
-        //   2. §scxml-6.2.4 requirement: idlocation variable must be set even
+        //   2. §scxml-6.2.3 requirement: idlocation variable must be set even
         //      when send fails (test 332: compares idlocation sendid == _event.sendid)
         //   3. If we generate sendid AFTER validation, failed sends cannot include
         //      sendid in error events or idlocation variables
@@ -670,7 +670,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             sendId = generateUniqueSendId();
         }
 
-        // §scxml-6.2.4: Store sendid in idlocation variable if specified
+        // §scxml-6.2.3: Store sendid in idlocation variable if specified
         // This happens BEFORE validation so the variable is set even if send fails
         if (!action.getIdLocation().empty()) {
             try {

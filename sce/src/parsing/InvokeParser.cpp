@@ -109,7 +109,7 @@ void SCE::InvokeParser::parseFinalizeElement(const std::shared_ptr<IXMLElement> 
         return;
     }
 
-    // §scxml-6.4: Finalize can contain executable content
+    // §scxml-6.5.2: Finalize can contain executable content
     // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
     std::string finalizeContent = XmlSerializationHelper::serializeContent(finalizeElement);
     invokeNode->setFinalize(finalizeContent);

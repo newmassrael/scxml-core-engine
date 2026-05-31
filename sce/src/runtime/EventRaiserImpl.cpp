@@ -167,7 +167,7 @@ bool EventRaiserImpl::raiseExternalEvent(const std::string &eventName, const std
 
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData,
                                  const std::string &originSessionId) {
-    // §scxml-6.4: Raise event with origin tracking for finalize support
+    // §scxml-5.10: Raise event with origin tracking for finalize support
     return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, originSessionId, "", "");
 }
 
@@ -469,7 +469,7 @@ void EventRaiserImpl::processQueuedEvents() {
 bool EventRaiserImpl::processNextQueuedEvent() {
     SCE_LOG_DEBUG("EventRaiserImpl: Processing ONE queued event (W3C SCXML compliance)");
 
-    // §scxml-6.4: Get event from queue but DON'T remove yet
+    // §scxml-6.5.2: Get event from queue but DON'T remove yet
     // Finalize handler must execute BEFORE removing event from queue
     QueuedEvent eventToProcess{"", "", EventPriority::EXTERNAL};
     bool hasEvent = false;
@@ -495,10 +495,10 @@ bool EventRaiserImpl::processNextQueuedEvent() {
         return false;
     }
 
-    // §scxml-6.4: Execute callback (including finalize) BEFORE removing from queue
+    // §scxml-6.5.2: Execute callback (including finalize) BEFORE removing from queue
     bool success = executeEventCallback(eventToProcess);
 
-    // §scxml-6.4: Only NOW remove event from queue (after finalize executed)
+    // §scxml-6.5.2: Only NOW remove event from queue (after finalize executed)
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
         if (!synchronousQueue_.empty() && synchronousQueue_.top().eventName == eventToProcess.eventName) {

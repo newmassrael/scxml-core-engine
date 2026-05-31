@@ -140,7 +140,7 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
         std::string invokeId = SessionRegistry::instance().getInvokeIdForChildSession(actualChildSessionId);
 
         // Raise event in parent session using parent's EventRaiser with origin and invoke tracking
-        // §scxml-6.4: Pass child session ID as originSessionId for finalize support
+        // §scxml-5.10: Pass child session ID as originSessionId for finalize support
         // §scxml-5.10: Pass invoke ID for event.invokeid field (test 338)
         // §scxml-5.10: Pass origintype as SCXML processor type (test 253, 331, 352, 372)
         // ARCHITECTURE.md: Use SCXMLConstants for Single Source of Truth

@@ -1685,6 +1685,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - sce/src/scripting/JSEngineImpl.cpp:JSEngine::setupSystemVariablesInternal
 - sce/src/scripting/LuaEngine.cpp:LuaEngine::setCurrentEvent
 - sce/src/scripting/SessionRegistry.cpp:SessionRegistry::getInvokeIdForChildSession
+- sce/src/runtime/EventRaiserImpl.h:originSessionId
 
 
 
@@ -2522,6 +2523,13 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
+**Implementations**:
+- sce/include/common/SendHelper.h:SendHelper
+- sce/include/runtime/StateSnapshot.h:originalDelayMs
+- sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 <param>. The SCXML Processor MUST evaluate this element when the parent <send> element is evaluated and pass the resulting data to the external service when the message is delivered. Occurs 0 or more times. See 5.7 <param> for details. <content>. The SCXML Processor MUST evaluate this element when the parent <send> element is evaluated and pass the resulting data to the external service when the message is delivered. Occurs 0 or 1 times. See 5.6 <content> for details. A conformant SCXML document MUST specify exactly one of 'event', 'eventexpr' and <content>. A conformant document MUST NOT specify "namelist" or <param> with <content>. The SCXML Processor MUST include all attributes and values provided by <param> or 'namelist' even if duplicates occur. If 'idlocation' is present, the SCXML Processor MUST generate an id when the parent <send> element is evaluated and store it in this location. See 3.14 IDs for details. If a delay is specified via 'delay' or 'delayexpr', the SCXML Processor MUST interpret the character string as a time interval. It MUST dispatch the message only when the delay interval elapses. (Note that the evaluation of the send tag will return immediately.) The Processor MUST evaluate all arguments to <send> when the <send> element is evaluated, and not when the message is actually dispatched. If the evaluation of <send>'s arguments produces an error, the Processor MUST discard the message without attempting to deliver it. If the SCXML session terminates before the delay interval has elapsed, the SCXML Processor MUST discard the message without attempting to deliver it.
@@ -2541,10 +2549,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 **Implementations**:
-- sce/include/common/SendHelper.h:SendHelper
-- sce/include/runtime/StateSnapshot.h:originalDelayMs
 - sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
-- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
 
 
 
@@ -2605,7 +2610,6 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 - sce/include/common/SendSchedulingHelper.h:SCE
 - sce/include/common/SendSchedulingHelper.h:cancel
 - sce/include/common/SendSchedulingHelper.h:schedule
-- sce/include/runtime/InvokeExecutor.h:getAllInvokedSessions
 - sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::cancelEvent
 - sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::cancelEventsForSession
 - sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::scheduleEvent
@@ -2725,9 +2729,6 @@ None
 - sce/src/parsing/InvokeParser.cpp:SCE::InvokeParser::parseInvokeNode
 - sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseInvokeElements
 - sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
-- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processNextQueuedEvent
-- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEvent
-- sce/src/runtime/EventRaiserImpl.h:originSessionId
 - sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
 - sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::executeInvoke
 - sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::generateInvokeId
@@ -2753,6 +2754,7 @@ None
 - sce/src/scripting/LuaEngine.cpp:LuaEngine::destroySession
 - sce/src/scripting/SessionRegistry.cpp:SessionRegistry::getParentSessionId
 - sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
+- sce/include/runtime/InvokeExecutor.h:getAllInvokedSessions
 
 
 
@@ -2833,6 +2835,12 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 - sce/include/core/InvokeHelper.h:createDoneInvokeEventName
 - sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
+- sce/include/runtime/InvokeExecutor.h:parentStateMachine_
+- sce/include/runtime/StateMachine.h:StateMachine
+- sce/include/runtime/StateMachine.h:completionCallback_
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- sce/src/runtime/StateMachine.cpp:StateMachine::setCompletionCallback
 
 
 
@@ -2882,16 +2890,11 @@ The implementation of <invoke>, including communication between parent and child
 - sce/include/common/SendHelper.h:SendHelper
 - sce/include/common/SendHelper.h:sendToParentWithOrigin
 - sce/include/core/StatePolicyConcepts.h:SCE::Core
-- sce/include/runtime/InvokeExecutor.h:parentStateMachine_
-- sce/include/runtime/StateMachine.h:StateMachine
-- sce/include/runtime/StateMachine.h:completionCallback_
 - sce/include/runtime/StateSnapshot.h:finalizeScript
 - sce/include/static/StaticExecutionEngine.h:processEventQueues
 - sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
 - sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
 - sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
-- sce/src/runtime/StateMachine.cpp:StateMachine::enterState
-- sce/src/runtime/StateMachine.cpp:StateMachine::setCompletionCallback
 
 
 
@@ -2912,10 +2915,6 @@ The implementation of <invoke>, including communication between parent and child
 
 
 
-**Implementations**:
-- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
-
-
 
 **Normative excerpt** (REC-scxml-20150901):
 None.
@@ -2932,6 +2931,13 @@ None.
 
 
 
+
+
+**Implementations**:
+- sce/src/parsing/InvokeParser.cpp:SCE::InvokeParser::parseFinalizeElement
+- sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processNextQueuedEvent
+- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
 
 
 
