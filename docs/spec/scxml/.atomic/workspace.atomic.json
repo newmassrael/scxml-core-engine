@@ -502,30 +502,6 @@
           "symbol": "executeTransitionMicrostep"
         },
         {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "getLastTransitionSource"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "getLastTransitionTarget"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "lastTransitionSource_"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "restoreActiveStatesDirectly"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "restoreFromSnapshot"
-        },
-        {
-          "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "setRestoringSnapshotOnAllRegions"
-        },
-        {
           "file": "sce/include/runtime/TransitionDomainCalculator.h",
           "symbol": "TransitionDomainCalculator"
         },
@@ -652,18 +628,6 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processStateTransitions"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::restoreActiveStatesDirectly"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::restoreFromSnapshot"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setRestoringSnapshotOnAllRegions"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",

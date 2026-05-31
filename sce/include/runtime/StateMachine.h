@@ -263,7 +263,7 @@ public:
     /**
      * @brief Get source state of last executed transition
      *
-     * §scxml-3.13: Interactive visualizer support for transition tracking
+     * Interactive visualizer support for transition tracking
      * Returns the source state of the most recently executed transition,
      * including eventless transitions.
      *
@@ -274,7 +274,7 @@ public:
     /**
      * @brief Get target state of last executed transition
      *
-     * §scxml-3.13: Interactive visualizer support for transition tracking
+     * Interactive visualizer support for transition tracking
      * Returns the target state of the most recently executed transition,
      * including eventless transitions.
      *
@@ -307,7 +307,7 @@ public:
     /**
      * @brief Restore active states directly without executing onentry actions
      *
-     * §scxml-3.13: Time-travel debugging support for InteractiveTestRunner
+     * Time-travel debugging support for InteractiveTestRunner
      * Restores state configuration from snapshot without side effects.
      *
      * ARCHITECTURE.md: Zero Duplication - Uses StateHierarchyManager infrastructure
@@ -496,7 +496,7 @@ public:
     /**
      * @brief Restore state machine from snapshot (complete restoration)
      *
-     * §scxml-3.13: Time-travel debugging support for InteractiveTestRunner
+     * Time-travel debugging support for InteractiveTestRunner
      * Handles all restoration requirements internally in correct order:
      * 1. JavaScript environment initialization
      * 2. State configuration restoration
@@ -518,7 +518,7 @@ public:
     bool restoreFromSnapshot(const std::vector<std::string> &states);
 
     /**
-     * @brief Set restoration mode on all parallel regions (§scxml-3.13)
+     * @brief Set restoration mode on all parallel regions
      *
      * When enabled, prevents side effects (callbacks, event generation) during
      * snapshot restoration. This ensures time-travel debugging maintains strict
@@ -641,7 +641,7 @@ private:
     bool inTransition_ = false;                    // Track if we're in a transition context (for history recording)
     std::string initialState_;
 
-    // §scxml-3.13: Last executed transition tracking (for interactive visualizer)
+    // Last executed transition tracking (for interactive visualizer)
     std::string lastTransitionSource_{};
     std::string lastTransitionTarget_{};
 
