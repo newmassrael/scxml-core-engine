@@ -442,9 +442,7 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
 - sce/include/static/StaticExecutionEngine.h:executeTransition
 - sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
-- sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::processReadyEvents
 - sce/src/events/InternalEventTarget.cpp:InternalEventTarget::send
-- sce/src/events/PlatformEventRaiserHelper.cpp:pollScheduler
 - sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setImmediateMode
 - sce/src/runtime/ActionExecutorImpl.h:setImmediateMode
 - sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::executeEventCallback
@@ -2523,6 +2521,8 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/include/runtime/StateSnapshot.h:originalDelayMs
 - sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
 - sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
+- sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::processReadyEvents
+- sce/src/events/PlatformEventRaiserHelper.cpp:pollScheduler
 
 
 
