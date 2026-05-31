@@ -85,7 +85,7 @@ public:
     /// parent that originated the wire-14.
     virtual const std::string& parentPeer() const = 0;
 
-    /// SCXML-side invoke id from the parent (§scxml-3.12.1 format,
+    /// SCXML-side invoke id from the parent (§scxml-6.4.1 format,
     /// `stateid.platformid.index`). Mirrored into every outbound wire-16/18
     /// envelope so the parent's `activeInvokes_[...]` lookup matches.
     virtual const std::string& invokeIdString() const = 0;

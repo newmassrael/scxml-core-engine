@@ -162,7 +162,7 @@ using ScxmlInvokeCancelCallback =
  * StatePolicy template parameter.
  *
  * Key SCXML standards implemented:
- * - Internal event queue with FIFO ordering (§scxml-3.12.1)
+ * - Internal event queue with FIFO ordering (§scxml-3.13)
  * - Entry/exit action execution (§scxml-3.8, 3.9)
  * - Event processing loop (§scxml-D-mainEventLoop)
  *

@@ -373,7 +373,7 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
             int iterations = 0;
             const int MAX_START_ITERATIONS = 1000;
 
-            // §scxml-3.12.1: Use shared algorithm (Single Source of Truth)
+            // §scxml-3.13: Use shared algorithm (Single Source of Truth)
             SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
             while (adapter.hasEvents()) {
                 if (++iterations > MAX_START_ITERATIONS) {
@@ -747,7 +747,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
-                        // §scxml-3.12.1: Use shared algorithm (Single Source of Truth)
+                        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
                         SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
                         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                             SCE_LOG_DEBUG(
@@ -1105,7 +1105,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
-                        // §scxml-3.12.1: Use shared algorithm (Single Source of Truth)
+                        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
                         SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
                         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                             SCE_LOG_DEBUG("W3C SCXML 3.4: Processing done.state event after parallel completion");
@@ -1206,7 +1206,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
-                        // §scxml-3.12.1: Use shared algorithm (Single Source of Truth)
+                        // §scxml-3.13: Use shared algorithm (Single Source of Truth)
                         SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
                         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                             SCE_LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event after successful transition");
@@ -1246,7 +1246,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
         auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
         if (eventRaiserImpl) {
-            // §scxml-3.12.1: Use shared algorithm (Single Source of Truth)
+            // §scxml-3.13: Use shared algorithm (Single Source of Truth)
             SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
             SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                 SCE_LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event");

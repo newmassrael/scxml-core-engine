@@ -332,14 +332,6 @@
           "symbol": "findLCA"
         },
         {
-          "file": "sce/include/core/TransitionHelper.h",
-          "symbol": "matchesAnyEventDescriptor"
-        },
-        {
-          "file": "sce/include/core/TransitionHelper.h",
-          "symbol": "matchesEventDescriptor"
-        },
-        {
           "file": "sce/include/mesh/ShmChannel.h",
           "symbol": "ShmChannel"
         },
@@ -413,47 +405,12 @@
       "decision_status": "active",
       "implementations": [
         {
-          "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
+          "file": "sce/include/core/TransitionHelper.h",
+          "symbol": "matchesAnyEventDescriptor"
         },
         {
-          "file": "sce/include/core/EventProcessingAlgorithms.h",
-          "symbol": "processInternalEventQueue"
-        },
-        {
-          "file": "sce/include/core/EventProcessingAlgorithms.h",
-          "symbol": "processMacrostep"
-        },
-        {
-          "file": "sce/include/core/EventQueueConcept.h",
-          "symbol": "SCE::Core"
-        },
-        {
-          "file": "sce/include/core/EventQueueManager.h",
-          "symbol": "SCE::Core"
-        },
-        {
-          "file": "sce/include/core/EventQueueManager.h",
-          "symbol": "queue_"
-        },
-        {
-          "file": "sce/include/core/InvokeHelper.h",
-          "symbol": "isValidInvokeId"
-        },
-        {
-          "file": "sce/include/mesh/IChildSession.h",
-          "symbol": "invokeIdString"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::start"
+          "file": "sce/include/core/TransitionHelper.h",
+          "symbol": "matchesEventDescriptor"
         }
       ],
       "normative_excerpt": {
@@ -923,6 +880,22 @@
         {
           "file": "sce/src/states/StateExitExecutor.cpp",
           "symbol": "StateExitExecutor::executeActionNodes"
+        },
+        {
+          "file": "sce/include/core/EventProcessingAlgorithms.h",
+          "symbol": "processInternalEventQueue"
+        },
+        {
+          "file": "sce/include/core/EventQueueConcept.h",
+          "symbol": "SCE::Core"
+        },
+        {
+          "file": "sce/include/core/EventQueueManager.h",
+          "symbol": "SCE::Core"
+        },
+        {
+          "file": "sce/include/core/EventQueueManager.h",
+          "symbol": "queue_"
         }
       ],
       "normative_excerpt": {
@@ -3185,6 +3158,12 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/include/common/EventMetadataHelper.h",
+          "symbol": "EventMetadataHelper"
+        }
+      ],
       "normative_excerpt": {
         "text": "Conditional expressions are used inside the 'cond' attribute of <transition>, <if> and <elseif>. If a conditional expression cannot be evaluated as a boolean value ('true' or 'false') or if its evaluation causes an error, the SCXML Processor MUST treat the expression as if it evaluated to 'false' and MUST place the error 'error.execution' in the internal event queue. The set of operators in conditional expressions varies depending on the data model, but all data models MUST support the 'In()' predicate, which takes a state ID as its argument and returns true if the state machine is in that state. This predicate allows coordination among parallel regions. Conditional expressions in conformant SCXML documents SHOULD NOT have side effects.",
         "anchor_url": "https://www.w3.org/TR/scxml/#ConditionalExpressions",
@@ -4136,6 +4115,14 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raiseExternal"
+        },
+        {
+          "file": "sce/include/core/InvokeHelper.h",
+          "symbol": "isValidInvokeId"
+        },
+        {
+          "file": "sce/include/mesh/IChildSession.h",
+          "symbol": "invokeIdString"
         }
       ],
       "normative_excerpt": {
