@@ -1407,6 +1407,10 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::isInFinalState"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "processEventQueues"
         }
       ],
       "normative_excerpt": {
@@ -2560,10 +2564,6 @@
           "symbol": "initializeVariable"
         },
         {
-          "file": "sce/include/events/PlatformEventRaiserHelper.h",
-          "symbol": "PlatformEventRaiserHelper"
-        },
-        {
           "file": "sce/include/runtime/BindingHelper.h",
           "symbol": "BindingHelper"
         },
@@ -2612,20 +2612,12 @@
           "symbol": "StateMachine"
         },
         {
-          "file": "sce/include/scripting/PlatformExecutionHelper.h",
-          "symbol": "PlatformExecutionHelper"
-        },
-        {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "initialize"
         },
         {
           "file": "sce/src/common/DataModelInitHelper.cpp",
           "symbol": "SCE::DataModelInitHelper::initializeVariableFromExpr"
-        },
-        {
-          "file": "sce/src/events/PlatformEventRaiserHelper.cpp",
-          "symbol": "QueuedEventRaiserHelper"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
@@ -2650,10 +2642,6 @@
         {
           "file": "sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
           "symbol": "EcmaScriptToLuaTransformer::transformFunctionSyntax"
-        },
-        {
-          "file": "sce/src/scripting/PlatformExecutionHelper.cpp",
-          "symbol": "QueuedExecutionHelper"
         }
       ],
       "normative_excerpt": {
@@ -2714,14 +2702,6 @@
           "symbol": "isValidLocation"
         },
         {
-          "file": "sce/include/core/ForeachHelper.h",
-          "symbol": "ForeachHelper"
-        },
-        {
-          "file": "sce/include/core/ForeachHelper.h",
-          "symbol": "evaluateForeachArray"
-        },
-        {
           "file": "sce/src/actions/AssignAction.cpp",
           "symbol": "AssignAction::execute"
         },
@@ -2741,12 +2721,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5.4",
       "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues"
-        }
-      ],
       "normative_excerpt": {
         "text": "Name Required Attribute Constraints Type Default Value Valid Values Description location true path expression none Any valid location expression. The location in the data model into which to insert the new value. See 5.9.2 Location Expressions for details. expr false This attribute must not occur in an <assign> element that has children. value expression none Any valid value expression An expression returning the value to be assigned. See 5.9.3 Legal Data Values and Value Expressions for details.",
         "anchor_url": "https://www.w3.org/TR/scxml/#N10A70",

@@ -816,7 +816,7 @@ protected:
                 SCE_LOG_DEBUG("AOT processEventQueues: Processing internal event, currentState={}",
                           static_cast<int>(currentState_));
 
-                // §scxml-5.4.1: Stop processing events if TOP-LEVEL final state reached
+                // §scxml-3.7: Stop processing events if TOP-LEVEL final state reached
                 // (Zero Duplication: same top-level-final predicate as tick() — encapsulated
                 // in isGlobalFinalState() to keep regional `<final>` inside a `<parallel>`
                 // from mis-terminating the queue drain.)

@@ -24,7 +24,7 @@ class EventRaiserImpl;
  * - WASM (Emscripten): Synchronous immediate mode (no pthread support)
  * - Native (Linux/macOS): Pthread-based worker thread for async event processing
  *
- * §scxml-5.3: Asynchronous event processing required for non-blocking state machine operations
+ * Asynchronous event processing required for non-blocking state machine operations
  *
  * References:
  * - ARCHITECTURE.md Zero Duplication Principle: Shared logic through Helper functions
