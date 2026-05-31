@@ -2103,7 +2103,7 @@ bool StateMachine::initializeFromModel() {
         // Initialize hierarchy manager for hierarchical state support
         hierarchyManager_ = std::make_unique<StateHierarchyManager>(model_);
 
-        // §scxml-3.12 / §scxml-3.13: Initialize transition domain calculator
+        // §scxml-3.13: Initialize transition domain calculator
         transitionDomain_ = std::make_unique<TransitionDomainCalculator>(model_, hierarchyManager_.get());
 
         // Set up onentry callback for W3C SCXML compliance
@@ -4199,7 +4199,7 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
 }
 
 // W3C SCXML: Get proper ancestors of a state (all ancestors excluding the state itself)
-// §scxml-3.12 / §scxml-3.13: Delegation to TransitionDomainCalculator
+// §scxml-3.13: Delegation to TransitionDomainCalculator
 // transitionDomain_ is guaranteed non-null after initializeFromModel()
 
 std::vector<std::string> StateMachine::getProperAncestors(const std::string &stateId) const {

@@ -240,7 +240,7 @@ private:
      *
      * @details
      * ARCHITECTURE.md: Extract duplicate code from processEventQueues
-     * §scxml-3.12: Compute LCA and execute hierarchical exit/entry
+     * §scxml-3.13: Compute LCA and execute hierarchical exit/entry
      *
      * @param oldState State before transition
      * @param newState State after transition
@@ -285,7 +285,7 @@ private:
                           lca.has_value() ? static_cast<int>(lca.value()) : -1);
             }
         } else {
-            // §scxml-3.12: External transition - find LCA normally
+            // §scxml-3.13: External transition - find LCA normally
             lca = SCE::Core::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
         }
 
@@ -416,7 +416,7 @@ private:
     /**
      * @brief Execute a state transition with hierarchical exit/entry handling
      *
-     * §scxml-3.12 / §scxml-3.13: Single Source of Truth for transition execution across all
+     * §scxml-3.13: Single Source of Truth for transition execution across all
      * processing paths (event queues, direct processEvent, eventless transitions).
      *
      * Callers customize two axes of variation via template callbacks:
@@ -453,7 +453,7 @@ private:
             return false;
         }
 
-        // §scxml-3.12: State transition requires hierarchical exit/entry
+        // §scxml-3.13: State transition requires hierarchical exit/entry
         if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
             handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
                                          [this] { policy_.executeTransitionActions(*this); });
@@ -469,7 +469,7 @@ private:
     /**
      * @brief Shared implementation for processEvent overloads
      *
-     * §scxml-3.12: External event processing with full macrostep completion.
+     * §scxml-3.13: External event processing with full macrostep completion.
      *
      * @param event Event to process
      */
@@ -1066,7 +1066,7 @@ public:
     }
 
     /**
-     * @brief Process an external event (§scxml-3.12)
+     * @brief Process an external event (§scxml-3.13)
      *
      * External events are processed after all internal events have been
      * consumed. Each external event triggers a macrostep.

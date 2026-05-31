@@ -305,26 +305,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 **Implementations**:
-- sce/include/core/EventProcessingAlgorithms.h:processMacrostep
-- sce/include/core/HierarchicalStateHelper.h:HierarchicalAlgorithms
-- sce/include/core/HierarchicalStateHelper.h:buildEntryChainFromParent
-- sce/include/core/HierarchicalStateHelper.h:buildExitChain
-- sce/include/core/HierarchicalStateHelper.h:findLCA
-- sce/include/mesh/ShmChannel.h:ShmChannel
-- sce/include/runtime/TransitionDomainCalculator.h:TransitionDomainCalculator
-- sce/include/runtime/TransitionDomainCalculator.h:findLCA
-- sce/include/runtime/TransitionDomainCalculator.h:getProperAncestors
-- sce/include/runtime/TransitionDomainCalculator.h:isDescendant
-- sce/include/static/StaticExecutionEngine.h:StaticExecutionEngine
-- sce/include/static/StaticExecutionEngine.h:executeTransition
-- sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
-- sce/include/static/StaticExecutionEngine.h:processEvent
-- sce/include/static/StaticExecutionEngine.h:processEventImpl
-- sce/src/runtime/StateMachine.cpp:SCE
-- sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
 - sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
-- sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::findLCA
-- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::processEvent
 
 
 
@@ -518,6 +499,16 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/core/EventQueueConcept.h:SCE::Core
 - sce/include/core/EventQueueManager.h:SCE::Core
 - sce/include/core/EventQueueManager.h:queue_
+- sce/include/core/HierarchicalStateHelper.h:HierarchicalAlgorithms
+- sce/include/core/HierarchicalStateHelper.h:buildEntryChainFromParent
+- sce/include/core/HierarchicalStateHelper.h:buildExitChain
+- sce/include/mesh/ShmChannel.h:ShmChannel
+- sce/include/runtime/TransitionDomainCalculator.h:findLCA
+- sce/include/runtime/TransitionDomainCalculator.h:getProperAncestors
+- sce/include/runtime/TransitionDomainCalculator.h:isDescendant
+- sce/include/static/StaticExecutionEngine.h:processEvent
+- sce/include/static/StaticExecutionEngine.h:processEventImpl
+- sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::findLCA
 
 
 

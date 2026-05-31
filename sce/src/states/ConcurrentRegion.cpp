@@ -185,7 +185,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
         }
 
         if (stateNode) {
-            // §scxml-3.12: Hierarchical event bubbling (innermost to outermost)
+            // §scxml-3.13: Hierarchical event bubbling (innermost to outermost)
             // Check from current active state up through parent hierarchy
             IStateNode *checkStatePtr = stateNode.get();  // Use raw pointer for hierarchy traversal
             int transitionIndex = 0;
@@ -296,7 +296,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                     return result;  // §scxml-3.13: First enabled transition wins in hierarchy
                 }
 
-                // §scxml-3.12: Move to parent state for hierarchical event bubbling
+                // §scxml-3.13: Move to parent state for hierarchical event bubbling
                 // But STOP at region boundary - don't bubble beyond the region's root state
                 // This prevents regions from collecting transitions from the parallel state's ancestors
                 if (checkStatePtr == rootState_.get()) {

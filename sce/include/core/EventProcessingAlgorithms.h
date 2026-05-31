@@ -164,7 +164,7 @@ public:
                                  InternalEventProcessor &&processInternalEvent, bool checkEventless = true) {
         auto oldState = sm.getCurrentState();
 
-        // 1. §scxml-3.12: Attempt transition with external event
+        // 1. §scxml-3.13: Attempt transition with external event
         if (sm.processTransition(event)) {
             auto newState = sm.getCurrentState();
 

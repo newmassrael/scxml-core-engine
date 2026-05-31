@@ -46,7 +46,7 @@ inline constexpr bool IsParallelStatePolicy = IsParallelStatePolicyTrait<P>::val
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Unified Hierarchical Algorithms (Single Source of Truth)
-// §scxml-3.3 / §scxml-3.12: Shared by AOT engine (enum states) and Interpreter (string states)
+// §scxml-3.3 / §scxml-3.13: Shared by AOT engine (enum states) and Interpreter (string states)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -63,7 +63,7 @@ inline constexpr bool IsParallelStatePolicy = IsParallelStatePolicyTrait<P>::val
 struct HierarchicalAlgorithms {
 
     /**
-     * @brief Find Least Common Ancestor of two states (§scxml-3.12)
+     * @brief Find Least Common Ancestor of two states (§scxml-3.13)
      *
      * @tparam StateType State identifier type (enum for AOT, std::string for Interpreter)
      * @tparam GetParentFn Callable: (const StateType&) -> std::optional<StateType>
@@ -112,7 +112,7 @@ struct HierarchicalAlgorithms {
     }
 
     /**
-     * @brief Build exit chain from state up to ancestor (§scxml-3.12)
+     * @brief Build exit chain from state up to ancestor (§scxml-3.13)
      *
      * @return Exit chain in child → parent order (excluding stopBeforeState)
      */
@@ -137,7 +137,7 @@ struct HierarchicalAlgorithms {
     }
 
     /**
-     * @brief Build entry chain from ancestor down to target (§scxml-3.12)
+     * @brief Build entry chain from ancestor down to target (§scxml-3.13)
      *
      * @return Entry chain in parent → child order (excluding ancestorState)
      */
@@ -460,7 +460,7 @@ public:
      * @brief Build exit chain from current state up to (excluding) ancestor
      *
      * @details
-     * §scxml-3.12 requires hierarchical state exit from descendant to ancestor.
+     * §scxml-3.13 requires hierarchical state exit from descendant to ancestor.
      * This method builds the complete exit chain for a state transition.
      *
      * Exit order is child -> parent, matching Interpreter's buildExitSetForDescendants().
@@ -490,7 +490,7 @@ public:
      * }
      * @endcode
      *
-     * @par §scxml-3.12 Compliance
+     * @par §scxml-3.13 Compliance
      * Matches Interpreter's buildExitSetForDescendants() behavior:
      * - Builds exit set from active state up to (but not including) LCA
      * - Maintains child -> parent exit order
@@ -505,7 +505,7 @@ public:
      * @brief Build entry chain from parent down to target state
      *
      * @details
-     * §scxml-3.12: After finding LCA, enter states from LCA down to target.
+     * §scxml-3.13: After finding LCA, enter states from LCA down to target.
      * This method builds the entry chain excluding the parent (LCA) itself.
      *
      * Entry order is parent -> child, matching Interpreter's hierarchical entry.
@@ -535,7 +535,7 @@ public:
      * }
      * @endcode
      *
-     * @par §scxml-3.12 Compliance
+     * @par §scxml-3.13 Compliance
      * Matches Interpreter's hierarchical entry after LCA calculation.
      */
     static std::vector<State> buildEntryChainFromParent(State targetState, State parentState) {
@@ -547,7 +547,7 @@ public:
      * @brief Find Least Common Ancestor (LCA) of two states
      *
      * @details
-     * §scxml-3.12: External transitions exit states up to the LCA,
+     * §scxml-3.13: External transitions exit states up to the LCA,
      * then enter states from LCA down to target.
      *
      * The LCA is the deepest common ancestor in the state hierarchy.
@@ -574,7 +574,7 @@ public:
      * // Returns: State::S011 (state is its own LCA)
      * @endcode
      *
-     * @par §scxml-3.12 Compliance
+     * @par §scxml-3.13 Compliance
      * Matches Interpreter's findLCA() behavior for external transitions.
      */
     static std::optional<State> findLCA(State state1, State state2) {
