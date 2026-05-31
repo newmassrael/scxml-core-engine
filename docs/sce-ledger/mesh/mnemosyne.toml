@@ -15,15 +15,19 @@
 # segment (before the first hyphen) is what section_namespace scoping keys on, so
 # a file may carry both §scxml-<n> (W3C) and §mesh-<n> cites without collision.
 #
+# Rooted at the SCE repo root so cited/implemented code paths are canonical
+# sce/... (R386 anchor resolve); Section.implementations forbids `..`
+# traversal, so Path B binding needs the workspace root to be an ancestor of
+# the documented code. Ledger artifacts stay under this directory via the
+# explicit repo-relative paths below.
 [workspace]
-docs = ["GENERATED.md"]
-default_doc = "GENERATED.md"
+root = "../../.."
+docs = ["docs/sce-ledger/mesh/GENERATED.md"]
+default_doc = "docs/sce-ledger/mesh/GENERATED.md"
 
-# Flatten the store + rendered doc directly under this workspace root (no nested
-# docs/ level), matching docs/spec/scxml.
 [atomic]
-sidecar_path = ".atomic/workspace.atomic.json"
-output_path = "GENERATED.md"
+sidecar_path = "docs/sce-ledger/mesh/.atomic/workspace.atomic.json"
+output_path = "docs/sce-ledger/mesh/GENERATED.md"
 
 [schema]
 changelog_titles = ["Revision History"]
@@ -59,13 +63,19 @@ severity = "warn"
 #                                later round; advisory so unbacked cites pass.
 [plugins.set_equality_validator]
 paths = [
-    "../../../sce/include/mesh",
-    "../../../sce/src/mesh",
-    "../../../sce/include/common",
-    "../../../sce/include/static",
+    "sce/include/mesh",
+    "sce/src/mesh",
+    "sce/include/common",
+    "sce/include/static",
 ]
 severity_missing = "reject"
-severity_binding = "warn"
+# Path B curated: every §mesh-<n> cite is bound to a ratified
+# Section.implementations (file, symbol), so binding-class drift now fails.
+severity_binding = "reject"
+# Coverage stays advisory — a spec ledger has prose/design sections (80 of
+# 106 here) that legitimately carry no code citation; the R385 split keeps
+# binding enforced without a per-section non-code carve-out.
+severity_coverage = "warn"
 comment_only = true
 section_namespace = "mesh"
 
@@ -73,8 +83,8 @@ section_namespace = "mesh"
 # extensions (.h/.cpp/.cc/...) to the `cpp` key; the in-process
 # tree-sitter-cpp backend resolves (file, line) to the enclosing symbol.
 # The symbol axis is opt-in per Section.implementations entry that records
-# a `symbol`, so this stays inert (file-only set-equality) until those are
-# registered; severity_binding above remains warn.
+# a `symbol`; the mesh ledger has now curated those sets, so symbol-level
+# drift is enforced under severity_binding = reject above.
 [plugins.symbol_resolver.cpp]
 transport = "in-process"
 backend = "tree-sitter-cpp"
