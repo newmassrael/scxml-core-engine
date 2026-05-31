@@ -2565,16 +2565,6 @@ The target of the <send> operation specifies the destination of the event. The t
 
 
 
-**Implementations**:
-- sce/include/common/LogicalTimeScheduler.h:cancelEvent
-- sce/include/common/LogicalTimeScheduler.h:popReadyEvent
-- sce/include/common/LogicalTimeScheduler.h:sendId
-- sce/include/static/StaticExecutionEngine.h:cancelEvent
-- sce/include/wrappers/GameLoopTimer.h:cancel
-- sce/include/wrappers/TimerManager.h:generateTimerSendId
-- sce/include/wrappers/TimerManager.h:stopTimer
-
-
 
 **Normative excerpt** (REC-scxml-20150901):
 The type of the <send> operation specifies the method that the SCXML processor MUST use to deliver the message to its target. A conformant SCXML document MAY use either the 'type' or the 'typeexpr' attribute to define the type. If neither the 'type' nor the 'typeexpr' is defined, the SCXML Processor MUST assume the default value of http://www.w3.org/TR/scxml/#SCXMLEventProcessor. If the SCXML Processor does not support the type that is specified, it MUST place the event error.execution on the internal event queue. SCXML Processors MUST support the following type: Value Details http://www.w3.org/TR/scxml/#SCXMLEventProcessor Target is an SCXML session. The transport mechanism is platform-specific. For details on the http://www.w3.org/TR/scxml/#SCXMLEventProcessor type, see C.1 SCXML Event I/O Processor. Support for HTTP POST is optional, however Processors that support it must use the following value for the "type" attribute: Value Details http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor Target is a URL. Data is sent via HTTP POST For details on the http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor type, see C.2 Basic HTTP Event I/O Processor. Processors MAY support other types such as web-services, SIP or basic HTTP GET. When they do so, they SHOULD assign such types the URI of the description of the relevant Event I/O Processor. Processors MAY define short form notations as an authoring convenience (e.g., "scxml" as equivalent to http://www.w3.org/TR/scxml/#SCXMLEventProcessor).
@@ -2621,6 +2611,11 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 - sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::scheduleEvent
 - sce/src/events/EventSchedulerImpl.h:EventSchedulerImpl
 - sce/src/events/EventSchedulerImpl.h:executionQueue_
+- sce/include/common/LogicalTimeScheduler.h:popReadyEvent
+- sce/include/common/LogicalTimeScheduler.h:cancelEvent
+- sce/include/static/StaticExecutionEngine.h:cancelEvent
+- sce/include/wrappers/GameLoopTimer.h:cancel
+- sce/include/wrappers/TimerManager.h:stopTimer
 
 
 
@@ -2639,6 +2634,11 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 
 
 
+
+
+**Implementations**:
+- sce/include/common/LogicalTimeScheduler.h:sendId
+- sce/include/wrappers/TimerManager.h:generateTimerSendId
 
 
 

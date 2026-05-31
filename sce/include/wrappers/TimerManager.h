@@ -190,7 +190,7 @@ public:
      *
      * Cancels the timer's scheduled event. For periodic timers, prevents future recurrence.
      *
-     * §scxml-6.2.5: Uses cancelEvent() with sendId
+     * §scxml-6.3: Uses cancelEvent() with sendId
      *
      * @param timerID Timer to stop
      * @return true if timer was running and stopped, false if not running
@@ -208,7 +208,7 @@ public:
             return false;
         }
 
-        // §scxml-6.2.5: Cancel scheduled event
+        // §scxml-6.3: Cancel scheduled event
         // For periodic timers, cancel the currently scheduled event (sequenceCounter - 1)
         // For one-shot timers, cancel the only scheduled event (sequenceCounter - 1)
         if (it->second.sequenceCounter > 0) {
@@ -418,7 +418,7 @@ private:
     /**
      * @brief Generate unique sendId for timer
      *
-     * §scxml-6.2.5: SendId format for timer identification
+     * §scxml-6.3.1: SendId format for timer identification
      *
      * @param timerID Timer identifier
      * @return Unique sendId string
