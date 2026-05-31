@@ -179,7 +179,7 @@ public:
     /**
      * @brief Get EventScheduler for scheduler mode access
      *
-     * §scxml-3.13: Enable parent-child scheduler mode inheritance for interactive debugging.
+     * Enable parent-child scheduler mode inheritance for interactive debugging.
      * Allows parent state machine to propagate MANUAL mode to child invoke sessions.
      *
      * @return Shared pointer to EventScheduler instance, or nullptr if not set
@@ -231,7 +231,7 @@ public:
     /**
      * @brief Get information about the last processed event (for time-travel debugging)
      *
-     * §scxml-3.13: Enable interactive visualizer to track internal events from raise actions.
+     * Enable interactive visualizer to track internal events from raise actions.
      * This allows step backward to replay internal events correctly.
      *
      * @param outEventName Output parameter for event name (empty if no event processed yet)
@@ -260,7 +260,7 @@ public:
     /**
      * @brief Get snapshot of current event queues for visualization/debugging
      *
-     * §scxml-3.13: Retrieves current contents of internal and external event queues
+     * Retrieves current contents of internal and external event queues
      * for use in interactive visualization and time-travel debugging.
      *
      * @param outInternal Output vector for internal queue events
@@ -359,7 +359,7 @@ public:
     std::priority_queue<QueuedEvent, std::vector<QueuedEvent>, QueuedEventComparator> synchronousQueue_;
     mutable std::mutex synchronousQueueMutex_;
 
-    // §scxml-3.13: Time-travel debugging support - track last processed event
+    // Time-travel debugging support - track last processed event
     std::string lastProcessedEventName_;
     std::string lastProcessedEventData_;
     mutable std::mutex lastProcessedEventMutex_;
