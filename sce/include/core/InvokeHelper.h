@@ -209,17 +209,17 @@ public:
     }
 
     /**
-     * @brief §scxml-6.3.1: Create done.invoke event name
+     * @brief §scxml-6.4.3: Create done.invoke event name
      *
      * Single Source of Truth for done.invoke event naming logic.
      * Used by both Interpreter and AOT engines.
      *
-     * §scxml-6.3.1: When an invoked child process completes, it generates
+     * §scxml-6.4.3: When an invoked child process completes, it generates
      * a done.invoke.{invokeid} event where invokeid is the ID of the invoke element.
      *
      * ARCHITECTURE.md Compliance:
      * - Zero Duplication: Shared naming logic between Interpreter and AOT
-     * - Single Source of Truth: §scxml-6.3.1 event naming specification
+     * - Single Source of Truth: §scxml-6.4.3 event naming specification
      *
      * @param invokeId Invoke element identifier
      * @return Event name in "done.invoke.{invokeid}" format
@@ -235,7 +235,7 @@ public:
      * @endcode
      */
     static std::string createDoneInvokeEventName(const std::string &invokeId) {
-        // §scxml-6.3.1: done.invoke.{invokeid} event naming
+        // §scxml-6.4.3: done.invoke.{invokeid} event naming
         return "done.invoke." + invokeId;
     }
 

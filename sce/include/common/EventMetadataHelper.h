@@ -272,7 +272,7 @@ public:
     }
 
     /**
-     * @brief §scxml-6.3.1: Create done.invoke event with invokeId
+     * @brief §scxml-6.4.3: Create done.invoke event with invokeId
      *
      * Single Source of Truth for done.invoke event metadata construction.
      * Complements InvokeHelper::createDoneInvokeEventName() (event name)
@@ -280,20 +280,21 @@ public:
      *
      * ARCHITECTURE.md Compliance:
      * - Zero Duplication: Shared event metadata construction
-     * - Single Source of Truth: §scxml-6.3.1 _event.invokeid requirement
+     * - Single Source of Truth: §scxml-5.10.1 _event.invokeid requirement
      * - Helper Pattern: Follows SendHelper, InvokeHelper, DoneDataHelper
      *
      * @tparam EventEnum Event enumeration type (e.g., State machine's Event enum)
      * @tparam MetadataType EventWithMetadata structure type
      * @param event Event enum value (e.g., Event::Done_invoke, Event::Done_invoke_foo)
-     * @param invokeId Invoke ID to populate _event.invokeid (§scxml-6.3.1)
+     * @param invokeId Invoke ID to populate _event.invokeid (§scxml-5.10.1)
      * @return EventWithMetadata with invokeId populated, all other fields empty
      *
      * @note All metadata fields except event and invokeId are empty strings
      * @note This is the canonical way to create done.invoke events across engines
      *
-     * §scxml-6.3.1: "The 'invokeid' field of the event is set to the invoke id
-     * of the invocation that was finished"
+     * §scxml-5.10.1: "If this event is generated from an invoked child process,
+     * the SCXML Processor MUST set this field to the invoke id of the invocation
+     * that triggered the child process"
      *
      * @example AOT Static invoke completion callback
      * @code
@@ -323,19 +324,19 @@ public:
      */
     template <typename EventEnum, typename MetadataType>
     static MetadataType createDoneInvokeEvent(EventEnum event, const std::string &invokeId) {
-        return MetadataType(event,     // event - §scxml-6.3.1: done.invoke or done.invoke.id
+        return MetadataType(event,     // event - §scxml-6.4.3: done.invoke or done.invoke.id
                             "",        // data - empty (no donedata from child)
                             "",        // origin - empty (child completion doesn't specify origin)
                             "",        // sendId - empty (not a send event)
                             "",        // type - empty (internal event, not external)
                             "",        // originType - empty (not external event)
-                            invokeId,  // invokeId - §scxml-6.3.1: _event.invokeid field
+                            invokeId,  // invokeId - §scxml-5.10.1: _event.invokeid field
                             ""         // target - empty (not a send event)
         );
     }
 
     /**
-     * @brief §scxml-5.5 + 6.3.1: Create done.invoke event carrying donedata
+     * @brief §scxml-5.5 + 6.4.3: Create done.invoke event carrying donedata
      *
      * Overload of `createDoneInvokeEvent` that surfaces the child's
      * `<donedata>` payload on `_event.data` of the synthesized
@@ -362,13 +363,13 @@ public:
                                               const std::string &invokeId,
                                               const std::string &data,
                                               std::optional<ScriptValue> typedData = std::nullopt) {
-        MetadataType metadata(event,     // event - §scxml-6.3.1
+        MetadataType metadata(event,     // event - §scxml-6.4.3
                               data,      // data - §scxml-5.5 donedata payload
                               "",        // origin
                               "",        // sendId
                               "",        // type
                               "",        // originType
-                              invokeId,  // invokeId - §scxml-6.3.1
+                              invokeId,  // invokeId - §scxml-5.10.1
                               ""         // target
         );
         metadata.typedData = std::move(typedData);

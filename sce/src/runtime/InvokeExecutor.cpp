@@ -304,7 +304,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         // Note: EXTERNAL priority auto-detected for done.* events (EventRaiserImpl.cpp:148)
         auto parentEventRaiser = parentSM->getEventRaiser();
         if (parentEventRaiser) {
-            // §scxml-5.5 + 6.3.1: carry the child's donedata payload on
+            // §scxml-5.5 + 6.4.3: carry the child's donedata payload on
             // `done.invoke.<id>._event.data`. The child stashed it at top-level
             // `<final>` entry via `StateMachine::enterState` into
             // `pendingDonedataAtFinal_`; we read it back here via

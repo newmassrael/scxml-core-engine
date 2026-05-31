@@ -2389,7 +2389,7 @@ bool StateMachine::enterState(const std::string &stateId) {
                 SCE_LOG_INFO("StateMachine: Reached top-level final state: {}, halting processing (W3C SCXML 3.13)",
                          actualCurrentState);
 
-                // §scxml-5.5 + 6.3.1: Stash donedata evaluated at top-level `<final>`
+                // §scxml-5.5 + 6.4.3: Stash donedata evaluated at top-level `<final>`
                 // so `SCXMLInvokeHandler`'s completion callback can read it back via
                 // `donedataAtFinal()` / `typedDonedataAtFinal()` and populate
                 // `done.invoke.<id>._event.data`. Mirror of

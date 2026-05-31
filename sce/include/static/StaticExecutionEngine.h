@@ -523,7 +523,7 @@ private:
     std::string currentEventInvokeId_;  // SCE Mesh §mesh-9.5: invokeId of event being processed
     SCE::PullScheduler<Event> scheduler_;       // §scxml-6.2: Delayed event scheduler
 
-    // §scxml-5.5 + 6.3.1: donedata payload stashed at top-level <final> entry.
+    // §scxml-5.5 + 6.4.3: donedata payload stashed at top-level <final> entry.
     // Consumed by:
     //   - local invoke completion callback (invoke_methods.jinja2) to populate
     //     `done.invoke.<id>._event.data`;
@@ -1171,7 +1171,7 @@ public:
 
     /**
      * @brief Stash donedata evaluated at top-level `<final>` entry
-     *        (§scxml-5.5 + 6.3.1).
+     *        (§scxml-5.5 + 6.4.3).
      *
      * Called by generated entry actions (`entry_exit_actions.jinja2`) after
      * `DoneDataHelper::evaluateParams` / `evaluateContent` / `emitContentLiteral`
@@ -1187,7 +1187,7 @@ public:
         pendingTypedDonedataAtFinal_ = std::move(typedData);
     }
 
-    /// §scxml-5.5 + 6.3.1: JSON/literal string payload from the reached
+    /// §scxml-5.5 + 6.4.3: JSON/literal string payload from the reached
     /// top-level `<final>`'s `<donedata>`. Empty when no donedata was authored
     /// or the machine has not reached a top-level final yet. Consumed by both
     /// local invoke completion and SCE Mesh §mesh-9.6.2 wire-18.

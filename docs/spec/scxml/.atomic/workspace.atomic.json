@@ -2448,6 +2448,10 @@
         {
           "file": "sce/src/scripting/JSEngine.cpp",
           "symbol": "JSEngine::setCurrentEvent"
+        },
+        {
+          "file": "sce/include/common/EventMetadataHelper.h",
+          "symbol": "createDoneInvokeEvent"
         }
       ],
       "normative_excerpt": {
@@ -3608,20 +3612,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.3",
       "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
-        },
-        {
-          "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "createDoneInvokeEvent"
-        },
-        {
-          "file": "sce/include/core/InvokeHelper.h",
-          "symbol": "createDoneInvokeEventName"
-        }
-      ],
       "normative_excerpt": {
         "text": "Name Required Attribute Constraints Type Default Value Valid Values Description sendid false Must not occur with sendidexpr. IDREF none The sendid of a delayed event The ID of the event(s) to be cancelled. If multiple delayed events have this sendid, the Processor will cancel them all. sendidexpr false Must not occur with sendid. Value Expression none Any expression that evaluates to the ID of a delayed event A dynamic alternative to 'sendid'. If this attribute is present, the SCXML Processor MUST evaluate it when the parent <cancel> element is evaluated and treat the result as if it had been entered as the value of 'sendid'. A conformant SCXML document MUST specify exactly one of sendid or sendidexpr.",
         "anchor_url": "https://www.w3.org/TR/scxml/#N10F08",
@@ -4039,6 +4029,18 @@
         {
           "file": "sce/include/common/DatamodelValidationHelper.h",
           "symbol": "isVariableDeclaredInChild"
+        },
+        {
+          "file": "sce/include/common/EventMetadataHelper.h",
+          "symbol": "EventMetadataHelper"
+        },
+        {
+          "file": "sce/include/core/InvokeHelper.h",
+          "symbol": "createDoneInvokeEventName"
+        },
+        {
+          "file": "sce/include/common/EventMetadataHelper.h",
+          "symbol": "createDoneInvokeEvent"
         }
       ],
       "normative_excerpt": {
