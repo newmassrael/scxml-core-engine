@@ -2664,12 +2664,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
-**Implementations**:
-- sce/include/common/DatamodelValidationHelper.h:DatamodelValidationHelper
-- sce/include/common/DatamodelValidationHelper.h:buildChildDatamodelSet
-- sce/include/common/DatamodelValidationHelper.h:isVariableDeclaredInChild
-
-
 
 **Normative excerpt** (REC-scxml-20150901):
 None
@@ -2838,6 +2832,9 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 **Implementations**:
 - sce/include/common/FileLoadingHelper.h:loadScxmlFile
+- sce/include/common/DatamodelValidationHelper.h:DatamodelValidationHelper
+- sce/include/common/DatamodelValidationHelper.h:buildChildDatamodelSet
+- sce/include/common/DatamodelValidationHelper.h:isVariableDeclaredInChild
 
 
 
