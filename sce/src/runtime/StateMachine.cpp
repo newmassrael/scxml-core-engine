@@ -3611,7 +3611,7 @@ bool StateMachine::setupAndActivateParallelState(ConcurrentStateNode *parallelSt
         }
     }
 
-    // §scxml-B-1: Set condition evaluator for transition guard evaluation
+    // §scxml-B-2-3: Set condition evaluator for transition guard evaluation
     // Regions must be able to evaluate guard conditions via JavaScript engine
     auto conditionEvaluator = [this](const std::string &condition) -> bool { return evaluateCondition(condition); };
 

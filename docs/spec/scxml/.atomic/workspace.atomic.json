@@ -4008,12 +4008,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-B",
       "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupAndActivateParallelState"
-        }
-      ],
       "normative_excerpt": {
         "text": "The value \"null\" for the 'datamodel' attribute results in an absent or empty data model. In particular:",
         "anchor_url": "https://www.w3.org/TR/scxml/#minimal-profile",
@@ -4357,6 +4351,12 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::setupAndActivateParallelState"
+        }
+      ],
       "normative_excerpt": {
         "text": "The Processor MUST convert ECMAScript expressions used in conditional expressions into their effective boolean value using the ToBoolean operator as described in Section 9.2 of [ECMASCRIPT-262]. The following example illustrates this usage. Example: Use of a boolean expression to determine whether or not a transition is taken. <state id=\"errorSwitch\"> <datamodel> <data id=\"time\"/> </datamodel> <onentry> <assign location=\"time\" expr=\"currentDateTime()\"/> </onentry> <transition cond=\"yearFromDatetime(time) > 2009\" target=\"newBehavior\"/> <transition target=\"currentBehavior\"/> </state> The SCXML processor MUST define an ECMAScript function named 'In()' that takes a stateID as its argument and returns 'true' if and only if that state is in the current state configuration, as described in 5.9.1 Conditional Expressions. Here is an example of its use, taken from G.3 Microwave Example (Using parallel) below: <transition cond=\"In('closed')\" target=\"cooking\"/>",
         "anchor_url": "https://www.w3.org/TR/scxml/#ecma_cond_expressions",
