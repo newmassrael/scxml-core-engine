@@ -143,16 +143,6 @@ public:
     virtual bool hasQueuedEvents() const = 0;
 
     /**
-     * @brief Raise an internal event (§scxml-3.13: higher priority than external events)
-     *
-     * Internal events are raised by <raise> elements and have higher priority than
-     * external events. This ensures proper event queue ordering as specified by W3C SCXML.
-     *
-     * @param eventName Name of the event to raise
-     * @param eventData Data associated with the event
-     * @return true if the event was successfully queued, false if the raiser is not ready
-     */
-    /**
      * @brief Get snapshot of current event queues for visualization/debugging
      *
      * Retrieves current contents of internal and external event queues
@@ -164,6 +154,16 @@ public:
     virtual void getEventQueues(std::vector<struct EventSnapshot> &outInternal,
                                 std::vector<struct EventSnapshot> &outExternal) const = 0;
 
+    /**
+     * @brief Raise an internal event (§scxml-3.13: higher priority than external events)
+     *
+     * Internal events are raised by <raise> elements and have higher priority than
+     * external events. This ensures proper event queue ordering as specified by W3C SCXML.
+     *
+     * @param eventName Name of the event to raise
+     * @param eventData Data associated with the event
+     * @return true if the event was successfully queued, false if the raiser is not ready
+     */
     virtual bool raiseInternalEvent(const std::string &eventName, const std::string &eventData) = 0;
 
     /**
@@ -182,7 +182,7 @@ public:
     /**
      * @brief Get EventScheduler for scheduler mode access
      *
-     * §scxml-3.13: Enable parent-child scheduler mode inheritance for interactive debugging.
+     * Enable parent-child scheduler mode inheritance for interactive debugging.
      * Allows parent state machine to propagate MANUAL mode to child invoke sessions.
      *
      * @return Shared pointer to EventScheduler instance, or nullptr if not set
