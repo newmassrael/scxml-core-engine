@@ -15,7 +15,7 @@
 namespace SCE::Core {
 
 /**
- * @brief §scxml-3.12.1: Internal Event Queue Management
+ * @brief §scxml-3.13: Internal Event Queue Management
  *
  * This class implements the W3C SCXML internal event queue semantics.
  * Internal events are placed at the back of the queue and processed
@@ -143,7 +143,7 @@ public:
     }
 
 private:
-    std::deque<EventType> queue_;  // FIFO ordering per §scxml-3.12.1
+    std::deque<EventType> queue_;  // FIFO ordering per §scxml-3.13
 
 #ifdef SCE_THREAD_SAFE
     mutable std::mutex mutex_;  // Mutex for thread-safe operations (mutable for const methods)

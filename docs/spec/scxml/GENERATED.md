@@ -306,8 +306,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/include/core/HierarchicalStateHelper.h:buildEntryChainFromParent
 - sce/include/core/HierarchicalStateHelper.h:buildExitChain
 - sce/include/core/HierarchicalStateHelper.h:findLCA
-- sce/include/core/TransitionHelper.h:matchesAnyEventDescriptor
-- sce/include/core/TransitionHelper.h:matchesEventDescriptor
 - sce/include/mesh/ShmChannel.h:ShmChannel
 - sce/include/runtime/TransitionDomainCalculator.h:TransitionDomainCalculator
 - sce/include/runtime/TransitionDomainCalculator.h:findLCA
@@ -344,17 +342,8 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 **Implementations**:
-- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
-- sce/include/core/EventProcessingAlgorithms.h:processInternalEventQueue
-- sce/include/core/EventProcessingAlgorithms.h:processMacrostep
-- sce/include/core/EventQueueConcept.h:SCE::Core
-- sce/include/core/EventQueueManager.h:SCE::Core
-- sce/include/core/EventQueueManager.h:queue_
-- sce/include/core/InvokeHelper.h:isValidInvokeId
-- sce/include/mesh/IChildSession.h:invokeIdString
-- sce/include/static/StaticExecutionEngine.h
-- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
-- sce/src/runtime/StateMachine.cpp:StateMachine::start
+- sce/include/core/TransitionHelper.h:matchesAnyEventDescriptor
+- sce/include/core/TransitionHelper.h:matchesEventDescriptor
 
 
 
@@ -521,6 +510,10 @@ The following events are generated automatically by the SCXML implementation und
 - sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::deactivateAllRegions
 - sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::exitParallelState
 - sce/src/states/StateExitExecutor.cpp:StateExitExecutor::executeActionNodes
+- sce/include/core/EventProcessingAlgorithms.h:processInternalEventQueue
+- sce/include/core/EventQueueConcept.h:SCE::Core
+- sce/include/core/EventQueueManager.h:SCE::Core
+- sce/include/core/EventQueueManager.h:queue_
 
 
 
@@ -2316,6 +2309,10 @@ The child content of the <script> element represents the script code to be execu
 
 
 
+**Implementations**:
+- sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+
+
 
 **Normative excerpt** (REC-scxml-20150901):
 Conditional expressions are used inside the 'cond' attribute of <transition>, <if> and <elseif>. If a conditional expression cannot be evaluated as a boolean value ('true' or 'false') or if its evaluation causes an error, the SCXML Processor MUST treat the expression as if it evaluated to 'false' and MUST place the error 'error.execution' in the internal event queue. The set of operators in conditional expressions varies depending on the data model, but all data models MUST support the 'In()' predicate, which takes a state ID as its argument and returns true if the state machine is in that state. This predicate allows coordination among parallel regions. Conditional expressions in conformant SCXML documents SHOULD NOT have side effects.
@@ -2834,6 +2831,8 @@ None
 - sce/include/static/StaticExecutionEngine.h:currentEventInvokeId
 - sce/include/static/StaticExecutionEngine.h:performMeshInvoke
 - sce/include/static/StaticExecutionEngine.h:raiseExternal
+- sce/include/core/InvokeHelper.h:isValidInvokeId
+- sce/include/mesh/IChildSession.h:invokeIdString
 
 
 

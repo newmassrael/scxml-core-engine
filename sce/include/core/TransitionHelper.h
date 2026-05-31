@@ -43,7 +43,7 @@ namespace SCE::Core::TransitionHelper {
 /**
  * @brief Check if an event descriptor matches an event name
  *
- * §scxml-3.12 compliant event descriptor matching.
+ * §scxml-3.12.1 compliant event descriptor matching.
  *
  * @param descriptor Event descriptor from transition (e.g., "*", "foo", "foo.*")
  * @param eventName Event name to match (e.g., "foo", "foo.bar")
@@ -83,7 +83,7 @@ inline bool matchesEventDescriptor(const std::string &descriptor, const std::str
 /**
  * @brief Check if any event descriptor in a list matches an event name
  *
- * §scxml-3.12: A transition can have multiple event descriptors.
+ * §scxml-3.12.1: A transition can have multiple event descriptors.
  * The transition matches if at least one descriptor matches.
  *
  * @param descriptors List of event descriptors (e.g., ["foo", "bar.*"])

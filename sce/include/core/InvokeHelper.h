@@ -240,19 +240,19 @@ public:
     }
 
     /**
-     * @brief §scxml-3.12.1: Validate invoke ID format
+     * @brief §scxml-6.4.1: Validate invoke ID format
      *
      * Single Source of Truth for invoke ID validation.
      * Used by both Interpreter and AOT engines.
      *
-     * §scxml-3.12.1: Invoke IDs must be unique within the session.
+     * §scxml-6.4.1: Invoke IDs must be unique within the session.
      * Format can be:
      * - User-provided ID (e.g., "foo", "myInvoke")
      * - Auto-generated ID (e.g., "stateid.platformid.index" format)
      *
      * ARCHITECTURE.md Compliance:
      * - Zero Duplication: Shared validation logic
-     * - Single Source of Truth: §scxml-3.12.1 ID requirements
+     * - Single Source of Truth: §scxml-6.4.1 ID requirements
      *
      * @param invokeId Invoke element identifier to validate
      * @return true if valid (non-empty), false otherwise
@@ -261,7 +261,7 @@ public:
      * @code
      * // Validate user-provided ID
      * if (!InvokeHelper::isValidInvokeId(userProvidedId)) {
-     *     throw std::invalid_argument("§scxml-3.12.1: Invoke ID must not be empty");
+     *     throw std::invalid_argument("§scxml-6.4.1: Invoke ID must not be empty");
      * }
      *
      * // Validate auto-generated ID
@@ -270,7 +270,7 @@ public:
      * @endcode
      */
     static bool isValidInvokeId(const std::string &invokeId) {
-        // §scxml-3.12.1: Invoke ID must not be empty
+        // §scxml-6.4.1: Invoke ID must not be empty
         // Both user-provided and auto-generated IDs must satisfy this requirement
         return !invokeId.empty();
     }
