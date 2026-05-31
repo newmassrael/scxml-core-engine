@@ -85,7 +85,7 @@ public:
  *
  * Zero Duplication: Native platform logic isolated in this class
  *
- * §scxml-5.3: Thread-safe asynchronous event processing for concurrent state machine instances
+ * Thread-safe asynchronous event processing for concurrent state machine instances
  *
  * Architecture:
  * - Main thread: Queues events via EventRaiserImpl::raiseEvent()

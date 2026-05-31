@@ -34,7 +34,7 @@ namespace SCE {
  * - WASM (Emscripten): Synchronous direct execution (no pthread support)
  * - Native (Linux/macOS): Pthread-based worker queue for thread safety
  *
- * §scxml-5.3: Thread-safe execution required for concurrent state machine instances
+ * Thread-safe execution required for concurrent state machine instances
  *
  * References:
  * - ARCHITECTURE.md Zero Duplication Principle: Shared logic through Helper functions

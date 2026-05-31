@@ -143,7 +143,7 @@ public:
     /**
      * @brief Evaluates a foreach array expression using script engine
      *
-     * §scxml-5.4: The 'array' attribute must evaluate to an iterable collection,
+     * §scxml-4.6: The 'array' attribute must evaluate to an iterable collection,
      * specifically objects that satisfy instanceof(Array) in ECMAScript.
      * Non-array values (numbers, strings, booleans, objects) must raise error.execution.
      *
@@ -169,7 +169,7 @@ public:
             return std::nullopt;
         }
 
-        // §scxml-5.4: Validate that the value is an array
+        // §scxml-4.6: Validate that the value is an array
         if (!arrayResult.isArray()) {
             // Empty Lua table converts to ScriptObject with no properties — treat as empty array
             const auto &val = arrayResult.getInternalValue();
