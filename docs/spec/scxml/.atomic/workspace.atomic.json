@@ -355,6 +355,10 @@
         {
           "file": "sce/include/core/EventMatchingHelper.h",
           "symbol": "matchesEventDescriptor"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "ConcurrentRegion::processEvent"
         }
       ],
       "normative_excerpt": {

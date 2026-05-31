@@ -330,6 +330,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/include/core/TransitionHelper.h:matchesAnyEventDescriptor
 - sce/include/core/TransitionHelper.h:matchesEventDescriptor
 - sce/include/core/EventMatchingHelper.h:matchesEventDescriptor
+- sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::processEvent
 
 
 
