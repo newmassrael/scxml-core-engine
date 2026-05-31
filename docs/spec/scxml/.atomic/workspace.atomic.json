@@ -542,10 +542,6 @@
           "symbol": "handleHierarchicalTransition"
         },
         {
-          "file": "sce/src/events/InternalEventTarget.cpp",
-          "symbol": "InternalEventTarget::send"
-        },
-        {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::setImmediateMode"
         },
@@ -568,18 +564,6 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "executeEventCallback"
-        },
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::captureChildState"
-        },
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::restoreChildState"
-        },
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
