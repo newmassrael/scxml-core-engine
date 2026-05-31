@@ -448,7 +448,7 @@ private:
             (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
 
         if (!needsHierarchicalHandling) {
-            // §scxml-3.4: Targetless transition - execute actions without state change
+            // §scxml-3.13: Targetless transition - execute actions without state change
             policy_.executeTransitionActions(*this);
             return false;
         }

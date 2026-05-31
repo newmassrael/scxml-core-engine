@@ -384,7 +384,7 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
 
                 SCE_LOG_DEBUG("StateMachine: Processing queued events after start (iteration {})", iterations);
 
-                // §scxml-3.3: RAII guard to prevent recursive auto-processing during batch event processing
+                // §scxml-3.13: RAII guard to prevent recursive auto-processing during batch event processing
                 {
                     BatchProcessingGuard batchGuard(isBatchProcessing_);
                     adapter.popNext();
@@ -741,7 +741,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 SCE_LOG_DEBUG("SCXML W3C: External transition from parallel state: {} -> {}",
                           stateTransitionResult.fromState, stateTransitionResult.toState);
 
-                // §scxml-3.3: Process all internal events before returning
+                // §scxml-3.13: Process all internal events before returning
                 // Only process if this is the top-level event (not nested/recursive call)
                 // Interactive mode: Skip auto-processing to allow manual step-by-step execution
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
@@ -1123,7 +1123,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
             finalResult.toState = currentState;  // Parallel state remains active
             finalResult.eventName = eventName;
 
-            // §scxml-3.3: Internal events will be processed at hierarchical transition completion
+            // §scxml-3.13: Internal events will be processed at hierarchical transition completion
             // Removed auto-processing here to prevent out-of-order execution during eventless transitions
             return finalResult;
         } else {
@@ -1200,7 +1200,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     }
                 }
 
-                // §scxml-3.3: Process all internal events before returning
+                // §scxml-3.13: Process all internal events before returning
                 // Only process if this is the top-level event (not nested/recursive call)
                 // Interactive mode: Skip auto-processing to allow manual step-by-step execution
                 if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
@@ -1238,7 +1238,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     result.eventName = eventName;
     result.errorMessage = "No valid transitions found in active state hierarchy";
 
-    // §scxml-3.3: Process all internal events before returning
+    // §scxml-3.13: Process all internal events before returning
     // After processing an external event, the system MUST process all queued internal events
     // This ensures done.state events are automatically processed (test: W3C_Parallel_CompletionCriteria)
     // Only process if this is the top-level event (not nested/recursive call)

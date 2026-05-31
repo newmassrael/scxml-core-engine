@@ -639,7 +639,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterStateWithAncestors
 - sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::updateParallelRegionCurrentStates
 - sce/src/runtime/StateMachine.cpp:StateMachine::enterState
-- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
 - sce/src/runtime/StateMachine.cpp:StateMachine::start
 - sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
 - sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::setCurrentState
@@ -716,7 +715,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/include/states/ConcurrentStateTypes.h:externalTransitionTarget
 - sce/include/states/IConcurrentRegion.h:setDoneStateCallback
 - sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
-- sce/include/static/StaticExecutionEngine.h:executeTransition
 - sce/include/static/StaticExecutionEngine.h:getActiveStates
 - sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterStateWithAncestors
 - sce/src/runtime/StateMachine.cpp:StateMachine::checkEventlessTransitions
