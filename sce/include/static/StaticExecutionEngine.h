@@ -677,7 +677,7 @@ public:
     }
 
     /**
-     * @brief Cancel a scheduled event (§scxml-6.2.5)
+     * @brief Cancel a scheduled event (§scxml-6.3)
      *
      * @param sendId Send ID to cancel
      * @return true if event was cancelled

@@ -172,7 +172,7 @@ public:
     /**
      * @brief Cancel a scheduled event
      *
-     * §scxml-6.2.5: <cancel sendidexpr="..."/>
+     * §scxml-6.3: <cancel sendidexpr="..."/>
      *
      * @param sendId The sendid of the event to cancel
      * @return true if sendid recorded for cancellation

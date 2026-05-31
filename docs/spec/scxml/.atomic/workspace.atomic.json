@@ -3511,36 +3511,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/include/common/LogicalTimeScheduler.h",
-          "symbol": "cancelEvent"
-        },
-        {
-          "file": "sce/include/common/LogicalTimeScheduler.h",
-          "symbol": "popReadyEvent"
-        },
-        {
-          "file": "sce/include/common/LogicalTimeScheduler.h",
-          "symbol": "sendId"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "cancelEvent"
-        },
-        {
-          "file": "sce/include/wrappers/GameLoopTimer.h",
-          "symbol": "cancel"
-        },
-        {
-          "file": "sce/include/wrappers/TimerManager.h",
-          "symbol": "generateTimerSendId"
-        },
-        {
-          "file": "sce/include/wrappers/TimerManager.h",
-          "symbol": "stopTimer"
-        }
-      ],
       "normative_excerpt": {
         "text": "The type of the <send> operation specifies the method that the SCXML processor MUST use to deliver the message to its target. A conformant SCXML document MAY use either the 'type' or the 'typeexpr' attribute to define the type. If neither the 'type' nor the 'typeexpr' is defined, the SCXML Processor MUST assume the default value of http://www.w3.org/TR/scxml/#SCXMLEventProcessor. If the SCXML Processor does not support the type that is specified, it MUST place the event error.execution on the internal event queue. SCXML Processors MUST support the following type: Value Details http://www.w3.org/TR/scxml/#SCXMLEventProcessor Target is an SCXML session. The transport mechanism is platform-specific. For details on the http://www.w3.org/TR/scxml/#SCXMLEventProcessor type, see C.1 SCXML Event I/O Processor. Support for HTTP POST is optional, however Processors that support it must use the following value for the \"type\" attribute: Value Details http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor Target is a URL. Data is sent via HTTP POST For details on the http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor type, see C.2 Basic HTTP Event I/O Processor. Processors MAY support other types such as web-services, SIP or basic HTTP GET. When they do so, they SHOULD assign such types the URI of the description of the relevant Event I/O Processor. Processors MAY define short form notations as an authoring convenience (e.g., \"scxml\" as equivalent to http://www.w3.org/TR/scxml/#SCXMLEventProcessor).",
         "anchor_url": "https://www.w3.org/TR/scxml/#SendTypes",
@@ -3599,6 +3569,26 @@
         {
           "file": "sce/src/events/EventSchedulerImpl.h",
           "symbol": "executionQueue_"
+        },
+        {
+          "file": "sce/include/common/LogicalTimeScheduler.h",
+          "symbol": "popReadyEvent"
+        },
+        {
+          "file": "sce/include/common/LogicalTimeScheduler.h",
+          "symbol": "cancelEvent"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "cancelEvent"
+        },
+        {
+          "file": "sce/include/wrappers/GameLoopTimer.h",
+          "symbol": "cancel"
+        },
+        {
+          "file": "sce/include/wrappers/TimerManager.h",
+          "symbol": "stopTimer"
         }
       ],
       "normative_excerpt": {
@@ -3612,6 +3602,16 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.3",
       "decision_status": "active",
+      "implementations": [
+        {
+          "file": "sce/include/common/LogicalTimeScheduler.h",
+          "symbol": "sendId"
+        },
+        {
+          "file": "sce/include/wrappers/TimerManager.h",
+          "symbol": "generateTimerSendId"
+        }
+      ],
       "normative_excerpt": {
         "text": "Name Required Attribute Constraints Type Default Value Valid Values Description sendid false Must not occur with sendidexpr. IDREF none The sendid of a delayed event The ID of the event(s) to be cancelled. If multiple delayed events have this sendid, the Processor will cancel them all. sendidexpr false Must not occur with sendid. Value Expression none Any expression that evaluates to the ID of a delayed event A dynamic alternative to 'sendid'. If this attribute is present, the SCXML Processor MUST evaluate it when the parent <cancel> element is evaluated and treat the result as if it had been entered as the value of 'sendid'. A conformant SCXML document MUST specify exactly one of sendid or sendidexpr.",
         "anchor_url": "https://www.w3.org/TR/scxml/#N10F08",

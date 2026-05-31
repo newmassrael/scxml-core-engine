@@ -65,7 +65,7 @@ public:
     struct ScheduledEvent {
         EventType event;
         double fireTimeMs;      ///< Logical time when event should fire (milliseconds)
-        std::string sendId;     ///< §scxml-6.2.5: Unique identifier for cancellation
+        std::string sendId;     ///< §scxml-6.3.1: Unique identifier for cancellation
         std::string eventData;  ///< §scxml-5.10: Event data from params
 
         ScheduledEvent(EventType evt, double fireTime, std::string id = "", std::string data = "")
@@ -147,7 +147,7 @@ public:
             auto scheduledEvent = queue_.top();
             queue_.pop();
 
-            // §scxml-6.2.5: Skip cancelled events
+            // §scxml-6.3: Skip cancelled events
             if (!scheduledEvent.sendId.empty() && isCancelled(scheduledEvent.sendId)) {
                 cancelledSendIds_.erase(scheduledEvent.sendId);  // Clean up
                 continue;
@@ -171,7 +171,7 @@ public:
     /**
      * @brief Cancel a scheduled event by sendid
      *
-     * §scxml-6.2.5: <cancel sendidexpr="..."/> cancels pending delayed send
+     * §scxml-6.3: <cancel sendidexpr="..."/> cancels pending delayed send
      *
      * @param sendId The sendid of the event to cancel
      * @return true if sendid recorded for cancellation
