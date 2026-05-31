@@ -24,7 +24,7 @@ private:
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
     std::string sessionId_;
-    SchedulerMode schedulerMode_ = SchedulerMode::AUTOMATIC;  // §scxml-3.13: Default to normal mode
+    SchedulerMode schedulerMode_ = SchedulerMode::AUTOMATIC;  // Default to normal (automatic) mode
 
 public:
     StateMachineBuilder() = default;
@@ -70,7 +70,7 @@ public:
     }
 
     /**
-     * @brief Set scheduler mode for parent-child inheritance (§scxml-3.13)
+     * @brief Set scheduler mode for parent-child inheritance
      *
      * Enables parent state machine to propagate MANUAL mode to child invoke sessions
      * for interactive debugging with time-travel support.
