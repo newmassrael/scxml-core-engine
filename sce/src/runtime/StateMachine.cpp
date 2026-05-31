@@ -1634,7 +1634,7 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
             updateStatistics();
             stats_.totalTransitions++;
 
-            // §scxml-3.13: Track last executed transition for interactive visualizer
+            // Track last executed transition for interactive visualizer
             // IMPORTANT: Set BEFORE enterState() because enterState() may trigger eventless transitions
             // that will overwrite this value with the correct final transition
             lastTransitionSource_ = fromState;
@@ -1846,7 +1846,7 @@ std::vector<TransitionDescriptorString> StateMachine::getLastOptimalTransitions(
 }
 
 bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states) {
-    // §scxml-3.13: Complete state machine restoration for time-travel debugging
+    // Complete state machine restoration for time-travel debugging
     // ARCHITECTURE.md: Template Method pattern - encapsulates restoration lifecycle
     // to prevent temporal coupling and maintain Single Source of Truth
 
@@ -1886,7 +1886,7 @@ bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states) {
 }
 
 void StateMachine::setRestoringSnapshotOnAllRegions(bool restoring) {
-    // §scxml-3.13: Enable/disable restoration mode on all parallel regions
+    // Enable/disable restoration mode on all parallel regions
     // Prevents side effects (callbacks, event generation) during snapshot restoration
 
     if (!model_) {
@@ -1917,7 +1917,7 @@ void StateMachine::setRestoringSnapshotOnAllRegions(bool restoring) {
 }
 
 void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &states) {
-    // §scxml-3.13: Time-travel debugging - restore configuration without side effects
+    // Time-travel debugging - restore configuration without side effects
     // ARCHITECTURE.md Zero Duplication: Uses StateHierarchyManager's addStateToConfigurationWithoutOnEntry
     // INTERNAL USE ONLY: Called by restoreFromSnapshot() after JS environment initialization
 
@@ -1937,21 +1937,21 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
         SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Calling hierarchyManager_->reset()");
         hierarchyManager_->reset();
 
-        // §scxml-3.13: Restore states in document order (already provided by vector)
+        // Restore states in document order (already provided by vector)
         // No sorting needed - vector from snapshot preserves correct document order (Test 570 fix)
         for (const auto &stateId : states) {
             hierarchyManager_->addStateToConfigurationWithoutOnEntry(stateId);
             SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Added state '{}' to configuration", stateId);
         }
 
-        // §scxml-3.13: Set running state after restoration to enable event processing
+        // Set running state after restoration to enable event processing
         // CRITICAL FIX: Child state machines must be running to receive events from parent
         // Without this, stepBackward() restoration leaves child in stopped state (Test 192)
         SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [BEFORE isRunning_=true] About to set isRunning_ = true");
         isRunning_ = true;
         SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [AFTER isRunning_=true] Set to true, mutex will release");
 
-        // §scxml-3.13: Synchronize parallel region states with restored configuration (Test 570 fix)
+        // Synchronize parallel region states with restored configuration (Test 570 fix)
         // After hierarchyManager restoration, parallel regions need their currentState_ updated
         // Without this, regions have stale state causing recursive event processing failures
         SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Syncing parallel region states");
@@ -2017,7 +2017,7 @@ void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &s
                             auto concreteRegion = std::dynamic_pointer_cast<ConcurrentRegion>(region);
                             if (concreteRegion) {
                                 concreteRegion->setCurrentState(regionActiveState);
-                                concreteRegion->setActiveForRestore();  // §scxml-3.13: Mark region as active for
+                                concreteRegion->setActiveForRestore();  // Mark region as active for
                                                                         // event processing
                                 SCE_LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Synced region '{}' to state '{}' "
                                           "and marked ACTIVE",
@@ -2537,7 +2537,7 @@ bool StateMachine::executeTransitionDirect(IStateNode *sourceState, std::shared_
     updateStatistics();
     stats_.totalTransitions++;
 
-    // §scxml-3.13: Track last executed transition for interactive visualizer
+    // Track last executed transition for interactive visualizer
     // Only update if at deeper recursion level (preserves actual last transition in eventless chains)
     if (eventlessRecursionDepth_ == 0 || eventlessRecursionDepth_ > lastTransitionDepth_) {
         lastTransitionSource_ = fromState;
