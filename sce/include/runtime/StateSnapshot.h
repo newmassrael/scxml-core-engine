@@ -29,7 +29,7 @@ struct EventSnapshot {
     std::string origin;      // §scxml-5.10.1: _event.origin (session ID)
     std::string invokeid;    // §scxml-5.10.1: _event.invokeid
 
-    // §scxml-3.13: Timestamp for FIFO ordering preservation during snapshot restore
+    // Timestamp for FIFO ordering preservation during snapshot restore
     // Stores nanoseconds since epoch for precise queue order restoration
     int64_t timestampNs;
 
@@ -119,7 +119,7 @@ struct InvokeSnapshot {
  */
 struct StateSnapshot {
     // Active configuration (§scxml-3.11)
-    // §scxml-3.13: Use vector to preserve document order for time-travel debugging (Test 570)
+    // Use vector to preserve document order for time-travel debugging (Test 570)
     std::vector<std::string> activeStates;
 
     // Data model state (§scxml-5)
@@ -137,7 +137,7 @@ struct StateSnapshot {
     std::vector<ScheduledEventSnapshot> scheduledEvents;
 
     // Event execution history for accurate state restoration via replay
-    // §scxml-3.13: Store all processed events to enable time-travel debugging
+    // Store all processed events to enable time-travel debugging
     std::vector<EventSnapshot> executedEvents;
 
     // §scxml-3.11: Active invocations (part of configuration)
@@ -148,12 +148,12 @@ struct StateSnapshot {
     int stepNumber;
     std::string lastEventName;
 
-    // §scxml-3.13: Scheduler logical time for MANUAL mode deterministic stepping
+    // Scheduler logical time for MANUAL mode deterministic stepping
     // In MANUAL mode, logical time must be saved/restored with snapshots to ensure
     // deterministic event scheduling after snapshot restoration (time-travel debugging)
     int64_t schedulerLogicalTimeMs;
 
-    // §scxml-3.13: Dual transition tracking for time-travel debugging
+    // Dual transition tracking for time-travel debugging
     // Incoming transition: How we arrived at this state (previous step's transition)
     std::string incomingTransitionSource;
     std::string incomingTransitionTarget;
@@ -253,7 +253,7 @@ public:
     /**
      * @brief Update outgoing transition for a specific snapshot
      *
-     * §scxml-3.13: After executing a transition, update the previous snapshot's
+     * After executing a transition, update the previous snapshot's
      * outgoing transition to enable accurate step backward visualization.
      *
      * This allows UI to display "cancelled transition" when stepping backward.
