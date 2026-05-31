@@ -3111,7 +3111,7 @@ bool StateMachine::setupJSEnvironment() {
         return false;
     }
 
-    // Register state query callback for In() function support (§scxml-5.9.2)
+    // Register state query callback for In() function support (§scxml-5.9.1)
     // Uses IScriptEngine interface method instead of JSEngine-specific setStateMachine()
     // RACE CONDITION FIX: Capture weak_ptr to prevent heap-use-after-free (W3C Test 530)
     std::weak_ptr<StateMachine> weakSelf = shared_from_this();

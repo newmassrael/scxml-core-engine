@@ -567,7 +567,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
     });
     lua_setglobal(L, "parseFloat");
 
-    // In(stateId): §scxml-5.9.2 In() predicate
+    // In(stateId): §scxml-5.9.1 In() predicate
     // Uses C++ state query callbacks
     lua_pushcfunction(L, [](lua_State *Ls) -> int {
         const char *stateId = luaL_checkstring(Ls, 1);
