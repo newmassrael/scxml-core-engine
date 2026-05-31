@@ -43,8 +43,9 @@ concurrency:
 
 env:
   # Pin to a Mnemosyne commit, never a branch; --locked builds against its
-  # committed Cargo.lock for a reproducible binary. R381 (7db5a1e).
-  MNEMOSYNE_REV: 7db5a1e18d6ce2fd0f72944e29d902de61341440
+  # committed Cargo.lock for a reproducible binary. R382 (572d532) adds the
+  # in-tree tree-sitter-cpp SymbolResolver wired by [plugins.symbol_resolver.cpp].
+  MNEMOSYNE_REV: 572d532f57791c09a953783d7de9e5a2a6830443
 
 jobs:
   citations:
