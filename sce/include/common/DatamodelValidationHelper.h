@@ -23,7 +23,7 @@
 namespace SCE {
 
 /**
- * @brief Helper for §scxml-6.3.2 datamodel validation
+ * @brief Helper for §scxml-6.4.3 datamodel validation
  *
  * Single Source of Truth for child datamodel variable validation.
  * Used by both Interpreter (InvokeExecutor.cpp) and AOT engines (generated code).
@@ -31,7 +31,7 @@ namespace SCE {
  * ARCHITECTURE.md Compliance:
  * - Zero Duplication: Shared validation logic across engines
  * - Helper Function Pattern: Follows SendHelper, ForeachHelper design
- * - §scxml-6.3.2: "If the name of a param element or the key of a namelist item
+ * - §scxml-6.4.3: "If the name of a param element or the key of a namelist item
  *   do not match the name of a data element in the invoked process, the Processor
  *   MUST NOT add the value to the invoked session's data model"
  */
@@ -40,7 +40,7 @@ public:
     /**
      * @brief Build set of child datamodel variable names
      *
-     * §scxml-6.3.2: Extract variable names from child's datamodel for validation.
+     * §scxml-6.4.3: Extract variable names from child's datamodel for validation.
      * Used to validate namelist and param bindings.
      *
      * @param varNames Vector of variable names from child's datamodel
@@ -53,7 +53,7 @@ public:
     /**
      * @brief Check if variable is declared in child's datamodel
      *
-     * §scxml-6.3.2: Validate that variable exists in child before binding.
+     * §scxml-6.4.3: Validate that variable exists in child before binding.
      * Prevents creating undeclared variables in child session.
      *
      * ARCHITECTURE.md Zero Duplication:
