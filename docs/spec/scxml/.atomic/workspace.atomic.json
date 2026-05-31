@@ -538,18 +538,6 @@
           "symbol": "getStateDocumentPosition"
         },
         {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "isRestoringSnapshot_"
-        },
-        {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setActiveForRestore"
-        },
-        {
-          "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setRestoringSnapshot"
-        },
-        {
           "file": "sce/include/states/ConcurrentStateTypes.h",
           "symbol": "hasActions"
         },
@@ -560,10 +548,6 @@
         {
           "file": "sce/include/states/ConcurrentStateTypes.h",
           "symbol": "isInternal"
-        },
-        {
-          "file": "sce/include/states/IConcurrentRegion.h",
-          "symbol": "setRestoringSnapshot"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -739,15 +723,7 @@
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::setActiveForRestore"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::setCurrentState"
-        },
-        {
-          "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::setRestoringSnapshot"
         },
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",

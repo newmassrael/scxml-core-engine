@@ -173,7 +173,7 @@ public:
     virtual void setCurrentState(const std::string &stateId) = 0;
 
     /**
-     * @brief Enable/disable restoration mode for snapshot restoration (§scxml-3.13)
+     * @brief Enable/disable restoration mode for snapshot restoration
      *
      * When enabled, prevents side effects like doneStateCallback from being triggered
      * during snapshot restoration. This ensures time-travel debugging doesn't generate
