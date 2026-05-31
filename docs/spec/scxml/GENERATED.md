@@ -563,6 +563,7 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/static/StaticExecutionEngine.h:initialize
 - sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
 - sce/src/runtime/StateMachine.cpp:StateMachine::start
+- sce/src/parsing/ParsingCommon.cpp:ParsingCommon::isScxmlNamespace
 
 
 
@@ -669,10 +670,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 
-
-
-**Implementations**:
-- sce/src/runtime/StateMachine.cpp:StateMachine::isInFinalState
 
 
 
@@ -799,7 +796,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 **Implementations**:
-- sce/src/parsing/ParsingCommon.cpp:ParsingCommon::isScxmlNamespace
 - sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::validateModel
 
 
@@ -927,6 +923,7 @@ None
 - sce/src/runtime/StateMachine.cpp:StateMachine::enterState
 - sce/src/runtime/StateMachine.cpp:StateMachine::handleCompoundStateFinalChild
 - sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::generateDoneStateEventIfComplete
+- sce/src/runtime/StateMachine.cpp:StateMachine::isInFinalState
 
 
 

@@ -33,7 +33,7 @@ bool ParsingCommon::isScxmlNamespace(const std::shared_ptr<IXMLElement> &element
     if (!element) {
         return false;
     }
-    // §scxml-3.5 requires the namespace declaration on root —
+    // §scxml-3.2 requires the namespace declaration on root —
     // strict matches the Rust AOT pipeline where `xsd_validator`
     // rejects xmlns-less documents at the parser boundary. The C++
     // Interpreter has no XSD step today (tracked separately as a

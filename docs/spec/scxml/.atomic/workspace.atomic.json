@@ -960,6 +960,10 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::start"
+        },
+        {
+          "file": "sce/src/parsing/ParsingCommon.cpp",
+          "symbol": "ParsingCommon::isScxmlNamespace"
         }
       ],
       "normative_excerpt": {
@@ -1131,12 +1135,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3.3",
       "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::isInFinalState"
-        }
-      ],
       "normative_excerpt": {
         "text": "Name Required Attribute Constraints Type Default Value Valid Values Description id false none ID none A valid id as defined in [XML Schema] The identifier for this state. See 3.14 IDs for details. initial false MUST NOT be specified in conjunction with the <initial> element. MUST NOT occur in atomic states. IDREFS none A legal state specification. See 3.11 Legal State Configurations and Specifications for details. The id of the default initial state (or states) for this state.",
         "anchor_url": "https://www.w3.org/TR/scxml/#N102B8",
@@ -1314,10 +1312,6 @@
       "decision_status": "active",
       "implementations": [
         {
-          "file": "sce/src/parsing/ParsingCommon.cpp",
-          "symbol": "ParsingCommon::isScxmlNamespace"
-        },
-        {
           "file": "sce/src/parsing/SCXMLParser.cpp",
           "symbol": "SCE::SCXMLParser::validateModel"
         }
@@ -1437,6 +1431,10 @@
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
           "symbol": "ConcurrentStateNode::generateDoneStateEventIfComplete"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::isInFinalState"
         }
       ],
       "normative_excerpt": {
