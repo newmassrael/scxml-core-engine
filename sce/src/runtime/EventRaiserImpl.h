@@ -66,7 +66,7 @@ public:
      * StateMachine reads this during processEvent() to populate _event fields.
      */
     struct EventContext {
-        std::string originSessionId;  // §scxml-6.4: _event.origin
+        std::string originSessionId;  // §scxml-5.10: _event.origin
         std::string sendId;           // §scxml-5.10: _event.sendid
         std::string invokeId;         // §scxml-5.10: _event.invokeid
         std::string originType;       // §scxml-5.10: _event.origintype

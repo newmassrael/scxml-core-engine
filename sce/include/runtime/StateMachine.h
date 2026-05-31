@@ -408,7 +408,7 @@ public:
     void setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher);
 
     /**
-     * @brief §scxml-6.5: Set completion callback for top-level final state notification
+     * @brief §scxml-6.4.3: Set completion callback for top-level final state notification
      *
      * This callback is invoked when the StateMachine reaches a top-level final state,
      * AFTER all onexit handlers have been executed. Used by invoke mechanism to
@@ -685,7 +685,7 @@ private:
     // EventRaiser for SCXML compliance mode control
     std::shared_ptr<IEventRaiser> eventRaiser_;
 
-    // §scxml-6.5: Completion callback for invoke done.invoke event
+    // §scxml-6.4.3: Completion callback for invoke done.invoke event
     CompletionCallback completionCallback_;
 
     // §scxml-5.5 + 6.4.3: donedata payload captured when the machine

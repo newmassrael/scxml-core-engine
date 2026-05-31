@@ -246,7 +246,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     session.isActive = true;
     session.autoForward = invoke->isAutoForward();
     session.finalizeScript =
-        invoke->getFinalize();  // §scxml-6.4: Store finalize handler for execution before processing child events
+        invoke->getFinalize();  // §scxml-6.5.2: Store finalize handler for execution before processing child events
     session.scxmlContent = scxmlContent;  // §scxml-3.11: Store SCXML content for snapshot restoration
 
     // Build StateMachine with dependency injection, then wrap in RAII context
@@ -268,10 +268,10 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Created child StateMachine with StateMachineBuilder for session: {}",
               childSessionId);
 
-    // §scxml-6.5: Register completion callback for done.invoke generation
+    // §scxml-6.4.3: Register completion callback for done.invoke generation
     // This callback is invoked AFTER the child's final state onexit handlers complete
     // IMPORTANT: Use weak_ptr to prevent accessing destroyed parent StateMachine (thread-safe)
-    // §scxml-6.5.1: Completion callback registered for both normal execution and snapshot restoration
+    // §scxml-6.4.3: Completion callback registered for both normal execution and snapshot restoration
     // Child state machines must send done.invoke when reaching final state after being restored
     std::weak_ptr<StateMachine> weakParentSM = parentStateMachine_;
     weakChildSM.lock()->setCompletionCallback([weakParentSM, weakChildSM, invokeid, childSessionId, parentSessionId,
@@ -294,7 +294,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             return;
         }
 
-        // §scxml-6.5: Generate done.invoke.id event
+        // §scxml-6.4.3: Generate done.invoke.id event
         // ARCHITECTURE.md: Use InvokeHelper for Single Source of Truth (Zero Duplication with AOT)
         std::string doneEvent = SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeid);
 
@@ -543,7 +543,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                   invokeid);
     }
 
-    // §scxml-6.5: done.invoke generation is now handled by completion callback
+    // §scxml-6.4.3: done.invoke generation is now handled by completion callback
     // The callback ensures proper event ordering: child onexit → done.invoke
     // No need for synchronous done.invoke generation here
 
@@ -1377,7 +1377,7 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
 
                     // Recreate scheduled events from snapshot with accurate remainingTime
                     for (const auto &eventSnapshot : childSnapshot.scheduledEvents) {
-                        // §scxml-6.2.4: Recreate send operation with remaining time
+                        // §scxml-6.2.3: Recreate send operation with remaining time
                         EventDescriptor event;
                         event.eventName = eventSnapshot.eventName;
                         event.data = eventSnapshot.eventData;

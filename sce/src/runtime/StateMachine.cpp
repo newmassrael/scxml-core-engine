@@ -449,7 +449,7 @@ void StateMachine::stop() {
 }
 
 StateMachine::TransitionResult StateMachine::processEvent(const std::string &eventName, const std::string &eventData) {
-    // §scxml-6.4: Check if there's an origin session ID from EventRaiser thread-local storage
+    // §scxml-5.10: Check if there's an origin session ID from EventRaiser thread-local storage
     std::string originSessionId = EventRaiserImpl::getCurrentOriginSessionId();
 
     // §scxml-5.10: Check if there's a send ID from EventRaiser thread-local storage (for error events)
@@ -625,7 +625,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
             SCE_LOG_DEBUG("StateMachine: Executing finalize handler BEFORE processing event '{}', script: '{}'", eventName,
                       finalizeScript);
 
-            // §scxml-6.4: Parse and execute finalize as SCXML executable content
+            // §scxml-6.5.2: Parse and execute finalize as SCXML executable content
             // Finalize contains elements like <assign>, <script>, <log>, <raise>, <if>, <foreach> etc.
             if (actionExecutor_) {
                 try {
@@ -2362,7 +2362,7 @@ bool StateMachine::enterState(const std::string &stateId) {
     SCE_LOG_DEBUG("Successfully entered state using hierarchy manager: {} (current: {})", stateId, getCurrentState());
 
     // §scxml-3.13: "If it has entered a final state that is a child of scxml, it MUST halt processing"
-    // §scxml-6.5: Invoke completion callback for invoked child StateMachines
+    // §scxml-6.4.3: Invoke completion callback for invoked child StateMachines
     // IMPORTANT: ALL StateMachines must halt, but only invoked ones call completionCallback
     // IMPORTANT: Parallel states are NOT final states, even when all regions complete
     if (model_) {
@@ -2412,7 +2412,7 @@ bool StateMachine::enterState(const std::string &stateId) {
                     SCE_LOG_WARN("StateMachine: Failed to execute onexit for final state: {}", actualCurrentState);
                 }
 
-                // §scxml-6.5: Callback is invoked AFTER onexit handlers execute (for invoked StateMachines)
+                // §scxml-6.4.3: Callback is invoked AFTER onexit handlers execute (for invoked StateMachines)
                 // This ensures correct event order: child events → done.invoke
                 if (completionCallback_) {
                     try {
@@ -3902,7 +3902,7 @@ void StateMachine::setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDis
     }
 }
 
-// §scxml-6.5: Completion callback management
+// §scxml-6.4.3: Completion callback management
 void StateMachine::setCompletionCallback(CompletionCallback callback) {
     completionCallback_ = callback;
     SCE_LOG_DEBUG("StateMachine: Completion callback {} for session: {}", callback ? "set" : "cleared", sessionId_);

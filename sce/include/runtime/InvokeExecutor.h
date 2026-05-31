@@ -106,7 +106,7 @@ public:
     std::vector<std::shared_ptr<StateMachine>> getAutoForwardSessions(const std::string &parentSessionId);
 
     /**
-     * @brief Get all active invoke sessions for visualization (§scxml-6.3)
+     * @brief Get all active invoke sessions for visualization (§scxml-6.4)
      * @param parentSessionId Parent session ID
      * @return Vector of child StateMachine shared_ptrs regardless of autoForward setting
      */
@@ -345,7 +345,7 @@ public:
     std::vector<std::shared_ptr<StateMachine>> getAutoForwardSessions(const std::string &parentSessionId);
 
     /**
-     * @brief Get all active invoke sessions for visualization (§scxml-6.3)
+     * @brief Get all active invoke sessions for visualization (§scxml-6.4)
      * @param parentSessionId Parent session ID
      * @return Vector of child StateMachine shared_ptrs regardless of autoForward setting
      *
@@ -399,7 +399,7 @@ private:
     IScriptEngine &scriptEngine_;
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
 
-    // §scxml-6.5: Parent StateMachine weak_ptr for completion callback state checking (thread-safe)
+    // §scxml-6.4.3: Parent StateMachine weak_ptr for completion callback state checking (thread-safe)
     std::weak_ptr<StateMachine> parentStateMachine_;
 
     // Track invoke sessions by parent session (for cancellation on state exit)
