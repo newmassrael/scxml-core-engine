@@ -163,7 +163,7 @@ using ScxmlInvokeCancelCallback =
  *
  * Key SCXML standards implemented:
  * - Internal event queue with FIFO ordering (§scxml-3.12.1)
- * - Entry/exit action execution (§scxml-3.7, 3.8)
+ * - Entry/exit action execution (§scxml-3.8, 3.9)
  * - Event processing loop (§scxml-D-mainEventLoop)
  *
  * @tparam StatePolicy Policy class providing state-specific implementations.
@@ -756,7 +756,7 @@ public:
 
 protected:
     /**
-     * @brief Execute entry actions for a state (§scxml-3.7)
+     * @brief Execute entry actions for a state (§scxml-3.8)
      *
      * Entry actions are executable content that runs when entering a state.
      * This includes <onentry> blocks which may contain <raise>, <assign>, etc.
@@ -772,7 +772,7 @@ protected:
     }
 
     /**
-     * @brief Execute exit actions for a state (§scxml-3.8)
+     * @brief Execute exit actions for a state (§scxml-3.9)
      *
      * Exit actions are executable content that runs when exiting a state.
      * This includes <onexit> blocks.
@@ -1019,7 +1019,7 @@ public:
         // whole is still running while sibling regions are active.
         if (isGlobalFinalState() && completionCallback_) {
             SCE_LOG_DEBUG("AOT initialize: Reached top-level final state during initialization, invoking completion callback");
-            // §scxml-3.8: Execute onexit actions for final state before notifying parent
+            // §scxml-3.9: Execute onexit actions for final state before notifying parent
             std::vector<State> activeStates = getActiveStates();
             executeOnExit(currentState_, activeStates);
             completionCallback_();

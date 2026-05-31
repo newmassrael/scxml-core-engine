@@ -1008,9 +1008,6 @@
       "decision_status": "active",
       "implementations": [
         {
-          "file": "sce/include/core/EventProcessingAlgorithms.h"
-        },
-        {
           "file": "sce/include/core/HierarchicalStateHelper.h",
           "symbol": "buildEntryChain"
         },
@@ -1450,10 +1447,6 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeOnEntry"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "isGlobalFinalState"
         },
         {
@@ -1566,14 +1559,6 @@
           "symbol": "entryActionBlocks_"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeOnExit"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize"
-        },
-        {
           "file": "sce/src/model/StateNode.cpp",
           "symbol": "SCE::StateNode::addEntryActionBlock"
         },
@@ -1600,6 +1585,10 @@
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
           "symbol": "ConcurrentStateNode::addEntryActionBlock"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "executeOnEntry"
         }
       ],
       "normative_excerpt": {
@@ -1699,6 +1688,14 @@
         {
           "file": "sce/src/states/StateExitExecutor.cpp",
           "symbol": "StateExitExecutor::executeActionNodes"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "executeOnExit"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "initialize"
         }
       ],
       "normative_excerpt": {

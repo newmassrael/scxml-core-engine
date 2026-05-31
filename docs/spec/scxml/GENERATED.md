@@ -623,7 +623,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 **Implementations**:
-- sce/include/core/EventProcessingAlgorithms.h
 - sce/include/core/HierarchicalStateHelper.h:buildEntryChain
 - sce/include/core/ParallelExitEntryHelper.h
 - sce/include/model/SCXMLModel.h:getInitialState
@@ -930,7 +929,6 @@ None
 - sce/include/runtime/StateMachine.h:handleCompoundStateFinalChild
 - sce/include/states/ConcurrentStateNode.h:generateDoneStateEventIfComplete
 - sce/include/states/ConcurrentStateNode.h:hasNotifiedCompletion
-- sce/include/static/StaticExecutionEngine.h:executeOnEntry
 - sce/include/static/StaticExecutionEngine.h:isGlobalFinalState
 - sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 - sce/src/runtime/StateMachine.cpp:StateMachine::checkEventlessTransitions
@@ -1010,8 +1008,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/include/parsing/StateNodeParser.h:parseExecutableContentBlock
 - sce/include/states/ConcurrentStateNode.h:addEntryActionBlock
 - sce/include/states/ConcurrentStateNode.h:entryActionBlocks_
-- sce/include/static/StaticExecutionEngine.h:executeOnExit
-- sce/include/static/StaticExecutionEngine.h:initialize
 - sce/src/model/StateNode.cpp:SCE::StateNode::addEntryActionBlock
 - sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseEntryExitActionNodes
 - sce/src/runtime/StateMachine.cpp:StateMachine::executeEntryActions
@@ -1019,6 +1015,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - sce/src/runtime/StateMachine.cpp:StateMachine::setupAndActivateParallelState
 - sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
 - sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::addEntryActionBlock
+- sce/include/static/StaticExecutionEngine.h:executeOnEntry
 
 
 
@@ -1092,6 +1089,8 @@ The children of the <onentry> handler consist of executable content as defined i
 - sce/src/runtime/StateMachine.cpp:StateMachine::executeExitActions
 - sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::addEntryActionBlock
 - sce/src/states/StateExitExecutor.cpp:StateExitExecutor::executeActionNodes
+- sce/include/static/StaticExecutionEngine.h:executeOnExit
+- sce/include/static/StaticExecutionEngine.h:initialize
 
 
 

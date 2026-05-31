@@ -139,7 +139,7 @@ public:
     }
 
     /**
-     * @brief §scxml-3.3 / D.1: Process complete macrostep
+     * @brief §scxml-3.13 / D.1: Process complete macrostep
      *
      * External event processing → Exhaust internal events → Eventless transitions.
      * Core event processing pattern for Interpreter and AOT engines.
