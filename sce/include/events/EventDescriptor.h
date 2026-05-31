@@ -28,7 +28,7 @@ struct EventDescriptor {
     std::chrono::milliseconds delay{0};                      // Delivery delay
     std::map<std::string, std::vector<std::string>> params;  // Additional parameters (W3C: supports duplicate names)
     std::map<std::string, ScriptValue> typedParams;          // Typed params preserving ScriptValue (engine-agnostic)
-    std::string content;                                     // §scxml-C-2: Content for HTTP body
+    std::string content;                                     // Content for HTTP body
 
     // Logical execution time for MANUAL mode FIFO preservation (visualizer stepping)
     std::chrono::milliseconds logicalExecuteTime{0};  // Scheduled logical time (0 = not set, use current time)
@@ -85,7 +85,7 @@ struct SendResult {
     std::string sendId;        // Assigned send ID (if successful)
     std::string errorMessage;  // Error description (if failed)
 
-    // §scxml-C-2: HTTP response event data (for WASM compatibility)
+    // HTTP response event data (for WASM compatibility)
     // WASM requires parsing HTTP response body to extract event information
     std::optional<std::string> responseEventName;  // Event name from HTTP response JSON
     std::optional<std::string> responseEventData;  // Event data from HTTP response JSON

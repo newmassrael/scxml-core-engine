@@ -4537,14 +4537,6 @@
           "symbol": "EmscriptenFetchClient"
         },
         {
-          "file": "sce/include/events/EventDescriptor.h",
-          "symbol": "content"
-        },
-        {
-          "file": "sce/include/events/EventDescriptor.h",
-          "symbol": "responseEventName"
-        },
-        {
           "file": "sce/include/events/IEventDispatcher.h",
           "symbol": "content"
         },

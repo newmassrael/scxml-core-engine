@@ -3478,8 +3478,6 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 - sce/include/common/UrlEncodingHelper.h:urlEncode
 - sce/include/events/CppHttplibClient.h:CppHttplibClient
 - sce/include/events/EmscriptenFetchClient.h:EmscriptenFetchClient
-- sce/include/events/EventDescriptor.h:content
-- sce/include/events/EventDescriptor.h:responseEventName
 - sce/include/events/IEventDispatcher.h:content
 - sce/include/events/IHttpClient.h:IHttpClient
 - sce/include/static/StaticExecutionEngine.h:HttpSendRequest
