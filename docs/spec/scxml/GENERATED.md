@@ -1642,7 +1642,6 @@ None. The manner in which the message is displayed or logged is platform-depende
 - sce/include/static/StaticExecutionEngine.h:StaticExecutionEngine
 - sce/include/static/StaticExecutionEngine.h:processEvent
 - sce/include/static/StaticExecutionEngine.h:raiseExternal
-- sce/src/actions/SendAction.cpp:SendAction::validateSpecific
 - sce/src/common/EventDataHelper.cpp:EventDataHelper::buildJsonFromParams
 - sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::createExternalTarget
 - sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::createInternalTarget
