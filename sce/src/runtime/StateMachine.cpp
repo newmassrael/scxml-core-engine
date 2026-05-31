@@ -1806,7 +1806,7 @@ bool StateMachine::isInFinalState() const {
         return false;
     }
 
-    // §scxml-3.3.1: Check only top-level final states, not child final states of compound states
+    // §scxml-3.7: Check only top-level final states, not child final states of compound states
     // Bug fix: Compound state children (e.g., s02 in test294) should NOT make the machine final
     // §scxml-3.4 & test570: Complete parallel states should NOT halt execution - only <final/> elements
     auto activeStates = hierarchyManager_->getActiveStates();
@@ -1816,7 +1816,7 @@ bool StateMachine::isInFinalState() const {
             continue;
         }
 
-        // §scxml-3.4 & 3.3.1: Only actual <final/> elements halt execution
+        // §scxml-3.4 & 3.7: Only actual <final/> elements halt execution
         // Parallel states with all regions complete (isFinalState()==true) should still process done.state events
         // Test570: done.state.p0s2 must be processed even when p0 has all regions in final states
         if (state->getType() == Type::FINAL && !state->getParent()) {
