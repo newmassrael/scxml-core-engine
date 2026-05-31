@@ -150,6 +150,22 @@
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::enterInitialState"
+        },
+        {
+          "file": "sce/src/runtime/HistoryStateAutoRegistrar.cpp",
+          "symbol": "HistoryStateAutoRegistrar::extractHistoryStatesFromModel"
+        },
+        {
+          "file": "sce/src/runtime/HistoryValidator.cpp",
+          "symbol": "HistoryValidator::validateRegistrationWithDefault"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::executeTransitionMicrostep"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::exitState"
         }
       ],
       "normative_excerpt": {
@@ -1347,26 +1363,6 @@
         {
           "file": "sce/include/core/StateEntryHelper.h",
           "symbol": "enterDeepTargets"
-        },
-        {
-          "file": "sce/src/runtime/HistoryStateAutoRegistrar.cpp",
-          "symbol": "HistoryStateAutoRegistrar::extractHistoryStatesFromModel"
-        },
-        {
-          "file": "sce/src/runtime/HistoryValidator.cpp",
-          "symbol": "HistoryValidator::validateRegistrationWithDefault"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::exitState"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions"
         }
       ],
       "normative_excerpt": {
