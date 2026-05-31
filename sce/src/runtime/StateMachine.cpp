@@ -1518,7 +1518,7 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
             SCE_LOG_DEBUG("W3C SCXML: Exiting {} states for transition {} -> {}", exitSetResult.states.size(), fromState,
                       targetState);
 
-            // §scxml-3.6: Record history BEFORE exiting states (test 388)
+            // §scxml-3.10: Record history BEFORE exiting states (test 388)
             // History must be recorded while all descendants are still active
             // Optimization: Only record for states that actually have history children
             if (historyManager_ && hierarchyManager_) {
@@ -2914,7 +2914,7 @@ bool StateMachine::executeTransitionMicrostep(const std::vector<TransitionInfo> 
         allStatesToExit, [&depthCache](const std::string &stateId) { return depthCache.at(stateId); },
         [&positionCache](const std::string &stateId) { return positionCache.at(stateId); });
 
-    // §scxml-3.6 (test 580): Record history BEFORE exiting states
+    // §scxml-3.10 (test 580): Record history BEFORE exiting states
     // History must be recorded while all descendants are still active
     // Only record for states that actually have history children
     if (historyManager_ && hierarchyManager_) {
@@ -3051,7 +3051,7 @@ bool StateMachine::exitState(const std::string &stateId) {
         }
     }
 
-    // §scxml-3.6: History recording (test 388)
+    // §scxml-3.10: History recording (test 388)
     // In transition context: History is pre-recorded before exit set execution
     // Outside transition context (direct exitState call): Record history now as fallback
     if (!inTransition_ && historyManager_ && hierarchyManager_) {
