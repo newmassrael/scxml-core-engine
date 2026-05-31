@@ -25,7 +25,7 @@
 namespace SCE::Core::HistoryHelper {
 
 /**
- * @brief §scxml-3.11: Filter states for shallow history recording
+ * @brief §scxml-3.10: Filter states for shallow history recording
  *
  * Shallow history records only immediate child states of the parent compound state.
  *
@@ -41,7 +41,7 @@ std::vector<StateType> filterShallowHistory(const std::vector<StateType> &active
                                             GetParentFunc getParent) {
     std::vector<StateType> filteredStates;
 
-    // §scxml-3.11: Shallow history records only direct children
+    // §scxml-3.10: Shallow history records only direct children
     for (const auto &state : activeStates) {
         auto parent = getParent(state);
         if (parent.has_value() && parent.value() == parentState) {
@@ -81,7 +81,7 @@ bool isDescendant(StateType state, StateType parentState, GetParentFunc getParen
 }
 
 /**
- * @brief §scxml-3.11: Filter states for deep history recording
+ * @brief §scxml-3.10: Filter states for deep history recording
  *
  * Deep history records all leaf (atomic) descendant states of the parent compound state.
  * A leaf state is one that has no active child states in the current configuration.
@@ -98,7 +98,7 @@ std::vector<StateType> filterDeepHistory(const std::vector<StateType> &activeSta
                                          GetParentFunc getParent) {
     std::vector<StateType> filteredStates;
 
-    // §scxml-3.11: Deep history records deepest active descendant configuration
+    // §scxml-3.10: Deep history records deepest active descendant configuration
     // We keep only leaf states (no active children) that are descendants of parent
 
     // Convert to set for O(1) lookup when checking if children are active
@@ -134,7 +134,7 @@ std::vector<StateType> filterDeepHistory(const std::vector<StateType> &activeSta
 }
 
 /**
- * @brief §scxml-3.11: Record history for a compound state
+ * @brief §scxml-3.10: Record history for a compound state
  *
  * This is the core recording logic shared between Interpreter and AOT engines.
  *
@@ -157,7 +157,7 @@ std::vector<StateType> recordHistory(const std::vector<StateType> &activeStates,
 }
 
 /**
- * @brief §scxml-3.11: Get ancestor chain for entering history target state
+ * @brief §scxml-3.10: Get ancestor chain for entering history target state
  *
  * This function builds the ancestor chain from target state up to (but not including) stopAtParent,
  * then returns them in bottom-up order (parent before child) for proper state entry.
@@ -182,7 +182,7 @@ std::vector<StateType> getAncestorsToEnter(StateType target, std::optional<State
     std::vector<StateType> ancestorsToEnter;
     StateType current = target;
 
-    // §scxml-3.11: Build ancestor chain from target up to (but not including) stopAtParent
+    // §scxml-3.10: Build ancestor chain from target up to (but not including) stopAtParent
     // If stopAtParent is nullopt, include ALL ancestors up to root
     while (true) {
         ancestorsToEnter.push_back(current);
@@ -201,7 +201,7 @@ std::vector<StateType> getAncestorsToEnter(StateType target, std::optional<State
         current = parent.value();
     }
 
-    // §scxml-3.11: Reverse to get bottom-up order (parent before child)
+    // §scxml-3.10: Reverse to get bottom-up order (parent before child)
     // This matches Interpreter's enterStateWithAncestors behavior
     std::reverse(ancestorsToEnter.begin(), ancestorsToEnter.end());
 
