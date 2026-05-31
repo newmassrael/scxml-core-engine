@@ -264,26 +264,9 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 **Implementations**:
-- sce/include/runtime/InvokeExecutor.h:captureChildState
-- sce/include/runtime/InvokeExecutor.h:captureInvokeState
-- sce/include/runtime/InvokeExecutor.h:restoreChildState
-- sce/include/runtime/InvokeExecutor.h:restoreInvokeState
-- sce/include/runtime/InvokeExecutor.h:scxmlContent
-- sce/include/runtime/InvokeExecutor.h:startInvokeInternal
-- sce/include/runtime/InvokeExecutor.h:startInvokeWithSessionId
-- sce/include/runtime/StateSnapshot.h:InvokeSnapshot
-- sce/include/runtime/StateSnapshot.h:activeInvokes
-- sce/include/runtime/StateSnapshot.h:activeStates
-- sce/include/runtime/StateSnapshot.h:captureSnapshot
-- sce/include/runtime/StateSnapshot.h:childState
 - sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
 - sce/include/static/StaticExecutionEngine.h:getActiveStates
 - sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
-- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
-- sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
-- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::captureChildState
-- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
-- sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 - sce/include/core/HistoryHelper.h:SCE::Core::HistoryHelper
 
 
