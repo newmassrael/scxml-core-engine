@@ -408,8 +408,6 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/core/ParallelTransitionHelper.h:transitionIndex
 - sce/include/core/StateEntryHelper.h:calculateAncestorPath
 - sce/include/core/StateEntryHelper.h:optimizeEntryOrder
-- sce/include/runtime/IEventRaiser.h:getEventQueues
-- sce/include/runtime/IEventRaiser.h:getScheduler
 - sce/include/runtime/ImmediateModeGuard.h:ImmediateModeGuard
 - sce/include/runtime/StateHierarchyManager.h:initialTransitionCallback_
 - sce/include/runtime/StateHierarchyManager.h:setInitialTransitionCallback
@@ -473,6 +471,7 @@ The following events are generated automatically by the SCXML implementation und
 - sce/include/core/ParallelTransitionHelper.h:isTargetless
 - sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::hasQueuedInternalEvents
 - sce/src/runtime/EventRaiserImpl.h:hasQueuedInternalEvents
+- sce/include/runtime/IEventRaiser.h:raiseInternalEvent
 
 
 
