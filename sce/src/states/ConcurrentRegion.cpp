@@ -195,7 +195,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
 
                 // §scxml-3.13: Find first enabled transition in document order
                 for (const auto &transition : transitions) {
-                    // §scxml-3.13: Wildcard event matching - "*" matches any event
+                    // §scxml-3.12.1: Wildcard event matching - "*" matches any event
                     std::string transitionEvent = transition->getEvent();
                     bool eventMatches = (transitionEvent == event.eventName) || (transitionEvent == "*");
 
