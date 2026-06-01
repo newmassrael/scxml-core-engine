@@ -981,6 +981,26 @@ pub struct SCXMLModel {
 
     pub states: BTreeMap<String, State>,
     pub events: BTreeSet<String>,
+    /// Derived external-ingress event set: the event descriptors that
+    /// appear as `<transition event="...">` triggers, with engine-
+    /// reserved families excluded (`error.*`, `done.invoke*`,
+    /// `done.state*`, `cancel.invoke`, the wildcard sentinels
+    /// `*`/`.*`/`_*`, and the eventless empty token).
+    ///
+    /// This is the contract a transport switchboard (e.g. a pub/sub
+    /// key -> domain-event router) validates its injection targets
+    /// against: an event raised via `Engine::raise_external_by_name`
+    /// is accepted by this machine iff it matches a member per W3C
+    /// SCXML 3.12.1 event-descriptor matching. Distinct from the
+    /// kitchen-sink `events` set above, which also carries egress
+    /// (`<send>`/`<raise>`) and engine-synthesized events. The
+    /// reserved-family filter is SCE-owned (mirrors
+    /// [`crate::analyzer::add_system_events`]) so downstream tooling
+    /// validates against one published set instead of re-deriving the
+    /// platform-event taxonomy. Populated in
+    /// [`crate::analyzer::compute_external_ingress_events`].
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub external_ingress_events: BTreeSet<String>,
     pub history_default_targets: BTreeMap<String, String>,
     pub history_states: BTreeMap<String, HistoryInfo>,
 
