@@ -334,6 +334,7 @@ here):
         }
       },
       "events": ["go"],
+      "external_ingress_events": ["go"],
       "has_history_states": false,
       "has_parallel_states": false,
       "source_location": { "file": "...", "line": 20, "col": 1 }
@@ -358,6 +359,33 @@ that need to walk a multi-doc statechart graph (an `<invoke>`
 parent + child) should emit AST for each document separately
 (orchestrate's per-doc fanout handles this) and join on
 `invokes[].src`.
+
+### `external_ingress_events` — the event-injection contract
+
+Two top-level event sets serve different consumers:
+
+* **`events`** is the kitchen-sink union of *every* event token the
+  document references — transition triggers, the events it emits via
+  `<send>`/`<raise>`, and engine-synthesized platform events
+  (`error.*`, `done.invoke.*`, `done.state.*`, `cancel.invoke`, the
+  `Wildcard` marker). It exists for codegen (enum population) and is
+  **not** a statement of what the machine accepts from outside.
+* **`external_ingress_events`** is the precise set of event
+  descriptors that appear as `<transition event="...">` triggers with
+  the engine-reserved families and the wildcard/eventless sentinels
+  removed. Omitted from the envelope when empty.
+
+A tool that injects events into a running machine — a transport
+switchboard mapping a pub/sub key to a domain event, an external
+command router, a test driver — validates its targets against
+`external_ingress_events`, **not** `events`. An injected name is
+accepted by the machine iff it matches a member per W3C SCXML 3.12.1
+event-descriptor matching (exact match in the common case where the
+trigger is a full event name). Validating against `events` would
+false-accept names the machine only *emits* or that the engine
+reserves; validating against `external_ingress_events` is drift-proof
+because SCE owns the reserved-family filter — consumers do not
+re-implement the platform-event taxonomy.
 
 ## 9. Reference
 

@@ -13,6 +13,7 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     classify_variables(model);
     analyze_model_features(model);
     add_system_events(model);
+    compute_external_ingress_events(model);
     build_prefix_matching(model);
 
     // SCE_MESH.md §9.6 codegen-shape seam. Initial value from SCXML-only
@@ -433,6 +434,40 @@ fn add_system_events(model: &mut SCXMLModel) {
     }
 }
 
+/// Derive the external-ingress event set consumed by transport
+/// switchboards (see [`SCXMLModel::external_ingress_events`]). Walks
+/// every `<transition event="...">` trigger, splits the W3C SCXML
+/// 3.12.1 space-separated descriptor list, and keeps the tokens that
+/// are not engine-reserved. Runs before [`build_prefix_matching`] so it
+/// reads the authored `transition.event` strings unmodified.
+fn compute_external_ingress_events(model: &mut SCXMLModel) {
+    let mut ingress = std::collections::BTreeSet::new();
+    for state in model.states.values() {
+        for transition in &state.transitions {
+            for token in transition.event.split_whitespace() {
+                if !is_reserved_ingress_event(token) {
+                    ingress.insert(token.to_string());
+                }
+            }
+        }
+    }
+    model.external_ingress_events = ingress;
+}
+
+/// True for event tokens a transport switchboard must not target:
+/// engine-synthesized W3C platform events and the wildcard / eventless
+/// sentinels. Mirrors the families [`add_system_events`] injects plus
+/// the `<transition>` wildcard tokens, so the reserved-event taxonomy
+/// has exactly one owner.
+fn is_reserved_ingress_event(event: &str) -> bool {
+    event.is_empty()
+        || matches!(event, "*" | ".*" | "_*")
+        || event.starts_with("error.")
+        || event.starts_with("done.invoke")
+        || event.starts_with("done.state")
+        || event == "cancel.invoke"
+}
+
 /// W3C SCXML 3.12.1: Build prefix matching for event transitions.
 fn build_prefix_matching(model: &mut SCXMLModel) {
     let all_events: Vec<String> = model.events.iter().cloned().collect();
@@ -785,6 +820,68 @@ mod tests {
             name: "probe".into(),
             ..Default::default()
         }
+    }
+
+    /// `external_ingress_events` keeps only non-reserved `<transition
+    /// event>` triggers — the set a transport switchboard validates its
+    /// injection targets against. Reserved W3C platform families
+    /// (`error.*` / `done.invoke*` / `done.state*` / `cancel.invoke`),
+    /// the wildcard sentinels, and the eventless token are excluded, and
+    /// the W3C SCXML 3.12.1 space-separated descriptor list is split per
+    /// token so a reserved token never masks an app token sharing its
+    /// transition.
+    #[test]
+    fn external_ingress_events_excludes_reserved_and_wildcard() {
+        let mut model = empty_model();
+        let state = State {
+            transitions: vec![
+                Transition {
+                    event: "temp_update".into(),
+                    ..Default::default()
+                },
+                Transition {
+                    event: "error.execution".into(),
+                    ..Default::default()
+                },
+                Transition {
+                    event: "done.invoke.child".into(),
+                    ..Default::default()
+                },
+                Transition {
+                    event: "done.state.region".into(),
+                    ..Default::default()
+                },
+                Transition {
+                    event: "cancel.invoke".into(),
+                    ..Default::default()
+                },
+                Transition {
+                    event: "*".into(),
+                    ..Default::default()
+                },
+                Transition {
+                    event: String::new(),
+                    ..Default::default()
+                },
+                // W3C 3.12.1 descriptor list: the app token survives, the
+                // reserved token in the same list is dropped.
+                Transition {
+                    event: "humidity_update done.invoke.x".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        model.states.insert("s1".into(), state);
+
+        compute_external_ingress_events(&mut model);
+
+        let got: Vec<&str> = model
+            .external_ingress_events
+            .iter()
+            .map(String::as_str)
+            .collect();
+        assert_eq!(got, vec!["humidity_update", "temp_update"]);
     }
 
     /// RFC §W5 D3 split, branch #2: "no initial attribute" stays
