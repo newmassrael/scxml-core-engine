@@ -160,7 +160,7 @@ void SCE::StateNode::setInitialTransition(std::shared_ptr<SCE::ITransitionNode> 
     initialTransition_ = transition;
 }
 
-// §scxml-3.8 / §scxml-3.9: Block-based action methods
+// §scxml-3.8: Block-based onentry action methods
 void SCE::StateNode::addEntryActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) {
     if (!block.empty()) {
         SCE_LOG_DEBUG("W3C SCXML 3.8: Adding entry action block to {} with {} actions", id_, block.size());
@@ -174,6 +174,7 @@ const std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> &SCE::StateNod
     return entryActionBlocks_;
 }
 
+// §scxml-3.9: Block-based onexit action methods
 void SCE::StateNode::addExitActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) {
     if (!block.empty()) {
         SCE_LOG_DEBUG("W3C SCXML 3.9: Adding exit action block to {} with {} actions", id_, block.size());

@@ -96,9 +96,10 @@ public:
     bool isShallowHistory() const override;
     bool isDeepHistory() const override;
 
-    // §scxml-3.8 / §scxml-3.9: Block-based action methods
+    // §scxml-3.8: Block-based onentry action methods
     void addEntryActionBlock(std::vector<std::shared_ptr<IActionNode>> block) override;
     const std::vector<std::vector<std::shared_ptr<IActionNode>>> &getEntryActionBlocks() const override;
+    // §scxml-3.9: Block-based onexit action methods
     void addExitActionBlock(std::vector<std::shared_ptr<IActionNode>> block) override;
     const std::vector<std::vector<std::shared_ptr<IActionNode>>> &getExitActionBlocks() const override;
 
@@ -281,8 +282,9 @@ private:
     std::string onExit_;
     std::string initialState_;
 
-    // §scxml-3.8 / §scxml-3.9: Block-based action storage
+    // §scxml-3.8: Block-based onentry action storage
     std::vector<std::vector<std::shared_ptr<IActionNode>>> entryActionBlocks_;
+    // §scxml-3.9: Block-based onexit action storage
     std::vector<std::vector<std::shared_ptr<IActionNode>>> exitActionBlocks_;
 
     HistoryType historyType_;

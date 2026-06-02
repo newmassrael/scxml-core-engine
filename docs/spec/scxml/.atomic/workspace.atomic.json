@@ -1454,11 +1454,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "executeExitBlocks",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/StateEntryHelper.h",
           "symbol": "enterDeepTargets",
           "kind": "implements"
@@ -1585,28 +1580,13 @@
         },
         {
           "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "executeEntryBlocks",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/core/EntryExitHelper.h",
           "symbol": "executeExitBlocks",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/model/IStateNode.h",
-          "symbol": "addEntryActionBlock",
           "kind": "implements"
         },
         {
           "file": "sce/include/model/StateNode.h",
           "symbol": "addExitActionBlock",
           "kind": "implements"
-        },
-        {
-          "file": "sce/include/model/StateNode.h",
-          "symbol": "entryActionBlocks_",
-          "kind": "references"
         },
         {
           "file": "sce/include/model/StateNode.h",
@@ -1624,21 +1604,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "addEntryActionBlock",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "entryActionBlocks_",
-          "kind": "references"
-        },
-        {
-          "file": "sce/src/model/StateNode.cpp",
-          "symbol": "SCE::StateNode::addEntryActionBlock",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/parsing/StateNodeParser.cpp",
           "symbol": "SCE::StateNodeParser::parseEntryExitActionNodes",
           "kind": "implements"
@@ -1646,11 +1611,6 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::executeExitActions",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::addEntryActionBlock",
           "kind": "implements"
         },
         {
@@ -1667,6 +1627,36 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "initialize",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/model/IStateNode.h",
+          "symbol": "addExitActionBlock",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/states/ConcurrentStateNode.h",
+          "symbol": "addExitActionBlock",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/model/StateNode.cpp",
+          "symbol": "SCE::StateNode::addExitActionBlock",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentStateNode.cpp",
+          "symbol": "ConcurrentStateNode::addExitActionBlock",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/states/ConcurrentStateNode.h",
+          "symbol": "exitActionBlocks_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/model/StateNode.h",
+          "symbol": "exitActionBlocks_",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
