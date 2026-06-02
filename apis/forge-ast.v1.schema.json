@@ -5180,7 +5180,7 @@
           "type": "string"
         },
         "transition_index": {
-          "description": "Original index within parent state's transition list",
+          "description": "Original index within parent state's transition list. This index is unique only WITHIN the parent state, never machine-wide — see [`native_payload_guard`](Self::native_payload_guard) for why that distinction matters.",
           "format": "uint",
           "minimum": 0.0,
           "type": "integer"

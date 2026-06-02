@@ -283,22 +283,22 @@ fn render_rust(
     };
 
     // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
-    // the typed `_event.data` payload sum, its `type Payload` spelling,
-    // and the per-transition native `matches!(…)` guards. The guard map
-    // is exposed to the transition templates as the `native_payload_guard`
-    // filter (transition_index → guard expression, "" when the guard
-    // stays on the script-engine / In() path).
+    // the typed `_event.data` payload sum, its `type Payload` spelling, and
+    // the per-transition native `matches!(…)` guards. The per-machine defs /
+    // type / inject seams ride in the render context (no IR home); the
+    // per-transition guards ride home on the transition's
+    // `native_payload_guard` via a single-language clone — co-located with
+    // their owning transition so a per-state `transition_index` cannot
+    // collide them across states.
     let payload = crate::forge::generator::build_rust_event_payload(model, &machine_name);
-    let guards = payload.guards.clone();
-    env.add_filter("native_payload_guard", move |idx: usize| -> String {
-        guards.get(&idx).cloned().unwrap_or_default()
-    });
+    let mut model_lowered = model.clone();
+    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
     let tmpl = env
         .get_template("state_machine.rs.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
     let ctx = minijinja::context! {
-        model => minijinja::Value::from_serialize(model),
+        model => minijinja::Value::from_serialize(&model_lowered),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(license_config()),
         inline_kind_types => &inline_kind_types,
@@ -370,13 +370,13 @@ fn render_cpp(
     // the policy fields / `populateTypedPayload` hook that lift the dequeued
     // event's std::any-carried payload, the per-event `raise<Event>` inject
     // seams, and the per-transition native guard (`pendingPayloadTag_ == … &&
-    // (…)`). The C++ twin of `render_rust` / `render_go`'s
-    // `native_payload_guard` filter — same SSOT guard selection.
+    // (…)`). The per-machine defs ride in the render context; the
+    // per-transition guards ride home on the transition's
+    // `native_payload_guard` via a single-language clone (same SSOT guard
+    // selection as every backend).
     let payload = crate::forge::generator::build_cpp_event_payload(model);
-    let guards = payload.guards.clone();
-    env.add_filter("native_payload_guard", move |idx: usize| -> String {
-        guards.get(&idx).cloned().unwrap_or_default()
-    });
+    let mut model_lowered = model.clone();
+    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
     let header_tmpl = env
         .get_template("state_machine.jinja2")
@@ -385,7 +385,7 @@ fn render_cpp(
         .get_template("state_machine_inl.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
 
-    let model_val = minijinja::Value::from_serialize(model);
+    let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
 
     let header_ctx = minijinja::context! {
@@ -487,13 +487,13 @@ fn render_c11(
     // union `<name>_payload_t`, the per-transition native guard
     // (`sm->pending_payload.tag == … && (…)`), and the `type_name` used by
     // the `event_with_meta`/`pending_payload` fields and the
-    // `raise_external_typed` seam. The C11 twin of `render_rust`'s
-    // `native_payload_guard` filter — same SSOT guard selection.
+    // `raise_external_typed` seam. The per-machine defs ride in the render
+    // context; the per-transition guards ride home on the transition's
+    // `native_payload_guard` via a single-language clone (same SSOT guard
+    // selection as every backend).
     let payload = crate::forge::generator::build_c11_event_payload(model);
-    let guards = payload.guards.clone();
-    env.add_filter("native_payload_guard", move |idx: usize| -> String {
-        guards.get(&idx).cloned().unwrap_or_default()
-    });
+    let mut model_lowered = model.clone();
+    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
     let header_tmpl = env
         .get_template("c/state_machine.h.jinja2")
@@ -502,7 +502,7 @@ fn render_c11(
         .get_template("c/state_machine.c.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
 
-    let model_val = minijinja::Value::from_serialize(model);
+    let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
 
     let header_ctx = minijinja::context! {
@@ -613,13 +613,14 @@ fn render_kotlin(
     // nullable `pending<Event>Payload` fields + `populateTypedPayload` override
     // that lift the dequeued event's typed carrier, the per-event `raise<Event>`
     // inject seams, and the per-transition native guard (`pending<Event>Payload
-    // != null && (…)`). The Kotlin twin of `render_go`'s `native_payload_guard`
-    // filter — same SSOT guard selection.
+    // != null && (…)`). The per-machine defs ride in the render context; the
+    // per-transition guards ride home on the transition's
+    // `native_payload_guard` via a single-language clone (same SSOT guard
+    // selection as every backend).
     let payload = crate::forge::generator::build_kotlin_event_payload(model);
-    let payload_guards = payload.guards.clone();
-    env.add_filter("native_payload_guard", move |idx: usize| -> String {
-        payload_guards.get(&idx).cloned().unwrap_or_default()
-    });
+    let mut model_lowered = model.clone();
+    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    let model = &model_lowered;
 
     let machine_name = filters::to_pascal_case(model.name.clone());
 
@@ -996,13 +997,14 @@ fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, Ge
     // `_pending_<event>_payload` __init__ fields + `set_current_event` lift that
     // carries the dequeued event's typed payload, the per-event `raise_<event>`
     // inject seams, and the per-transition native guard (`self._pending_<event>
-    // _payload is not None and (…)`). The Python twin of `render_go` /
-    // `render_kotlin`'s `native_payload_guard` filter — same SSOT selection.
+    // _payload is not None and (…)`). The per-machine defs ride in the render
+    // context; the per-transition guards ride home on the transition's
+    // `native_payload_guard` via a single-language clone (same SSOT selection
+    // as every backend).
     let payload = crate::forge::generator::build_python_event_payload(model);
-    let payload_guards = payload.guards.clone();
-    env.add_filter("native_payload_guard", move |idx: usize| -> String {
-        payload_guards.get(&idx).cloned().unwrap_or_default()
-    });
+    let mut model_lowered = model.clone();
+    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    let model = &model_lowered;
 
     let tmpl = env
         .get_template("state_machine.py.jinja2")
@@ -1042,14 +1044,14 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
     // `_event.data` payload channel: a tag enum + per-event payload structs,
     // the policy fields / populate type-switch that lift the dequeued event's
     // typed payload, the per-event `Raise<Event>` inject seams, and the
-    // per-transition native guard (`p.pendingPayloadTag == … && (…)`). The Go
-    // twin of `render_rust` / `render_c11`'s `native_payload_guard` filter —
-    // same SSOT guard selection.
+    // per-transition native guard (`p.pendingPayloadTag == … && (…)`). The
+    // per-machine defs ride in the render context; the per-transition guards
+    // ride home on the transition's `native_payload_guard` via a
+    // single-language clone (same SSOT guard selection as every backend).
     let payload = crate::forge::generator::build_go_event_payload(model);
-    let guards = payload.guards.clone();
-    env.add_filter("native_payload_guard", move |idx: usize| -> String {
-        guards.get(&idx).cloned().unwrap_or_default()
-    });
+    let mut model_lowered = model.clone();
+    crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
+    let model = &model_lowered;
 
     let tmpl = env
         .get_template("state_machine.go.jinja2")

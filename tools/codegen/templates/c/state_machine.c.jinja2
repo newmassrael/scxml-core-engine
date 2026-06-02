@@ -2678,7 +2678,7 @@ static bool SCE_SM_FN try_match_in_state({{ model.name }}_t *sm,
             {% for trans in state.transitions %}
             {{ emit_transition_match_check(trans) }} {
             {% if trans.cond %}
-            {% set native_payload_guard_expr = trans.transition_index | native_payload_guard %}
+            {% set native_payload_guard_expr = trans.native_payload_guard %}
             {% if trans.is_pure_in_predicate %}
                 /* W3C SCXML 3.13 + 5.9.2: cond="{{ trans.cond | escape_c }}" pure
                    In() predicate — native C lower via `to_in_predicate_c11`

@@ -62,8 +62,38 @@ pub struct Transition {
     pub actions: Vec<Action>,
     pub needs_string_matching: bool,
     pub matching_enum_values: Vec<String>,
-    /// Original index within parent state's transition list
+    /// Original index within parent state's transition list. This index is
+    /// unique only WITHIN the parent state, never machine-wide — see
+    /// [`native_payload_guard`](Self::native_payload_guard) for why that
+    /// distinction matters.
     pub transition_index: usize,
+    /// NL→IR Item C1 Path A: the native typed `_event.data` guard expression
+    /// for this transition, lowered at generate time from `cond` against the
+    /// imported EventSchema (see `forge::generator::build_*_event_payload`).
+    /// Empty when the guard stays on the script-engine / In() path or no
+    /// schema applies.
+    ///
+    /// The guard is per-transition derived data, so its home is the
+    /// transition that owns it — exactly like [`cond_cpp`](Self::cond_cpp).
+    /// It is deliberately NOT a machine-global side table keyed by
+    /// `transition_index`: that index is per-state, so two transitions in
+    /// different states share a key and the last writer wins, silently
+    /// miscompiling every colliding guard. Storing it here makes that
+    /// collision unrepresentable.
+    ///
+    /// Transient by design: the language-agnostic parse model leaves it empty
+    /// (skipped in serialized AST exports — the persistent IR stays neutral,
+    /// per `build_rust_event_payload`'s render-context principle). Each
+    /// single-language generate pass clones the model and populates it for
+    /// that one language.
+    ///
+    /// Excluded from the stable AST export contract (`schemars(skip)`): it is
+    /// a transient codegen artifact, never present on the parsed model that
+    /// `--emit-ast` serializes, so it is not part of the language-agnostic IR
+    /// schema.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_payload_guard: String,
     /// W3C SCXML 3.11: History target if transition targets a history state
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_target: Option<String>,

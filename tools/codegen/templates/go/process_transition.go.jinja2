@@ -158,11 +158,11 @@ func (p *{{ machine_name }}Policy) tryCollectTransition(checkState {{ machine_na
 {% if trans.cond %}
 {% if trans.is_pure_in_predicate %}
 			if {{ trans.cond_cpp | to_in_predicate_go }} {
-{% elif trans.transition_index | native_payload_guard %}
+{% elif trans.native_payload_guard %}
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "{{ trans.cond }}" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if {{ trans.transition_index | native_payload_guard }} {
+			if {{ trans.native_payload_guard }} {
 {% elif model.needs_script_engine %}
 			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
 {% else %}
@@ -202,11 +202,11 @@ func (p *{{ machine_name }}Policy) tryCollectTransition(checkState {{ machine_na
 {% if trans.cond %}
 {% if trans.is_pure_in_predicate %}
 			if {{ trans.cond_cpp | to_in_predicate_go }} {
-{% elif trans.transition_index | native_payload_guard %}
+{% elif trans.native_payload_guard %}
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "{{ trans.cond }}" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if {{ trans.transition_index | native_payload_guard }} {
+			if {{ trans.native_payload_guard }} {
 {% elif model.needs_script_engine %}
 			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
 {% else %}
@@ -252,11 +252,11 @@ func (p *{{ machine_name }}Policy) tryTransitionInState(checkState {{ machine_na
 {% if trans.cond %}
 {% if trans.is_pure_in_predicate %}
 			if {{ trans.cond_cpp | to_in_predicate_go }} {
-{% elif trans.transition_index | native_payload_guard %}
+{% elif trans.native_payload_guard %}
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "{{ trans.cond }}" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if {{ trans.transition_index | native_payload_guard }} {
+			if {{ trans.native_payload_guard }} {
 {% elif model.needs_script_engine %}
 			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
 {% else %}
@@ -300,11 +300,11 @@ func (p *{{ machine_name }}Policy) tryTransitionInState(checkState {{ machine_na
 {% if trans.cond %}
 {% if trans.is_pure_in_predicate %}
 			if {{ trans.cond_cpp | to_in_predicate_go }} {
-{% elif trans.transition_index | native_payload_guard %}
+{% elif trans.native_payload_guard %}
 			// NL→IR Item C1 Path A: native typed `_event.data` guard — cond
 			// "{{ trans.cond }}" lowered to a tag-checked field comparison on
 			// the lifted `pending<Event>Payload` (no script engine).
-			if {{ trans.transition_index | native_payload_guard }} {
+			if {{ trans.native_payload_guard }} {
 {% elif model.needs_script_engine %}
 			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
 {% else %}
