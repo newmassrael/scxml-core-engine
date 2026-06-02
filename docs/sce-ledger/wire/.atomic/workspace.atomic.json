@@ -9,14 +9,16 @@
       "title": "contract (this RFC; commit-series contract)",
       "parent_doc": "GENERATED.md",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/parsing/Diagnostic.h",
-          "symbol": "clone"
+          "symbol": "clone",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/SCXMLParser.h",
-          "symbol": "getDiagnostics"
+          "symbol": "getDiagnostics",
+          "kind": "implements"
         }
       ]
     },
@@ -24,17 +26,20 @@
       "title": "scope sketch — library API only (no CLI)",
       "parent_doc": "GENERATED.md",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/parsing/Diagnostic.h",
-          "symbol": "to_canonical_json_string"
+          "symbol": "to_canonical_json_string",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/parsing/DiagnosticBatchFormatter.h"
+          "file": "sce/include/parsing/DiagnosticBatchFormatter.h",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/Diagnostic.cpp",
-          "symbol": "Diagnostic::to_canonical_json_string"
+          "symbol": "Diagnostic::to_canonical_json_string",
+          "kind": "implements"
         }
       ]
     },
@@ -42,17 +47,20 @@
       "title": "scope sketch",
       "parent_doc": "GENERATED.md",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/parsing/XIncludeError.h",
-          "symbol": "SCE::parsing"
+          "symbol": "SCE::parsing",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/XIncludeError.h",
-          "symbol": "setLocation"
+          "symbol": "setLocation",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/parsing/XIncludeExpander.h"
+          "file": "sce/include/parsing/XIncludeExpander.h",
+          "kind": "implements"
         }
       ]
     },
@@ -60,42 +68,51 @@
       "title": "LANDED 2026-04-26 (α-strict, D1-C typed-throw)",
       "parent_doc": "GENERATED.md",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/parsing/IXMLParser.h",
-          "symbol": "parseFile"
+          "symbol": "parseFile",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/ParseError.h",
-          "symbol": "ParseException"
+          "symbol": "ParseException",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/ParseError.h",
-          "symbol": "ParseFileNotFound"
+          "symbol": "ParseFileNotFound",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/ParseError.h",
-          "symbol": "SCE::parsing"
+          "symbol": "SCE::parsing",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/PugiXMLParser.cpp",
-          "symbol": "PugiXMLParser::parseFile"
+          "symbol": "PugiXMLParser::parseFile",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseAbstractDocument"
+          "symbol": "SCE::SCXMLParser::parseAbstractDocument",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseContent"
+          "symbol": "SCE::SCXMLParser::parseContent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseFile"
+          "symbol": "SCE::SCXMLParser::parseFile",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent"
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
         }
       ]
     },
@@ -103,34 +120,41 @@
       "title": "LANDED 2026-04-26 (debt repayment, polling surface removed)",
       "parent_doc": "GENERATED.md",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/parsing/IXMLDocument.h",
-          "symbol": "processSceTemplate"
+          "symbol": "processSceTemplate",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/IXMLDocument.h",
-          "symbol": "processXInclude"
+          "symbol": "processXInclude",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/PugiXMLParser.cpp",
-          "symbol": "PugiXMLDocument::processSceTemplate"
+          "symbol": "PugiXMLDocument::processSceTemplate",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/PugiXMLParser.cpp",
-          "symbol": "PugiXMLDocument::processXInclude"
+          "symbol": "PugiXMLDocument::processXInclude",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseContent"
+          "symbol": "SCE::SCXMLParser::parseContent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseFile"
+          "symbol": "SCE::SCXMLParser::parseFile",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/XIncludeProcessor.cpp",
-          "symbol": "XIncludeProcessor::process"
+          "symbol": "XIncludeProcessor::process",
+          "kind": "implements"
         }
       ]
     },
@@ -138,39 +162,46 @@
       "title": "LANDED 2026-04-26 (semantic family typed-throw, test-as-consumer + dead-code cleanup)",
       "parent_doc": "GENERATED.md",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/parsing/SemanticError.h",
-          "symbol": "SCE::parsing"
+          "symbol": "SCE::parsing",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/SemanticError.h",
-          "symbol": "SemanticTopLevelScriptUnloaded"
+          "symbol": "SemanticTopLevelScriptUnloaded",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseContent"
+          "symbol": "SCE::SCXMLParser::parseContent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseFile"
+          "symbol": "SCE::SCXMLParser::parseFile",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseScxmlNode"
+          "symbol": "SCE::SCXMLParser::parseScxmlNode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::validateModel"
+          "symbol": "SCE::SCXMLParser::validateModel",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SemanticError.cpp",
-          "symbol": "SCE::parsing"
+          "symbol": "SCE::parsing",
+          "kind": "implements"
         }
       ]
     }
   },
   "changelog_entries": {},
   "inventory_entries": {},
-  "schema_version": 4
+  "schema_version": 6
 }

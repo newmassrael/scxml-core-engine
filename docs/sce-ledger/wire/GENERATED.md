@@ -22,6 +22,7 @@ Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 
 
 
+
 ### §wire-W1. contract (this RFC; commit-series contract)
 
 
@@ -34,9 +35,10 @@ Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 
 
 
-**Implementations**:
-- sce/include/parsing/Diagnostic.h:clone
-- sce/include/parsing/SCXMLParser.h:getDiagnostics
+**Bindings**:
+- [implements] sce/include/parsing/Diagnostic.h:clone
+- [implements] sce/include/parsing/SCXMLParser.h:getDiagnostics
+
 
 
 
@@ -53,10 +55,11 @@ Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 
 
 
-**Implementations**:
-- sce/include/parsing/Diagnostic.h:to_canonical_json_string
-- sce/include/parsing/DiagnosticBatchFormatter.h
-- sce/src/parsing/Diagnostic.cpp:Diagnostic::to_canonical_json_string
+**Bindings**:
+- [implements] sce/include/parsing/Diagnostic.h:to_canonical_json_string
+- [implements] sce/include/parsing/DiagnosticBatchFormatter.h
+- [implements] sce/src/parsing/Diagnostic.cpp:Diagnostic::to_canonical_json_string
+
 
 
 
@@ -73,10 +76,11 @@ Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 
 
 
-**Implementations**:
-- sce/include/parsing/XIncludeError.h:SCE::parsing
-- sce/include/parsing/XIncludeError.h:setLocation
-- sce/include/parsing/XIncludeExpander.h
+**Bindings**:
+- [implements] sce/include/parsing/XIncludeError.h:SCE::parsing
+- [implements] sce/include/parsing/XIncludeError.h:setLocation
+- [implements] sce/include/parsing/XIncludeExpander.h
+
 
 
 
@@ -93,16 +97,17 @@ Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 
 
 
-**Implementations**:
-- sce/include/parsing/IXMLParser.h:parseFile
-- sce/include/parsing/ParseError.h:ParseException
-- sce/include/parsing/ParseError.h:ParseFileNotFound
-- sce/include/parsing/ParseError.h:SCE::parsing
-- sce/src/parsing/PugiXMLParser.cpp:PugiXMLParser::parseFile
-- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseAbstractDocument
-- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
-- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
-- sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
+**Bindings**:
+- [implements] sce/include/parsing/IXMLParser.h:parseFile
+- [implements] sce/include/parsing/ParseError.h:ParseException
+- [implements] sce/include/parsing/ParseError.h:ParseFileNotFound
+- [implements] sce/include/parsing/ParseError.h:SCE::parsing
+- [implements] sce/src/parsing/PugiXMLParser.cpp:PugiXMLParser::parseFile
+- [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseAbstractDocument
+- [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
+- [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
+- [implements] sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
+
 
 
 
@@ -119,14 +124,15 @@ Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 
 
 
-**Implementations**:
-- sce/include/parsing/IXMLDocument.h:processSceTemplate
-- sce/include/parsing/IXMLDocument.h:processXInclude
-- sce/src/parsing/PugiXMLParser.cpp:PugiXMLDocument::processSceTemplate
-- sce/src/parsing/PugiXMLParser.cpp:PugiXMLDocument::processXInclude
-- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
-- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
-- sce/src/parsing/XIncludeProcessor.cpp:XIncludeProcessor::process
+**Bindings**:
+- [implements] sce/include/parsing/IXMLDocument.h:processSceTemplate
+- [implements] sce/include/parsing/IXMLDocument.h:processXInclude
+- [implements] sce/src/parsing/PugiXMLParser.cpp:PugiXMLDocument::processSceTemplate
+- [implements] sce/src/parsing/PugiXMLParser.cpp:PugiXMLDocument::processXInclude
+- [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
+- [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
+- [implements] sce/src/parsing/XIncludeProcessor.cpp:XIncludeProcessor::process
+
 
 
 
@@ -143,14 +149,15 @@ Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 
 
 
-**Implementations**:
-- sce/include/parsing/SemanticError.h:SCE::parsing
-- sce/include/parsing/SemanticError.h:SemanticTopLevelScriptUnloaded
-- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
-- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
-- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseScxmlNode
-- sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::validateModel
-- sce/src/parsing/SemanticError.cpp:SCE::parsing
+**Bindings**:
+- [implements] sce/include/parsing/SemanticError.h:SCE::parsing
+- [implements] sce/include/parsing/SemanticError.h:SemanticTopLevelScriptUnloaded
+- [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
+- [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
+- [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseScxmlNode
+- [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::validateModel
+- [implements] sce/src/parsing/SemanticError.cpp:SCE::parsing
+
 
 
 
