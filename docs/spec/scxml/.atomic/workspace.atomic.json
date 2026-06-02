@@ -100,12 +100,12 @@
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
           "symbol": "enterStateCallback_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
           "symbol": "historyManager_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
@@ -366,17 +366,17 @@
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "hasActions",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "isExternal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "isInternal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
@@ -434,7 +434,7 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "isInternal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
@@ -444,7 +444,7 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "transitionIndex",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/StateEntryHelper.h",
@@ -464,7 +464,7 @@
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
           "symbol": "initialTransitionCallback_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
@@ -499,17 +499,17 @@
         {
           "file": "sce/include/states/ConcurrentStateTypes.h",
           "symbol": "hasActions",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/states/ConcurrentStateTypes.h",
           "symbol": "isExternal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/states/ConcurrentStateTypes.h",
           "symbol": "isInternal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -699,7 +699,7 @@
         {
           "file": "sce/include/core/EventQueueManager.h",
           "symbol": "queue_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
@@ -754,7 +754,7 @@
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
           "symbol": "isTargetless",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
@@ -779,12 +779,12 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "internalQueue_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "externalQueue_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -833,7 +833,7 @@
         {
           "file": "sce/include/parsing/DoneDataParser.h",
           "symbol": "datamodelType_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/parsing/SemanticError.h",
@@ -917,7 +917,7 @@
         {
           "file": "sce/include/model/SCXMLModel.h",
           "symbol": "initialStates_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/SCXMLModel.h",
@@ -942,7 +942,7 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "isEnteringInitialConfiguration_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
@@ -952,7 +952,7 @@
         {
           "file": "sce/include/states/ConcurrentRegion.h",
           "symbol": "desiredInitialChild_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
@@ -1125,7 +1125,7 @@
         {
           "file": "sce/include/states/ConcurrentRegion.h",
           "symbol": "doneStateCallback_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
@@ -1145,7 +1145,7 @@
         {
           "file": "sce/include/states/ConcurrentStateTypes.h",
           "symbol": "externalTransitionTarget",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/states/IConcurrentRegion.h",
@@ -1476,7 +1476,7 @@
         {
           "file": "sce/include/model/StateNode.h",
           "symbol": "entryActionBlocks_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/StateNode.h",
@@ -1501,7 +1501,7 @@
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
           "symbol": "entryActionBlocks_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/model/StateNode.cpp",
@@ -1606,7 +1606,7 @@
         {
           "file": "sce/include/model/StateNode.h",
           "symbol": "entryActionBlocks_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/StateNode.h",
@@ -1631,7 +1631,7 @@
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
           "symbol": "entryActionBlocks_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/model/StateNode.cpp",
@@ -2107,7 +2107,7 @@
         {
           "file": "sce/include/common/LogicalTimeScheduler.h",
           "symbol": "eventData",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/SendHelper.h",
@@ -2132,7 +2132,7 @@
         {
           "file": "sce/include/events/InternalEventTarget.h",
           "symbol": "sessionId_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
@@ -2157,7 +2157,7 @@
         {
           "file": "sce/include/scripting/IScriptEngine.h",
           "symbol": "SetCurrentEventArgs",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
@@ -2172,7 +2172,7 @@
         {
           "file": "sce/include/scripting/JSEngine.h",
           "symbol": "eventObjectInitialized",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/JSEngine.h",
@@ -2267,7 +2267,7 @@
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
           "symbol": "currentTypedData_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
@@ -2312,12 +2312,12 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "currentEventContext_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "eventType",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
@@ -2327,17 +2327,17 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "invokeId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "originType",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "sendId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
@@ -2412,7 +2412,7 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "originSessionId",
-          "kind": "implements"
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2459,12 +2459,12 @@
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
           "symbol": "SetCurrentEventArgs",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -2474,17 +2474,17 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "invokeId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "origin",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "originType",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -2499,12 +2499,12 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "sendId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "type",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
@@ -2514,27 +2514,27 @@
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
           "symbol": "currentEventType_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
           "symbol": "currentInvokeId_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
           "symbol": "currentOriginSessionId_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
           "symbol": "currentOriginType_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
           "symbol": "currentSendId_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
@@ -2549,22 +2549,22 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "invokeId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "origin",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "originType",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "sendId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
@@ -2759,7 +2759,7 @@
         {
           "file": "sce/include/runtime/DataModelInitializer.h",
           "symbol": "initializedStates_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
@@ -2995,7 +2995,7 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "pendingDonedataAtFinal_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
@@ -3010,7 +3010,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "pendingDonedataAtFinal_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -3020,7 +3020,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "typedData",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -3193,12 +3193,12 @@
         {
           "file": "sce/include/model/SCXMLModel.h",
           "symbol": "topLevelScripts_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/parsing/ActionParser.h",
           "symbol": "scxmlBasePath_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/parsing/ActionParser.h",
@@ -3423,7 +3423,7 @@
         {
           "file": "sce/include/actions/SendAction.h",
           "symbol": "typeExpr_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
@@ -3493,7 +3493,7 @@
         {
           "file": "sce/include/events/IEventDispatcher.h",
           "symbol": "ScheduledEventInfo",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/events/IEventDispatcher.h",
@@ -3503,12 +3503,12 @@
         {
           "file": "sce/include/events/IEventDispatcher.h",
           "symbol": "params",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/events/IEventDispatcher.h",
           "symbol": "targetUri",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/events/ParentEventTarget.h",
@@ -3533,7 +3533,7 @@
         {
           "file": "sce/include/scripting/SessionRegistry.h",
           "symbol": "eventDispatchers_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -3558,7 +3558,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "scheduler_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -3653,7 +3653,7 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "scheduler_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
@@ -3846,7 +3846,7 @@
         {
           "file": "sce/src/events/EventSchedulerImpl.h",
           "symbol": "executionQueue_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/LogicalTimeScheduler.h",
@@ -3889,7 +3889,7 @@
         {
           "file": "sce/include/common/LogicalTimeScheduler.h",
           "symbol": "sendId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/wrappers/TimerManager.h",
@@ -3988,7 +3988,7 @@
         {
           "file": "sce/include/model/InvokeNode.h",
           "symbol": "stateId_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/IEventRaiser.h",
@@ -4003,7 +4003,7 @@
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
           "symbol": "invokeDeferCallback_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
@@ -4033,12 +4033,12 @@
         {
           "file": "sce/include/scripting/SessionRegistry.h",
           "symbol": "parentChildMappings_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
           "symbol": "invokeCallback_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
@@ -4407,7 +4407,7 @@
         {
           "file": "sce/include/runtime/InvokeExecutor.h",
           "symbol": "parentStateMachine_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
@@ -4417,7 +4417,7 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "completionCallback_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
@@ -5103,7 +5103,7 @@
         {
           "file": "sce/include/actions/SendAction.h",
           "symbol": "namelist_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/NamelistHelper.h",
@@ -5198,7 +5198,7 @@
         {
           "file": "sce/include/actions/SendAction.h",
           "symbol": "content_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/actions/SendAction.h",
@@ -5268,7 +5268,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "HttpSendRequest",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -5293,7 +5293,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "target",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/actions/SendAction.cpp",

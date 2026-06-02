@@ -188,8 +188,8 @@ In the case of a transition located in a compound state, the 'type' attribute is
 
 
 **Bindings**:
-- [implements] sce/include/runtime/StateHierarchyManager.h:enterStateCallback_
-- [implements] sce/include/runtime/StateHierarchyManager.h:historyManager_
+- [references] sce/include/runtime/StateHierarchyManager.h:enterStateCallback_
+- [references] sce/include/runtime/StateHierarchyManager.h:historyManager_
 - [implements] sce/include/runtime/StateHierarchyManager.h:setEnterStateCallback
 - [implements] sce/include/runtime/StateHierarchyManager.h:setHistoryManager
 - [implements] sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
@@ -386,9 +386,9 @@ The following events are generated automatically by the SCXML implementation und
 
 **Bindings**:
 - [implements] sce/include/core/ConflictResolutionHelper.h:computeExitSet
-- [implements] sce/include/core/ConflictResolutionHelper.h:hasActions
-- [implements] sce/include/core/ConflictResolutionHelper.h:isExternal
-- [implements] sce/include/core/ConflictResolutionHelper.h:isInternal
+- [references] sce/include/core/ConflictResolutionHelper.h:hasActions
+- [references] sce/include/core/ConflictResolutionHelper.h:isExternal
+- [references] sce/include/core/ConflictResolutionHelper.h:isInternal
 - [implements] sce/include/core/ConflictResolutionHelper.h:removeConflictingTransitions
 - [implements] sce/include/core/EntryExitHelper.h:executeEntryBlocks
 - [implements] sce/include/core/EntryExitHelper.h:executeExitBlocks
@@ -400,22 +400,22 @@ The following events are generated automatically by the SCXML implementation und
 - [implements] sce/include/core/ParallelTransitionHelper.h:computeExitSet
 - [implements] sce/include/core/ParallelTransitionHelper.h:computeStatesToExit
 - [implements] sce/include/core/ParallelTransitionHelper.h:hasConflict
-- [implements] sce/include/core/ParallelTransitionHelper.h:isInternal
+- [references] sce/include/core/ParallelTransitionHelper.h:isInternal
 - [implements] sce/include/core/ParallelTransitionHelper.h:sortStatesForExit
-- [implements] sce/include/core/ParallelTransitionHelper.h:transitionIndex
+- [references] sce/include/core/ParallelTransitionHelper.h:transitionIndex
 - [implements] sce/include/core/StateEntryHelper.h:calculateAncestorPath
 - [implements] sce/include/core/StateEntryHelper.h:optimizeEntryOrder
 - [implements] sce/include/runtime/ImmediateModeGuard.h:ImmediateModeGuard
-- [implements] sce/include/runtime/StateHierarchyManager.h:initialTransitionCallback_
+- [references] sce/include/runtime/StateHierarchyManager.h:initialTransitionCallback_
 - [implements] sce/include/runtime/StateHierarchyManager.h:setInitialTransitionCallback
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
 - [implements] sce/include/runtime/StateMachine.h:executeTransitionMicrostep
 - [implements] sce/include/runtime/TransitionDomainCalculator.h:TransitionDomainCalculator
 - [implements] sce/include/runtime/TransitionDomainCalculator.h:computeExitSet
 - [implements] sce/include/runtime/TransitionDomainCalculator.h:getStateDocumentPosition
-- [implements] sce/include/states/ConcurrentStateTypes.h:hasActions
-- [implements] sce/include/states/ConcurrentStateTypes.h:isExternal
-- [implements] sce/include/states/ConcurrentStateTypes.h:isInternal
+- [references] sce/include/states/ConcurrentStateTypes.h:hasActions
+- [references] sce/include/states/ConcurrentStateTypes.h:isExternal
+- [references] sce/include/states/ConcurrentStateTypes.h:isInternal
 - [implements] sce/include/static/StaticExecutionEngine.h:StaticExecutionEngine
 - [implements] sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
 - [implements] sce/include/static/StaticExecutionEngine.h:executeTransition
@@ -453,7 +453,7 @@ The following events are generated automatically by the SCXML implementation und
 - [implements] sce/include/core/EventProcessingAlgorithms.h:processInternalEventQueue
 - [implements] sce/include/core/EventQueueConcept.h:SCE::Core
 - [implements] sce/include/core/EventQueueManager.h:SCE::Core
-- [implements] sce/include/core/EventQueueManager.h:queue_
+- [references] sce/include/core/EventQueueManager.h:queue_
 - [implements] sce/include/core/HierarchicalStateHelper.h:HierarchicalAlgorithms
 - [implements] sce/include/core/HierarchicalStateHelper.h:buildEntryChainFromParent
 - [implements] sce/include/core/HierarchicalStateHelper.h:buildExitChain
@@ -464,13 +464,13 @@ The following events are generated automatically by the SCXML implementation und
 - [implements] sce/include/static/StaticExecutionEngine.h:processEvent
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventImpl
 - [implements] sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::findLCA
-- [implements] sce/include/core/ConflictResolutionHelper.h:isTargetless
+- [references] sce/include/core/ConflictResolutionHelper.h:isTargetless
 - [implements] sce/include/core/ParallelTransitionHelper.h:isTargetless
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::hasQueuedInternalEvents
 - [implements] sce/src/runtime/EventRaiserImpl.h:hasQueuedInternalEvents
 - [implements] sce/include/runtime/IEventRaiser.h:raiseInternalEvent
-- [implements] sce/include/static/StaticExecutionEngine.h:internalQueue_
-- [implements] sce/include/static/StaticExecutionEngine.h:externalQueue_
+- [references] sce/include/static/StaticExecutionEngine.h:internalQueue_
+- [references] sce/include/static/StaticExecutionEngine.h:externalQueue_
 - [implements] sce/include/static/StaticExecutionEngine.h:raise
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventQueues
@@ -516,7 +516,7 @@ The following events are generated automatically by the SCXML implementation und
 
 
 **Bindings**:
-- [implements] sce/include/parsing/DoneDataParser.h:datamodelType_
+- [references] sce/include/parsing/DoneDataParser.h:datamodelType_
 - [implements] sce/include/parsing/SemanticError.h:SemanticNoStates
 - [implements] sce/include/static/StaticExecutionEngine.h:initialize
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
@@ -586,14 +586,14 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [implements] sce/include/core/ParallelExitEntryHelper.h
 - [implements] sce/include/model/SCXMLModel.h:getInitialState
 - [implements] sce/include/model/SCXMLModel.h:getInitialStates
-- [implements] sce/include/model/SCXMLModel.h:initialStates_
+- [references] sce/include/model/SCXMLModel.h:initialStates_
 - [implements] sce/include/model/SCXMLModel.h:setInitialState
 - [implements] sce/include/runtime/StateHierarchyManager.h:enterStateWithAncestors
 - [implements] sce/include/runtime/StateHierarchyManager.h:updateParallelRegionCurrentStates
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
-- [implements] sce/include/runtime/StateMachine.h:isEnteringInitialConfiguration_
+- [references] sce/include/runtime/StateMachine.h:isEnteringInitialConfiguration_
 - [implements] sce/include/runtime/StateMachine.h:setupAndActivateParallelState
-- [implements] sce/include/states/ConcurrentRegion.h:desiredInitialChild_
+- [references] sce/include/states/ConcurrentRegion.h:desiredInitialChild_
 - [implements] sce/include/states/ConcurrentRegion.h:setCurrentState
 - [implements] sce/include/states/ConcurrentRegion.h:setDesiredInitialChild
 - [implements] sce/include/states/IConcurrentRegion.h:setCurrentState
@@ -681,11 +681,11 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [implements] sce/include/core/ParallelStateHelper.h
 - [implements] sce/include/runtime/StateMachine.h:generateDoneStateEvent
 - [implements] sce/include/runtime/StateMachine.h:setupAndActivateParallelState
-- [implements] sce/include/states/ConcurrentRegion.h:doneStateCallback_
+- [references] sce/include/states/ConcurrentRegion.h:doneStateCallback_
 - [implements] sce/include/states/ConcurrentRegion.h:setDoneStateCallback
 - [implements] sce/include/states/ConcurrentStateNode.h:generateDoneStateEventIfComplete
 - [implements] sce/include/states/ConcurrentStateNode.h:hasNotifiedCompletion
-- [implements] sce/include/states/ConcurrentStateTypes.h:externalTransitionTarget
+- [references] sce/include/states/ConcurrentStateTypes.h:externalTransitionTarget
 - [implements] sce/include/states/IConcurrentRegion.h:setDoneStateCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
 - [implements] sce/include/static/StaticExecutionEngine.h:getActiveStates
@@ -966,12 +966,12 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [implements] sce/include/core/StateEntryHelper.h:enterDeepTargets
 - [implements] sce/include/model/IStateNode.h:addEntryActionBlock
 - [implements] sce/include/model/StateNode.h:addEntryActionBlock
-- [implements] sce/include/model/StateNode.h:entryActionBlocks_
+- [references] sce/include/model/StateNode.h:entryActionBlocks_
 - [implements] sce/include/model/StateNode.h:getEntryActionBlocks
 - [implements] sce/include/parsing/StateNodeParser.h:parseEntryExitActionNodes
 - [implements] sce/include/parsing/StateNodeParser.h:parseExecutableContentBlock
 - [implements] sce/include/states/ConcurrentStateNode.h:addEntryActionBlock
-- [implements] sce/include/states/ConcurrentStateNode.h:entryActionBlocks_
+- [references] sce/include/states/ConcurrentStateNode.h:entryActionBlocks_
 - [implements] sce/src/model/StateNode.cpp:SCE::StateNode::addEntryActionBlock
 - [implements] sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseEntryExitActionNodes
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeEntryActions
@@ -1045,12 +1045,12 @@ The children of the <onentry> handler consist of executable content as defined i
 - [implements] sce/include/core/EntryExitHelper.h:executeExitBlocks
 - [implements] sce/include/model/IStateNode.h:addEntryActionBlock
 - [implements] sce/include/model/StateNode.h:addExitActionBlock
-- [implements] sce/include/model/StateNode.h:entryActionBlocks_
+- [references] sce/include/model/StateNode.h:entryActionBlocks_
 - [implements] sce/include/model/StateNode.h:getExitActionBlocks
 - [implements] sce/include/parsing/StateNodeParser.h:parseEntryExitActionNodes
 - [implements] sce/include/parsing/StateNodeParser.h:parseExecutableContentBlock
 - [implements] sce/include/states/ConcurrentStateNode.h:addEntryActionBlock
-- [implements] sce/include/states/ConcurrentStateNode.h:entryActionBlocks_
+- [references] sce/include/states/ConcurrentStateNode.h:entryActionBlocks_
 - [implements] sce/src/model/StateNode.cpp:SCE::StateNode::addEntryActionBlock
 - [implements] sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseEntryExitActionNodes
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeExitActions
@@ -1632,20 +1632,20 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/include/common/EventMetadataHelper.h:clearPolicyMetadata
 - [implements] sce/include/common/EventMetadataHelper.h:populatePolicyFromMetadata
 - [implements] sce/include/common/FinalizeHelper.h:executeFinalizeWithEvent
-- [implements] sce/include/common/LogicalTimeScheduler.h:eventData
+- [references] sce/include/common/LogicalTimeScheduler.h:eventData
 - [implements] sce/include/common/SendHelper.h:isInvalidTarget
 - [implements] sce/include/common/SendHelper.h:sendToParentWithOrigin
 - [implements] sce/include/core/EventMetadata.h:EventMetadata
 - [implements] sce/include/events/InternalEventTarget.h:InternalEventTarget
-- [implements] sce/include/events/InternalEventTarget.h:sessionId_
+- [references] sce/include/events/InternalEventTarget.h:sessionId_
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 - [implements] sce/include/mesh/PayloadCodec.h:PayloadCodec
 - [implements] sce/include/runtime/IEventRaiser.h:raiseEvent
 - [implements] sce/include/runtime/IEventRaiser.h:raiseExternalEvent
-- [implements] sce/include/scripting/IScriptEngine.h:SetCurrentEventArgs
+- [references] sce/include/scripting/IScriptEngine.h:SetCurrentEventArgs
 - [implements] sce/include/scripting/IScriptEngine.h:setCurrentEvent
 - [implements] sce/include/scripting/ISessionRegistry.h:getInvokeIdForChildSession
-- [implements] sce/include/scripting/JSEngine.h:eventObjectInitialized
+- [references] sce/include/scripting/JSEngine.h:eventObjectInitialized
 - [implements] sce/include/scripting/JSEngine.h:setCurrentEvent
 - [implements] sce/include/static/StaticExecutionEngine.h:StaticExecutionEngine
 - [implements] sce/include/static/StaticExecutionEngine.h:processEvent
@@ -1664,7 +1664,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::ensureCurrentEventSet
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setCurrentEvent
-- [implements] sce/src/runtime/ActionExecutorImpl.h:currentTypedData_
+- [references] sce/src/runtime/ActionExecutorImpl.h:currentTypedData_
 - [implements] sce/src/runtime/ActionExecutorImpl.h:getCurrentEvent
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::executeEventCallback
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processEvent
@@ -1673,12 +1673,12 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseExternalEvent
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:SCE
 - [implements] sce/src/runtime/EventRaiserImpl.h:EventRaiserImpl
-- [implements] sce/src/runtime/EventRaiserImpl.h:currentEventContext_
-- [implements] sce/src/runtime/EventRaiserImpl.h:eventType
+- [references] sce/src/runtime/EventRaiserImpl.h:currentEventContext_
+- [references] sce/src/runtime/EventRaiserImpl.h:eventType
 - [implements] sce/src/runtime/EventRaiserImpl.h:getCurrentEventContext
-- [implements] sce/src/runtime/EventRaiserImpl.h:invokeId
-- [implements] sce/src/runtime/EventRaiserImpl.h:originType
-- [implements] sce/src/runtime/EventRaiserImpl.h:sendId
+- [references] sce/src/runtime/EventRaiserImpl.h:invokeId
+- [references] sce/src/runtime/EventRaiserImpl.h:originType
+- [references] sce/src/runtime/EventRaiserImpl.h:sendId
 - [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::executeInvoke
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 - [implements] sce/src/runtime/StateMachine.cpp:EventContextGuard
@@ -1693,7 +1693,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/src/scripting/JSEngineImpl.cpp:JSEngine::setupSystemVariablesInternal
 - [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::setCurrentEvent
 - [implements] sce/src/scripting/SessionRegistry.cpp:SessionRegistry::getInvokeIdForChildSession
-- [implements] sce/src/runtime/EventRaiserImpl.h:originSessionId
+- [references] sce/src/runtime/EventRaiserImpl.h:originSessionId
 
 
 
@@ -1722,28 +1722,28 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/include/common/EventMetadataHelper.h:setEventMetadata
 - [implements] sce/include/common/EventTypeHelper.h:EventTypeHelper
 - [implements] sce/include/common/EventTypeHelper.h:classifyEventType
-- [implements] sce/include/mesh/MeshDispatch.h
-- [implements] sce/include/scripting/IScriptEngine.h:SetCurrentEventArgs
+- [references] sce/include/mesh/MeshDispatch.h
+- [references] sce/include/scripting/IScriptEngine.h:SetCurrentEventArgs
 - [implements] sce/include/static/StaticExecutionEngine.h:currentEventInvokeId
-- [implements] sce/include/static/StaticExecutionEngine.h:invokeId
-- [implements] sce/include/static/StaticExecutionEngine.h:origin
-- [implements] sce/include/static/StaticExecutionEngine.h:originType
+- [references] sce/include/static/StaticExecutionEngine.h:invokeId
+- [references] sce/include/static/StaticExecutionEngine.h:origin
+- [references] sce/include/static/StaticExecutionEngine.h:originType
 - [implements] sce/include/static/StaticExecutionEngine.h:raise
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
-- [implements] sce/include/static/StaticExecutionEngine.h:sendId
-- [implements] sce/include/static/StaticExecutionEngine.h:type
+- [references] sce/include/static/StaticExecutionEngine.h:sendId
+- [references] sce/include/static/StaticExecutionEngine.h:type
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setCurrentEvent
-- [implements] sce/src/runtime/ActionExecutorImpl.h:currentEventType_
-- [implements] sce/src/runtime/ActionExecutorImpl.h:currentInvokeId_
-- [implements] sce/src/runtime/ActionExecutorImpl.h:currentOriginSessionId_
-- [implements] sce/src/runtime/ActionExecutorImpl.h:currentOriginType_
-- [implements] sce/src/runtime/ActionExecutorImpl.h:currentSendId_
+- [references] sce/src/runtime/ActionExecutorImpl.h:currentEventType_
+- [references] sce/src/runtime/ActionExecutorImpl.h:currentInvokeId_
+- [references] sce/src/runtime/ActionExecutorImpl.h:currentOriginSessionId_
+- [references] sce/src/runtime/ActionExecutorImpl.h:currentOriginType_
+- [references] sce/src/runtime/ActionExecutorImpl.h:currentSendId_
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::getEventQueues
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEvent
-- [implements] sce/src/runtime/EventRaiserImpl.h:invokeId
-- [implements] sce/src/runtime/EventRaiserImpl.h:origin
-- [implements] sce/src/runtime/EventRaiserImpl.h:originType
-- [implements] sce/src/runtime/EventRaiserImpl.h:sendId
+- [references] sce/src/runtime/EventRaiserImpl.h:invokeId
+- [references] sce/src/runtime/EventRaiserImpl.h:origin
+- [references] sce/src/runtime/EventRaiserImpl.h:originType
+- [references] sce/src/runtime/EventRaiserImpl.h:sendId
 - [implements] sce/src/scripting/JSEngine.cpp:JSEngine::setCurrentEvent
 - [implements] sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
 
@@ -1857,7 +1857,7 @@ None.
 - [implements] sce/include/runtime/DataModelInitializer.h:initializeAllDataItems
 - [implements] sce/include/runtime/DataModelInitializer.h:initializeDataItem
 - [implements] sce/include/runtime/DataModelInitializer.h:initializeStateDataOnEntry
-- [implements] sce/include/runtime/DataModelInitializer.h:initializedStates_
+- [references] sce/include/runtime/DataModelInitializer.h:initializedStates_
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
 - [implements] sce/include/static/StaticExecutionEngine.h:initialize
 - [implements] sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariableFromExpr
@@ -2027,12 +2027,12 @@ The children of the <assign>element provide an in-line specification of the lega
 - [implements] sce/include/parsing/DoneDataParser.h:setDatamodelType
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
 - [implements] sce/include/runtime/StateMachine.h:donedataAtFinal
-- [implements] sce/include/runtime/StateMachine.h:pendingDonedataAtFinal_
+- [references] sce/include/runtime/StateMachine.h:pendingDonedataAtFinal_
 - [implements] sce/include/runtime/StateMachine.h:typedDonedataAtFinal
 - [implements] sce/include/static/StaticExecutionEngine.h:donedataAtFinal
-- [implements] sce/include/static/StaticExecutionEngine.h:pendingDonedataAtFinal_
+- [references] sce/include/static/StaticExecutionEngine.h:pendingDonedataAtFinal_
 - [implements] sce/include/static/StaticExecutionEngine.h:stashDonedataAtFinal
-- [implements] sce/include/static/StaticExecutionEngine.h:typedData
+- [references] sce/include/static/StaticExecutionEngine.h:typedData
 - [implements] sce/include/static/StaticExecutionEngine.h:typedDonedataAtFinal
 - [implements] sce/src/parsing/DoneDataParser.cpp:SCE::DoneDataParser::parseContent
 - [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseScxmlNode
@@ -2223,8 +2223,8 @@ None.
 - [implements] sce/include/common/FileLoadingHelper.h:loadExternalScript
 - [implements] sce/include/model/SCXMLModel.h:addTopLevelScript
 - [implements] sce/include/model/SCXMLModel.h:getTopLevelScripts
-- [implements] sce/include/model/SCXMLModel.h:topLevelScripts_
-- [implements] sce/include/parsing/ActionParser.h:scxmlBasePath_
+- [references] sce/include/model/SCXMLModel.h:topLevelScripts_
+- [references] sce/include/parsing/ActionParser.h:scxmlBasePath_
 - [implements] sce/include/parsing/ActionParser.h:setScxmlBasePath
 - [implements] sce/include/parsing/SemanticError.h:SCE::parsing
 - [implements] sce/include/parsing/SemanticError.h:SemanticTopLevelScriptUnloaded
@@ -2442,7 +2442,7 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 
 **Bindings**:
 - [implements] sce/include/actions/SendAction.h:setTypeExpr
-- [implements] sce/include/actions/SendAction.h:typeExpr_
+- [references] sce/include/actions/SendAction.h:typeExpr_
 - [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 - [implements] sce/include/common/LogicalTimeScheduler.h:SCE::Common
 - [implements] sce/include/common/NamelistHelper.h:NamelistHelper
@@ -2456,20 +2456,20 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 - [implements] sce/include/common/SendHelper.h:validateTarget
 - [implements] sce/include/common/SendSchedulingHelper.h:parseDelayString
 - [implements] sce/include/common/SendSchedulingHelper.h:schedule
-- [implements] sce/include/events/IEventDispatcher.h:ScheduledEventInfo
+- [references] sce/include/events/IEventDispatcher.h:ScheduledEventInfo
 - [implements] sce/include/events/IEventDispatcher.h:cancelEventsForSession
-- [implements] sce/include/events/IEventDispatcher.h:params
-- [implements] sce/include/events/IEventDispatcher.h:targetUri
+- [references] sce/include/events/IEventDispatcher.h:params
+- [references] sce/include/events/IEventDispatcher.h:targetUri
 - [implements] sce/include/events/ParentEventTarget.h:ParentEventTarget
 - [implements] sce/include/events/PlatformEventRaiserHelper.h:pollScheduler
 - [implements] sce/include/scripting/ISessionRegistry.h:ISessionRegistry
 - [implements] sce/include/scripting/ISessionRegistry.h:cleanupSession
-- [implements] sce/include/scripting/SessionRegistry.h:eventDispatchers_
+- [references] sce/include/scripting/SessionRegistry.h:eventDispatchers_
 - [implements] sce/include/static/StaticExecutionEngine.h:pumpScheduledEvents
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:runUntilCompletion
 - [implements] sce/include/static/StaticExecutionEngine.h:scheduleEvent
-- [implements] sce/include/static/StaticExecutionEngine.h:scheduler_
+- [references] sce/include/static/StaticExecutionEngine.h:scheduler_
 - [implements] sce/include/static/StaticExecutionEngine.h:tick
 - [implements] sce/include/wrappers/GameLoopTimer.h:SCE::Wrappers
 - [implements] sce/include/wrappers/GameLoopTimer.h:scheduleByMs
@@ -2488,7 +2488,7 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setEventDispatcher
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::~ActionExecutorImpl
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processQueuedEvents
-- [implements] sce/src/runtime/EventRaiserImpl.h:scheduler_
+- [references] sce/src/runtime/EventRaiserImpl.h:scheduler_
 - [implements] sce/src/runtime/EventRaiserImpl.h:setScheduler
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::captureChildState
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
@@ -2652,7 +2652,7 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 - [implements] sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::cancelEventsForSession
 - [implements] sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::scheduleEvent
 - [implements] sce/src/events/EventSchedulerImpl.h:EventSchedulerImpl
-- [implements] sce/src/events/EventSchedulerImpl.h:executionQueue_
+- [references] sce/src/events/EventSchedulerImpl.h:executionQueue_
 - [implements] sce/include/common/LogicalTimeScheduler.h:popReadyEvent
 - [implements] sce/include/common/LogicalTimeScheduler.h:cancelEvent
 - [implements] sce/include/static/StaticExecutionEngine.h:cancelEvent
@@ -2680,7 +2680,7 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 
 
 **Bindings**:
-- [implements] sce/include/common/LogicalTimeScheduler.h:sendId
+- [references] sce/include/common/LogicalTimeScheduler.h:sendId
 - [implements] sce/include/wrappers/TimerManager.h:generateTimerSendId
 
 
@@ -2736,17 +2736,17 @@ None
 - [implements] sce/include/mesh/PatternKind.h:PatternKind
 - [implements] sce/include/model/IInvokeNode.h:setStateId
 - [implements] sce/include/model/InvokeNode.h:setStateId
-- [implements] sce/include/model/InvokeNode.h:stateId_
+- [references] sce/include/model/InvokeNode.h:stateId_
 - [implements] sce/include/runtime/IEventRaiser.h:raiseEvent
 - [implements] sce/include/runtime/InvokeExecutor.h:getAutoForward
-- [implements] sce/include/runtime/StateHierarchyManager.h:invokeDeferCallback_
+- [references] sce/include/runtime/StateHierarchyManager.h:invokeDeferCallback_
 - [implements] sce/include/runtime/StateHierarchyManager.h:setInvokeDeferCallback
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
 - [implements] sce/include/runtime/StateMachine.h:createFromSCXMLString
 - [implements] sce/include/scripting/ISessionRegistry.h:getParentSessionId
 - [implements] sce/include/scripting/ISessionRegistry.h:registerParentChild
-- [implements] sce/include/scripting/SessionRegistry.h:parentChildMappings_
-- [implements] sce/include/states/ConcurrentRegion.h:invokeCallback_
+- [references] sce/include/scripting/SessionRegistry.h:parentChildMappings_
+- [references] sce/include/states/ConcurrentRegion.h:invokeCallback_
 - [implements] sce/include/states/ConcurrentRegion.h:setInvokeCallback
 - [implements] sce/include/states/IConcurrentRegion.h:setInvokeCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:completionCallback_
@@ -2878,9 +2878,9 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 - [implements] sce/include/core/InvokeHelper.h:createDoneInvokeEventName
 - [implements] sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
-- [implements] sce/include/runtime/InvokeExecutor.h:parentStateMachine_
+- [references] sce/include/runtime/InvokeExecutor.h:parentStateMachine_
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
-- [implements] sce/include/runtime/StateMachine.h:completionCallback_
+- [references] sce/include/runtime/StateMachine.h:completionCallback_
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::enterState
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::setCompletionCallback
@@ -3540,7 +3540,7 @@ In certain circumstances, e.g. when including data in events sent via the BasicH
 
 
 **Bindings**:
-- [implements] sce/include/actions/SendAction.h:namelist_
+- [references] sce/include/actions/SendAction.h:namelist_
 - [implements] sce/include/common/NamelistHelper.h:NamelistHelper
 - [implements] sce/include/common/NamelistHelper.h:evaluateNamelist
 - [implements] sce/include/common/SCXMLConstants.h:SCE::Constants
@@ -3612,7 +3612,7 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 
 
 **Bindings**:
-- [implements] sce/include/actions/SendAction.h:content_
+- [references] sce/include/actions/SendAction.h:content_
 - [implements] sce/include/actions/SendAction.h:setContent
 - [implements] sce/include/common/SCXMLConstants.h:SCE::Constants
 - [implements] sce/include/common/SendHelper.h:buildHttpPostBody
@@ -3626,12 +3626,12 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 - [implements] sce/include/events/EmscriptenFetchClient.h:EmscriptenFetchClient
 - [implements] sce/include/events/IEventDispatcher.h:content
 - [implements] sce/include/events/IHttpClient.h:IHttpClient
-- [implements] sce/include/static/StaticExecutionEngine.h:HttpSendRequest
+- [references] sce/include/static/StaticExecutionEngine.h:HttpSendRequest
 - [implements] sce/include/static/StaticExecutionEngine.h:onHttpSend_
 - [implements] sce/include/static/StaticExecutionEngine.h:performHttpSend
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:setHttpSendCallback
-- [implements] sce/include/static/StaticExecutionEngine.h:target
+- [references] sce/include/static/StaticExecutionEngine.h:target
 - [implements] sce/src/actions/SendAction.cpp:SendAction::getSpecificDescription
 - [implements] sce/src/actions/SendAction.cpp:SendAction::validateSpecific
 - [implements] sce/src/events/EmscriptenFetchClient.cpp:BrowserFetchContext
