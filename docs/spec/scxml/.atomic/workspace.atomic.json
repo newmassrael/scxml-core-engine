@@ -2447,7 +2447,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raise",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -5203,7 +5203,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raiseExternal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
