@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Git pre-push hook — block a push that would leave embed/MANIFEST.json
+# stale relative to the sce/include/ public-header surface (mirrors
+# .github/workflows/*.yml that run scripts/verify_embed_manifest.sh).
+#
+# embed/MANIFEST.json is the one tracked file under the otherwise
+# gitignored embed/ tree: a snapshot of the embeddable public API
+# surface. A header edit under sce/include/ that forgets
+# `scripts/package_embed.sh` lands a stale manifest and turns CI red
+# AFTER the push. This hook runs the same verifier locally so the drift
+# is caught BEFORE the push — the missing companion to the pre-commit
+# §6.2.6 drift gate.
+#
+# Install via scripts/install-hooks.sh (symlinks this file into
+# .git/hooks/pre-push). Hooks are tracked in scripts/hooks/ so updates
+# stay versioned.
+#
+# Bypass: `git push --no-verify` — reserve for true emergencies; the
+# CI gate (verify_embed_manifest.yml) still catches the drift on merge.
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+# stdin carries one line per pushed ref:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# Collect the files changed across every pushed range. A new remote
+# branch reports an all-zero remote sha — diff against the local
+# commit's first parent so the pushed headers are still seen. If a
+# range cannot be resolved (remote sha not present locally), fall back
+# to running the verifier rather than silently skipping it.
+zero="0000000000000000000000000000000000000000"
+changed=""
+force_run=0
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+    [ "${local_sha}" = "${zero}" ] && continue   # branch deletion — nothing to verify
+    if [ "${remote_sha}" = "${zero}" ]; then
+        base="$(git rev-parse "${local_sha}^" 2>/dev/null || true)"
+    else
+        base="${remote_sha}"
+    fi
+    if [ -z "${base}" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+        force_run=1
+        continue
+    fi
+    changed+=$'\n'"$(git diff --name-only "${base}" "${local_sha}" 2>/dev/null || true)"
+done
+
+# Only fire when the push touches the public-header surface or the
+# manifest itself — keeps unrelated pushes fast. `force_run` (an
+# unresolved range) bypasses the filter and verifies unconditionally.
+if [ "${force_run}" -eq 0 ] &&
+    ! printf '%s\n' "${changed}" | grep -qE '^(sce/include/.*\.h|embed/MANIFEST\.json)$'; then
+    exit 0
+fi
+
+# Graceful skip when the toolchain is absent, mirroring the pre-commit
+# drift gate's behaviour for fresh-checkout contributors. CI's
+# clang-19 gate still runs on merge.
+if [ -z "${CLANG:-}" ] && ! command -v clang++-19 >/dev/null 2>&1; then
+    echo "pre-push: embed-manifest gate skipped — clang++-19 not on PATH." >&2
+    echo "pre-push:   install clang-19 or set CLANG=...; CI still gates on merge." >&2
+    exit 0
+fi
+
+if ! "${repo_root}/scripts/verify_embed_manifest.sh" >&2; then
+    echo "" >&2
+    echo "pre-push: embed/MANIFEST.json is stale vs the sce/include/ surface." >&2
+    echo "pre-push:   refresh with:" >&2
+    echo "pre-push:     scripts/package_embed.sh" >&2
+    echo "pre-push:   stage the updated embed/MANIFEST.json, commit, then retry." >&2
+    echo "pre-push:   bypass with 'git push --no-verify' (CI gate still runs)." >&2
+    exit 1
+fi
+exit 0
