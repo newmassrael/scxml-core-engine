@@ -917,10 +917,6 @@ None
 
 
 
-**Bindings**:
-- [implements] sce/include/core/ParallelCompletionHelper.h:ParallelCompletionHelper
-
-
 
 
 **Normative excerpt** (REC-scxml-20150901):
@@ -2281,7 +2277,6 @@ The child content of the <script> element represents the script code to be execu
 
 
 **Bindings**:
-- [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 - [implements] sce/include/common/GuardHelper.h:evaluateGuard
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::assignVariable
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::evaluateCondition
@@ -2310,7 +2305,6 @@ The child content of the <script> element represents the script code to be execu
 
 
 **Bindings**:
-- [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 - [implements] sce/include/common/InPredicateHelper.h:SCE::InPredicateHelper
 - [implements] sce/include/common/InPredicateHelper.h:isStateActive
 - [implements] sce/include/scripting/IScriptEngine.h:IScriptEngine
@@ -2432,7 +2426,6 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 **Bindings**:
 - [implements] sce/include/actions/SendAction.h:setTypeExpr
 - [references] sce/include/actions/SendAction.h:typeExpr_
-- [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 - [implements] sce/include/common/LogicalTimeScheduler.h:SCE::Common
 - [implements] sce/include/common/NamelistHelper.h:NamelistHelper
 - [implements] sce/include/common/NamelistHelper.h:evaluateNamelist
@@ -2475,7 +2468,6 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::evaluateExpression
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setEventDispatcher
-- [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::~ActionExecutorImpl
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processQueuedEvents
 - [references] sce/src/runtime/EventRaiserImpl.h:scheduler_
 - [implements] sce/src/runtime/EventRaiserImpl.h:setScheduler
@@ -3619,7 +3611,6 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:setHttpSendCallback
 - [references] sce/include/static/StaticExecutionEngine.h:target
-- [implements] sce/src/actions/SendAction.cpp:SendAction::getSpecificDescription
 - [implements] sce/src/actions/SendAction.cpp:SendAction::validateSpecific
 - [implements] sce/src/events/EmscriptenFetchClient.cpp:BrowserFetchContext
 - [implements] sce/src/events/EmscriptenFetchClient.cpp:EM_ASYNC_JS

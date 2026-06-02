@@ -256,7 +256,7 @@ std::string SendAction::getSpecificDescription() const {
         desc += " params=" + std::to_string(paramsWithExpr_.size());
     }
 
-    // §scxml-C-2: Include content information for debugging
+    // Include content information for debugging
     if (!content_.empty()) {
         std::string contentPreview = content_.substr(0, 50);
         if (content_.size() > 50) {
