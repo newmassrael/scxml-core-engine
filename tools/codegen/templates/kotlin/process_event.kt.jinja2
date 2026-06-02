@@ -22,6 +22,8 @@
 {{ trans.cond_kt }}
 {%- elif trans.is_kt_condition -%}
 {{ trans.cond_kt }}
+{%- elif trans.transition_index | native_payload_guard -%}
+{{ trans.transition_index | native_payload_guard }}
 {%- elif model.needs_script_engine and trans.cond and not trans.is_cpp_condition -%}
 safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {%- elif trans.cond and not trans.is_cpp_condition -%}

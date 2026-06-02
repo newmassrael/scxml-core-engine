@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 32bb8515e09395468fbe442f393d8fa280b19e8eee3f4849a191223ea6d4c265
-// generated-at: 1780369943
+// template-hash: beb72c3a9cb76e61aa4916ff585cb6a1d22e66c189bf8cc96c5023dec391d982
+// generated-at: 1780379900
 // GENERATED -- DO NOT EDIT (sce-codegen)
 // SCE-MAP: test351.scxml:1
 use std::time::Duration;

@@ -277,6 +277,10 @@ struct TransitionInfo {
 };
 {% endif %}
 
+{% if event_payload_active %}
+// ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
+{{ event_payload_defs }}
+{% endif %}
 {# Policy class #}
 // State policy for {{ model.name }}
 {% if _has_tpl %}
@@ -390,6 +394,13 @@ struct {{ model.name }}Policy {
     {% if model.needs_event_invokeid %}
     // W3C SCXML 5.10.1: Event invokeid storage for _event.invokeid access (test338)
     mutable ::std::string pendingEventInvokeId_;
+    {% endif %}
+    {% if event_payload_active %}
+    // NL→IR Item C1 Path A: the current event's typed `_event.data` payload,
+    // lifted from the dequeued event's std::any carrier by populateTypedPayload
+    // and read by the native transition guards (`pending<Event>Payload_.<field>`).
+    // Mirrors the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
+{{ event_payload_policy_members }}
     {% endif %}
     {% if model.needs_external_flag %}
     // W3C SCXML 6.2: Flag to mark next event as external (from send)
@@ -617,6 +628,13 @@ public:
     using EventWithMetadata =
         typename ::SCE::Static::StaticExecutionEngine<{{ _pol_inst }}>::EventWithMetadata;
 
+{% if event_payload_active %}
+    // ── NL→IR Item C1 Path A: per-event typed `_event.data` inject seams ──
+    // Each binds the event name + payload field values in one call so the
+    // name↔type pairing cannot be constructed inconsistently. The watching-
+    // zenoh MCU consumer is C11/Rust; this is the AP-side C++ parity.
+{{ event_payload_inject_methods }}
+{% endif %}
 {% if model.context_objects or model.needs_parent_template %}
     explicit {{ model.name }}(
         {%- for ctx in model.context_objects %}{% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}& {{ ctx.id }}{{ ', ' if not loop.last or model.needs_parent_template }}{% endfor %}
