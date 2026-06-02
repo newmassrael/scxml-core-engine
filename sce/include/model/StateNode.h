@@ -243,8 +243,9 @@ private:
 
     // New action system (IActionNode-based)
 
-    // §scxml-3.8 / §scxml-3.9: Block-based action storage for proper handler isolation
+    // §scxml-3.8: Block-based onentry action storage for proper handler isolation
     std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> entryActionBlocks_;
+    // §scxml-3.9: Block-based onexit action storage for proper handler isolation
     std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> exitActionBlocks_;
 
     std::vector<std::shared_ptr<IInvokeNode>> invokes_;

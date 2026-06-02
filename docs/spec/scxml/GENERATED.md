@@ -962,7 +962,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 **Bindings**:
 - [implements] sce/include/core/EntryExitHelper.h:SCE::Core
 - [implements] sce/include/core/EntryExitHelper.h:executeEntryBlocks
-- [implements] sce/include/core/EntryExitHelper.h:executeExitBlocks
 - [implements] sce/include/core/StateEntryHelper.h:enterDeepTargets
 - [implements] sce/include/model/IStateNode.h:addEntryActionBlock
 - [implements] sce/include/model/StateNode.h:addEntryActionBlock
@@ -1041,23 +1040,22 @@ The children of the <onentry> handler consist of executable content as defined i
 
 **Bindings**:
 - [implements] sce/include/core/EntryExitHelper.h:SCE::Core
-- [implements] sce/include/core/EntryExitHelper.h:executeEntryBlocks
 - [implements] sce/include/core/EntryExitHelper.h:executeExitBlocks
-- [implements] sce/include/model/IStateNode.h:addEntryActionBlock
 - [implements] sce/include/model/StateNode.h:addExitActionBlock
-- [references] sce/include/model/StateNode.h:entryActionBlocks_
 - [implements] sce/include/model/StateNode.h:getExitActionBlocks
 - [implements] sce/include/parsing/StateNodeParser.h:parseEntryExitActionNodes
 - [implements] sce/include/parsing/StateNodeParser.h:parseExecutableContentBlock
-- [implements] sce/include/states/ConcurrentStateNode.h:addEntryActionBlock
-- [references] sce/include/states/ConcurrentStateNode.h:entryActionBlocks_
-- [implements] sce/src/model/StateNode.cpp:SCE::StateNode::addEntryActionBlock
 - [implements] sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseEntryExitActionNodes
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeExitActions
-- [implements] sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::addEntryActionBlock
 - [implements] sce/src/states/StateExitExecutor.cpp:StateExitExecutor::executeActionNodes
 - [implements] sce/include/static/StaticExecutionEngine.h:executeOnExit
 - [implements] sce/include/static/StaticExecutionEngine.h:initialize
+- [implements] sce/include/model/IStateNode.h:addExitActionBlock
+- [implements] sce/include/states/ConcurrentStateNode.h:addExitActionBlock
+- [implements] sce/src/model/StateNode.cpp:SCE::StateNode::addExitActionBlock
+- [implements] sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::addExitActionBlock
+- [references] sce/include/states/ConcurrentStateNode.h:exitActionBlocks_
+- [references] sce/include/model/StateNode.h:exitActionBlocks_
 
 
 
