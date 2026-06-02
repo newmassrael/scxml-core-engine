@@ -1435,6 +1435,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Implementations**:
 - sce/include/mesh/PatternKind.h:PatternKind
+- sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 
 
 
@@ -1463,10 +1464,6 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 
-
-
-**Implementations**:
-- sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 
 
 
