@@ -48,6 +48,10 @@
 
 namespace SCE::Mesh {
 
+/// SCE_MESH.md §mesh-9.5: the `<invoke type="sce:mesh-rpc">` request/reply
+/// correlation table — maps a wire-level invoke id to its pending parent
+/// callback and matches replies, deadlines, and cancels back to the
+/// originating single-round-trip RPC.
 class InvokeCorrelation {
 public:
     /// Wire-level invoke id: the 16-byte UUID v7 carried in
