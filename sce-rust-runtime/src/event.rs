@@ -104,21 +104,32 @@ impl EventMetadata {
 /// Ports the C++ nested struct `StaticExecutionEngine<Policy>::EventWithMetadata`
 /// at `StaticExecutionEngine.h:114`. The generic parameter `E` is the generated
 /// `Policy::Event` enum type.
+///
+/// The second parameter `P` is the typed payload (EventSchema MCU native-lowering
+/// RFC §10.2). It defaults to `()` so every existing one-parameter use
+/// (`EventWithMetadata<E>`) keeps compiling; for a schema-carrying document the
+/// engine instantiates it with the policy's `Self::Payload` sum so the typed
+/// payload rides with its event through the queues.
 #[derive(Debug, Clone)]
-pub struct EventWithMetadata<E> {
+pub struct EventWithMetadata<E, P = ()> {
     /// The typed event value (e.g., `Test332Event::Foo`).
     pub event: E,
+    /// Typed event payload (RFC §10.2). `()` for schemaless events; the
+    /// per-document `<Doc>Payload` sum for schema-carrying events.
+    pub payload: P,
     /// Event metadata (data, type, sendid, origin, origintype, invokeid).
     pub metadata: EventMetadata,
     /// W3C SCXML C.2: HTTP POST target URL (empty if not an HTTP send).
     pub target: SceString,
 }
 
-impl<E> EventWithMetadata<E> {
-    /// Construct an `EventWithMetadata` from a bare event with default metadata.
+impl<E, P: Default> EventWithMetadata<E, P> {
+    /// Construct an `EventWithMetadata` from a bare event with default metadata
+    /// and a default (`Self::Payload::default()`) payload slot.
     pub fn new(event: E) -> Self {
         Self {
             event,
+            payload: P::default(),
             metadata: EventMetadata::default(),
             target: SceString::new(),
         }
