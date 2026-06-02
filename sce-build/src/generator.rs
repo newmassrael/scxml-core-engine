@@ -138,16 +138,17 @@ fn reject_mesh_rpc_in_unsupported_lang(
     )))
 }
 
-/// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
-/// reject a typed `_event.data` transition guard on a backend that does
-/// not yet emit the native payload channel. Such a guard makes
-/// `needs_script_engine` false for every backend (the flag is
-/// backend-independent), but only the Rust backend emits the
-/// `<Machine>Payload` sum + `matches!` guard today. Without this gate the
-/// other backends would render the raw ECMAScript cond into a unit with
-/// no script engine to evaluate it — silently broken code. Failing fast
-/// here keeps the contract honest until each backend's native lowering
-/// lands (C11 is RFC §10.4 step 5; C++/Kotlin/Go/Python follow).
+/// NL→IR Item C1 Path A (EventSchema MCU native lowering) — reject a typed
+/// `_event.data` transition guard on a backend that does not yet emit the
+/// native payload channel. Such a guard makes `needs_script_engine` false
+/// for every backend (the flag is backend-independent), but only the Rust
+/// and C11 backends emit the native payload guard today (Rust: a
+/// `<Machine>Payload` sum + `matches!`; C11: a tagged union + tag-checked
+/// comparison, RFC §10.4 step 5). Without this gate the remaining backends
+/// would render the raw ECMAScript cond into a unit with no script engine
+/// to evaluate it — silently broken code. Failing fast here keeps the
+/// contract honest until each backend's native lowering lands
+/// (C++/Kotlin/Go/Python are sequenced follow-ups).
 fn reject_typed_native_guard_unsupported(
     model: &SCXMLModel,
     language: &'static str,
@@ -157,9 +158,10 @@ fn reject_typed_native_guard_unsupported(
     }
     Err(GenerateError::UnsupportedFeature(format!(
         "EventSchema typed `_event.data` transition guard in '{}' has no {} \
-         native-lowering codegen path yet (currently Rust-only; C11 and the \
+         native-lowering codegen path yet (currently Rust + C11; the \
          remaining backends are sequenced follow-ups). Generate this machine \
-         for `--lang rust` or drop the EventSchema import + typed guard.",
+         for `--lang rust` or `--lang c11`, or drop the EventSchema import + \
+         typed guard.",
         model.name, language
     )))
 }
@@ -326,6 +328,7 @@ fn render_rust(
         no_std => no_std,
         event_payload_defs => &payload.defs,
         event_payload_type => &payload.type_name,
+        event_payload_entries => &payload.entries,
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -442,7 +445,7 @@ pub fn generate_c11(
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_c11_filters(&mut env);
-    render_c11(&env, model, input_stem)
+    render_c11(&mut env, model, input_stem)
 }
 
 /// Generate C11 code using pre-loaded template strings (WASM-compatible).
@@ -454,15 +457,14 @@ pub fn generate_c11_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_c11_filters(&mut env);
-    render_c11(&env, model, input_stem)
+    render_c11(&mut env, model, input_stem)
 }
 
 fn render_c11(
-    env: &Environment,
+    env: &mut Environment,
     model: &SCXMLModel,
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
-    reject_typed_native_guard_unsupported(model, "C11")?;
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
@@ -486,6 +488,19 @@ fn render_c11(
         String::new()
     };
 
+    // NL→IR Item C1 Path A (EventSchema MCU native lowering, RFC §10.4
+    // step 5) — the C11 typed `_event.data` payload channel: a tagged
+    // union `<name>_payload_t`, the per-transition native guard
+    // (`sm->pending_payload.tag == … && (…)`), and the `type_name` used by
+    // the `event_with_meta`/`pending_payload` fields and the
+    // `raise_external_typed` seam. The C11 twin of `render_rust`'s
+    // `native_payload_guard` filter — same SSOT guard selection.
+    let payload = crate::forge::generator::build_c11_event_payload(model);
+    let guards = payload.guards.clone();
+    env.add_filter("native_payload_guard", move |idx: usize| -> String {
+        guards.get(&idx).cloned().unwrap_or_default()
+    });
+
     let header_tmpl = env
         .get_template("c/state_machine.h.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -501,11 +516,18 @@ fn render_c11(
         base_path => &base_path,
         license_config => &license_val,
         inline_kind_code => &inline_kind_code,
+        event_payload_defs => &payload.defs,
+        event_payload_type => &payload.type_name,
+        event_payload_active => payload.active,
+        event_payload_entry_decls => &payload.entry_decls,
     };
     let source_ctx = minijinja::context! {
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
+        event_payload_type => &payload.type_name,
+        event_payload_active => payload.active,
+        event_payload_entry_defs => &payload.entry_defs,
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;

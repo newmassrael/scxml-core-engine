@@ -225,6 +225,25 @@ fn statechart_native_lowering_emits_engine_free_typed_guard() {
         ),
         "expected the native typed-payload guard; got:\n{src}"
     );
+    // Per-event typed inject: an EXTENSION TRAIT (orphan-rule-clean —
+    // `Engine` is foreign, so an inherent impl would be E0116) whose impl
+    // binds the event name + payload variant in one call so the pairing
+    // cannot be constructed inconsistently (the generic
+    // `raise_external_typed` is the underlying primitive).
+    assert!(
+        src.contains("pub trait StatechartMinimalInject")
+            && src.contains(
+                "impl StatechartMinimalInject for ::sce_rust_runtime::Engine<StatechartMinimalPolicy>"
+            )
+            && src.contains(
+                "fn raise_job_completed(&mut self, payload: StatechartMinimalJobCompletedPayload)"
+            )
+            && src.contains(
+                "self.raise_external_typed(StatechartMinimalEvent::JobCompleted, \
+                 StatechartMinimalPayload::JobCompleted(payload))"
+            ),
+        "expected the per-event typed inject extension trait (orphan-rule-clean); got:\n{src}"
+    );
     assert!(
         !src.contains("safe_evaluate_guard"),
         "native lowering must not fall back to the script-engine guard"
@@ -236,6 +255,126 @@ fn statechart_native_lowering_emits_engine_free_typed_guard() {
     assert!(
         !src.contains("elapsed_ms ==="),
         "the raw ECMAScript guard must be fully lowered away"
+    );
+}
+
+// NL→IR Item C1 Path A (EventSchema MCU native lowering, RFC §10.4 step
+// 5) — C11 parity for `statechart_native_lowering_emits_engine_free_typed_guard`.
+// The C11 backend must lower the typed `_event.data.elapsed_ms` guard to a
+// native tagged-union comparison: a `<name>_payload_t` union, a
+// `pending_payload` copy in the pop loop, a `raise_external_typed` inject
+// seam, and a `tag ==` + field-comparison guard — never the Lua
+// `lua_eval_guard` path (there is no script engine on an MCU). Beyond the
+// shape assertions the generated translation unit must COMPILE under the
+// strict MCU profile (`-std=c11 -Wall -Wextra -Wpedantic -Werror`) and,
+// critically, under `-ffreestanding` — the value path's whole point is that
+// it carries no hosted-libc / Lua dependency, so it builds for a bare-metal
+// target. That freestanding compile is the A5 MCU acceptance gate.
+#[test]
+fn statechart_native_lowering_c11_compiles_freestanding() {
+    let Some(cc) = resolve_tool("clang").or_else(|| resolve_tool("gcc")) else {
+        eprintln!("SKIP statechart_native_lowering_c11: clang/gcc not on PATH");
+        return;
+    };
+    let scratch = reset_scratch("c11_statechart");
+    let out_dir = scratch.join("statechart_minimal");
+    run_generate("c11", &out_dir, "statechart_minimal");
+
+    let c_files = find_by_ext(&out_dir, "c");
+    assert_eq!(c_files.len(), 1, "expected exactly one generated C11 TU");
+    let src = std::fs::read_to_string(&c_files[0]).expect("read .c");
+
+    assert!(
+        src.contains(
+            "sm->pending_payload.tag == STATECHART_MINIMAL_PAYLOAD_JOB_COMPLETED \
+             && (sm->pending_payload.as.job_completed.elapsed_ms == 0)"
+        ),
+        "expected the native tagged-union typed-payload guard; got:\n{src}"
+    );
+    assert!(
+        src.contains(
+            "statechart_minimal_raise_job_completed_typed(statechart_minimal_t *sm, \
+             const statechart_minimal_job_completed_payload_t *payload)"
+        ),
+        "expected the per-event typed-payload inject seam (binds event+tag+member)"
+    );
+    assert!(
+        !src.contains("lua_eval_guard"),
+        "native lowering must not fall back to the Lua script-engine guard"
+    );
+    // `elapsed_ms ===` would only survive if the raw ECMAScript cond leaked
+    // (`===` is not valid C). A precise sentinel — the `cond="…"` echo
+    // comment uses `escape_c` and reads `elapsed_ms === 0` inside a quoted
+    // string, so match the bare operator form the guard would emit.
+    assert!(
+        !src.contains("if (sm->pending_payload.as.job_completed.elapsed_ms === 0)")
+            && !src.contains("lua_eval"),
+        "the raw ECMAScript guard must be fully lowered away"
+    );
+
+    let runtime_inc = repo_root().join("sce-c-runtime/include");
+    // Strict MCU profile + freestanding: the no-script-engine value path
+    // must build with no hosted-libc assumption (A5 MCU gate).
+    let mut cmd = Command::new(&cc);
+    cmd.args([
+        "-std=c11",
+        "-ffreestanding",
+        "-c",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-Werror",
+    ]);
+    cmd.arg("-I").arg(&runtime_inc);
+    cmd.arg("-I").arg(&out_dir);
+    cmd.arg("-o").arg(out_dir.join("sm.o"));
+    cmd.arg(&c_files[0]);
+    let output = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run c11 compiler");
+    assert!(
+        output.status.success(),
+        "freestanding -std=c11 compile of the native-lowered TU failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+
+    // A5 north-star gate: a REAL bare-metal ARM cross-compile (Cortex-M4,
+    // Thumb). The freestanding host compile above proves "no hosted-libc
+    // calls"; this proves the value path actually builds for the MCU ISA
+    // the watching-zenoh consumer targets. Skipped (not failed) when the
+    // cross toolchain is absent, mirroring the host-compiler skips above —
+    // CI installs `gcc-arm-none-eabi`.
+    let Some(arm_cc) = resolve_tool("arm-none-eabi-gcc") else {
+        eprintln!("SKIP arm-none-eabi cross-compile: arm-none-eabi-gcc not on PATH");
+        return;
+    };
+    let mut arm = Command::new(&arm_cc);
+    arm.args([
+        "-mcpu=cortex-m4",
+        "-mthumb",
+        "-std=c11",
+        "-ffreestanding",
+        "-c",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-Werror",
+    ]);
+    arm.arg("-I").arg(&runtime_inc);
+    arm.arg("-I").arg(&out_dir);
+    arm.arg("-o").arg(out_dir.join("sm.arm.o"));
+    arm.arg(&c_files[0]);
+    let arm_out = arm
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run arm-none-eabi-gcc");
+    assert!(
+        arm_out.status.success(),
+        "arm-none-eabi (cortex-m4) cross-compile of the native-lowered TU failed\nstderr: {}",
+        String::from_utf8_lossy(&arm_out.stderr),
     );
 }
 

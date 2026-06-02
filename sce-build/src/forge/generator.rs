@@ -1671,6 +1671,54 @@ fn render_event_schema(
     l.render(env, "event_schema", ctx)
 }
 
+/// One transition whose typed `_event.data` guard lowers to a native
+/// payload comparison: its per-source-state `transition_index`, the
+/// schema-carrying event it matches, and the raw `cond`. The per-language
+/// payload builders ([`build_rust_event_payload`],
+/// [`build_c11_event_payload`]) format the guard expression and the
+/// payload type definitions from this shared selection.
+struct NativeTypedGuard {
+    transition_index: usize,
+    event: String,
+    cond: String,
+}
+
+/// Select every transition whose typed `_event.data` guard lowers
+/// natively (event carries an imported, payload-eligible schema + the
+/// cond passes [`event_schema_check::guard_is_native_lowerable`]).
+///
+/// This is the single SSOT the Rust and C11 payload builders share so the
+/// two backends never disagree about which guards are native — gating on
+/// a per-backend local predicate would let one backend emit a native
+/// guard the other (and the engine-need analyzer) treated as
+/// script-engine. Returns an empty vec for the schemaless baseline (no
+/// imported schema, or no guard lowers).
+fn select_native_typed_guards(model: &crate::model::SCXMLModel) -> Vec<NativeTypedGuard> {
+    let mut guarded = Vec::new();
+    if model.imported_event_schemas.is_empty() {
+        return guarded;
+    }
+    for state in model.states.values() {
+        for trans in &state.transitions {
+            if trans.cond.trim().is_empty() {
+                continue;
+            }
+            let Some(schema) = model.imported_event_schemas.get(&trans.event) else {
+                continue;
+            };
+            if !crate::forge::event_schema_check::guard_is_native_lowerable(&trans.cond, schema) {
+                continue;
+            }
+            guarded.push(NativeTypedGuard {
+                transition_index: trans.transition_index,
+                event: trans.event.clone(),
+                cond: trans.cond.clone(),
+            });
+        }
+    }
+    guarded
+}
+
 /// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
 /// Rust-codegen payload data for a statechart that imports one or more
 /// EventSchemas and reads `_event.data.<field>` in a transition guard.
@@ -1681,13 +1729,21 @@ fn render_event_schema(
 /// `Transition::transition_index` to the native `matches!(…)` guard
 /// expression the template emits in place of the script-engine call.
 ///
-/// All three are Rust-specific (the `matches!` lowering, enum/struct
+/// All four are Rust-specific (the `matches!` lowering, enum/struct
 /// syntax, derive set), so they are injected into the render context
 /// rather than carried on the language-agnostic model.
 pub struct RustEventPayload {
     pub defs: String,
     pub type_name: String,
     pub guards: std::collections::BTreeMap<usize, String>,
+    /// The per-event typed inject wrappers — one `Engine<Policy>` method
+    /// per guarded event (`raise_<event>`), each binding the event name
+    /// and the matching payload variant in a single call so the
+    /// name↔payload-type pairing cannot be constructed inconsistently
+    /// (the generic `Engine::raise_external_typed` remains the underlying
+    /// runtime primitive, but the generated safe API is per-event). `""`
+    /// when no typed channel is active.
+    pub entries: String,
 }
 
 /// Build the [`RustEventPayload`] for `model`.
@@ -1709,51 +1765,35 @@ pub fn build_rust_event_payload(
         defs: String::new(),
         type_name: "()".to_string(),
         guards: std::collections::BTreeMap::new(),
+        entries: String::new(),
     };
-    if model.imported_event_schemas.is_empty() {
-        return schemaless();
-    }
     let enum_name = format!("{machine_name}Payload");
 
     // Lower every typed-access guard first; the set of events owning a
     // lowered guard is exactly the set of enum variants emitted below, so
-    // no variant (and no payload struct) is ever dead.
+    // no variant (and no payload struct) is ever dead. The selection
+    // (`select_native_typed_guards`) is shared with the C11 builder so the
+    // two backends agree on which guards are native; the
+    // `lower_typed_guard` call is guaranteed `Ok` by that gate (the `else`
+    // arm is defensive).
     let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    for state in model.states.values() {
-        for trans in &state.transitions {
-            if trans.cond.trim().is_empty() {
-                continue;
-            }
-            let Some(schema) = model.imported_event_schemas.get(&trans.event) else {
-                continue;
-            };
-            // SSOT: gate on the exact predicate the engine-need analyzer
-            // uses — `guard_is_native_lowerable` (schema-eligible + pure
-            // typed-payload + transpilable). Gating on a looser local
-            // combination would let codegen emit a native guard the
-            // analyzer treated as script-engine (or vice versa), e.g. a
-            // mixed `_event.data.x && datamodelVar` cond would emit a bare
-            // undefined identifier. The follow-up `lower_typed_guard` is
-            // guaranteed `Ok` by the gate; the `else` arm is defensive.
-            if !crate::forge::event_schema_check::guard_is_native_lowerable(&trans.cond, schema) {
-                continue;
-            }
-            let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
-                &trans.cond,
-                schema,
-                "ev",
-                ExprTarget::Rust,
-            ) else {
-                continue;
-            };
-            let variant = filters::to_event_variant(trans.event.clone());
-            guards.insert(
-                trans.transition_index,
-                format!("matches!(&self.pending_payload, {enum_name}::{variant}(ev) if {inner})"),
-            );
-            guarded_events.insert(trans.event.clone());
-        }
+    for g in select_native_typed_guards(model) {
+        let schema = &model.imported_event_schemas[&g.event];
+        let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
+            &g.cond,
+            schema,
+            "ev",
+            ExprTarget::Rust,
+        ) else {
+            continue;
+        };
+        let variant = filters::to_event_variant(g.event.clone());
+        guards.insert(
+            g.transition_index,
+            format!("matches!(&self.pending_payload, {enum_name}::{variant}(ev) if {inner})"),
+        );
+        guarded_events.insert(g.event);
     }
     if guards.is_empty() {
         return schemaless();
@@ -1767,10 +1807,34 @@ pub fn build_rust_event_payload(
     let l = LangCtx::new(crate::generator::Language::Rust);
     let mut structs = String::new();
     let mut variant_lines = String::new();
+    let mut entry_fns = String::new();
+    let mut trait_methods = String::new();
     for event in &guarded_events {
         let schema = &model.imported_event_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let struct_name = format!("{machine_name}{variant}Payload");
+        // Per-event typed inject wrapper: one call binds the event name and
+        // the matching payload variant, so a caller cannot pair them
+        // inconsistently (the generic `raise_external_typed` is the
+        // underlying primitive). `raise_<event>` snake-cases the event.
+        // Emitted as an EXTENSION TRAIT impl, not an inherent impl: `Engine`
+        // is a foreign type (defined in `sce_rust_runtime`), so the orphan
+        // rule forbids an inherent `impl Engine<Policy>` here (E0116). The
+        // local trait `<Machine>Inject` is the idiomatic extension point —
+        // the same shape as the generated `<Machine>LinkRx` trait impl.
+        let method = format!("raise_{}", filters::to_snake_case(event.clone()));
+        let doc = format!(
+            "    /// NL\u{2192}IR Item C1 Path A: typed `_event.data` inject for `{event}`.\n    \
+/// Binds the event name and payload variant in one call (name\u{2194}type\n    \
+/// pairing cannot be constructed inconsistently)."
+        );
+        trait_methods.push_str(&format!(
+            "{doc}\n    fn {method}(&mut self, payload: {struct_name});\n"
+        ));
+        entry_fns.push_str(&format!(
+            "    fn {method}(&mut self, payload: {struct_name}) {{\n        \
+self.raise_external_typed({machine_name}Event::{variant}, {enum_name}::{variant}(payload));\n    }}\n"
+        ));
         let mut field_lines = String::new();
         for f in &schema.fields {
             let ty = l.resolved_type(&f.sce_type, &[]);
@@ -1788,10 +1852,185 @@ EventSchema-imported events whose transition guards lowered natively.\n\
 /// Schemaless / not-yet-populated default (W3C \u{a7}5.10 empty `_event.data`).\n    \
 #[default]\n    None,\n{variant_lines}}}\n"
     );
+    // Extension trait + impl (orphan-rule-clean — `Engine` is foreign).
+    // The consumer brings the per-event inject methods into scope with
+    // `use …::{machine_name}Inject;`.
+    let entries = format!(
+        "/// NL\u{2192}IR Item C1 Path A: per-event typed `_event.data` inject seam.\n\
+/// Bring into scope with `use …::{machine_name}Inject;` to call the\n\
+/// `raise_<event>` methods on the engine.\n\
+pub trait {machine_name}Inject {{\n{trait_methods}}}\n\n\
+impl {machine_name}Inject for ::sce_rust_runtime::Engine<{machine_name}Policy> {{\n{entry_fns}}}\n"
+    );
     RustEventPayload {
         defs,
         type_name: enum_name,
         guards,
+        entries,
+    }
+}
+
+/// NL→IR Item C1 Path A (EventSchema MCU native lowering, RFC §10.4 step
+/// 5) — C11 parity for [`build_rust_event_payload`].
+///
+/// `defs` is the emitted typed-payload typedef block (one `struct` per
+/// guarded event, a tag `enum`, and the tagged-union `<name>_payload_t`);
+/// `type_name` is that union's typedef name (`""` when no typed channel is
+/// active); `guards` maps `Transition::transition_index` to the native C
+/// guard expression — a tag check ANDed with the lowered field
+/// comparison — the template emits in place of the Lua `lua_eval_guard`
+/// call.
+///
+/// The Rust backend models the payload as an `enum` whose variant is
+/// matched with `matches!`; C has no sum type, so the structural twin is a
+/// tagged union (`tag` selects the live `as.<event>` member). The guard
+/// selection ([`select_native_typed_guards`]) is the same SSOT both
+/// backends gate on.
+pub struct C11EventPayload {
+    pub defs: String,
+    pub type_name: String,
+    pub active: bool,
+    pub guards: std::collections::BTreeMap<usize, String>,
+    /// Per-event typed inject entry declarations (`.h`) — one
+    /// `<name>_raise_<event>_typed(sm, const <event>_payload_t *)` per
+    /// guarded event. The C twin of the Rust per-event `Engine<Policy>`
+    /// wrappers: each binds the event enum, the tag, and the union member
+    /// in a single site so an inconsistent pairing cannot be constructed.
+    /// `""` when no typed channel is active.
+    pub entry_decls: String,
+    /// The matching entry definitions (`.c`).
+    pub entry_defs: String,
+}
+
+/// The C identifier token for an event name: `.`/`-` collapse to `_`
+/// (mirrors the `event | replace('.','_') | replace('-','_')` the C11
+/// templates apply to the event enum). The caller upper/lower-cases it for
+/// the tag constant vs the struct/member spelling.
+fn c11_event_token(event: &str) -> String {
+    event.replace(['.', '-'], "_")
+}
+
+/// Build the [`C11EventPayload`] for `model`. See
+/// [`build_rust_event_payload`] for the shared design; this emits the C11
+/// tagged-union form. `model.name` is the C identifier stem (already
+/// snake-case; the C11 templates use it verbatim as the type prefix).
+pub fn build_c11_event_payload(model: &crate::model::SCXMLModel) -> C11EventPayload {
+    let inactive = || C11EventPayload {
+        defs: String::new(),
+        type_name: String::new(),
+        active: false,
+        guards: std::collections::BTreeMap::new(),
+        entry_decls: String::new(),
+        entry_defs: String::new(),
+    };
+    let name = &model.name;
+    let union_type = format!("{name}_payload_t");
+    let tag_type = format!("{name}_payload_tag_t");
+    let name_upper = name.to_uppercase();
+
+    // Same SSOT selection as the Rust builder; lower each guard to a C
+    // tag-check + field comparison. The set of events owning a lowered
+    // guard is exactly the set of union members emitted below — no member
+    // (and no payload struct) is ever dead.
+    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for g in select_native_typed_guards(model) {
+        let schema = &model.imported_event_schemas[&g.event];
+        let token = c11_event_token(&g.event);
+        let member = token.to_lowercase();
+        let tag_const = format!("{name_upper}_PAYLOAD_{}", token.to_uppercase());
+        let accessor = format!("sm->pending_payload.as.{member}");
+        let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
+            &g.cond,
+            schema,
+            &accessor,
+            ExprTarget::C,
+        ) else {
+            continue;
+        };
+        guards.insert(
+            g.transition_index,
+            format!("sm->pending_payload.tag == {tag_const} && ({inner})"),
+        );
+        guarded_events.insert(g.event);
+    }
+    if guards.is_empty() {
+        return inactive();
+    }
+
+    // Emit one payload struct + one union member per guarded event, plus
+    // the tag enum. Field types resolve through `LangCtx::resolved_type`;
+    // payload eligibility guarantees every field is primitive, so this
+    // never reaches the Enum arm (which would need an out-of-scope
+    // include).
+    let l = LangCtx::new(crate::generator::Language::C11);
+    let mut structs = String::new();
+    let mut tag_lines = format!("    {name_upper}_PAYLOAD_NONE = 0,\n");
+    let mut union_lines = String::new();
+    let mut entry_decls = String::new();
+    let mut entry_defs = String::new();
+    for event in &guarded_events {
+        let schema = &model.imported_event_schemas[event];
+        let token = c11_event_token(event);
+        let member = token.to_lowercase();
+        let upper = token.to_uppercase();
+        let struct_name = format!("{name}_{member}_payload_t");
+        let event_const = format!("{name_upper}_EVENT_{upper}");
+        let tag_const = format!("{name_upper}_PAYLOAD_{upper}");
+        let fn_name = format!("{name}_raise_{member}_typed");
+        let mut field_lines = String::new();
+        for f in &schema.fields {
+            let ty = l.resolved_type(&f.sce_type, &[]);
+            field_lines.push_str(&format!("    {ty} {};\n", f.id));
+        }
+        structs.push_str(&format!(
+            "typedef struct {name}_{member}_payload {{\n{field_lines}}} {struct_name};\n\n"
+        ));
+        tag_lines.push_str(&format!("    {tag_const},\n"));
+        union_lines.push_str(&format!("        {struct_name} {member};\n"));
+
+        // Per-event typed inject entry: binds the event enum, the tag, and
+        // the union member in one site so a caller cannot mis-pair them
+        // (the C twin of the Rust per-event `Engine<Policy>` wrappers).
+        entry_decls.push_str(&format!(
+            "/* NL\u{2192}IR Item C1 Path A: typed `_event.data` inject for `{event}` — binds\n   \
+the event name, payload tag, and union member in one call (the name\u{2194}type\n   \
+pairing cannot be constructed inconsistently). A NULL `payload` injects the\n   \
+event with a zeroed payload. */\n\
+void {fn_name}({name}_t *sm, const {struct_name} *payload);\n\n"
+        ));
+        entry_defs.push_str(&format!(
+            "SCE_SM_FN void {fn_name}({name}_t *sm, const {struct_name} *payload) {{\n    \
+{name}_event_with_meta_t evt = {{0}};\n    \
+evt.event = {event_const};\n    \
+evt.payload.tag = {tag_const};\n    \
+if (payload != NULL) {{\n        \
+evt.payload.as.{member} = *payload;\n    \
+}}\n    \
+{name}_raise_external(sm, &evt);\n}}\n\n"
+        ));
+    }
+    // Trim the trailing comma on the last tag enumerator (C is tolerant of
+    // it, but -Wpedantic flags a trailing comma in an enum under C99/C11).
+    let tag_lines = tag_lines.trim_end().trim_end_matches(',').to_string();
+    let defs = format!(
+        "/* NL\u{2192}IR Item C1 Path A (RFC \u{a7}10.4 step 5): typed `_event.data`\n   \
+payload channel for the EventSchema-imported events whose transition\n   \
+guards lowered to a native C comparison (no script engine). The C11\n   \
+twin of the Rust `{name_upper}Payload` enum\n   \
+(forge::generator::build_rust_event_payload): a tagged union whose `tag`\n   \
+selects the live `as.<event>` member. The pop loop copies it into\n   \
+`pending_payload`; native guards read `pending_payload.as.<event>.<field>`. */\n\
+{structs}typedef enum {name}_payload_tag_e {{\n{tag_lines}\n}} {tag_type};\n\n\
+typedef struct {name}_payload {{\n    {tag_type} tag;\n    union {{\n{union_lines}    }} as;\n}} {union_type};\n"
+    );
+    C11EventPayload {
+        defs,
+        type_name: union_type,
+        active: true,
+        guards,
+        entry_decls,
+        entry_defs,
     }
 }
 
