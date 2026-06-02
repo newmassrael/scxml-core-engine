@@ -1728,7 +1728,15 @@ pub fn build_rust_event_payload(
             let Some(schema) = model.imported_event_schemas.get(&trans.event) else {
                 continue;
             };
-            if !crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {
+            // SSOT: gate on the exact predicate the engine-need analyzer
+            // uses — `guard_is_native_lowerable` (schema-eligible + pure
+            // typed-payload + transpilable). Gating on a looser local
+            // combination would let codegen emit a native guard the
+            // analyzer treated as script-engine (or vice versa), e.g. a
+            // mixed `_event.data.x && datamodelVar` cond would emit a bare
+            // undefined identifier. The follow-up `lower_typed_guard` is
+            // guaranteed `Ok` by the gate; the `else` arm is defensive.
+            if !crate::forge::event_schema_check::guard_is_native_lowerable(&trans.cond, schema) {
                 continue;
             }
             let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(

@@ -262,18 +262,113 @@ pub fn model_has_native_typed_guard(model: &SCXMLModel) -> bool {
 
 /// `true` iff `cond` lowers natively on every backend SCE generates —
 /// i.e. the document needs no runtime script engine to evaluate this
-/// guard. Requires (a) the schema is payload-eligible
-/// ([`schema_is_native_payload_eligible`]) and (b) the expression emits
-/// on the fallible backends: only the Rust and Go emitters can fail
-/// (`transpile_typed`'s C++ / Kotlin / Python / C arms return `Ok`
-/// unconditionally), so success on those two implies success on all six;
-/// the engine-need flag is backend-independent, so it must hold for the
-/// strictest target. The accessor is irrelevant to lowerability (any
-/// valid identifier renames cleanly), so a fixed placeholder is used.
+/// guard. The native form is a self-contained `matches!` over the
+/// payload-enum variant, so all of the following must hold:
+///
+/// (a) the schema is payload-eligible
+///     ([`schema_is_native_payload_eligible`]);
+/// (b) the cond reads at least one typed `_event.data.<field>` (a guard
+///     that touches no payload field is not a typed guard — it keeps the
+///     normal native/script-engine path);
+/// (c) the cond references *nothing else* —
+///     [`cond_is_pure_typed_payload`]. A datamodel identifier, function
+///     call, or `In()` predicate has no binding inside the payload
+///     `matches!` guard; emitting it would produce a bare undefined
+///     identifier (e.g. `retry_count` instead of `self.retry_count`).
+///     Such mixed conds keep the script-engine path and are surfaced as
+///     `validation/typed-cond-non-native` by [`check`];
+/// (d) the expression emits on the fallible backends — only the Rust and
+///     Go emitters can fail (`transpile_typed`'s C++ / Kotlin / Python /
+///     C arms return `Ok` unconditionally), so success on those two
+///     implies success on all six. The engine-need flag is backend-
+///     independent, so it must hold for the strictest target. The
+///     accessor is irrelevant to lowerability (any valid identifier
+///     renames cleanly), so a fixed placeholder is used.
 pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool {
-    schema_is_native_payload_eligible(schema)
-        && lower_typed_guard(cond, schema, "ev", ExprTarget::Rust).is_ok()
+    if !schema_is_native_payload_eligible(schema) {
+        return false;
+    }
+    let Ok(ast) = parse_to_ast(cond) else {
+        return false;
+    };
+    if !cond_references_event_data(&ast) || !cond_is_pure_typed_payload(&ast) {
+        return false;
+    }
+    lower_typed_guard(cond, schema, "ev", ExprTarget::Rust).is_ok()
         && lower_typed_guard(cond, schema, "ev", ExprTarget::Go).is_ok()
+}
+
+/// `true` iff `expr` reads at least one `_event.data.<field>` member
+/// access anywhere in the tree.
+fn cond_references_event_data(expr: &TypedExpr) -> bool {
+    match &expr.kind {
+        ExprKind::Member { object, .. } if is_event_data_object(object) => true,
+        ExprKind::Member { object, .. } => cond_references_event_data(object),
+        ExprKind::Binary { left, right, .. } => {
+            cond_references_event_data(left) || cond_references_event_data(right)
+        }
+        ExprKind::Unary { operand, .. } => cond_references_event_data(operand),
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            cond_references_event_data(condition)
+                || cond_references_event_data(consequent)
+                || cond_references_event_data(alternate)
+        }
+        ExprKind::Index { object, index } => {
+            cond_references_event_data(object) || cond_references_event_data(index)
+        }
+        ExprKind::Call { callee, args } => {
+            cond_references_event_data(callee) || args.iter().any(cond_references_event_data)
+        }
+        ExprKind::Ident(_)
+        | ExprKind::Raw(_)
+        | ExprKind::NumberLit(_)
+        | ExprKind::StringLit { .. }
+        | ExprKind::BoolLit(_)
+        | ExprKind::NullLit => false,
+    }
+}
+
+/// `true` iff every reference in `expr` is a `_event.data.<field>` access
+/// — i.e. the cond is built only from typed payload fields, literals, and
+/// operators. A bare identifier (datamodel variable), function call,
+/// `In()` predicate, index, or nested member (`_event.data.a.b`) makes it
+/// `false`: those cannot be expressed inside the payload-variant
+/// `matches!` guard, which binds only the flat payload fields.
+fn cond_is_pure_typed_payload(expr: &TypedExpr) -> bool {
+    match &expr.kind {
+        // `_event.data.<field>` — the only permitted leaf reference. The
+        // object is the validated `_event.data` access; do not recurse.
+        ExprKind::Member { object, .. } if is_event_data_object(object) => true,
+        ExprKind::Binary { left, right, .. } => {
+            cond_is_pure_typed_payload(left) && cond_is_pure_typed_payload(right)
+        }
+        ExprKind::Unary { operand, .. } => cond_is_pure_typed_payload(operand),
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            cond_is_pure_typed_payload(condition)
+                && cond_is_pure_typed_payload(consequent)
+                && cond_is_pure_typed_payload(alternate)
+        }
+        ExprKind::NumberLit(_)
+        | ExprKind::StringLit { .. }
+        | ExprKind::BoolLit(_)
+        | ExprKind::NullLit => true,
+        // Any other Member shape (`frame.x`, `_event.data.a.b`), bare
+        // Ident (datamodel var), Call, Index, or Raw fragment references
+        // something the payload `matches!` cannot bind.
+        ExprKind::Member { .. }
+        | ExprKind::Ident(_)
+        | ExprKind::Call { .. }
+        | ExprKind::Index { .. }
+        | ExprKind::Raw(_) => false,
+    }
 }
 
 /// Per-statechart receive-side typecheck.
@@ -1414,6 +1509,31 @@ mod tests {
             "ev.elapsed_ms == 0"
         );
         assert!(schema_is_native_payload_eligible(&s));
+        assert!(guard_is_native_lowerable(
+            "_event.data.elapsed_ms === 0",
+            &s
+        ));
+    }
+
+    // A guard that mixes a typed `_event.data` field with a datamodel
+    // identifier (or any non-payload reference) is NOT natively lowerable:
+    // the bare identifier has no binding inside the payload `matches!`
+    // guard. Must report false so codegen keeps it off the native path
+    // (and `check` surfaces `validation/typed-cond-non-native`) — emitting
+    // it would produce a reference to an undefined local.
+    #[test]
+    fn mixed_typed_and_datamodel_guard_is_not_lowerable() {
+        let s = schema("job.completed", vec![field("elapsed_ms", SceType::Uint32)]);
+        assert!(!guard_is_native_lowerable(
+            "_event.data.elapsed_ms === 0 && retryCount > 3",
+            &s
+        ));
+        // A function call over a typed field is likewise non-pure.
+        assert!(!guard_is_native_lowerable(
+            "compute(_event.data.elapsed_ms) > 0",
+            &s
+        ));
+        // Sanity: the pure single-field comparison still lowers.
         assert!(guard_is_native_lowerable(
             "_event.data.elapsed_ms === 0",
             &s
