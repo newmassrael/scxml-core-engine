@@ -2777,11 +2777,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::assignVariable",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/DataModelInitializer.cpp",
           "symbol": "DataModelInitializer::initializeAllDataItems",
           "kind": "implements"
@@ -2799,11 +2794,6 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::setupJSEnvironment",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-          "symbol": "EcmaScriptToLuaTransformer::transformFunctionSyntax",
           "kind": "implements"
         }
       ],

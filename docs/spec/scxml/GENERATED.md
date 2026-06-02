@@ -1861,12 +1861,10 @@ None.
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
 - [implements] sce/include/static/StaticExecutionEngine.h:initialize
 - [implements] sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariableFromExpr
-- [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::assignVariable
 - [implements] sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeAllDataItems
 - [implements] sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::enterState
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
-- [implements] sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformFunctionSyntax
 
 
 
