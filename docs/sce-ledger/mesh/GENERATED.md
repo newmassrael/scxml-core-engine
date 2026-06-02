@@ -515,7 +515,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 **Bindings**:
 - [references] sce/include/mesh/CommunicationError.h:timeout_ms
 - [implements] sce/include/mesh/ParallelCompletionTracker.h
-- [implements] sce/include/static/StaticExecutionEngine.h:triggerParallelRegionRemoteSend
+- [references] sce/include/static/StaticExecutionEngine.h:triggerParallelRegionRemoteSend
 
 
 
@@ -1757,7 +1757,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [implements] sce/include/static/StaticExecutionEngine.h:setScxmlInvokeCancelCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:setScxmlInvokeParentEventCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:setScxmlInvokeStartCallback
-- [implements] sce/include/static/StaticExecutionEngine.h:stashDonedataAtFinal
+- [references] sce/include/static/StaticExecutionEngine.h:stashDonedataAtFinal
 - [implements] sce/src/mesh/MeshEnvelopeCodec.cpp:isValidPatternKind
 
 

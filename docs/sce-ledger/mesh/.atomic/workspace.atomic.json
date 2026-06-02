@@ -374,7 +374,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "triggerParallelRegionRemoteSend",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
@@ -1455,7 +1455,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "stashDonedataAtFinal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
