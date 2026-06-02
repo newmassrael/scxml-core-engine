@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A (EventSchema MCU native lowering, RFC §10.4 step 5)
+  — C11 runtime-parity fixture. Imports the EventSchema and reads
+  `_event.data.elapsed_ms` in a transition guard. The C11 backend lowers
+  this to a native tagged-union comparison (no script engine), so the
+  generated translation unit links zero runtime libraries — the harness
+  target (`sce_c_integration_event_schema_native`) deliberately links
+  none, which is the MCU-clean acceptance proof. The runner injects a
+  typed payload through `..._raise_external_typed` and asserts the guard
+  fires (elapsed_ms == 0 → done) / misses (elapsed_ms != 0 → waiting),
+  the C11 twin of the Rust slice behaviour.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="event_schema_native"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <state id="waiting">
+    <transition event="job.completed" cond="_event.data.elapsed_ms === 0" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>

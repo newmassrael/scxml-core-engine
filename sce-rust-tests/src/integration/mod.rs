@@ -15,3 +15,4 @@
 //! a single-line edit here.
 
 pub mod donedata_local_invoke;
+pub mod event_schema_native;

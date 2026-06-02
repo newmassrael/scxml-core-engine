@@ -388,6 +388,60 @@ set_tests_properties(c11_integration_donedata_local_invoke PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─
+#
+# Proves the C11 backend's native typed `_event.data` lowering at runtime
+# (the watching-zenoh value path): a guard `_event.data.elapsed_ms === 0`
+# lowers to a tagged-union comparison with NO script engine, and the typed
+# inject seam `..._raise_external_typed` drives it. Generation runs directly
+# from the read-only resource dir (NOT via the staging helper) so the
+# `<sce:import kind="event-schema">` sibling resolves relative to the
+# importing statechart's own directory.
+#
+# MCU-clean gate: the target links NO runtime library — the datamodel-less
+# native path is fully self-contained (only header-only `sce/types.h`
+# constants), so a successful link is the no-Lua / no-script-engine proof
+# for a bare-metal target.
+set(_ES_FIXTURE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/event_schema_native")
+set(_ES_PARENT_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_native_sm.c")
+set(_ES_PARENT_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_native_sm.h")
+add_custom_command(
+    OUTPUT "${_ES_PARENT_SOURCE}"
+    COMMAND "${SCE_CODEGEN}" generate
+            "${_ES_FIXTURE_ROOT}/event_schema_native.scxml"
+            -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    DEPENDS "${_ES_FIXTURE_ROOT}/event_schema_native.scxml"
+            "${_ES_FIXTURE_ROOT}/schema_job_completed.scxml"
+            "${SCE_CODEGEN}"
+    BYPRODUCTS "${_ES_PARENT_HEADER}"
+    COMMENT "Generating C11 EventSchema native-lowering fixture: event_schema_native_sm.{h,c}"
+    VERBATIM
+)
+
+add_executable(sce_c_integration_event_schema_native
+    integration/test_event_schema_native.c
+    "${_ES_PARENT_SOURCE}"
+    "${_ES_PARENT_HEADER}"
+)
+# Intentionally NO target_link_libraries: the native value path links zero
+# runtime — that is the MCU-clean acceptance proof (RFC §10.4 step 5).
+target_include_directories(sce_c_integration_event_schema_native PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/sce-c-runtime/include"
+)
+set_target_properties(sce_c_integration_event_schema_native PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_event_schema_native
+    COMMAND sce_c_integration_event_schema_native
+)
+set_tests_properties(c11_integration_event_schema_native PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── BasicHTTP fixture: standalone Node server lifecycle ────────────
 #
 # The W3C SCXML C.2 corpus addresses `http://localhost:8080/test` on the
