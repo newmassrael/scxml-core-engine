@@ -6,26 +6,27 @@
 # ordered cheapest-first; the first failure short-circuits the rest.
 #
 # Gates:
-#   1. cargo build sce-codegen               — every downstream gate uses it
+#   1.  cargo build sce-codegen              — every downstream gate uses it
 #   1b. Rust mod.rs ↔ subdir drift check     — fail fast on orphaned modules
-#                                              before Stage 2 spends ~30s
-#                                              compiling to the same error
-#                                              (reproduces the
-#                                              donedata_local_invoke
-#                                              integration/ tree split push
-#                                              failure)
-#   2. cargo test --workspace --release      — Rust unit + integration suite
+#                                              before the heavy test stage
+#                                              compiles to the same error
+#   1c. emit_embed_manifest fail-fast TC     — clang degraded-AST regression
+#   2.  cargo clippy --workspace             — mirrors clippy-check.yml;
+#                                              catches stable-toolchain lint
+#                                              drift (unnecessary_sort_by,
+#                                              collapsible_match) before CI
+#   3.  verify_embed_manifest.sh             — embed/MANIFEST.json public-API
+#                                              drift (header surface changed
+#                                              without package_embed.sh)
+#   4.  cargo test --workspace --release     — Rust unit + integration suite
 #                                              (covers forge goldens, mesh,
 #                                              diagnostic contract tests)
-#   3. Go forge conformance regen + build    — catches Go codegen drift
-#                                              (reproduces the crossfile
-#                                              _scxml package-alias bug)
-#   4. C++ forge conformance build           — catches C++ codegen drift
-#                                              (reproduces the harness
-#                                              include-name mismatch)
-#   5. Example codegen (doom_wasm / smart_light) — catches namespace /
+#   5.  Go forge conformance regen + build   — catches Go codegen drift
+#                                              (crossfile package-alias bug)
+#   6.  C++ forge conformance build          — catches C++ codegen drift
+#                                              (harness include-name mismatch)
+#   7.  Example codegen (doom / smart_light) — catches namespace /
 #                                              statechart-parser drift
-#                                              without pulling in emscripten
 #
 # Note (2026-05-23): the cargo-fmt gate that used to live as Stage 0 here
 # moved to `pre-commit` so fmt drift fails at commit time, before the
@@ -76,7 +77,7 @@ trap cleanup EXIT
 # stages renumbered accordingly.
 
 # ── Stage 1: sce-codegen build (baseline) ─────────────────────────
-log_step "Stage 1/5 — cargo build sce-codegen --release"
+log_step "Stage 1/7 — cargo build sce-codegen --release"
 cargo build --bin sce-codegen --features cli --release -p sce-build \
     || fail_step "Stage 1 (sce-codegen build)"
 
@@ -89,7 +90,7 @@ cargo build --bin sce-codegen --features cli --release -p sce-build \
 # `cargo test --workspace` catches it eventually — but only after
 # ~30 s of compilation; this fast structural check fails in under a
 # second with a precise diff that points at the offending file.
-log_step "Stage 1b/5 — Rust mod.rs ↔ subdir drift check"
+log_step "Stage 1b/7 — Rust mod.rs ↔ subdir drift check"
 check_mod_tree() {
     local mod_file="$1"
     local parent_dir
@@ -154,9 +155,34 @@ done
 # present + no manifest written. Runs in ~1s, no toolchain beyond
 # clang-19 already required by Stage 4. Catches the silent-degrade
 # pattern's reintroduction before any developer pays the CI round-trip.
-log_step "Stage 1c/5 — emit_embed_manifest.sh fail-fast regression TC"
+log_step "Stage 1c/7 — emit_embed_manifest.sh fail-fast regression TC"
 bash scripts/test_emit_manifest_fail_fast.sh \
     || fail_step "Stage 1c (emit_embed_manifest fail-fast TC)"
+
+# ── Stage 2: cargo clippy (mirror clippy-check.yml) ───────────────
+# clippy-check.yml runs `cargo clippy --workspace --all-targets -- -D
+# warnings` on dtolnay/rust-toolchain@stable. The lint set is
+# version-sensitive: a stale local `stable` (behind the CI runner's
+# fresh stable) passes locally and only breaks CI on a newly-stabilised
+# lint — exactly the unnecessary_sort_by / collapsible_match drift that
+# motivated this gate. Keep the default toolchain current
+# (`rustup update stable`) so this sees the same lints CI will. Runs
+# before the heavy test/build stages so a lint failure aborts fast.
+log_step "Stage 2/7 — cargo clippy --workspace --all-targets -- -D warnings"
+cargo clippy --workspace --all-targets -- -D warnings \
+    || fail_step "Stage 2 (cargo clippy)"
+
+# ── Stage 3: embed/MANIFEST.json drift (mirror verify_embed_manifest) ─
+# embed/MANIFEST.json is the tracked snapshot of the embeddable public
+# API surface. A header edit under sce/include/ that forgets
+# `scripts/package_embed.sh` lands a stale manifest that only CI's
+# verify_embed_manifest job catches. Stage 1c covers the emit
+# fail-fast path; this covers the orthogonal DRIFT path (committed
+# manifest vs the current header surface) — the gap that let the
+# SetCurrentEventArgs surface change land stale.
+log_step "Stage 3/7 — verify_embed_manifest.sh (embed public-API drift)"
+bash scripts/verify_embed_manifest.sh \
+    || fail_step "Stage 3 (embed/MANIFEST.json drift)"
 
 # ── W3C HTTP test server (mirror w3c-tests.yml:379) ───────────────
 # Rust integration tests for W3C SCXML C.2 BasicHTTPEventProcessor
@@ -181,9 +207,9 @@ if ! kill -0 "${HTTP_SERVER_PID}" 2>/dev/null; then
 fi
 
 # ── Stage 2: Rust workspace tests ─────────────────────────────────
-log_step "Stage 2/5 — cargo test --workspace --release"
+log_step "Stage 4/7 — cargo test --workspace --release"
 cargo test --workspace --release \
-    || fail_step "Stage 2 (cargo test --workspace)"
+    || fail_step "Stage 4 (cargo test --workspace)"
 
 # Stage 2 done — release the HTTP server before the heavier later
 # stages so a stuck node process cannot survive into Stages 3-5.
@@ -194,23 +220,23 @@ HTTP_SERVER_PID=""
 # generate.sh already runs `go build ./conformance/...` as a smoke check,
 # so a codegen drift that produces uncompilable Go (the package-alias bug
 # this hook was born to catch) surfaces right here.
-log_step "Stage 3/5 — Go forge conformance regenerate + go build"
+log_step "Stage 5/7 — Go forge conformance regenerate + go build"
 ( cd sce-forge-runtime/go/conformance && bash generate.sh ) \
-    || fail_step "Stage 3 (Go forge conformance)"
+    || fail_step "Stage 5 (Go forge conformance)"
 
 # ── Stage 4: C++ forge conformance build ──────────────────────────
 # Uses a dedicated scratch build dir so it does not clobber a developer's
 # main build tree. The codegen dependency is passed explicitly via
 # -DSCE_CODEGEN so CMake cannot quietly pick up a stale binary.
-log_step "Stage 4/5 — C++ forge conformance build"
+log_step "Stage 6/7 — C++ forge conformance build"
 BUILD_DIR="$(mktemp -d)"
 cmake -S sce-forge-runtime/cpp/tests/conformance \
       -B "$BUILD_DIR" \
       -DSCE_CODEGEN="$REPO_ROOT/target/release/sce-codegen" \
       -Wno-dev >/dev/null \
-    || fail_step "Stage 4 (C++ forge conformance configure)"
+    || fail_step "Stage 6 (C++ forge conformance configure)"
 cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
-    || fail_step "Stage 4 (C++ forge conformance build)"
+    || fail_step "Stage 6 (C++ forge conformance build)"
 
 # ── Stage 5: Example codegen smoke test ───────────────────────────
 # The emscripten-backed doom_wasm / visualizer builds are too heavy for
@@ -218,7 +244,7 @@ cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
 # `urn:sce:extensions` → `http://sce.dev/ext` namespace migration) surface
 # well before link time. Run sce-codegen over each example SCXML in a
 # scratch output dir and abort push if any fail to produce artifacts.
-log_step "Stage 5/5 — Example SCXML codegen smoke"
+log_step "Stage 7/7 — Example SCXML codegen smoke"
 GEN_OUT="$(mktemp -d)"
 example_failures=0
 for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.scxml; do
@@ -230,6 +256,6 @@ for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.s
         example_failures=$((example_failures + 1))
     fi
 done
-(( example_failures == 0 )) || fail_step "Stage 5 ($example_failures example(s) failed codegen)"
+(( example_failures == 0 )) || fail_step "Stage 7 ($example_failures example(s) failed codegen)"
 
-printf '\npre-push: all 5 gates passed — push allowed.\n' >&2
+printf '\npre-push: all 7 gates passed — push allowed.\n' >&2
