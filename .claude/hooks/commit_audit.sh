@@ -516,27 +516,38 @@ while rest and not rest[0].strip():
     rest.pop(0)
 
 if rest:
-    # Parse bullets. A bullet starts with "- " at column 0. Lines
-    # that begin with whitespace are treated as wrap continuations
-    # of the preceding bullet. Any other non-blank line is a violation.
+    # Parse bullets. A bullet starts with "- " at column 0 and is one
+    # line, max 72 chars (incl the "- " prefix) — no continuation/wrap
+    # lines. Bullets must be contiguous: a blank line between bullets
+    # is rejected (not a soft separator). Any other non-blank line is a
+    # prose-paragraph violation. (COMMIT_FORMAT.md §Body.)
     bullets = []
     saw_nonbullet = False
-    current_bullet = None
     for line in rest:
         if line.startswith("- "):
-            current_bullet = line
-            bullets.append(current_bullet)
+            bullets.append(line)
+            if len(line) > 72:
+                violations.append(("body-bullet-length",
+                    f"Bullet is {len(line)} chars; max 72 (incl the "
+                    f"`- ` prefix). Rewrite tighter or split into "
+                    f"another bullet: {line!r}"))
         elif not line.strip():
-            current_bullet = None
-        elif line[:1] in (" ", "\t") and current_bullet is not None:
-            # Wrap continuation — OK.
-            continue
+            # Interior blank line — bullets must be contiguous.
+            violations.append(("body-blank-line",
+                "Blank line inside body — bullets must be contiguous "
+                "with no blank separator between them. Put every bullet "
+                "in a single -m block on consecutive lines."))
+        elif line[:1] in (" ", "\t"):
+            violations.append(("body-continuation",
+                f"Indented continuation of a bullet — one bullet = one "
+                f"line, max 72 chars. Rewrite tighter or split: {line!r}"))
+            saw_nonbullet = True
         else:
             if not saw_nonbullet:
                 violations.append(("body-nonbullet",
-                    f"Body line is not a bullet and not a wrap "
-                    f"continuation: {line!r}. COMMIT_FORMAT.md requires "
-                    f"bullet points (`- ` prefix) only."))
+                    f"Body line is not a bullet: {line!r}. "
+                    f"COMMIT_FORMAT.md requires bullet points "
+                    f"(`- ` prefix) only, no prose."))
                 saw_nonbullet = True
 
     n = len(bullets)
@@ -583,7 +594,10 @@ if [ -n "$FORMAT_VIOLATIONS" ]; then
     echo "  - Subject: \`<type>: <text>\` (type ∈ feat/refactor/fix/docs/test/chore),"
     echo "    max 72 chars, no trailing period."
     echo "  - Body:    one blank line after subject, then 1-3 bullets with"
-    echo "             \`- \` prefix. No prose paragraphs."
+    echo "             \`- \` prefix. No prose paragraphs. Each bullet is"
+    echo "             one line, max 72 chars (incl '- '), no wrap. Bullets"
+    echo "             must be contiguous — no blank line between them"
+    echo "             (put the whole body in a single -m block)."
     echo "  - Style:   no Co-Authored-By tag, no 'Generated with Claude Code',"
     echo "             no emojis. Project rule overrides global templates."
     echo ""
