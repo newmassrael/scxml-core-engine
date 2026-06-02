@@ -88,6 +88,10 @@ struct OrderingTickResult {
 /// Per-source reorder buffer. Admit returns envelopes ready for
 /// dispatch, in sequence order; tick fires gap timeouts that would
 /// otherwise stall indefinitely when no further traffic arrives.
+///
+/// SCE_MESH.md §mesh-10.6.4: realizes the receiver-buffer per-source
+/// state (`next_expected_seq` + buffered map) and the admit/tick
+/// dispatch rules defined there.
 class OrderingBuffer {
 public:
     /// Clock facility; `std::chrono::steady_clock` is monotonic and not
@@ -116,6 +120,11 @@ public:
     /// reaching here (SCE_MESH.md §mesh-10.6.3) — this class does not
     /// re-check because the router's branch already guarantees the
     /// invariant.
+    ///
+    /// SCE_MESH.md §mesh-10.6.4: implements the receiver-buffer admit
+    /// algorithm — anchor on the first observed sequence, dispatch and
+    /// drain contiguous buffered envelopes on the expected sequence,
+    /// buffer ahead-of-sequence arrivals, drop stragglers.
     [[nodiscard]] std::vector<MeshEnvelope>
     admit(const std::string& source, MeshEnvelope env) {
         std::lock_guard<std::mutex> lock(mutex_);

@@ -232,7 +232,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/OrderingBuffer.h:OrderingBuffer
+- [references] sce/include/mesh/OrderingBuffer.h:OrderingBuffer
 
 
 
@@ -268,7 +268,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 **Bindings**:
 - [references] sce/include/mesh/CommunicationError.h:ReasonCode
 - [references] sce/include/mesh/MeshEnvelope.h:sequence_no
-- [implements] sce/include/mesh/OrderingBuffer.h:admit
+- [references] sce/include/mesh/OrderingBuffer.h:admit
 
 
 
@@ -288,6 +288,8 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Bindings**:
 - [references] sce/include/mesh/CommunicationError.h:ReasonCode
+- [implements] sce/include/mesh/OrderingBuffer.h:admit
+- [implements] sce/include/mesh/OrderingBuffer.h:OrderingBuffer
 
 
 

@@ -163,7 +163,7 @@
         {
           "file": "sce/include/mesh/OrderingBuffer.h",
           "symbol": "OrderingBuffer",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
@@ -192,7 +192,7 @@
         {
           "file": "sce/include/mesh/OrderingBuffer.h",
           "symbol": "admit",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
@@ -206,6 +206,16 @@
           "file": "sce/include/mesh/CommunicationError.h",
           "symbol": "ReasonCode",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/OrderingBuffer.h",
+          "symbol": "admit",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/OrderingBuffer.h",
+          "symbol": "OrderingBuffer",
+          "kind": "implements"
         }
       ]
     },
