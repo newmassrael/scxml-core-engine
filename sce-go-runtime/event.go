@@ -59,6 +59,20 @@ type EventMetadata struct {
 
 	// InvokeID is the _event.invokeid if event came from a child invoke (W3C 6.4.1).
 	InvokeID string
+
+	// TypedPayload is the NL→IR Item C1 Path A typed `_event.data` payload —
+	// a generated per-event payload struct carried through the queue when an
+	// EventSchema-imported event is injected via the generated
+	// `Raise<Event>` seam. The generated policy's PopulateEventMetadata
+	// type-asserts it into the policy's typed `pending<Event>Payload` field,
+	// which the natively-lowered transition guards read (no script engine).
+	// Nil for every event raised without a typed payload, against which the
+	// native guards' tag check simply fails. The type-erased carrier is the
+	// Go-idiomatic twin of the Rust runtime's statically-typed
+	// `EventWithMetadata<E, P>.payload`; the name↔type pairing is enforced at
+	// the single generated `Raise<Event>` constructor, so it can never be
+	// constructed inconsistently.
+	TypedPayload any
 }
 
 // PlatformMetadata constructs platform metadata (e.g., for error.execution, done.state.*).

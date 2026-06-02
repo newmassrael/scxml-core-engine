@@ -20,6 +20,16 @@ class EventMetadata:
     origin: str = ""
     origin_type: str = ""
     invoke_id: str = ""
+    # NL→IR Item C1 Path A (EventSchema MCU native lowering): the type-erased
+    # typed `_event.data` payload carrier. For an event whose imported
+    # EventSchema lowered a transition guard to a native comparison, the
+    # generated per-event inject seam (`raise_<event>`) packs the typed payload
+    # dataclass here; the generated policy's `set_current_event` override lifts
+    # it into a typed `_pending_<event>_payload` field the native guard reads.
+    # `None` for every untyped event, so the script-engine baseline is
+    # unchanged. The Python twin of the Go `EventMetadata.TypedPayload any` /
+    # Kotlin `EventMetadata.typedPayload: Any?`.
+    typed_payload: Any = None
 
 
 @dataclass

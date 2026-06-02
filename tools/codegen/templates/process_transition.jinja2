@@ -583,6 +583,11 @@ private:
 {% elif trans.is_pure_in_predicate %}
                 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
                 if ({{ trans.cond_cpp }}) SCE_LIKELY {
+{% elif trans.transition_index | native_payload_guard %}
+                // NL→IR Item C1 Path A: native typed `_event.data` guard — cond
+                // "{{ trans.cond }}" lowered to a tag-checked field comparison on
+                // the lifted pending<Event>Payload_ (no script engine).
+                if ({{ trans.transition_index | native_payload_guard }}) SCE_LIKELY {
 {% elif model.needs_script_engine %}
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
                 if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ trans.cond | escape_cpp }}", engine)) SCE_LIKELY {
