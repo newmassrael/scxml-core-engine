@@ -3523,36 +3523,34 @@ fn actions_to_javascript(actions: &[Action]) -> String {
                     js_lines.push(format!("console.log({log_msg});"));
                 }
             }
-            "if" => {
-                if !action.cond.is_empty() {
-                    js_lines.push(format!("if ({}) {{", action.cond));
-                    if !action.then_actions.is_empty() {
-                        let then_js = actions_to_javascript(&action.then_actions);
-                        if !then_js.is_empty() {
-                            js_lines.push(format!("  {then_js}"));
-                        }
+            "if" if !action.cond.is_empty() => {
+                js_lines.push(format!("if ({}) {{", action.cond));
+                if !action.then_actions.is_empty() {
+                    let then_js = actions_to_javascript(&action.then_actions);
+                    if !then_js.is_empty() {
+                        js_lines.push(format!("  {then_js}"));
                     }
-                    js_lines.push("}".to_string());
-                    for elseif in &action.elseif_branches {
-                        if !elseif.cond.is_empty() {
-                            js_lines.push(format!("else if ({}) {{", elseif.cond));
-                            if !elseif.actions.is_empty() {
-                                let elseif_js = actions_to_javascript(&elseif.actions);
-                                if !elseif_js.is_empty() {
-                                    js_lines.push(format!("  {elseif_js}"));
-                                }
+                }
+                js_lines.push("}".to_string());
+                for elseif in &action.elseif_branches {
+                    if !elseif.cond.is_empty() {
+                        js_lines.push(format!("else if ({}) {{", elseif.cond));
+                        if !elseif.actions.is_empty() {
+                            let elseif_js = actions_to_javascript(&elseif.actions);
+                            if !elseif_js.is_empty() {
+                                js_lines.push(format!("  {elseif_js}"));
                             }
-                            js_lines.push("}".to_string());
-                        }
-                    }
-                    if !action.else_actions.is_empty() {
-                        js_lines.push("else {".to_string());
-                        let else_js = actions_to_javascript(&action.else_actions);
-                        if !else_js.is_empty() {
-                            js_lines.push(format!("  {else_js}"));
                         }
                         js_lines.push("}".to_string());
                     }
+                }
+                if !action.else_actions.is_empty() {
+                    js_lines.push("else {".to_string());
+                    let else_js = actions_to_javascript(&action.else_actions);
+                    if !else_js.is_empty() {
+                        js_lines.push(format!("  {else_js}"));
+                    }
+                    js_lines.push("}".to_string());
                 }
             }
             _ => {}
