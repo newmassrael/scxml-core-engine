@@ -2733,7 +2733,6 @@ None
 - [references] sce/include/static/StaticExecutionEngine.h:completionCallback_
 - [implements] sce/include/static/StaticExecutionEngine.h:getPolicy
 - [implements] sce/include/static/StaticExecutionEngine.h:initialize
-- [implements] sce/include/static/StaticExecutionEngine.h:isInFinalState
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventImpl
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:setCompletionCallback
