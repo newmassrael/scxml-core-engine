@@ -183,7 +183,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine
 bool SCE::DataModelInitHelper::initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId,
                                                           const std::string &varId, const std::string &expr,
                                                           std::function<void(const std::string &)> errorCallback) {
-    // §scxml-5.2 / §scxml-5.3: Evaluate expr attribute and assign to variable
+    // §scxml-5.3: Evaluate expr attribute and assign to variable
     // Test 277: expr evaluation failure must raise error.execution (no fallback to whitespace normalization)
     // ARCHITECTURE.md Zero Duplication: Matches AOT engine template (scriptengine_helpers.jinja2)
 

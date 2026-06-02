@@ -2315,16 +2315,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::executeInvoke",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "EventContextGuard",
           "kind": "implements"
@@ -2550,6 +2540,21 @@
           "file": "sce/include/common/EventMetadataHelper.h",
           "symbol": "createDoneInvokeEvent",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "sendToParent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "sendToParentWithOrigin",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "SendHelper",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2563,18 +2568,6 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5",
       "decision_status": "active",
-      "bindings": [
-        {
-          "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::initializeVariableFromExpr",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/DataModelInitializer.cpp",
-          "symbol": "DataModelInitializer::initializeDataItem",
-          "kind": "implements"
-        }
-      ],
       "normative_excerpt": {
         "text": "[This section is normative.] <datamodel> is a wrapper element which encapsulates any number of <data> elements, each of which defines a single data object. The exact nature of the data object depends on the data model language used.",
         "anchor_url": "https://www.w3.org/TR/scxml/#datamodel",
@@ -4258,21 +4251,6 @@
       "parent_section": "scxml-6.4",
       "decision_status": "active",
       "bindings": [
-        {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "SendHelper",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParent",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin",
-          "kind": "implements"
-        },
         {
           "file": "sce/include/mesh/IChildSession.h",
           "symbol": "tick",
