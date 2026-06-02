@@ -30,6 +30,10 @@ import com.sce.interpreter.ScxmlRuntimeInterpreter
 
 {% include 'events.kt.jinja2' %}
 
+{% if event_payload_active %}
+// ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
+{{ event_payload_defs }}
+{% endif %}
 // --- State Machine (W3C SCXML) ---
 
 {% if model.context_objects %}
@@ -62,6 +66,22 @@ class {{ machine_name }}StateMachine(
 
     // ── SCE Forge: Inline kind member functions ──────────────
 {{ inline_kind_code }}
+{% endif %}
+{% if event_payload_active %}
+
+    // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
+    // lifted from the dequeued event by populateTypedPayload and read by the
+    // native transition guards. `null` between events / for untyped events.
+{{ event_payload_policy_fields }}
+    // NL→IR Item C1 Path A: lift the dequeued event's type-erased typed payload
+    // into the matching nullable field (a non-typed carrier resets all to null,
+    // so every typed guard fails). Twin of the Go policy's PopulateEventMetadata
+    // type-switch / the C11 pop loop's `sm->pending_payload = evt.payload`.
+    override fun populateTypedPayload(metadata: EventMetadata) {
+{{ event_payload_populate }}    }
+
+    // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
+{{ event_payload_inject }}
 {% endif %}
 
     override val initialState: {{ machine_name }}State = {{ machine_name }}State.{{ model.initial_leaf | to_state_class_name if model.initial_leaf else model.initial | to_state_class_name }}

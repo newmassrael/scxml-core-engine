@@ -48,11 +48,19 @@ echo "==> Integration trees (Rust / Kotlin / Go committed; Python gitignored)"
 echo "==> Forge round-trip Go codec tree"
 sce-forge-runtime/go/round_trip/generate.sh
 
-# EventSchema MCU native-lowering Rust gate (NL→IR C1 Path A, RFC §10.4
-# step 5). A Rust-ONLY committed tree — the fixture's typed `_event.data`
-# guard still fail-fasts on kotlin/go/python, so it cannot ride the
-# `generate-integration` fan-out until those backends grow native lowering.
+# EventSchema native-lowering gates (NL→IR C1 Path A). Per-backend committed
+# trees driven by their own regen scripts (not the `generate-integration`
+# fan-out): each gate reuses the canonical fixture directly so its receive-side
+# schema sibling resolves, and lives next to its own backend's test harness.
+# Every backend (Rust, Go, Kotlin, Python; cpp/c11 gates run at CMake/CI time)
+# now lowers the typed `_event.data` guard to a script-engine-free comparison.
 echo "==> EventSchema native-lowering Rust tree"
 scripts/regen_event_schema_native.sh
+echo "==> EventSchema native-lowering Go tree"
+scripts/regen_event_schema_native_go.sh
+echo "==> EventSchema native-lowering Kotlin tree"
+scripts/regen_event_schema_native_kotlin.sh
+echo "==> EventSchema native-lowering Python tree"
+scripts/regen_event_schema_native_python.sh
 
 echo "All committed §6.2.6 trees regenerated."

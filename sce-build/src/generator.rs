@@ -138,33 +138,11 @@ fn reject_mesh_rpc_in_unsupported_lang(
     )))
 }
 
-/// NL→IR Item C1 Path A (EventSchema MCU native lowering) — reject a typed
-/// `_event.data` transition guard on a backend that does not yet emit the
-/// native payload channel. Such a guard makes `needs_script_engine` false
-/// for every backend (the flag is backend-independent), but only the Rust
-/// and C11 backends emit the native payload guard today (Rust: a
-/// `<Machine>Payload` sum + `matches!`; C11: a tagged union + tag-checked
-/// comparison, RFC §10.4 step 5). Without this gate the remaining backends
-/// would render the raw ECMAScript cond into a unit with no script engine
-/// to evaluate it — silently broken code. Failing fast here keeps the
-/// contract honest until each backend's native lowering lands
-/// (C++/Kotlin/Go/Python are sequenced follow-ups).
-fn reject_typed_native_guard_unsupported(
-    model: &SCXMLModel,
-    language: &'static str,
-) -> Result<(), GenerateError> {
-    if !crate::forge::event_schema_check::model_has_native_typed_guard(model) {
-        return Ok(());
-    }
-    Err(GenerateError::UnsupportedFeature(format!(
-        "EventSchema typed `_event.data` transition guard in '{}' has no {} \
-         native-lowering codegen path yet (currently Rust + C11; the \
-         remaining backends are sequenced follow-ups). Generate this machine \
-         for `--lang rust` or `--lang c11`, or drop the EventSchema import + \
-         typed guard.",
-        model.name, language
-    )))
-}
+// NL→IR Item C1 Path A (EventSchema MCU native lowering): every backend
+// (Rust, C11, C++, Kotlin, Go, Python) now lowers a typed `_event.data`
+// transition guard to a script-engine-free native comparison, so the former
+// `reject_typed_native_guard_unsupported` fail-fast gate is retired — no
+// backend can reach codegen with an un-lowerable typed guard.
 
 // ── §16.5 L3500 barrier-timeout observability gate ────────────────
 //
@@ -344,7 +322,7 @@ pub fn generate_cpp(
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_cpp_filters(&mut env);
-    render_cpp(&env, model, input_stem)
+    render_cpp(&mut env, model, input_stem)
 }
 
 /// Generate C++ code using pre-loaded template strings (WASM-compatible).
@@ -356,17 +334,16 @@ pub fn generate_cpp_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_cpp_filters(&mut env);
-    render_cpp(&env, model, input_stem)
+    render_cpp(&mut env, model, input_stem)
 }
 
 fn render_cpp(
-    env: &Environment,
+    env: &mut Environment,
     model: &SCXMLModel,
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
-    reject_typed_native_guard_unsupported(model, "C++")?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // W3C SCXML 5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
@@ -388,6 +365,19 @@ fn render_cpp(
         String::new()
     };
 
+    // NL→IR Item C1 Path A (EventSchema native lowering) — the C++ typed
+    // `_event.data` payload channel: a tag enum + per-event payload structs,
+    // the policy fields / `populateTypedPayload` hook that lift the dequeued
+    // event's std::any-carried payload, the per-event `raise<Event>` inject
+    // seams, and the per-transition native guard (`pendingPayloadTag_ == … &&
+    // (…)`). The C++ twin of `render_rust` / `render_go`'s
+    // `native_payload_guard` filter — same SSOT guard selection.
+    let payload = crate::forge::generator::build_cpp_event_payload(model);
+    let guards = payload.guards.clone();
+    env.add_filter("native_payload_guard", move |idx: usize| -> String {
+        guards.get(&idx).cloned().unwrap_or_default()
+    });
+
     let header_tmpl = env
         .get_template("state_machine.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -404,6 +394,10 @@ fn render_cpp(
         license_config => &license_val,
         inl_filename => &inl_filename,
         inline_kind_code => &inline_kind_code,
+        event_payload_defs => &payload.defs,
+        event_payload_active => payload.active,
+        event_payload_policy_members => &payload.policy_members,
+        event_payload_inject_methods => &payload.inject_methods,
     };
     let inl_ctx = minijinja::context! {
         model => &model_val,
@@ -560,7 +554,7 @@ pub fn generate_kotlin(
     load_templates(&mut env, template_dir)?;
     filters::register_kotlin_filters(&mut env);
     register_kotlin_dynamic_filters(&mut env, model);
-    render_kotlin(&env, model, package_prefix)
+    render_kotlin(&mut env, model, package_prefix)
 }
 
 /// Generate Kotlin code using pre-loaded template strings (WASM-compatible).
@@ -576,7 +570,7 @@ pub fn generate_kotlin_with_templates(
     load_template_strings(&mut env, templates)?;
     filters::register_kotlin_filters(&mut env);
     register_kotlin_dynamic_filters(&mut env, model);
-    render_kotlin(&env, model, package_prefix)
+    render_kotlin(&mut env, model, package_prefix)
 }
 
 /// Register model-dependent Kotlin filters (event refs, parallel checks).
@@ -608,12 +602,24 @@ fn register_kotlin_dynamic_filters(env: &mut Environment, model: &SCXMLModel) {
 }
 
 fn render_kotlin(
-    env: &Environment,
+    env: &mut Environment,
     model: &SCXMLModel,
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
-    reject_typed_native_guard_unsupported(model, "Kotlin")?;
     use crate::{analyzer, kotlin};
+
+    // NL→IR Item C1 Path A (EventSchema MCU native lowering) — the Kotlin typed
+    // `_event.data` payload channel: top-level payload data classes, the
+    // nullable `pending<Event>Payload` fields + `populateTypedPayload` override
+    // that lift the dequeued event's typed carrier, the per-event `raise<Event>`
+    // inject seams, and the per-transition native guard (`pending<Event>Payload
+    // != null && (…)`). The Kotlin twin of `render_go`'s `native_payload_guard`
+    // filter — same SSOT guard selection.
+    let payload = crate::forge::generator::build_kotlin_event_payload(model);
+    let payload_guards = payload.guards.clone();
+    env.add_filter("native_payload_guard", move |idx: usize| -> String {
+        payload_guards.get(&idx).cloned().unwrap_or_default()
+    });
 
     let machine_name = filters::to_pascal_case(model.name.clone());
 
@@ -682,6 +688,11 @@ fn render_kotlin(
         ancestors_with_event_transitions => minijinja::Value::from_serialize(&ancestors_with_event_transitions),
         ancestors_with_null_transitions => minijinja::Value::from_serialize(&ancestors_with_null_transitions),
         inline_kind_code => &inline_kind_code,
+        event_payload_active => payload.active,
+        event_payload_defs => &payload.defs,
+        event_payload_policy_fields => &payload.policy_fields,
+        event_payload_populate => &payload.populate,
+        event_payload_inject => &payload.inject_methods,
     };
 
     let output = tmpl.render(ctx).map_err(render_error)?;
@@ -779,7 +790,7 @@ pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, Ge
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_go_filters(&mut env);
-    render_go(&env, model)
+    render_go(&mut env, model)
 }
 
 /// Generate Go code using pre-loaded template strings (WASM-compatible).
@@ -791,7 +802,7 @@ pub fn generate_go_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_go_filters(&mut env);
-    render_go(&env, model)
+    render_go(&mut env, model)
 }
 
 // ── Python generator ────────────────────────────────────────────
@@ -812,7 +823,7 @@ pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_python_filters(&mut env);
-    render_python(&env, model)
+    render_python(&mut env, model)
 }
 
 /// Generate Python code using pre-loaded template strings (WASM-compatible).
@@ -825,7 +836,7 @@ pub fn generate_python_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_python_filters(&mut env);
-    render_python(&env, model)
+    render_python(&mut env, model)
 }
 
 /// Atomic γ-2 surface — explicitly reject features the Python codegen
@@ -977,9 +988,21 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
     Ok(())
 }
 
-fn render_python(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
-    reject_typed_native_guard_unsupported(model, "Python")?;
+fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
+
+    // NL→IR Item C1 Path A (EventSchema MCU native lowering) — the Python typed
+    // `_event.data` payload channel: module-level payload dataclasses, the
+    // `_pending_<event>_payload` __init__ fields + `set_current_event` lift that
+    // carries the dequeued event's typed payload, the per-event `raise_<event>`
+    // inject seams, and the per-transition native guard (`self._pending_<event>
+    // _payload is not None and (…)`). The Python twin of `render_go` /
+    // `render_kotlin`'s `native_payload_guard` filter — same SSOT selection.
+    let payload = crate::forge::generator::build_python_event_payload(model);
+    let payload_guards = payload.guards.clone();
+    env.add_filter("native_payload_guard", move |idx: usize| -> String {
+        payload_guards.get(&idx).cloned().unwrap_or_default()
+    });
 
     let tmpl = env
         .get_template("state_machine.py.jinja2")
@@ -988,14 +1011,18 @@ fn render_python(env: &Environment, model: &SCXMLModel) -> Result<String, Genera
         model => minijinja::Value::from_serialize(model),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(license_config()),
+        event_payload_active => payload.active,
+        event_payload_defs => &payload.defs,
+        event_payload_init => &payload.init,
+        event_payload_populate => &payload.populate,
+        event_payload_inject => &payload.inject,
     };
     tmpl.render(ctx).map_err(render_error)
 }
 
 // ── Go generator ────────────────────────────────────────────────
 
-fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
-    reject_typed_native_guard_unsupported(model, "Go")?;
+fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 
     // SCE Forge: render inline kind declarations as Go code fragments.
@@ -1011,6 +1038,19 @@ fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateEr
         (String::new(), String::new())
     };
 
+    // NL→IR Item C1 Path A (EventSchema MCU native lowering) — the Go typed
+    // `_event.data` payload channel: a tag enum + per-event payload structs,
+    // the policy fields / populate type-switch that lift the dequeued event's
+    // typed payload, the per-event `Raise<Event>` inject seams, and the
+    // per-transition native guard (`p.pendingPayloadTag == … && (…)`). The Go
+    // twin of `render_rust` / `render_c11`'s `native_payload_guard` filter —
+    // same SSOT guard selection.
+    let payload = crate::forge::generator::build_go_event_payload(model);
+    let guards = payload.guards.clone();
+    env.add_filter("native_payload_guard", move |idx: usize| -> String {
+        guards.get(&idx).cloned().unwrap_or_default()
+    });
+
     let tmpl = env
         .get_template("state_machine.go.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -1020,6 +1060,11 @@ fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateEr
         license_config => minijinja::Value::from_serialize(license_config()),
         inline_kind_types => &inline_kind_types,
         inline_kind_fns => &inline_kind_fns,
+        event_payload_defs => &payload.defs,
+        event_payload_active => payload.active,
+        event_payload_policy_fields => &payload.policy_fields,
+        event_payload_populate => &payload.populate,
+        event_payload_clear => &payload.clear,
     };
     tmpl.render(ctx).map_err(render_error)
 }

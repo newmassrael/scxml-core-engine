@@ -19,6 +19,7 @@
 #include "SCXMLTypes.h"
 #include "common/EventDataHelper.h"
 #include "core/StatePolicyConcepts.h"
+#include <any>
 #include <optional>
 #include <string>
 #include <type_traits>
@@ -66,6 +67,14 @@ template<typename P> struct has_pendingEventTypedData<P, std::void_t<decltype(st
 
 template<typename P, typename = void> struct has_pendingEventName : std::false_type {};
 template<typename P> struct has_pendingEventName<P, std::void_t<decltype(std::declval<P>().pendingEventName_)>> : std::true_type {};
+
+// NL→IR Item C1 Path A (EventSchema native lowering): detect the generated
+// policy's typed-payload populate hook. Present only on a policy whose
+// statechart reads a typed `_event.data.<field>` guard that lowered natively;
+// when absent the if-constexpr block below is a no-op, so every existing
+// policy is unaffected.
+template<typename P, typename = void> struct has_populateTypedPayload : std::false_type {};
+template<typename P> struct has_populateTypedPayload<P, std::void_t<decltype(std::declval<P&>().populateTypedPayload(std::declval<const std::any&>()))>> : std::true_type {};
 
 }  // namespace detail
 
@@ -208,6 +217,16 @@ public:
             } else if (!metadata.data.empty()) {
                 policy.pendingEventTypedData_ = EventDataHelper::jsonStringToScriptValue(metadata.data);
             }
+        }
+
+        // NL→IR Item C1 Path A: lift the dequeued event's typed `_event.data`
+        // payload into the generated policy's typed channel (no script engine).
+        // The hook resets its tag and any_casts the carrier into the matching
+        // pending<Event>Payload_ field; the native transition guards read it.
+        // Twin of the Go policy's PopulateEventMetadata type-switch and the
+        // C11 pop loop's `sm->pending_payload = evt.payload`.
+        if constexpr (detail::has_populateTypedPayload<Policy>::value) {
+            policy.populateTypedPayload(metadata.typedPayload);
         }
     }
 

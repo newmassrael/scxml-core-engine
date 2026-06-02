@@ -24,6 +24,9 @@ remain reject-walled.
 
 from __future__ import annotations
 
+{% if event_payload_active %}
+from dataclasses import dataclass
+{% endif %}
 from enum import IntEnum
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -181,6 +184,13 @@ def _parse_delay_text(text: str) -> int:
         return 0
 
 
+{% if event_payload_active %}
+# ======================================================================
+# NL→IR Item C1 Path A: typed `_event.data` payload dataclasses
+# ======================================================================
+
+{{ event_payload_defs }}
+{% endif %}
 # ======================================================================
 # Policy
 # ======================================================================
@@ -208,6 +218,13 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
         # same field regardless of whether the document is ever
         # actually invoked.
         self._parent_queue: List[Tuple[str, Any]] = []
+{% if event_payload_active %}
+        # NL→IR Item C1 Path A: the current event's typed `_event.data`
+        # payload(s), lifted from the dequeued event by `set_current_event`
+        # and read by the native transition guards. `None` between events /
+        # for untyped events.
+{{ event_payload_init }}
+{% endif %}
 
     # ── Structural metadata ────────────────────────────────────────
 
@@ -448,6 +465,14 @@ def create_engine(script_engine=None) -> Engine[{{ machine_name }}State, {{ mach
     return Engine(policy, script_engine=script_engine)
 
 
+{% if event_payload_active %}
+
+# ======================================================================
+# NL→IR Item C1 Path A: per-event typed `_event.data` inject seams
+# ======================================================================
+
+{{ event_payload_inject }}
+{% endif %}
 # Re-export for callers that only know the module-level name.
 State = {{ machine_name }}State
 Event = {{ machine_name }}Event

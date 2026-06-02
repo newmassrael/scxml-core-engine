@@ -235,31 +235,6 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
         .all(|f| !matches!(f.sce_type, SceType::Enum(_)))
 }
 
-/// `true` iff `model` contains at least one transition guard that the
-/// codegen path lowers to a native typed `_event.data` comparison (event
-/// carries an imported, payload-eligible schema + the cond lowers). Used
-/// by the non-Rust backends to fail fast — the engine-need flag is
-/// backend-independent, so such a guard makes `needs_script_engine` false
-/// for every backend, but only the Rust backend emits the native payload
-/// channel today (C11 is RFC §10.4 step 5; C++/Kotlin/Go/Python are
-/// follow-ups). Without this guard those backends would silently emit the
-/// raw ECMAScript cond into a script-engine-less unit — broken code. The
-/// guard converts that into an explicit codegen error.
-pub fn model_has_native_typed_guard(model: &SCXMLModel) -> bool {
-    if model.imported_event_schemas.is_empty() {
-        return false;
-    }
-    model.states.values().any(|state| {
-        state.transitions.iter().any(|trans| {
-            !trans.cond.trim().is_empty()
-                && model
-                    .imported_event_schemas
-                    .get(&trans.event)
-                    .is_some_and(|schema| guard_is_native_lowerable(&trans.cond, schema))
-        })
-    })
-}
-
 /// `true` iff `cond` lowers natively on every backend SCE generates —
 /// i.e. the document needs no runtime script engine to evaluate this
 /// guard. The native form is a self-contained `matches!` over the

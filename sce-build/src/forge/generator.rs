@@ -2034,6 +2034,656 @@ typedef struct {name}_payload {{\n    {tag_type} tag;\n    union {{\n{union_line
     }
 }
 
+/// NL→IR Item C1 Path A (EventSchema MCU native lowering) — Go-codegen
+/// payload data, the Go twin of [`build_rust_event_payload`] /
+/// [`build_c11_event_payload`].
+///
+/// Go has neither sum types nor unions, so the structural twin of the Rust
+/// `<Machine>Payload` enum (and the C11 tagged union) is a `tag` field plus
+/// one typed `pending<Event>Payload` field per guarded event on the policy
+/// struct. The dequeued event's typed payload rides through the queue in the
+/// type-erased `EventMetadata.TypedPayload any` carrier (no engine/queue
+/// genericization); `PopulateEventMetadata` type-asserts it into the matching
+/// typed field and sets the tag, exactly where the C11 pop loop copies
+/// `evt.payload` into `sm->pending_payload`.
+///
+/// `defs` is the top-level type block (the `<Machine>PayloadTag` enum, one
+/// payload struct per guarded event, and the per-event `Raise<Event>` inject
+/// seams); `policy_fields` are the lines added to the generated policy
+/// struct; `populate` is the `PopulateEventMetadata` type-switch body;
+/// `clear` resets the tag in `ClearEventMetadata`; `guards` maps
+/// `Transition::transition_index` to the native guard expression (a tag check
+/// ANDed with the lowered field comparison) the template emits in place of
+/// the `p.evaluateGuard(...)` script-engine call.
+pub struct GoEventPayload {
+    pub defs: String,
+    pub active: bool,
+    pub policy_fields: String,
+    pub populate: String,
+    pub clear: String,
+    pub guards: std::collections::BTreeMap<usize, String>,
+}
+
+/// Build the [`GoEventPayload`] for `model`. Same SSOT guard selection
+/// ([`select_native_typed_guards`]) as the Rust and C11 builders, so all
+/// three backends agree on which guards are native.
+pub fn build_go_event_payload(model: &crate::model::SCXMLModel) -> GoEventPayload {
+    let inactive = || GoEventPayload {
+        defs: String::new(),
+        active: false,
+        policy_fields: String::new(),
+        populate: String::new(),
+        clear: String::new(),
+        guards: std::collections::BTreeMap::new(),
+    };
+    let machine = filters::to_pascal_case(model.name.clone());
+    let tag_type = format!("{machine}PayloadTag");
+    let tag_none = format!("{tag_type}None");
+
+    // Lower every typed-access guard first; the set of events owning a
+    // lowered guard is exactly the set of payload structs / policy fields
+    // emitted below, so nothing is ever dead. The accessor is the policy
+    // field the populate seam fills (`p.pending<Event>Payload`); the guard
+    // is a tag check (against an event delivered without a typed payload)
+    // ANDed with the lowered field comparison.
+    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for g in select_native_typed_guards(model) {
+        let schema = &model.imported_event_schemas[&g.event];
+        let variant = filters::to_event_variant(g.event.clone());
+        let accessor = format!("p.pending{variant}Payload");
+        let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
+            &g.cond,
+            schema,
+            &accessor,
+            ExprTarget::Go,
+        ) else {
+            continue;
+        };
+        guards.insert(
+            g.transition_index,
+            format!("p.pendingPayloadTag == {tag_type}{variant} && ({inner})"),
+        );
+        guarded_events.insert(g.event);
+    }
+    if guards.is_empty() {
+        return inactive();
+    }
+
+    // Field types resolve through `LangCtx::resolved_type`; payload
+    // eligibility guarantees every field is primitive, so this never hits
+    // the enum-alias arm (which would need an out-of-scope import).
+    let l = LangCtx::new(crate::generator::Language::Go);
+    let mut structs = String::new();
+    let mut raise_fns = String::new();
+    let mut tag_consts = format!("\t{tag_none} {tag_type} = iota\n");
+    let mut policy_fields = format!("\tpendingPayloadTag {tag_type}\n");
+    // `switch v := ….(type)` resets the tag to None for every event (a nil /
+    // untyped carrier matches no case), then binds the matching typed field.
+    let mut populate =
+        format!("\tp.pendingPayloadTag = {tag_none}\n\tswitch v := meta.TypedPayload.(type) {{\n");
+    let clear = format!("\tp.pendingPayloadTag = {tag_none}\n");
+
+    for event in &guarded_events {
+        let schema = &model.imported_event_schemas[event];
+        let variant = filters::to_event_variant(event.clone());
+        let struct_name = format!("{machine}{variant}Payload");
+        let field = format!("pending{variant}Payload");
+        // Internal payload struct: fields are verbatim schema ids (matching
+        // the verbatim property emit of `expr.rs::emit_go`) and unexported —
+        // the policy reads them in the native guard within the same package,
+        // and consumers never name a field directly (they pass the values to
+        // the `Raise<Event>` seam below).
+        let mut field_lines = String::new();
+        let mut params = String::new();
+        let mut struct_lits = String::new();
+        for f in &schema.fields {
+            let ty = l.resolved_type(&f.sce_type, &[]);
+            field_lines.push_str(&format!("\t{} {ty}\n", f.id));
+            params.push_str(&format!(", {} {ty}", f.id));
+            struct_lits.push_str(&format!("{}: {}, ", f.id, f.id));
+        }
+        structs.push_str(&format!(
+            "// {struct_name} is the NL\u{2192}IR Item C1 Path A typed `_event.data`\n\
+// payload for `{event}`. Internal to the package; consumers inject it via\n\
+// the `Raise{variant}` seam below (fields are unexported by design).\n\
+type {struct_name} struct {{\n{field_lines}}}\n\n"
+        ));
+        tag_consts.push_str(&format!("\t{tag_type}{variant}\n"));
+        policy_fields.push_str(&format!("\t{field} {struct_name}\n"));
+        populate.push_str(&format!(
+            "\tcase {struct_name}:\n\t\tp.pendingPayloadTag = {tag_type}{variant}\n\t\tp.{field} = v\n"
+        ));
+        // Per-event typed inject seam: binds the event name and the payload
+        // field values in one call (the Go twin of the Rust `Raise{variant}`
+        // extension-trait method and the C11 `raise_<event>_typed` entry).
+        // A free function because `Engine` is a foreign type (the Go
+        // equivalent of Rust's orphan rule). The values are packed into the
+        // type-erased `TypedPayload` carrier; the populate seam asserts them
+        // back into the typed policy field.
+        raise_fns.push_str(&format!(
+            "// Raise{variant} is the NL\u{2192}IR Item C1 Path A per-event typed `_event.data`\n\
+// inject seam for `{event}` — binds the event name and the payload field\n\
+// values in one call so the name\u{2194}type pairing cannot be constructed\n\
+// inconsistently. Twin of the Rust `Raise{variant}` extension-trait method\n\
+// and the C11 `raise_<event>_typed` entry.\n\
+func Raise{variant}(e *sce.Engine[{machine}State, {machine}Event]{params}) {{\n\
+\te.RaiseExternalWithMeta(sce.EventWithMetadata[{machine}Event]{{\n\
+\t\tEvent:    {machine}Event{variant},\n\
+\t\tMetadata: sce.EventMetadata{{EventType: sce.EventTypeExternal, TypedPayload: {struct_name}{{{struct_lits}}}}},\n\
+\t}})\n}}\n\n"
+        ));
+    }
+    populate.push_str("\t}\n");
+
+    let defs = format!(
+        "// NL\u{2192}IR Item C1 Path A (EventSchema MCU native lowering): typed\n\
+// `_event.data` payload channel for the EventSchema-imported events whose\n\
+// transition guards lowered to a native Go comparison (no script engine).\n\
+// The Go twin of the Rust `{machine}Payload` enum / C11 tagged union: a tag\n\
+// plus one `pending<Event>Payload` field per guarded event on the policy.\n\
+type {tag_type} int\n\nconst (\n{tag_consts})\n\n{structs}{raise_fns}"
+    );
+
+    GoEventPayload {
+        defs,
+        active: true,
+        policy_fields,
+        populate,
+        clear,
+        guards,
+    }
+}
+
+/// NL→IR Item C1 Path A (EventSchema native lowering) — C++-codegen payload
+/// data, the C++ twin of [`build_rust_event_payload`] /
+/// [`build_go_event_payload`].
+///
+/// The typed payload rides through the queue in the type-erased
+/// `EventWithMetadata.typedPayload` (`std::any`); the generated policy's
+/// `populateTypedPayload` `std::any_cast`s it into the matching typed
+/// `pending<Event>Payload_` field (and sets `pendingPayloadTag_`), exactly
+/// where the Go policy's `PopulateEventMetadata` type-switches and the C11
+/// pop loop copies `evt.payload`. No engine/queue genericization — the carrier
+/// is additive on the shared `EventWithMetadata` (C++ is hosted, so `std::any`
+/// is free to use; the MCU target is C11, already covered).
+///
+/// `defs` is the top-level `enum class <Machine>PayloadTag` + one payload
+/// struct per guarded event; `policy_members` are the policy-struct fields
+/// plus the `populateTypedPayload` hook; `inject_methods` are the per-event
+/// `raise<Event>` seams on the generated engine class; `guards` maps
+/// `Transition::transition_index` to the native guard expression (a tag check
+/// ANDed with the lowered field comparison) emitted in place of the
+/// `safeEvaluateGuard(...)` script call.
+pub struct CppEventPayload {
+    pub defs: String,
+    pub active: bool,
+    pub policy_members: String,
+    pub inject_methods: String,
+    pub guards: std::collections::BTreeMap<usize, String>,
+}
+
+/// The C++ `Event` enum value spelling for an event name — mirrors the
+/// `event | replace('.','_') | replace('-','_') | capitalize` the
+/// `state_machine.jinja2` Event enum applies (capitalize = upper-first,
+/// lower-rest).
+fn cpp_event_enum_value(event: &str) -> String {
+    let token = event.replace(['.', '-'], "_");
+    let mut chars = token.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+        None => token,
+    }
+}
+
+/// Build the [`CppEventPayload`] for `model`. Same SSOT guard selection
+/// ([`select_native_typed_guards`]) as the Rust / Go / C11 builders.
+pub fn build_cpp_event_payload(model: &crate::model::SCXMLModel) -> CppEventPayload {
+    let inactive = || CppEventPayload {
+        defs: String::new(),
+        active: false,
+        policy_members: String::new(),
+        inject_methods: String::new(),
+        guards: std::collections::BTreeMap::new(),
+    };
+    let machine = filters::to_pascal_case(model.name.clone());
+    let tag_type = format!("{machine}PayloadTag");
+
+    // Lower each typed guard; the accessor is the policy field the populate
+    // hook fills (`pending<Event>Payload_`, unqualified — the transition
+    // matcher runs as a policy method). Guard = tag check (against an event
+    // delivered without a typed payload) ANDed with the lowered comparison.
+    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for g in select_native_typed_guards(model) {
+        let schema = &model.imported_event_schemas[&g.event];
+        let variant = filters::to_event_variant(g.event.clone());
+        let accessor = format!("pending{variant}Payload_");
+        let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
+            &g.cond,
+            schema,
+            &accessor,
+            ExprTarget::Cpp,
+        ) else {
+            continue;
+        };
+        guards.insert(
+            g.transition_index,
+            format!("pendingPayloadTag_ == {tag_type}::{variant} && ({inner})"),
+        );
+        guarded_events.insert(g.event);
+    }
+    if guards.is_empty() {
+        return inactive();
+    }
+
+    let l = LangCtx::new(crate::generator::Language::Cpp);
+    let mut structs = String::new();
+    let mut tag_values = String::from("    None = 0,\n");
+    // `mutable` mirrors the existing `pendingEvent*_` fields — the transition
+    // matcher reads them from a const policy method.
+    let mut fields = format!("    mutable {tag_type} pendingPayloadTag_ = {tag_type}::None;\n");
+    let mut populate = String::from(
+        "    // NL→IR Item C1 Path A: lift the type-erased typed payload into the\n    \
+// matching typed field (any_cast misses leave the tag None → guard fails).\n    \
+void populateTypedPayload(const ::std::any &tp) {\n        \
+pendingPayloadTag_ = {TAG}::None;\n",
+    )
+    .replace("{TAG}", &tag_type);
+    let mut inject = String::new();
+
+    for event in &guarded_events {
+        let schema = &model.imported_event_schemas[event];
+        let variant = filters::to_event_variant(event.clone());
+        let struct_name = format!("{machine}{variant}Payload");
+        let field = format!("pending{variant}Payload_");
+        let event_enum = cpp_event_enum_value(event);
+
+        let mut field_lines = String::new();
+        let mut params = String::new();
+        let mut struct_inits = String::new();
+        for f in &schema.fields {
+            let ty = l.resolved_type(&f.sce_type, &[]);
+            field_lines.push_str(&format!("    {ty} {};\n", f.id));
+            if !params.is_empty() {
+                params.push_str(", ");
+            }
+            params.push_str(&format!("{ty} {}", f.id));
+            struct_inits.push_str(&format!(".{} = {}, ", f.id, f.id));
+        }
+        structs.push_str(&format!(
+            "// {struct_name} — NL→IR Item C1 Path A typed `_event.data` payload for\n\
+// `{event}`. Consumers inject it via the engine's `raise{variant}` seam.\n\
+struct {struct_name} {{\n{field_lines}}};\n\n"
+        ));
+        tag_values.push_str(&format!("    {variant},\n"));
+        fields.push_str(&format!("    mutable {struct_name} {field}{{}};\n"));
+        populate.push_str(&format!(
+            "        if (const auto *p = ::std::any_cast<{struct_name}>(&tp)) {{\n            \
+pendingPayloadTag_ = {tag_type}::{variant};\n            \
+{field} = *p;\n        }}\n"
+        ));
+        // Per-event typed inject seam on the generated engine class — binds the
+        // event name + payload field values in one call (the C++ twin of the
+        // Rust `raise_<event>` extension trait and the Go `Raise<Event>` func).
+        inject.push_str(&format!(
+            "    /// NL→IR Item C1 Path A: typed `_event.data` inject for `{event}` —\n    \
+/// binds the event name and the payload field values in one call so the\n    \
+/// name↔type pairing cannot be constructed inconsistently.\n    \
+void raise{variant}({params}) {{\n        \
+EventWithMetadata m(PolicyType::Event::{event_enum});\n        \
+m.typedPayload = {struct_name}{{{struct_inits}}};\n        \
+this->raiseExternal(m);\n    }}\n"
+        ));
+    }
+    populate.push_str("    }\n");
+
+    let defs = format!(
+        "// NL→IR Item C1 Path A (EventSchema native lowering): typed `_event.data`\n\
+// payload channel for the EventSchema-imported events whose transition guards\n\
+// lowered to a native C++ comparison (no script engine). The C++ twin of the\n\
+// Rust `{machine}Payload` enum / C11 tagged union: a tag plus one\n\
+// pending<Event>Payload_ policy field per guarded event.\n\
+enum class {tag_type} : ::std::uint8_t {{\n{tag_values}}};\n\n{structs}"
+    );
+
+    CppEventPayload {
+        defs,
+        active: true,
+        policy_members: format!("{fields}{populate}"),
+        inject_methods: inject,
+        guards,
+    }
+}
+
+/// NL→IR Item C1 Path A (EventSchema native lowering) — Kotlin-codegen
+/// payload data, the Kotlin twin of [`build_rust_event_payload`] /
+/// [`build_go_event_payload`] / [`build_cpp_event_payload`].
+///
+/// Kotlin is a GC/dynamic backend, so the carrier is the type-erased
+/// `EventMetadata.typedPayload: Any?`; the generated machine's
+/// `populateTypedPayload` override `is`-checks it into a matching nullable
+/// `pending<Event>Payload` field (mirroring the Go policy's type-switch).
+/// Nullability replaces Go's separate tag enum — a `null` field is the
+/// "no payload" sentinel, and the native guard's `… != null && (…)` prefix
+/// is the tag check.
+///
+/// `defs` is the top-level payload data classes; `policy_fields` are the
+/// nullable `pending<Event>Payload` properties; `populate` is the body of
+/// the `populateTypedPayload` override (reset-to-null then a `when` over the
+/// carrier); `inject_methods` are the per-event `raise<Event>` seams on the
+/// generated machine class; `guards` maps `Transition::transition_index` to
+/// the native guard expression emitted in place of the `safeEvaluateGuard`
+/// script call.
+pub struct KotlinEventPayload {
+    pub defs: String,
+    pub active: bool,
+    pub policy_fields: String,
+    pub populate: String,
+    pub inject_methods: String,
+    pub guards: std::collections::BTreeMap<usize, String>,
+}
+
+/// Build the [`KotlinEventPayload`] for `model`. Same SSOT guard selection
+/// ([`select_native_typed_guards`]) as the Rust / Go / C11 / C++ builders.
+pub fn build_kotlin_event_payload(model: &crate::model::SCXMLModel) -> KotlinEventPayload {
+    let inactive = || KotlinEventPayload {
+        defs: String::new(),
+        active: false,
+        policy_fields: String::new(),
+        populate: String::new(),
+        inject_methods: String::new(),
+        guards: std::collections::BTreeMap::new(),
+    };
+    let machine = filters::to_pascal_case(model.name.clone());
+
+    // Resolve the sealed-event reference spelling exactly as the template's
+    // `to_event_ref` does (a branch event needs the `.Self` data object).
+    let kotlin_events: std::collections::BTreeSet<String> = model
+        .events
+        .iter()
+        .filter(|e| e.as_str() != "Wildcard")
+        .cloned()
+        .collect();
+    let event_tree = crate::kotlin::build_event_tree(&kotlin_events);
+    let branch_events = crate::kotlin::collect_branch_events(&event_tree, "");
+
+    // Lower every typed-access guard first; the set of events owning a lowered
+    // guard is exactly the set of payload data classes / policy fields emitted
+    // below, so nothing is ever dead. The accessor is the nullable policy field
+    // the populate seam fills, non-null-asserted (`!!`) — the `… != null`
+    // prefix of the guard makes the assertion always safe.
+    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for g in select_native_typed_guards(model) {
+        let schema = &model.imported_event_schemas[&g.event];
+        let variant = filters::to_event_variant(g.event.clone());
+        let field = format!("pending{variant}Payload");
+        let accessor = format!("{field}!!");
+        let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
+            &g.cond,
+            schema,
+            &accessor,
+            ExprTarget::Kotlin,
+        ) else {
+            continue;
+        };
+        guards.insert(g.transition_index, format!("{field} != null && ({inner})"));
+        guarded_events.insert(g.event);
+    }
+    if guards.is_empty() {
+        return inactive();
+    }
+
+    let l = LangCtx::new(crate::generator::Language::Kotlin);
+    let mut data_classes = String::new();
+    let mut policy_fields = String::new();
+    let mut inject = String::new();
+    // `populate` resets every field to null first (a non-typed event clears a
+    // stale payload), then a `when` over the type-erased carrier binds the
+    // matching field.
+    let mut populate = String::new();
+    let mut when_arms = String::new();
+    for event in &guarded_events {
+        let variant = filters::to_event_variant(event.clone());
+        populate.push_str(&format!("        pending{variant}Payload = null\n"));
+    }
+    populate.push_str("        when (val tp = metadata.typedPayload) {\n");
+
+    for event in &guarded_events {
+        let schema = &model.imported_event_schemas[event];
+        let variant = filters::to_event_variant(event.clone());
+        let class_name = format!("{machine}{variant}Payload");
+        let field = format!("pending{variant}Payload");
+        let event_ref = format!(
+            "{machine}Event.{}",
+            crate::kotlin::to_event_ref(event, &branch_events)
+        );
+
+        // Constructor params / inject params / call args. Fields are the
+        // verbatim schema ids (matching the verbatim property emit of
+        // `expr.rs::emit_kotlin`) so the lowered guard's `<field>!!.<id>`
+        // resolves against the data class member.
+        let mut ctor_params = String::new();
+        let mut call_params = String::new();
+        let mut call_args = String::new();
+        for f in &schema.fields {
+            let ty = l.resolved_type(&f.sce_type, &[]);
+            if !ctor_params.is_empty() {
+                ctor_params.push_str(", ");
+            }
+            ctor_params.push_str(&format!("val {}: {ty}", f.id));
+            if !call_params.is_empty() {
+                call_params.push_str(", ");
+            }
+            call_params.push_str(&format!("{}: {ty}", f.id));
+            if !call_args.is_empty() {
+                call_args.push_str(", ");
+            }
+            call_args.push_str(&f.id);
+        }
+        data_classes.push_str(&format!(
+            "// {class_name} is the NL\u{2192}IR Item C1 Path A typed `_event.data`\n\
+// payload for `{event}`. Consumers inject it via the `raise{variant}` seam\n\
+// on the machine — they never name this class directly.\n\
+data class {class_name}({ctor_params})\n\n"
+        ));
+        policy_fields.push_str(&format!("    private var {field}: {class_name}? = null\n"));
+        when_arms.push_str(&format!("            is {class_name} -> {field} = tp\n"));
+        // Per-event typed inject seam on the generated machine class: binds the
+        // event name and the payload field values in one call so the name↔type
+        // pairing cannot be constructed inconsistently. The Kotlin twin of the
+        // Rust `raise<Event>` extension trait / Go `Raise<Event>` func / C++
+        // `raise<Event>` method. A member (not a free function) because the
+        // generated machine *is* the engine subclass — no orphan-rule barrier.
+        inject.push_str(&format!(
+            "    // NL\u{2192}IR Item C1 Path A typed `_event.data` inject seam for\n    \
+// `{event}` — binds the event name and the payload field values in one call.\n    \
+fun raise{variant}({call_params}) {{\n        \
+send(\n            {event_ref},\n            \
+EventMetadata(type = \"external\", typedPayload = {class_name}({call_args}))\n        )\n    }}\n"
+        ));
+    }
+    populate.push_str(&when_arms);
+    populate.push_str("            else -> {}\n        }\n");
+
+    let defs = format!(
+        "// NL\u{2192}IR Item C1 Path A (EventSchema MCU native lowering): typed\n\
+// `_event.data` payload classes for the EventSchema-imported events whose\n\
+// transition guards lowered to a native Kotlin comparison (no script engine).\n\
+// The Kotlin twin of the Rust `{machine}Payload` enum / Go per-event payload\n\
+// structs: one data class per guarded event, carried through the queue in the\n\
+// type-erased `EventMetadata.typedPayload` and lifted into a nullable field.\n\
+{data_classes}"
+    );
+
+    KotlinEventPayload {
+        defs,
+        active: true,
+        policy_fields,
+        populate,
+        inject_methods: inject,
+        guards,
+    }
+}
+
+/// NL→IR Item C1 Path A (EventSchema native lowering) — Python-codegen
+/// payload data, the Python twin of [`build_kotlin_event_payload`] /
+/// [`build_go_event_payload`].
+///
+/// Python is a GC/dynamic backend, so the carrier is the type-erased
+/// `EventMetadata.typed_payload: Any`; the generated policy's
+/// `set_current_event` override `isinstance`-checks it into a matching
+/// `_pending_<event>_payload` instance attribute (mirroring the Kotlin
+/// `populateTypedPayload` / the Go policy's type-switch). `None` is the
+/// "no payload" sentinel — the native guard's `… is not None and (…)`
+/// prefix is the tag check.
+///
+/// `defs` is the module-level payload dataclasses; `init` is the
+/// `__init__` field-reset block; `populate` is the body prepended to the
+/// generated `set_current_event` (reset-to-None then an `isinstance`
+/// cascade over the carrier); `inject` are the module-level per-event
+/// `raise_<event>` seams; `guards` maps `Transition::transition_index` to
+/// the native guard expression emitted in place of the `self._guard(…)`
+/// script call.
+pub struct PythonEventPayload {
+    pub defs: String,
+    pub active: bool,
+    pub init: String,
+    pub populate: String,
+    pub inject: String,
+    pub guards: std::collections::BTreeMap<usize, String>,
+}
+
+/// Build the [`PythonEventPayload`] for `model`. Same SSOT guard selection
+/// ([`select_native_typed_guards`]) as the Rust / Go / C11 / C++ / Kotlin
+/// builders.
+pub fn build_python_event_payload(model: &crate::model::SCXMLModel) -> PythonEventPayload {
+    let inactive = || PythonEventPayload {
+        defs: String::new(),
+        active: false,
+        init: String::new(),
+        populate: String::new(),
+        inject: String::new(),
+        guards: std::collections::BTreeMap::new(),
+    };
+    let machine = filters::to_pascal_case(model.name.clone());
+
+    // Lower every typed-access guard first; the set of events owning a lowered
+    // guard is exactly the set of payload dataclasses / policy fields emitted
+    // below, so nothing is ever dead. The accessor is the instance attribute
+    // the populate seam fills; the `… is not None` prefix is the tag check
+    // (Python is dynamic — no literal-type coercion needed, `== 0` is direct).
+    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for g in select_native_typed_guards(model) {
+        let schema = &model.imported_event_schemas[&g.event];
+        let snake = filters::to_snake_case(g.event.clone());
+        let accessor = format!("self._pending_{snake}_payload");
+        let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
+            &g.cond,
+            schema,
+            &accessor,
+            ExprTarget::Python,
+        ) else {
+            continue;
+        };
+        guards.insert(
+            g.transition_index,
+            format!("{accessor} is not None and ({inner})"),
+        );
+        guarded_events.insert(g.event);
+    }
+    if guards.is_empty() {
+        return inactive();
+    }
+
+    let l = LangCtx::new(crate::generator::Language::Python);
+    let mut data_classes = String::new();
+    let mut init = String::new();
+    let mut inject = String::new();
+    // `populate` resets every field to None first (a non-typed event clears a
+    // stale payload), then an `isinstance` cascade binds the matching field.
+    let mut populate = String::new();
+    for event in &guarded_events {
+        let snake = filters::to_snake_case(event.clone());
+        populate.push_str(&format!("        self._pending_{snake}_payload = None\n"));
+    }
+    populate.push_str("        _tp = metadata.typed_payload\n");
+
+    let mut first = true;
+    for event in &guarded_events {
+        let schema = &model.imported_event_schemas[event];
+        let variant = filters::to_event_variant(event.clone());
+        let snake = filters::to_snake_case(event.clone());
+        let class_name = format!("{machine}{variant}Payload");
+        let event_const = filters::to_python_const(event.clone());
+
+        // Constructor field annotations / inject params / call args. Fields are
+        // the verbatim schema ids (matching the verbatim attribute emit of
+        // `expr.rs::emit_python`) so the lowered guard's `<accessor>.<id>`
+        // resolves against the dataclass attribute.
+        let mut field_lines = String::new();
+        let mut params = String::new();
+        let mut call_args = String::new();
+        for f in &schema.fields {
+            let ty = l.resolved_type(&f.sce_type, &[]);
+            field_lines.push_str(&format!("    {}: {ty}\n", f.id));
+            params.push_str(&format!(", {}: {ty}", f.id));
+            if !call_args.is_empty() {
+                call_args.push_str(", ");
+            }
+            call_args.push_str(&f.id);
+        }
+        data_classes.push_str(&format!(
+            "@dataclass\n\
+class {class_name}:\n    \
+\"\"\"NL\u{2192}IR Item C1 Path A typed `_event.data` payload for `{event}`.\n\n    \
+Consumers inject it via the module-level `raise_{snake}` seam; they never\n    \
+name this class directly.\"\"\"\n\n{field_lines}\n\n"
+        ));
+        init.push_str(&format!("        self._pending_{snake}_payload = None\n"));
+        let kw = if first { "if" } else { "elif" };
+        first = false;
+        populate.push_str(&format!(
+            "        {kw} isinstance(_tp, {class_name}):\n            \
+self._pending_{snake}_payload = _tp\n"
+        ));
+        // Per-event typed inject seam: a module-level free function (the Python
+        // twin of the Go `Raise<Event>` func — the runtime `Engine` is a
+        // foreign type, so no method can be added) binding the event name and
+        // the payload field values in one call so the name↔type pairing cannot
+        // be constructed inconsistently.
+        inject.push_str(&format!(
+            "def raise_{snake}(engine{params}) -> None:\n    \
+\"\"\"NL\u{2192}IR Item C1 Path A typed `_event.data` inject seam for `{event}` —\n    \
+binds the event name and the payload field values in one call.\"\"\"\n    \
+engine.send_event(\n        \
+{machine}Event.{event_const},\n        \
+EventMetadata(event_type=\"external\", typed_payload={class_name}({call_args})),\n    )\n\n\n"
+        ));
+    }
+
+    let defs = format!(
+        "# NL\u{2192}IR Item C1 Path A (EventSchema MCU native lowering): typed\n\
+# `_event.data` payload dataclasses for the EventSchema-imported events whose\n\
+# transition guards lowered to a native Python comparison (no script engine).\n\
+# The Python twin of the Rust `{machine}Payload` enum / Go per-event payload\n\
+# structs: one dataclass per guarded event, carried through the queue in the\n\
+# type-erased `EventMetadata.typed_payload` and lifted into a `_pending_*` field.\n\
+{data_classes}"
+    );
+
+    PythonEventPayload {
+        defs,
+        active: true,
+        init,
+        populate,
+        inject,
+        guards,
+    }
+}
+
 // ── Condition rendering (unified) ─────────────────────────────
 
 fn render_condition(

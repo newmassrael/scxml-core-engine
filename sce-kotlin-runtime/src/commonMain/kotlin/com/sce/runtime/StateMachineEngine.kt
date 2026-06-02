@@ -42,7 +42,16 @@ data class EventMetadata(
     val sendId: String = "",
     val origin: String = "",
     val originType: String = "",
-    val invokeId: String = ""
+    val invokeId: String = "",
+    // NL→IR Item C1 Path A (EventSchema MCU native lowering): the type-erased
+    // typed `_event.data` payload carrier. For an event whose imported
+    // EventSchema lowered a transition guard to a native comparison, the
+    // generated per-event inject seam packs the typed payload data class here;
+    // the generated `populateTypedPayload` override lifts it back into a typed
+    // policy field the native guard reads. `null` for every untyped event, so
+    // the script-engine baseline is byte-unchanged. The Kotlin twin of the Go
+    // `EventMetadata.TypedPayload any` / C++ `EventWithMetadata.typedPayload`.
+    val typedPayload: Any? = null
 ) {
     companion object {
         val EMPTY = EventMetadata()
@@ -193,6 +202,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * setCurrentEventInScriptEngine() can read it.
      */
     protected var currentEventMetadata: EventMetadata = EventMetadata.EMPTY
+
+    /**
+     * NL→IR Item C1 Path A (EventSchema MCU native lowering): lift the dequeued
+     * event's type-erased typed `_event.data` payload into the typed policy
+     * field(s) the generated native guards read. Called at every point that
+     * assigns [currentEventMetadata], so a stale payload from a prior event is
+     * always cleared before the next microstep — a non-typed event (carrier
+     * `null`) resets the generated fields to `null`, making every typed guard
+     * fail. The base implementation is a no-op; only a generated machine that
+     * lowered at least one typed guard overrides it. The Kotlin twin of the Go
+     * policy's `PopulateEventMetadata` type-switch / the C11 pop loop's
+     * `sm->pending_payload = evt.payload`.
+     */
+    protected open fun populateTypedPayload(metadata: EventMetadata) {}
 
     /**
      * W3C SCXML 3.12.1: Event channel (FIFO, unbounded).
@@ -668,6 +691,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 for (queued in eventChannel) {
                     if (isInFinalState) break
                     currentEventMetadata = queued.metadata
+                    populateTypedPayload(queued.metadata)
                     processMicrostep(queued.event)
                 }
             }
@@ -788,6 +812,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             while (externalEventQueue.isNotEmpty() && !isInFinalState) {
                 val queued = externalEventQueue.removeFirst()
                 currentEventMetadata = queued.metadata
+                populateTypedPayload(queued.metadata)
                 executeFinalizeForChildEvent(queued.event)
                 autoForwardEvent(queued.event)
                 processOneEvent(queued.event)
@@ -1413,6 +1438,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (internalEventQueue.isNotEmpty()) {
                 val queued = internalEventQueue.removeFirst()
                 currentEventMetadata = queued.metadata
+                populateTypedPayload(queued.metadata)
                 processOneEvent(queued.event)
                 flushPendingFinalState()
                 continue

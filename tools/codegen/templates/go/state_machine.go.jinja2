@@ -102,11 +102,22 @@ func (e {{ machine_name }}Event) String() string {
 {{ inline_kind_types }}
 
 {% endif %}
+{% if event_payload_active %}
+// ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────────
+{{ event_payload_defs }}
+{% endif %}
 // ======================================================================
 // Policy struct
 // ======================================================================
 
 type {{ machine_name }}Policy struct {
+{% if event_payload_active %}
+	// NL→IR Item C1 Path A: the current event's typed `_event.data` payload,
+	// lifted from the dequeued event by PopulateEventMetadata and read by the
+	// native transition guards (`p.pending<Event>Payload.<field>`). Mirrors
+	// the Rust policy's `pending_payload` / the C11 `sm->pending_payload`.
+{{ event_payload_policy_fields }}
+{% endif %}
 	// W3C SCXML 3.13: Last transition metadata
 	lastTransitionIsInternal  bool
 	lastTransitionIsTargetless bool
@@ -516,6 +527,12 @@ func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(_ string, _ *sce
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
 // Note: event name is set separately via setCurrentEvent(), not from metadata.
 func (p *{{ machine_name }}Policy) PopulateEventMetadata(meta *sce.EventMetadata) {
+{% if event_payload_active %}
+	// NL→IR Item C1 Path A: lift the dequeued event's typed payload from the
+	// type-erased carrier into the typed policy field the native guards read
+	// (twin of the C11 pop loop's `sm->pending_payload = evt.payload`).
+{{ event_payload_populate }}
+{% endif %}
 {% if model.needs_event_data %}
 	p.pendingEventData = meta.Data
 {% endif %}
@@ -538,6 +555,12 @@ func (p *{{ machine_name }}Policy) PopulateEventMetadata(meta *sce.EventMetadata
 
 // ClearEventMetadata resets pending event metadata (W3C SCXML 5.10).
 func (p *{{ machine_name }}Policy) ClearEventMetadata() {
+{% if event_payload_active %}
+	// NL→IR Item C1 Path A: reset the typed-payload tag (PopulateEventMetadata
+	// always re-establishes it for the next event; this keeps a stale payload
+	// from being read between macrosteps).
+{{ event_payload_clear }}
+{% endif %}
 {% if model.needs_event_name %}
 	p.pendingEventName = ""
 {% endif %}

@@ -31,6 +31,7 @@
 #include "core/AOTEventQueue.h"
 #include "core/EventQueueManager.h"
 #include "events/EventDescriptor.h"
+#include <any>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -223,6 +224,18 @@ public:
         std::string invokeId;    // §scxml-5.10.1: _event.invokeid
         std::string target;      // §scxml-C-2: HTTP POST target URL
         std::optional<ScriptValue> typedData;  // §scxml-5.5: Engine-agnostic typed event data
+        // NL→IR Item C1 Path A (EventSchema native lowering): typed
+        // `_event.data` payload riding with the event through the queue — a
+        // generated per-event payload struct, type-erased in std::any (the
+        // C++-idiomatic twin of the Rust runtime's statically-typed
+        // EventWithMetadata<E,P>.payload and the Go `TypedPayload any`
+        // carrier). The generated policy's populateTypedPayload() any_casts it
+        // into its typed pending<Event>Payload_ field, which the natively-
+        // lowered transition guards read (no script engine). Empty for every
+        // event raised without a typed payload, against which the native
+        // guards' tag check fails. The name↔type pairing is enforced at the
+        // single generated raise<Event>() inject seam.
+        std::any typedPayload;
 
         // Default constructor for aggregate initialization
         EventWithMetadata() = default;
