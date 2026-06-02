@@ -84,16 +84,26 @@ fi
 # operator as a segment boundary, and check each segment for the
 # `git [flags...] commit` shape.
 IS_COMMIT="$(printf '%s' "$CMD" | python3 -c '
-import shlex, sys
+import re, shlex, sys
 cmd = sys.stdin.read()
+# Heredoc bodies are the commit MESSAGE, not shell syntax, and they
+# routinely contain an apostrophe (possessive s, contractions) or a
+# stray quote that shlex reads as an unbalanced quotation — raising
+# ValueError and (previously) making a real `git commit` look like
+# not-a-commit, silently bypassing every audit/format check. Strip
+# `<<TAG ... TAG` blocks before tokenising so the message content
+# cannot break detection. (No literal quote chars in this -c body:
+# the regex uses \x27/\x22 so the surrounding single-quote survives.)
+cmd_detect = re.sub(
+    r"<<-?\s*[\x27\x22]?([A-Za-z_][A-Za-z0-9_]*)[\x27\x22]?\s*\n.*?\n\s*\1\s*(?:\n|$)",
+    " ", cmd, flags=re.DOTALL)
 try:
-    tokens = shlex.split(cmd, comments=False, posix=True)
+    tokens = shlex.split(cmd_detect, comments=False, posix=True)
 except ValueError:
-    # Genuinely malformed input (mismatched quotes at the top
-    # level). Fail-closed is tempting but noisy; classify as
-    # not-a-commit so the hook does not spam on every broken
-    # pipeline. A broken commit would fail git itself anyway.
-    print("no")
+    # Still unbalanced after stripping heredocs: do NOT fail open.
+    # Fall back to a quote-insensitive scan — a `git ... commit` shape
+    # anywhere classifies as a commit so the audit still fires.
+    print("yes" if re.search(r"\bgit\b[^\n;|&]*\bcommit\b", cmd) else "no")
     sys.exit(0)
 
 GIT_FLAGS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree",
