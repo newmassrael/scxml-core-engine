@@ -66,9 +66,9 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:ReasonCode
+- [references] sce/include/mesh/CommunicationError.h:ReasonCode
 - [implements] sce/include/mesh/InvokeCorrelation.h:cancelAllPending
-- [implements] sce/include/mesh/MeshUuidKey.h
+- [references] sce/include/mesh/MeshUuidKey.h
 - [implements] sce/include/mesh/OutboundBuffer.h:markNotReady
 - [implements] sce/include/mesh/OutboundBuffer.h:markReady
 
@@ -190,7 +190,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Bindings**:
 - [implements] sce/include/mesh/DedupRouter.h:DedupRouter
-- [implements] sce/include/mesh/DedupRouter.h:kCapacity
+- [references] sce/include/mesh/DedupRouter.h:kCapacity
 - [implements] sce/include/mesh/OrderingBuffer.h
 - [implements] sce/include/mesh/OutboundBuffer.h
 - [implements] sce/include/mesh/RetryingDispatcher.h:send_with_retry
@@ -266,8 +266,8 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:ReasonCode
-- [implements] sce/include/mesh/MeshEnvelope.h:sequence_no
+- [references] sce/include/mesh/CommunicationError.h:ReasonCode
+- [references] sce/include/mesh/MeshEnvelope.h:sequence_no
 - [implements] sce/include/mesh/OrderingBuffer.h:admit
 
 
@@ -287,7 +287,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:ReasonCode
+- [references] sce/include/mesh/CommunicationError.h:ReasonCode
 
 
 
@@ -325,11 +325,11 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:detail
-- [implements] sce/include/mesh/CommunicationError.h:envelope_id
-- [implements] sce/include/mesh/CommunicationError.h:source
+- [references] sce/include/mesh/CommunicationError.h:detail
+- [references] sce/include/mesh/CommunicationError.h:envelope_id
+- [references] sce/include/mesh/CommunicationError.h:source
 - [implements] sce/include/mesh/CommunicationError.h:toJsonBytes
-- [implements] sce/include/mesh/CommunicationError.h:transport_error
+- [references] sce/include/mesh/CommunicationError.h:transport_error
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 - [implements] sce/include/mesh/ShmChannel.h:ShmChannel
 
@@ -365,7 +365,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/MeshEnvelope.h:routing_id
+- [references] sce/include/mesh/MeshEnvelope.h:routing_id
 - [implements] sce/include/mesh/OutboundBuffer.h
 
 
@@ -490,7 +490,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/MeshUuidKey.h
+- [references] sce/include/mesh/MeshUuidKey.h
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h
 - [implements] sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h
 
@@ -511,7 +511,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:timeout_ms
+- [references] sce/include/mesh/CommunicationError.h:timeout_ms
 - [implements] sce/include/mesh/ParallelCompletionTracker.h
 - [implements] sce/include/static/StaticExecutionEngine.h:triggerParallelRegionRemoteSend
 
@@ -777,7 +777,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:ReasonCode
+- [references] sce/include/mesh/CommunicationError.h:ReasonCode
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:SCE::Mesh::Someip
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:availabilityChangeSafely
 
@@ -798,15 +798,15 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:ReasonCode
-- [implements] sce/include/mesh/CommunicationError.h:parallel_id
+- [references] sce/include/mesh/CommunicationError.h:ReasonCode
+- [references] sce/include/mesh/CommunicationError.h:parallel_id
 - [implements] sce/include/mesh/MeshDispatch.h:SCE::Mesh
-- [implements] sce/include/mesh/MeshEnvelope.h:parallel_id
+- [references] sce/include/mesh/MeshEnvelope.h:parallel_id
 - [implements] sce/include/mesh/MeshEnvelopeCodec.h:SCE::Mesh
 - [implements] sce/include/mesh/ParallelCompletionTracker.h:ParallelCompletionTracker
 - [implements] sce/include/mesh/ParallelCompletionTracker.h:onRegionComplete
 - [implements] sce/include/mesh/ParallelCompletionTracker.h:reset
-- [implements] sce/include/mesh/PatternKind.h:PatternKind
+- [references] sce/include/mesh/PatternKind.h:PatternKind
 - [implements] sce/include/static/StaticExecutionEngine.h:isGlobalFinalState
 - [implements] sce/include/static/StaticExecutionEngine.h:onParallelRegionLocalComplete_
 - [implements] sce/include/static/StaticExecutionEngine.h:setParallelRegionLocalCompleteCallback
@@ -848,47 +848,47 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:ReasonCode
+- [references] sce/include/mesh/CommunicationError.h:ReasonCode
 - [implements] sce/include/mesh/CommunicationError.h:SCE::Mesh
-- [implements] sce/include/mesh/CommunicationError.h:attempts
-- [implements] sce/include/mesh/CommunicationError.h:codec
-- [implements] sce/include/mesh/CommunicationError.h:invoke_id
-- [implements] sce/include/mesh/CommunicationError.h:last_seen_ms_ago
-- [implements] sce/include/mesh/CommunicationError.h:lost_seq_hi
-- [implements] sce/include/mesh/CommunicationError.h:lost_seq_lo
-- [implements] sce/include/mesh/CommunicationError.h:machine
-- [implements] sce/include/mesh/CommunicationError.h:missing_regions
-- [implements] sce/include/mesh/CommunicationError.h:parallel_id
-- [implements] sce/include/mesh/CommunicationError.h:partition
-- [implements] sce/include/mesh/CommunicationError.h:position
-- [implements] sce/include/mesh/CommunicationError.h:queue_depth
-- [implements] sce/include/mesh/CommunicationError.h:reason
-- [implements] sce/include/mesh/CommunicationError.h:target
-- [implements] sce/include/mesh/CommunicationError.h:timeout_ms
-- [implements] sce/include/mesh/CommunicationError.h:transport
-- [implements] sce/include/mesh/CommunicationError.h:transport_error
-- [implements] sce/include/mesh/CommunicationError.h:transport_status
-- [implements] sce/include/mesh/CommunicationError.h:window_size
+- [references] sce/include/mesh/CommunicationError.h:attempts
+- [references] sce/include/mesh/CommunicationError.h:codec
+- [references] sce/include/mesh/CommunicationError.h:invoke_id
+- [references] sce/include/mesh/CommunicationError.h:last_seen_ms_ago
+- [references] sce/include/mesh/CommunicationError.h:lost_seq_hi
+- [references] sce/include/mesh/CommunicationError.h:lost_seq_lo
+- [references] sce/include/mesh/CommunicationError.h:machine
+- [references] sce/include/mesh/CommunicationError.h:missing_regions
+- [references] sce/include/mesh/CommunicationError.h:parallel_id
+- [references] sce/include/mesh/CommunicationError.h:partition
+- [references] sce/include/mesh/CommunicationError.h:position
+- [references] sce/include/mesh/CommunicationError.h:queue_depth
+- [references] sce/include/mesh/CommunicationError.h:reason
+- [references] sce/include/mesh/CommunicationError.h:target
+- [references] sce/include/mesh/CommunicationError.h:timeout_ms
+- [references] sce/include/mesh/CommunicationError.h:transport
+- [references] sce/include/mesh/CommunicationError.h:transport_error
+- [references] sce/include/mesh/CommunicationError.h:transport_status
+- [references] sce/include/mesh/CommunicationError.h:window_size
 - [implements] sce/include/mesh/DedupRouter.h:DedupWindow
 - [implements] sce/include/mesh/DedupRouter.h:admitWithSignal
 - [implements] sce/include/mesh/InvokeCorrelation.h:InvokeCorrelation
 - [implements] sce/include/mesh/InvokeCorrelation.h:cancelAllPending
 - [implements] sce/include/mesh/InvokeCorrelation.h:cancelAllPendingForTarget
 - [implements] sce/include/mesh/InvokeCorrelation.h:registerInvoke
-- [implements] sce/include/mesh/OrderingBuffer.h:OrderingGapEvent
+- [references] sce/include/mesh/OrderingBuffer.h:OrderingGapEvent
 - [implements] sce/include/mesh/OutboundBuffer.h:OutboundBuffer
-- [implements] sce/include/mesh/OutboundBuffer.h:SendResult
+- [references] sce/include/mesh/OutboundBuffer.h:SendResult
 - [implements] sce/include/mesh/OutboundBuffer.h:admit
 - [implements] sce/include/mesh/OutboundBuffer.h:markNotReady
 - [implements] sce/include/mesh/OutboundBuffer.h:markReady
-- [implements] sce/include/mesh/OutboundBuffer.h:retryable
+- [references] sce/include/mesh/OutboundBuffer.h:retryable
 - [implements] sce/include/mesh/ParallelCompletionTracker.h
 - [implements] sce/include/mesh/RetryingDispatcher.h:RetryingDispatcher
 - [implements] sce/include/mesh/ShmChannel.h:ShmChannel
 - [implements] sce/include/mesh/ShmChannel.h:drain
 - [implements] sce/include/mesh/ShmChannel.h:drainWith
 - [implements] sce/include/mesh/third_party/AuthClassifier.h:isZenohAuthFailMessage
-- [implements] sce/include/mesh/transports/CustomTcpTransport.h:ReadResult
+- [references] sce/include/mesh/transports/CustomTcpTransport.h:ReadResult
 - [implements] sce/include/mesh/transports/CustomTcpTransport.h:readLoop
 - [implements] sce/include/mesh/transports/CustomTcpTransport.h:setDecodeErrorHandler
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:SCE::Mesh::Someip
@@ -1459,7 +1459,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:codec
+- [references] sce/include/mesh/CommunicationError.h:codec
 
 
 
@@ -1523,7 +1523,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/PatternKind.h:PatternKind
+- [references] sce/include/mesh/PatternKind.h:PatternKind
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 
 
@@ -1648,16 +1648,16 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/CommunicationError.h:invoke_id
+- [references] sce/include/mesh/CommunicationError.h:invoke_id
 - [implements] sce/include/mesh/InvokeCorrelation.h:cancelAllPendingForTarget
 - [implements] sce/include/mesh/MeshDeadlineScheduler.h:shutdown
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
-- [implements] sce/include/mesh/MeshUuidKey.h
+- [references] sce/include/mesh/MeshUuidKey.h
 - [implements] sce/include/mesh/RetryingDispatcher.h:cancelEnvelopeRetry
 - [implements] sce/include/mesh/RetryingDispatcher.h:onRetryFire
-- [implements] sce/include/static/StaticExecutionEngine.h:currentEventInvokeId_
-- [implements] sce/include/static/StaticExecutionEngine.h:onMeshCancel_
-- [implements] sce/include/static/StaticExecutionEngine.h:onMeshInvoke_
+- [references] sce/include/static/StaticExecutionEngine.h:currentEventInvokeId_
+- [references] sce/include/static/StaticExecutionEngine.h:onMeshCancel_
+- [references] sce/include/static/StaticExecutionEngine.h:onMeshInvoke_
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:setMeshCancelCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:setMeshInvokeCallback
@@ -1680,10 +1680,10 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Bindings**:
 - [implements] sce/include/mesh/ChildSessionAdapter.h
-- [implements] sce/include/mesh/CommunicationError.h:invoke_id
-- [implements] sce/include/mesh/IChildSession.h
+- [references] sce/include/mesh/CommunicationError.h:invoke_id
+- [references] sce/include/mesh/IChildSession.h
 - [implements] sce/include/mesh/MeshDispatch.h
-- [implements] sce/include/mesh/PatternKind.h
+- [references] sce/include/mesh/PatternKind.h
 - [implements] sce/include/mesh/ShmChannel.h:drain
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:SCE::Mesh::Someip
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:ScxmlInvokeEndpoint
@@ -1714,7 +1714,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 **Bindings**:
 - [implements] sce/include/mesh/IChildSession.h:sessionId
 - [implements] sce/include/mesh/IChildSession.h:tick
-- [implements] sce/include/mesh/MeshEnvelope.h:child_session_id
+- [references] sce/include/mesh/MeshEnvelope.h:child_session_id
 
 
 
@@ -1737,18 +1737,18 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [implements] sce/include/common/DoneDataHelper.h:evaluateContent
 - [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
-- [implements] sce/include/mesh/MeshEnvelope.h:child_session_id
+- [references] sce/include/mesh/MeshEnvelope.h:child_session_id
 - [implements] sce/include/mesh/MeshEnvelopeCodec.h:SCE::Mesh
-- [implements] sce/include/mesh/PatternKind.h:PatternKind
+- [references] sce/include/mesh/PatternKind.h:PatternKind
 - [implements] sce/include/mesh/ShmChannel.h:ShmChannel
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:SCE::Mesh::Someip
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:send
 - [implements] sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h
 - [implements] sce/include/static/StaticExecutionEngine.h:donedataAtFinal
-- [implements] sce/include/static/StaticExecutionEngine.h:onScxmlInvokeCancel_
-- [implements] sce/include/static/StaticExecutionEngine.h:onScxmlInvokeParentEvent_
-- [implements] sce/include/static/StaticExecutionEngine.h:onScxmlInvokeStart_
-- [implements] sce/include/static/StaticExecutionEngine.h:pendingDonedataAtFinal_
+- [references] sce/include/static/StaticExecutionEngine.h:onScxmlInvokeCancel_
+- [references] sce/include/static/StaticExecutionEngine.h:onScxmlInvokeParentEvent_
+- [references] sce/include/static/StaticExecutionEngine.h:onScxmlInvokeStart_
+- [references] sce/include/static/StaticExecutionEngine.h:pendingDonedataAtFinal_
 - [implements] sce/include/static/StaticExecutionEngine.h:setScxmlInvokeCancelCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:setScxmlInvokeParentEventCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:setScxmlInvokeStartCallback
@@ -1774,7 +1774,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 **Bindings**:
 - [implements] sce/include/mesh/IChildSession.h:sessionId
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
-- [implements] sce/include/mesh/MeshEnvelope.h:child_session_id
+- [references] sce/include/mesh/MeshEnvelope.h:child_session_id
 - [implements] sce/include/static/StaticExecutionEngine.h
 
 
