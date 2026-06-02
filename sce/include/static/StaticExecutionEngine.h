@@ -1142,7 +1142,7 @@ public:
     }
 
     /**
-     * @brief Check if in a final state (§scxml-3.3)
+     * @brief Check if in a final state (§scxml-3.7)
      *
      * Leaf semantics: returns true for **any** `<final>`, including a
      * region-level `<final>` nested inside a `<parallel>` whose sibling

@@ -599,7 +599,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [implements] sce/include/states/IConcurrentRegion.h:setCurrentState
 - [implements] sce/include/states/IConcurrentRegion.h:setDesiredInitialChild
 - [implements] sce/include/static/StaticExecutionEngine.h:initialize
-- [implements] sce/include/static/StaticExecutionEngine.h:isInFinalState
 - [implements] sce/src/model/SCXMLModel.cpp:SCE::SCXMLModel::setInitialState
 - [implements] sce/src/model/SCXMLModel.cpp:SCE::SCXMLModel::validateStateRelationships
 - [implements] sce/src/model/StateHierarchy.cpp:SCE::StateHierarchy::validateRelationships
@@ -896,6 +895,7 @@ None
 - [implements] sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::generateDoneStateEventIfComplete
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::isInFinalState
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventQueues
+- [implements] sce/include/static/StaticExecutionEngine.h:isInFinalState
 
 
 
@@ -1389,9 +1389,6 @@ None.
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeForeachAction
 - [implements] sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformArrayLiterals
 - [implements] sce/src/scripting/JSEngine.cpp:JSEngine::hasVariable
-- [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::luaToScriptValue
-- [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::pushScriptValue
-- [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::registerBuiltins
 
 
 
@@ -3274,6 +3271,8 @@ The <foreach> element and the elements defined in 5 Data Model and Data Manipula
 - [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::shutdown
 - [implements] sce/src/scripting/ScriptResultUtils.cpp:resultToStringArray
 - [implements] sce/src/scripting/XMLDOMWrapper.cpp:XMLDocument::XMLDocument
+- [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::luaToScriptValue
+- [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::pushScriptValue
 
 
 

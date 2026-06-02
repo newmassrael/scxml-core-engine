@@ -25,7 +25,7 @@ extern "C" {
 namespace {
 
 // ECMAScript null/undefined sentinel tags for Lua lightuserdata
-// Used to preserve null vs undefined distinction in Lua arrays (§scxml-4.6)
+// Used to preserve null vs undefined distinction in Lua arrays (§scxml-B-2)
 char NULL_SENTINEL_TAG;
 char UNDEFINED_SENTINEL_TAG;
 
@@ -400,7 +400,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
 
     // === Register SCXML built-in functions ===
 
-    // §scxml-4.6: null/undefined sentinels for array element preservation
+    // §scxml-B-2: null/undefined sentinels for array element preservation
     lua_pushlightuserdata(L, &NULL_SENTINEL_TAG);
     lua_setglobal(L, "_NULL");
     lua_pushlightuserdata(L, &UNDEFINED_SENTINEL_TAG);
@@ -413,7 +413,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
             lua_pushboolean(Ls, 0);
             return 1;
         }
-        // §scxml-4.6: null/undefined sentinels are falsy
+        // §scxml-B-2: null/undefined sentinels are falsy
         if (lua_islightuserdata(Ls, 1)) {
             void *p = lua_touserdata(Ls, 1);
             if (p == &NULL_SENTINEL_TAG || p == &UNDEFINED_SENTINEL_TAG) {
@@ -442,7 +442,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
         if (lua_isnil(Ls, 1)) {
             lua_pushstring(Ls, "undefined");
         } else if (lua_islightuserdata(Ls, 1)) {
-            // §scxml-4.6: typeof null === "object", typeof undefined === "undefined"
+            // §scxml-B-2: typeof null === "object", typeof undefined === "undefined"
             void *p = lua_touserdata(Ls, 1);
             lua_pushstring(Ls, (p == &NULL_SENTINEL_TAG) ? "object" : "undefined");
         } else if (lua_isboolean(Ls, 1)) {
@@ -1350,7 +1350,7 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
         if constexpr (std::is_same_v<T, ScriptUndefined>) {
             lua_pushnil(L);
         } else if constexpr (std::is_same_v<T, ScriptNull>) {
-            // §scxml-4.6: Push null sentinel to preserve typeof semantics
+            // §scxml-B-2: Push null sentinel to preserve typeof semantics
             lua_pushlightuserdata(L, &NULL_SENTINEL_TAG);
         } else if constexpr (std::is_same_v<T, bool>) {
             lua_pushboolean(L, val ? 1 : 0);
@@ -1364,7 +1364,7 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
             lua_newtable(L);
             if (val) {
                 for (size_t i = 0; i < val->elements.size(); ++i) {
-                    // §scxml-4.6: Use undefined sentinel in arrays to prevent nil holes
+                    // §scxml-B-2: Use undefined sentinel in arrays to prevent nil holes
                     if (std::holds_alternative<ScriptUndefined>(val->elements[i])) {
                         lua_pushlightuserdata(L, &UNDEFINED_SENTINEL_TAG);
                     } else {
@@ -1424,7 +1424,7 @@ ScriptValue LuaEngine::luaToScriptValue(lua_State *L, int index) {
             return ScriptValue(obj);
         }
         case LUA_TLIGHTUSERDATA: {
-            // §scxml-4.6: Convert null/undefined sentinels back to ScriptValue types
+            // §scxml-B-2: Convert null/undefined sentinels back to ScriptValue types
             void *p = lua_touserdata(L, index);
             if (p == &NULL_SENTINEL_TAG) {
                 return ScriptNull{};
