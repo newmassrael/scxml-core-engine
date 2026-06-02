@@ -953,6 +953,26 @@ pub struct SCXMLModel {
     /// re-parsing the SCXML.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forge_imports: Vec<crate::forge::model::ForgeImport>,
+    /// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+    /// the statechart's `<sce:import kind="event-schema">` declarations
+    /// resolved to their `EventSchemaModel`, keyed by SCXML event name
+    /// (e.g. `"job.completed"`). Populated by [`crate::parser`] during
+    /// the file-based parse (when a `base_dir` is available to follow
+    /// each import's `src=` to the sibling schema document), *before*
+    /// [`crate::script_engine_analyzer`] runs — so the engine-need
+    /// analysis sees a transition guard's typed `_event.data.<field>`
+    /// surface and can lower it natively instead of routing through the
+    /// runtime script engine (which no_std MCU targets lack).
+    ///
+    /// Empty for statecharts that import no EventSchema, and for the
+    /// in-memory `parse_string` path (WASM), which has no sibling files
+    /// to resolve — those keep the dynamic `_event.data` String
+    /// baseline. Purely an in-memory analysis/codegen aid recomputable
+    /// from [`forge_imports`] + the sibling documents, so it is not
+    /// serialized into the manifest.
+    #[serde(skip)]
+    pub imported_event_schemas:
+        std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
     pub initial: String,
     pub initial_leaf: String,
     pub binding: String,

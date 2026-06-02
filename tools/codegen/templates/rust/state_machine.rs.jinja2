@@ -142,6 +142,10 @@ pub enum {{ machine_name }}Event {
 {{ inline_kind_types }}
 
 {% endif %}
+{% if event_payload_defs %}
+// ── NL→IR Item C1 Path A: EventSchema typed `_event.data` payload ──
+{{ event_payload_defs }}
+{% endif %}
 // ======================================================================
 // Policy struct
 // ======================================================================
@@ -176,6 +180,12 @@ pub struct {{ machine_name }}Policy {
 {% if model.needs_event_data %}
     // W3C SCXML 5.10: Event data for _event.data binding
     pending_event_data: String,
+{% endif %}
+{% if event_payload_type != '()' %}
+    // NL→IR Item C1 Path A: typed `_event.data` payload for the current
+    // event, stored by `populate_event_payload` and read by native
+    // transition guards (`matches!(&self.pending_payload, …)`).
+    pending_payload: {{ event_payload_type }},
 {% endif %}
 {% if model.needs_event_type %}
     // W3C SCXML 5.10.1: Event type for _event.type binding
@@ -285,6 +295,9 @@ impl {{ machine_name }}Policy {
 {% if model.needs_event_data %}
             pending_event_data: String::new(),
 {% endif %}
+{% if event_payload_type != '()' %}
+            pending_payload: {{ event_payload_type }}::default(),
+{% endif %}
 {% if model.needs_event_type %}
             pending_event_type: String::new(),
 {% endif %}
@@ -371,8 +384,9 @@ impl StatePolicy for {{ machine_name }}Policy {
     type State = {{ machine_name }}State;
     type Event = {{ machine_name }}Event;
     // EventSchema MCU native-lowering RFC §10.2: `()` = schemaless (dynamic
-    // `_event.data` baseline); a `<Doc>Payload` sum is emitted for EventSchema docs.
-    type Payload = ();
+    // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
+    // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
+    type Payload = {{ event_payload_type }};
     type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags
@@ -627,6 +641,16 @@ impl StatePolicy for {{ machine_name }}Policy {
     }
 {% endif %}
 
+{% if event_payload_type != '()' %}
+    // NL→IR Item C1 Path A: store the current event's typed `_event.data`
+    // payload so native transition guards can read it without a script
+    // engine. Called by the engine's pop loop for every dequeued event;
+    // events injected without a typed payload carry the `#[default] None`
+    // variant, against which the variant-specific guards simply fail.
+    fn populate_event_payload(&mut self, payload: &Self::Payload) {
+        self.pending_payload = payload.clone();
+    }
+{% endif %}
 {% if model.needs_event_data or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype %}
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
     // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
@@ -774,9 +798,13 @@ impl {{ machine_name }}Policy {
                 if false {
 {% endif %}
 {% if trans.cond %}
+{% set native_guard = trans.transition_index | native_payload_guard %}
 {% if trans.is_pure_in_predicate %}
                     // W3C SCXML 5.9.2: Pure In() predicate
                     if {{ trans.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
+{% elif native_guard %}
+                    // NL→IR Item C1 Path A: native typed `_event.data` guard
+                    if {{ native_guard }} {
 {% elif model.needs_script_engine %}
                     // W3C SCXML 5.9: Script engine guard
                     if self.safe_evaluate_guard("{{ trans.cond | to_lua_guard | escape_rust }}", engine) {
@@ -856,8 +884,11 @@ impl {{ machine_name }}Policy {
 {# Guarded eventless transitions: use if/else if/else chain #}
 {% for transition in eventless_transitions %}
 {% if transition.cond %}
+{% set native_guard = transition.transition_index | native_payload_guard %}
 {% if transition.is_pure_in_predicate %}
                     {% if not loop.first %}} else {% endif %}if {{ transition.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
+{% elif native_guard %}
+                    {% if not loop.first %}} else {% endif %}if {{ native_guard }} {
 {% elif model.needs_script_engine %}
                     {% if not loop.first %}} else {% endif %}if self.safe_evaluate_guard("{{ transition.cond | to_lua_guard | escape_rust }}", engine) {
 {% else %}

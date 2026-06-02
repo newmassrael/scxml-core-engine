@@ -50,12 +50,13 @@
 //   * Same `validation/cross-kind-type-mismatch` reuse (design lock
 //     #2 — 318 DiagnosticCodes unchanged across F-κ).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
-use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
-use crate::forge::expr::{parse_to_ast, BinOp, ExprKind, TypedExpr};
+use crate::forge::error::{ExprError, ForgeError, Located, SourceLocation, ValidationError};
+use crate::forge::expr::{parse_to_ast, transpile_typed, BinOp, ExprKind, ExprTarget, TypedExpr};
 use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, ForgeKind, SceType};
+use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Param, SCXMLModel, Transition};
 
 /// NL→IR Mapping Roadmap Item C1 Path A (DL-7' prerequisite) — resolve
@@ -172,6 +173,107 @@ pub fn resolve_imported_enums(
             .or_insert_with(|| em.clone());
     }
     resolved
+}
+
+/// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) — the
+/// single source of truth for "is this transition guard expressible
+/// without a runtime script engine".
+///
+/// Lower a guard `cond` that reads `_event.data.<field>` (whose
+/// triggering event carries `schema`) into a native `target` expression,
+/// renaming the `_event.data` access object to `accessor` (the generated
+/// state machine's bound typed-payload variable, e.g. the `if let`
+/// binding of the payload-enum variant). Each schema field is registered
+/// in the type context under its `_event.data.<field>` access path so the
+/// generalized member-path inference in [`crate::forge::expr`] resolves
+/// each leaf to its declared concrete type.
+///
+/// Returns the emitted native expression on success. `Err` means the
+/// guard cannot be lowered for `target`: there is deliberately NO
+/// allow-list of permitted AST nodes — "native-conforming" is defined
+/// purely as "the typed-expression pipeline emits it". The engine-need
+/// analyzer ([`crate::script_engine_analyzer`]) treats `Err` as "keep
+/// the script engine"; the codegen path treats `Ok(s)` as the expression
+/// to emit and `Err` as the `validation/typed-cond-non-native` trigger.
+pub fn lower_typed_guard(
+    cond: &str,
+    schema: &EventSchemaModel,
+    accessor: &str,
+    target: ExprTarget,
+) -> Result<String, ExprError> {
+    // The dotted access-path keys must outlive `ctx` (whose `vars` map
+    // borrows its keys), so they are owned here and borrowed in.
+    let keys: Vec<String> = schema
+        .fields
+        .iter()
+        .map(|f| format!("_event.data.{}", f.id))
+        .collect();
+    let mut ctx = TypeCtx::new();
+    for (field, key) in schema.fields.iter().zip(keys.iter()) {
+        ctx.insert_var(key.as_str(), InferredType::from_sce_type(&field.sce_type));
+    }
+    let mut renames: HashMap<&str, &str> = HashMap::new();
+    renames.insert("_event.data", accessor);
+    transpile_typed(cond, target, &ctx, &renames, InferredType::Unknown)
+}
+
+/// `true` iff `schema` can back a native typed-payload channel. The
+/// generated payload struct emits every declared field, so the channel
+/// is only eligible when all fields resolve to a self-contained native
+/// type. Enum-typed fields (`SceType::Enum`) carry their concrete width
+/// in a *separate* imported Enum document whose `use`/`include` would
+/// have to be threaded into the state-machine unit — until that wiring
+/// exists, an enum-typed schema keeps the dynamic `_event.data` baseline
+/// (the cond stays on the script engine) rather than emit a payload
+/// struct that names an out-of-scope type. This is the single eligibility
+/// rule shared by the engine-need analyzer and the codegen path so the
+/// two never disagree.
+pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
+    schema
+        .fields
+        .iter()
+        .all(|f| !matches!(f.sce_type, SceType::Enum(_)))
+}
+
+/// `true` iff `model` contains at least one transition guard that the
+/// codegen path lowers to a native typed `_event.data` comparison (event
+/// carries an imported, payload-eligible schema + the cond lowers). Used
+/// by the non-Rust backends to fail fast — the engine-need flag is
+/// backend-independent, so such a guard makes `needs_script_engine` false
+/// for every backend, but only the Rust backend emits the native payload
+/// channel today (C11 is RFC §10.4 step 5; C++/Kotlin/Go/Python are
+/// follow-ups). Without this guard those backends would silently emit the
+/// raw ECMAScript cond into a script-engine-less unit — broken code. The
+/// guard converts that into an explicit codegen error.
+pub fn model_has_native_typed_guard(model: &SCXMLModel) -> bool {
+    if model.imported_event_schemas.is_empty() {
+        return false;
+    }
+    model.states.values().any(|state| {
+        state.transitions.iter().any(|trans| {
+            !trans.cond.trim().is_empty()
+                && model
+                    .imported_event_schemas
+                    .get(&trans.event)
+                    .is_some_and(|schema| guard_is_native_lowerable(&trans.cond, schema))
+        })
+    })
+}
+
+/// `true` iff `cond` lowers natively on every backend SCE generates —
+/// i.e. the document needs no runtime script engine to evaluate this
+/// guard. Requires (a) the schema is payload-eligible
+/// ([`schema_is_native_payload_eligible`]) and (b) the expression emits
+/// on the fallible backends: only the Rust and Go emitters can fail
+/// (`transpile_typed`'s C++ / Kotlin / Python / C arms return `Ok`
+/// unconditionally), so success on those two implies success on all six;
+/// the engine-need flag is backend-independent, so it must hold for the
+/// strictest target. The accessor is irrelevant to lowerability (any
+/// valid identifier renames cleanly), so a fixed placeholder is used.
+pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool {
+    schema_is_native_payload_eligible(schema)
+        && lower_typed_guard(cond, schema, "ev", ExprTarget::Rust).is_ok()
+        && lower_typed_guard(cond, schema, "ev", ExprTarget::Go).is_ok()
 }
 
 /// Per-statechart receive-side typecheck.
@@ -1298,6 +1400,43 @@ mod tests {
     fn known_field_passes() {
         let s = schema("job.completed", vec![field("status", SceType::Uint8)]);
         assert!(run(s, "_event.data.status === 0").is_ok());
+    }
+
+    // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+    // the shared SSOT lowering helper emits a native typed-payload
+    // comparison (rename `_event.data` → bound payload var, `===` → `==`,
+    // leaf field type adopted) and the engine-need verdict agrees.
+    #[test]
+    fn primitive_guard_lowers_native_and_is_engine_free() {
+        let s = schema("job.completed", vec![field("elapsed_ms", SceType::Uint32)]);
+        assert_eq!(
+            lower_typed_guard("_event.data.elapsed_ms === 0", &s, "ev", ExprTarget::Rust).unwrap(),
+            "ev.elapsed_ms == 0"
+        );
+        assert!(schema_is_native_payload_eligible(&s));
+        assert!(guard_is_native_lowerable(
+            "_event.data.elapsed_ms === 0",
+            &s
+        ));
+    }
+
+    // An enum-typed field carries its width in a separate imported Enum
+    // document not yet threaded into the state-machine unit, so the
+    // schema is payload-ineligible and the guard keeps the script-engine
+    // baseline — 2b and 2c agree via this single eligibility rule.
+    #[test]
+    fn enum_typed_schema_is_payload_ineligible() {
+        let s = schema(
+            "job.completed",
+            vec![field(
+                "status",
+                SceType::Enum(EnumRef {
+                    alias: "Result".to_string(),
+                }),
+            )],
+        );
+        assert!(!schema_is_native_payload_eligible(&s));
+        assert!(!guard_is_native_lowerable("_event.data.status === 0", &s));
     }
 
     #[test]
