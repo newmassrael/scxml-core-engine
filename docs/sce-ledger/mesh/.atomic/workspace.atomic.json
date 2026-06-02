@@ -1361,17 +1361,17 @@
         {
           "file": "sce/include/common/DoneDataHelper.h",
           "symbol": "emitContentLiteral",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/DoneDataHelper.h",
           "symbol": "evaluateContent",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
           "symbol": "EventMetadataHelper",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
@@ -1415,7 +1415,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "donedataAtFinal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
