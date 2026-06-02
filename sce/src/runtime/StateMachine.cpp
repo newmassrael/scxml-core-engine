@@ -135,7 +135,7 @@ StateMachine::~StateMachine() {
         SCE_LOG_DEBUG("StateMachine: All processEvent calls completed, proceeding with destruction");
     }
 
-    // §scxml-3.13: Always call stop() to ensure session cleanup
+    // Always call stop() to ensure session cleanup
     // Final state sets isRunning_=false but session must still be destroyed
     // stop() is idempotent and handles cleanup even when isRunning_=false
     stop();
