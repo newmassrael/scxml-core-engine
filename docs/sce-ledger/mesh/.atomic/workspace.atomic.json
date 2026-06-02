@@ -134,7 +134,7 @@
         {
           "file": "sce/include/mesh/RetryingDispatcher.h",
           "symbol": "send_with_retry",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
@@ -855,6 +855,16 @@
           "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
           "symbol": "start",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/RetryingDispatcher.h",
+          "symbol": "send_with_retry",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/RetryingDispatcher.h",
+          "symbol": "onRetryFire",
+          "kind": "implements"
         }
       ]
     },
@@ -1201,7 +1211,7 @@
         {
           "file": "sce/include/mesh/RetryingDispatcher.h",
           "symbol": "onRetryFire",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
