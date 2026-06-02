@@ -66,6 +66,23 @@ pub trait StatePolicy: Sized + 'static {
     /// Event enum type generated per SCXML document (W3C SCXML 3.12).
     type Event: Copy + Eq + Hash + Debug + 'static;
 
+    /// Typed event payload (EventSchema MCU native-lowering RFC §10.2).
+    ///
+    /// `()` for schemaless documents — the dynamic `_event.data` baseline keeps
+    /// riding in [`EventMetadata::data`](crate::EventMetadata) as before. For a
+    /// document that imports `EventSchema`s, generated code sets this to the
+    /// per-document payload sum (`<Doc>Payload`) so that `_event.data.<field>`
+    /// guards lower to native field reads with no script engine — the no_std MCU
+    /// value path. The payload rides with its event through the queues in
+    /// [`EventWithMetadata::payload`](crate::EventWithMetadata) and is copied to
+    /// the policy at dispatch via
+    /// [`populate_event_payload`](StatePolicy::populate_event_payload).
+    ///
+    /// `Default` supplies the slot for payloadless/schemaless events (the queues
+    /// are homogeneous in `Self::Payload`); `Clone`/`Debug` mirror the
+    /// `EventWithMetadata` derives; `'static` because payloads carry no borrows.
+    type Payload: Clone + Default + Debug + 'static;
+
     /// HAL impl bound to this policy (watching-zenoh RFC §5.J.2 line 1984).
     ///
     /// Determines which [`Hal`] impl the [`Engine`] dispatches `ticks` /
@@ -327,10 +344,22 @@ pub trait StatePolicy: Sized + 'static {
     /// external queue processing, before the event is routed to transitions.
     fn execute_finalize_for_child_event(
         &mut self,
-        _event: &EventWithMetadata<Self::Event>,
+        _event: &EventWithMetadata<Self::Event, Self::Payload>,
         _engine: &mut Engine<Self>,
     ) {
     }
+
+    /// Copy the typed payload of the event being dispatched into the policy
+    /// (EventSchema MCU native-lowering RFC §10.2).
+    ///
+    /// The runtime calls this at dispatch — alongside
+    /// [`populate_event_metadata`](StatePolicy::populate_event_metadata) — for
+    /// every dequeued event, handing the [`EventWithMetadata::payload`](crate::EventWithMetadata)
+    /// that rode with the event. Schemaless documents leave the default no-op
+    /// (`Self::Payload = ()`, nothing to bind); a document importing
+    /// `EventSchema`s overrides this to store the payload in a typed
+    /// `pending_payload` field that `_event.data.<field>` guards read natively.
+    fn populate_event_payload(&mut self, _payload: &Self::Payload) {}
 
     /// Get active states for parallel state machines (W3C SCXML 3.4).
     ///

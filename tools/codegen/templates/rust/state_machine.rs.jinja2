@@ -370,6 +370,9 @@ impl Default for {{ machine_name }}Policy {
 impl StatePolicy for {{ machine_name }}Policy {
     type State = {{ machine_name }}State;
     type Event = {{ machine_name }}Event;
+    // EventSchema MCU native-lowering RFC §10.2: `()` = schemaless (dynamic
+    // `_event.data` baseline); a `<Doc>Payload` sum is emitted for EventSchema docs.
+    type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags

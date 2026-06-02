@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 5e63a3ecc19b397697c3e24d727bc3c78cb748941f07d7f7c9d76cdea58d15a4
-// generated-at: 1780032749
+// template-hash: d2f0bcf4d5c727ad2446a904193402929b9b2d65dfec5e5c07ad3bc881483b09
+// generated-at: 1780358476
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -304,6 +304,9 @@ impl DonedataLocalInvokeSceSynthInvokeInvContentPolicy {
 impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvContentPolicy {
     type State = DonedataLocalInvokeSceSynthInvokeInvContentState;
     type Event = DonedataLocalInvokeSceSynthInvokeInvContentEvent;
+    // EventSchema MCU native-lowering RFC §10.2: `()` = schemaless (dynamic
+    // `_event.data` baseline); a `<Doc>Payload` sum is emitted for EventSchema docs.
+    type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML feature flags

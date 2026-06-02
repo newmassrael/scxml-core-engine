@@ -83,6 +83,7 @@ impl MockPolicy {
 impl StatePolicy for MockPolicy {
     type State = St;
     type Event = Ev;
+    type Payload = ();
     type Hal = MockHal;
 
     fn initial_state() -> Self::State {
