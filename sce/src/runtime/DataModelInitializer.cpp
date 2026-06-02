@@ -126,7 +126,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             SCE_LOG_DEBUG("DataModelInitializer: Initialized function variable '{}' from expression '{}'", id, expr);
         } else {
             // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
-            // §scxml-5.2 / §scxml-5.3: Use initializeVariableFromExpr for expr attribute
+            // §scxml-5.3: Use initializeVariableFromExpr for expr attribute
             // Test 277: expr evaluation failure must raise error.execution (no fallback)
             bool success = DataModelInitHelper::initializeVariableFromExpr(
                 scriptEngine_, sessionId_, id, expr, [this](const std::string &msg) {

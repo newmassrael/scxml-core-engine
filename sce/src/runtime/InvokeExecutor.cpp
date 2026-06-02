@@ -495,7 +495,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // Get reference to the session we just added (session was moved, can't use it anymore)
     auto &activeSession = activeSessions_[invokeid];
 
-    // §scxml-5.10 test 338: Register invoke mapping BEFORE starting child
+    // §scxml-6.4 test 338: Register invoke mapping BEFORE starting child
     // This ensures mapping is available when child's final state onentry sends events
     // For pre-allocated sessions (sessionAlreadyExists=true), mapping may already be registered by InvokeExecutor
     SCE_LOG_INFO("[INVOKE MAPPING] sessionAlreadyExists={}, isRestoration={}, parent={}, invoke={}, child={}",
@@ -801,7 +801,7 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
         scxmlHandler->setParentStateMachine(parentSM);
     }
 
-    // §scxml-5.10: Pre-register handler and invoke mapping BEFORE child starts (test 338)
+    // §scxml-6.4: Pre-register handler and invoke mapping BEFORE child starts (test 338)
     // This ensures mapping is available when child immediately completes and sends events
     invokeHandlers_[invokeid] = handler;
     SCE_LOG_DEBUG("InvokeExecutor: Pre-registered handler for invoke: {}", invokeid);

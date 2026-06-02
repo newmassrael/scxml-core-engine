@@ -1674,8 +1674,6 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [references] sce/src/runtime/EventRaiserImpl.h:invokeId
 - [references] sce/src/runtime/EventRaiserImpl.h:originType
 - [references] sce/src/runtime/EventRaiserImpl.h:sendId
-- [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::executeInvoke
-- [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 - [implements] sce/src/runtime/StateMachine.cpp:EventContextGuard
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::enterState
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionMicrostep
@@ -1741,6 +1739,9 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [references] sce/src/runtime/EventRaiserImpl.h:sendId
 - [implements] sce/src/scripting/JSEngine.cpp:JSEngine::setCurrentEvent
 - [implements] sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
+- [implements] sce/include/common/SendHelper.h:sendToParent
+- [implements] sce/include/common/SendHelper.h:sendToParentWithOrigin
+- [implements] sce/include/common/SendHelper.h:SendHelper
 
 
 
@@ -1760,11 +1761,6 @@ Events have an internal structure which is reflected in the _event variable. Thi
 
 
 
-
-
-**Bindings**:
-- [implements] sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariableFromExpr
-- [implements] sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
 
 
 
@@ -2810,9 +2806,6 @@ None
 
 
 **Bindings**:
-- [implements] sce/include/common/SendHelper.h:SendHelper
-- [implements] sce/include/common/SendHelper.h:sendToParent
-- [implements] sce/include/common/SendHelper.h:sendToParentWithOrigin
 - [implements] sce/include/mesh/IChildSession.h:tick
 - [implements] sce/include/static/StaticExecutionEngine.h:currentEventInvokeId
 - [implements] sce/include/static/StaticExecutionEngine.h:performMeshInvoke
