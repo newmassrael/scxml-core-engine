@@ -332,8 +332,8 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [references] sce/include/mesh/CommunicationError.h:source
 - [implements] sce/include/mesh/CommunicationError.h:toJsonBytes
 - [references] sce/include/mesh/CommunicationError.h:transport_error
-- [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
-- [implements] sce/include/mesh/ShmChannel.h:ShmChannel
+- [references] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
+- [references] sce/include/mesh/ShmChannel.h:ShmChannel
 
 
 
@@ -887,7 +887,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [implements] sce/include/mesh/ParallelCompletionTracker.h
 - [implements] sce/include/mesh/RetryingDispatcher.h:RetryingDispatcher
 - [implements] sce/include/mesh/ShmChannel.h:ShmChannel
-- [implements] sce/include/mesh/ShmChannel.h:drain
+- [references] sce/include/mesh/ShmChannel.h:drain
 - [implements] sce/include/mesh/ShmChannel.h:drainWith
 - [implements] sce/include/mesh/third_party/AuthClassifier.h:isZenohAuthFailMessage
 - [references] sce/include/mesh/transports/CustomTcpTransport.h:ReadResult
