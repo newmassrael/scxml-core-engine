@@ -329,7 +329,7 @@ pub fn select_optimal_transitions<P: StatePolicy>(
     }
 
     // Sort by depth (deeper first -- preemption)
-    enabled_transitions.sort_by(|a, b| get_depth::<P>(b.source).cmp(&get_depth::<P>(a.source)));
+    enabled_transitions.sort_by_key(|t| std::cmp::Reverse(get_depth::<P>(t.source)));
 
     // Greedy selection
     let mut selected: Vec<Transition<P::State>> = Vec::new();

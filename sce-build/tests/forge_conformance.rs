@@ -10637,7 +10637,7 @@ fn rustc_run_codec_set(
             &opts,
         )
         .map_err(|e| format!("codegen {filename}: {e:?}"))?;
-        all_files.extend(output.files.into_iter());
+        all_files.extend(output.files);
     }
     for (filename, content) in extra_sources {
         all_files.push((filename.to_string(), content.to_string()));
@@ -11182,7 +11182,7 @@ fn generate_files_for_codec_set(
             &opts,
         )
         .map_err(|e| format!("codegen {filename}: {e:?}"))?;
-        all_files.extend(output.files.into_iter());
+        all_files.extend(output.files);
     }
     Ok(all_files)
 }
