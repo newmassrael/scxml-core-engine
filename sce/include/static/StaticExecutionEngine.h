@@ -1146,8 +1146,8 @@ public:
      *
      * Leaf semantics: returns true for **any** `<final>`, including a
      * region-level `<final>` nested inside a `<parallel>` whose sibling
-     * regions are still running. Callers that need §scxml-6.4 "machine
-     * has terminated" semantics (global-done detection, tick
+     * regions are still running. Callers that need "machine has
+     * terminated" semantics (global-done detection, tick
      * short-circuit, external `done.invoke` propagation) must use
      * `isGlobalFinalState()` instead.
      *
