@@ -23,7 +23,7 @@
 namespace SCE::Core {
 
 /**
- * @brief Helper for parallel state completion detection (§scxml-3.4, §scxml-3.7.1)
+ * @brief Helper for parallel state completion detection (§scxml-3.4)
  *
  * Single Source of Truth for "all regions in final state" logic.
  * Shared between Interpreter and AOT engines following Zero Duplication Principle.
@@ -31,7 +31,7 @@ namespace SCE::Core {
  * §scxml-3.4: "When all of the children reach final states,
  * the <parallel> element itself is considered to be in a final state"
  *
- * §scxml-3.7.1: "done.state.id event is generated upon completion"
+ * §scxml-3.4: done.state.id event is generated upon parallel completion
  *
  * ARCHITECTURE.md Compliance:
  * - Zero Duplication: Single implementation shared by both engines
