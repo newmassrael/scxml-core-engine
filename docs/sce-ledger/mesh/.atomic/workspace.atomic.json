@@ -993,6 +993,10 @@
         {
           "file": "sce/include/mesh/PatternKind.h",
           "symbol": "PatternKind"
+        },
+        {
+          "file": "sce/include/mesh/MeshDispatch.h",
+          "symbol": "dispatchEnvelope"
         }
       ]
     },
@@ -1006,13 +1010,7 @@
       "title": "Realization Status (2026-04-13)",
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-8",
-      "decision_status": "active",
-      "implementations": [
-        {
-          "file": "sce/include/mesh/MeshDispatch.h",
-          "symbol": "dispatchEnvelope"
-        }
-      ]
+      "decision_status": "active"
     },
     "mesh-9": {
       "title": "Remote Invoke Semantics",
