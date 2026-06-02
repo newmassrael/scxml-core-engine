@@ -266,12 +266,12 @@
         {
           "file": "sce/include/mesh/MeshDispatch.h",
           "symbol": "dispatchEnvelope",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/mesh/ShmChannel.h",
           "symbol": "ShmChannel",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
@@ -799,7 +799,7 @@
         {
           "file": "sce/include/mesh/ShmChannel.h",
           "symbol": "drain",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/mesh/ShmChannel.h",
