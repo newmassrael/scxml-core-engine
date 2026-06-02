@@ -521,6 +521,15 @@ if subject.rstrip().endswith("."):
         f"Subject must not end with a period. Got: {subject!r}"))
 
 # ── Body rules (COMMIT_FORMAT.md §"Body") ──
+# A non-blank line directly after the subject (no intervening blank)
+# makes git fold subject+body into one oversized subject line — the
+# bullets never register as a body. COMMIT_FORMAT.md mandates the
+# blank line; require it explicitly so a folded message is rejected.
+if rest and rest[0].strip():
+    violations.append(("body-no-blank-after-subject",
+        "No blank line after the subject: git folds the subject and "
+        "body into one oversized subject line, so the bullets never "
+        "register. Add a blank line after the subject, then 1-3 bullets."))
 # Strip leading blanks (the mandatory blank line after subject).
 while rest and not rest[0].strip():
     rest.pop(0)
