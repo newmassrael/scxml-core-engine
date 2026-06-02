@@ -1345,6 +1345,26 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
     }
 }
 
+/// Flatten a Member/Ident object chain into its dotted source path —
+/// `Some("_event.data")` for `Member{Member{Ident(_event), data}}`,
+/// `Some("frame")` for `Ident(frame)`. Returns `None` if any segment is
+/// not a plain `Ident` or `Member` of such (e.g. a `Call` or `Index`),
+/// because those carry no qualified-key meaning for `ctx.vars`.
+///
+/// This is the single path-construction point shared by the inference
+/// and rename passes' qualified-key handling — generalizing the former
+/// bare-`Ident`-only lookup to arbitrary depth without changing the
+/// resolution semantics for any already-registered key shape.
+fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
+    match &expr.kind {
+        ExprKind::Ident(name) => Some(name.clone()),
+        ExprKind::Member { object, property } => {
+            Some(format!("{}.{property}", flatten_member_path(object)?))
+        }
+        _ => None,
+    }
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Inference pass — annotates every node's `ty` bottom-up
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1416,23 +1436,28 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         }
         ExprKind::Member { object, property } => {
             infer_types(object, ctx);
-            // Qualified-key lookup: when the Member's object is a bare
-            // Ident (i.e. a pre-rename, pre-collapse access), we form
-            // `"{obj}.{prop}"` and consult `ctx.vars`. Stateful import
-            // aliases register their fields under exactly this key shape
-            // (see `forge::type_ctx::insert_stateful_imports`), so
-            // this path recovers the concrete field type for expressions
-            // like `frame.payload` where `frame` is an imported codec.
+            // Qualified-key lookup: form the dotted source path of the
+            // Member's object chain and consult `ctx.vars`. Stateful
+            // import aliases register their fields under the depth-2
+            // shape `"frame.payload"` (see
+            // `forge::type_ctx::insert_stateful_imports`); EventSchema
+            // typed-guard lowering registers `"_event.data.<field>"` at
+            // depth 3 (`forge::event_schema_check::lower_typed_guard`).
+            // [`flatten_member_path`] handles both — and any deeper
+            // all-Ident/Member chain — uniformly. A chain containing a
+            // non-path segment (Call, Index, …) yields `None` and falls
+            // through to `Unknown`, exactly as the prior bare-`Ident`-only
+            // guard did. `lookup_var` returns `Unknown` for an absent
+            // key, so chains whose full path is not registered stay
+            // opaque — no behaviour change for existing callers.
             //
             // Inference must run BEFORE rename (see top-of-file rationale)
-            // so the Member node still carries its `Ident(obj)` form at
-            // this point; after rename the object may become `Raw(...)`
-            // and the qualified key lookup would no longer resolve.
-            if let ExprKind::Ident(obj_name) = &object.kind {
-                let qualified = format!("{}.{}", obj_name, property);
-                ctx.lookup_var(&qualified)
-            } else {
-                InferredType::Unknown
+            // so the Member node still carries its `Ident`/`Member` form
+            // here; after rename the object may become `Raw(...)` and the
+            // qualified-key lookup would no longer resolve.
+            match flatten_member_path(object) {
+                Some(base) => ctx.lookup_var(&format!("{base}.{property}")),
+                None => InferredType::Unknown,
             }
         }
         ExprKind::Index { object, index } => {
@@ -3829,6 +3854,50 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out, "retryCount_ + 1");
+    }
+
+    // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2):
+    // the depth-3 `_event.data.<field>` access path is the exact shape
+    // `event_schema_check::lower_typed_guard` feeds in — the field's
+    // concrete type is registered under the full dotted key, the inner
+    // `_event.data` Member is renamed to the bound payload variable, and
+    // the leaf `.field` is preserved. Proves the generalized member-path
+    // inference resolves the leaf type (so the literal adopts the field
+    // width) and that the `===` guard lowers to native Rust `==`.
+    #[test]
+    fn event_data_typed_guard_lowers_to_native_rust() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("_event.data.elapsed_ms", int(false, 32));
+        let mut renames = HashMap::new();
+        renames.insert("_event.data", "ev");
+        let out = transpile_typed(
+            "_event.data.elapsed_ms === 0",
+            ExprTarget::Rust,
+            &ctx,
+            &renames,
+            InferredType::Unknown,
+        )
+        .unwrap();
+        assert_eq!(out, "ev.elapsed_ms == 0");
+    }
+
+    // The generalized member-path lookup is additive: a depth-3 chain
+    // whose full dotted key is NOT registered still infers `Unknown` and
+    // emits verbatim, exactly as before the generalization — so no
+    // existing caller's output shifts.
+    #[test]
+    fn unregistered_member_path_stays_opaque() {
+        let mut renames = HashMap::new();
+        renames.insert("_event.data", "ev");
+        let out = transpile_typed(
+            "_event.data.elapsed_ms === 0",
+            ExprTarget::Cpp,
+            &empty_ctx(),
+            &renames,
+            InferredType::Unknown,
+        )
+        .unwrap();
+        assert_eq!(out, "ev.elapsed_ms == 0");
     }
 
     // ── transpile_lvalue ───────────────────────────────────────

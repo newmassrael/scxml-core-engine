@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: d2f0bcf4d5c727ad2446a904193402929b9b2d65dfec5e5c07ad3bc881483b09
-// generated-at: 1780358475
+// template-hash: bc7b5b1dd90f65e6c3a4df2e3c4223cf8922d7e6b2d5d124b66683d16074cb6e
+// generated-at: 1780362263
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -408,7 +408,8 @@ impl StatePolicy for Test448Policy {
     type State = Test448State;
     type Event = Test448Event;
     // EventSchema MCU native-lowering RFC §10.2: `()` = schemaless (dynamic
-    // `_event.data` baseline); a `<Doc>Payload` sum is emitted for EventSchema docs.
+    // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
+    // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
 

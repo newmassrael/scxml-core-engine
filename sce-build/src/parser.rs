@@ -568,6 +568,63 @@ impl SCXMLParser {
         self.parse_impl(content, label, None)
     }
 
+    /// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+    /// resolve a statechart's `<sce:import kind="event-schema">`
+    /// declarations to their [`EventSchemaModel`]s by following each
+    /// `src=` to the sibling document under `base_dir`, returning the
+    /// `event_name → EventSchemaModel` map
+    /// [`SCXMLModel::imported_event_schemas`] carries.
+    ///
+    /// Mirrors the build orchestrator's forge-doc parse — file stem as
+    /// [`DocumentLabel::identifier`], so the parsed
+    /// `EventSchemaModel::name` equals the stem — then reuses the
+    /// canonical
+    /// [`crate::forge::event_schema_check::resolve_imported_event_schemas`]
+    /// matcher so the stem→event-name resolution has a single source of
+    /// truth.
+    ///
+    /// Best-effort: an unreadable, non-forge, or non-EventSchema sibling
+    /// is silently skipped (mirroring the resolver's conservative-
+    /// defensive skip). The authoritative diagnostics for a malformed or
+    /// missing schema document are raised by the multi-doc build's
+    /// receive-/send-side validators (`event_schema_check::check`), which
+    /// run later with the build-wide registry.
+    fn resolve_event_schema_imports(
+        model: &SCXMLModel,
+        base_dir: &Path,
+    ) -> std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel> {
+        use crate::forge::model::{ForgeDocument, ForgeKind};
+        let mut registry: std::collections::BTreeMap<
+            String,
+            crate::forge::model::EventSchemaModel,
+        > = std::collections::BTreeMap::new();
+        for import in &model.forge_imports {
+            if !matches!(import.kind, ForgeKind::EventSchema) {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(base_dir.join(&import.src)) else {
+                continue;
+            };
+            let Some(stem) = Path::new(&import.src).file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let basename = Path::new(&import.src)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(stem);
+            let label = DocumentLabel {
+                identifier: stem,
+                diagnostic_label: basename,
+            };
+            if let Ok(Some(ForgeDocument::EventSchema(schema))) =
+                crate::forge::parser::parse_forge(&content, label)
+            {
+                registry.entry(schema.name.clone()).or_insert(schema);
+            }
+        }
+        crate::forge::event_schema_check::resolve_imported_event_schemas(model, &registry)
+    }
+
     /// Two-role label contract — see [`DocumentLabel`]. `label.identifier`
     /// is the pure identifier stored in [`SCXMLModel::name`] (flows into
     /// template symbols, must be extension-free). `label.diagnostic_label`
@@ -864,6 +921,20 @@ impl SCXMLParser {
 
         // Parse initial_children
         self.parse_initial_children(&mut model);
+
+        // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2)
+        // — resolve `<sce:import kind="event-schema">` siblings into the
+        // `event_name → EventSchemaModel` map BEFORE the script-engine
+        // analyzer runs, so a transition guard reading a typed
+        // `_event.data.<field>` whose event carries an imported schema is
+        // recognised as natively lowerable (no runtime script engine —
+        // the form no_std MCU targets require). The in-memory
+        // `parse_string` path (WASM) passes `base_dir = None` and has no
+        // sibling files to follow, so it keeps the dynamic `_event.data`
+        // String baseline.
+        if let Some(dir) = base_dir {
+            model.imported_event_schemas = Self::resolve_event_schema_imports(&model, dir);
+        }
 
         // SCE script-engine requirement — single source of truth. See
         // [`crate::script_engine_analyzer`]. Must run before the

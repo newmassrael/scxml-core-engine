@@ -1671,6 +1671,122 @@ fn render_event_schema(
     l.render(env, "event_schema", ctx)
 }
 
+/// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+/// Rust-codegen payload data for a statechart that imports one or more
+/// EventSchemas and reads `_event.data.<field>` in a transition guard.
+///
+/// `defs` is the emitted `<Machine>Payload` enum plus one payload struct
+/// per guarded event; `type_name` is the `type Payload` associated-type
+/// spelling (`()` when no typed channel is active); `guards` maps
+/// `Transition::transition_index` to the native `matches!(…)` guard
+/// expression the template emits in place of the script-engine call.
+///
+/// All three are Rust-specific (the `matches!` lowering, enum/struct
+/// syntax, derive set), so they are injected into the render context
+/// rather than carried on the language-agnostic model.
+pub struct RustEventPayload {
+    pub defs: String,
+    pub type_name: String,
+    pub guards: std::collections::BTreeMap<usize, String>,
+}
+
+/// Build the [`RustEventPayload`] for `model`.
+///
+/// The typed-payload channel is activated only when at least one
+/// transition guard actually lowers to a native typed-payload comparison
+/// (see [`crate::forge::event_schema_check::lower_typed_guard`]). This
+/// guarantees the emitted `pending_payload` field, the
+/// `populate_event_payload` override, and every enum variant have a
+/// consumer (no dead code), and that a statechart which imports schemas
+/// but reads no typed guard keeps the schemaless `type Payload = ()`
+/// baseline. The set of emitted enum variants is exactly the set of
+/// events that own a lowered guard.
+pub fn build_rust_event_payload(
+    model: &crate::model::SCXMLModel,
+    machine_name: &str,
+) -> RustEventPayload {
+    let schemaless = || RustEventPayload {
+        defs: String::new(),
+        type_name: "()".to_string(),
+        guards: std::collections::BTreeMap::new(),
+    };
+    if model.imported_event_schemas.is_empty() {
+        return schemaless();
+    }
+    let enum_name = format!("{machine_name}Payload");
+
+    // Lower every typed-access guard first; the set of events owning a
+    // lowered guard is exactly the set of enum variants emitted below, so
+    // no variant (and no payload struct) is ever dead.
+    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for state in model.states.values() {
+        for trans in &state.transitions {
+            if trans.cond.trim().is_empty() {
+                continue;
+            }
+            let Some(schema) = model.imported_event_schemas.get(&trans.event) else {
+                continue;
+            };
+            if !crate::forge::event_schema_check::schema_is_native_payload_eligible(schema) {
+                continue;
+            }
+            let Ok(inner) = crate::forge::event_schema_check::lower_typed_guard(
+                &trans.cond,
+                schema,
+                "ev",
+                ExprTarget::Rust,
+            ) else {
+                continue;
+            };
+            let variant = filters::to_event_variant(trans.event.clone());
+            guards.insert(
+                trans.transition_index,
+                format!("matches!(&self.pending_payload, {enum_name}::{variant}(ev) if {inner})"),
+            );
+            guarded_events.insert(trans.event.clone());
+        }
+    }
+    if guards.is_empty() {
+        return schemaless();
+    }
+
+    // Emit one payload struct + one enum variant per guarded event.
+    // Field types resolve through `LangCtx::resolved_type`; payload
+    // eligibility above guarantees every field is primitive, so this
+    // never hits the enum-alias arm (which would need an out-of-scope
+    // `use`).
+    let l = LangCtx::new(crate::generator::Language::Rust);
+    let mut structs = String::new();
+    let mut variant_lines = String::new();
+    for event in &guarded_events {
+        let schema = &model.imported_event_schemas[event];
+        let variant = filters::to_event_variant(event.clone());
+        let struct_name = format!("{machine_name}{variant}Payload");
+        let mut field_lines = String::new();
+        for f in &schema.fields {
+            let ty = l.resolved_type(&f.sce_type, &[]);
+            field_lines.push_str(&format!("    pub {}: {ty},\n", f.id));
+        }
+        structs.push_str(&format!(
+            "#[derive(Clone, Debug, Default, PartialEq)]\npub struct {struct_name} {{\n{field_lines}}}\n\n"
+        ));
+        variant_lines.push_str(&format!("    {variant}({struct_name}),\n"));
+    }
+    let defs = format!(
+        "{structs}/// NL\u{2192}IR Item C1 Path A: typed `_event.data` payload sum for the \
+EventSchema-imported events whose transition guards lowered natively.\n\
+#[derive(Clone, Debug, Default, PartialEq)]\npub enum {enum_name} {{\n    \
+/// Schemaless / not-yet-populated default (W3C \u{a7}5.10 empty `_event.data`).\n    \
+#[default]\n    None,\n{variant_lines}}}\n"
+    );
+    RustEventPayload {
+        defs,
+        type_name: enum_name,
+        guards,
+    }
+}
+
 // ── Condition rendering (unified) ─────────────────────────────
 
 fn render_condition(

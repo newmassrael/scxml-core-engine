@@ -21,10 +21,12 @@
 //! extraction, tests) sees a correctly-set flag without any parse-time
 //! side effects.
 
+use crate::forge::model::EventSchemaModel;
 use crate::model::{
     Action, DoneData, DoneDataContent, Invoke, InvokeSessionCommon, MeshRpcTarget, SCXMLModel,
     State, Variable,
 };
+use std::collections::BTreeMap;
 
 /// One distinct reason a document needs a runtime script engine.
 ///
@@ -115,7 +117,7 @@ pub fn analyze(model: &SCXMLModel) -> Vec<NeedsScriptEngineCause> {
     collect_datamodel_causes(&model.variables, &mut causes);
     collect_global_script_causes(model, &mut causes);
     for (state_id, state) in &model.states {
-        collect_state_causes(state_id, state, &mut causes);
+        collect_state_causes(state_id, state, &model.imported_event_schemas, &mut causes);
     }
     causes
 }
@@ -152,9 +154,14 @@ fn collect_global_script_causes(model: &SCXMLModel, out: &mut Vec<NeedsScriptEng
     }
 }
 
-fn collect_state_causes(state_id: &str, state: &State, out: &mut Vec<NeedsScriptEngineCause>) {
+fn collect_state_causes(
+    state_id: &str,
+    state: &State,
+    schemas: &BTreeMap<String, EventSchemaModel>,
+    out: &mut Vec<NeedsScriptEngineCause>,
+) {
     for trans in &state.transitions {
-        if transition_guard_needs_engine(trans) {
+        if transition_guard_needs_engine(trans, schemas) {
             out.push(NeedsScriptEngineCause::TransitionGuard {
                 source_state: state_id.to_string(),
             });
@@ -186,14 +193,36 @@ fn collect_state_causes(state_id: &str, state: &State, out: &mut Vec<NeedsScript
     }
 }
 
-fn transition_guard_needs_engine(trans: &crate::model::Transition) -> bool {
+fn transition_guard_needs_engine(
+    trans: &crate::model::Transition,
+    schemas: &BTreeMap<String, EventSchemaModel>,
+) -> bool {
     // `check_expression_needs` is the single classifier — it returns
     // `(false, _)` for `cpp:` / `kt:` prefixes and pure-In() predicates,
     // so no additional native-case guard is needed here. `is_cpp_condition`
     // / `is_kt_condition` remain on [`crate::model::Transition`] for
     // codegen template branching, not for flag decisions.
     let (needs_se, _has_in) = crate::parser::check_expression_needs(&trans.cond);
-    needs_se
+    if !needs_se {
+        return false;
+    }
+    // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) — a
+    // guard whose triggering event carries an imported EventSchema and
+    // whose whole expression lowers through the typed-expression pipeline
+    // needs no script engine: codegen emits it as a native typed-payload
+    // comparison (`_event.data.<field>` → the bound payload variant
+    // field) instead of routing the ECMAScript string through the runtime
+    // engine that no_std MCU targets lack. The lowerability verdict is
+    // the single source of truth shared with the codegen path — see
+    // [`crate::forge::event_schema_check::guard_is_native_lowerable`].
+    // Events without an imported schema keep the dynamic `_event.data`
+    // baseline (schemaless fallback DL-9').
+    if let Some(schema) = schemas.get(&trans.event) {
+        if crate::forge::event_schema_check::guard_is_native_lowerable(&trans.cond, schema) {
+            return false;
+        }
+    }
+    true
 }
 
 fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScriptEngineCause>) {
