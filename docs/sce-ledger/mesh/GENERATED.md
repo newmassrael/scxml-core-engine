@@ -1738,9 +1738,9 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/common/DoneDataHelper.h:emitContentLiteral
-- [implements] sce/include/common/DoneDataHelper.h:evaluateContent
-- [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
+- [references] sce/include/common/DoneDataHelper.h:emitContentLiteral
+- [references] sce/include/common/DoneDataHelper.h:evaluateContent
+- [references] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 - [references] sce/include/mesh/MeshEnvelope.h:child_session_id
 - [implements] sce/include/mesh/MeshEnvelopeCodec.h:SCE::Mesh
@@ -1749,7 +1749,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:SCE::Mesh::Someip
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:send
 - [implements] sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h
-- [implements] sce/include/static/StaticExecutionEngine.h:donedataAtFinal
+- [references] sce/include/static/StaticExecutionEngine.h:donedataAtFinal
 - [references] sce/include/static/StaticExecutionEngine.h:onScxmlInvokeCancel_
 - [references] sce/include/static/StaticExecutionEngine.h:onScxmlInvokeParentEvent_
 - [references] sce/include/static/StaticExecutionEngine.h:onScxmlInvokeStart_
