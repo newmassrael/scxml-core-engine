@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: beca9474db42b497aed4c765b9f54fd1b06f7a4335c8e7caab83e346fda56c99
-// template-hash: beb72c3a9cb76e61aa4916ff585cb6a1d22e66c189bf8cc96c5023dec391d982
-// generated-at: 1780379903
+// template-hash: e8782a5c8351481fc8f6e7fcdb09caae80cbe9e47c6019dcf15afff703e3c3b3
+// generated-at: 1780407552
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/event_schema/statechart_minimal.scxml

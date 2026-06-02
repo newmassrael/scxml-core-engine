@@ -31,13 +31,13 @@
         if state == {{ machine_name }}State.{{ state_id | to_python_const }}:
 {% for transition in state.transitions %}
 {% if not transition.event %}
-            if event == {{ machine_name }}Event.NULL{% if transition.cond %} and {% if transition.transition_index | native_payload_guard %}({{ transition.transition_index | native_payload_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
+            if event == {{ machine_name }}Event.NULL{% if transition.cond %} and {% if transition.native_payload_guard %}({{ transition.native_payload_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
 {% elif transition.needs_string_matching %}
-            if event != {{ machine_name }}Event.NULL and self._event_name_matches({{ transition.event | py_string_literal }}, str(event)){% if transition.cond %} and {% if transition.transition_index | native_payload_guard %}({{ transition.transition_index | native_payload_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
+            if event != {{ machine_name }}Event.NULL and self._event_name_matches({{ transition.event | py_string_literal }}, str(event)){% if transition.cond %} and {% if transition.native_payload_guard %}({{ transition.native_payload_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
 {% elif transition.matching_enum_values | length == 1 %}
-            if event == {{ machine_name }}Event.{{ transition.matching_enum_values[0] | to_python_const }}{% if transition.cond %} and {% if transition.transition_index | native_payload_guard %}({{ transition.transition_index | native_payload_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
+            if event == {{ machine_name }}Event.{{ transition.matching_enum_values[0] | to_python_const }}{% if transition.cond %} and {% if transition.native_payload_guard %}({{ transition.native_payload_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
 {% elif transition.matching_enum_values %}
-            if ({% for ev in transition.matching_enum_values %}event == {{ machine_name }}Event.{{ ev | to_python_const }}{{ " or " if not loop.last }}{% endfor %}){% if transition.cond %} and {% if transition.transition_index | native_payload_guard %}({{ transition.transition_index | native_payload_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
+            if ({% for ev in transition.matching_enum_values %}event == {{ machine_name }}Event.{{ ev | to_python_const }}{{ " or " if not loop.last }}{% endfor %}){% if transition.cond %} and {% if transition.native_payload_guard %}({{ transition.native_payload_guard }}){% else %}self._guard(engine, {{ transition.cond | to_lua_guard | py_string_literal }}){% endif %}{% endif %}:
 {% else %}
             # W3C SCXML 3.13: descriptor "{{ transition.event }}" matches no declared event
             if False:
