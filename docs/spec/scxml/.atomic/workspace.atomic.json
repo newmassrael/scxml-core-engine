@@ -980,11 +980,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "isInFinalState",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/model/SCXMLModel.cpp",
           "symbol": "SCE::SCXMLModel::setInitialState",
           "kind": "implements"
@@ -1399,6 +1394,11 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "processEventQueues",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "isInFinalState",
           "kind": "implements"
         }
       ],
@@ -1894,21 +1894,6 @@
         {
           "file": "sce/src/scripting/JSEngine.cpp",
           "symbol": "JSEngine::hasVariable",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::luaToScriptValue",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::pushScriptValue",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::registerBuiltins",
           "kind": "implements"
         }
       ],
@@ -4904,6 +4889,16 @@
         {
           "file": "sce/src/scripting/XMLDOMWrapper.cpp",
           "symbol": "XMLDocument::XMLDocument",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::luaToScriptValue",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::pushScriptValue",
           "kind": "implements"
         }
       ],
