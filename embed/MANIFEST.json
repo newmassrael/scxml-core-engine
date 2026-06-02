@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250114103320+cd708029e0b2-1~exp1~20250114103432.75)",
-  "embed_version": "529c40e9",
+  "embed_version": "87ab3ccac",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 237,
+  "symbol_count": 239,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -1355,6 +1355,44 @@
       "kind": "class",
       "members": [],
       "name": "SCE::IScriptEngine"
+    },
+    {
+      "header": "scripting/IScriptEngine.h",
+      "kind": "struct",
+      "members": [
+        "field std::string eventData",
+        "field std::string eventName",
+        "field std::string eventType",
+        "field std::string invokeId",
+        "field std::string origin",
+        "field std::string originType",
+        "field std::string sendId",
+        "method SetCurrentEventArgs &(SetCurrentEventArgs &&) operator=",
+        "method SetCurrentEventArgs &(const SetCurrentEventArgs &) operator=",
+        "method void () noexcept ~SetCurrentEventArgs",
+        "method void (SetCurrentEventArgs &&) SetCurrentEventArgs",
+        "method void (const SetCurrentEventArgs &) SetCurrentEventArgs"
+      ],
+      "name": "SCE::SetCurrentEventArgs"
+    },
+    {
+      "header": "scripting/IScriptEngine.h",
+      "kind": "struct",
+      "members": [
+        "field std::string eventData",
+        "field std::string eventName",
+        "field std::string eventType",
+        "field std::string invokeId",
+        "field std::string origin",
+        "field std::string originType",
+        "field std::string sendId",
+        "method SetCurrentEventArgs &(SetCurrentEventArgs &&) operator=",
+        "method SetCurrentEventArgs &(const SetCurrentEventArgs &) operator=",
+        "method void () ~SetCurrentEventArgs",
+        "method void (SetCurrentEventArgs &&) SetCurrentEventArgs",
+        "method void (const SetCurrentEventArgs &) SetCurrentEventArgs"
+      ],
+      "name": "SCE::SetCurrentEventArgs"
     },
     {
       "header": "scripting/ISessionLifecycle.h",
