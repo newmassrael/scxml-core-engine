@@ -111,7 +111,7 @@ public:
      * - Single Source of Truth: Block orchestration centralized in this method
      * - Helper Pattern: Static template method, no state, policy-based types
      *
-     * @see executeExitBlocks() for onexit handler execution (§scxml-3.9)
+     * @see executeExitBlocks() for onexit handler execution
      * @see StateMachine::executeOnEntryActions() for Interpreter implementation (future refactoring target)
      * @see entry_exit_actions.jinja2 for AOT code generation template
      */
@@ -147,7 +147,7 @@ public:
      * @brief Execute onexit action blocks with error isolation
      *
      * §scxml-3.9: "Each <onexit> element is a separate executable content handler."
-     * Same semantics as onentry (§scxml-3.8): Independent block execution with error isolation.
+     * Same semantics as onentry: Independent block execution with error isolation.
      *
      * Implementation Details:
      * - Identical logic to executeEntryBlocks() but for onexit handlers
@@ -174,7 +174,7 @@ public:
      * - Single Source of Truth: Block orchestration centralized in this method
      * - Helper Pattern: Static template method, no state, policy-based types
      *
-     * @see executeEntryBlocks() for onentry handler execution (§scxml-3.8)
+     * @see executeEntryBlocks() for onentry handler execution
      * @see StateExitExecutor::executeExit() for Interpreter implementation (future refactoring target)
      * @see entry_exit_actions.jinja2 for AOT code generation template
      */
@@ -188,7 +188,7 @@ public:
         }
 
         // §scxml-3.9: Execute each block independently
-        // Same logic as onentry blocks (§scxml-3.8)
+        // Same logic as onentry blocks
         for (size_t i = 0; i < blocks.size(); ++i) {
             SCE_LOG_DEBUG("W3C SCXML 3.9: Executing onexit block {}/{}", i + 1, blocks.size());
 

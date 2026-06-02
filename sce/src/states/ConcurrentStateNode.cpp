@@ -153,7 +153,7 @@ bool ConcurrentStateNode::isDeepHistory() const {
     return historyType_ == HistoryType::DEEP;
 }
 
-// §scxml-3.8 / §scxml-3.9: Block-based action methods
+// §scxml-3.8: Block-based onentry action methods
 void ConcurrentStateNode::addEntryActionBlock(std::vector<std::shared_ptr<IActionNode>> block) {
     if (!block.empty()) {
         entryActionBlocks_.push_back(std::move(block));
@@ -164,6 +164,7 @@ const std::vector<std::vector<std::shared_ptr<IActionNode>>> &ConcurrentStateNod
     return entryActionBlocks_;
 }
 
+// §scxml-3.9: Block-based onexit action methods
 void ConcurrentStateNode::addExitActionBlock(std::vector<std::shared_ptr<IActionNode>> block) {
     if (!block.empty()) {
         exitActionBlocks_.push_back(std::move(block));
