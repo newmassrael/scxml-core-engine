@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A (EventSchema MCU native lowering) — minimal
+  EventSchema for the C11 runtime-parity fixture. One primitive field, no
+  enum import, generic vocabulary (`job.completed` + uint32 `elapsed_ms`):
+  no protocol token, no consumer-specific identifier. Mirrors
+  `sce-build/tests/fixtures/event_schema/schema_job_completed_minimal.scxml`
+  (the Rust-side codegen fixture); duplicated here because sce-c-tests
+  generates from its own resource tree (the import resolves relative to
+  the importing statechart's directory).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="schema_job_completed"
+       sce:kind="event-schema"
+       sce:event-name="job.completed">
+  <datamodel>
+    <data id="elapsed_ms" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

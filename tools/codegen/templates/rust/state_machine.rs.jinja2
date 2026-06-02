@@ -145,6 +145,7 @@ pub enum {{ machine_name }}Event {
 {% if event_payload_defs %}
 // ── NL→IR Item C1 Path A: EventSchema typed `_event.data` payload ──
 {{ event_payload_defs }}
+{{ event_payload_entries }}
 {% endif %}
 // ======================================================================
 // Policy struct

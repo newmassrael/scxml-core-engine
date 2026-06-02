@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# Regenerate sce-rust-tests/src/integration/event_schema_native/ from the
+# canonical EventSchema native-lowering fixture at
+# sce-build/tests/fixtures/event_schema/statechart_minimal.scxml.
+#
+# This is the Rust compile+run gate for NL→IR Item C1 Path A (EventSchema
+# MCU native lowering, RFC §10.4 step 5) — the twin of the C11 integration
+# test `c11_integration_event_schema_native`. It is a Rust-ONLY committed
+# tree (NOT driven by `generate-integration`, which fans out to
+# kotlin/go/python): those backends still fail-fast on a typed `_event.data`
+# guard, so the fixture cannot live under the shared `integration_resources/`
+# tree until they grow native lowering of their own.
+#
+# `syn::parse_file` in the smoke gate is syntax-only and cannot catch a
+# Rust semantic error such as the orphan rule (an inherent `impl Engine<P>`
+# is E0116); this committed tree compiles as part of
+# `cargo test -p sce-rust-tests`, so the per-event inject extension trait is
+# really type-checked, and the runtime test (`tests/event_schema_native.rs`)
+# drives the typed guard.
+#
+# Usage (from repo root):
+#   scripts/regen_event_schema_native.sh
+#
+# Requires:
+#   target/release/sce-codegen (auto-built when missing).
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+CODEGEN="target/release/sce-codegen"
+FIXTURE="sce-build/tests/fixtures/event_schema/statechart_minimal.scxml"
+GENERATED_DIR="sce-rust-tests/src/integration/event_schema_native"
+
+if [[ ! -x "$CODEGEN" ]]; then
+    cargo build --bin sce-codegen --features cli --release -p sce-build
+fi
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+"$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/"
+
+mkdir -p "$GENERATED_DIR"
+find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
+cp "$TMP"/*.rs "$GENERATED_DIR/"
+
+MODRS="$GENERATED_DIR/mod.rs"
+{
+    echo "// GENERATED -- DO NOT EDIT (scripts/regen_event_schema_native.sh)"
+    echo ""
+    echo "mod statechart_minimal_sm;"
+    echo "pub use statechart_minimal_sm::*;"
+} > "$MODRS"
+
+cargo fmt -p sce-rust-tests
+
+echo "Regenerated: $GENERATED_DIR/ from $FIXTURE"

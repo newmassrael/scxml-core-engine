@@ -2678,6 +2678,7 @@ static bool SCE_SM_FN try_match_in_state({{ model.name }}_t *sm,
             {% for trans in state.transitions %}
             {{ emit_transition_match_check(trans) }} {
             {% if trans.cond %}
+            {% set native_payload_guard_expr = trans.transition_index | native_payload_guard %}
             {% if trans.is_pure_in_predicate %}
                 /* W3C SCXML 3.13 + 5.9.2: cond="{{ trans.cond | escape_c }}" pure
                    In() predicate — native C lower via `to_in_predicate_c11`
@@ -2688,6 +2689,19 @@ static bool SCE_SM_FN try_match_in_state({{ model.name }}_t *sm,
                    inline-only lock-in). The filter also unblocks pure-In conds
                    in fixtures that don't otherwise need script-engine. */
                 if ({{ trans.cond | to_in_predicate_c11(model.name, model.history_states | list) }}) {
+                    {{ emit_transition_body(trans) }}
+                }
+            {% elif native_payload_guard_expr %}
+                /* W3C SCXML 3.13 + NL→IR Item C1 Path A (RFC §10.4 step 5):
+                   cond="{{ trans.cond | escape_c }}" reads a typed
+                   `_event.data.<field>` of an EventSchema-imported event —
+                   lowered to a native tagged-union comparison (no script
+                   engine, MCU-clean). The tag check guards against an event
+                   delivered without a typed payload (`_PAYLOAD_NONE`); the
+                   field comparison is `expr.rs::transpile_typed` over the
+                   live `pending_payload` member (twin of the Rust
+                   `matches!(&self.pending_payload, …)` guard). */
+                if ({{ native_payload_guard_expr }}) {
                     {{ emit_transition_body(trans) }}
                 }
             {% elif model.needs_script_engine %}
@@ -2973,6 +2987,16 @@ SCE_SM_FN void {{ model.name }}_raise_external({{ model.name }}_t *sm,
                                      const {{ model.name }}_event_with_meta_t *evt) {
     event_queue_push(&sm->external_queue, evt);
 }
+
+{% if event_payload_active %}
+/* NL→IR Item C1 Path A (RFC §10.4 step 5): per-event typed-payload inject
+   entries (see the header decls for the watching-zenoh ownership
+   boundary). Each binds the event enum + payload tag + union member in
+   one site, so the name↔type pairing is impossible to construct
+   inconsistently. `= {0}` zero-inits the whole record (no <string.h>
+   dependency — the datamodel-less native path does not include it). */
+{{ event_payload_entry_defs }}
+{% endif %}
 
 {% if model.has_parent_communication %}
 /* W3C SCXML 6.4 / 3.4 (test236): natural-termination exit walk.
@@ -3440,6 +3464,12 @@ static void SCE_SM_FN process_event_queues({{ model.name }}_t *sm) {
 
     while (event_queue_pop(&sm->internal_queue, &evt)) {
         sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
+        {% if event_payload_active %}
+        /* NL→IR Item C1 Path A: lift the dequeued event's typed payload so
+           native transition guards read `sm->pending_payload.as.<event>`.
+           Twin of the Rust policy's `populate_event_payload`. */
+        sm->pending_payload = evt.payload;
+        {% endif %}
         {% if model.needs_script_engine %}
         /* W3C SCXML 5.10.1 (test331): seed `_event.type` carry — internal
            queue pop is the spec's 'internal' category. set_current_event's
@@ -3467,6 +3497,14 @@ static void SCE_SM_FN process_event_queues({{ model.name }}_t *sm) {
 
     while (event_queue_pop(&sm->external_queue, &evt)) {
         sce_copy_bounded_id(sm->current_event_invoke_id, evt.invoke_id);
+        {% if event_payload_active %}
+        /* NL→IR Item C1 Path A: lift the dequeued event's typed payload so
+           native transition guards read `sm->pending_payload.as.<event>`.
+           Twin of the Rust policy's `populate_event_payload`. The external
+           queue is where the per-event `raise_<event>_typed` entries
+           enqueue. */
+        sm->pending_payload = evt.payload;
+        {% endif %}
         {% if model.needs_script_engine %}
         /* W3C SCXML 5.10.1 (test331/336): seed `_event.type` /
            `_event.origin` / `_event.origintype` carry — external
