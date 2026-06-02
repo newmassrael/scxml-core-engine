@@ -8,6 +8,12 @@
 
 use crate::filters;
 use crate::forge::error::{ForgeError, GenerateError};
+// `select_native_typed_guards` (+ its `NativeTypedGuard`) live in
+// `event_schema_check` next to the `guard_is_native_lowerable` eligibility
+// predicate, so the language-neutral analyzer derives
+// `SCXMLModel::typed_inject_events` from the identical selection (single
+// SSOT). The per-language payload builders here import and call it.
+use crate::forge::event_schema_check::select_native_typed_guards;
 use crate::forge::expr::{self, ExprTarget};
 use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
@@ -1669,54 +1675,6 @@ fn render_event_schema(
     }
 
     l.render(env, "event_schema", ctx)
-}
-
-/// One transition whose typed `_event.data` guard lowers to a native
-/// payload comparison: its per-source-state `transition_index`, the
-/// schema-carrying event it matches, and the raw `cond`. The per-language
-/// payload builders ([`build_rust_event_payload`],
-/// [`build_c11_event_payload`]) format the guard expression and the
-/// payload type definitions from this shared selection.
-struct NativeTypedGuard {
-    transition_index: usize,
-    event: String,
-    cond: String,
-}
-
-/// Select every transition whose typed `_event.data` guard lowers
-/// natively (event carries an imported, payload-eligible schema + the
-/// cond passes [`event_schema_check::guard_is_native_lowerable`]).
-///
-/// This is the single SSOT the Rust and C11 payload builders share so the
-/// two backends never disagree about which guards are native — gating on
-/// a per-backend local predicate would let one backend emit a native
-/// guard the other (and the engine-need analyzer) treated as
-/// script-engine. Returns an empty vec for the schemaless baseline (no
-/// imported schema, or no guard lowers).
-fn select_native_typed_guards(model: &crate::model::SCXMLModel) -> Vec<NativeTypedGuard> {
-    let mut guarded = Vec::new();
-    if model.imported_event_schemas.is_empty() {
-        return guarded;
-    }
-    for state in model.states.values() {
-        for trans in &state.transitions {
-            if trans.cond.trim().is_empty() {
-                continue;
-            }
-            let Some(schema) = model.imported_event_schemas.get(&trans.event) else {
-                continue;
-            };
-            if !crate::forge::event_schema_check::guard_is_native_lowerable(&trans.cond, schema) {
-                continue;
-            }
-            guarded.push(NativeTypedGuard {
-                transition_index: trans.transition_index,
-                event: trans.event.clone(),
-                cond: trans.cond.clone(),
-            });
-        }
-    }
-    guarded
 }
 
 /// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —

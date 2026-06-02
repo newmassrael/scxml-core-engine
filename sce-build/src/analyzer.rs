@@ -14,6 +14,7 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     analyze_model_features(model);
     add_system_events(model);
     compute_external_ingress_events(model);
+    compute_typed_inject_events(model);
     build_prefix_matching(model);
 
     // SCE_MESH.md §9.6 codegen-shape seam. Initial value from SCXML-only
@@ -452,6 +453,21 @@ fn compute_external_ingress_events(model: &mut SCXMLModel) {
         }
     }
     model.external_ingress_events = ingress;
+}
+
+/// Populate [`SCXMLModel::typed_inject_events`] — the per-event
+/// typed-inject seam set (see that field's doc). Derived from the shared
+/// [`crate::forge::event_schema_check::select_native_typed_guards`]
+/// selection so the published set is byte-identical to the events for
+/// which codegen emits a `<Machine>Inject::raise_<event>` method. Runs
+/// before [`build_prefix_matching`] for the same reason
+/// [`compute_external_ingress_events`] does: it reads the authored
+/// `transition.event` (the key `imported_event_schemas` is indexed by)
+/// before any prefix-matching enrichment. `imported_event_schemas` is
+/// already resolved at parse time (the in-memory WASM path leaves it
+/// empty, yielding an empty set — the schemaless baseline).
+fn compute_typed_inject_events(model: &mut SCXMLModel) {
+    model.typed_inject_events = crate::forge::event_schema_check::native_typed_inject_events(model);
 }
 
 /// True for event tokens a transport switchboard must not target:

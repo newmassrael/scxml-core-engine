@@ -572,3 +572,76 @@ fn envelope_trailing_newline_for_git_diff() {
          not flag 'no newline at end of file' on every emit"
     );
 }
+
+/// NL→IR Item C1 Path A — the statechart AST arm publishes
+/// `typed_inject_events`: the per-event typed-inject seam set a transport
+/// switchboard keys off to choose the typed value path
+/// (`<Machine>Inject::raise_<event>`) over the schemaless signal path
+/// (`Engine::raise_external_by_name`). The set is the same
+/// `event_schema_check::select_native_typed_guards` selection codegen emits
+/// the seam from — single SSOT, so the published list never disagrees with
+/// the methods actually generated — and is a subset of
+/// `external_ingress_events`.
+#[test]
+fn statechart_typed_inject_events_published_for_native_guard() {
+    // `statechart_minimal` imports the minimal EventSchema and reads
+    // `_event.data.elapsed_ms` in a `job.completed` transition guard that
+    // lowers natively, so the seam (and thus this set) covers
+    // `job.completed`. The fixture lives under the EventSchema cross-doc
+    // fixtures dir (it has a sibling `<sce:import>`), not `forge/resources`.
+    let path = repo_root().join("sce-build/tests/fixtures/event_schema/statechart_minimal.scxml");
+    let parsed = parse_fixture(&path);
+    let mut buf = Vec::new();
+    write_envelope(&mut buf, &parsed).expect("write_envelope");
+    let json: Value = serde_json::from_slice(&buf).expect("emitted JSON parses");
+
+    assert_eq!(json["ast"]["document"]["kind"], Value::from("statechart"));
+    assert_eq!(
+        json["ast"]["document"]["typed_inject_events"],
+        serde_json::json!(["job.completed"]),
+        "the native-lowered `job.completed` guard must publish a typed-inject seam"
+    );
+    // Subset invariant: every typed-inject event is also an external-ingress
+    // event — it is, after all, a `<transition event=...>` trigger.
+    let ingress: BTreeSet<String> = json["ast"]["document"]["external_ingress_events"]
+        .as_array()
+        .expect("external_ingress_events is an array")
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .expect("ingress event token is a string")
+                .to_string()
+        })
+        .collect();
+    assert!(
+        ingress.contains("job.completed"),
+        "typed_inject_events must be a subset of external_ingress_events; \
+         ingress = {ingress:?}"
+    );
+}
+
+/// Companion to `statechart_typed_inject_events_published_for_native_guard`:
+/// a schemaless statechart (no imported EventSchema, so no guard lowers to a
+/// native typed payload) publishes NO seam — the `BTreeSet::is_empty`
+/// `skip_serializing_if` omits the key entirely rather than emitting `[]`.
+/// Pins the §4 boundary: an event matched by no native typed guard has no
+/// inject seam and stays on the schemaless signal path.
+#[test]
+fn statechart_typed_inject_events_absent_when_schemaless() {
+    let parsed = parse_fixture(&fixture("statechart_ast_export_min.scxml"));
+    let mut buf = Vec::new();
+    write_envelope(&mut buf, &parsed).expect("write_envelope");
+    let json: Value = serde_json::from_slice(&buf).expect("emitted JSON parses");
+
+    assert_eq!(json["ast"]["document"]["kind"], Value::from("statechart"));
+    assert!(
+        json["ast"]["document"].get("typed_inject_events").is_none(),
+        "a schemaless statechart must omit typed_inject_events \
+         (skip_serializing_if = BTreeSet::is_empty), not emit an empty array"
+    );
+    // The event is still a valid schemaless signal-path ingress target.
+    assert_eq!(
+        json["ast"]["document"]["external_ingress_events"],
+        serde_json::json!(["go"]),
+    );
+}
