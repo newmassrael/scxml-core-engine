@@ -67,7 +67,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Bindings**:
 - [references] sce/include/mesh/CommunicationError.h:ReasonCode
-- [implements] sce/include/mesh/InvokeCorrelation.h:cancelAllPending
+- [references] sce/include/mesh/InvokeCorrelation.h:cancelAllPending
 - [references] sce/include/mesh/MeshUuidKey.h
 - [implements] sce/include/mesh/OutboundBuffer.h:markNotReady
 - [implements] sce/include/mesh/OutboundBuffer.h:markReady
@@ -308,7 +308,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/InvokeCorrelation.h:InvokeCorrelation
+- [references] sce/include/mesh/InvokeCorrelation.h:InvokeCorrelation
 
 
 
@@ -1663,6 +1663,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:setMeshCancelCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:setMeshInvokeCallback
+- [implements] sce/include/mesh/InvokeCorrelation.h:InvokeCorrelation
 
 
 
