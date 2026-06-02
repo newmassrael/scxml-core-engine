@@ -145,6 +145,10 @@ public:
     /// rejects at parse time; the codepath survives as a defensive
     /// no-op in case a future caller constructs the RetryingDispatcher
     /// programmatically with `max_retries=0`.
+    ///
+    /// SCE_MESH.md §mesh-16.7 row 3: entry to the DELIVERY_EXHAUSTED retry
+    /// layer — one synchronous attempt, then queue for exponential-backoff
+    /// retry; exhaustion raises `error.communication` reason DELIVERY_EXHAUSTED.
     SendResult send_with_retry(const MeshEnvelope& env) {
         SendResult result = inner_(env);
         if (result.ok) {
@@ -226,6 +230,9 @@ private:
         std::chrono::milliseconds next_backoff;
     };
 
+    /// SCE_MESH.md §mesh-16.7 row 3: the retry-timer callback that re-sends a
+    /// queued envelope, re-arms exponential backoff, and raises
+    /// DELIVERY_EXHAUSTED once `max_retries` attempts are reached.
     void onRetryFire(const MeshDeadlineScheduler::Key& key) {
         MeshEnvelope env_copy;
         {

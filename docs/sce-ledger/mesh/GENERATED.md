@@ -193,7 +193,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [references] sce/include/mesh/DedupRouter.h:kCapacity
 - [implements] sce/include/mesh/OrderingBuffer.h
 - [implements] sce/include/mesh/OutboundBuffer.h
-- [implements] sce/include/mesh/RetryingDispatcher.h:send_with_retry
+- [references] sce/include/mesh/RetryingDispatcher.h:send_with_retry
 
 
 
@@ -899,6 +899,8 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:setDecodeErrorHandler
 - [implements] sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h:setDecodeErrorHandler
 - [implements] sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h:start
+- [implements] sce/include/mesh/RetryingDispatcher.h:send_with_retry
+- [implements] sce/include/mesh/RetryingDispatcher.h:onRetryFire
 
 
 
@@ -1656,7 +1658,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 - [references] sce/include/mesh/MeshUuidKey.h
 - [implements] sce/include/mesh/RetryingDispatcher.h:cancelEnvelopeRetry
-- [implements] sce/include/mesh/RetryingDispatcher.h:onRetryFire
+- [references] sce/include/mesh/RetryingDispatcher.h:onRetryFire
 - [references] sce/include/static/StaticExecutionEngine.h:currentEventInvokeId_
 - [references] sce/include/static/StaticExecutionEngine.h:onMeshCancel_
 - [references] sce/include/static/StaticExecutionEngine.h:onMeshInvoke_
