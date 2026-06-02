@@ -187,6 +187,58 @@ fn smoke_rust() {
     }
 }
 
+// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) — the
+// importing-statechart side of the contract. `statechart_minimal`
+// imports the minimal schema and reads `_event.data.elapsed_ms` in a
+// transition guard. The Rust backend must lower it to a script-engine-
+// free native typed-payload comparison: `needs_script_engine = false`,
+// a `<Machine>Payload` sum, and a `matches!(&self.pending_payload, …)`
+// guard — never the raw ECMAScript cond (which would not even parse:
+// `===` is not Rust) and never the `safe_evaluate_guard` script path.
+// `syn::parse_file` is the syntactic gate; the substring assertions pin
+// the lowering shape so a regression to the raw-cond branch fails loudly.
+#[test]
+fn statechart_native_lowering_emits_engine_free_typed_guard() {
+    let scratch = reset_scratch("rust_statechart");
+    let out_dir = scratch.join("statechart_minimal");
+    run_generate("rust", &out_dir, "statechart_minimal");
+
+    let rs_files = find_by_ext(&out_dir, "rs");
+    assert_eq!(rs_files.len(), 1, "expected exactly one generated SM");
+    let src = std::fs::read_to_string(&rs_files[0]).expect("read rs");
+
+    if let Err(e) = syn::parse_file(&src) {
+        panic!("generated native-lowered SM does not parse as Rust: {e}");
+    }
+
+    assert!(
+        src.contains("const NEEDS_SCRIPT_ENGINE: bool = false;"),
+        "typed-guard statechart must not require a script engine"
+    );
+    assert!(
+        src.contains("pub enum StatechartMinimalPayload"),
+        "expected the per-document typed payload sum"
+    );
+    assert!(
+        src.contains(
+            "matches!(&self.pending_payload, StatechartMinimalPayload::JobCompleted(ev) if ev.elapsed_ms == 0)"
+        ),
+        "expected the native typed-payload guard; got:\n{src}"
+    );
+    assert!(
+        !src.contains("safe_evaluate_guard"),
+        "native lowering must not fall back to the script-engine guard"
+    );
+    // The raw cond fragment `elapsed_ms ===` would only appear if the
+    // pre-lowering ECMAScript guard leaked into the emitted code (`===`
+    // is not valid Rust). A precise sentinel — decorative `// ====`
+    // separators and `_event.data` prose comments do not match it.
+    assert!(
+        !src.contains("elapsed_ms ==="),
+        "the raw ECMAScript guard must be fully lowered away"
+    );
+}
+
 #[test]
 fn smoke_go() {
     let Some(gofmt) = resolve_tool("gofmt") else {

@@ -138,6 +138,32 @@ fn reject_mesh_rpc_in_unsupported_lang(
     )))
 }
 
+/// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+/// reject a typed `_event.data` transition guard on a backend that does
+/// not yet emit the native payload channel. Such a guard makes
+/// `needs_script_engine` false for every backend (the flag is
+/// backend-independent), but only the Rust backend emits the
+/// `<Machine>Payload` sum + `matches!` guard today. Without this gate the
+/// other backends would render the raw ECMAScript cond into a unit with
+/// no script engine to evaluate it — silently broken code. Failing fast
+/// here keeps the contract honest until each backend's native lowering
+/// lands (C11 is RFC §10.4 step 5; C++/Kotlin/Go/Python follow).
+fn reject_typed_native_guard_unsupported(
+    model: &SCXMLModel,
+    language: &'static str,
+) -> Result<(), GenerateError> {
+    if !crate::forge::event_schema_check::model_has_native_typed_guard(model) {
+        return Ok(());
+    }
+    Err(GenerateError::UnsupportedFeature(format!(
+        "EventSchema typed `_event.data` transition guard in '{}' has no {} \
+         native-lowering codegen path yet (currently Rust-only; C11 and the \
+         remaining backends are sequenced follow-ups). Generate this machine \
+         for `--lang rust` or drop the EventSchema import + typed guard.",
+        model.name, language
+    )))
+}
+
 // ── §16.5 L3500 barrier-timeout observability gate ────────────────
 //
 // A deploy.yaml `barrier_timeout_ms:` on a Root partition is a signal
@@ -238,7 +264,7 @@ pub fn generate(
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_filters(&mut env);
-    render_rust(&env, model, no_std)
+    render_rust(&mut env, model, no_std)
 }
 
 /// Generate Rust code using pre-loaded template strings (WASM-compatible).
@@ -253,11 +279,11 @@ pub fn generate_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_filters(&mut env);
-    render_rust(&env, model, no_std)
+    render_rust(&mut env, model, no_std)
 }
 
 fn render_rust(
-    env: &Environment,
+    env: &mut Environment,
     model: &SCXMLModel,
     no_std: bool,
 ) -> Result<String, GenerateError> {
@@ -276,6 +302,18 @@ fn render_rust(
         (String::new(), String::new())
     };
 
+    // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+    // the typed `_event.data` payload sum, its `type Payload` spelling,
+    // and the per-transition native `matches!(…)` guards. The guard map
+    // is exposed to the transition templates as the `native_payload_guard`
+    // filter (transition_index → guard expression, "" when the guard
+    // stays on the script-engine / In() path).
+    let payload = crate::forge::generator::build_rust_event_payload(model, &machine_name);
+    let guards = payload.guards.clone();
+    env.add_filter("native_payload_guard", move |idx: usize| -> String {
+        guards.get(&idx).cloned().unwrap_or_default()
+    });
+
     let tmpl = env
         .get_template("state_machine.rs.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
@@ -286,6 +324,8 @@ fn render_rust(
         inline_kind_types => &inline_kind_types,
         inline_kind_fns => &inline_kind_fns,
         no_std => no_std,
+        event_payload_defs => &payload.defs,
+        event_payload_type => &payload.type_name,
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -323,6 +363,7 @@ fn render_cpp(
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
+    reject_typed_native_guard_unsupported(model, "C++")?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // W3C SCXML 5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
@@ -421,6 +462,7 @@ fn render_c11(
     model: &SCXMLModel,
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
+    reject_typed_native_guard_unsupported(model, "C11")?;
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
@@ -548,6 +590,7 @@ fn render_kotlin(
     model: &SCXMLModel,
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
+    reject_typed_native_guard_unsupported(model, "Kotlin")?;
     use crate::{analyzer, kotlin};
 
     let machine_name = filters::to_pascal_case(model.name.clone());
@@ -913,6 +956,7 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
 }
 
 fn render_python(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
+    reject_typed_native_guard_unsupported(model, "Python")?;
     let machine_name = filters::to_pascal_case(model.name.clone());
 
     let tmpl = env
@@ -929,6 +973,7 @@ fn render_python(env: &Environment, model: &SCXMLModel) -> Result<String, Genera
 // ── Go generator ────────────────────────────────────────────────
 
 fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
+    reject_typed_native_guard_unsupported(model, "Go")?;
     let machine_name = filters::to_pascal_case(model.name.clone());
 
     // SCE Forge: render inline kind declarations as Go code fragments.
