@@ -273,6 +273,76 @@ pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool 
         && lower_typed_guard(cond, schema, "ev", ExprTarget::Go).is_ok()
 }
 
+/// One transition whose typed `_event.data` guard lowers to a native
+/// payload comparison: its per-source-state `transition_index`, the
+/// schema-carrying event it matches, and the raw `cond`. The per-language
+/// payload builders ([`crate::forge::generator::build_rust_event_payload`]
+/// and its C11/Go/C++/Kotlin/Python twins) format the guard expression and
+/// the payload type definitions from this shared selection.
+pub(crate) struct NativeTypedGuard {
+    pub(crate) transition_index: usize,
+    pub(crate) event: String,
+    pub(crate) cond: String,
+}
+
+/// Select every transition whose typed `_event.data` guard lowers
+/// natively (event carries an imported, payload-eligible schema + the
+/// cond passes [`guard_is_native_lowerable`]).
+///
+/// This is the single SSOT every backend payload builder shares so the
+/// six never disagree about which guards are native — gating on a
+/// per-backend local predicate would let one backend emit a native guard
+/// the other (and the engine-need analyzer) treated as script-engine.
+/// Returns an empty vec for the schemaless baseline (no imported schema,
+/// or no guard lowers). Lives here next to the eligibility predicate
+/// rather than in the codegen module so the language-neutral analyzer can
+/// derive [`native_typed_inject_events`] from the identical selection.
+pub(crate) fn select_native_typed_guards(
+    model: &crate::model::SCXMLModel,
+) -> Vec<NativeTypedGuard> {
+    let mut guarded = Vec::new();
+    if model.imported_event_schemas.is_empty() {
+        return guarded;
+    }
+    for state in model.states.values() {
+        for trans in &state.transitions {
+            if trans.cond.trim().is_empty() {
+                continue;
+            }
+            let Some(schema) = model.imported_event_schemas.get(&trans.event) else {
+                continue;
+            };
+            if !guard_is_native_lowerable(&trans.cond, schema) {
+                continue;
+            }
+            guarded.push(NativeTypedGuard {
+                transition_index: trans.transition_index,
+                event: trans.event.clone(),
+                cond: trans.cond.clone(),
+            });
+        }
+    }
+    guarded
+}
+
+/// The set of event descriptors for which a per-event typed-inject seam
+/// (`<Machine>Inject::raise_<event>`) is generated — i.e. the events whose
+/// transition guard lowers to a native typed-payload comparison
+/// ([`select_native_typed_guards`]). Language-neutral SSOT a transport
+/// switchboard keys off to decide, per value binding, whether an event has
+/// a typed value path (the generated `raise_<event>` inject seam) or only
+/// the schemaless signal path (`Engine::raise_external_by_name`), without
+/// re-deriving the native-lowering eligibility rule. Surfaced on the
+/// statechart AST arm as [`crate::model::SCXMLModel::typed_inject_events`].
+pub(crate) fn native_typed_inject_events(
+    model: &crate::model::SCXMLModel,
+) -> std::collections::BTreeSet<String> {
+    select_native_typed_guards(model)
+        .into_iter()
+        .map(|g| g.event)
+        .collect()
+}
+
 /// `true` iff `expr` reads at least one `_event.data.<field>` member
 /// access anywhere in the tree.
 fn cond_references_event_data(expr: &TypedExpr) -> bool {

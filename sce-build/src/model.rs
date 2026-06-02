@@ -1021,6 +1021,33 @@ pub struct SCXMLModel {
     /// [`crate::analyzer::compute_external_ingress_events`].
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub external_ingress_events: BTreeSet<String>,
+    /// Derived per-event typed-inject seam set: the event descriptors for
+    /// which a `<Machine>Inject::raise_<event>(payload)` method is
+    /// generated — i.e. events whose transition guard lowers to a native
+    /// typed `_event.data.<field>` comparison (no script engine; the
+    /// no_std MCU value path). A *subset* of
+    /// [`Self::external_ingress_events`]: every member is an
+    /// external-ingress event, but ingress events whose guards stay on the
+    /// dynamic `_event.data` baseline are absent — an enum-typed schema
+    /// field, a mixed datamodel/`In()`/function cond, or an event whose
+    /// payload is read only by an `<assign>`/action rather than a
+    /// transition guard.
+    ///
+    /// This is the contract a transport switchboard keys off to decide,
+    /// per value binding, whether an event has a typed value path (call
+    /// the generated `raise_<event>` inject seam) or only the schemaless
+    /// signal path (`Engine::raise_external_by_name`) — so the switchboard
+    /// never re-derives the native-lowering eligibility rule. Deliberately
+    /// language-neutral: the Rust codegen identifiers
+    /// (`raise_<event>` / `<Machine><Variant>Payload` / `<Machine>Inject`)
+    /// are resolved from the published `to_snake_case` / `to_event_variant`
+    /// filters, NOT carried in this IR, so backend naming never leaks into
+    /// the cross-language contract. Populated in
+    /// [`crate::analyzer::compute_typed_inject_events`] from the same
+    /// [`crate::forge::event_schema_check::select_native_typed_guards`]
+    /// selection the codegen payload builders consume.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub typed_inject_events: BTreeSet<String>,
     pub history_default_targets: BTreeMap<String, String>,
     pub history_states: BTreeMap<String, HistoryInfo>,
 
