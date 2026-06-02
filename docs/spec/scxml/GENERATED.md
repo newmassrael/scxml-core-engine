@@ -2882,6 +2882,9 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::enterState
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::setCompletionCallback
+- [implements] sce/include/runtime/IEventRaiser.h:cancelEventsForSession
+- [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::cancelEventsForSession
+- [implements] sce/src/runtime/EventRaiserImpl.h:cancelEventsForSession
 
 
 
@@ -2903,12 +2906,8 @@ The implementation of <invoke>, including communication between parent and child
 
 
 
-**Bindings**:
-- [implements] sce/include/runtime/IEventRaiser.h:cancelEventsForSession
-- [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::cancelEventsForSession
-- [implements] sce/src/runtime/EventRaiserImpl.h:cancelEventsForSession
 
-
+**Coverage**: informative
 
 
 **Normative excerpt** (REC-scxml-20150901):

@@ -190,10 +190,11 @@ public:
     virtual std::shared_ptr<class IEventScheduler> getScheduler() const = 0;
 
     /**
-     * @brief Cancel all queued events from a specific session (§scxml-6.4.4 compliance)
+     * @brief Cancel all queued events from a specific session (§scxml-6.4.3 compliance)
      *
-     * §scxml-6.4.4: "Once it cancels an invoked session, the Processor MUST NOT insert
-     * any events it receives from the invoked session into the external event queue"
+     * §scxml-6.4.3: "Once it cancels the invoked session, the Processor MUST ignore any
+     * events it receives from that session. In particular it MUST NOT insert them into
+     * the external event queue of the invoking session"
      *
      * This method removes all queued events that originated from the specified session.
      * Used when cancelling invokes to prevent processing events from cancelled child sessions.
