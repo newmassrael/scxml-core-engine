@@ -21,7 +21,14 @@
 
 ### 2. Body
 - One blank line after subject
-- Bullet points (- prefix) only
+- Bullet points (- prefix) only — no prose lead paragraph
+- Bullets must be **contiguous** — no blank line between bullets
+- **One bullet = one line, max 72 characters total (incl. `- ` prefix)**
+  - No continuation / indented wrap lines. If a bullet does not fit in
+    72 chars, rewrite it tighter or split into a separate bullet.
+  - Put the whole body in a single `-m` block (bullets on consecutive
+    lines); a separate `-m` per bullet inserts a blank line that the
+    commit-audit hook rejects as a non-contiguous body.
 - **1-3 items** - focus on key changes (fewer is better)
 - Be specific and technical
 - Reference W3C SCXML sections when applicable (e.g., "W3C SCXML 3.12.1")
