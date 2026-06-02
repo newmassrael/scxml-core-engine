@@ -2747,7 +2747,7 @@ None
 - [references] sce/include/states/ConcurrentRegion.h:invokeCallback_
 - [implements] sce/include/states/ConcurrentRegion.h:setInvokeCallback
 - [implements] sce/include/states/IConcurrentRegion.h:setInvokeCallback
-- [implements] sce/include/static/StaticExecutionEngine.h:completionCallback_
+- [references] sce/include/static/StaticExecutionEngine.h:completionCallback_
 - [implements] sce/include/static/StaticExecutionEngine.h:getPolicy
 - [implements] sce/include/static/StaticExecutionEngine.h:initialize
 - [implements] sce/include/static/StaticExecutionEngine.h:isInFinalState
@@ -3625,7 +3625,7 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 - [implements] sce/include/events/IEventDispatcher.h:content
 - [implements] sce/include/events/IHttpClient.h:IHttpClient
 - [references] sce/include/static/StaticExecutionEngine.h:HttpSendRequest
-- [implements] sce/include/static/StaticExecutionEngine.h:onHttpSend_
+- [references] sce/include/static/StaticExecutionEngine.h:onHttpSend_
 - [implements] sce/include/static/StaticExecutionEngine.h:performHttpSend
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:setHttpSendCallback
