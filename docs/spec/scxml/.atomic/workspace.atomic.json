@@ -4043,7 +4043,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "completionCallback_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -5263,7 +5263,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "onHttpSend_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
