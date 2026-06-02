@@ -376,9 +376,9 @@ public:
     }
 
     /**
-     * @brief Send event to parent with invokeid metadata (§scxml-6.4.1)
+     * @brief Send event to parent with invokeid metadata (§scxml-5.10.1)
      *
-     * §scxml-6.4.1 (test338): When a child sends an event to its parent,
+     * §scxml-5.10.1 (test338): When a child sends an event to its parent,
      * the _event.invokeid field must be set to the invokeid of the invoke
      * that created the child.
      *
@@ -392,7 +392,7 @@ public:
         SCE_LOG_DEBUG("SendHelper::sendToParent called - parent={}, event={}, invokeId={}", (void *)parent,
                   static_cast<int>(event), invokeId);
         if (parent) {
-            // §scxml-6.4.1: Create event with invokeid metadata
+            // §scxml-5.10.1: Create event with invokeid metadata
             typename ParentStateMachine::EventWithMetadata eventWithMetadata(event);
             eventWithMetadata.invokeId = invokeId;
 
@@ -427,7 +427,7 @@ public:
                   "eventData='{}'",
                   (void *)parent, static_cast<int>(event), invokeId, childSessionId, eventData);
         if (parent) {
-            // §scxml-6.4.1: Create event with invokeid metadata
+            // §scxml-5.10.1: Create event with invokeid metadata
             // §scxml-6.5: Add origin (child session ID) for finalize support
             // §scxml-5.10: Add event data from params/namelist (test 233)
             typename ParentStateMachine::EventWithMetadata eventWithMetadata(event, eventData);
