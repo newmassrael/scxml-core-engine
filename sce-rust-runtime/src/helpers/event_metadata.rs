@@ -47,6 +47,9 @@ pub fn build_metadata(
 pub fn create_done_invoke_event<E>(event: E, invoke_id: &str) -> EventWithMetadata<E> {
     EventWithMetadata {
         event,
+        // `done.invoke` is a payloadless platform event — the default `()`
+        // payload of the one-parameter `EventWithMetadata<E>` (RFC §10.2).
+        payload: (),
         metadata: EventMetadata {
             data: SceString::new(),
             event_type: EventType::Platform,
@@ -66,8 +69,8 @@ pub fn create_done_invoke_event<E>(event: E, invoke_id: &str) -> EventWithMetada
 ///
 /// This is the Rust equivalent of C++ `populatePolicyFromMetadata`, adapted for
 /// the Rust architecture where generated code does not expose raw struct fields.
-pub fn extract_event_fields<E: Copy>(
-    event_with_meta: &EventWithMetadata<E>,
+pub fn extract_event_fields<E: Copy, P>(
+    event_with_meta: &EventWithMetadata<E, P>,
     get_event_name: impl Fn(E) -> &'static str,
 ) -> EventFields {
     EventFields {

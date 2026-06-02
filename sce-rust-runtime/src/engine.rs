@@ -282,9 +282,9 @@ pub struct Engine<P: StatePolicy> {
     /// Currently active state (or deepest active state for parallel machines).
     pub(crate) current_state: P::State,
     /// W3C SCXML C.1: Internal event queue (high priority, `<raise>` + targetless sends).
-    pub(crate) internal_queue: EventQueueManager<EventWithMetadata<P::Event>>,
+    pub(crate) internal_queue: EventQueueManager<EventWithMetadata<P::Event, P::Payload>>,
     /// W3C SCXML C.1: External event queue (low priority, external sends).
-    pub(crate) external_queue: EventQueueManager<EventWithMetadata<P::Event>>,
+    pub(crate) external_queue: EventQueueManager<EventWithMetadata<P::Event, P::Payload>>,
     /// Whether the engine is currently running (set false by `stop()` and final state).
     pub(crate) is_running: bool,
     /// W3C SCXML 6.4: Completion callback invoked when reaching a final state.
@@ -729,7 +729,7 @@ impl<P: StatePolicy> Engine<P> {
     /// W3C SCXML C.1: Raise an internal event (high priority).
     ///
     /// Matches C++ `raise(EventWithMetadata)`.
-    pub fn raise(&mut self, event: EventWithMetadata<P::Event>) {
+    pub fn raise(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
         self.internal_queue.raise(event);
     }
 
@@ -739,10 +739,45 @@ impl<P: StatePolicy> Engine<P> {
     pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {
         let meta = EventWithMetadata {
             event,
+            payload: P::Payload::default(),
             metadata: EventMetadata {
                 data: crate::sce_string_from_str(event_data),
                 event_type: EventType::External,
                 origin: crate::sce_string_from_str(origin),
+                origin_type: crate::sce_string_from_str(
+                    crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
+                ),
+                ..Default::default()
+            },
+            target: SceString::new(),
+        };
+        self.external_queue.raise(meta);
+
+        // W3C SCXML 5.10.1: Mark next event as external for _event.type
+        if concepts::has_external_event_flag::<P>() {
+            self.policy.set_next_event_is_external(true);
+        }
+    }
+
+    /// EventSchema MCU native-lowering RFC §10.2 / §7: Raise an external event
+    /// carrying a typed payload.
+    ///
+    /// This is the single typed-inject seam: it pairs an event with its
+    /// `Self::Payload` value so the name ↔ payload-type invariant is established
+    /// in exactly one place (illegal pairings can't be constructed elsewhere).
+    /// The payload rides with the event through the external queue and is bound
+    /// to the policy at dispatch via
+    /// [`StatePolicy::populate_event_payload`], where `_event.data.<field>`
+    /// guards read it natively — no script engine, no string serialization, so
+    /// the value path holds on no_std MCU. A consumer (e.g. watching-zenoh)
+    /// decodes its wire bytes into the payload struct and calls this; everything
+    /// inside is SCE's.
+    pub fn raise_external_typed(&mut self, event: P::Event, payload: P::Payload) {
+        let meta = EventWithMetadata {
+            event,
+            payload,
+            metadata: EventMetadata {
+                event_type: EventType::External,
                 origin_type: crate::sce_string_from_str(
                     crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
                 ),
@@ -778,7 +813,7 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Matches C++ `raiseExternal(const EventWithMetadata&)`. Preserves `invokeid`
     /// for parent finalize handlers.
-    pub fn raise_external_with_meta(&mut self, event: EventWithMetadata<P::Event>) {
+    pub fn raise_external_with_meta(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
         sce_log_debug!("Engine::raise_external_with_meta: enqueuing external event with metadata");
 
         // W3C SCXML 6.4.6: Autoforward.
@@ -822,6 +857,7 @@ impl<P: StatePolicy> Engine<P> {
         }
         let meta = EventWithMetadata {
             event,
+            payload: P::Payload::default(),
             metadata,
             target: SceString::new(),
         };
@@ -986,6 +1022,10 @@ impl<P: StatePolicy> Engine<P> {
             // W3C SCXML 5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
             self.policy
                 .populate_event_metadata(&event_with_meta.metadata);
+            // EventSchema MCU native-lowering RFC §10.2: bind the typed payload
+            // that rode with this event so `_event.data.<field>` guards read it
+            // natively. No-op for schemaless policies (`Payload = ()`).
+            self.policy.populate_event_payload(&event_with_meta.payload);
             self.execute_transition(event_with_meta.event);
             self.policy.clear_event_metadata();
         }
@@ -1003,6 +1043,10 @@ impl<P: StatePolicy> Engine<P> {
             // W3C SCXML 5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
             self.policy
                 .populate_event_metadata(&event_with_meta.metadata);
+            // EventSchema MCU native-lowering RFC §10.2: bind the typed payload
+            // that rode with this event so `_event.data.<field>` guards read it
+            // natively. No-op for schemaless policies (`Payload = ()`).
+            self.policy.populate_event_payload(&event_with_meta.payload);
             self.execute_transition(event_with_meta.event);
             self.policy.clear_event_metadata();
         }
