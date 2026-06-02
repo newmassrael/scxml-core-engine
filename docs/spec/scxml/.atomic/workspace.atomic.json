@@ -4423,20 +4423,7 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::setCompletionCallback",
           "kind": "implements"
-        }
-      ],
-      "normative_excerpt": {
-        "text": "The implementation of <invoke>, including communication between parent and child processes, is platform-specific, but the following requirements hold in the case where the invoked process is itself an SCXML session: If the 'name' of a <param> element in the <invoke> matches the 'id' of a <data> element in the top-level data declarations of the invoked session, the SCXML Processor MUST use the value of the <param> element as the initial value of the corresponding <data> element. (The top-level data declarations are those that are contained in the <datamodel> element that is a child of <scxml>.) (Note that this means that any value specified in the <data> element is ignored.) The behavior of 'namelist' is similar. If the value of a key in the namelist matches the 'id' of a <data> element in the top-level data model of the invoked session, the SCXML Processor MUST use the value of the key as the initial value of the corresponding <data> element. If the names do not match, the Processor MUST NOT add the value of the <param> element or namelist key/value pair to the invoked session's data model. However the Processor MAY make the values available by some other platform-specific means. When the invoked state machine reaches a top-level final state, the Processor MUST place the event done.invoke.id on the external event queue of the invoking machine, where id is the invokeid for this invocation. Note that reaching a top level final state corresponds to normal termination of the machine and that it cannot generate or process any further events once it is in this state. As described above, if the invoking state machine exits the state containing the invocation before it receives the done.invoke.id event, it cancels the invoked session. The method for doing this is platform-specific. However, when it is cancelled, the invoked session MUST exit at the end of the next microstep. The Processor MUST execute the <onexit> handlers for all active states in the invoked session, but it MUST NOT generate the done.invoke.id event. Once it cancels the invoked session, the Processor MUST ignore any events it receives from that session. In particular it MUST NOT not insert them into the external event queue of the invoking session. The SCXML Processor MUST support the use of SCXML Event/IO processor (C.1 SCXML Event I/O Processor) to communicate between the invoking and the invoked sessions. The Processor MAY support the use of other Event/IO processors to communicate between the invoking and the invoked sessions.",
-        "anchor_url": "https://www.w3.org/TR/scxml/#invokeimplementation",
-        "source_revision": "REC-scxml-20150901"
-      }
-    },
-    "scxml-6.4.4": {
-      "title": "Data Sharing",
-      "parent_doc": "docs/GENERATED.md",
-      "parent_section": "scxml-6.4",
-      "decision_status": "active",
-      "bindings": [
+        },
         {
           "file": "sce/include/runtime/IEventRaiser.h",
           "symbol": "cancelEventsForSession",
@@ -4453,6 +4440,18 @@
           "kind": "implements"
         }
       ],
+      "normative_excerpt": {
+        "text": "The implementation of <invoke>, including communication between parent and child processes, is platform-specific, but the following requirements hold in the case where the invoked process is itself an SCXML session: If the 'name' of a <param> element in the <invoke> matches the 'id' of a <data> element in the top-level data declarations of the invoked session, the SCXML Processor MUST use the value of the <param> element as the initial value of the corresponding <data> element. (The top-level data declarations are those that are contained in the <datamodel> element that is a child of <scxml>.) (Note that this means that any value specified in the <data> element is ignored.) The behavior of 'namelist' is similar. If the value of a key in the namelist matches the 'id' of a <data> element in the top-level data model of the invoked session, the SCXML Processor MUST use the value of the key as the initial value of the corresponding <data> element. If the names do not match, the Processor MUST NOT add the value of the <param> element or namelist key/value pair to the invoked session's data model. However the Processor MAY make the values available by some other platform-specific means. When the invoked state machine reaches a top-level final state, the Processor MUST place the event done.invoke.id on the external event queue of the invoking machine, where id is the invokeid for this invocation. Note that reaching a top level final state corresponds to normal termination of the machine and that it cannot generate or process any further events once it is in this state. As described above, if the invoking state machine exits the state containing the invocation before it receives the done.invoke.id event, it cancels the invoked session. The method for doing this is platform-specific. However, when it is cancelled, the invoked session MUST exit at the end of the next microstep. The Processor MUST execute the <onexit> handlers for all active states in the invoked session, but it MUST NOT generate the done.invoke.id event. Once it cancels the invoked session, the Processor MUST ignore any events it receives from that session. In particular it MUST NOT not insert them into the external event queue of the invoking session. The SCXML Processor MUST support the use of SCXML Event/IO processor (C.1 SCXML Event I/O Processor) to communicate between the invoking and the invoked sessions. The Processor MAY support the use of other Event/IO processors to communicate between the invoking and the invoked sessions.",
+        "anchor_url": "https://www.w3.org/TR/scxml/#invokeimplementation",
+        "source_revision": "REC-scxml-20150901"
+      }
+    },
+    "scxml-6.4.4": {
+      "title": "Data Sharing",
+      "parent_doc": "docs/GENERATED.md",
+      "parent_section": "scxml-6.4",
+      "decision_status": "active",
+      "coverage_expectation": "informative",
       "normative_excerpt": {
         "text": "[This section is informative.] The invoked external resource is logically separate from the state machine that invokes it and does not share data with it unless the author explicitly requests this with the <param> or <content> elements and/or the 'src' and 'namelist' attributes. The invoked and invoking process can also communicate via events. In addition to automatic forwarding specified by the 'autoforward' attribute. SCXML scripts can also use the <send> tag to send messages to the child process on an ad-hoc basis. The 'type' attribute of <send> is set to the same value as was used in the original <invoke>, while the target has the special form #_invokeid, where invokeid is the identifier corresponding to the original <invoke> tag. For example, in a document using ECMAScript as the data model, the following code would invoke a VoiceXML session: <invoke type=\"http://www.w3.org/TR/voicexml21/\" idlocation=\"myInvoke\"/> In this case, the unique invoke identifier has been stored in the data model location MyInvoke. Since the target attribute is an expression which is evaluated, the following code will extract that identifier and send a message to the invoked VoiceXML session: <send type=\"http://www.w3.org/TR/voicexml21/\" targetexpr=\"'#_' + myInvoke\"/> Finally, in the case where the invoked external service is an SCXML session, it can use <send> with the special target '_parent' and type 'scxml' to send events, possibly containing data, to the invoking session.",
         "anchor_url": "https://www.w3.org/TR/scxml/#DataSharing",
