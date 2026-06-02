@@ -274,12 +274,16 @@ pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool 
 }
 
 /// One transition whose typed `_event.data` guard lowers to a native
-/// payload comparison: its per-source-state `transition_index`, the
+/// payload comparison: its owning `state_id` plus per-source-state
+/// `transition_index` (the two together are the machine-unique transition
+/// identity — `transition_index` alone is NOT unique across states), the
 /// schema-carrying event it matches, and the raw `cond`. The per-language
 /// payload builders ([`crate::forge::generator::build_rust_event_payload`]
 /// and its C11/Go/C++/Kotlin/Python twins) format the guard expression and
-/// the payload type definitions from this shared selection.
+/// the payload type definitions from this shared selection, then attach the
+/// rendered guard to the transition located by `(state_id, transition_index)`.
 pub(crate) struct NativeTypedGuard {
+    pub(crate) state_id: String,
     pub(crate) transition_index: usize,
     pub(crate) event: String,
     pub(crate) cond: String,
@@ -304,7 +308,7 @@ pub(crate) fn select_native_typed_guards(
     if model.imported_event_schemas.is_empty() {
         return guarded;
     }
-    for state in model.states.values() {
+    for (state_id, state) in &model.states {
         for trans in &state.transitions {
             if trans.cond.trim().is_empty() {
                 continue;
@@ -316,6 +320,7 @@ pub(crate) fn select_native_typed_guards(
                 continue;
             }
             guarded.push(NativeTypedGuard {
+                state_id: state_id.clone(),
                 transition_index: trans.transition_index,
                 event: trans.event.clone(),
                 cond: trans.cond.clone(),

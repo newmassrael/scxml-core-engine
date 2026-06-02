@@ -799,7 +799,7 @@ impl {{ machine_name }}Policy {
                 if false {
 {% endif %}
 {% if trans.cond %}
-{% set native_guard = trans.transition_index | native_payload_guard %}
+{% set native_guard = trans.native_payload_guard %}
 {% if trans.is_pure_in_predicate %}
                     // W3C SCXML 5.9.2: Pure In() predicate
                     if {{ trans.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
@@ -885,7 +885,7 @@ impl {{ machine_name }}Policy {
 {# Guarded eventless transitions: use if/else if/else chain #}
 {% for transition in eventless_transitions %}
 {% if transition.cond %}
-{% set native_guard = transition.transition_index | native_payload_guard %}
+{% set native_guard = transition.native_payload_guard %}
 {% if transition.is_pure_in_predicate %}
                     {% if not loop.first %}} else {% endif %}if {{ transition.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
 {% elif native_guard %}

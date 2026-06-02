@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NL→IR Item C1 Path A regression fixture for the cross-state native-guard
+  collision (per feedback_codegen_fixture_orthogonal_axes — flips the
+  "guards distributed across multiple source states" axis that every other
+  event_schema fixture leaves fixed by parking all guards in one state).
+
+  Three source states (waiting, running, escalated) each own a native typed
+  `_event.data` guard on `job.completed`, and each guard is the FIRST
+  transition of its state, so all three share local transition_index 0.
+  Before the fix, the per-language payload builders keyed a machine-global
+  guard map by that per-state index, so the alphabetically-last state's guard
+  (waiting → elapsed_ms) overwrote the other two and every state matched on
+  `elapsed_ms`. Each guard now reads a DISTINCT field (elapsed_ms / retried /
+  job_id), so a collision is detectable by token presence alone — see
+  `tests/event_schema_cross_state_guard.rs`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_cross_state_guard"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_job_completed_multi.scxml" kind="event-schema" as="JobCompletedSchema"/>
+  <state id="waiting">
+    <transition event="job.completed" cond="_event.data.elapsed_ms === 0" target="running"/>
+  </state>
+  <state id="running">
+    <transition event="job.completed" cond="_event.data.retried === true" target="escalated"/>
+  </state>
+  <state id="escalated">
+    <transition event="job.completed" cond="_event.data.job_id === 'sentinel'" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

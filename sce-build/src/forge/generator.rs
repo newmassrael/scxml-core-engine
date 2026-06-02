@@ -1677,23 +1677,61 @@ fn render_event_schema(
     l.render(env, "event_schema", ctx)
 }
 
+/// One lowered native guard ready to attach to its owning transition.
+///
+/// The per-language payload builders return these instead of a side table
+/// keyed by `transition_index`: that index is unique only within its parent
+/// state, so a machine-global map keyed by it silently overwrites every
+/// transition that shares a local index with another state's transition. The
+/// owning transition is located unambiguously by `(state_id,
+/// transition_index)` and the rendered `guard` written onto its
+/// [`native_payload_guard`](crate::model::Transition::native_payload_guard)
+/// field, where it cannot collide. `guard` is language-specific; the write
+/// happens on the single-language clone of the model each generate pass owns.
+pub struct NativeGuardWrite {
+    pub state_id: String,
+    pub transition_index: usize,
+    pub guard: String,
+}
+
+/// Apply lowered native guards to a (cloned, single-language) model, writing
+/// each onto its owning transition's
+/// [`native_payload_guard`](crate::model::Transition::native_payload_guard).
+/// The `(state_id, transition_index)` pair is the machine-unique transition
+/// identity, so the lookup is exact; an entry whose target no longer exists
+/// is ignored (defensive — the selection derives from the same model).
+pub fn apply_native_guard_writes(
+    model: &mut crate::model::SCXMLModel,
+    writes: &[NativeGuardWrite],
+) {
+    for w in writes {
+        if let Some(state) = model.states.get_mut(&w.state_id) {
+            if let Some(trans) = state.transitions.get_mut(w.transition_index) {
+                trans.native_payload_guard.clone_from(&w.guard);
+            }
+        }
+    }
+}
+
 /// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
 /// Rust-codegen payload data for a statechart that imports one or more
 /// EventSchemas and reads `_event.data.<field>` in a transition guard.
 ///
 /// `defs` is the emitted `<Machine>Payload` enum plus one payload struct
 /// per guarded event; `type_name` is the `type Payload` associated-type
-/// spelling (`()` when no typed channel is active); `guards` maps
-/// `Transition::transition_index` to the native `matches!(…)` guard
-/// expression the template emits in place of the script-engine call.
+/// spelling (`()` when no typed channel is active); `guard_writes` carries
+/// the native `matches!(…)` guard expressions to attach to the matching
+/// transitions (see [`NativeGuardWrite`]).
 ///
-/// All four are Rust-specific (the `matches!` lowering, enum/struct
-/// syntax, derive set), so they are injected into the render context
-/// rather than carried on the language-agnostic model.
+/// `defs`/`type_name`/`entries` are per-machine Rust-specific codegen blobs
+/// with no natural home on the language-agnostic model, so they are injected
+/// into the render context. The guards, by contrast, are per-transition, so
+/// they ride home on the transition itself rather than a machine-global side
+/// table.
 pub struct RustEventPayload {
     pub defs: String,
     pub type_name: String,
-    pub guards: std::collections::BTreeMap<usize, String>,
+    pub guard_writes: Vec<NativeGuardWrite>,
     /// The per-event typed inject wrappers — one `Engine<Policy>` method
     /// per guarded event (`raise_<event>`), each binding the event name
     /// and the matching payload variant in a single call so the
@@ -1722,7 +1760,7 @@ pub fn build_rust_event_payload(
     let schemaless = || RustEventPayload {
         defs: String::new(),
         type_name: "()".to_string(),
-        guards: std::collections::BTreeMap::new(),
+        guard_writes: Vec::new(),
         entries: String::new(),
     };
     let enum_name = format!("{machine_name}Payload");
@@ -1734,7 +1772,7 @@ pub fn build_rust_event_payload(
     // two backends agree on which guards are native; the
     // `lower_typed_guard` call is guaranteed `Ok` by that gate (the `else`
     // arm is defensive).
-    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for g in select_native_typed_guards(model) {
         let schema = &model.imported_event_schemas[&g.event];
@@ -1747,13 +1785,16 @@ pub fn build_rust_event_payload(
             continue;
         };
         let variant = filters::to_event_variant(g.event.clone());
-        guards.insert(
-            g.transition_index,
-            format!("matches!(&self.pending_payload, {enum_name}::{variant}(ev) if {inner})"),
-        );
+        guard_writes.push(NativeGuardWrite {
+            state_id: g.state_id,
+            transition_index: g.transition_index,
+            guard: format!(
+                "matches!(&self.pending_payload, {enum_name}::{variant}(ev) if {inner})"
+            ),
+        });
         guarded_events.insert(g.event);
     }
-    if guards.is_empty() {
+    if guard_writes.is_empty() {
         return schemaless();
     }
 
@@ -1823,7 +1864,7 @@ impl {machine_name}Inject for ::sce_rust_runtime::Engine<{machine_name}Policy> {
     RustEventPayload {
         defs,
         type_name: enum_name,
-        guards,
+        guard_writes,
         entries,
     }
 }
@@ -1834,10 +1875,10 @@ impl {machine_name}Inject for ::sce_rust_runtime::Engine<{machine_name}Policy> {
 /// `defs` is the emitted typed-payload typedef block (one `struct` per
 /// guarded event, a tag `enum`, and the tagged-union `<name>_payload_t`);
 /// `type_name` is that union's typedef name (`""` when no typed channel is
-/// active); `guards` maps `Transition::transition_index` to the native C
-/// guard expression — a tag check ANDed with the lowered field
-/// comparison — the template emits in place of the Lua `lua_eval_guard`
-/// call.
+/// active); `guard_writes` carries the native C guard expressions — each a
+/// tag check ANDed with the lowered field comparison — to attach to the
+/// matching transitions (see [`NativeGuardWrite`]) in place of the Lua
+/// `lua_eval_guard` call.
 ///
 /// The Rust backend models the payload as an `enum` whose variant is
 /// matched with `matches!`; C has no sum type, so the structural twin is a
@@ -1848,7 +1889,7 @@ pub struct C11EventPayload {
     pub defs: String,
     pub type_name: String,
     pub active: bool,
-    pub guards: std::collections::BTreeMap<usize, String>,
+    pub guard_writes: Vec<NativeGuardWrite>,
     /// Per-event typed inject entry declarations (`.h`) — one
     /// `<name>_raise_<event>_typed(sm, const <event>_payload_t *)` per
     /// guarded event. The C twin of the Rust per-event `Engine<Policy>`
@@ -1877,7 +1918,7 @@ pub fn build_c11_event_payload(model: &crate::model::SCXMLModel) -> C11EventPayl
         defs: String::new(),
         type_name: String::new(),
         active: false,
-        guards: std::collections::BTreeMap::new(),
+        guard_writes: Vec::new(),
         entry_decls: String::new(),
         entry_defs: String::new(),
     };
@@ -1890,7 +1931,7 @@ pub fn build_c11_event_payload(model: &crate::model::SCXMLModel) -> C11EventPayl
     // tag-check + field comparison. The set of events owning a lowered
     // guard is exactly the set of union members emitted below — no member
     // (and no payload struct) is ever dead.
-    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for g in select_native_typed_guards(model) {
         let schema = &model.imported_event_schemas[&g.event];
@@ -1906,13 +1947,14 @@ pub fn build_c11_event_payload(model: &crate::model::SCXMLModel) -> C11EventPayl
         ) else {
             continue;
         };
-        guards.insert(
-            g.transition_index,
-            format!("sm->pending_payload.tag == {tag_const} && ({inner})"),
-        );
+        guard_writes.push(NativeGuardWrite {
+            state_id: g.state_id,
+            transition_index: g.transition_index,
+            guard: format!("sm->pending_payload.tag == {tag_const} && ({inner})"),
+        });
         guarded_events.insert(g.event);
     }
-    if guards.is_empty() {
+    if guard_writes.is_empty() {
         return inactive();
     }
 
@@ -1986,7 +2028,7 @@ typedef struct {name}_payload {{\n    {tag_type} tag;\n    union {{\n{union_line
         defs,
         type_name: union_type,
         active: true,
-        guards,
+        guard_writes,
         entry_decls,
         entry_defs,
     }
@@ -2009,17 +2051,18 @@ typedef struct {name}_payload {{\n    {tag_type} tag;\n    union {{\n{union_line
 /// payload struct per guarded event, and the per-event `Raise<Event>` inject
 /// seams); `policy_fields` are the lines added to the generated policy
 /// struct; `populate` is the `PopulateEventMetadata` type-switch body;
-/// `clear` resets the tag in `ClearEventMetadata`; `guards` maps
-/// `Transition::transition_index` to the native guard expression (a tag check
-/// ANDed with the lowered field comparison) the template emits in place of
-/// the `p.evaluateGuard(...)` script-engine call.
+/// `clear` resets the tag in `ClearEventMetadata`; `guard_writes` carries
+/// the native guard expressions (each a tag check ANDed with the lowered
+/// field comparison) to attach to the matching transitions (see
+/// [`NativeGuardWrite`]) in place of the `p.evaluateGuard(...)`
+/// script-engine call.
 pub struct GoEventPayload {
     pub defs: String,
     pub active: bool,
     pub policy_fields: String,
     pub populate: String,
     pub clear: String,
-    pub guards: std::collections::BTreeMap<usize, String>,
+    pub guard_writes: Vec<NativeGuardWrite>,
 }
 
 /// Build the [`GoEventPayload`] for `model`. Same SSOT guard selection
@@ -2032,7 +2075,7 @@ pub fn build_go_event_payload(model: &crate::model::SCXMLModel) -> GoEventPayloa
         policy_fields: String::new(),
         populate: String::new(),
         clear: String::new(),
-        guards: std::collections::BTreeMap::new(),
+        guard_writes: Vec::new(),
     };
     let machine = filters::to_pascal_case(model.name.clone());
     let tag_type = format!("{machine}PayloadTag");
@@ -2044,7 +2087,7 @@ pub fn build_go_event_payload(model: &crate::model::SCXMLModel) -> GoEventPayloa
     // field the populate seam fills (`p.pending<Event>Payload`); the guard
     // is a tag check (against an event delivered without a typed payload)
     // ANDed with the lowered field comparison.
-    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for g in select_native_typed_guards(model) {
         let schema = &model.imported_event_schemas[&g.event];
@@ -2058,13 +2101,14 @@ pub fn build_go_event_payload(model: &crate::model::SCXMLModel) -> GoEventPayloa
         ) else {
             continue;
         };
-        guards.insert(
-            g.transition_index,
-            format!("p.pendingPayloadTag == {tag_type}{variant} && ({inner})"),
-        );
+        guard_writes.push(NativeGuardWrite {
+            state_id: g.state_id,
+            transition_index: g.transition_index,
+            guard: format!("p.pendingPayloadTag == {tag_type}{variant} && ({inner})"),
+        });
         guarded_events.insert(g.event);
     }
-    if guards.is_empty() {
+    if guard_writes.is_empty() {
         return inactive();
     }
 
@@ -2149,7 +2193,7 @@ type {tag_type} int\n\nconst (\n{tag_consts})\n\n{structs}{raise_fns}"
         policy_fields,
         populate,
         clear,
-        guards,
+        guard_writes,
     }
 }
 
@@ -2169,16 +2213,17 @@ type {tag_type} int\n\nconst (\n{tag_consts})\n\n{structs}{raise_fns}"
 /// `defs` is the top-level `enum class <Machine>PayloadTag` + one payload
 /// struct per guarded event; `policy_members` are the policy-struct fields
 /// plus the `populateTypedPayload` hook; `inject_methods` are the per-event
-/// `raise<Event>` seams on the generated engine class; `guards` maps
-/// `Transition::transition_index` to the native guard expression (a tag check
-/// ANDed with the lowered field comparison) emitted in place of the
-/// `safeEvaluateGuard(...)` script call.
+/// `raise<Event>` seams on the generated engine class; `guard_writes` carries
+/// the native guard expressions (each a tag check ANDed with the lowered
+/// field comparison) to attach to the matching transitions (see
+/// [`NativeGuardWrite`]) in place of the `safeEvaluateGuard(...)` script
+/// call.
 pub struct CppEventPayload {
     pub defs: String,
     pub active: bool,
     pub policy_members: String,
     pub inject_methods: String,
-    pub guards: std::collections::BTreeMap<usize, String>,
+    pub guard_writes: Vec<NativeGuardWrite>,
 }
 
 /// The C++ `Event` enum value spelling for an event name — mirrors the
@@ -2202,7 +2247,7 @@ pub fn build_cpp_event_payload(model: &crate::model::SCXMLModel) -> CppEventPayl
         active: false,
         policy_members: String::new(),
         inject_methods: String::new(),
-        guards: std::collections::BTreeMap::new(),
+        guard_writes: Vec::new(),
     };
     let machine = filters::to_pascal_case(model.name.clone());
     let tag_type = format!("{machine}PayloadTag");
@@ -2211,7 +2256,7 @@ pub fn build_cpp_event_payload(model: &crate::model::SCXMLModel) -> CppEventPayl
     // hook fills (`pending<Event>Payload_`, unqualified — the transition
     // matcher runs as a policy method). Guard = tag check (against an event
     // delivered without a typed payload) ANDed with the lowered comparison.
-    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for g in select_native_typed_guards(model) {
         let schema = &model.imported_event_schemas[&g.event];
@@ -2225,13 +2270,14 @@ pub fn build_cpp_event_payload(model: &crate::model::SCXMLModel) -> CppEventPayl
         ) else {
             continue;
         };
-        guards.insert(
-            g.transition_index,
-            format!("pendingPayloadTag_ == {tag_type}::{variant} && ({inner})"),
-        );
+        guard_writes.push(NativeGuardWrite {
+            state_id: g.state_id,
+            transition_index: g.transition_index,
+            guard: format!("pendingPayloadTag_ == {tag_type}::{variant} && ({inner})"),
+        });
         guarded_events.insert(g.event);
     }
-    if guards.is_empty() {
+    if guard_writes.is_empty() {
         return inactive();
     }
 
@@ -2310,7 +2356,7 @@ enum class {tag_type} : ::std::uint8_t {{\n{tag_values}}};\n\n{structs}"
         active: true,
         policy_members: format!("{fields}{populate}"),
         inject_methods: inject,
-        guards,
+        guard_writes,
     }
 }
 
@@ -2330,16 +2376,16 @@ enum class {tag_type} : ::std::uint8_t {{\n{tag_values}}};\n\n{structs}"
 /// nullable `pending<Event>Payload` properties; `populate` is the body of
 /// the `populateTypedPayload` override (reset-to-null then a `when` over the
 /// carrier); `inject_methods` are the per-event `raise<Event>` seams on the
-/// generated machine class; `guards` maps `Transition::transition_index` to
-/// the native guard expression emitted in place of the `safeEvaluateGuard`
-/// script call.
+/// generated machine class; `guard_writes` carries the native guard
+/// expressions to attach to the matching transitions (see
+/// [`NativeGuardWrite`]) in place of the `safeEvaluateGuard` script call.
 pub struct KotlinEventPayload {
     pub defs: String,
     pub active: bool,
     pub policy_fields: String,
     pub populate: String,
     pub inject_methods: String,
-    pub guards: std::collections::BTreeMap<usize, String>,
+    pub guard_writes: Vec<NativeGuardWrite>,
 }
 
 /// Build the [`KotlinEventPayload`] for `model`. Same SSOT guard selection
@@ -2351,7 +2397,7 @@ pub fn build_kotlin_event_payload(model: &crate::model::SCXMLModel) -> KotlinEve
         policy_fields: String::new(),
         populate: String::new(),
         inject_methods: String::new(),
-        guards: std::collections::BTreeMap::new(),
+        guard_writes: Vec::new(),
     };
     let machine = filters::to_pascal_case(model.name.clone());
 
@@ -2371,7 +2417,7 @@ pub fn build_kotlin_event_payload(model: &crate::model::SCXMLModel) -> KotlinEve
     // below, so nothing is ever dead. The accessor is the nullable policy field
     // the populate seam fills, non-null-asserted (`!!`) — the `… != null`
     // prefix of the guard makes the assertion always safe.
-    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for g in select_native_typed_guards(model) {
         let schema = &model.imported_event_schemas[&g.event];
@@ -2386,10 +2432,14 @@ pub fn build_kotlin_event_payload(model: &crate::model::SCXMLModel) -> KotlinEve
         ) else {
             continue;
         };
-        guards.insert(g.transition_index, format!("{field} != null && ({inner})"));
+        guard_writes.push(NativeGuardWrite {
+            state_id: g.state_id,
+            transition_index: g.transition_index,
+            guard: format!("{field} != null && ({inner})"),
+        });
         guarded_events.insert(g.event);
     }
-    if guards.is_empty() {
+    if guard_writes.is_empty() {
         return inactive();
     }
 
@@ -2481,7 +2531,7 @@ EventMetadata(type = \"external\", typedPayload = {class_name}({call_args}))\n  
         policy_fields,
         populate,
         inject_methods: inject,
-        guards,
+        guard_writes,
     }
 }
 
@@ -2501,16 +2551,16 @@ EventMetadata(type = \"external\", typedPayload = {class_name}({call_args}))\n  
 /// `__init__` field-reset block; `populate` is the body prepended to the
 /// generated `set_current_event` (reset-to-None then an `isinstance`
 /// cascade over the carrier); `inject` are the module-level per-event
-/// `raise_<event>` seams; `guards` maps `Transition::transition_index` to
-/// the native guard expression emitted in place of the `self._guard(…)`
-/// script call.
+/// `raise_<event>` seams; `guard_writes` carries the native guard
+/// expressions to attach to the matching transitions (see
+/// [`NativeGuardWrite`]) in place of the `self._guard(…)` script call.
 pub struct PythonEventPayload {
     pub defs: String,
     pub active: bool,
     pub init: String,
     pub populate: String,
     pub inject: String,
-    pub guards: std::collections::BTreeMap<usize, String>,
+    pub guard_writes: Vec<NativeGuardWrite>,
 }
 
 /// Build the [`PythonEventPayload`] for `model`. Same SSOT guard selection
@@ -2523,7 +2573,7 @@ pub fn build_python_event_payload(model: &crate::model::SCXMLModel) -> PythonEve
         init: String::new(),
         populate: String::new(),
         inject: String::new(),
-        guards: std::collections::BTreeMap::new(),
+        guard_writes: Vec::new(),
     };
     let machine = filters::to_pascal_case(model.name.clone());
 
@@ -2532,7 +2582,7 @@ pub fn build_python_event_payload(model: &crate::model::SCXMLModel) -> PythonEve
     // below, so nothing is ever dead. The accessor is the instance attribute
     // the populate seam fills; the `… is not None` prefix is the tag check
     // (Python is dynamic — no literal-type coercion needed, `== 0` is direct).
-    let mut guards: std::collections::BTreeMap<usize, String> = std::collections::BTreeMap::new();
+    let mut guard_writes: Vec<NativeGuardWrite> = Vec::new();
     let mut guarded_events: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for g in select_native_typed_guards(model) {
         let schema = &model.imported_event_schemas[&g.event];
@@ -2546,13 +2596,14 @@ pub fn build_python_event_payload(model: &crate::model::SCXMLModel) -> PythonEve
         ) else {
             continue;
         };
-        guards.insert(
-            g.transition_index,
-            format!("{accessor} is not None and ({inner})"),
-        );
+        guard_writes.push(NativeGuardWrite {
+            state_id: g.state_id,
+            transition_index: g.transition_index,
+            guard: format!("{accessor} is not None and ({inner})"),
+        });
         guarded_events.insert(g.event);
     }
-    if guards.is_empty() {
+    if guard_writes.is_empty() {
         return inactive();
     }
 
@@ -2638,7 +2689,7 @@ EventMetadata(event_type=\"external\", typed_payload={class_name}({call_args})),
         init,
         populate,
         inject,
-        guards,
+        guard_writes,
     }
 }
 
