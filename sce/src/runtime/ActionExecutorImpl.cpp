@@ -50,7 +50,7 @@ ActionExecutorImpl::ActionExecutorImpl(const std::string &sessionId, IScriptEngi
 }
 
 ActionExecutorImpl::~ActionExecutorImpl() {
-    // §scxml-6.2: Unregister from SessionRegistry EventDispatcher registry for proper cleanup
+    // Unregister from SessionRegistry EventDispatcher registry for proper cleanup (RAII)
     if (eventDispatcher_) {
         try {
             SessionRegistry::instance().unregisterEventDispatcher(sessionId_);

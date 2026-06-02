@@ -88,9 +88,9 @@ template<typename P> struct has_populateTypedPayload<P, std::void_t<decltype(std
  * §scxml-5.10.1: Event Descriptor fields (name, data, type, sendid, origin, origintype, invokeid)
  *
  * Related Helpers:
- * - SendHelper: §scxml-6.2 send action support
- * - ForeachHelper: §scxml-5.9 foreach iteration
- * - GuardHelper: §scxml-5.9.1 conditional guard evaluation
+ * - SendHelper: send action support
+ * - ForeachHelper: foreach iteration
+ * - GuardHelper: conditional guard evaluation
  *
  * @example Interpreter Engine Usage
  * @code
