@@ -220,19 +220,34 @@ pub fn lower_typed_guard(
 /// `true` iff `schema` can back a native typed-payload channel. The
 /// generated payload struct emits every declared field, so the channel
 /// is only eligible when all fields resolve to a self-contained native
-/// type. Enum-typed fields (`SceType::Enum`) carry their concrete width
-/// in a *separate* imported Enum document whose `use`/`include` would
-/// have to be threaded into the state-machine unit — until that wiring
-/// exists, an enum-typed schema keeps the dynamic `_event.data` baseline
-/// (the cond stays on the script engine) rather than emit a payload
-/// struct that names an out-of-scope type. This is the single eligibility
-/// rule shared by the engine-need analyzer and the codegen path so the
-/// two never disagree.
+/// type. Two field types are excluded:
+///
+///   * Enum-typed fields (`SceType::Enum`) carry their concrete width
+///     in a *separate* imported Enum document whose `use`/`include`
+///     would have to be threaded into the state-machine unit — until
+///     that wiring exists, an enum-typed schema keeps the dynamic
+///     `_event.data` baseline (the cond stays on the script engine)
+///     rather than emit a payload struct that names an out-of-scope
+///     type.
+///   * Bytes-typed fields (`SceType::Bytes`) have no native C11 payload
+///     representation yet: `generator::c_type` returns a length-less
+///     `const uint8_t *` placeholder, so the C11 payload struct cannot
+///     carry the field and a `bytes` guard would lower to a comparison
+///     that does not compile (`Vec<u8> == &str` on Rust, an illegal
+///     slice `==` on Go, a silent `bytes == str` → `False` on Python).
+///     A bytes-containing schema therefore keeps the dynamic baseline
+///     uniformly until the bounded-buffer payload representation lands
+///     (see `claudedocs/rfc-eventschema-bytes-guard.md` §3.1) — this is
+///     deliberately uniform across backends so the language-neutral
+///     `native_typed_inject_events` SSOT never splits.
+///
+/// This is the single eligibility rule shared by the engine-need
+/// analyzer and the codegen path so the two never disagree.
 pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
     schema
         .fields
         .iter()
-        .all(|f| !matches!(f.sce_type, SceType::Enum(_)))
+        .all(|f| !matches!(f.sce_type, SceType::Enum(_) | SceType::Bytes))
 }
 
 /// `true` iff `cond` lowers natively on every backend SCE generates —
@@ -1607,6 +1622,38 @@ mod tests {
         );
         assert!(!schema_is_native_payload_eligible(&s));
         assert!(!guard_is_native_lowerable("_event.data.status === 0", &s));
+    }
+
+    // A bytes-typed field has no native C11 payload representation yet
+    // (length-less `const uint8_t *` placeholder), so a bytes-containing
+    // schema is payload-ineligible and its guard keeps the script-engine
+    // baseline uniformly across backends — the honest interim gate before
+    // the bounded-buffer payload representation lands (see
+    // `claudedocs/rfc-eventschema-bytes-guard.md` §3.1). Without this, the
+    // guard `_event.data.raw === 'ack'` was classed native and lowered to
+    // `ev.raw == "ack"`, which does not compile on Rust.
+    #[test]
+    fn bytes_typed_schema_is_payload_ineligible() {
+        let s = schema("temp.update", vec![field("raw", SceType::Bytes)]);
+        assert!(!schema_is_native_payload_eligible(&s));
+        assert!(!guard_is_native_lowerable("_event.data.raw === 'ack'", &s));
+    }
+
+    // A schema that mixes a numeric field with a bytes field is ineligible
+    // as a whole: the payload struct emits *every* field, so the unrepresentable
+    // bytes field poisons the otherwise-native numeric guard too. The gate
+    // is per-schema, not per-guard.
+    #[test]
+    fn schema_with_any_bytes_field_is_payload_ineligible() {
+        let s = schema(
+            "temp.update",
+            vec![
+                field("count", SceType::Uint32),
+                field("raw", SceType::Bytes),
+            ],
+        );
+        assert!(!schema_is_native_payload_eligible(&s));
+        assert!(!guard_is_native_lowerable("_event.data.count === 0", &s));
     }
 
     #[test]
