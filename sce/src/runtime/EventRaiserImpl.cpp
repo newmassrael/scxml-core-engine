@@ -64,7 +64,7 @@ size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionI
 
     std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
 
-    // §scxml-6.4.4: Remove all queued events from the specified session
+    // §scxml-6.4.3: Remove all queued events from the specified session
     // priority_queue doesn't support direct removal, so we need to rebuild it
     std::vector<QueuedEvent> remaining;
     size_t cancelledCount = 0;

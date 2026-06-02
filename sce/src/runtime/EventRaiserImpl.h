@@ -187,7 +187,7 @@ public:
     std::shared_ptr<IEventScheduler> getScheduler() const override;
 
     /**
-     * @brief Cancel all queued events from a specific session (§scxml-6.4.4 compliance)
+     * @brief Cancel all queued events from a specific session (§scxml-6.4.3 compliance)
      *
      * Removes all events in the synchronous queue that originated from the specified session.
      * This is required when cancelling invokes to prevent processing events from cancelled children.
