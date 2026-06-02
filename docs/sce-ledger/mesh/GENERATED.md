@@ -1662,7 +1662,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [references] sce/include/static/StaticExecutionEngine.h:currentEventInvokeId_
 - [references] sce/include/static/StaticExecutionEngine.h:onMeshCancel_
 - [references] sce/include/static/StaticExecutionEngine.h:onMeshInvoke_
-- [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
+- [references] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:setMeshCancelCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:setMeshInvokeCallback
 - [implements] sce/include/mesh/InvokeCorrelation.h:InvokeCorrelation

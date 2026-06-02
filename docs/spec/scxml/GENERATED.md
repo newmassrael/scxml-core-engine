@@ -1717,7 +1717,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [references] sce/include/static/StaticExecutionEngine.h:invokeId
 - [references] sce/include/static/StaticExecutionEngine.h:origin
 - [references] sce/include/static/StaticExecutionEngine.h:originType
-- [implements] sce/include/static/StaticExecutionEngine.h:raise
+- [references] sce/include/static/StaticExecutionEngine.h:raise
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [references] sce/include/static/StaticExecutionEngine.h:sendId
 - [references] sce/include/static/StaticExecutionEngine.h:type
@@ -3607,7 +3607,7 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 - [references] sce/include/static/StaticExecutionEngine.h:HttpSendRequest
 - [references] sce/include/static/StaticExecutionEngine.h:onHttpSend_
 - [implements] sce/include/static/StaticExecutionEngine.h:performHttpSend
-- [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
+- [references] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/static/StaticExecutionEngine.h:setHttpSendCallback
 - [references] sce/include/static/StaticExecutionEngine.h:target
 - [implements] sce/src/actions/SendAction.cpp:SendAction::validateSpecific
