@@ -52,8 +52,9 @@
 // `<transition event="error.execution">` observes the same raise shape as the
 // transport-absent local fallback (SCE_MESH.md §mesh-9.6 line 1396).
 //
-// FieldRead/FieldWrite are inbound on the server role (SCE_MESH.md §mesh-8.3):
-// the server's queryable / `register_message_handler` receives the
+// FieldRead/FieldWrite are inbound on the server role (SCE_MESH.md §mesh-8.1
+// `field.get` / `field.set` pattern semantics): the server's queryable /
+// `register_message_handler` receives the
 // getter/setter request and dispatches it to the engine, which fires the
 // matching `<transition event="field.get.X">` / `<transition event="field.set.X">`.
 //
@@ -209,7 +210,7 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     case PatternKind::RpcReply:
     // FieldRead/FieldWrite on the server role: inbound request that fires the
     // matching `<transition event="field.get.X">` / `<transition event="field.set.X">`
-    // on the server-side engine (SCE_MESH.md §mesh-8.3).
+    // on the server-side engine (SCE_MESH.md §mesh-8.1 `field.get` / `field.set`).
     case PatternKind::FieldRead:
     case PatternKind::FieldWrite: {
         auto ev = Policy::getEventFromName(env.type.c_str());
