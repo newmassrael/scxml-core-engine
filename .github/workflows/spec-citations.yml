@@ -43,9 +43,11 @@ concurrency:
 
 env:
   # Pin to a Mnemosyne commit, never a branch; --locked builds against its
-  # committed Cargo.lock for a reproducible binary. R386 (f1e8436) completes [workspace] root (anchor resolve) so subdir-rooted
-  # ledgers bind Path B impl paths repo-relative; +R382 tree-sitter-cpp resolver.
-  MNEMOSYNE_REV: f1e84368cab57018b65d2e64b6278c6344606d85
+  # committed Cargo.lock for a reproducible binary. 73986cef ships the binding-kind
+  # schema (Section.bindings[] + kind=implements|references, store schema v6) replacing
+  # the v4 implementations[] array; see claudedocs/mnemosyne-binding-kind-design.md.
+  # Carries forward [workspace] root anchor resolve + R382 tree-sitter-cpp resolver.
+  MNEMOSYNE_REV: 73986cef39f50018f5a9a013c2f8b4eb6514b442
 
 jobs:
   citations:

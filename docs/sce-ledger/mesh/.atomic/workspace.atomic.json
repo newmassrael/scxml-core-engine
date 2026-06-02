@@ -21,25 +21,30 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode"
+          "symbol": "ReasonCode",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/InvokeCorrelation.h",
-          "symbol": "cancelAllPending"
+          "symbol": "cancelAllPending",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/MeshUuidKey.h"
+          "file": "sce/include/mesh/MeshUuidKey.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "symbol": "markNotReady"
+          "symbol": "markNotReady",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "symbol": "markReady"
+          "symbol": "markReady",
+          "kind": "implements"
         }
       ]
     },
@@ -60,9 +65,10 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
-          "file": "sce/include/mesh/transports/CustomTcpTransport.h"
+          "file": "sce/include/mesh/transports/CustomTcpTransport.h",
+          "kind": "implements"
         }
       ]
     },
@@ -71,18 +77,21 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10.4",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/InvokeCorrelation.h",
-          "symbol": "cancelAllPending"
+          "symbol": "cancelAllPending",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/InvokeCorrelation.h",
-          "symbol": "registerInvoke"
+          "symbol": "registerInvoke",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "symbol": "markNotReady"
+          "symbol": "markNotReady",
+          "kind": "implements"
         }
       ]
     },
@@ -103,24 +112,29 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/DedupRouter.h",
-          "symbol": "DedupRouter"
+          "symbol": "DedupRouter",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/DedupRouter.h",
-          "symbol": "kCapacity"
+          "symbol": "kCapacity",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/OrderingBuffer.h"
+          "file": "sce/include/mesh/OrderingBuffer.h",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/OutboundBuffer.h"
+          "file": "sce/include/mesh/OutboundBuffer.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/RetryingDispatcher.h",
-          "symbol": "send_with_retry"
+          "symbol": "send_with_retry",
+          "kind": "implements"
         }
       ]
     },
@@ -129,12 +143,14 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
-          "file": "sce/include/mesh/OrderingBuffer.h"
+          "file": "sce/include/mesh/OrderingBuffer.h",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/OutboundBuffer.h"
+          "file": "sce/include/mesh/OutboundBuffer.h",
+          "kind": "implements"
         }
       ]
     },
@@ -143,10 +159,11 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10.6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/OrderingBuffer.h",
-          "symbol": "OrderingBuffer"
+          "symbol": "OrderingBuffer",
+          "kind": "implements"
         }
       ]
     },
@@ -161,18 +178,21 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10.6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode"
+          "symbol": "ReasonCode",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshEnvelope.h",
-          "symbol": "sequence_no"
+          "symbol": "sequence_no",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OrderingBuffer.h",
-          "symbol": "admit"
+          "symbol": "admit",
+          "kind": "implements"
         }
       ]
     },
@@ -181,10 +201,11 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10.6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode"
+          "symbol": "ReasonCode",
+          "kind": "implements"
         }
       ]
     },
@@ -193,10 +214,11 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/InvokeCorrelation.h",
-          "symbol": "InvokeCorrelation"
+          "symbol": "InvokeCorrelation",
+          "kind": "implements"
         }
       ]
     },
@@ -205,34 +227,41 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10.7",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "detail"
+          "symbol": "detail",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "envelope_id"
+          "symbol": "envelope_id",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "source"
+          "symbol": "source",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "toJsonBytes"
+          "symbol": "toJsonBytes",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "transport_error"
+          "symbol": "transport_error",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
-          "symbol": "dispatchEnvelope"
+          "symbol": "dispatchEnvelope",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ShmChannel.h",
-          "symbol": "ShmChannel"
+          "symbol": "ShmChannel",
+          "kind": "implements"
         }
       ]
     },
@@ -247,13 +276,15 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-10",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/MeshEnvelope.h",
-          "symbol": "routing_id"
+          "symbol": "routing_id",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/OutboundBuffer.h"
+          "file": "sce/include/mesh/OutboundBuffer.h",
+          "kind": "implements"
         }
       ]
     },
@@ -301,15 +332,18 @@
       "title": "Roadmap",
       "parent_doc": "GENERATED.md",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
-          "file": "sce/include/mesh/MeshUuidKey.h"
+          "file": "sce/include/mesh/MeshUuidKey.h",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h"
+          "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h"
+          "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
+          "kind": "implements"
         }
       ]
     },
@@ -317,17 +351,20 @@
       "title": "deploy.yaml Schema",
       "parent_doc": "GENERATED.md",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "timeout_ms"
+          "symbol": "timeout_ms",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/ParallelCompletionTracker.h"
+          "file": "sce/include/mesh/ParallelCompletionTracker.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "triggerParallelRegionRemoteSend"
+          "symbol": "triggerParallelRegionRemoteSend",
+          "kind": "implements"
         }
       ]
     },
@@ -336,14 +373,16 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-14",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "SCE::Mesh::Someip"
+          "symbol": "SCE::Mesh::Someip",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
-          "symbol": "SCE::Mesh::Zenoh"
+          "symbol": "SCE::Mesh::Zenoh",
+          "kind": "implements"
         }
       ]
     },
@@ -440,18 +479,21 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-16",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode"
+          "symbol": "ReasonCode",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "SCE::Mesh::Someip"
+          "symbol": "SCE::Mesh::Someip",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "availabilityChangeSafely"
+          "symbol": "availabilityChangeSafely",
+          "kind": "implements"
         }
       ]
     },
@@ -460,74 +502,91 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-16",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode"
+          "symbol": "ReasonCode",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "parallel_id"
+          "symbol": "parallel_id",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
-          "symbol": "SCE::Mesh"
+          "symbol": "SCE::Mesh",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshEnvelope.h",
-          "symbol": "parallel_id"
+          "symbol": "parallel_id",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshEnvelopeCodec.h",
-          "symbol": "SCE::Mesh"
+          "symbol": "SCE::Mesh",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ParallelCompletionTracker.h",
-          "symbol": "ParallelCompletionTracker"
+          "symbol": "ParallelCompletionTracker",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ParallelCompletionTracker.h",
-          "symbol": "onRegionComplete"
+          "symbol": "onRegionComplete",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ParallelCompletionTracker.h",
-          "symbol": "reset"
+          "symbol": "reset",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/PatternKind.h",
-          "symbol": "PatternKind"
+          "symbol": "PatternKind",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "isGlobalFinalState"
+          "symbol": "isGlobalFinalState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "onParallelRegionLocalComplete_"
+          "symbol": "onParallelRegionLocalComplete_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setParallelRegionLocalCompleteCallback"
+          "symbol": "setParallelRegionLocalCompleteCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setParallelRegionRemoteSendCallback"
+          "symbol": "setParallelRegionRemoteSendCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "tick"
+          "symbol": "tick",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "triggerParallelRegionLocalComplete"
+          "symbol": "triggerParallelRegionLocalComplete",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "triggerParallelRegionRemoteSend"
+          "symbol": "triggerParallelRegionRemoteSend",
+          "kind": "implements"
         },
         {
           "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
-          "symbol": "isValidPatternKind"
+          "symbol": "isValidPatternKind",
+          "kind": "implements"
         }
       ]
     },
@@ -542,201 +601,250 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-16",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "ReasonCode"
+          "symbol": "ReasonCode",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "SCE::Mesh"
+          "symbol": "SCE::Mesh",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "attempts"
+          "symbol": "attempts",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "codec"
+          "symbol": "codec",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "invoke_id"
+          "symbol": "invoke_id",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "last_seen_ms_ago"
+          "symbol": "last_seen_ms_ago",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "lost_seq_hi"
+          "symbol": "lost_seq_hi",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "lost_seq_lo"
+          "symbol": "lost_seq_lo",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "machine"
+          "symbol": "machine",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "missing_regions"
+          "symbol": "missing_regions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "parallel_id"
+          "symbol": "parallel_id",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "partition"
+          "symbol": "partition",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "position"
+          "symbol": "position",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "queue_depth"
+          "symbol": "queue_depth",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "reason"
+          "symbol": "reason",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "target"
+          "symbol": "target",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "timeout_ms"
+          "symbol": "timeout_ms",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "transport"
+          "symbol": "transport",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "transport_error"
+          "symbol": "transport_error",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "transport_status"
+          "symbol": "transport_status",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "window_size"
+          "symbol": "window_size",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/DedupRouter.h",
-          "symbol": "DedupWindow"
+          "symbol": "DedupWindow",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/DedupRouter.h",
-          "symbol": "admitWithSignal"
+          "symbol": "admitWithSignal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/InvokeCorrelation.h",
-          "symbol": "InvokeCorrelation"
+          "symbol": "InvokeCorrelation",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/InvokeCorrelation.h",
-          "symbol": "cancelAllPending"
+          "symbol": "cancelAllPending",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/InvokeCorrelation.h",
-          "symbol": "cancelAllPendingForTarget"
+          "symbol": "cancelAllPendingForTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/InvokeCorrelation.h",
-          "symbol": "registerInvoke"
+          "symbol": "registerInvoke",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OrderingBuffer.h",
-          "symbol": "OrderingGapEvent"
+          "symbol": "OrderingGapEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "symbol": "OutboundBuffer"
+          "symbol": "OutboundBuffer",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "symbol": "SendResult"
+          "symbol": "SendResult",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "symbol": "admit"
+          "symbol": "admit",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "symbol": "markNotReady"
+          "symbol": "markNotReady",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "symbol": "markReady"
+          "symbol": "markReady",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "symbol": "retryable"
+          "symbol": "retryable",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/ParallelCompletionTracker.h"
+          "file": "sce/include/mesh/ParallelCompletionTracker.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/RetryingDispatcher.h",
-          "symbol": "RetryingDispatcher"
+          "symbol": "RetryingDispatcher",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ShmChannel.h",
-          "symbol": "ShmChannel"
+          "symbol": "ShmChannel",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ShmChannel.h",
-          "symbol": "drain"
+          "symbol": "drain",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ShmChannel.h",
-          "symbol": "drainWith"
+          "symbol": "drainWith",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/third_party/AuthClassifier.h",
-          "symbol": "isZenohAuthFailMessage"
+          "symbol": "isZenohAuthFailMessage",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/CustomTcpTransport.h",
-          "symbol": "ReadResult"
+          "symbol": "ReadResult",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/CustomTcpTransport.h",
-          "symbol": "readLoop"
+          "symbol": "readLoop",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/CustomTcpTransport.h",
-          "symbol": "setDecodeErrorHandler"
+          "symbol": "setDecodeErrorHandler",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "SCE::Mesh::Someip"
+          "symbol": "SCE::Mesh::Someip",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "availabilityChangeSafely"
+          "symbol": "availabilityChangeSafely",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "registerWire"
+          "symbol": "registerWire",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "setDecodeErrorHandler"
+          "symbol": "setDecodeErrorHandler",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
-          "symbol": "setDecodeErrorHandler"
+          "symbol": "setDecodeErrorHandler",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
-          "symbol": "start"
+          "symbol": "start",
+          "kind": "implements"
         }
       ]
     },
@@ -763,10 +871,11 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-16.8",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/transports/CustomTcpTransport.h",
-          "symbol": "parse_endpoint"
+          "symbol": "parse_endpoint",
+          "kind": "implements"
         }
       ]
     },
@@ -960,10 +1069,11 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-7",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "codec"
+          "symbol": "codec",
+          "kind": "implements"
         }
       ]
     },
@@ -989,14 +1099,16 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-8",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/PatternKind.h",
-          "symbol": "PatternKind"
+          "symbol": "PatternKind",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
-          "symbol": "dispatchEnvelope"
+          "symbol": "dispatchEnvelope",
+          "kind": "implements"
         }
       ]
     },
@@ -1046,57 +1158,70 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-9",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "invoke_id"
+          "symbol": "invoke_id",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/InvokeCorrelation.h",
-          "symbol": "cancelAllPendingForTarget"
+          "symbol": "cancelAllPendingForTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshDeadlineScheduler.h",
-          "symbol": "shutdown"
+          "symbol": "shutdown",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
-          "symbol": "dispatchEnvelope"
+          "symbol": "dispatchEnvelope",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/MeshUuidKey.h"
+          "file": "sce/include/mesh/MeshUuidKey.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/RetryingDispatcher.h",
-          "symbol": "cancelEnvelopeRetry"
+          "symbol": "cancelEnvelopeRetry",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/RetryingDispatcher.h",
-          "symbol": "onRetryFire"
+          "symbol": "onRetryFire",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "currentEventInvokeId_"
+          "symbol": "currentEventInvokeId_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "onMeshCancel_"
+          "symbol": "onMeshCancel_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "onMeshInvoke_"
+          "symbol": "onMeshInvoke_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setMeshCancelCallback"
+          "symbol": "setMeshCancelCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setMeshInvokeCallback"
+          "symbol": "setMeshInvokeCallback",
+          "kind": "implements"
         }
       ]
     },
@@ -1105,62 +1230,77 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-9",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
-          "file": "sce/include/mesh/ChildSessionAdapter.h"
+          "file": "sce/include/mesh/ChildSessionAdapter.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/CommunicationError.h",
-          "symbol": "invoke_id"
+          "symbol": "invoke_id",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/IChildSession.h"
+          "file": "sce/include/mesh/IChildSession.h",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/MeshDispatch.h"
+          "file": "sce/include/mesh/MeshDispatch.h",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/PatternKind.h"
+          "file": "sce/include/mesh/PatternKind.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ShmChannel.h",
-          "symbol": "drain"
+          "symbol": "drain",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "SCE::Mesh::Someip"
+          "symbol": "SCE::Mesh::Someip",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "ScxmlInvokeEndpoint"
+          "symbol": "ScxmlInvokeEndpoint",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "methodForPattern"
+          "symbol": "methodForPattern",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "send"
+          "symbol": "send",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
-          "symbol": "SCE::Mesh::Zenoh"
+          "symbol": "SCE::Mesh::Zenoh",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
-          "symbol": "ScxmlInvokeEndpoint"
+          "symbol": "ScxmlInvokeEndpoint",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
-          "symbol": "start"
+          "symbol": "start",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "performScxmlInvokeStart"
+          "symbol": "performScxmlInvokeStart",
+          "kind": "implements"
         },
         {
           "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
-          "symbol": "isValidPatternKind"
+          "symbol": "isValidPatternKind",
+          "kind": "implements"
         }
       ]
     },
@@ -1169,18 +1309,21 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-9.6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/IChildSession.h",
-          "symbol": "sessionId"
+          "symbol": "sessionId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/IChildSession.h",
-          "symbol": "tick"
+          "symbol": "tick",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshEnvelope.h",
-          "symbol": "child_session_id"
+          "symbol": "child_session_id",
+          "kind": "implements"
         }
       ]
     },
@@ -1189,89 +1332,110 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-9.6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/DoneDataHelper.h",
-          "symbol": "emitContentLiteral"
+          "symbol": "emitContentLiteral",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DoneDataHelper.h",
-          "symbol": "evaluateContent"
+          "symbol": "evaluateContent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
+          "symbol": "EventMetadataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
-          "symbol": "dispatchEnvelope"
+          "symbol": "dispatchEnvelope",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshEnvelope.h",
-          "symbol": "child_session_id"
+          "symbol": "child_session_id",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshEnvelopeCodec.h",
-          "symbol": "SCE::Mesh"
+          "symbol": "SCE::Mesh",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/PatternKind.h",
-          "symbol": "PatternKind"
+          "symbol": "PatternKind",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ShmChannel.h",
-          "symbol": "ShmChannel"
+          "symbol": "ShmChannel",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "SCE::Mesh::Someip"
+          "symbol": "SCE::Mesh::Someip",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "symbol": "send"
+          "symbol": "send",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "donedataAtFinal"
-        },
-        {
-          "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "onScxmlInvokeCancel_"
+          "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "onScxmlInvokeParentEvent_"
+          "symbol": "donedataAtFinal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "onScxmlInvokeStart_"
+          "symbol": "onScxmlInvokeCancel_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "pendingDonedataAtFinal_"
+          "symbol": "onScxmlInvokeParentEvent_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setScxmlInvokeCancelCallback"
+          "symbol": "onScxmlInvokeStart_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setScxmlInvokeParentEventCallback"
+          "symbol": "pendingDonedataAtFinal_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setScxmlInvokeStartCallback"
+          "symbol": "setScxmlInvokeCancelCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "stashDonedataAtFinal"
+          "symbol": "setScxmlInvokeParentEventCallback",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "setScxmlInvokeStartCallback",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "stashDonedataAtFinal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
-          "symbol": "isValidPatternKind"
+          "symbol": "isValidPatternKind",
+          "kind": "implements"
         }
       ]
     },
@@ -1280,21 +1444,25 @@
       "parent_doc": "GENERATED.md",
       "parent_section": "mesh-9.6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/mesh/IChildSession.h",
-          "symbol": "sessionId"
+          "symbol": "sessionId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
-          "symbol": "dispatchEnvelope"
+          "symbol": "dispatchEnvelope",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshEnvelope.h",
-          "symbol": "child_session_id"
+          "symbol": "child_session_id",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/static/StaticExecutionEngine.h"
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "kind": "implements"
         }
       ]
     },
@@ -1325,5 +1493,5 @@
   },
   "changelog_entries": {},
   "inventory_entries": {},
-  "schema_version": 4
+  "schema_version": 6
 }

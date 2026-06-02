@@ -96,102 +96,126 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "enterStateCallback_"
+          "symbol": "enterStateCallback_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "historyManager_"
+          "symbol": "historyManager_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "setEnterStateCallback"
+          "symbol": "setEnterStateCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "setHistoryManager"
+          "symbol": "setHistoryManager",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "handleHierarchicalTransition"
+          "symbol": "handleHierarchicalTransition",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterState"
+          "symbol": "StateHierarchyManager::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionDirect"
+          "symbol": "StateMachine::executeTransitionDirect",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions"
+          "symbol": "StateMachine::processStateTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupJSEnvironment"
+          "symbol": "StateMachine::setupJSEnvironment",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::computeExitSet"
+          "symbol": "TransitionDomainCalculator::computeExitSet",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::enterInitialState"
+          "symbol": "ConcurrentRegion::enterInitialState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/HistoryStateAutoRegistrar.cpp",
-          "symbol": "HistoryStateAutoRegistrar::extractHistoryStatesFromModel"
+          "symbol": "HistoryStateAutoRegistrar::extractHistoryStatesFromModel",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/HistoryValidator.cpp",
-          "symbol": "HistoryValidator::validateRegistrationWithDefault"
+          "symbol": "HistoryValidator::validateRegistrationWithDefault",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep"
+          "symbol": "StateMachine::executeTransitionMicrostep",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::exitState"
+          "symbol": "StateMachine::exitState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "filterShallowHistory"
+          "symbol": "filterShallowHistory",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "filterDeepHistory"
+          "symbol": "filterDeepHistory",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "getAncestorsToEnter"
+          "symbol": "getAncestorsToEnter",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChain"
+          "symbol": "buildEntryChain",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/HistoryManager.h",
-          "symbol": "HistoryManager"
+          "symbol": "HistoryManager",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/HistoryManager.cpp",
-          "symbol": "HistoryManager::recordHistory"
+          "symbol": "HistoryManager::recordHistory",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::initializeHistoryManager"
+          "symbol": "StateMachine::initializeHistoryManager",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "SCE::Core::HistoryHelper"
+          "symbol": "SCE::Core::HistoryHelper",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -227,22 +251,26 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "checkEventlessTransitions"
+          "symbol": "checkEventlessTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "getActiveStates"
+          "symbol": "getActiveStates",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "handleHierarchicalTransition"
+          "symbol": "handleHierarchicalTransition",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HistoryHelper.h",
-          "symbol": "SCE::Core::HistoryHelper"
+          "symbol": "SCE::Core::HistoryHelper",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -256,10 +284,11 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions"
+          "symbol": "StateMachine::processStateTransitions",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -273,22 +302,26 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3.12",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/TransitionHelper.h",
-          "symbol": "matchesAnyEventDescriptor"
+          "symbol": "matchesAnyEventDescriptor",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/TransitionHelper.h",
-          "symbol": "matchesEventDescriptor"
+          "symbol": "matchesEventDescriptor",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EventMatchingHelper.h",
-          "symbol": "matchesEventDescriptor"
+          "symbol": "matchesEventDescriptor",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::processEvent"
+          "symbol": "ConcurrentRegion::processEvent",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -324,364 +357,454 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
-          "symbol": "computeExitSet"
+          "symbol": "computeExitSet",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
-          "symbol": "hasActions"
+          "symbol": "hasActions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
-          "symbol": "isExternal"
+          "symbol": "isExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
-          "symbol": "isInternal"
+          "symbol": "isInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
-          "symbol": "removeConflictingTransitions"
+          "symbol": "removeConflictingTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "executeEntryBlocks"
+          "symbol": "executeEntryBlocks",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "executeExitBlocks"
+          "symbol": "executeExitBlocks",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EventProcessingAlgorithms.h",
-          "symbol": "checkEventlessTransitions"
+          "symbol": "checkEventlessTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EventProcessingAlgorithms.h",
-          "symbol": "processMacrostep"
+          "symbol": "processMacrostep",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "findLCA"
+          "symbol": "findLCA",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/core/ParallelExitEntryHelper.h"
+          "file": "sce/include/core/ParallelExitEntryHelper.h",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/core/ParallelStateHelper.h"
-        },
-        {
-          "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "computeExitSet"
-        },
-        {
-          "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "computeStatesToExit"
+          "file": "sce/include/core/ParallelStateHelper.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "hasConflict"
+          "symbol": "computeExitSet",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "isInternal"
+          "symbol": "computeStatesToExit",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "sortStatesForExit"
+          "symbol": "hasConflict",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "transitionIndex"
+          "symbol": "isInternal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "sortStatesForExit",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "transitionIndex",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "calculateAncestorPath"
+          "symbol": "calculateAncestorPath",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "optimizeEntryOrder"
+          "symbol": "optimizeEntryOrder",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/ImmediateModeGuard.h",
-          "symbol": "ImmediateModeGuard"
+          "symbol": "ImmediateModeGuard",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "initialTransitionCallback_"
+          "symbol": "initialTransitionCallback_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "setInitialTransitionCallback"
+          "symbol": "setInitialTransitionCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "StateMachine"
+          "symbol": "StateMachine",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "executeTransitionMicrostep"
+          "symbol": "executeTransitionMicrostep",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "TransitionDomainCalculator"
+          "symbol": "TransitionDomainCalculator",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "computeExitSet"
+          "symbol": "computeExitSet",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "getStateDocumentPosition"
+          "symbol": "getStateDocumentPosition",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "hasActions"
+          "symbol": "hasActions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "isExternal"
+          "symbol": "isExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "isInternal"
+          "symbol": "isInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "StaticExecutionEngine"
+          "symbol": "StaticExecutionEngine",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "checkEventlessTransitions"
+          "symbol": "checkEventlessTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeTransition"
+          "symbol": "executeTransition",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "handleHierarchicalTransition"
+          "symbol": "handleHierarchicalTransition",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::setImmediateMode"
+          "symbol": "ActionExecutorImpl::setImmediateMode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "setImmediateMode"
+          "symbol": "setImmediateMode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::getEventQueues"
+          "symbol": "EventRaiserImpl::getEventQueues",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::raiseEventWithPriority"
+          "symbol": "EventRaiserImpl::raiseEventWithPriority",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::raiseInternalEvent"
+          "symbol": "EventRaiserImpl::raiseInternalEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "executeEventCallback"
+          "symbol": "executeEventCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterState"
+          "symbol": "StateHierarchyManager::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::exitState"
+          "symbol": "StateHierarchyManager::exitState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "SCE"
+          "symbol": "SCE",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::checkEventlessTransitions"
+          "symbol": "StateMachine::checkEventlessTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeExitActions"
+          "symbol": "StateMachine::executeExitActions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionDirect"
+          "symbol": "StateMachine::executeTransitionDirect",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep"
+          "symbol": "StateMachine::executeTransitionMicrostep",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::exitState"
+          "symbol": "StateMachine::exitState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::initializeFromModel"
+          "symbol": "StateMachine::initializeFromModel",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent"
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions"
+          "symbol": "StateMachine::processStateTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupJSEnvironment"
+          "symbol": "StateMachine::setupJSEnvironment",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::start"
+          "symbol": "StateMachine::start",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::~StateMachine"
+          "symbol": "StateMachine::~StateMachine",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::computeExitSet"
+          "symbol": "TransitionDomainCalculator::computeExitSet",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::getStateDocumentPosition"
+          "symbol": "TransitionDomainCalculator::getStateDocumentPosition",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::deactivate"
+          "symbol": "ConcurrentRegion::deactivate",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::exitAllStates"
+          "symbol": "ConcurrentRegion::exitAllStates",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::processEvent"
+          "symbol": "ConcurrentRegion::processEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::setCurrentState"
+          "symbol": "ConcurrentRegion::setCurrentState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::deactivateAllRegions"
+          "symbol": "ConcurrentStateNode::deactivateAllRegions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::exitParallelState"
+          "symbol": "ConcurrentStateNode::exitParallelState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/StateExitExecutor.cpp",
-          "symbol": "StateExitExecutor::executeActionNodes"
+          "symbol": "StateExitExecutor::executeActionNodes",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EventProcessingAlgorithms.h",
-          "symbol": "processInternalEventQueue"
+          "symbol": "processInternalEventQueue",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EventQueueConcept.h",
-          "symbol": "SCE::Core"
+          "symbol": "SCE::Core",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EventQueueManager.h",
-          "symbol": "SCE::Core"
+          "symbol": "SCE::Core",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EventQueueManager.h",
-          "symbol": "queue_"
+          "symbol": "queue_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "HierarchicalAlgorithms"
+          "symbol": "HierarchicalAlgorithms",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChainFromParent"
+          "symbol": "buildEntryChainFromParent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildExitChain"
+          "symbol": "buildExitChain",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ShmChannel.h",
-          "symbol": "ShmChannel"
+          "symbol": "ShmChannel",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "findLCA"
+          "symbol": "findLCA",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "getProperAncestors"
+          "symbol": "getProperAncestors",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/TransitionDomainCalculator.h",
-          "symbol": "isDescendant"
+          "symbol": "isDescendant",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEvent"
+          "symbol": "processEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventImpl"
+          "symbol": "processEventImpl",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
-          "symbol": "TransitionDomainCalculator::findLCA"
+          "symbol": "TransitionDomainCalculator::findLCA",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ConflictResolutionHelper.h",
-          "symbol": "isTargetless"
+          "symbol": "isTargetless",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
-          "symbol": "isTargetless"
+          "symbol": "isTargetless",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::hasQueuedInternalEvents"
+          "symbol": "EventRaiserImpl::hasQueuedInternalEvents",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "hasQueuedInternalEvents"
+          "symbol": "hasQueuedInternalEvents",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "raiseInternalEvent"
+          "symbol": "raiseInternalEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "internalQueue_"
+          "symbol": "internalQueue_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "externalQueue_"
+          "symbol": "externalQueue_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raise"
+          "symbol": "raise",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues"
+          "symbol": "processEventQueues",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize"
+          "symbol": "initialize",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -706,30 +829,36 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/parsing/DoneDataParser.h",
-          "symbol": "datamodelType_"
+          "symbol": "datamodelType_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/SemanticError.h",
-          "symbol": "SemanticNoStates"
+          "symbol": "SemanticNoStates",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize"
+          "symbol": "initialize",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::initializeFromModel"
+          "symbol": "StateMachine::initializeFromModel",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::start"
+          "symbol": "StateMachine::start",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/ParsingCommon.cpp",
-          "symbol": "ParsingCommon::isScxmlNamespace"
+          "symbol": "ParsingCommon::isScxmlNamespace",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -765,125 +894,155 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChain"
+          "symbol": "buildEntryChain",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/core/ParallelExitEntryHelper.h"
-        },
-        {
-          "file": "sce/include/model/SCXMLModel.h",
-          "symbol": "getInitialState"
-        },
-        {
-          "file": "sce/include/model/SCXMLModel.h",
-          "symbol": "getInitialStates"
+          "file": "sce/include/core/ParallelExitEntryHelper.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/SCXMLModel.h",
-          "symbol": "initialStates_"
+          "symbol": "getInitialState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/SCXMLModel.h",
-          "symbol": "setInitialState"
+          "symbol": "getInitialStates",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/model/SCXMLModel.h",
+          "symbol": "initialStates_",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/model/SCXMLModel.h",
+          "symbol": "setInitialState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "enterStateWithAncestors"
+          "symbol": "enterStateWithAncestors",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "updateParallelRegionCurrentStates"
+          "symbol": "updateParallelRegionCurrentStates",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "StateMachine"
+          "symbol": "StateMachine",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "isEnteringInitialConfiguration_"
+          "symbol": "isEnteringInitialConfiguration_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "setupAndActivateParallelState"
+          "symbol": "setupAndActivateParallelState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "desiredInitialChild_"
+          "symbol": "desiredInitialChild_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setCurrentState"
+          "symbol": "setCurrentState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setDesiredInitialChild"
+          "symbol": "setDesiredInitialChild",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/IConcurrentRegion.h",
-          "symbol": "setCurrentState"
+          "symbol": "setCurrentState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/IConcurrentRegion.h",
-          "symbol": "setDesiredInitialChild"
+          "symbol": "setDesiredInitialChild",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize"
+          "symbol": "initialize",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "isInFinalState"
+          "symbol": "isInFinalState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/model/SCXMLModel.cpp",
-          "symbol": "SCE::SCXMLModel::setInitialState"
+          "symbol": "SCE::SCXMLModel::setInitialState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/model/SCXMLModel.cpp",
-          "symbol": "SCE::SCXMLModel::validateStateRelationships"
+          "symbol": "SCE::SCXMLModel::validateStateRelationships",
+          "kind": "implements"
         },
         {
           "file": "sce/src/model/StateHierarchy.cpp",
-          "symbol": "SCE::StateHierarchy::validateRelationships"
+          "symbol": "SCE::StateHierarchy::validateRelationships",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::validateModel"
+          "symbol": "SCE::SCXMLParser::validateModel",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/StateNodeParser.cpp",
-          "symbol": "SCE::StateNodeParser::parseInitialElement"
+          "symbol": "SCE::StateNodeParser::parseInitialElement",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterState"
+          "symbol": "StateHierarchyManager::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterStateWithAncestors"
+          "symbol": "StateHierarchyManager::enterStateWithAncestors",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::updateParallelRegionCurrentStates"
+          "symbol": "StateHierarchyManager::updateParallelRegionCurrentStates",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::start"
+          "symbol": "StateMachine::start",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::enterInitialState"
+          "symbol": "ConcurrentRegion::enterInitialState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::setCurrentState"
+          "symbol": "ConcurrentRegion::setCurrentState",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -919,120 +1078,149 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "addParallelRegions"
+          "symbol": "addParallelRegions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
-          "symbol": "buildEntryChain"
+          "symbol": "buildEntryChain",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ParallelCompletionHelper.h",
-          "symbol": "ParallelCompletionHelper"
+          "symbol": "ParallelCompletionHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ParallelCompletionHelper.h",
-          "symbol": "areAllRegionsInFinal"
+          "symbol": "areAllRegionsInFinal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ParallelConfigurationHelper.h",
-          "symbol": "ParallelConfigurationHelper"
+          "symbol": "ParallelConfigurationHelper",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/core/ParallelExitEntryHelper.h"
+          "file": "sce/include/core/ParallelExitEntryHelper.h",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/core/ParallelStateHelper.h"
+          "file": "sce/include/core/ParallelStateHelper.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "generateDoneStateEvent"
+          "symbol": "generateDoneStateEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "setupAndActivateParallelState"
+          "symbol": "setupAndActivateParallelState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "doneStateCallback_"
+          "symbol": "doneStateCallback_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setDoneStateCallback"
+          "symbol": "setDoneStateCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "generateDoneStateEventIfComplete"
+          "symbol": "generateDoneStateEventIfComplete",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "hasNotifiedCompletion"
+          "symbol": "hasNotifiedCompletion",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateTypes.h",
-          "symbol": "externalTransitionTarget"
+          "symbol": "externalTransitionTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/IConcurrentRegion.h",
-          "symbol": "setDoneStateCallback"
+          "symbol": "setDoneStateCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "checkEventlessTransitions"
+          "symbol": "checkEventlessTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "getActiveStates"
+          "symbol": "getActiveStates",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterStateWithAncestors"
+          "symbol": "StateHierarchyManager::enterStateWithAncestors",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::checkEventlessTransitions"
+          "symbol": "StateMachine::checkEventlessTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::isInFinalState"
+          "symbol": "StateMachine::isInFinalState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent"
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupAndActivateParallelState"
+          "symbol": "StateMachine::setupAndActivateParallelState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupParallelStateCallbacks"
+          "symbol": "StateMachine::setupParallelStateCallbacks",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::determineIfInFinalState"
+          "symbol": "ConcurrentRegion::determineIfInFinalState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::setCurrentState"
+          "symbol": "ConcurrentRegion::setCurrentState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::generateDoneStateEventIfComplete"
+          "symbol": "ConcurrentStateNode::generateDoneStateEventIfComplete",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::processEventInAllRegions"
+          "symbol": "ConcurrentStateNode::processEventInAllRegions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ExternalTransitionHandler.cpp",
-          "symbol": "ExternalTransitionHandler::registerParallelState"
+          "symbol": "ExternalTransitionHandler::registerParallelState",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1068,10 +1256,11 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::validateModel"
+          "symbol": "SCE::SCXMLParser::validateModel",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1107,14 +1296,16 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "StateEntryHelper"
+          "symbol": "StateEntryHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "enterDeepTargets"
+          "symbol": "enterDeepTargets",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1150,53 +1341,65 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
-          "file": "sce/include/mesh/ParallelCompletionTracker.h"
+          "file": "sce/include/mesh/ParallelCompletionTracker.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "handleCompoundStateFinalChild"
+          "symbol": "handleCompoundStateFinalChild",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "generateDoneStateEventIfComplete"
+          "symbol": "generateDoneStateEventIfComplete",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "hasNotifiedCompletion"
+          "symbol": "hasNotifiedCompletion",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "isGlobalFinalState"
+          "symbol": "isGlobalFinalState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::checkEventlessTransitions"
+          "symbol": "StateMachine::checkEventlessTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::handleCompoundStateFinalChild"
+          "symbol": "StateMachine::handleCompoundStateFinalChild",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::generateDoneStateEventIfComplete"
+          "symbol": "ConcurrentStateNode::generateDoneStateEventIfComplete",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::isInFinalState"
+          "symbol": "StateMachine::isInFinalState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues"
+          "symbol": "processEventQueues",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1210,10 +1413,11 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3.7",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/ParallelCompletionHelper.h",
-          "symbol": "ParallelCompletionHelper"
+          "symbol": "ParallelCompletionHelper",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1238,86 +1442,106 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "SCE::Core"
+          "symbol": "SCE::Core",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "executeEntryBlocks"
+          "symbol": "executeEntryBlocks",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "executeExitBlocks"
+          "symbol": "executeExitBlocks",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/StateEntryHelper.h",
-          "symbol": "enterDeepTargets"
+          "symbol": "enterDeepTargets",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/IStateNode.h",
-          "symbol": "addEntryActionBlock"
+          "symbol": "addEntryActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/StateNode.h",
-          "symbol": "addEntryActionBlock"
+          "symbol": "addEntryActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/StateNode.h",
-          "symbol": "entryActionBlocks_"
+          "symbol": "entryActionBlocks_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/StateNode.h",
-          "symbol": "getEntryActionBlocks"
+          "symbol": "getEntryActionBlocks",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/StateNodeParser.h",
-          "symbol": "parseEntryExitActionNodes"
+          "symbol": "parseEntryExitActionNodes",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/StateNodeParser.h",
-          "symbol": "parseExecutableContentBlock"
+          "symbol": "parseExecutableContentBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "addEntryActionBlock"
+          "symbol": "addEntryActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "entryActionBlocks_"
+          "symbol": "entryActionBlocks_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/model/StateNode.cpp",
-          "symbol": "SCE::StateNode::addEntryActionBlock"
+          "symbol": "SCE::StateNode::addEntryActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/StateNodeParser.cpp",
-          "symbol": "SCE::StateNodeParser::parseEntryExitActionNodes"
+          "symbol": "SCE::StateNodeParser::parseEntryExitActionNodes",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeEntryActions"
+          "symbol": "StateMachine::executeEntryActions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeOnEntryActions"
+          "symbol": "StateMachine::executeOnEntryActions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupAndActivateParallelState"
+          "symbol": "StateMachine::setupAndActivateParallelState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::enterInitialState"
+          "symbol": "ConcurrentRegion::enterInitialState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::addEntryActionBlock"
+          "symbol": "ConcurrentStateNode::addEntryActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeOnEntry"
+          "symbol": "executeOnEntry",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1353,78 +1577,96 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "SCE::Core"
+          "symbol": "SCE::Core",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "executeEntryBlocks"
+          "symbol": "executeEntryBlocks",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EntryExitHelper.h",
-          "symbol": "executeExitBlocks"
+          "symbol": "executeExitBlocks",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/IStateNode.h",
-          "symbol": "addEntryActionBlock"
+          "symbol": "addEntryActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/StateNode.h",
-          "symbol": "addExitActionBlock"
+          "symbol": "addExitActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/StateNode.h",
-          "symbol": "entryActionBlocks_"
+          "symbol": "entryActionBlocks_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/StateNode.h",
-          "symbol": "getExitActionBlocks"
+          "symbol": "getExitActionBlocks",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/StateNodeParser.h",
-          "symbol": "parseEntryExitActionNodes"
+          "symbol": "parseEntryExitActionNodes",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/StateNodeParser.h",
-          "symbol": "parseExecutableContentBlock"
+          "symbol": "parseExecutableContentBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "addEntryActionBlock"
+          "symbol": "addEntryActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentStateNode.h",
-          "symbol": "entryActionBlocks_"
+          "symbol": "entryActionBlocks_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/model/StateNode.cpp",
-          "symbol": "SCE::StateNode::addEntryActionBlock"
+          "symbol": "SCE::StateNode::addEntryActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/StateNodeParser.cpp",
-          "symbol": "SCE::StateNodeParser::parseEntryExitActionNodes"
+          "symbol": "SCE::StateNodeParser::parseEntryExitActionNodes",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeExitActions"
+          "symbol": "StateMachine::executeExitActions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
-          "symbol": "ConcurrentStateNode::addEntryActionBlock"
+          "symbol": "ConcurrentStateNode::addEntryActionBlock",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/StateExitExecutor.cpp",
-          "symbol": "StateExitExecutor::executeActionNodes"
+          "symbol": "StateExitExecutor::executeActionNodes",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "executeOnExit"
+          "symbol": "executeOnExit",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize"
+          "symbol": "initialize",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1608,62 +1850,76 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-4",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/ForeachValidator.h",
-          "symbol": "validateForeachAttributes"
+          "symbol": "validateForeachAttributes",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ForeachHelper.h",
-          "symbol": "ForeachHelper"
+          "symbol": "ForeachHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ForeachHelper.h",
-          "symbol": "evaluateForeachArray"
+          "symbol": "evaluateForeachArray",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ForeachHelper.h",
-          "symbol": "executeForeachWithActions"
+          "symbol": "executeForeachWithActions",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ForeachHelper.h",
-          "symbol": "executeForeachWithoutBody"
+          "symbol": "executeForeachWithoutBody",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ForeachHelper.h",
-          "symbol": "isLegalVariableName"
+          "symbol": "isLegalVariableName",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
-          "symbol": "hasVariable"
+          "symbol": "hasVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/ScriptResultUtils.h",
-          "symbol": "ScriptResultUtils"
+          "symbol": "ScriptResultUtils",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::executeForeachAction"
+          "symbol": "ActionExecutorImpl::executeForeachAction",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-          "symbol": "EcmaScriptToLuaTransformer::transformArrayLiterals"
+          "symbol": "EcmaScriptToLuaTransformer::transformArrayLiterals",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::hasVariable"
+          "symbol": "JSEngine::hasVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::luaToScriptValue"
+          "symbol": "LuaEngine::luaToScriptValue",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::pushScriptValue"
+          "symbol": "LuaEngine::pushScriptValue",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::registerBuiltins"
+          "symbol": "LuaEngine::registerBuiltins",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1792,298 +2048,371 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/SCXMLTypes.h",
-          "symbol": "setTypedData"
+          "symbol": "setTypedData",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignmentExecutionHelper.h",
-          "symbol": "AssignmentExecutionHelper"
+          "symbol": "AssignmentExecutionHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignmentExecutionHelper.h",
-          "symbol": "executeAssignment"
+          "symbol": "executeAssignment",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignmentExecutionHelper.h",
-          "symbol": "isSystemVariableReference"
+          "symbol": "isSystemVariableReference",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DoneDataHelper.h",
-          "symbol": "evaluateContent"
+          "symbol": "evaluateContent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventDataHelper.h",
-          "symbol": "buildJsonFromParams"
+          "symbol": "buildJsonFromParams",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventDataHelper.h",
-          "symbol": "buildJsonFromTypedParams"
+          "symbol": "buildJsonFromTypedParams",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
+          "symbol": "EventMetadataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "clearPolicyMetadata"
+          "symbol": "clearPolicyMetadata",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "populatePolicyFromMetadata"
+          "symbol": "populatePolicyFromMetadata",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/FinalizeHelper.h",
-          "symbol": "executeFinalizeWithEvent"
+          "symbol": "executeFinalizeWithEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/LogicalTimeScheduler.h",
-          "symbol": "eventData"
+          "symbol": "eventData",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "isInvalidTarget"
+          "symbol": "isInvalidTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin"
+          "symbol": "sendToParentWithOrigin",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EventMetadata.h",
-          "symbol": "EventMetadata"
+          "symbol": "EventMetadata",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/InternalEventTarget.h",
-          "symbol": "InternalEventTarget"
+          "symbol": "InternalEventTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/InternalEventTarget.h",
-          "symbol": "sessionId_"
+          "symbol": "sessionId_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",
-          "symbol": "dispatchEnvelope"
+          "symbol": "dispatchEnvelope",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/PayloadCodec.h",
-          "symbol": "PayloadCodec"
+          "symbol": "PayloadCodec",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "raiseEvent"
+          "symbol": "raiseEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "raiseExternalEvent"
+          "symbol": "raiseExternalEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
-          "symbol": "SetCurrentEventArgs"
+          "symbol": "SetCurrentEventArgs",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
-          "symbol": "setCurrentEvent"
+          "symbol": "setCurrentEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
-          "symbol": "getInvokeIdForChildSession"
+          "symbol": "getInvokeIdForChildSession",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/JSEngine.h",
-          "symbol": "eventObjectInitialized"
+          "symbol": "eventObjectInitialized",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/JSEngine.h",
-          "symbol": "setCurrentEvent"
+          "symbol": "setCurrentEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "StaticExecutionEngine"
+          "symbol": "StaticExecutionEngine",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEvent"
+          "symbol": "processEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/EventDataHelper.cpp",
-          "symbol": "EventDataHelper::buildJsonFromParams"
+          "symbol": "EventDataHelper::buildJsonFromParams",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventTargetFactoryImpl.cpp",
-          "symbol": "EventTargetFactoryImpl::createExternalTarget"
+          "symbol": "EventTargetFactoryImpl::createExternalTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventTargetFactoryImpl.cpp",
-          "symbol": "EventTargetFactoryImpl::createInternalTarget"
+          "symbol": "EventTargetFactoryImpl::createInternalTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/HttpEventTarget.cpp",
-          "symbol": "HttpEventTarget::send"
+          "symbol": "HttpEventTarget::send",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/InternalEventTarget.cpp",
-          "symbol": "InternalEventTarget::buildEventData"
+          "symbol": "InternalEventTarget::buildEventData",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/InternalEventTarget.cpp",
-          "symbol": "InternalEventTarget::send"
+          "symbol": "InternalEventTarget::send",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/InvokeEventTarget.cpp",
-          "symbol": "InvokeEventTarget::send"
+          "symbol": "InvokeEventTarget::send",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/ParentEventTarget.cpp",
-          "symbol": "ParentEventTarget::sendImmediately"
+          "symbol": "ParentEventTarget::sendImmediately",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/ActionParser.cpp",
-          "symbol": "SCE::ActionParser::parseActionNode"
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::addSystemVariables"
+          "symbol": "SCE::SCXMLParser::addSystemVariables",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::assignVariable"
+          "symbol": "ActionExecutorImpl::assignVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::ensureCurrentEventSet"
+          "symbol": "ActionExecutorImpl::ensureCurrentEventSet",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::executeSendAction"
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::setCurrentEvent"
+          "symbol": "ActionExecutorImpl::setCurrentEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "currentTypedData_"
+          "symbol": "currentTypedData_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "getCurrentEvent"
+          "symbol": "getCurrentEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::executeEventCallback"
+          "symbol": "EventRaiserImpl::executeEventCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::processEvent"
+          "symbol": "EventRaiserImpl::processEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::raiseEvent"
+          "symbol": "EventRaiserImpl::raiseEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::raiseEventWithPriority"
+          "symbol": "EventRaiserImpl::raiseEventWithPriority",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::raiseExternalEvent"
+          "symbol": "EventRaiserImpl::raiseExternalEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "SCE"
+          "symbol": "SCE",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "EventRaiserImpl"
+          "symbol": "EventRaiserImpl",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "currentEventContext_"
+          "symbol": "currentEventContext_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "eventType"
+          "symbol": "eventType",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "getCurrentEventContext"
+          "symbol": "getCurrentEventContext",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "invokeId"
+          "symbol": "invokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "originType"
+          "symbol": "originType",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "sendId"
+          "symbol": "sendId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::executeInvoke"
+          "symbol": "InvokeExecutor::executeInvoke",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "EventContextGuard"
+          "symbol": "EventContextGuard",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executeTransitionMicrostep"
+          "symbol": "StateMachine::executeTransitionMicrostep",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent"
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions"
+          "symbol": "StateMachine::processStateTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupJSEnvironment"
+          "symbol": "StateMachine::setupJSEnvironment",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::setupSCXMLBuiltins"
+          "symbol": "JSEngine::setupSCXMLBuiltins",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngineImpl.cpp",
-          "symbol": "JSEngine::setCurrentEventInternal"
+          "symbol": "JSEngine::setCurrentEventInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngineImpl.cpp",
-          "symbol": "JSEngine::setVariableInternal"
+          "symbol": "JSEngine::setVariableInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngineImpl.cpp",
-          "symbol": "JSEngine::setupSystemVariablesInternal"
+          "symbol": "JSEngine::setupSystemVariablesInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::setCurrentEvent"
+          "symbol": "LuaEngine::setCurrentEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/SessionRegistry.cpp",
-          "symbol": "SessionRegistry::getInvokeIdForChildSession"
+          "symbol": "SessionRegistry::getInvokeIdForChildSession",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "originSessionId"
+          "symbol": "originSessionId",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2097,125 +2426,155 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5.10",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
+          "symbol": "EventMetadataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "clearPolicyMetadata"
+          "symbol": "clearPolicyMetadata",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "populatePolicyFromMetadata"
+          "symbol": "populatePolicyFromMetadata",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "setEventMetadata"
+          "symbol": "setEventMetadata",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventTypeHelper.h",
-          "symbol": "EventTypeHelper"
+          "symbol": "EventTypeHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventTypeHelper.h",
-          "symbol": "classifyEventType"
+          "symbol": "classifyEventType",
+          "kind": "implements"
         },
         {
-          "file": "sce/include/mesh/MeshDispatch.h"
+          "file": "sce/include/mesh/MeshDispatch.h",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
-          "symbol": "SetCurrentEventArgs"
+          "symbol": "SetCurrentEventArgs",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "currentEventInvokeId"
+          "symbol": "currentEventInvokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "invokeId"
+          "symbol": "invokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "origin"
+          "symbol": "origin",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "originType"
+          "symbol": "originType",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raise"
+          "symbol": "raise",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "sendId"
+          "symbol": "sendId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "type"
+          "symbol": "type",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::setCurrentEvent"
+          "symbol": "ActionExecutorImpl::setCurrentEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "currentEventType_"
+          "symbol": "currentEventType_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "currentInvokeId_"
+          "symbol": "currentInvokeId_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "currentOriginSessionId_"
+          "symbol": "currentOriginSessionId_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "currentOriginType_"
+          "symbol": "currentOriginType_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.h",
-          "symbol": "currentSendId_"
+          "symbol": "currentSendId_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::getEventQueues"
+          "symbol": "EventRaiserImpl::getEventQueues",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::raiseEvent"
+          "symbol": "EventRaiserImpl::raiseEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "invokeId"
+          "symbol": "invokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "origin"
+          "symbol": "origin",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "originType"
+          "symbol": "originType",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "sendId"
+          "symbol": "sendId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::setCurrentEvent"
+          "symbol": "JSEngine::setCurrentEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "createDoneInvokeEvent"
+          "symbol": "createDoneInvokeEvent",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2229,14 +2588,16 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::initializeVariableFromExpr"
+          "symbol": "SCE::DataModelInitHelper::initializeVariableFromExpr",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/DataModelInitializer.cpp",
-          "symbol": "DataModelInitializer::initializeDataItem"
+          "symbol": "DataModelInitializer::initializeDataItem",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2261,38 +2622,46 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5.2",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/DataModelInitHelper.h",
-          "symbol": "initializeVariable"
+          "symbol": "initializeVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DataModelInitHelper.h",
-          "symbol": "initializeVariableFromExpr"
+          "symbol": "initializeVariableFromExpr",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DataModelInitHelper.h",
-          "symbol": "initializeVariableFromSrc"
+          "symbol": "initializeVariableFromSrc",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/FileLoadingHelper.h",
-          "symbol": "loadFileContent"
+          "symbol": "loadFileContent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/FileLoadingHelper.h",
-          "symbol": "normalizePath"
+          "symbol": "normalizePath",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::initializeVariable"
+          "symbol": "SCE::DataModelInitHelper::initializeVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::initializeVariableFromSrc"
+          "symbol": "SCE::DataModelInitHelper::initializeVariableFromSrc",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/DataModelParser.cpp",
-          "symbol": "SCE::DataModelParser::loadExternalContent"
+          "symbol": "SCE::DataModelParser::loadExternalContent",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2306,110 +2675,136 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/AssignHelper.h",
-          "symbol": "AssignHelper"
+          "symbol": "AssignHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignHelper.h",
-          "symbol": "getInvalidLocationErrorMessage"
+          "symbol": "getInvalidLocationErrorMessage",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignHelper.h",
-          "symbol": "isValidLocation"
+          "symbol": "isValidLocation",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignmentExecutionHelper.h",
-          "symbol": "AssignmentExecutionHelper"
+          "symbol": "AssignmentExecutionHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignmentExecutionHelper.h",
-          "symbol": "executeAssignment"
+          "symbol": "executeAssignment",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DataModelInitHelper.h",
-          "symbol": "initializeVariable"
+          "symbol": "initializeVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/BindingHelper.h",
-          "symbol": "BindingHelper"
+          "symbol": "BindingHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/BindingHelper.h",
-          "symbol": "getDefaultBinding"
+          "symbol": "getDefaultBinding",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/BindingHelper.h",
-          "symbol": "isEarlyBinding"
+          "symbol": "isEarlyBinding",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/BindingHelper.h",
-          "symbol": "isLateBinding"
+          "symbol": "isLateBinding",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/BindingHelper.h",
-          "symbol": "shouldAssignValueAtDocumentLoad"
+          "symbol": "shouldAssignValueAtDocumentLoad",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/BindingHelper.h",
-          "symbol": "shouldAssignValueOnStateEntry"
+          "symbol": "shouldAssignValueOnStateEntry",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/DataModelInitializer.h",
-          "symbol": "DataModelInitializer"
+          "symbol": "DataModelInitializer",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/DataModelInitializer.h",
-          "symbol": "initializeAllDataItems"
+          "symbol": "initializeAllDataItems",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/DataModelInitializer.h",
-          "symbol": "initializeDataItem"
+          "symbol": "initializeDataItem",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/DataModelInitializer.h",
-          "symbol": "initializeStateDataOnEntry"
+          "symbol": "initializeStateDataOnEntry",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/DataModelInitializer.h",
-          "symbol": "initializedStates_"
+          "symbol": "initializedStates_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "StateMachine"
+          "symbol": "StateMachine",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize"
+          "symbol": "initialize",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::initializeVariableFromExpr"
+          "symbol": "SCE::DataModelInitHelper::initializeVariableFromExpr",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::assignVariable"
+          "symbol": "ActionExecutorImpl::assignVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/DataModelInitializer.cpp",
-          "symbol": "DataModelInitializer::initializeAllDataItems"
+          "symbol": "DataModelInitializer::initializeAllDataItems",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/DataModelInitializer.cpp",
-          "symbol": "DataModelInitializer::initializeDataItem"
+          "symbol": "DataModelInitializer::initializeDataItem",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupJSEnvironment"
+          "symbol": "StateMachine::setupJSEnvironment",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-          "symbol": "EcmaScriptToLuaTransformer::transformFunctionSyntax"
+          "symbol": "EcmaScriptToLuaTransformer::transformFunctionSyntax",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2456,26 +2851,31 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/AssignHelper.h",
-          "symbol": "AssignHelper"
+          "symbol": "AssignHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignHelper.h",
-          "symbol": "getInvalidLocationErrorMessage"
+          "symbol": "getInvalidLocationErrorMessage",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignHelper.h",
-          "symbol": "isValidLocation"
+          "symbol": "isValidLocation",
+          "kind": "implements"
         },
         {
           "file": "sce/src/actions/AssignAction.cpp",
-          "symbol": "AssignAction::execute"
+          "symbol": "AssignAction::execute",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::assignVariable"
+          "symbol": "ActionExecutorImpl::assignVariable",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2511,126 +2911,156 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/DoneDataHelper.h",
-          "symbol": "DoneDataHelper"
+          "symbol": "DoneDataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DoneDataHelper.h",
-          "symbol": "emitContentLiteral"
+          "symbol": "emitContentLiteral",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DoneDataHelper.h",
-          "symbol": "evaluateContent"
+          "symbol": "evaluateContent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DoneDataHelper.h",
-          "symbol": "evaluateParams"
+          "symbol": "evaluateParams",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
+          "symbol": "EventMetadataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "clearPolicyMetadata"
+          "symbol": "clearPolicyMetadata",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "createDoneInvokeEvent"
+          "symbol": "createDoneInvokeEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ChildSessionAdapter.h",
-          "symbol": "getDonedata"
+          "symbol": "getDonedata",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/DoneData.h",
-          "symbol": "DoneData"
+          "symbol": "DoneData",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/DoneData.h",
-          "symbol": "setContentExpression"
+          "symbol": "setContentExpression",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/DoneData.h",
-          "symbol": "setContentLiteral"
+          "symbol": "setContentLiteral",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/IStateNode.h",
-          "symbol": "setDoneDataContentExpression"
+          "symbol": "setDoneDataContentExpression",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/IStateNode.h",
-          "symbol": "setDoneDataContentLiteral"
+          "symbol": "setDoneDataContentLiteral",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/DoneDataParser.h",
-          "symbol": "setDatamodelType"
+          "symbol": "setDatamodelType",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "StateMachine"
+          "symbol": "StateMachine",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "donedataAtFinal"
+          "symbol": "donedataAtFinal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "pendingDonedataAtFinal_"
+          "symbol": "pendingDonedataAtFinal_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "typedDonedataAtFinal"
+          "symbol": "typedDonedataAtFinal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "donedataAtFinal"
+          "symbol": "donedataAtFinal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "pendingDonedataAtFinal_"
+          "symbol": "pendingDonedataAtFinal_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "stashDonedataAtFinal"
+          "symbol": "stashDonedataAtFinal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "typedData"
+          "symbol": "typedData",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "typedDonedataAtFinal"
+          "symbol": "typedDonedataAtFinal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/DoneDataParser.cpp",
-          "symbol": "SCE::DoneDataParser::parseContent"
+          "symbol": "SCE::DoneDataParser::parseContent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseScxmlNode"
+          "symbol": "SCE::SCXMLParser::parseScxmlNode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "SCE"
+          "symbol": "SCE",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::evaluateDoneData"
+          "symbol": "StateMachine::evaluateDoneData",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::handleCompoundStateFinalChild"
+          "symbol": "StateMachine::handleCompoundStateFinalChild",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2699,14 +3129,16 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/DoneDataHelper.h",
-          "symbol": "DoneDataHelper"
+          "symbol": "DoneDataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DoneDataHelper.h",
-          "symbol": "evaluateParams"
+          "symbol": "evaluateParams",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2742,54 +3174,66 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/FileLoadingHelper.h",
-          "symbol": "loadExternalScript"
+          "symbol": "loadExternalScript",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/SCXMLModel.h",
-          "symbol": "addTopLevelScript"
+          "symbol": "addTopLevelScript",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/SCXMLModel.h",
-          "symbol": "getTopLevelScripts"
+          "symbol": "getTopLevelScripts",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/SCXMLModel.h",
-          "symbol": "topLevelScripts_"
+          "symbol": "topLevelScripts_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/ActionParser.h",
-          "symbol": "scxmlBasePath_"
+          "symbol": "scxmlBasePath_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/ActionParser.h",
-          "symbol": "setScxmlBasePath"
+          "symbol": "setScxmlBasePath",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/SemanticError.h",
-          "symbol": "SCE::parsing"
+          "symbol": "SCE::parsing",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/SemanticError.h",
-          "symbol": "SemanticTopLevelScriptUnloaded"
+          "symbol": "SemanticTopLevelScriptUnloaded",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/ActionParser.cpp",
-          "symbol": "SCE::ActionParser::parseActionNode"
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseFile"
+          "symbol": "SCE::SCXMLParser::parseFile",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
-          "symbol": "SCE::SCXMLParser::parseScxmlNode"
+          "symbol": "SCE::SCXMLParser::parseScxmlNode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupJSEnvironment"
+          "symbol": "StateMachine::setupJSEnvironment",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2825,34 +3269,41 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
+          "symbol": "EventMetadataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/GuardHelper.h",
-          "symbol": "evaluateGuard"
+          "symbol": "evaluateGuard",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::assignVariable"
+          "symbol": "ActionExecutorImpl::assignVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::evaluateCondition"
+          "symbol": "ActionExecutorImpl::evaluateCondition",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::executeLogAction"
+          "symbol": "ActionExecutorImpl::executeLogAction",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::evaluateCondition"
+          "symbol": "StateMachine::evaluateCondition",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::evaluateExpressionInternal"
+          "symbol": "LuaEngine::evaluateExpressionInternal",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2866,34 +3317,41 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
+          "symbol": "EventMetadataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/InPredicateHelper.h",
-          "symbol": "SCE::InPredicateHelper"
+          "symbol": "SCE::InPredicateHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/InPredicateHelper.h",
-          "symbol": "isStateActive"
+          "symbol": "isStateActive",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
-          "symbol": "IScriptEngine"
+          "symbol": "IScriptEngine",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupJSEnvironment"
+          "symbol": "StateMachine::setupJSEnvironment",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::checkStateActive"
+          "symbol": "JSEngine::checkStateActive",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::registerBuiltins"
+          "symbol": "LuaEngine::registerBuiltins",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2956,230 +3414,286 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/actions/SendAction.h",
-          "symbol": "setTypeExpr"
+          "symbol": "setTypeExpr",
+          "kind": "implements"
         },
         {
           "file": "sce/include/actions/SendAction.h",
-          "symbol": "typeExpr_"
+          "symbol": "typeExpr_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
+          "symbol": "EventMetadataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/LogicalTimeScheduler.h",
-          "symbol": "SCE::Common"
+          "symbol": "SCE::Common",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/NamelistHelper.h",
-          "symbol": "NamelistHelper"
+          "symbol": "NamelistHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/NamelistHelper.h",
-          "symbol": "evaluateNamelist"
+          "symbol": "evaluateNamelist",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "SendHelper"
+          "symbol": "SendHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "generateSendId"
+          "symbol": "generateSendId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "isInvalidTarget"
+          "symbol": "isInvalidTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "isSupportedSendType"
+          "symbol": "isSupportedSendType",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParent"
+          "symbol": "sendToParent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin"
+          "symbol": "sendToParentWithOrigin",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "validateTarget"
+          "symbol": "validateTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendSchedulingHelper.h",
-          "symbol": "parseDelayString"
+          "symbol": "parseDelayString",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendSchedulingHelper.h",
-          "symbol": "schedule"
+          "symbol": "schedule",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/IEventDispatcher.h",
-          "symbol": "ScheduledEventInfo"
+          "symbol": "ScheduledEventInfo",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/IEventDispatcher.h",
-          "symbol": "cancelEventsForSession"
+          "symbol": "cancelEventsForSession",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/IEventDispatcher.h",
-          "symbol": "params"
+          "symbol": "params",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/IEventDispatcher.h",
-          "symbol": "targetUri"
+          "symbol": "targetUri",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/ParentEventTarget.h",
-          "symbol": "ParentEventTarget"
+          "symbol": "ParentEventTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/PlatformEventRaiserHelper.h",
-          "symbol": "pollScheduler"
+          "symbol": "pollScheduler",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
-          "symbol": "ISessionRegistry"
+          "symbol": "ISessionRegistry",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
-          "symbol": "cleanupSession"
+          "symbol": "cleanupSession",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/SessionRegistry.h",
-          "symbol": "eventDispatchers_"
+          "symbol": "eventDispatchers_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "pumpScheduledEvents"
+          "symbol": "pumpScheduledEvents",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "runUntilCompletion"
+          "symbol": "runUntilCompletion",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "scheduleEvent"
+          "symbol": "scheduleEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "scheduler_"
+          "symbol": "scheduler_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "tick"
+          "symbol": "tick",
+          "kind": "implements"
         },
         {
           "file": "sce/include/wrappers/GameLoopTimer.h",
-          "symbol": "SCE::Wrappers"
+          "symbol": "SCE::Wrappers",
+          "kind": "implements"
         },
         {
           "file": "sce/include/wrappers/GameLoopTimer.h",
-          "symbol": "scheduleByMs"
+          "symbol": "scheduleByMs",
+          "kind": "implements"
         },
         {
           "file": "sce/include/wrappers/TimerManager.h",
-          "symbol": "SCE::Wrappers"
+          "symbol": "SCE::Wrappers",
+          "kind": "implements"
         },
         {
           "file": "sce/include/wrappers/TimerManager.h",
-          "symbol": "processExpiredTimers"
+          "symbol": "processExpiredTimers",
+          "kind": "implements"
         },
         {
           "file": "sce/include/wrappers/TimerManager.h",
-          "symbol": "registerTimer"
+          "symbol": "registerTimer",
+          "kind": "implements"
         },
         {
           "file": "sce/include/wrappers/TimerManager.h",
-          "symbol": "startTimer"
+          "symbol": "startTimer",
+          "kind": "implements"
         },
         {
           "file": "sce/src/actions/SendAction.cpp",
-          "symbol": "SendAction::validateSpecific"
+          "symbol": "SendAction::validateSpecific",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventDispatcherImpl.cpp",
-          "symbol": "EventDispatcherImpl::cancelEventsForSession"
+          "symbol": "EventDispatcherImpl::cancelEventsForSession",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventDispatcherImpl.cpp",
-          "symbol": "EventDispatcherImpl::onScheduledEventExecution"
+          "symbol": "EventDispatcherImpl::onScheduledEventExecution",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/ParentEventTarget.cpp",
-          "symbol": "ParentEventTarget::send"
+          "symbol": "ParentEventTarget::send",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/PlatformEventRaiserHelper.cpp",
-          "symbol": "pollScheduler"
+          "symbol": "pollScheduler",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/ActionParser.cpp",
-          "symbol": "SCE::ActionParser::parseActionNode"
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::evaluateExpression"
+          "symbol": "ActionExecutorImpl::evaluateExpression",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::executeSendAction"
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::setEventDispatcher"
+          "symbol": "ActionExecutorImpl::setEventDispatcher",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::~ActionExecutorImpl"
+          "symbol": "ActionExecutorImpl::~ActionExecutorImpl",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::processQueuedEvents"
+          "symbol": "EventRaiserImpl::processQueuedEvents",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "scheduler_"
+          "symbol": "scheduler_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "setScheduler"
+          "symbol": "setScheduler",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::captureChildState"
+          "symbol": "SCXMLInvokeHandler::captureChildState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::restoreChildState"
+          "symbol": "SCXMLInvokeHandler::restoreChildState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/SCXMLEngineImpl.cpp",
-          "symbol": "SCXMLEngineImpl::loadSCXMLFromString"
+          "symbol": "SCXMLEngineImpl::loadSCXMLFromString",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::destroySessionInternal"
+          "symbol": "JSEngine::destroySessionInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::destroySession"
+          "symbol": "LuaEngine::destroySession",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/SessionRegistry.cpp",
-          "symbol": "SessionRegistry::cleanupSession"
+          "symbol": "SessionRegistry::cleanupSession",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3215,26 +3729,31 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "SendHelper"
+          "symbol": "SendHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::executeSendAction"
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::restoreChildState"
+          "symbol": "SCXMLInvokeHandler::restoreChildState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventSchedulerImpl.cpp",
-          "symbol": "EventSchedulerImpl::processReadyEvents"
+          "symbol": "EventSchedulerImpl::processReadyEvents",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/PlatformEventRaiserHelper.cpp",
-          "symbol": "pollScheduler"
+          "symbol": "pollScheduler",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3248,10 +3767,11 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::executeSendAction"
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3287,58 +3807,71 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/SendSchedulingHelper.h",
-          "symbol": "SCE"
-        },
-        {
-          "file": "sce/include/common/SendSchedulingHelper.h",
-          "symbol": "cancel"
+          "symbol": "SCE",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendSchedulingHelper.h",
-          "symbol": "schedule"
+          "symbol": "cancel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendSchedulingHelper.h",
+          "symbol": "schedule",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventSchedulerImpl.cpp",
-          "symbol": "EventSchedulerImpl::cancelEvent"
+          "symbol": "EventSchedulerImpl::cancelEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventSchedulerImpl.cpp",
-          "symbol": "EventSchedulerImpl::cancelEventsForSession"
+          "symbol": "EventSchedulerImpl::cancelEventsForSession",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventSchedulerImpl.cpp",
-          "symbol": "EventSchedulerImpl::scheduleEvent"
+          "symbol": "EventSchedulerImpl::scheduleEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventSchedulerImpl.h",
-          "symbol": "EventSchedulerImpl"
+          "symbol": "EventSchedulerImpl",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventSchedulerImpl.h",
-          "symbol": "executionQueue_"
+          "symbol": "executionQueue_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/LogicalTimeScheduler.h",
-          "symbol": "popReadyEvent"
+          "symbol": "popReadyEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/LogicalTimeScheduler.h",
-          "symbol": "cancelEvent"
+          "symbol": "cancelEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "cancelEvent"
+          "symbol": "cancelEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/wrappers/GameLoopTimer.h",
-          "symbol": "cancel"
+          "symbol": "cancel",
+          "kind": "implements"
         },
         {
           "file": "sce/include/wrappers/TimerManager.h",
-          "symbol": "stopTimer"
+          "symbol": "stopTimer",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3352,14 +3885,16 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.3",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/LogicalTimeScheduler.h",
-          "symbol": "sendId"
+          "symbol": "sendId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/wrappers/TimerManager.h",
-          "symbol": "generateTimerSendId"
+          "symbol": "generateTimerSendId",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3384,294 +3919,366 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/FileLoadingHelper.h",
-          "symbol": "loadScxmlFile"
+          "symbol": "loadScxmlFile",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SCXMLConstants.h",
-          "symbol": "SCE::Constants"
+          "symbol": "SCE::Constants",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "extractInvokeId"
+          "symbol": "extractInvokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "isChildInvokeTarget"
+          "symbol": "isChildInvokeTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/UniqueIdGenerator.h",
-          "symbol": "generateInvokeId"
+          "symbol": "generateInvokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/InvokeHelper.h",
-          "symbol": "InvokeHelper"
+          "symbol": "InvokeHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/InvokeHelper.h",
-          "symbol": "executePendingInvokes"
+          "symbol": "executePendingInvokes",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/StatePolicyConcepts.h",
-          "symbol": "SCE::Core"
+          "symbol": "SCE::Core",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/ChildSessionAdapter.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/IChildSession.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/PatternKind.h",
-          "symbol": "PatternKind"
+          "symbol": "PatternKind",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/IInvokeNode.h",
-          "symbol": "setStateId"
+          "symbol": "setStateId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/InvokeNode.h",
-          "symbol": "setStateId"
+          "symbol": "setStateId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/model/InvokeNode.h",
-          "symbol": "stateId_"
+          "symbol": "stateId_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "raiseEvent"
+          "symbol": "raiseEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "getAutoForward"
+          "symbol": "getAutoForward",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "invokeDeferCallback_"
+          "symbol": "invokeDeferCallback_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
-          "symbol": "setInvokeDeferCallback"
+          "symbol": "setInvokeDeferCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "StateMachine"
+          "symbol": "StateMachine",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "createFromSCXMLString"
+          "symbol": "createFromSCXMLString",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
-          "symbol": "getParentSessionId"
+          "symbol": "getParentSessionId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
-          "symbol": "registerParentChild"
+          "symbol": "registerParentChild",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/SessionRegistry.h",
-          "symbol": "parentChildMappings_"
+          "symbol": "parentChildMappings_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "invokeCallback_"
+          "symbol": "invokeCallback_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/ConcurrentRegion.h",
-          "symbol": "setInvokeCallback"
+          "symbol": "setInvokeCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/states/IConcurrentRegion.h",
-          "symbol": "setInvokeCallback"
+          "symbol": "setInvokeCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "completionCallback_"
+          "symbol": "completionCallback_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "getPolicy"
+          "symbol": "getPolicy",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "initialize"
+          "symbol": "initialize",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "isInFinalState"
+          "symbol": "isInFinalState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventImpl"
+          "symbol": "processEventImpl",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setCompletionCallback"
+          "symbol": "setCompletionCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setScxmlInvokeCancelCallback"
+          "symbol": "setScxmlInvokeCancelCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "step"
+          "symbol": "step",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "tick"
+          "symbol": "tick",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/UniqueIdGenerator.cpp",
-          "symbol": "UniqueIdGenerator::generateInvokeId"
+          "symbol": "UniqueIdGenerator::generateInvokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventTargetFactoryImpl.cpp",
-          "symbol": "EventTargetFactoryImpl::createTarget"
+          "symbol": "EventTargetFactoryImpl::createTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventTargetFactoryImpl.cpp",
-          "symbol": "SCE::EventTargetFactoryImpl::createParentTarget"
+          "symbol": "SCE::EventTargetFactoryImpl::createParentTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/ParentEventTarget.cpp",
-          "symbol": "ParentEventTarget::findParentSessionId"
+          "symbol": "ParentEventTarget::findParentSessionId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/ParentEventTarget.cpp",
-          "symbol": "ParentEventTarget::sendImmediately"
+          "symbol": "ParentEventTarget::sendImmediately",
+          "kind": "implements"
         },
         {
           "file": "sce/src/model/InvokeNode.cpp",
-          "symbol": "SCE::InvokeNode::setStateId"
+          "symbol": "SCE::InvokeNode::setStateId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/InvokeParser.cpp",
-          "symbol": "SCE::InvokeParser::parseFinalizeElement"
+          "symbol": "SCE::InvokeParser::parseFinalizeElement",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/InvokeParser.cpp",
-          "symbol": "SCE::InvokeParser::parseInvokeNode"
+          "symbol": "SCE::InvokeParser::parseInvokeNode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/StateNodeParser.cpp",
-          "symbol": "SCE::StateNodeParser::parseInvokeElements"
+          "symbol": "SCE::StateNodeParser::parseInvokeElements",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/DataModelInitializer.cpp",
-          "symbol": "DataModelInitializer::initializeDataItem"
+          "symbol": "DataModelInitializer::initializeDataItem",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::captureInvokeState"
+          "symbol": "InvokeExecutor::captureInvokeState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::executeInvoke"
+          "symbol": "InvokeExecutor::executeInvoke",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::generateInvokeId"
+          "symbol": "InvokeExecutor::generateInvokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::restoreInvokeState"
+          "symbol": "InvokeExecutor::restoreInvokeState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::generateInvokeId"
+          "symbol": "SCXMLInvokeHandler::generateInvokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::getAutoForward"
+          "symbol": "SCXMLInvokeHandler::getAutoForward",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::getAutoForwardSessions"
+          "symbol": "SCXMLInvokeHandler::getAutoForwardSessions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::loadSCXMLFromFile"
+          "symbol": "SCXMLInvokeHandler::loadSCXMLFromFile",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::restoreChildState"
+          "symbol": "SCXMLInvokeHandler::restoreChildState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "extractParentStateIdFromInvokeId"
+          "symbol": "extractParentStateIdFromInvokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterState"
+          "symbol": "StateHierarchyManager::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateHierarchyManager.cpp",
-          "symbol": "StateHierarchyManager::enterStateWithAncestors"
+          "symbol": "StateHierarchyManager::enterStateWithAncestors",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::deferInvokeExecution"
+          "symbol": "StateMachine::deferInvokeExecution",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::executePendingInvokes"
+          "symbol": "StateMachine::executePendingInvokes",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::initializeFromModel"
+          "symbol": "StateMachine::initializeFromModel",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent"
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processStateTransitions"
+          "symbol": "StateMachine::processStateTransitions",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupAndActivateParallelState"
+          "symbol": "StateMachine::setupAndActivateParallelState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::createSessionInternal"
+          "symbol": "JSEngine::createSessionInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::destroySessionInternal"
+          "symbol": "JSEngine::destroySessionInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::createSession"
+          "symbol": "LuaEngine::createSession",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::destroySession"
+          "symbol": "LuaEngine::destroySession",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/SessionRegistry.cpp",
-          "symbol": "SessionRegistry::getParentSessionId"
+          "symbol": "SessionRegistry::getParentSessionId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/states/ConcurrentRegion.cpp",
-          "symbol": "ConcurrentRegion::enterInitialState"
+          "symbol": "ConcurrentRegion::enterInitialState",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "getAllInvokedSessions"
+          "symbol": "getAllInvokedSessions",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3685,42 +4292,51 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.4",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "SendHelper"
+          "symbol": "SendHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParent"
+          "symbol": "sendToParent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin"
+          "symbol": "sendToParentWithOrigin",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/IChildSession.h",
-          "symbol": "tick"
+          "symbol": "tick",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "currentEventInvokeId"
+          "symbol": "currentEventInvokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "performMeshInvoke"
+          "symbol": "performMeshInvoke",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/InvokeHelper.h",
-          "symbol": "isValidInvokeId"
+          "symbol": "isValidInvokeId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/mesh/IChildSession.h",
-          "symbol": "invokeIdString"
+          "symbol": "invokeIdString",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3734,10 +4350,11 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.4",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::setVariableInternal"
+          "symbol": "LuaEngine::setVariableInternal",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3751,58 +4368,71 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.4",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/FileLoadingHelper.h",
-          "symbol": "loadScxmlFile"
+          "symbol": "loadScxmlFile",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DatamodelValidationHelper.h",
-          "symbol": "DatamodelValidationHelper"
+          "symbol": "DatamodelValidationHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DatamodelValidationHelper.h",
-          "symbol": "buildChildDatamodelSet"
+          "symbol": "buildChildDatamodelSet",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DatamodelValidationHelper.h",
-          "symbol": "isVariableDeclaredInChild"
+          "symbol": "isVariableDeclaredInChild",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper"
+          "symbol": "EventMetadataHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/InvokeHelper.h",
-          "symbol": "createDoneInvokeEventName"
+          "symbol": "createDoneInvokeEventName",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "createDoneInvokeEvent"
+          "symbol": "createDoneInvokeEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/InvokeExecutor.h",
-          "symbol": "parentStateMachine_"
+          "symbol": "parentStateMachine_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "StateMachine"
+          "symbol": "StateMachine",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
-          "symbol": "completionCallback_"
+          "symbol": "completionCallback_",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::enterState"
+          "symbol": "StateMachine::enterState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setCompletionCallback"
+          "symbol": "StateMachine::setCompletionCallback",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3816,18 +4446,21 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.4",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/runtime/IEventRaiser.h",
-          "symbol": "cancelEventsForSession"
+          "symbol": "cancelEventsForSession",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::cancelEventsForSession"
+          "symbol": "EventRaiserImpl::cancelEventsForSession",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
-          "symbol": "cancelEventsForSession"
+          "symbol": "cancelEventsForSession",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3841,38 +4474,46 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/FinalizeHelper.h",
-          "symbol": "executeFinalizeWithEvent"
+          "symbol": "executeFinalizeWithEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "SendHelper"
+          "symbol": "SendHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin"
+          "symbol": "sendToParentWithOrigin",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/StatePolicyConcepts.h",
-          "symbol": "SCE::Core"
+          "symbol": "SCE::Core",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues"
+          "symbol": "processEventQueues",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::captureInvokeState"
+          "symbol": "InvokeExecutor::captureInvokeState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "InvokeExecutor::restoreInvokeState"
+          "symbol": "InvokeExecutor::restoreInvokeState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -3897,22 +4538,26 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-6.5",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/src/parsing/InvokeParser.cpp",
-          "symbol": "SCE::InvokeParser::parseFinalizeElement"
+          "symbol": "SCE::InvokeParser::parseFinalizeElement",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::processNextQueuedEvent"
+          "symbol": "EventRaiserImpl::processNextQueuedEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::processEvent"
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4056,186 +4701,231 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-B",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/common/AssignHelper.h",
-          "symbol": "isValidLocation"
+          "symbol": "isValidLocation",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/AssignmentExecutionHelper.h",
-          "symbol": "AssignmentExecutionHelper"
+          "symbol": "AssignmentExecutionHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/DataModelInitHelper.h",
-          "symbol": "isFunctionExpression"
+          "symbol": "isFunctionExpression",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventDataHelper.h",
-          "symbol": "jsonStringToScriptValue"
+          "symbol": "jsonStringToScriptValue",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventDataHelper.h",
-          "symbol": "scriptValueToJsonString"
+          "symbol": "scriptValueToJsonString",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "populatePolicyFromMetadata"
+          "symbol": "populatePolicyFromMetadata",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/ForeachHelper.h",
-          "symbol": "isLegalVariableName"
+          "symbol": "isLegalVariableName",
+          "kind": "implements"
         },
         {
           "file": "sce/include/parsing/XmlSerializationHelper.h",
-          "symbol": "XmlSerializationHelper"
+          "symbol": "XmlSerializationHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/DataContentHelpers.h",
-          "symbol": "SCE"
+          "symbol": "SCE",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/DOMBinding.h",
-          "symbol": "DOMBinding"
+          "symbol": "DOMBinding",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/DOMBinding.h",
-          "symbol": "resetClassId"
+          "symbol": "resetClassId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
-          "symbol": "setVariableAsDOM"
+          "symbol": "setVariableAsDOM",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/JSEngine.h",
-          "symbol": "isDOMObject"
+          "symbol": "isDOMObject",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/JSEngine.h",
-          "symbol": "setVariableAsDOM"
+          "symbol": "setVariableAsDOM",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/LuaDOMBinding.h",
-          "symbol": "LuaDOMBinding"
+          "symbol": "LuaDOMBinding",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/LuaDOMBinding.h",
-          "symbol": "resetClassId"
+          "symbol": "resetClassId",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/XMLDOMWrapper.h",
-          "symbol": "XMLDocument"
+          "symbol": "XMLDocument",
+          "kind": "implements"
         },
         {
           "file": "sce/include/scripting/XMLDOMWrapper.h",
-          "symbol": "XMLElement"
+          "symbol": "XMLElement",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::initializeVariable"
+          "symbol": "SCE::DataModelInitHelper::initializeVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::isFunctionExpression"
+          "symbol": "SCE::DataModelInitHelper::isFunctionExpression",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/EventDataHelper.cpp",
-          "symbol": "jsonToScriptValue"
+          "symbol": "jsonToScriptValue",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/EventDataHelper.cpp",
-          "symbol": "scriptValueToJson"
+          "symbol": "scriptValueToJson",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/InternalEventTarget.cpp",
-          "symbol": "InternalEventTarget::buildEventData"
+          "symbol": "InternalEventTarget::buildEventData",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/DataModelParser.cpp",
-          "symbol": "SCE::DataModelParser::parseDataContent"
+          "symbol": "SCE::DataModelParser::parseDataContent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/PugiXMLParser.cpp",
-          "symbol": "PugiXMLElement::serializeChildContent"
+          "symbol": "PugiXMLElement::serializeChildContent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/DataContentHelpers.cpp",
-          "symbol": "isXMLContent"
+          "symbol": "isXMLContent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/DataContentHelpers.cpp",
-          "symbol": "normalizeWhitespace"
+          "symbol": "normalizeWhitespace",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/DataModelInitializer.cpp",
-          "symbol": "DataModelInitializer::initializeDataItem"
+          "symbol": "DataModelInitializer::initializeDataItem",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
-          "symbol": "EventRaiserImpl::raiseEventWithPriority"
+          "symbol": "EventRaiserImpl::raiseEventWithPriority",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
-          "symbol": "SCXMLInvokeHandler::startInvokeInternal"
+          "symbol": "SCXMLInvokeHandler::startInvokeInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/DOMBinding.cpp",
-          "symbol": "DOMBinding::resetClassId"
+          "symbol": "DOMBinding::resetClassId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/EcmaScriptToLuaTransformer.cpp",
-          "symbol": "EcmaScriptToLuaTransformer::transformOperators"
+          "symbol": "EcmaScriptToLuaTransformer::transformOperators",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::reset"
+          "symbol": "JSEngine::reset",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::setVariableAsDOM"
+          "symbol": "JSEngine::setVariableAsDOM",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngine.cpp",
-          "symbol": "JSEngine::shutdown"
+          "symbol": "JSEngine::shutdown",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngineImpl.cpp",
-          "symbol": "JSEngine::evaluateExpressionInternal"
+          "symbol": "JSEngine::evaluateExpressionInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngineImpl.cpp",
-          "symbol": "parseEventData"
+          "symbol": "parseEventData",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaDOMBinding.cpp",
-          "symbol": "LuaDOMBinding::resetClassId"
+          "symbol": "LuaDOMBinding::resetClassId",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::createLuaState"
+          "symbol": "LuaEngine::createLuaState",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::registerBuiltins"
+          "symbol": "LuaEngine::registerBuiltins",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::setCurrentEvent"
+          "symbol": "LuaEngine::setCurrentEvent",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::setVariableAsDOM"
+          "symbol": "LuaEngine::setVariableAsDOM",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
-          "symbol": "LuaEngine::shutdown"
+          "symbol": "LuaEngine::shutdown",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/ScriptResultUtils.cpp",
-          "symbol": "resultToStringArray"
+          "symbol": "resultToStringArray",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/XMLDOMWrapper.cpp",
-          "symbol": "XMLDocument::XMLDocument"
+          "symbol": "XMLDocument::XMLDocument",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4282,22 +4972,26 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/runtime/BindingHelper.h",
-          "symbol": "shouldAssignValueAtDocumentLoad"
+          "symbol": "shouldAssignValueAtDocumentLoad",
+          "kind": "implements"
         },
         {
           "file": "sce/include/runtime/BindingHelper.h",
-          "symbol": "shouldAssignValueOnStateEntry"
+          "symbol": "shouldAssignValueOnStateEntry",
+          "kind": "implements"
         },
         {
           "file": "sce/src/common/DataModelInitHelper.cpp",
-          "symbol": "SCE::DataModelInitHelper::initializeVariable"
+          "symbol": "SCE::DataModelInitHelper::initializeVariable",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/DataModelInitializer.cpp",
-          "symbol": "DataModelInitializer::initializeDataItem"
+          "symbol": "DataModelInitializer::initializeDataItem",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4311,10 +5005,11 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::setupAndActivateParallelState"
+          "symbol": "StateMachine::setupAndActivateParallelState",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4404,54 +5099,66 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-C",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/actions/SendAction.h",
-          "symbol": "namelist_"
+          "symbol": "namelist_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/NamelistHelper.h",
-          "symbol": "NamelistHelper"
+          "symbol": "NamelistHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/NamelistHelper.h",
-          "symbol": "evaluateNamelist"
+          "symbol": "evaluateNamelist",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SCXMLConstants.h",
-          "symbol": "SCE::Constants"
+          "symbol": "SCE::Constants",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "isInternalTarget"
+          "symbol": "isInternalTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "isUnreachableTarget"
+          "symbol": "isUnreachableTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "sendToParentWithOrigin"
+          "symbol": "sendToParentWithOrigin",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventTargetFactoryImpl.cpp",
-          "symbol": "EventTargetFactoryImpl::createTarget"
+          "symbol": "EventTargetFactoryImpl::createTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/src/parsing/ActionParser.cpp",
-          "symbol": "SCE::ActionParser::parseActionNode"
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::executeSendAction"
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/JSEngineImpl.cpp",
-          "symbol": "JSEngine::setupSystemVariablesInternal"
+          "symbol": "JSEngine::setupSystemVariablesInternal",
+          "kind": "implements"
         },
         {
           "file": "sce/src/scripting/ScriptResultUtils.cpp",
-          "symbol": "resultToString"
+          "symbol": "resultToString",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4487,126 +5194,156 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-C",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/actions/SendAction.h",
-          "symbol": "content_"
+          "symbol": "content_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/actions/SendAction.h",
-          "symbol": "setContent"
+          "symbol": "setContent",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SCXMLConstants.h",
-          "symbol": "SCE::Constants"
+          "symbol": "SCE::Constants",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "buildHttpPostBody"
+          "symbol": "buildHttpPostBody",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "isHttpTarget"
+          "symbol": "isHttpTarget",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "isSupportedSendType"
+          "symbol": "isSupportedSendType",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "requiresTargetAttribute"
+          "symbol": "requiresTargetAttribute",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "validateBasicHttpSend"
+          "symbol": "validateBasicHttpSend",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/UrlEncodingHelper.h",
-          "symbol": "UrlEncodingHelper"
+          "symbol": "UrlEncodingHelper",
+          "kind": "implements"
         },
         {
           "file": "sce/include/common/UrlEncodingHelper.h",
-          "symbol": "urlEncode"
+          "symbol": "urlEncode",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/CppHttplibClient.h",
-          "symbol": "CppHttplibClient"
+          "symbol": "CppHttplibClient",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/EmscriptenFetchClient.h",
-          "symbol": "EmscriptenFetchClient"
+          "symbol": "EmscriptenFetchClient",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/IEventDispatcher.h",
-          "symbol": "content"
+          "symbol": "content",
+          "kind": "implements"
         },
         {
           "file": "sce/include/events/IHttpClient.h",
-          "symbol": "IHttpClient"
+          "symbol": "IHttpClient",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "HttpSendRequest"
+          "symbol": "HttpSendRequest",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "onHttpSend_"
+          "symbol": "onHttpSend_",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "performHttpSend"
+          "symbol": "performHttpSend",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "raiseExternal"
+          "symbol": "raiseExternal",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "setHttpSendCallback"
+          "symbol": "setHttpSendCallback",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "target"
+          "symbol": "target",
+          "kind": "implements"
         },
         {
           "file": "sce/src/actions/SendAction.cpp",
-          "symbol": "SendAction::getSpecificDescription"
+          "symbol": "SendAction::getSpecificDescription",
+          "kind": "implements"
         },
         {
           "file": "sce/src/actions/SendAction.cpp",
-          "symbol": "SendAction::validateSpecific"
+          "symbol": "SendAction::validateSpecific",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EmscriptenFetchClient.cpp",
-          "symbol": "BrowserFetchContext"
+          "symbol": "BrowserFetchContext",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EmscriptenFetchClient.cpp",
-          "symbol": "EM_ASYNC_JS"
+          "symbol": "EM_ASYNC_JS",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EmscriptenFetchClient.cpp",
-          "symbol": "EmscriptenFetchClient::sendRequest"
+          "symbol": "EmscriptenFetchClient::sendRequest",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/EventTargetFactoryImpl.cpp",
-          "symbol": "EventTargetFactoryImpl::EventTargetFactoryImpl"
+          "symbol": "EventTargetFactoryImpl::EventTargetFactoryImpl",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/HttpEventTarget.cpp",
-          "symbol": "HttpEventTarget::createJsonPayload"
+          "symbol": "HttpEventTarget::createJsonPayload",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/HttpEventTarget.cpp",
-          "symbol": "HttpEventTarget::performRequestWithRetry"
+          "symbol": "HttpEventTarget::performRequestWithRetry",
+          "kind": "implements"
         },
         {
           "file": "sce/src/events/HttpEventTarget.cpp",
-          "symbol": "HttpEventTarget::send"
+          "symbol": "HttpEventTarget::send",
+          "kind": "implements"
         },
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
-          "symbol": "ActionExecutorImpl::executeSendAction"
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4652,10 +5389,11 @@
       "title": "Algorithm for SCXML Interpretation",
       "parent_doc": "docs/GENERATED.md",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/EventQueueManager.h",
-          "symbol": "SCE::Core"
+          "symbol": "SCE::Core",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4933,18 +5671,21 @@
       "parent_doc": "docs/GENERATED.md",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
-      "implementations": [
+      "bindings": [
         {
           "file": "sce/include/core/EventQueueManager.h",
-          "symbol": "EventQueueManager"
+          "symbol": "EventQueueManager",
+          "kind": "implements"
         },
         {
           "file": "sce/include/core/EventQueueManager.h",
-          "symbol": "raise"
+          "symbol": "raise",
+          "kind": "implements"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "symbol": "processEventQueues"
+          "symbol": "processEventQueues",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -5166,5 +5907,5 @@
   },
   "changelog_entries": {},
   "inventory_entries": {},
-  "schema_version": 4
+  "schema_version": 6
 }
