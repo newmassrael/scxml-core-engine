@@ -95,10 +95,10 @@ bool ActionExecutorImpl::executeScript(const std::string &script) {
 }
 
 bool ActionExecutorImpl::assignVariable(const std::string &location, const std::string &expr) {
-    // §scxml-5.3, §scxml-5.4: Empty location check (shared with AOT via AssignHelper)
+    // §scxml-5.4: Empty location check (shared with AOT via AssignHelper)
     // ARCHITECTURE.md: Zero Duplication - Use shared AssignHelper for cross-engine consistency
     if (!AssignHelper::isValidLocation(location)) {
-        SCE_LOG_ERROR("W3C SCXML 5.3/5.4/B.2: {}", AssignHelper::getInvalidLocationErrorMessage(location));
+        SCE_LOG_ERROR("W3C SCXML 5.4/B.2: {}", AssignHelper::getInvalidLocationErrorMessage(location));
         // §scxml-5.4: Raise error.execution for invalid location
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", AssignHelper::getInvalidLocationErrorMessage(location));
@@ -131,7 +131,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
         std::string jsLocation = transformVariableName(location);
 
         // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
-        // §scxml-5.3 / §scxml-5.10: Assignment execution with proper system variable handling
+        // §scxml-5.4 / §scxml-5.10: Assignment execution with proper system variable handling
         bool success = AssignmentExecutionHelper::executeAssignment(
             scriptEngine_, sessionId_, jsLocation, expr, [this, &location, &expr](const std::string &error) {
                 handleJSError("assignment execution", error);

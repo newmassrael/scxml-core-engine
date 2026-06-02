@@ -1016,7 +1016,7 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
                 while (j < result.size() && std::isspace(static_cast<unsigned char>(result[j]))) ++j;
 
                 if (j < result.size() && result[j] == '{') {
-                    // §scxml-5.3: Detect JS constructor pattern
+                    // Detect JS constructor pattern
                     bool isConstructor = false;
                     int checkDepth = 1;
                     for (size_t k = j + 1; k < result.size() && checkDepth > 0; ++k) {
