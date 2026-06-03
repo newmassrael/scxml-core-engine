@@ -77,8 +77,8 @@ Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/parsing/XIncludeError.h:SCE::parsing
-- [implements] sce/include/parsing/XIncludeError.h:setLocation
+- [references] sce/include/parsing/XIncludeError.h:SCE::parsing
+- [references] sce/include/parsing/XIncludeError.h:setLocation
 - [implements] sce/include/parsing/XIncludeExpander.h
 
 
