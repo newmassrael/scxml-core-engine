@@ -719,7 +719,7 @@
         {
           "file": "sce/include/mesh/ShmChannel.h",
           "symbol": "ShmChannel",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/TransitionDomainCalculator.h",
@@ -759,7 +759,7 @@
         {
           "file": "sce/include/core/ParallelTransitionHelper.h",
           "symbol": "isTargetless",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
@@ -2020,7 +2020,7 @@
         {
           "file": "sce/include/SCXMLTypes.h",
           "symbol": "setTypedData",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/AssignmentExecutionHelper.h",
@@ -2090,7 +2090,7 @@
         {
           "file": "sce/include/core/EventMetadata.h",
           "symbol": "EventMetadata",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/events/InternalEventTarget.h",
@@ -2110,7 +2110,7 @@
         {
           "file": "sce/include/mesh/PayloadCodec.h",
           "symbol": "PayloadCodec",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/IEventRaiser.h",
@@ -3904,17 +3904,17 @@
         {
           "file": "sce/include/mesh/PatternKind.h",
           "symbol": "PatternKind",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/IInvokeNode.h",
           "symbol": "setStateId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/InvokeNode.h",
           "symbol": "setStateId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/InvokeNode.h",
@@ -3929,7 +3929,7 @@
         {
           "file": "sce/include/runtime/InvokeExecutor.h",
           "symbol": "getAutoForward",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
@@ -3939,7 +3939,7 @@
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
           "symbol": "setInvokeDeferCallback",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
@@ -3954,7 +3954,7 @@
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
           "symbol": "getParentSessionId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
@@ -3974,12 +3974,12 @@
         {
           "file": "sce/include/states/ConcurrentRegion.h",
           "symbol": "setInvokeCallback",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/states/IConcurrentRegion.h",
           "symbol": "setInvokeCallback",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -3989,7 +3989,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "getPolicy",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -4675,7 +4675,7 @@
         {
           "file": "sce/include/scripting/JSEngine.h",
           "symbol": "isDOMObject",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/JSEngine.h",
@@ -5038,7 +5038,7 @@
         {
           "file": "sce/include/common/SCXMLConstants.h",
           "symbol": "SCE::Constants",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/SendHelper.h",
@@ -5178,7 +5178,7 @@
         {
           "file": "sce/include/events/IEventDispatcher.h",
           "symbol": "content",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/events/IHttpClient.h",

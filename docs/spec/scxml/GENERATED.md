@@ -457,7 +457,7 @@ The following events are generated automatically by the SCXML implementation und
 - [implements] sce/include/core/HierarchicalStateHelper.h:HierarchicalAlgorithms
 - [implements] sce/include/core/HierarchicalStateHelper.h:buildEntryChainFromParent
 - [implements] sce/include/core/HierarchicalStateHelper.h:buildExitChain
-- [implements] sce/include/mesh/ShmChannel.h:ShmChannel
+- [references] sce/include/mesh/ShmChannel.h:ShmChannel
 - [implements] sce/include/runtime/TransitionDomainCalculator.h:findLCA
 - [implements] sce/include/runtime/TransitionDomainCalculator.h:getProperAncestors
 - [implements] sce/include/runtime/TransitionDomainCalculator.h:isDescendant
@@ -465,7 +465,7 @@ The following events are generated automatically by the SCXML implementation und
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventImpl
 - [implements] sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::findLCA
 - [references] sce/include/core/ConflictResolutionHelper.h:isTargetless
-- [implements] sce/include/core/ParallelTransitionHelper.h:isTargetless
+- [references] sce/include/core/ParallelTransitionHelper.h:isTargetless
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::hasQueuedInternalEvents
 - [implements] sce/src/runtime/EventRaiserImpl.h:hasQueuedInternalEvents
 - [implements] sce/include/runtime/IEventRaiser.h:raiseInternalEvent
@@ -1612,7 +1612,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 
 
 **Bindings**:
-- [implements] sce/include/SCXMLTypes.h:setTypedData
+- [references] sce/include/SCXMLTypes.h:setTypedData
 - [implements] sce/include/common/AssignmentExecutionHelper.h:AssignmentExecutionHelper
 - [implements] sce/include/common/AssignmentExecutionHelper.h:executeAssignment
 - [implements] sce/include/common/AssignmentExecutionHelper.h:isSystemVariableReference
@@ -1626,11 +1626,11 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [references] sce/include/common/LogicalTimeScheduler.h:eventData
 - [implements] sce/include/common/SendHelper.h:isInvalidTarget
 - [implements] sce/include/common/SendHelper.h:sendToParentWithOrigin
-- [implements] sce/include/core/EventMetadata.h:EventMetadata
+- [references] sce/include/core/EventMetadata.h:EventMetadata
 - [implements] sce/include/events/InternalEventTarget.h:InternalEventTarget
 - [references] sce/include/events/InternalEventTarget.h:sessionId_
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
-- [implements] sce/include/mesh/PayloadCodec.h:PayloadCodec
+- [references] sce/include/mesh/PayloadCodec.h:PayloadCodec
 - [implements] sce/include/runtime/IEventRaiser.h:raiseEvent
 - [implements] sce/include/runtime/IEventRaiser.h:raiseExternalEvent
 - [references] sce/include/scripting/IScriptEngine.h:SetCurrentEventArgs
@@ -2714,24 +2714,24 @@ None
 - [implements] sce/include/core/StatePolicyConcepts.h:SCE::Core
 - [implements] sce/include/mesh/ChildSessionAdapter.h:raiseExternal
 - [implements] sce/include/mesh/IChildSession.h:raiseExternal
-- [implements] sce/include/mesh/PatternKind.h:PatternKind
-- [implements] sce/include/model/IInvokeNode.h:setStateId
-- [implements] sce/include/model/InvokeNode.h:setStateId
+- [references] sce/include/mesh/PatternKind.h:PatternKind
+- [references] sce/include/model/IInvokeNode.h:setStateId
+- [references] sce/include/model/InvokeNode.h:setStateId
 - [references] sce/include/model/InvokeNode.h:stateId_
 - [implements] sce/include/runtime/IEventRaiser.h:raiseEvent
-- [implements] sce/include/runtime/InvokeExecutor.h:getAutoForward
+- [references] sce/include/runtime/InvokeExecutor.h:getAutoForward
 - [references] sce/include/runtime/StateHierarchyManager.h:invokeDeferCallback_
-- [implements] sce/include/runtime/StateHierarchyManager.h:setInvokeDeferCallback
+- [references] sce/include/runtime/StateHierarchyManager.h:setInvokeDeferCallback
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
 - [implements] sce/include/runtime/StateMachine.h:createFromSCXMLString
-- [implements] sce/include/scripting/ISessionRegistry.h:getParentSessionId
+- [references] sce/include/scripting/ISessionRegistry.h:getParentSessionId
 - [implements] sce/include/scripting/ISessionRegistry.h:registerParentChild
 - [references] sce/include/scripting/SessionRegistry.h:parentChildMappings_
 - [references] sce/include/states/ConcurrentRegion.h:invokeCallback_
-- [implements] sce/include/states/ConcurrentRegion.h:setInvokeCallback
-- [implements] sce/include/states/IConcurrentRegion.h:setInvokeCallback
+- [references] sce/include/states/ConcurrentRegion.h:setInvokeCallback
+- [references] sce/include/states/IConcurrentRegion.h:setInvokeCallback
 - [references] sce/include/static/StaticExecutionEngine.h:completionCallback_
-- [implements] sce/include/static/StaticExecutionEngine.h:getPolicy
+- [references] sce/include/static/StaticExecutionEngine.h:getPolicy
 - [implements] sce/include/static/StaticExecutionEngine.h:initialize
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventImpl
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
@@ -3222,7 +3222,7 @@ The <foreach> element and the elements defined in 5 Data Model and Data Manipula
 - [implements] sce/include/scripting/DOMBinding.h:DOMBinding
 - [implements] sce/include/scripting/DOMBinding.h:resetClassId
 - [implements] sce/include/scripting/IScriptEngine.h:setVariableAsDOM
-- [implements] sce/include/scripting/JSEngine.h:isDOMObject
+- [references] sce/include/scripting/JSEngine.h:isDOMObject
 - [implements] sce/include/scripting/JSEngine.h:setVariableAsDOM
 - [implements] sce/include/scripting/LuaDOMBinding.h:LuaDOMBinding
 - [implements] sce/include/scripting/LuaDOMBinding.h:resetClassId
@@ -3521,7 +3521,7 @@ In certain circumstances, e.g. when including data in events sent via the BasicH
 - [references] sce/include/actions/SendAction.h:namelist_
 - [implements] sce/include/common/NamelistHelper.h:NamelistHelper
 - [implements] sce/include/common/NamelistHelper.h:evaluateNamelist
-- [implements] sce/include/common/SCXMLConstants.h:SCE::Constants
+- [references] sce/include/common/SCXMLConstants.h:SCE::Constants
 - [implements] sce/include/common/SendHelper.h:isInternalTarget
 - [implements] sce/include/common/SendHelper.h:isUnreachableTarget
 - [implements] sce/include/common/SendHelper.h:sendToParentWithOrigin
@@ -3602,7 +3602,7 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 - [implements] sce/include/common/UrlEncodingHelper.h:urlEncode
 - [implements] sce/include/events/CppHttplibClient.h:CppHttplibClient
 - [implements] sce/include/events/EmscriptenFetchClient.h:EmscriptenFetchClient
-- [implements] sce/include/events/IEventDispatcher.h:content
+- [references] sce/include/events/IEventDispatcher.h:content
 - [implements] sce/include/events/IHttpClient.h:IHttpClient
 - [references] sce/include/static/StaticExecutionEngine.h:HttpSendRequest
 - [references] sce/include/static/StaticExecutionEngine.h:onHttpSend_
