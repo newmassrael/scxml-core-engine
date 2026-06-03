@@ -269,13 +269,31 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
 ///     identifier (e.g. `retry_count` instead of `self.retry_count`).
 ///     Such mixed conds keep the script-engine path and are surfaced as
 ///     `validation/typed-cond-non-native` by [`check`];
-/// (d) the expression emits on the fallible backends — only the Rust and
-///     Go emitters can fail (`transpile_typed`'s C++ / Kotlin / Python /
-///     C arms return `Ok` unconditionally), so success on those two
-///     implies success on all six. The engine-need flag is backend-
-///     independent, so it must hold for the strictest target. The
-///     accessor is irrelevant to lowerability (any valid identifier
-///     renames cleanly), so a fixed placeholder is used.
+/// (d) the expression lowers on *every* backend SCE generates —
+///     [`ExprTarget::ALL`]. The verdict feeds the language-neutral
+///     `native_typed_inject_events` switchboard SSOT, which is
+///     all-or-nothing across backends: a guard one backend can emit but
+///     another cannot must not be classed native, or the SSOT splits
+///     ([`select_native_typed_guards`] doc, RFC §1.3). Earlier this
+///     proxied all six by checking only Rust + Go on the documented
+///     assumption that the other emitters never fail. Iterating
+///     [`ExprTarget::ALL`] removes the proxy structurally — the verdict
+///     can never again silently diverge from a backend it did not
+///     consult, and a future fallible emitter path is covered the day it
+///     lands. The accessor is irrelevant to lowerability (any valid
+///     identifier renames cleanly), so a fixed placeholder is used.
+///
+/// Behavior is preserved at this staging point: every non-`bytes` form
+/// that reaches here lowers on all six backends, and `bytes` schemas are
+/// still suppressed upstream by [`schema_is_native_payload_eligible`]
+/// (the RFC §3.1 interim gate) so no `bytes` guard reaches the per-target
+/// lowering yet. The check that makes a *representable* `bytes` equality
+/// pass while an ordering / non-ASCII form fails the verdict lands with
+/// the gate flip (RFC §5 commit 6), where `bytes` first reaches this
+/// path and is covered by the cross-backend conformance fixture; until
+/// then those malformed forms are rejected at validation
+/// (`validation/bytes-comparison-not-equality` + the B2 literal check)
+/// before codegen ever runs.
 pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool {
     if !schema_is_native_payload_eligible(schema) {
         return false;
@@ -286,8 +304,9 @@ pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool 
     if !cond_references_event_data(&ast) || !cond_is_pure_typed_payload(&ast) {
         return false;
     }
-    lower_typed_guard(cond, schema, "ev", ExprTarget::Rust).is_ok()
-        && lower_typed_guard(cond, schema, "ev", ExprTarget::Go).is_ok()
+    ExprTarget::ALL
+        .iter()
+        .all(|&target| lower_typed_guard(cond, schema, "ev", target).is_ok())
 }
 
 /// One transition whose typed `_event.data` guard lowers to a native
@@ -1668,6 +1687,24 @@ mod tests {
             "_event.data.elapsed_ms === 0",
             &s
         ));
+    }
+
+    // RFC §3 B6 — the native-lowerability verdict is the conjunction over
+    // every backend SCE generates (`ExprTarget::ALL`), not a Rust + Go
+    // proxy. A guard the verdict classes native must lower on each target.
+    #[test]
+    fn native_verdict_requires_all_six_targets_lower() {
+        let s = schema("job.completed", vec![field("elapsed_ms", SceType::Uint32)]);
+        assert!(guard_is_native_lowerable(
+            "_event.data.elapsed_ms === 0",
+            &s
+        ));
+        for target in ExprTarget::ALL {
+            assert!(
+                lower_typed_guard("_event.data.elapsed_ms === 0", &s, "ev", target).is_ok(),
+                "{target:?} must lower the native guard the verdict accepted"
+            );
+        }
     }
 
     // A guard that mixes a typed `_event.data` field with a datamodel
