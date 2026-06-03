@@ -810,13 +810,13 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [implements] sce/include/mesh/ParallelCompletionTracker.h:reset
 - [references] sce/include/mesh/PatternKind.h:PatternKind
 - [implements] sce/include/static/StaticExecutionEngine.h:isGlobalFinalState
-- [implements] sce/include/static/StaticExecutionEngine.h:onParallelRegionLocalComplete_
+- [references] sce/include/static/StaticExecutionEngine.h:onParallelRegionLocalComplete_
 - [implements] sce/include/static/StaticExecutionEngine.h:setParallelRegionLocalCompleteCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:setParallelRegionRemoteSendCallback
 - [implements] sce/include/static/StaticExecutionEngine.h:tick
 - [implements] sce/include/static/StaticExecutionEngine.h:triggerParallelRegionLocalComplete
 - [implements] sce/include/static/StaticExecutionEngine.h:triggerParallelRegionRemoteSend
-- [implements] sce/src/mesh/MeshEnvelopeCodec.cpp:isValidPatternKind
+- [references] sce/src/mesh/MeshEnvelopeCodec.cpp:isValidPatternKind
 
 
 
