@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC rfc-eventschema-bytes-guard.md §3 fixture: an EventSchema with a
+  single `bytes`-typed payload field. The field carries natively as a
+  no-alloc bounded buffer on C11 (uint8_t[CAP] + size_t _len, CAP from
+  sce:max-size) and as the owned byte-sequence type on each hosted
+  backend. Generic vocabulary (`signal.received` + `raw`) — no protocol
+  token, no domain-specific identifier.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="signal_bytes_schema"
+       sce:kind="event-schema"
+       sce:event-name="signal.received">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in" sce:max-size="8"/>
+  </datamodel>
+</scxml>
