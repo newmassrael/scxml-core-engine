@@ -1338,7 +1338,7 @@
         {
           "file": "sce/include/mesh/IChildSession.h",
           "symbol": "sessionId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/mesh/IChildSession.h",
@@ -1473,7 +1473,7 @@
         {
           "file": "sce/include/mesh/IChildSession.h",
           "symbol": "sessionId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/mesh/MeshDispatch.h",

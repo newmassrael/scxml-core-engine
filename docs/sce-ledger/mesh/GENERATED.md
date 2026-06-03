@@ -1717,7 +1717,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/IChildSession.h:sessionId
+- [references] sce/include/mesh/IChildSession.h:sessionId
 - [implements] sce/include/mesh/IChildSession.h:tick
 - [references] sce/include/mesh/MeshEnvelope.h:child_session_id
 
@@ -1777,7 +1777,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 
 **Bindings**:
-- [implements] sce/include/mesh/IChildSession.h:sessionId
+- [references] sce/include/mesh/IChildSession.h:sessionId
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 - [references] sce/include/mesh/MeshEnvelope.h:child_session_id
 - [implements] sce/include/static/StaticExecutionEngine.h
