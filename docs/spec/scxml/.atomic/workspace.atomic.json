@@ -907,12 +907,12 @@
         {
           "file": "sce/include/model/SCXMLModel.h",
           "symbol": "getInitialState",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/SCXMLModel.h",
           "symbol": "getInitialStates",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/SCXMLModel.h",
@@ -967,7 +967,7 @@
         {
           "file": "sce/include/states/IConcurrentRegion.h",
           "symbol": "setCurrentState",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/states/IConcurrentRegion.h",
@@ -1524,7 +1524,7 @@
         {
           "file": "sce/src/states/ConcurrentStateNode.cpp",
           "symbol": "ConcurrentStateNode::addEntryActionBlock",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -1584,7 +1584,7 @@
         {
           "file": "sce/include/model/StateNode.h",
           "symbol": "getExitActionBlocks",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/parsing/StateNodeParser.h",
@@ -1867,7 +1867,7 @@
         {
           "file": "sce/include/scripting/IScriptEngine.h",
           "symbol": "hasVariable",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/ScriptResultUtils.h",
@@ -2941,7 +2941,7 @@
         {
           "file": "sce/include/runtime/StateMachine.h",
           "symbol": "donedataAtFinal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
@@ -2956,7 +2956,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "donedataAtFinal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -2976,7 +2976,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "typedDonedataAtFinal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/parsing/DoneDataParser.cpp",
@@ -3359,7 +3359,7 @@
         {
           "file": "sce/include/actions/SendAction.h",
           "symbol": "setTypeExpr",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/actions/SendAction.h",
@@ -3859,7 +3859,7 @@
         {
           "file": "sce/include/common/SCXMLConstants.h",
           "symbol": "SCE::Constants",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/SendHelper.h",
@@ -3889,7 +3889,7 @@
         {
           "file": "sce/include/core/StatePolicyConcepts.h",
           "symbol": "SCE::Core",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/mesh/ChildSessionAdapter.h",
@@ -4054,7 +4054,7 @@
         {
           "file": "sce/src/model/InvokeNode.cpp",
           "symbol": "SCE::InvokeNode::setStateId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/parsing/InvokeParser.cpp",
@@ -4104,7 +4104,7 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::getAutoForward",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
@@ -4204,7 +4204,7 @@
         {
           "file": "sce/include/runtime/InvokeExecutor.h",
           "symbol": "getAllInvokedSessions",
-          "kind": "implements"
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -4247,7 +4247,7 @@
         {
           "file": "sce/include/mesh/IChildSession.h",
           "symbol": "invokeIdString",
-          "kind": "implements"
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -4403,7 +4403,7 @@
         {
           "file": "sce/include/core/StatePolicyConcepts.h",
           "symbol": "SCE::Core",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -5123,12 +5123,12 @@
         {
           "file": "sce/include/actions/SendAction.h",
           "symbol": "setContent",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/SCXMLConstants.h",
           "symbol": "SCE::Constants",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/SendHelper.h",
