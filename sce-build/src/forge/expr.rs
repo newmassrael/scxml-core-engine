@@ -1408,7 +1408,14 @@ fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
 /// byte constant. The `BytesLit` carrier is forward-compatible: a future
 /// escape/UTF-8 decoder widens this helper without touching the IR or
 /// the emitters.
-fn decode_bytes_literal(value: &str) -> Option<Vec<u8>> {
+///
+/// Exposed `pub(crate)` so the receive-side validator
+/// (`event_schema_check`) shares the exact same printable-ASCII
+/// admission rule (RFC §3 B2) instead of re-deriving it: a literal this
+/// helper declines is rejected at validation time with a clear
+/// diagnostic rather than slipping through to an ambiguous byte
+/// constant at codegen.
+pub(crate) fn decode_bytes_literal(value: &str) -> Option<Vec<u8>> {
     if value
         .bytes()
         .all(|b| (b.is_ascii_graphic() && b != b'\\') || b == b' ')

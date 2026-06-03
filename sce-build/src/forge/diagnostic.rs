@@ -2431,6 +2431,13 @@ pub enum DiagnosticCode {
     ValidationEventSchemaOnBuiltinEvent,
     #[serde(rename = "validation/event-payload-field-unknown")]
     ValidationEventPayloadFieldUnknown,
+    // RFC `rfc-eventschema-bytes-guard.md` §3 B3 — an ordering operator
+    // (`<`/`>`/`<=`/`>=`) applied to a bytes-typed `_event.data.<field>`
+    // in a transition guard. Distinct operator-domain rule (no existing
+    // code fits without semantic stretch), so one new variant per
+    // `diagnostic_code_edit_checklist`.
+    #[serde(rename = "validation/bytes-comparison-not-equality")]
+    ValidationBytesComparisonNotEquality,
     #[serde(rename = "mesh/event-schema-mismatch")]
     MeshEventSchemaMismatch,
 }
@@ -2870,6 +2877,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // ── NL→IR Item C1 Path A Atomic 3: EventSchema kind ────
         ValidationEventSchemaOnBuiltinEvent,
         ValidationEventPayloadFieldUnknown,
+        ValidationBytesComparisonNotEquality,
         MeshEventSchemaMismatch,
     ]
 };
@@ -3486,6 +3494,7 @@ impl DiagnosticCode {
             // stays None.
             | ValidationEventSchemaOnBuiltinEvent
             | ValidationEventPayloadFieldUnknown
+            | ValidationBytesComparisonNotEquality
             | MeshEventSchemaMismatch => None,
         }
     }
@@ -3936,6 +3945,7 @@ impl DiagnosticCode {
             // ── NL→IR Item C1 Path A: EventSchema kind (Atomic 3) ──
             ValidationEventSchemaOnBuiltinEvent => "validation/event-schema-on-builtin-event",
             ValidationEventPayloadFieldUnknown => "validation/event-payload-field-unknown",
+            ValidationBytesComparisonNotEquality => "validation/bytes-comparison-not-equality",
             MeshEventSchemaMismatch => "mesh/event-schema-mismatch",
         }
     }
@@ -6827,6 +6837,33 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 importing_name.clone(),
                 event_name.clone(),
                 field.clone(),
+            ],
+        },
+        ValidationError::BytesComparisonNotEquality {
+            importing_kind,
+            importing_name,
+            field,
+            op,
+        } => DiagnosticPayload {
+            // RFC `rfc-eventschema-bytes-guard.md` §3 B3: an ordering
+            // operator on a bytes payload. No `fix` candidate set —
+            // the repair is author-domain (switch to `===`/`!==`, or
+            // compare a different field); deterministic, not a closed
+            // choice. `expected` names the only legal operator class so
+            // the message and the wire payload agree.
+            code: DiagnosticCode::ValidationBytesComparisonNotEquality,
+            stage: Stage::Validation,
+            expected: Some(vec!["=== or !==".to_string()]),
+            actual: Some(op.clone()),
+            // Statechart + offending field + operator form the
+            // canonical identity — two distinct bad guards on the same
+            // field with different operators stay distinct.
+            fix: None,
+            key_fragments: vec![
+                importing_kind.to_string(),
+                importing_name.clone(),
+                field.clone(),
+                op.clone(),
             ],
         },
     }
@@ -9952,6 +9989,20 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:fa3df31661845cdb","code":"validation/event-payload-field-unknown","stage":"validation","message":"statechart 'demo': <send event=\"job.completed\"> declares <param name=\"stauts\"> not in the EventSchema for 'job.completed' (imported event-schema 'job_completed_schema') (declared fields: count, status)","expected":["count","status"],"actual":"stauts","fix":{"kind":"replace_one_of","candidates":["count","status"]}}"#,
             ),
+            // ── RFC `rfc-eventschema-bytes-guard.md` §3 B3: ordering
+            //   operator on a bytes payload. `id` is a placeholder; the
+            //   goldens test prints the actual FNV1a on first run.
+            (
+                "validation/bytes-comparison-not-equality",
+                ValidationError::BytesComparisonNotEquality {
+                    importing_kind: ForgeKind::Statechart,
+                    importing_name: "demo".into(),
+                    field: "raw".into(),
+                    op: "<".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:dd6f31b5df3a391c","code":"validation/bytes-comparison-not-equality","stage":"validation","message":"statechart 'demo': operator '<' is not defined on the bytes payload '_event.data.raw' — only equality ('===' / '!==') is supported on bytes","expected":["=== or !=="],"actual":"<"}"#,
+            ),
         ]
     }
 
@@ -12252,6 +12303,12 @@ mod tests {
             // closed but the legal replacement event name is open,
             // so no `ReplaceOneOf` set fits — NeutralOrDeterministic.
             | ValidationEventSchemaOnBuiltinEvent
+            // RFC `rfc-eventschema-bytes-guard.md` §3 B3: ordering
+            // operator on a bytes payload. Repair is author-domain
+            // (switch to `===`/`!==`, or compare a different field) —
+            // deterministic, no closed candidate set the validator can
+            // predict, so NeutralOrDeterministic.
+            | ValidationBytesComparisonNotEquality
             // NL→IR Item C1 Path A (Atomic 3): mesh cross-machine
             // EventSchema mismatch — repair is two-axis (realign
             // sender ↔ receiver schemas by editing one side's field
@@ -12746,6 +12803,7 @@ mod tests {
                 // NL→IR Item C1 Path A: EventSchema kind (Atomic 3)
                 | ValidationEventSchemaOnBuiltinEvent
                 | ValidationEventPayloadFieldUnknown
+                | ValidationBytesComparisonNotEquality
                 | MeshEventSchemaMismatch => true,
             }
         }
@@ -12758,7 +12816,7 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            318,
+            319,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
              expected 263 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
@@ -13534,7 +13592,14 @@ mod tests {
              `validation/cross-kind-type-mismatch` per Item 4 reuse \
              precedent. Receive-side field-not-found + comparison \
              type-mismatch reuse the existing cross-kind codes per \
-             the same precedent. 315 → 318.",
+             the same precedent. 315 → 318. Then RFC \
+             `rfc-eventschema-bytes-guard.md` §3 B3 adds one code — \
+             `validation/bytes-comparison-not-equality` rejects an \
+             ordering operator (`<`/`>`/`<=`/`>=`) applied to a \
+             bytes-typed `_event.data.<field>` in a transition guard; \
+             a distinct operator-domain rule with no existing code \
+             fitting without semantic stretch. NeutralOrDeterministic. \
+             318 → 319.",
         );
     }
 

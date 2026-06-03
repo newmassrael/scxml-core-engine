@@ -54,7 +54,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 use crate::forge::error::{ExprError, ForgeError, Located, SourceLocation, ValidationError};
-use crate::forge::expr::{parse_to_ast, transpile_typed, BinOp, ExprKind, ExprTarget, TypedExpr};
+use crate::forge::expr::{
+    decode_bytes_literal, parse_to_ast, transpile_typed, BinOp, ExprKind, ExprTarget, TypedExpr,
+};
 use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, ForgeKind, SceType};
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Param, SCXMLModel, Transition};
@@ -577,6 +579,11 @@ fn walk_for_event_data_refs(
             )?;
             if is_comparison(*op) {
                 if let Some(field) = extract_event_data_field(left, schema) {
+                    // RFC §3 B3 (ordering-on-bytes) before the type
+                    // check: an ordering operator on a bytes field is a
+                    // structural rejection independent of the other
+                    // operand's type, so it must surface first.
+                    reject_bytes_ordering(field, *op, transition, statechart_name, diag_label)?;
                     check_comparison_type(
                         field,
                         right,
@@ -587,6 +594,7 @@ fn walk_for_event_data_refs(
                     )?;
                 }
                 if let Some(field) = extract_event_data_field(right, schema) {
+                    reject_bytes_ordering(field, *op, transition, statechart_name, diag_label)?;
                     check_comparison_type(
                         field,
                         left,
@@ -797,6 +805,34 @@ fn check_comparison_type(
             },
         ));
     }
+    // RFC §3 B2 — a `bytes` field compares by value against a
+    // printable-ASCII string literal only. The category check above
+    // admits any `String` literal for a `Bytes` field; narrow that here
+    // to the literals that have an unambiguous cross-backend byte
+    // constant. A literal carrying a backslash escape or a non-ASCII
+    // byte is rejected as a type-category mismatch (reused per Item 4
+    // precedent) rather than slipping through to ambiguous codegen. The
+    // admission rule is the shared `decode_bytes_literal` SSOT — the
+    // same predicate the codegen reinterpretation consults — so the
+    // validator never accepts a literal the emitters would decline.
+    if matches!(field.sce_type, SceType::Bytes) {
+        if let ExprKind::StringLit { value, .. } = &other_operand.kind {
+            if decode_bytes_literal(value).is_none() {
+                return Err(located_on_transition(
+                    transition,
+                    diag_label,
+                    ValidationError::CrossKindTypeMismatch {
+                        importing_kind: ForgeKind::Statechart,
+                        importing_name: statechart_name.to_string(),
+                        alias: "_event.data".to_string(),
+                        field: field.id.clone(),
+                        actual: format!("non-printable-ASCII bytes literal '{value}'"),
+                        expected: sce_type_canonical(&field.sce_type),
+                    },
+                ));
+            }
+        }
+    }
     if let Some(overflow) = enum_underlying_overflow(&field.sce_type, other_operand, imported_enums)
     {
         return Err(located_on_transition(
@@ -835,6 +871,57 @@ fn check_comparison_type(
         ));
     }
     Ok(())
+}
+
+/// RFC §3 B3 — reject an ordering operator (`<`, `>`, `<=`, `>=`)
+/// applied to a `bytes`-typed `_event.data.<field>`. Lexicographic
+/// ordering of an opaque payload byte-blob is not a meaningful author
+/// intent; only equality-as-bytes (`===` / `!==`) lowers to a
+/// well-defined, byte-identical comparison on every backend. A no-op
+/// for non-`bytes` fields and for the equality operators.
+fn reject_bytes_ordering(
+    field: &ForgeField,
+    op: BinOp,
+    transition: &Transition,
+    statechart_name: &str,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    if !matches!(field.sce_type, SceType::Bytes) || !is_ordering_comparison(op) {
+        return Ok(());
+    }
+    Err(located_on_transition(
+        transition,
+        diag_label,
+        ValidationError::BytesComparisonNotEquality {
+            importing_kind: ForgeKind::Statechart,
+            importing_name: statechart_name.to_string(),
+            field: field.id.clone(),
+            op: ordering_op_token(op).to_string(),
+        },
+    ))
+}
+
+/// The ordering subset of the comparison operators — the operators
+/// `reject_bytes_ordering` forbids on a `bytes` operand. Distinct from
+/// [`is_comparison`], which also admits the equality operators that
+/// `bytes` permits.
+fn is_ordering_comparison(op: BinOp) -> bool {
+    matches!(op, BinOp::Lt | BinOp::Gt | BinOp::LtEq | BinOp::GtEq)
+}
+
+/// Source-token rendering for the ordering operators, for the B3
+/// diagnostic's `op` slot. Only ordering operators reach this helper
+/// (callers gate on [`is_ordering_comparison`]); the catch-all is
+/// unreachable in practice and returns an empty token rather than
+/// panicking.
+fn ordering_op_token(op: BinOp) -> &'static str {
+    match op {
+        BinOp::Lt => "<",
+        BinOp::Gt => ">",
+        BinOp::LtEq => "<=",
+        BinOp::GtEq => ">=",
+        _ => "",
+    }
 }
 
 /// The rough type of a comparison's non-`_event.data` operand. Restricted
@@ -1712,6 +1799,71 @@ mod tests {
         let msg = format!("{err}");
         assert!(msg.contains("string"), "{msg}");
         assert!(msg.contains("enum:Result"), "{msg}");
+    }
+
+    // ─── RFC `rfc-eventschema-bytes-guard.md` §3 B2/B3 — bytes guards ──
+
+    // B3 baseline: equality against a printable-ASCII literal is the
+    // one comparison shape a bytes payload permits.
+    #[test]
+    fn bytes_equality_with_ascii_literal_passes() {
+        let s = schema("job.completed", vec![field("raw", SceType::Bytes)]);
+        assert!(run(s.clone(), "_event.data.raw === 'ack'").is_ok());
+        assert!(run(s, "_event.data.raw !== 'ack'").is_ok());
+    }
+
+    // B3: an ordering operator on a bytes field is rejected with the
+    // dedicated operator-domain code, naming the offending operator.
+    #[test]
+    fn bytes_ordering_rejects() {
+        for op in ["<", ">", "<=", ">="] {
+            let s = schema("job.completed", vec![field("raw", SceType::Bytes)]);
+            let cond = format!("_event.data.raw {op} 'ack'");
+            let err = run(s, &cond).expect_err("ordering on bytes should reject");
+            let ForgeError::Validation(v) = &err.error else {
+                panic!("expected Validation, got {err:?}");
+            };
+            assert!(
+                matches!(**v, ValidationError::BytesComparisonNotEquality { .. }),
+                "expected BytesComparisonNotEquality, got {v:?}"
+            );
+            let msg = format!("{err}");
+            assert!(msg.contains("bytes"), "{msg}");
+            assert!(msg.contains(op), "{msg}");
+        }
+    }
+
+    // B3 is operand-order independent — the bytes field on the right of
+    // the operator is rejected the same way.
+    #[test]
+    fn bytes_ordering_reversed_operand_rejects() {
+        let s = schema("job.completed", vec![field("raw", SceType::Bytes)]);
+        let err = run(s, "'ack' < _event.data.raw").expect_err("should reject");
+        let ForgeError::Validation(v) = &err.error else {
+            panic!("expected Validation, got {err:?}");
+        };
+        assert!(matches!(
+            **v,
+            ValidationError::BytesComparisonNotEquality { .. }
+        ));
+    }
+
+    // B2: a non-printable-ASCII literal (here a non-ASCII byte) has no
+    // unambiguous cross-backend byte constant, so even an equality
+    // comparison is rejected — reusing the cross-kind type-mismatch code.
+    #[test]
+    fn bytes_non_ascii_literal_rejects() {
+        let s = schema("job.completed", vec![field("raw", SceType::Bytes)]);
+        let err = run(s, "_event.data.raw === 'café'").expect_err("should reject");
+        let ForgeError::Validation(v) = &err.error else {
+            panic!("expected Validation, got {err:?}");
+        };
+        assert!(
+            matches!(**v, ValidationError::CrossKindTypeMismatch { .. }),
+            "expected CrossKindTypeMismatch, got {v:?}"
+        );
+        let msg = format!("{err}");
+        assert!(msg.contains("bytes"), "{msg}");
     }
 
     #[test]
