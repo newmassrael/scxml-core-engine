@@ -272,7 +272,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 
 **Bindings**:
-- [implements] sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
+- [references] sce/include/static/StaticExecutionEngine.h:checkEventlessTransitions
 - [implements] sce/include/static/StaticExecutionEngine.h:getActiveStates
 - [implements] sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
 - [implements] sce/include/core/HistoryHelper.h:SCE::Core::HistoryHelper
@@ -671,7 +671,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 
 **Bindings**:
 - [implements] sce/include/core/HierarchicalStateHelper.h:addParallelRegions
-- [implements] sce/include/core/HierarchicalStateHelper.h:buildEntryChain
+- [references] sce/include/core/HierarchicalStateHelper.h:buildEntryChain
 - [implements] sce/include/core/ParallelCompletionHelper.h:ParallelCompletionHelper
 - [implements] sce/include/core/ParallelCompletionHelper.h:areAllRegionsInFinal
 - [implements] sce/include/core/ParallelConfigurationHelper.h:ParallelConfigurationHelper
@@ -1044,7 +1044,7 @@ The children of the <onentry> handler consist of executable content as defined i
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeExitActions
 - [implements] sce/src/states/StateExitExecutor.cpp:StateExitExecutor::executeActionNodes
 - [implements] sce/include/static/StaticExecutionEngine.h:executeOnExit
-- [implements] sce/include/static/StaticExecutionEngine.h:initialize
+- [references] sce/include/static/StaticExecutionEngine.h:initialize
 - [implements] sce/include/model/IStateNode.h:addExitActionBlock
 - [implements] sce/include/states/ConcurrentStateNode.h:addExitActionBlock
 - [implements] sce/src/model/StateNode.cpp:SCE::StateNode::addExitActionBlock
@@ -1383,7 +1383,7 @@ None.
 - [implements] sce/include/scripting/ScriptResultUtils.h:ScriptResultUtils
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeForeachAction
 - [implements] sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformArrayLiterals
-- [implements] sce/src/scripting/JSEngine.cpp:JSEngine::hasVariable
+- [references] sce/src/scripting/JSEngine.cpp:JSEngine::hasVariable
 
 
 
@@ -1615,7 +1615,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/include/common/AssignmentExecutionHelper.h:AssignmentExecutionHelper
 - [implements] sce/include/common/AssignmentExecutionHelper.h:executeAssignment
 - [implements] sce/include/common/AssignmentExecutionHelper.h:isSystemVariableReference
-- [implements] sce/include/common/DoneDataHelper.h:evaluateContent
+- [references] sce/include/common/DoneDataHelper.h:evaluateContent
 - [implements] sce/include/common/EventDataHelper.h:buildJsonFromParams
 - [implements] sce/include/common/EventDataHelper.h:buildJsonFromTypedParams
 - [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
@@ -1623,7 +1623,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/include/common/EventMetadataHelper.h:populatePolicyFromMetadata
 - [implements] sce/include/common/FinalizeHelper.h:executeFinalizeWithEvent
 - [references] sce/include/common/LogicalTimeScheduler.h:eventData
-- [implements] sce/include/common/SendHelper.h:isInvalidTarget
+- [references] sce/include/common/SendHelper.h:isInvalidTarget
 - [implements] sce/include/common/SendHelper.h:sendToParentWithOrigin
 - [references] sce/include/core/EventMetadata.h:EventMetadata
 - [implements] sce/include/events/InternalEventTarget.h:InternalEventTarget
@@ -1631,10 +1631,10 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 - [references] sce/include/mesh/PayloadCodec.h:PayloadCodec
 - [implements] sce/include/runtime/IEventRaiser.h:raiseEvent
-- [implements] sce/include/runtime/IEventRaiser.h:raiseExternalEvent
+- [references] sce/include/runtime/IEventRaiser.h:raiseExternalEvent
 - [references] sce/include/scripting/IScriptEngine.h:SetCurrentEventArgs
 - [implements] sce/include/scripting/IScriptEngine.h:setCurrentEvent
-- [implements] sce/include/scripting/ISessionRegistry.h:getInvokeIdForChildSession
+- [references] sce/include/scripting/ISessionRegistry.h:getInvokeIdForChildSession
 - [references] sce/include/scripting/JSEngine.h:eventObjectInitialized
 - [implements] sce/include/scripting/JSEngine.h:setCurrentEvent
 - [implements] sce/include/static/StaticExecutionEngine.h:StaticExecutionEngine
@@ -1643,7 +1643,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/src/common/EventDataHelper.cpp:EventDataHelper::buildJsonFromParams
 - [implements] sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::createExternalTarget
 - [implements] sce/src/events/EventTargetFactoryImpl.cpp:EventTargetFactoryImpl::createInternalTarget
-- [implements] sce/src/events/HttpEventTarget.cpp:HttpEventTarget::send
+- [references] sce/src/events/HttpEventTarget.cpp:HttpEventTarget::send
 - [implements] sce/src/events/InternalEventTarget.cpp:InternalEventTarget::buildEventData
 - [implements] sce/src/events/InternalEventTarget.cpp:InternalEventTarget::send
 - [implements] sce/src/events/InvokeEventTarget.cpp:InvokeEventTarget::send
@@ -2000,7 +2000,7 @@ The children of the <assign>element provide an in-line specification of the lega
 - [implements] sce/include/common/DoneDataHelper.h:evaluateContent
 - [implements] sce/include/common/DoneDataHelper.h:evaluateParams
 - [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
-- [implements] sce/include/common/EventMetadataHelper.h:clearPolicyMetadata
+- [references] sce/include/common/EventMetadataHelper.h:clearPolicyMetadata
 - [implements] sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
 - [implements] sce/include/mesh/ChildSessionAdapter.h:getDonedata
 - [implements] sce/include/model/DoneData.h:DoneData
@@ -2797,9 +2797,9 @@ None
 
 **Bindings**:
 - [implements] sce/include/mesh/IChildSession.h:tick
-- [implements] sce/include/static/StaticExecutionEngine.h:currentEventInvokeId
-- [implements] sce/include/static/StaticExecutionEngine.h:performMeshInvoke
-- [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
+- [references] sce/include/static/StaticExecutionEngine.h:currentEventInvokeId
+- [references] sce/include/static/StaticExecutionEngine.h:performMeshInvoke
+- [references] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/core/InvokeHelper.h:isValidInvokeId
 - [references] sce/include/mesh/IChildSession.h:invokeIdString
 
@@ -3219,12 +3219,12 @@ The <foreach> element and the elements defined in 5 Data Model and Data Manipula
 - [implements] sce/include/parsing/XmlSerializationHelper.h:XmlSerializationHelper
 - [implements] sce/include/runtime/DataContentHelpers.h:SCE
 - [implements] sce/include/scripting/DOMBinding.h:DOMBinding
-- [implements] sce/include/scripting/DOMBinding.h:resetClassId
+- [references] sce/include/scripting/DOMBinding.h:resetClassId
 - [implements] sce/include/scripting/IScriptEngine.h:setVariableAsDOM
 - [references] sce/include/scripting/JSEngine.h:isDOMObject
 - [implements] sce/include/scripting/JSEngine.h:setVariableAsDOM
 - [implements] sce/include/scripting/LuaDOMBinding.h:LuaDOMBinding
-- [implements] sce/include/scripting/LuaDOMBinding.h:resetClassId
+- [references] sce/include/scripting/LuaDOMBinding.h:resetClassId
 - [implements] sce/include/scripting/XMLDOMWrapper.h:XMLDocument
 - [implements] sce/include/scripting/XMLDOMWrapper.h:XMLElement
 - [implements] sce/src/common/DataModelInitHelper.cpp:SCE::DataModelInitHelper::initializeVariable
@@ -3251,7 +3251,7 @@ The <foreach> element and the elements defined in 5 Data Model and Data Manipula
 - [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::registerBuiltins
 - [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::setCurrentEvent
 - [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::setVariableAsDOM
-- [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::shutdown
+- [references] sce/src/scripting/LuaEngine.cpp:LuaEngine::shutdown
 - [implements] sce/src/scripting/ScriptResultUtils.cpp:resultToStringArray
 - [implements] sce/src/scripting/XMLDOMWrapper.cpp:XMLDocument::XMLDocument
 - [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::luaToScriptValue
