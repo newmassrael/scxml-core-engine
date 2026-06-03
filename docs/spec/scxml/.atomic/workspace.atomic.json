@@ -574,7 +574,7 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "SCE",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
@@ -2265,7 +2265,7 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
           "symbol": "SCE",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
@@ -3737,7 +3737,7 @@
         {
           "file": "sce/include/common/SendSchedulingHelper.h",
           "symbol": "SCE",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/SendSchedulingHelper.h",
@@ -4296,11 +4296,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/include/common/EventMetadataHelper.h",
-          "symbol": "EventMetadataHelper",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/core/InvokeHelper.h",
           "symbol": "createDoneInvokeEventName",
           "kind": "implements"
@@ -4354,6 +4349,11 @@
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "cancelEventsForSession",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/EventMetadataHelper.h",
+          "symbol": "EventMetadataHelper",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -4387,11 +4387,6 @@
         },
         {
           "file": "sce/include/common/SendHelper.h",
-          "symbol": "SendHelper",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/SendHelper.h",
           "symbol": "sendToParentWithOrigin",
           "kind": "implements"
         },
@@ -4419,6 +4414,11 @@
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "SendHelper",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {

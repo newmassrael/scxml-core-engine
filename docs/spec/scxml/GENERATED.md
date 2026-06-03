@@ -428,7 +428,7 @@ The following events are generated automatically by the SCXML implementation und
 - [implements] sce/src/runtime/EventRaiserImpl.h:executeEventCallback
 - [implements] sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::enterState
 - [implements] sce/src/runtime/StateHierarchyManager.cpp:StateHierarchyManager::exitState
-- [implements] sce/src/runtime/StateMachine.cpp:SCE
+- [references] sce/src/runtime/StateMachine.cpp:SCE
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::checkEventlessTransitions
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::enterState
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeExitActions
@@ -1661,7 +1661,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEvent
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEventWithPriority
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseExternalEvent
-- [implements] sce/src/runtime/EventRaiserImpl.cpp:SCE
+- [references] sce/src/runtime/EventRaiserImpl.cpp:SCE
 - [implements] sce/src/runtime/EventRaiserImpl.h:EventRaiserImpl
 - [references] sce/src/runtime/EventRaiserImpl.h:currentEventContext_
 - [references] sce/src/runtime/EventRaiserImpl.h:eventType
@@ -2625,7 +2625,7 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 
 
 **Bindings**:
-- [implements] sce/include/common/SendSchedulingHelper.h:SCE
+- [references] sce/include/common/SendSchedulingHelper.h:SCE
 - [implements] sce/include/common/SendSchedulingHelper.h:cancel
 - [implements] sce/include/common/SendSchedulingHelper.h:schedule
 - [implements] sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::cancelEvent
@@ -2851,7 +2851,6 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [implements] sce/include/common/DatamodelValidationHelper.h:DatamodelValidationHelper
 - [implements] sce/include/common/DatamodelValidationHelper.h:buildChildDatamodelSet
 - [implements] sce/include/common/DatamodelValidationHelper.h:isVariableDeclaredInChild
-- [implements] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 - [implements] sce/include/core/InvokeHelper.h:createDoneInvokeEventName
 - [implements] sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
 - [references] sce/include/runtime/InvokeExecutor.h:parentStateMachine_
@@ -2863,6 +2862,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [implements] sce/include/runtime/IEventRaiser.h:cancelEventsForSession
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::cancelEventsForSession
 - [implements] sce/src/runtime/EventRaiserImpl.h:cancelEventsForSession
+- [references] sce/include/common/EventMetadataHelper.h:EventMetadataHelper
 
 
 
@@ -2907,13 +2907,13 @@ The implementation of <invoke>, including communication between parent and child
 
 **Bindings**:
 - [implements] sce/include/common/FinalizeHelper.h:executeFinalizeWithEvent
-- [implements] sce/include/common/SendHelper.h:SendHelper
 - [implements] sce/include/common/SendHelper.h:sendToParentWithOrigin
 - [references] sce/include/core/StatePolicyConcepts.h:SCE::Core
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventQueues
 - [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
 - [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- [references] sce/include/common/SendHelper.h:SendHelper
 
 
 
