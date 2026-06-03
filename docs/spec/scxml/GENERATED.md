@@ -390,8 +390,8 @@ The following events are generated automatically by the SCXML implementation und
 - [references] sce/include/core/ConflictResolutionHelper.h:isExternal
 - [references] sce/include/core/ConflictResolutionHelper.h:isInternal
 - [implements] sce/include/core/ConflictResolutionHelper.h:removeConflictingTransitions
-- [implements] sce/include/core/EntryExitHelper.h:executeEntryBlocks
-- [implements] sce/include/core/EntryExitHelper.h:executeExitBlocks
+- [references] sce/include/core/EntryExitHelper.h:executeEntryBlocks
+- [references] sce/include/core/EntryExitHelper.h:executeExitBlocks
 - [implements] sce/include/core/EventProcessingAlgorithms.h:checkEventlessTransitions
 - [implements] sce/include/core/EventProcessingAlgorithms.h:processMacrostep
 - [implements] sce/include/core/HierarchicalStateHelper.h:findLCA
