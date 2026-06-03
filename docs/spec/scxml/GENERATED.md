@@ -1671,7 +1671,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [references] sce/src/runtime/EventRaiserImpl.h:originType
 - [references] sce/src/runtime/EventRaiserImpl.h:sendId
 - [implements] sce/src/runtime/StateMachine.cpp:EventContextGuard
-- [implements] sce/src/runtime/StateMachine.cpp:StateMachine::enterState
+- [references] sce/src/runtime/StateMachine.cpp:StateMachine::enterState
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionMicrostep
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
@@ -2211,7 +2211,7 @@ None.
 - [references] sce/include/model/SCXMLModel.h:topLevelScripts_
 - [references] sce/include/parsing/ActionParser.h:scxmlBasePath_
 - [implements] sce/include/parsing/ActionParser.h:setScxmlBasePath
-- [implements] sce/include/parsing/SemanticError.h:SCE::parsing
+- [references] sce/include/parsing/SemanticError.h:SCE::parsing
 - [implements] sce/include/parsing/SemanticError.h:SemanticTopLevelScriptUnloaded
 - [implements] sce/src/parsing/ActionParser.cpp:SCE::ActionParser::parseActionNode
 - [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseFile
@@ -2467,10 +2467,10 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 - [implements] sce/src/parsing/ActionParser.cpp:SCE::ActionParser::parseActionNode
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::evaluateExpression
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
-- [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setEventDispatcher
+- [references] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setEventDispatcher
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processQueuedEvents
 - [references] sce/src/runtime/EventRaiserImpl.h:scheduler_
-- [implements] sce/src/runtime/EventRaiserImpl.h:setScheduler
+- [references] sce/src/runtime/EventRaiserImpl.h:setScheduler
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::captureChildState
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
