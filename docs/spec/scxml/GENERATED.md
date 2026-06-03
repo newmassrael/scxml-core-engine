@@ -1827,9 +1827,9 @@ None.
 
 
 **Bindings**:
-- [implements] sce/include/common/AssignHelper.h:AssignHelper
-- [implements] sce/include/common/AssignHelper.h:getInvalidLocationErrorMessage
-- [implements] sce/include/common/AssignHelper.h:isValidLocation
+- [references] sce/include/common/AssignHelper.h:AssignHelper
+- [references] sce/include/common/AssignHelper.h:getInvalidLocationErrorMessage
+- [references] sce/include/common/AssignHelper.h:isValidLocation
 - [implements] sce/include/common/AssignmentExecutionHelper.h:AssignmentExecutionHelper
 - [implements] sce/include/common/AssignmentExecutionHelper.h:executeAssignment
 - [implements] sce/include/common/DataModelInitHelper.h:initializeVariable
@@ -2470,9 +2470,9 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::processQueuedEvents
 - [references] sce/src/runtime/EventRaiserImpl.h:scheduler_
 - [references] sce/src/runtime/EventRaiserImpl.h:setScheduler
-- [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::captureChildState
+- [references] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::captureChildState
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
-- [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- [references] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 - [implements] sce/src/runtime/SCXMLEngineImpl.cpp:SCXMLEngineImpl::loadSCXMLFromString
 - [implements] sce/src/scripting/JSEngine.cpp:JSEngine::destroySessionInternal
 - [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::destroySession
@@ -2539,7 +2539,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 **Bindings**:
 - [implements] sce/include/common/SendHelper.h:SendHelper
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeSendAction
-- [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
+- [references] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
 - [implements] sce/src/events/EventSchedulerImpl.cpp:EventSchedulerImpl::processReadyEvents
 - [implements] sce/src/events/PlatformEventRaiserHelper.cpp:pollScheduler
 
@@ -2661,7 +2661,7 @@ The sending SCXML Interpreter MUST not alter the content of the <send> and MUST 
 
 **Bindings**:
 - [references] sce/include/common/LogicalTimeScheduler.h:sendId
-- [implements] sce/include/wrappers/TimerManager.h:generateTimerSendId
+- [references] sce/include/wrappers/TimerManager.h:generateTimerSendId
 
 
 
@@ -3238,7 +3238,7 @@ The <foreach> element and the elements defined in 5 Data Model and Data Manipula
 - [implements] sce/src/runtime/DataContentHelpers.cpp:normalizeWhitespace
 - [implements] sce/src/runtime/DataModelInitializer.cpp:DataModelInitializer::initializeDataItem
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEventWithPriority
-- [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
+- [references] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 - [implements] sce/src/scripting/DOMBinding.cpp:DOMBinding::resetClassId
 - [implements] sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformOperators
 - [implements] sce/src/scripting/JSEngine.cpp:JSEngine::reset
@@ -3697,7 +3697,7 @@ SCXML Processors that support the BasicHTTP Event I/O Processor MUST maintain a 
 
 
 **Bindings**:
-- [implements] sce/include/core/EventQueueManager.h:SCE::Core
+- [references] sce/include/core/EventQueueManager.h:SCE::Core
 
 
 
@@ -4176,8 +4176,8 @@ Return true if s is a compound <state> and one of its children is an active <fin
 
 
 **Bindings**:
-- [implements] sce/include/core/EventQueueManager.h:EventQueueManager
-- [implements] sce/include/core/EventQueueManager.h:raise
+- [references] sce/include/core/EventQueueManager.h:EventQueueManager
+- [references] sce/include/core/EventQueueManager.h:raise
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventQueues
 
 
