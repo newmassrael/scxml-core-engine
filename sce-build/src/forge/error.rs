@@ -3268,6 +3268,31 @@ pub enum ValidationError {
         /// closed candidate set for typo repair.
         candidates: Vec<String>,
     },
+
+    /// A transition guard applies an ordering operator (`<`, `>`, `<=`,
+    /// `>=`) to a `bytes`-typed `_event.data.<field>`. Lexicographic
+    /// ordering of an opaque payload byte-blob is not a meaningful
+    /// author intent; only equality-as-bytes (`===` / `!==`) lowers to
+    /// a well-defined, byte-identical comparison on every backend.
+    /// Rejecting is more textbook than silently defining an order that
+    /// would diverge per language. Wire code:
+    /// `validation/bytes-comparison-not-equality`. See
+    /// `rfc-eventschema-bytes-guard.md` §3 B3.
+    #[error(
+        "{importing_kind} '{importing_name}': operator '{op}' is not defined on the bytes payload '_event.data.{field}' \u{2014} only equality ('===' / '!==') is supported on bytes"
+    )]
+    BytesComparisonNotEquality {
+        /// Importing kind — `ForgeKind::Statechart`, since the guard
+        /// originates from an SCXML transition `cond`.
+        importing_kind: ForgeKind,
+        /// Statechart-document name carrying the offending guard.
+        importing_name: String,
+        /// The `bytes` payload field id (the `_event.data.<field>`
+        /// operand the operator was applied to).
+        field: String,
+        /// The rejected ordering operator token (`<`, `>`, `<=`, `>=`).
+        op: String,
+    },
 }
 
 /// watching-zenoh RFC §5.E B7-η' Atomic A2 callback-path failure

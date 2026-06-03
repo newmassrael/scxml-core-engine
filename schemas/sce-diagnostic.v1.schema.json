@@ -339,6 +339,7 @@
         "validation/enum-unsupported-underlying-type",
         "validation/event-schema-on-builtin-event",
         "validation/event-payload-field-unknown",
+        "validation/bytes-comparison-not-equality",
         "mesh/event-schema-mismatch"
       ]
     },
