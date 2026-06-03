@@ -613,6 +613,9 @@ fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, ConstFoldKind
         ExprKind::StringLit { .. } => Err(ConstFoldKind::NotFoldable(
             "string literals are not foldable to a scalar array element".to_string(),
         )),
+        ExprKind::BytesLit { .. } => Err(ConstFoldKind::NotFoldable(
+            "byte-sequence literals are not foldable to a scalar array element".to_string(),
+        )),
         ExprKind::Ident(name) => scope
             .lookup(name)
             .map(EvalValue::from_const)

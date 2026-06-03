@@ -308,6 +308,7 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
         | ExprKind::Ident(_)
         | ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
         | ExprKind::BoolLit(_)
         | ExprKind::NullLit => {}
     }
@@ -425,6 +426,7 @@ fn shape_name(kind: &ExprKind) -> &'static str {
     match kind {
         ExprKind::NumberLit(_) => "number literal",
         ExprKind::StringLit { .. } => "string literal",
+        ExprKind::BytesLit { .. } => "bytes literal",
         ExprKind::BoolLit(_) => "boolean literal",
         ExprKind::NullLit => "null literal",
         ExprKind::Ident(_) => "identifier",
@@ -470,6 +472,17 @@ pub(crate) enum ExprKind {
     StringLit {
         value: String,
         quote: char,
+    },
+    /// A byte-sequence literal carrying its fully decoded bytes. Not
+    /// produced by the parser — [`infer_types`] rewrites a `StringLit`
+    /// into a `BytesLit` when it is compared against a `Bytes`-typed
+    /// operand (e.g. `_event.data.raw === 'ack'`). The decode-once-here
+    /// design keeps the "this string is bytes" decision and its encoding
+    /// (UTF-8) in a single place, so every backend renders byte-identical
+    /// comparison constants instead of re-deriving the reinterpretation
+    /// per emitter. See `claudedocs/rfc-eventschema-bytes-guard.md` §3 B1.
+    BytesLit {
+        bytes: Vec<u8>,
     },
     BoolLit(bool),
     NullLit,
@@ -1340,6 +1353,7 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
         ExprKind::Raw(_)
         | ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
         | ExprKind::BoolLit(_)
         | ExprKind::NullLit => {}
     }
@@ -1383,6 +1397,77 @@ fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
 /// but the syntax of a coercion (e.g., `x as f64` vs `float64(x)` vs
 /// `x.toDouble()`) is language-specific. Emitters keep their knowledge
 /// localized by consulting the tree's natural types.
+/// Decode a string literal's verbatim source `value` into its byte
+/// sequence for a `Bytes`-typed comparison (RFC §3 B2). Conservative:
+/// only printable ASCII (no backslash escape, no non-ASCII byte) is
+/// accepted — the byte sequence is then exactly `value.as_bytes()`,
+/// byte-identical on every backend with no target-compiler escape
+/// involvement. Anything else returns `None`; the caller then leaves the
+/// node a `StringLit`, and the receive-side validator rejects the
+/// comparison with a clear diagnostic rather than emitting an ambiguous
+/// byte constant. The `BytesLit` carrier is forward-compatible: a future
+/// escape/UTF-8 decoder widens this helper without touching the IR or
+/// the emitters.
+fn decode_bytes_literal(value: &str) -> Option<Vec<u8>> {
+    if value
+        .bytes()
+        .all(|b| (b.is_ascii_graphic() && b != b'\\') || b == b' ')
+    {
+        Some(value.as_bytes().to_vec())
+    } else {
+        None
+    }
+}
+
+/// If `lit_node` is a `StringLit` and `other` is `Bytes`-typed, rewrite
+/// `lit_node` in place into a `BytesLit` carrying the decoded bytes and
+/// retype it `Bytes`. No-op for every other shape (including a string
+/// literal whose content [`decode_bytes_literal`] declines). This is the
+/// single site that performs the string→bytes reinterpretation; emitters
+/// only render the resulting `BytesLit`. See RFC §3 B1.
+fn reinterpret_string_as_bytes(lit_node: &mut TypedExpr, other: &TypedExpr) {
+    if !matches!(other.ty, InferredType::Bytes) {
+        return;
+    }
+    let ExprKind::StringLit { value, .. } = &lit_node.kind else {
+        return;
+    };
+    let Some(bytes) = decode_bytes_literal(value) else {
+        return;
+    };
+    lit_node.kind = ExprKind::BytesLit { bytes };
+    lit_node.ty = InferredType::Bytes;
+}
+
+/// Render a decoded byte sequence as the content of a double-quoted
+/// target string literal. [`decode_bytes_literal`] guarantees printable
+/// ASCII with no backslash, so the only character that needs escaping is
+/// the double quote itself. Shared by the byte-equality emitters that
+/// wrap the bytes in a target string literal (Rust `b"…"`, Python `b"…"`,
+/// Go `"…"`, Kotlin `"…"`, C `"…"`).
+fn bytes_as_quoted_ascii(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len());
+    for &b in bytes {
+        if b == b'"' {
+            s.push('\\');
+        }
+        s.push(b as char);
+    }
+    s
+}
+
+/// Render a decoded byte sequence as a comma-separated list of hex byte
+/// values (`0x61, 0x63, 0x6b`). Used by the C++ vector-literal and the
+/// Go/Kotlin standalone-fallback renderings, which have no byte-string
+/// literal syntax.
+fn bytes_as_hex_list(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("0x{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
     expr.ty = match &mut expr.kind {
         ExprKind::NumberLit(n) => {
@@ -1393,6 +1478,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             }
         }
         ExprKind::StringLit { .. } => InferredType::Str,
+        ExprKind::BytesLit { .. } => InferredType::Bytes,
         ExprKind::BoolLit(_) => InferredType::Bool,
         ExprKind::NullLit => InferredType::Null,
         ExprKind::Ident(name) => ctx.lookup_var(name.as_str()),
@@ -1406,6 +1492,16 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         ExprKind::Binary { op, left, right } => {
             infer_types(left, ctx);
             infer_types(right, ctx);
+            // Bytes reinterpretation (RFC §3 B1): a string literal compared
+            // against a `Bytes`-typed operand denotes the literal's bytes,
+            // not a target-language string. Rewrite the `StringLit` child
+            // into a `BytesLit` carrying the decoded bytes so every emitter
+            // renders the same byte sequence through its content-equality
+            // primitive. Done once, here, rather than re-derived per emitter.
+            if op.is_comparison() {
+                reinterpret_string_as_bytes(left, right);
+                reinterpret_string_as_bytes(right, left);
+            }
             if op.is_arith() {
                 join_arith(left.ty, right.ty)
             } else if op.is_comparison() || op.is_logical() {
@@ -1742,6 +1838,13 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
     match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        // `std::vector<uint8_t>` has `operator==`, so the default
+        // `==`/`!=` path compares length+content directly against this
+        // value-constructed temporary. No byte-string literal in C++, so
+        // a hex initializer list. RFC §3 B5.
+        ExprKind::BytesLit { bytes } => {
+            format!("std::vector<uint8_t>{{{}}}", bytes_as_hex_list(bytes))
+        }
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "nullptr".to_string(),
         ExprKind::Ident(s) => s.clone(),
@@ -1999,11 +2102,33 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
     match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        // `"ack".toByteArray()` is byte-identical to the ASCII literal
+        // (UTF-8 default). Used as the `contentEquals` argument in the
+        // bytes-equality Binary branch below. RFC §3 B5.
+        ExprKind::BytesLit { bytes } => {
+            format!("\"{}\".toByteArray()", bytes_as_quoted_ascii(bytes))
+        }
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "null".to_string(),
         ExprKind::Ident(s) => s.clone(),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
+            // Bytes equality: Kotlin `==` on `ByteArray` is reference
+            // equality, so content comparison must use `contentEquals`.
+            // RFC §3 B3/B5 — only `===`/`!==` reach here for bytes.
+            if matches!(op, BinOp::StrictEq | BinOp::StrictNeq)
+                && (matches!(left.ty, InferredType::Bytes)
+                    || matches!(right.ty, InferredType::Bytes))
+            {
+                let l = emit_kotlin(left, InferredType::Unknown);
+                let r = emit_kotlin(right, InferredType::Unknown);
+                let call = format!("{}.contentEquals({r})", wrap_postfix(left, l));
+                return if matches!(op, BinOp::StrictNeq) {
+                    format!("!{call}")
+                } else {
+                    call
+                };
+            }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_kotlin(left, operand_ty);
             let r_raw = emit_kotlin(right, operand_ty);
@@ -2324,6 +2449,11 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        // `Vec<u8> == &[u8; N]` (and `== Vec<u8>`) compare length+content,
+        // so the default `==`/`!=` Binary path needs no special-casing —
+        // only this constant rendering. ASCII-only (RFC §3 B2) so `b"…"`
+        // is valid. See `claudedocs/rfc-eventschema-bytes-guard.md` §3 B5.
+        ExprKind::BytesLit { bytes } => format!("b\"{}\"", bytes_as_quoted_ascii(bytes)),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
         ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
@@ -2591,11 +2721,37 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
     Ok(match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        // Standalone fallback only — the bytes-equality Binary branch
+        // renders operands itself (as `string(x)` / a string literal) so
+        // it needs no `bytes` import. RFC §3 B5.
+        ExprKind::BytesLit { bytes } => format!("[]byte{{{}}}", bytes_as_hex_list(bytes)),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "nil".to_string(),
         ExprKind::Ident(s) => s.clone(),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
+            // Bytes equality: Go forbids `==` on `[]byte` slices. Compare
+            // via `string(slice)` conversion (no `bytes` import needed);
+            // a `BytesLit` operand renders directly as a Go string literal.
+            // RFC §3 B3/B5 — only `===`/`!==` reach here for bytes.
+            if matches!(op, BinOp::StrictEq | BinOp::StrictNeq)
+                && (matches!(left.ty, InferredType::Bytes)
+                    || matches!(right.ty, InferredType::Bytes))
+            {
+                let render = |operand: &TypedExpr| -> Result<String, ExprError> {
+                    if let ExprKind::BytesLit { bytes } = &operand.kind {
+                        Ok(format!("\"{}\"", bytes_as_quoted_ascii(bytes)))
+                    } else {
+                        Ok(format!(
+                            "string({})",
+                            emit_go(operand, InferredType::Unknown)?
+                        ))
+                    }
+                };
+                let l = render(left)?;
+                let r = render(right)?;
+                return Ok(format!("{l} {} {r}", go_binop(*op)));
+            }
             let operand_ty = binary_operand_type(*op, left.ty, right.ty);
             let l_raw = emit_go(left, operand_ty)?;
             let r_raw = emit_go(right, operand_ty)?;
@@ -2821,6 +2977,11 @@ fn python_emit_node(expr: &TypedExpr) -> String {
     match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("'{value}'"),
+        // `bytes == bytes` compares content, so the default `==`/`!=`
+        // path needs no special-casing — only this constant rendering.
+        // A `b"…"` literal (double-quoted so a `'` byte needs no escape).
+        // RFC §3 B5.
+        ExprKind::BytesLit { bytes } => format!("b\"{}\"", bytes_as_quoted_ascii(bytes)),
         ExprKind::BoolLit(b) => if *b { "True" } else { "False" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
         ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
@@ -3030,11 +3191,49 @@ fn c_emit_node(expr: &TypedExpr) -> String {
     match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        // Standalone fallback — the bytes-equality Binary branch renders
+        // the literal and its byte count itself (a `bytes` value has no
+        // length without its `_len` sibling). RFC §3 B5.
+        ExprKind::BytesLit { bytes } => format!("\"{}\"", bytes_as_quoted_ascii(bytes)),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "NULL".to_string(),
         ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
         ExprKind::Raw(s) => s.clone(),
         ExprKind::Binary { op, left, right } => {
+            // Bytes equality: C has no slice equality. The payload struct
+            // stores a bytes field as `uint8_t <id>[CAP]; size_t <id>_len;`
+            // (the EventSchema-bytes representation reuses the codec
+            // bounded-buffer shape), so content equality is a length guard
+            // plus `memcmp` over the asserted-equal byte count. A literal
+            // operand fixes the count; the validator template's <string.h>
+            // include (already added for the strcmp lowering below) also
+            // covers memcmp. RFC §3 B3/B5 — only `===`/`!==` reach here.
+            if matches!(op, BinOp::StrictEq | BinOp::StrictNeq)
+                && (matches!(left.ty, InferredType::Bytes)
+                    || matches!(right.ty, InferredType::Bytes))
+            {
+                let render = |operand: &TypedExpr| -> (String, String, Option<usize>) {
+                    if let ExprKind::BytesLit { bytes } = &operand.kind {
+                        let v = format!("\"{}\"", bytes_as_quoted_ascii(bytes));
+                        (v, bytes.len().to_string(), Some(bytes.len()))
+                    } else {
+                        let v = emit_c(operand, InferredType::Unknown);
+                        let len = format!("{v}_len");
+                        (v, len, None)
+                    }
+                };
+                let (lv, ll, l_lit) = render(left);
+                let (rv, rl, r_lit) = render(right);
+                let cmp_len = l_lit
+                    .or(r_lit)
+                    .map(|n| n.to_string())
+                    .unwrap_or_else(|| ll.clone());
+                return if matches!(op, BinOp::StrictEq) {
+                    format!("{ll} == {rl} && memcmp({lv}, {rv}, {cmp_len}) == 0")
+                } else {
+                    format!("{ll} != {rl} || memcmp({lv}, {rv}, {cmp_len}) != 0")
+                };
+            }
             // RFC §5.J.2 V3 — string comparison lowering. C lacks operator
             // overloading; `a == b` on `const char *` is pointer equality, not
             // content equality. Lower any string-typed comparison (==, !=, <,
@@ -3313,6 +3512,94 @@ mod tests {
         assert_eq!(tp_with("a > b", ExprTarget::C, &ctx), "strcmp(a, b) > 0");
         assert_eq!(tp_with("a <= b", ExprTarget::C, &ctx), "strcmp(a, b) <= 0");
         assert_eq!(tp_with("a >= b", ExprTarget::C, &ctx), "strcmp(a, b) >= 0");
+    }
+
+    // ── Bytes equality (RFC §3 B1/B5) ───────────────────────────
+    // A string literal compared against a `Bytes`-typed operand is
+    // reinterpreted as a byte sequence (`BytesLit`) and lowered to each
+    // backend's content-equality primitive. The decoded bytes are
+    // identical on every backend; only the surface syntax differs.
+    fn bytes_ctx() -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("raw", InferredType::Bytes);
+        ctx
+    }
+
+    #[test]
+    fn bytes_eq_lowers_per_backend() {
+        let ctx = bytes_ctx();
+        assert_eq!(
+            tp_with("raw === 'ack'", ExprTarget::Rust, &ctx),
+            "raw == b\"ack\""
+        );
+        assert_eq!(
+            tp_with("raw === 'ack'", ExprTarget::Python, &ctx),
+            "raw == b\"ack\""
+        );
+        assert_eq!(
+            tp_with("raw === 'ack'", ExprTarget::Cpp, &ctx),
+            "raw == std::vector<uint8_t>{0x61, 0x63, 0x6b}"
+        );
+        assert_eq!(
+            tp_with("raw === 'ack'", ExprTarget::Go, &ctx),
+            "string(raw) == \"ack\""
+        );
+        assert_eq!(
+            tp_with("raw === 'ack'", ExprTarget::Kotlin, &ctx),
+            "raw.contentEquals(\"ack\".toByteArray())"
+        );
+        assert_eq!(
+            tp_with("raw === 'ack'", ExprTarget::C, &ctx),
+            "raw_len == 3 && memcmp(raw, \"ack\", 3) == 0"
+        );
+    }
+
+    #[test]
+    fn bytes_neq_lowers_per_backend() {
+        let ctx = bytes_ctx();
+        assert_eq!(
+            tp_with("raw !== 'ack'", ExprTarget::Rust, &ctx),
+            "raw != b\"ack\""
+        );
+        assert_eq!(
+            tp_with("raw !== 'ack'", ExprTarget::Python, &ctx),
+            "raw != b\"ack\""
+        );
+        assert_eq!(
+            tp_with("raw !== 'ack'", ExprTarget::Cpp, &ctx),
+            "raw != std::vector<uint8_t>{0x61, 0x63, 0x6b}"
+        );
+        assert_eq!(
+            tp_with("raw !== 'ack'", ExprTarget::Go, &ctx),
+            "string(raw) != \"ack\""
+        );
+        assert_eq!(
+            tp_with("raw !== 'ack'", ExprTarget::Kotlin, &ctx),
+            "!raw.contentEquals(\"ack\".toByteArray())"
+        );
+        assert_eq!(
+            tp_with("raw !== 'ack'", ExprTarget::C, &ctx),
+            "raw_len != 3 || memcmp(raw, \"ack\", 3) != 0"
+        );
+    }
+
+    // A non-ASCII / escape-bearing literal is NOT reinterpreted (RFC §3
+    // B2): the node stays a `StringLit`, so the comparison does not lower
+    // to a byte constant. The receive-side validator rejects it later;
+    // here we only assert the reinterpretation declined.
+    #[test]
+    fn bytes_non_ascii_literal_not_reinterpreted() {
+        let ctx = bytes_ctx();
+        // A backslash escape is declined — Rust would otherwise need a
+        // decoder; the node stays a StringLit, so no `BytesLit` byte
+        // constant (`== b"…"`) is emitted. The gate / validator handles
+        // the residual mismatch, not codegen.
+        let out = tp_with("raw === 'a\\tb'", ExprTarget::Rust, &ctx);
+        assert_eq!(out, "raw == \"a\\tb\"");
+        assert!(
+            !out.contains("== b\""),
+            "must not reinterpret as bytes: {out}"
+        );
     }
 
     #[test]
