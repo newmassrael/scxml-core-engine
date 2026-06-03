@@ -19,6 +19,7 @@
 
 use core::time::Duration;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use sce_rust_runtime::{Engine, Hal, StatePolicy};
 
@@ -27,6 +28,24 @@ use sce_rust_runtime::{Engine, Hal, StatePolicy};
 // ─────────────────────────────────────────────────────────────
 
 static MOCK_TICK_MS: AtomicU64 = AtomicU64::new(0);
+
+// `MOCK_TICK_MS` is one process-global clock, but cargo runs the `#[test]`
+// functions in this binary on PARALLEL threads. Two tests that drive the
+// clock (`scheduler_consults_hal_under_std`,
+// `scheduler_resolution_is_milliseconds`) therefore race: one test's
+// `mock_set_ticks` can interleave between the other's anchor and its
+// `schedule_event`, so `ready_at` is computed against the wrong epoch and a
+// later assertion observes a clock below it. The race only manifests under
+// load (workspace `cargo test`), not in isolation. Serialize every
+// clock-driving test on this lock so each runs with exclusive ownership of
+// the global tick. `into_inner` ignores poisoning: a failing assertion in
+// one test must surface as that test's failure, not cascade into a panic in
+// the next test's `lock()`.
+static CLOCK_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_clock() -> MutexGuard<'static, ()> {
+    CLOCK_LOCK.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 fn mock_set_ticks(ms: u64) {
     MOCK_TICK_MS.store(ms, Ordering::SeqCst);
@@ -168,8 +187,13 @@ impl StatePolicy for MockPolicy {
 
 #[test]
 fn scheduler_consults_hal_under_std() {
+    // Exclusive ownership of the process-global mock clock for this test's
+    // duration — no parallel test may mutate `MOCK_TICK_MS` between the
+    // anchor below and the assertions.
+    let _clock = lock_clock();
+
     // Anchor mock clock at a known epoch so the test is independent of any
-    // prior mutation (other tests in this file run sequentially per &mut).
+    // prior mutation.
     mock_set_ticks(1_000_000);
 
     let mut engine = Engine::<MockPolicy>::new(MockPolicy::new());
@@ -200,6 +224,9 @@ fn scheduler_consults_hal_under_std() {
 
 #[test]
 fn scheduler_resolution_is_milliseconds() {
+    // Serialize against the other clock-driving test (see `CLOCK_LOCK`).
+    let _clock = lock_clock();
+
     // Sub-ms Duration must truncate to 0ms — same fire-immediately semantics
     // as Duration::ZERO. Documents the resolution contract; if a future
     // refactor introduces sub-ms scheduling support, this test should be
