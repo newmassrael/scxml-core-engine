@@ -60,7 +60,7 @@
         },
         {
           "file": "sce/include/parsing/XIncludeExpander.h",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
