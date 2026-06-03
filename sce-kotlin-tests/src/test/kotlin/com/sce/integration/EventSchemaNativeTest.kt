@@ -22,6 +22,8 @@
 
 package com.sce.integration
 
+import com.sce.integration.statechart_bytes.StatechartBytesState
+import com.sce.integration.statechart_bytes.StatechartBytesStateMachine
 import com.sce.integration.statechart_minimal.StatechartMinimalState
 import com.sce.integration.statechart_minimal.StatechartMinimalStateMachine
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -76,6 +78,51 @@ class EventSchemaNativeTest {
                 sm.currentState.value,
                 "after raiseJobCompleted(5): elapsed_ms == 5 must leave the machine " +
                     "in Waiting (native typed guard must not fire)"
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    // RFC rfc-eventschema-bytes-guard.md §6 — the bytes-field guard
+    // `cond="_event.data.raw === 'ack'"` lowers to
+    // `pending….raw.contentEquals("ack".toByteArray())`. Kotlin `==` on a
+    // ByteArray is reference equality, so a regression to `==` would compare
+    // identities (always false here) — only a runtime transition check
+    // distinguishes that from the correct content comparison.
+    @Test
+    fun bytesPayloadGuardFiresOnMatch() {
+        val sm = StatechartBytesStateMachine()
+        sm.initialize()
+        assertEquals(StatechartBytesState.Waiting, sm.currentState.value)
+
+        sm.raiseSignalReceived("ack".toByteArray())
+        sm.tick()
+
+        try {
+            assertEquals(
+                StatechartBytesState.Done,
+                sm.currentState.value,
+                "raw == \"ack\" must fire the native bytes guard to Done"
+            )
+        } finally {
+            sm.cleanup()
+        }
+    }
+
+    @Test
+    fun bytesPayloadGuardMissesOnNonmatch() {
+        val sm = StatechartBytesStateMachine()
+        sm.initialize()
+
+        sm.raiseSignalReceived("no".toByteArray())
+        sm.tick()
+
+        try {
+            assertEquals(
+                StatechartBytesState.Waiting,
+                sm.currentState.value,
+                "raw == \"no\" must leave the machine in Waiting"
             )
         } finally {
             sm.cleanup()

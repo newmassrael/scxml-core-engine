@@ -4,102 +4,102 @@
 // generated-at: 1780457185
 
 // GENERATED CODE — DO NOT EDIT
-// Source: sce-build/tests/fixtures/event_schema/statechart_minimal.scxml
+// Source: sce-build/tests/fixtures/event_schema/statechart_bytes.scxml
 // Generator: SCE Kotlin Code Generator v1.0
-// SCE-MAP: statechart_minimal.scxml:8
+// SCE-MAP: statechart_bytes.scxml:13
 
-package com.sce.integration.statechart_minimal
+package com.sce.integration.statechart_bytes
 
 import com.sce.runtime.*
 
 
 // --- States (W3C SCXML 3.2) ---
 
-sealed interface StatechartMinimalState : State {
-    data object Done : StatechartMinimalState
-    data object Waiting : StatechartMinimalState
+sealed interface StatechartBytesState : State {
+    data object Done : StatechartBytesState
+    data object Waiting : StatechartBytesState
 }
 
 // --- Events (W3C SCXML 3.12.1) ---
 
-sealed interface StatechartMinimalEvent : Event {
-    sealed interface Job : StatechartMinimalEvent {
-        data object Completed : Job
+sealed interface StatechartBytesEvent : Event {
+    sealed interface Signal : StatechartBytesEvent {
+        data object Received : Signal
     }
 }
 // ── NL→IR Item C1 Path A: typed `_event.data` payload classes ─────────
 // NL→IR Item C1 Path A (EventSchema MCU native lowering): typed
 // `_event.data` payload classes for the EventSchema-imported events whose
 // transition guards lowered to a native Kotlin comparison (no script engine).
-// The Kotlin twin of the Rust `StatechartMinimalPayload` enum / Go per-event payload
+// The Kotlin twin of the Rust `StatechartBytesPayload` enum / Go per-event payload
 // structs: one data class per guarded event, carried through the queue in the
 // type-erased `EventMetadata.typedPayload` and lifted into a nullable field.
-// StatechartMinimalJobCompletedPayload is the NL→IR Item C1 Path A typed `_event.data`
-// payload for `job.completed`. Consumers inject it via the `raiseJobCompleted` seam
+// StatechartBytesSignalReceivedPayload is the NL→IR Item C1 Path A typed `_event.data`
+// payload for `signal.received`. Consumers inject it via the `raiseSignalReceived` seam
 // on the machine — they never name this class directly.
-data class StatechartMinimalJobCompletedPayload(val elapsed_ms: UInt)
+data class StatechartBytesSignalReceivedPayload(val raw: ByteArray)
 
 
 // --- State Machine (W3C SCXML) ---
 
-class StatechartMinimalStateMachine(
-) : StateMachineEngine<StatechartMinimalState, StatechartMinimalEvent>() {
+class StatechartBytesStateMachine(
+) : StateMachineEngine<StatechartBytesState, StatechartBytesEvent>() {
 
     // NL→IR Item C1 Path A: the current event's typed `_event.data` payload(s),
     // lifted from the dequeued event by populateTypedPayload and read by the
     // native transition guards. `null` between events / for untyped events.
-    private var pendingJobCompletedPayload: StatechartMinimalJobCompletedPayload? = null
+    private var pendingSignalReceivedPayload: StatechartBytesSignalReceivedPayload? = null
 
     // NL→IR Item C1 Path A: lift the dequeued event's type-erased typed payload
     // into the matching nullable field (a non-typed carrier resets all to null,
     // so every typed guard fails). Twin of the Go policy's PopulateEventMetadata
     // type-switch / the C11 pop loop's `sm->pending_payload = evt.payload`.
     override fun populateTypedPayload(metadata: EventMetadata) {
-        pendingJobCompletedPayload = null
+        pendingSignalReceivedPayload = null
         when (val tp = metadata.typedPayload) {
-            is StatechartMinimalJobCompletedPayload -> pendingJobCompletedPayload = tp
+            is StatechartBytesSignalReceivedPayload -> pendingSignalReceivedPayload = tp
             else -> {}
         }
     }
 
     // NL→IR Item C1 Path A: per-event typed `_event.data` inject seams.
     // NL→IR Item C1 Path A typed `_event.data` inject seam for
-    // `job.completed` — binds the event name and the payload field values in one call.
-    fun raiseJobCompleted(elapsed_ms: UInt) {
+    // `signal.received` — binds the event name and the payload field values in one call.
+    fun raiseSignalReceived(raw: ByteArray) {
         send(
-            StatechartMinimalEvent.Job.Completed,
-            EventMetadata(type = "external", typedPayload = StatechartMinimalJobCompletedPayload(elapsed_ms))
+            StatechartBytesEvent.Signal.Received,
+            EventMetadata(type = "external", typedPayload = StatechartBytesSignalReceivedPayload(raw))
         )
     }
 
 
-    override val initialState: StatechartMinimalState = StatechartMinimalState.Waiting
+    override val initialState: StatechartBytesState = StatechartBytesState.Waiting
 
 
 
     // W3C SCXML: Resolve state ID string to State object
-    override fun resolveState(stateId: String): StatechartMinimalState? = when (stateId) {
-        "done" -> StatechartMinimalState.Done
-        "waiting" -> StatechartMinimalState.Waiting
+    override fun resolveState(stateId: String): StatechartBytesState? = when (stateId) {
+        "done" -> StatechartBytesState.Done
+        "waiting" -> StatechartBytesState.Waiting
         else -> null
     }
 
     // W3C SCXML: Get state ID string from State object
-    override fun stateIdOf(state: StatechartMinimalState): String = when (state) {
-        is StatechartMinimalState.Done -> "done"
-        is StatechartMinimalState.Waiting -> "waiting"
+    override fun stateIdOf(state: StatechartBytesState): String = when (state) {
+        is StatechartBytesState.Done -> "done"
+        is StatechartBytesState.Waiting -> "waiting"
     }
 
     // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
-    override fun isAtomicState(state: StatechartMinimalState): Boolean = when (state) {
+    override fun isAtomicState(state: StatechartBytesState): Boolean = when (state) {
         else -> true
     }
 
 
     // W3C SCXML 3.13: Document order for exit ordering
-    override fun documentOrderOf(state: StatechartMinimalState): Int = when (state) {
-        is StatechartMinimalState.Done -> 1
-        is StatechartMinimalState.Waiting -> 0
+    override fun documentOrderOf(state: StatechartBytesState): Int = when (state) {
+        is StatechartBytesState.Done -> 1
+        is StatechartBytesState.Waiting -> 0
     }
 
 
@@ -108,10 +108,10 @@ class StatechartMinimalStateMachine(
 
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
-        state: StatechartMinimalState,
-        event: StatechartMinimalEvent
-    ): TransitionResult<StatechartMinimalState> = when (state) {
-        is StatechartMinimalState.Waiting -> processWaiting(event)
+        state: StatechartBytesState,
+        event: StatechartBytesEvent
+    ): TransitionResult<StatechartBytesState> = when (state) {
+        is StatechartBytesState.Waiting -> processWaiting(event)
         else -> TransitionResult.Ignored
     }
 
@@ -119,9 +119,9 @@ class StatechartMinimalStateMachine(
     // --- Per-State Event Handlers ---
 
     private fun processWaiting(
-        event: StatechartMinimalEvent
-    ): TransitionResult<StatechartMinimalState> = when {
-        event is StatechartMinimalEvent.Job.Completed && pendingJobCompletedPayload != null && (pendingJobCompletedPayload!!.elapsed_ms == 0.toUInt()) -> TransitionResult.External(StatechartMinimalState.Done, StatechartMinimalState.Waiting)
+        event: StatechartBytesEvent
+    ): TransitionResult<StatechartBytesState> = when {
+        event is StatechartBytesEvent.Signal.Received && pendingSignalReceivedPayload != null && (pendingSignalReceivedPayload!!.raw.contentEquals("ack".toByteArray())) -> TransitionResult.External(StatechartBytesState.Done, StatechartBytesState.Waiting)
 
         else -> TransitionResult.Ignored
     }
@@ -129,14 +129,14 @@ class StatechartMinimalStateMachine(
 
 
     // Entry Actions (W3C SCXML 3.8)
-    // SCE-MAP: statechart_minimal.scxml:8
-    override fun onEntry(state: StatechartMinimalState) {
+    // SCE-MAP: statechart_bytes.scxml:13
+    override fun onEntry(state: StatechartBytesState) {
         when (state) {
-            is StatechartMinimalState.Done -> {
+            is StatechartBytesState.Done -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("done")) return
             }
-            is StatechartMinimalState.Waiting -> {
+            is StatechartBytesState.Waiting -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("waiting")) return
             }
@@ -144,13 +144,13 @@ class StatechartMinimalStateMachine(
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    // SCE-MAP: statechart_minimal.scxml:8
-    override fun onExit(state: StatechartMinimalState) {
+    // SCE-MAP: statechart_bytes.scxml:13
+    override fun onExit(state: StatechartBytesState) {
         when (state) {
-            is StatechartMinimalState.Done -> {
+            is StatechartBytesState.Done -> {
                 activeStateIds.remove("done")
             }
-            is StatechartMinimalState.Waiting -> {
+            is StatechartBytesState.Waiting -> {
                 activeStateIds.remove("waiting")
             }
         }
@@ -158,10 +158,10 @@ class StatechartMinimalStateMachine(
 
 
     // Transition Actions (W3C SCXML 3.13)
-    // SCE-MAP: statechart_minimal.scxml:8
+    // SCE-MAP: statechart_bytes.scxml:13
     override fun executeTransitionActions(
-        source: StatechartMinimalState,
-        event: StatechartMinimalEvent?
+        source: StatechartBytesState,
+        event: StatechartBytesEvent?
     ) {
         when (source) {
         else -> {}

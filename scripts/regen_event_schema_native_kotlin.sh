@@ -49,19 +49,35 @@ if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build
 fi
 
+# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §6) lowers to a
+# Kotlin `pending….raw.contentEquals("ack".toByteArray())` guard — ByteArray
+# `==` is reference equality, so contentEquals is the whole point. Its
+# machine name differs, so the generated SM lives in its own package dir.
+BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"
+BYTES_DIR="sce-kotlin-tests/src/main/kotlin/com/sce/integration/statechart_bytes"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-"$CODEGEN" generate "$FIXTURE" -l kotlin -o "$TMP/" \
+"$CODEGEN" generate "$FIXTURE" -l kotlin -o "$TMP/minimal/" \
+    --input-root "$INPUT_ROOT" \
+    --kotlin-package-prefix "$PACKAGE_PREFIX"
+"$CODEGEN" generate "$BYTES_FIXTURE" -l kotlin -o "$TMP/bytes/" \
     --input-root "$INPUT_ROOT" \
     --kotlin-package-prefix "$PACKAGE_PREFIX"
 
-mkdir -p "$GENERATED_DIR"
+mkdir -p "$GENERATED_DIR" "$BYTES_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*Sm.kt' -delete
-for src in "$TMP"/*Sm.kt; do
+find "$BYTES_DIR" -maxdepth 1 -name '*Sm.kt' -delete
+for src in "$TMP"/minimal/*Sm.kt; do
     [[ -f "$src" ]] || continue
-    sed -i "s|// Source: ${TMP}/|// Source: ${INPUT_ROOT}/|g" "$src"
+    sed -i "s|// Source: ${TMP}/minimal/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$GENERATED_DIR/"
 done
-cp "$TMP"/*Sm.kt "$GENERATED_DIR/"
+for src in "$TMP"/bytes/*Sm.kt; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// Source: ${TMP}/bytes/|// Source: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$BYTES_DIR/"
+done
 
 echo "Regenerated: $GENERATED_DIR/ from $FIXTURE"

@@ -442,6 +442,50 @@ set_tests_properties(c11_integration_event_schema_native PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# RFC rfc-eventschema-bytes-guard.md §6 — bytes-field twin of the numeric
+# gate above. Same MCU-clean contract: the no-alloc bounded-buffer + memcmp
+# value path links NO runtime library, so a successful link is the
+# no-Lua / no-script-engine proof. The driver runs the guard
+# (raw == "ack" → done / raw == "no" → waiting).
+set(_ESB_FIXTURE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/integration_resources/event_schema_bytes")
+set(_ESB_SOURCE "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_bytes_sm.c")
+set(_ESB_HEADER "${SCE_C_INTEGRATION_GENERATED_DIR}/event_schema_bytes_sm.h")
+add_custom_command(
+    OUTPUT "${_ESB_SOURCE}"
+    COMMAND "${SCE_CODEGEN}" generate
+            "${_ESB_FIXTURE_ROOT}/event_schema_bytes.scxml"
+            -l c11 -o "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    DEPENDS "${_ESB_FIXTURE_ROOT}/event_schema_bytes.scxml"
+            "${_ESB_FIXTURE_ROOT}/schema_signal_bytes.scxml"
+            "${SCE_CODEGEN}"
+    BYPRODUCTS "${_ESB_HEADER}"
+    COMMENT "Generating C11 EventSchema bytes-guard fixture: event_schema_bytes_sm.{h,c}"
+    VERBATIM
+)
+
+add_executable(sce_c_integration_event_schema_bytes
+    integration/test_event_schema_bytes.c
+    "${_ESB_SOURCE}"
+    "${_ESB_HEADER}"
+)
+# Intentionally NO target_link_libraries: same MCU-clean acceptance proof.
+target_include_directories(sce_c_integration_event_schema_bytes PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    "${CMAKE_SOURCE_DIR}/sce-c-runtime/include"
+)
+set_target_properties(sce_c_integration_event_schema_bytes PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_event_schema_bytes
+    COMMAND sce_c_integration_event_schema_bytes
+)
+set_tests_properties(c11_integration_event_schema_bytes PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── BasicHTTP fixture: standalone Node server lifecycle ────────────
 #
 # The W3C SCXML C.2 corpus addresses `http://localhost:8080/test` on the

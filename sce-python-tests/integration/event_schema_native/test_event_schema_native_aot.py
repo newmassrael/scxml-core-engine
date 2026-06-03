@@ -30,6 +30,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 sys.path.insert(0, str(_HERE.parents[2] / "sce-python-runtime"))
 
+import statechart_bytes_sm as _bytes_sm  # noqa: E402 — path inserted above
 import statechart_minimal_sm as _sm  # noqa: E402 — path inserted above
 from sce_runtime.scripting import LuaScriptEngine  # noqa: E402
 
@@ -79,4 +80,42 @@ def test_typed_payload_guard_misses_on_nonzero() -> None:
     assert str(engine.current_state) == "waiting", (
         f"after raise_job_completed(5): state = {engine.current_state!s}, want "
         "waiting — elapsed_ms == 5 must leave the native typed guard unfired"
+    )
+
+
+# RFC rfc-eventschema-bytes-guard.md §6 — the bytes-field guard
+# ``cond="_event.data.raw === 'ack'"`` lowers to ``self._pending_signal_-
+# received_payload.raw == b"ack"`` (a ``bytes == bytes`` comparison, NOT
+# ``bytes == str`` which Python evaluates ``False`` always). Only a runtime
+# transition check distinguishes the two — a match must reach ``done`` and a
+# non-match must not. The ``_NoEvalLua`` engine additionally proves the guard
+# never routed through the script engine.
+def _make_bytes_engine():
+    script_engine = _NoEvalLua()
+    script_engine.initialize()
+    engine = _bytes_sm.create_engine(script_engine=script_engine)
+    engine.initialize()
+    return engine
+
+
+def test_bytes_payload_guard_fires_on_match() -> None:
+    engine = _make_bytes_engine()
+    assert str(engine.current_state) == "waiting"
+
+    _bytes_sm.raise_signal_received(engine, b"ack")
+
+    assert str(engine.current_state) == "done", (
+        f"after raise_signal_received(b'ack'): state = {engine.current_state!s}, "
+        "want done — raw == b'ack' must fire the native bytes guard"
+    )
+
+
+def test_bytes_payload_guard_misses_on_nonmatch() -> None:
+    engine = _make_bytes_engine()
+
+    _bytes_sm.raise_signal_received(engine, b"no")
+
+    assert str(engine.current_state) == "waiting", (
+        f"after raise_signal_received(b'no'): state = {engine.current_state!s}, "
+        "want waiting — raw == b'no' must leave the native bytes guard unfired"
     )
