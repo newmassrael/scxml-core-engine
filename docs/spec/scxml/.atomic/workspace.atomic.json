@@ -1865,11 +1865,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/scripting/ScriptResultUtils.h",
-          "symbol": "ScriptResultUtils",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeForeachAction",
           "kind": "implements"
@@ -1883,6 +1878,11 @@
           "file": "sce/src/scripting/JSEngine.cpp",
           "symbol": "JSEngine::hasVariable",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/ScriptResultUtils.cpp",
+          "symbol": "resultToScriptValueArray",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
