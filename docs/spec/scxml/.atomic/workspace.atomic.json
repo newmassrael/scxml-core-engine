@@ -255,7 +255,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "checkEventlessTransitions",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -1077,7 +1077,7 @@
         {
           "file": "sce/include/core/HierarchicalStateHelper.h",
           "symbol": "buildEntryChain",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/ParallelCompletionHelper.h",
@@ -1614,7 +1614,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "initialize",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/IStateNode.h",
@@ -1882,7 +1882,7 @@
         {
           "file": "sce/src/scripting/JSEngine.cpp",
           "symbol": "JSEngine::hasVariable",
-          "kind": "implements"
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2035,7 +2035,7 @@
         {
           "file": "sce/include/common/DoneDataHelper.h",
           "symbol": "evaluateContent",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/EventDataHelper.h",
@@ -2075,7 +2075,7 @@
         {
           "file": "sce/include/common/SendHelper.h",
           "symbol": "isInvalidTarget",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/SendHelper.h",
@@ -2115,7 +2115,7 @@
         {
           "file": "sce/include/runtime/IEventRaiser.h",
           "symbol": "raiseExternalEvent",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
@@ -2130,7 +2130,7 @@
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
           "symbol": "getInvokeIdForChildSession",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/JSEngine.h",
@@ -2175,7 +2175,7 @@
         {
           "file": "sce/src/events/HttpEventTarget.cpp",
           "symbol": "HttpEventTarget::send",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/events/InternalEventTarget.cpp",
@@ -2886,7 +2886,7 @@
         {
           "file": "sce/include/common/EventMetadataHelper.h",
           "symbol": "clearPolicyMetadata",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/EventMetadataHelper.h",
@@ -4222,17 +4222,17 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "currentEventInvokeId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "performMeshInvoke",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "raiseExternal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/InvokeHelper.h",
@@ -4660,7 +4660,7 @@
         {
           "file": "sce/include/scripting/DOMBinding.h",
           "symbol": "resetClassId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/IScriptEngine.h",
@@ -4685,7 +4685,7 @@
         {
           "file": "sce/include/scripting/LuaDOMBinding.h",
           "symbol": "resetClassId",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/XMLDOMWrapper.h",
@@ -4820,7 +4820,7 @@
         {
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::shutdown",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/scripting/ScriptResultUtils.cpp",
