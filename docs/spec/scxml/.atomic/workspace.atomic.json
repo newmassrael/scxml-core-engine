@@ -449,12 +449,12 @@
         {
           "file": "sce/include/core/StateEntryHelper.h",
           "symbol": "calculateAncestorPath",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/StateEntryHelper.h",
           "symbol": "optimizeEntryOrder",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/ImmediateModeGuard.h",
@@ -544,7 +544,7 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
           "symbol": "EventRaiserImpl::getEventQueues",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
@@ -609,7 +609,7 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::initializeFromModel",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
@@ -629,11 +629,6 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::start",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/src/runtime/StateMachine.cpp",
-          "symbol": "StateMachine::~StateMachine",
           "kind": "implements"
         },
         {
