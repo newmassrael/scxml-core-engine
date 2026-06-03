@@ -2635,17 +2635,17 @@
         {
           "file": "sce/include/common/AssignHelper.h",
           "symbol": "AssignHelper",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/AssignHelper.h",
           "symbol": "getInvalidLocationErrorMessage",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/AssignHelper.h",
           "symbol": "isValidLocation",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/common/AssignmentExecutionHelper.h",
@@ -3589,7 +3589,7 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::captureChildState",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
@@ -3599,7 +3599,7 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/SCXMLEngineImpl.cpp",
@@ -3669,7 +3669,7 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::restoreChildState",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/events/EventSchedulerImpl.cpp",
@@ -3820,7 +3820,7 @@
         {
           "file": "sce/include/wrappers/TimerManager.h",
           "symbol": "generateTimerSendId",
-          "kind": "implements"
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -4755,7 +4755,7 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "SCXMLInvokeHandler::startInvokeInternal",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/scripting/DOMBinding.cpp",
@@ -5303,7 +5303,7 @@
         {
           "file": "sce/include/core/EventQueueManager.h",
           "symbol": "SCE::Core",
-          "kind": "implements"
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5585,12 +5585,12 @@
         {
           "file": "sce/include/core/EventQueueManager.h",
           "symbol": "EventQueueManager",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/EventQueueManager.h",
           "symbol": "raise",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
