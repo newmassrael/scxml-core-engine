@@ -53,7 +53,7 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
 /**
  * @brief Extract ScriptValue array elements directly from ScriptResult
  *
- * §scxml-4.6: Foreach array element extraction without string round-trip.
+ * Foreach array element extraction without string round-trip.
  * Preserves type information for objects, arrays, and all primitive types.
  * Falls back to engine evaluation for non-ScriptArray results.
  *

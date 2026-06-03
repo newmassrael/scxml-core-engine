@@ -1380,10 +1380,10 @@ None.
 - [implements] sce/include/core/ForeachHelper.h:executeForeachWithoutBody
 - [implements] sce/include/core/ForeachHelper.h:isLegalVariableName
 - [references] sce/include/scripting/IScriptEngine.h:hasVariable
-- [implements] sce/include/scripting/ScriptResultUtils.h:ScriptResultUtils
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeForeachAction
 - [implements] sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformArrayLiterals
 - [references] sce/src/scripting/JSEngine.cpp:JSEngine::hasVariable
+- [implements] sce/src/scripting/ScriptResultUtils.cpp:resultToScriptValueArray
 
 
 
