@@ -320,14 +320,14 @@ pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool 
 /// six backends: an equality (`===` / `!==`) against a printable-ASCII
 /// string literal. Ordering operators (`<`, `>`, `<=`, `>=`) on a
 /// `bytes` operand and equality against a non-decodable literal have no
-/// such lowering (RFC §3 B2/B3) and make the cond non-native. Built on
-/// the same primitives the receive-side validator uses
-/// ([`is_ordering_comparison`], [`decode_bytes_literal`],
-/// [`extract_event_data_field`]) so the verdict and the diagnostic can
-/// never disagree about which forms are representable. Non-comparison
-/// nodes and comparisons that touch no `bytes` field are transparently
-/// recursed/accepted — the pure-typed-payload check (c) has already
-/// excluded everything but typed fields, literals, and operators.
+/// such lowering (RFC §3 B2/B3) and make the cond non-native. Each
+/// comparison is classified by [`classify_bytes_comparison`] — the SAME
+/// SSOT rule the receive-side validator renders as a diagnostic — so the
+/// verdict and the diagnostic can never disagree about which forms are
+/// representable. Non-comparison nodes and comparisons that touch no
+/// `bytes` field are transparently recursed/accepted — the
+/// pure-typed-payload check (c) has already excluded everything but typed
+/// fields, literals, and operators.
 fn bytes_comparisons_are_native_representable(ast: &TypedExpr, schema: &EventSchemaModel) -> bool {
     match &ast.kind {
         ExprKind::Binary { op, left, right } => {
@@ -335,21 +335,13 @@ fn bytes_comparisons_are_native_representable(ast: &TypedExpr, schema: &EventSch
                 let Some(field) = extract_event_data_field(field_side, schema) else {
                     continue;
                 };
-                if !matches!(field.sce_type, SceType::Bytes) {
-                    continue;
-                }
-                // B3: ordering on a bytes operand has no native lowering.
-                if is_ordering_comparison(*op) {
+                // The same SSOT rule the validator uses: a bytes field
+                // touched by a non-representable comparison (B2/B3) is not
+                // natively lowerable.
+                if matches!(field.sce_type, SceType::Bytes)
+                    && classify_bytes_comparison(*op, other) != BytesComparisonForm::Representable
+                {
                     return false;
-                }
-                // B2: equality against a non-printable-ASCII literal has
-                // no byte-identical native constant.
-                if matches!(op, BinOp::StrictEq | BinOp::StrictNeq) {
-                    if let ExprKind::StringLit { value, .. } = &other.kind {
-                        if decode_bytes_literal(value).is_none() {
-                            return false;
-                        }
-                    }
                 }
             }
             bytes_comparisons_are_native_representable(left, schema)
@@ -659,31 +651,31 @@ fn walk_for_event_data_refs(
                 diag_label,
             )?;
             if is_comparison(*op) {
-                if let Some(field) = extract_event_data_field(left, schema) {
-                    // RFC §3 B3 (ordering-on-bytes) before the type
-                    // check: an ordering operator on a bytes field is a
-                    // structural rejection independent of the other
-                    // operand's type, so it must surface first.
-                    reject_bytes_ordering(field, *op, transition, statechart_name, diag_label)?;
-                    check_comparison_type(
-                        field,
-                        right,
-                        imported_enums,
-                        transition,
-                        statechart_name,
-                        diag_label,
-                    )?;
-                }
-                if let Some(field) = extract_event_data_field(right, schema) {
-                    reject_bytes_ordering(field, *op, transition, statechart_name, diag_label)?;
-                    check_comparison_type(
-                        field,
-                        left,
-                        imported_enums,
-                        transition,
-                        statechart_name,
-                        diag_label,
-                    )?;
+                // Each operand is checked against the schema with the
+                // OTHER operand as its comparison partner. RFC §3 B2/B3
+                // (non-representable bytes form) surfaces before the
+                // primitive-literal type check: it is a structural
+                // rejection the SSOT classifier decides, independent of
+                // the partner's type.
+                for (field_side, other) in [(left, right), (right, left)] {
+                    if let Some(field) = extract_event_data_field(field_side, schema) {
+                        reject_non_representable_bytes(
+                            field,
+                            *op,
+                            other,
+                            transition,
+                            statechart_name,
+                            diag_label,
+                        )?;
+                        check_comparison_type(
+                            field,
+                            other,
+                            imported_enums,
+                            transition,
+                            statechart_name,
+                            diag_label,
+                        )?;
+                    }
                 }
             }
         }
@@ -886,34 +878,13 @@ fn check_comparison_type(
             },
         ));
     }
-    // RFC §3 B2 — a `bytes` field compares by value against a
-    // printable-ASCII string literal only. The category check above
-    // admits any `String` literal for a `Bytes` field; narrow that here
-    // to the literals that have an unambiguous cross-backend byte
-    // constant. A literal carrying a backslash escape or a non-ASCII
-    // byte is rejected as a type-category mismatch (reused per Item 4
-    // precedent) rather than slipping through to ambiguous codegen. The
-    // admission rule is the shared `decode_bytes_literal` SSOT — the
-    // same predicate the codegen reinterpretation consults — so the
-    // validator never accepts a literal the emitters would decline.
-    if matches!(field.sce_type, SceType::Bytes) {
-        if let ExprKind::StringLit { value, .. } = &other_operand.kind {
-            if decode_bytes_literal(value).is_none() {
-                return Err(located_on_transition(
-                    transition,
-                    diag_label,
-                    ValidationError::CrossKindTypeMismatch {
-                        importing_kind: ForgeKind::Statechart,
-                        importing_name: statechart_name.to_string(),
-                        alias: "_event.data".to_string(),
-                        field: field.id.clone(),
-                        actual: format!("non-printable-ASCII bytes literal '{value}'"),
-                        expected: sce_type_canonical(&field.sce_type),
-                    },
-                ));
-            }
-        }
-    }
+    // Note: the `bytes`-specific representability rules (RFC §3 B2/B3 —
+    // non-ASCII literal, ordering operator) are NOT decided here. They
+    // live in the SSOT [`classify_bytes_comparison`] and are surfaced as
+    // diagnostics by [`reject_non_representable_bytes`], which the walk
+    // runs alongside this category check. Keeping the bytes rule out of
+    // this primitive-category helper is what lets the native-lowerability
+    // verdict consult the identical rule without duplicating it.
     if let Some(overflow) = enum_underlying_overflow(&field.sce_type, other_operand, imported_enums)
     {
         return Err(located_on_transition(
@@ -954,32 +925,99 @@ fn check_comparison_type(
     Ok(())
 }
 
-/// RFC §3 B3 — reject an ordering operator (`<`, `>`, `<=`, `>=`)
-/// applied to a `bytes`-typed `_event.data.<field>`. Lexicographic
-/// ordering of an opaque payload byte-blob is not a meaningful author
-/// intent; only equality-as-bytes (`===` / `!==`) lowers to a
-/// well-defined, byte-identical comparison on every backend. A no-op
-/// for non-`bytes` fields and for the equality operators.
-fn reject_bytes_ordering(
+/// The native-lowering admissibility of ONE comparison that touches a
+/// `bytes` payload field — the single rule shared by the receive-side
+/// validator (which renders a violation as a diagnostic) and the
+/// native-lowerability verdict (which renders it as a non-native
+/// classification). Defining it once keeps "which `bytes` comparison
+/// forms lower natively" in exactly one place (RFC §3 B2/B3): a third
+/// forbidden form is added here and both consumers inherit it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BytesComparisonForm {
+    /// `===` / `!==` against a printable-ASCII string literal (or a
+    /// non-literal operand) — the one shape with a byte-identical native
+    /// lowering on all six backends.
+    Representable,
+    /// B3 — an ordering operator (`<`, `>`, `<=`, `>=`) on the `bytes`
+    /// operand. Lexicographic ordering of an opaque payload byte-blob is
+    /// not a meaningful author intent.
+    OrderingOperator,
+    /// B2 — equality against a string literal carrying a backslash
+    /// escape or a non-ASCII byte: no unambiguous cross-backend byte
+    /// constant.
+    NonAsciiLiteral,
+}
+
+/// Classify a comparison `op` between a `bytes`-typed `_event.data`
+/// field and its partner operand `other`. The caller has established
+/// that one operand is the `bytes` field. Built on the shared primitives
+/// [`is_ordering_comparison`] and [`decode_bytes_literal`] (the latter
+/// the same printable-ASCII rule the codegen string→bytes
+/// reinterpretation consults), so validator, verdict, and emitter can
+/// never disagree about which forms are representable.
+fn classify_bytes_comparison(op: BinOp, other: &TypedExpr) -> BytesComparisonForm {
+    if is_ordering_comparison(op) {
+        return BytesComparisonForm::OrderingOperator;
+    }
+    if matches!(op, BinOp::StrictEq | BinOp::StrictNeq) {
+        if let ExprKind::StringLit { value, .. } = &other.kind {
+            if decode_bytes_literal(value).is_none() {
+                return BytesComparisonForm::NonAsciiLiteral;
+            }
+        }
+    }
+    BytesComparisonForm::Representable
+}
+
+/// Render a non-representable `bytes` comparison as its receive-side
+/// diagnostic (RFC §3 B2/B3). A no-op for a non-`bytes` field or a
+/// representable form — [`classify_bytes_comparison`] is the SSOT that
+/// decides; this only maps the verdict to a diagnostic. `op` and `other`
+/// are the comparison operator and the partner operand of `field`.
+fn reject_non_representable_bytes(
     field: &ForgeField,
     op: BinOp,
+    other: &TypedExpr,
     transition: &Transition,
     statechart_name: &str,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
-    if !matches!(field.sce_type, SceType::Bytes) || !is_ordering_comparison(op) {
+    if !matches!(field.sce_type, SceType::Bytes) {
         return Ok(());
     }
-    Err(located_on_transition(
-        transition,
-        diag_label,
-        ValidationError::BytesComparisonNotEquality {
-            importing_kind: ForgeKind::Statechart,
-            importing_name: statechart_name.to_string(),
-            field: field.id.clone(),
-            op: ordering_op_token(op).to_string(),
-        },
-    ))
+    match classify_bytes_comparison(op, other) {
+        BytesComparisonForm::Representable => Ok(()),
+        BytesComparisonForm::OrderingOperator => Err(located_on_transition(
+            transition,
+            diag_label,
+            ValidationError::BytesComparisonNotEquality {
+                importing_kind: ForgeKind::Statechart,
+                importing_name: statechart_name.to_string(),
+                field: field.id.clone(),
+                op: ordering_op_token(op).to_string(),
+            },
+        )),
+        BytesComparisonForm::NonAsciiLiteral => {
+            // The classifier returns this variant only for a StringLit
+            // partner, so the literal's source text is recoverable for
+            // the message.
+            let ExprKind::StringLit { value, .. } = &other.kind else {
+                unreachable!("NonAsciiLiteral is produced only for a StringLit operand");
+            };
+            Err(located_on_transition(
+                transition,
+                diag_label,
+                ValidationError::CrossKindTypeMismatch {
+                    importing_kind: ForgeKind::Statechart,
+                    importing_name: statechart_name.to_string(),
+                    alias: "_event.data".to_string(),
+                    field: field.id.clone(),
+                    actual: format!("non-printable-ASCII bytes literal '{value}'"),
+                    expected: sce_type_canonical(&field.sce_type),
+                },
+            ))
+        }
+    }
 }
 
 /// The ordering subset of the comparison operators — the operators
