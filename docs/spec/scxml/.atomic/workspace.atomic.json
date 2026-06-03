@@ -386,12 +386,12 @@
         {
           "file": "sce/include/core/EntryExitHelper.h",
           "symbol": "executeEntryBlocks",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/EntryExitHelper.h",
           "symbol": "executeExitBlocks",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/EventProcessingAlgorithms.h",
