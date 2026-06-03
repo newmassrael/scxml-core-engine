@@ -51,12 +51,12 @@
         {
           "file": "sce/include/parsing/XIncludeError.h",
           "symbol": "SCE::parsing",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/parsing/XIncludeError.h",
           "symbol": "setLocation",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/parsing/XIncludeExpander.h",
