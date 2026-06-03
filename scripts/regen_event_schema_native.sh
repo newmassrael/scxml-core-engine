@@ -40,10 +40,16 @@ if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build
 fi
 
+# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §6) rides the same
+# committed-tree gate so the bytes-equality guard is REALLY compiled + run,
+# not only form-asserted in the sce-build smoke layer.
+BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 "$CODEGEN" generate "$FIXTURE" -l rust -o "$TMP/"
+"$CODEGEN" generate "$BYTES_FIXTURE" -l rust -o "$TMP/"
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.rs' -delete
@@ -55,6 +61,9 @@ MODRS="$GENERATED_DIR/mod.rs"
     echo ""
     echo "mod statechart_minimal_sm;"
     echo "pub use statechart_minimal_sm::*;"
+    echo ""
+    echo "mod statechart_bytes_sm;"
+    echo "pub use statechart_bytes_sm::*;"
 } > "$MODRS"
 
 cargo fmt -p sce-rust-tests

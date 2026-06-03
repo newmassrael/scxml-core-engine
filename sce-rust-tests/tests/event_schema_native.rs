@@ -22,8 +22,9 @@
 // call.
 
 use sce_rust_tests::integration::event_schema_native::{
-    StatechartMinimalInject, StatechartMinimalJobCompletedPayload, StatechartMinimalPolicy,
-    StatechartMinimalState,
+    StatechartBytesInject, StatechartBytesPolicy, StatechartBytesSignalReceivedPayload,
+    StatechartBytesState, StatechartMinimalInject, StatechartMinimalJobCompletedPayload,
+    StatechartMinimalPolicy, StatechartMinimalState,
 };
 
 #[test]
@@ -61,5 +62,46 @@ fn typed_payload_guard_misses_on_nonzero() {
         engine.get_current_state(),
         StatechartMinimalState::Waiting,
         "elapsed_ms == 5 must leave the machine in `waiting`"
+    );
+}
+
+// RFC rfc-eventschema-bytes-guard.md §6 — the bytes-field guard
+// `cond="_event.data.raw === 'ack'"` lowers to a native
+// `matches!(&self.pending_payload, … if ev.raw == b"ack")` with NO script
+// engine. Running the committed SM proves the `Vec<u8>` payload carrier
+// round-trips and the byte-equality guard fires on a match and not
+// otherwise — the runtime check the form/byte-golden layers cannot give.
+#[test]
+fn bytes_payload_guard_fires_on_match() {
+    let mut engine = sce_rust_runtime::Engine::new(StatechartBytesPolicy::new());
+    engine.initialize();
+    assert_eq!(engine.get_current_state(), StatechartBytesState::Waiting);
+
+    engine.raise_signal_received(StatechartBytesSignalReceivedPayload {
+        raw: b"ack".to_vec(),
+    });
+    engine.step();
+
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartBytesState::Done,
+        "raw == b\"ack\" must fire the native bytes guard to `done`"
+    );
+}
+
+#[test]
+fn bytes_payload_guard_misses_on_nonmatch() {
+    let mut engine = sce_rust_runtime::Engine::new(StatechartBytesPolicy::new());
+    engine.initialize();
+
+    engine.raise_signal_received(StatechartBytesSignalReceivedPayload {
+        raw: b"no".to_vec(),
+    });
+    engine.step();
+
+    assert_eq!(
+        engine.get_current_state(),
+        StatechartBytesState::Waiting,
+        "raw == b\"no\" must leave the machine in `waiting`"
     );
 }

@@ -42,17 +42,32 @@ if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build
 fi
 
+# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §6) lowers to a Go
+# `string(p.pending….raw) == "ack"` guard (slice `==` is illegal in Go, so
+# the conversion is the whole point). Its machine name differs, so the
+# generated `package statechart_bytes` lives in its OWN directory (Go allows
+# one package per dir) and rides the same compile+run gate.
+BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"
+BYTES_DIR="sce-go-tests/integration/event_schema_bytes"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-"$CODEGEN" generate "$FIXTURE" -l go -o "$TMP/" --input-root "$INPUT_ROOT"
+"$CODEGEN" generate "$FIXTURE" -l go -o "$TMP/minimal/" --input-root "$INPUT_ROOT"
+"$CODEGEN" generate "$BYTES_FIXTURE" -l go -o "$TMP/bytes/" --input-root "$INPUT_ROOT"
 
-mkdir -p "$GENERATED_DIR"
+mkdir -p "$GENERATED_DIR" "$BYTES_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.go' -delete
-for src in "$TMP"/*_sm.go; do
+find "$BYTES_DIR" -maxdepth 1 -name '*_sm.go' -delete
+for src in "$TMP"/minimal/*_sm.go; do
     [[ -f "$src" ]] || continue
-    sed -i "s|// From: ${TMP}/|// From: ${INPUT_ROOT}/|g" "$src"
+    sed -i "s|// From: ${TMP}/minimal/|// From: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$GENERATED_DIR/"
 done
-cp "$TMP"/*_sm.go "$GENERATED_DIR/"
+for src in "$TMP"/bytes/*_sm.go; do
+    [[ -f "$src" ]] || continue
+    sed -i "s|// From: ${TMP}/bytes/|// From: ${INPUT_ROOT}/|g" "$src"
+    cp "$src" "$BYTES_DIR/"
+done
 
-echo "Regenerated: $GENERATED_DIR/ from $FIXTURE"
+echo "Regenerated: $GENERATED_DIR/ + $BYTES_DIR/ from $FIXTURE + $BYTES_FIXTURE"
