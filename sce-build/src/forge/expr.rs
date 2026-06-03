@@ -84,6 +84,23 @@ pub enum ExprTarget {
     C,
 }
 
+impl ExprTarget {
+    /// Every backend SCE generates code for. This is the canonical list a
+    /// "lowers natively on all backends" verdict must exercise — checking
+    /// a proper subset (historically just Rust + Go) is a proxy that lies
+    /// the moment one backend's emitter can fail where another cannot
+    /// (e.g. an unrepresentable `bytes` form). Kept exhaustive by
+    /// `expr_target_all_contains_every_variant`.
+    pub(crate) const ALL: [ExprTarget; 6] = [
+        ExprTarget::Cpp,
+        ExprTarget::Kotlin,
+        ExprTarget::Rust,
+        ExprTarget::Go,
+        ExprTarget::Python,
+        ExprTarget::C,
+    ];
+}
+
 /// Transpile an ECMAScript expression to the target language with full
 /// type-aware coercion.
 ///
@@ -3350,6 +3367,34 @@ mod tests {
     use crate::forge::types::{FuncSig, InferredType};
 
     // ── Helpers ─────────────────────────────────────────────────
+
+    /// Forcing function for [`ExprTarget::ALL`]: a new `ExprTarget`
+    /// variant breaks the exhaustive `match` below at compile time,
+    /// pointing the author at the array (and at every all-backend verdict
+    /// that iterates it — e.g. `guard_is_native_lowerable`). The
+    /// `contains` check additionally proves the array is not missing any
+    /// existing variant.
+    #[test]
+    fn expr_target_all_contains_every_variant() {
+        fn assert_listed(t: ExprTarget) {
+            match t {
+                ExprTarget::Cpp
+                | ExprTarget::Kotlin
+                | ExprTarget::Rust
+                | ExprTarget::Go
+                | ExprTarget::Python
+                | ExprTarget::C => {}
+            }
+            assert!(
+                ExprTarget::ALL.contains(&t),
+                "{t:?} missing from ExprTarget::ALL"
+            );
+        }
+        for t in ExprTarget::ALL {
+            assert_listed(t);
+        }
+        assert_eq!(ExprTarget::ALL.len(), 6);
+    }
 
     fn empty_ctx() -> TypeCtx<'static> {
         TypeCtx::new()
