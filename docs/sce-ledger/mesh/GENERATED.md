@@ -139,7 +139,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Bindings**:
 - [implements] sce/include/mesh/InvokeCorrelation.h:cancelAllPending
-- [implements] sce/include/mesh/InvokeCorrelation.h:registerInvoke
+- [references] sce/include/mesh/InvokeCorrelation.h:registerInvoke
 - [implements] sce/include/mesh/OutboundBuffer.h:markNotReady
 
 
@@ -535,7 +535,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Bindings**:
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:SCE::Mesh::Someip
-- [implements] sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h:SCE::Mesh::Zenoh
+- [references] sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h:SCE::Mesh::Zenoh
 
 
 
@@ -1689,7 +1689,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [references] sce/include/mesh/IChildSession.h
 - [implements] sce/include/mesh/MeshDispatch.h
 - [references] sce/include/mesh/PatternKind.h
-- [implements] sce/include/mesh/ShmChannel.h:drain
+- [references] sce/include/mesh/ShmChannel.h:drain
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:SCE::Mesh::Someip
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:ScxmlInvokeEndpoint
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:methodForPattern
