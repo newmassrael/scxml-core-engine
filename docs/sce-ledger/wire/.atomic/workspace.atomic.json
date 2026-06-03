@@ -87,7 +87,7 @@
         {
           "file": "sce/include/parsing/ParseError.h",
           "symbol": "SCE::parsing",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/parsing/PugiXMLParser.cpp",
