@@ -780,7 +780,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Bindings**:
 - [references] sce/include/mesh/CommunicationError.h:ReasonCode
-- [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:SCE::Mesh::Someip
+- [references] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:SCE::Mesh::Someip
 - [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h:availabilityChangeSafely
 
 
