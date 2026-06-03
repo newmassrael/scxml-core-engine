@@ -1909,6 +1909,26 @@ fn c11_event_token(event: &str) -> String {
     event.replace(['.', '-'], "_")
 }
 
+/// One C11 payload-struct field declaration for EventSchema field `f`.
+///
+/// A `bytes` field lowers to a no-alloc fixed-capacity buffer plus a
+/// length sibling (`uint8_t <id>[CAP]; size_t <id>_len;`), reusing the
+/// codec bounded-bytes storage shape. CAP resolves from the field's
+/// `sce:max-size`, else `BYTES_DEFAULT_MAX`. The inject seam copies the
+/// struct by value, so the buffer is owned and survives the event queue;
+/// the native guard reads `<id>` and `<id>_len` (see the C bytes-equality
+/// lowering in [`crate::forge::expr`]). RFC §3 B4. Every other field type
+/// is a self-contained scalar via [`LangCtx::resolved_type`].
+fn c11_payload_field_decl(l: &LangCtx, f: &ForgeField) -> String {
+    if matches!(f.sce_type, SceType::Bytes) {
+        let cap = crate::forge::limits::resolve_bytes_max(f.max_size);
+        format!("    uint8_t {}[{cap}];\n    size_t {}_len;\n", f.id, f.id)
+    } else {
+        let ty = l.resolved_type(&f.sce_type, &[]);
+        format!("    {ty} {};\n", f.id)
+    }
+}
+
 /// Build the [`C11EventPayload`] for `model`. See
 /// [`build_rust_event_payload`] for the shared design; this emits the C11
 /// tagged-union form. `model.name` is the C identifier stem (already
@@ -1980,8 +2000,7 @@ pub fn build_c11_event_payload(model: &crate::model::SCXMLModel) -> C11EventPayl
         let fn_name = format!("{name}_raise_{member}_typed");
         let mut field_lines = String::new();
         for f in &schema.fields {
-            let ty = l.resolved_type(&f.sce_type, &[]);
-            field_lines.push_str(&format!("    {ty} {};\n", f.id));
+            field_lines.push_str(&c11_payload_field_decl(&l, f));
         }
         structs.push_str(&format!(
             "typedef struct {name}_{member}_payload {{\n{field_lines}}} {struct_name};\n\n"
@@ -21750,6 +21769,37 @@ fn to_rust_variant(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::forge::model::{ForgeKind, SceType};
+
+    // ── EventSchema C11 payload field declaration (RFC §3 B4) ──
+
+    #[test]
+    fn c11_payload_field_decl_bytes_uses_bounded_buffer() {
+        use crate::forge::model::{Direction, ForgeField};
+        let l = LangCtx::new(crate::generator::Language::C11);
+        let mk = |sce_type, max_size| ForgeField {
+            id: "raw".to_string(),
+            sce_type,
+            direction: Direction::In,
+            expr: None,
+            quantity: None,
+            max_size,
+        };
+        // Bytes with no annotation → default-capacity buffer + length sibling.
+        assert_eq!(
+            c11_payload_field_decl(&l, &mk(SceType::Bytes, None)),
+            "    uint8_t raw[256];\n    size_t raw_len;\n"
+        );
+        // Explicit sce:max-size overrides the default capacity.
+        assert_eq!(
+            c11_payload_field_decl(&l, &mk(SceType::Bytes, Some(64))),
+            "    uint8_t raw[64];\n    size_t raw_len;\n"
+        );
+        // A non-bytes field stays a plain scalar declaration.
+        assert_eq!(
+            c11_payload_field_decl(&l, &mk(SceType::Uint32, None)),
+            "    uint32_t raw;\n"
+        );
+    }
 
     // ── Type mapping: cpp ────────────────────────────────────
 
