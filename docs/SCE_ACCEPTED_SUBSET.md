@@ -855,6 +855,25 @@ against a `uint32` field) surfaces through
 `validation/cross-kind-type-mismatch` (also reused per Item 4
 precedent).
 
+A `bytes`-typed field compares against a printable-ASCII string
+literal by value (`_event.data.raw === 'ack'`). Two
+`bytes`-specific rejections layer on top of the shared receive-side
+checks (RFC `rfc-eventschema-bytes-guard.md` §3):
+
+- `validation/bytes-comparison-not-equality` — an ordering operator
+  (`<`, `>`, `<=`, `>=`) applied to a `bytes` field. Lexicographic
+  ordering of an opaque payload byte-blob is not a meaningful author
+  intent; only equality (`===` / `!==`) lowers to a well-defined,
+  byte-identical comparison on every backend. A distinct
+  operator-domain rule, so a dedicated wire code.
+- `validation/cross-kind-type-mismatch` (reused per Item 4
+  precedent) — the string literal carries a backslash escape or a
+  non-ASCII byte. Such a literal has no unambiguous cross-backend
+  byte constant, so it is rejected as a type-category mismatch; the
+  printable-ASCII boundary is a validated, forward-compatible
+  literal-syntax scope (the byte carrier widens later without
+  touching the wire form).
+
 **Send-side payload typecheck** (DL-4'): a `<send event="X">` or
 `<raise event="X">` (in transition `actions`, `<onentry>`, or
 `<onexit>` content, including nested `<if>` / `<foreach>` bodies)
@@ -962,7 +981,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (318 codes)
+## Appendix — `DiagnosticCode` index (319 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1037,6 +1056,7 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/enum-unsupported-underlying-type` | Validation |
 | `validation/event-schema-on-builtin-event` | Validation |
 | `validation/event-payload-field-unknown` | Validation |
+| `validation/bytes-comparison-not-equality` | Validation |
 | `mesh/event-schema-mismatch` | Validation |
 | `algorithm/local-shadows-param` | Validation |
 | `algorithm/lvalue-unsupported` | Validation |
