@@ -584,8 +584,8 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 **Bindings**:
 - [implements] sce/include/core/HierarchicalStateHelper.h:buildEntryChain
 - [implements] sce/include/core/ParallelExitEntryHelper.h
-- [implements] sce/include/model/SCXMLModel.h:getInitialState
-- [implements] sce/include/model/SCXMLModel.h:getInitialStates
+- [references] sce/include/model/SCXMLModel.h:getInitialState
+- [references] sce/include/model/SCXMLModel.h:getInitialStates
 - [references] sce/include/model/SCXMLModel.h:initialStates_
 - [implements] sce/include/model/SCXMLModel.h:setInitialState
 - [implements] sce/include/runtime/StateHierarchyManager.h:enterStateWithAncestors
@@ -596,7 +596,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [references] sce/include/states/ConcurrentRegion.h:desiredInitialChild_
 - [implements] sce/include/states/ConcurrentRegion.h:setCurrentState
 - [implements] sce/include/states/ConcurrentRegion.h:setDesiredInitialChild
-- [implements] sce/include/states/IConcurrentRegion.h:setCurrentState
+- [references] sce/include/states/IConcurrentRegion.h:setCurrentState
 - [implements] sce/include/states/IConcurrentRegion.h:setDesiredInitialChild
 - [implements] sce/include/static/StaticExecutionEngine.h:initialize
 - [implements] sce/src/model/SCXMLModel.cpp:SCE::SCXMLModel::setInitialState
@@ -973,7 +973,7 @@ Name Required Attribute Constraints Type Default Value Valid Values Description 
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeOnEntryActions
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::setupAndActivateParallelState
 - [implements] sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
-- [implements] sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::addEntryActionBlock
+- [references] sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::addEntryActionBlock
 - [implements] sce/include/static/StaticExecutionEngine.h:executeOnEntry
 
 
@@ -1038,7 +1038,7 @@ The children of the <onentry> handler consist of executable content as defined i
 - [implements] sce/include/core/EntryExitHelper.h:SCE::Core
 - [implements] sce/include/core/EntryExitHelper.h:executeExitBlocks
 - [implements] sce/include/model/StateNode.h:addExitActionBlock
-- [implements] sce/include/model/StateNode.h:getExitActionBlocks
+- [references] sce/include/model/StateNode.h:getExitActionBlocks
 - [implements] sce/include/parsing/StateNodeParser.h:parseEntryExitActionNodes
 - [implements] sce/include/parsing/StateNodeParser.h:parseExecutableContentBlock
 - [implements] sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseEntryExitActionNodes
@@ -1380,7 +1380,7 @@ None.
 - [implements] sce/include/core/ForeachHelper.h:executeForeachWithActions
 - [implements] sce/include/core/ForeachHelper.h:executeForeachWithoutBody
 - [implements] sce/include/core/ForeachHelper.h:isLegalVariableName
-- [implements] sce/include/scripting/IScriptEngine.h:hasVariable
+- [references] sce/include/scripting/IScriptEngine.h:hasVariable
 - [implements] sce/include/scripting/ScriptResultUtils.h:ScriptResultUtils
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::executeForeachAction
 - [implements] sce/src/scripting/EcmaScriptToLuaTransformer.cpp:EcmaScriptToLuaTransformer::transformArrayLiterals
@@ -2011,14 +2011,14 @@ The children of the <assign>element provide an in-line specification of the lega
 - [implements] sce/include/model/IStateNode.h:setDoneDataContentLiteral
 - [implements] sce/include/parsing/DoneDataParser.h:setDatamodelType
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
-- [implements] sce/include/runtime/StateMachine.h:donedataAtFinal
+- [references] sce/include/runtime/StateMachine.h:donedataAtFinal
 - [references] sce/include/runtime/StateMachine.h:pendingDonedataAtFinal_
 - [implements] sce/include/runtime/StateMachine.h:typedDonedataAtFinal
-- [implements] sce/include/static/StaticExecutionEngine.h:donedataAtFinal
+- [references] sce/include/static/StaticExecutionEngine.h:donedataAtFinal
 - [references] sce/include/static/StaticExecutionEngine.h:pendingDonedataAtFinal_
 - [implements] sce/include/static/StaticExecutionEngine.h:stashDonedataAtFinal
 - [references] sce/include/static/StaticExecutionEngine.h:typedData
-- [implements] sce/include/static/StaticExecutionEngine.h:typedDonedataAtFinal
+- [references] sce/include/static/StaticExecutionEngine.h:typedDonedataAtFinal
 - [implements] sce/src/parsing/DoneDataParser.cpp:SCE::DoneDataParser::parseContent
 - [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseScxmlNode
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
@@ -2424,7 +2424,7 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 
 
 **Bindings**:
-- [implements] sce/include/actions/SendAction.h:setTypeExpr
+- [references] sce/include/actions/SendAction.h:setTypeExpr
 - [references] sce/include/actions/SendAction.h:typeExpr_
 - [implements] sce/include/common/LogicalTimeScheduler.h:SCE::Common
 - [implements] sce/include/common/NamelistHelper.h:NamelistHelper
@@ -2705,13 +2705,13 @@ None
 
 **Bindings**:
 - [implements] sce/include/common/FileLoadingHelper.h:loadScxmlFile
-- [implements] sce/include/common/SCXMLConstants.h:SCE::Constants
+- [references] sce/include/common/SCXMLConstants.h:SCE::Constants
 - [implements] sce/include/common/SendHelper.h:extractInvokeId
 - [implements] sce/include/common/SendHelper.h:isChildInvokeTarget
 - [implements] sce/include/common/UniqueIdGenerator.h:generateInvokeId
 - [implements] sce/include/core/InvokeHelper.h:InvokeHelper
 - [implements] sce/include/core/InvokeHelper.h:executePendingInvokes
-- [implements] sce/include/core/StatePolicyConcepts.h:SCE::Core
+- [references] sce/include/core/StatePolicyConcepts.h:SCE::Core
 - [implements] sce/include/mesh/ChildSessionAdapter.h:raiseExternal
 - [implements] sce/include/mesh/IChildSession.h:raiseExternal
 - [references] sce/include/mesh/PatternKind.h:PatternKind
@@ -2744,7 +2744,7 @@ None
 - [implements] sce/src/events/EventTargetFactoryImpl.cpp:SCE::EventTargetFactoryImpl::createParentTarget
 - [implements] sce/src/events/ParentEventTarget.cpp:ParentEventTarget::findParentSessionId
 - [implements] sce/src/events/ParentEventTarget.cpp:ParentEventTarget::sendImmediately
-- [implements] sce/src/model/InvokeNode.cpp:SCE::InvokeNode::setStateId
+- [references] sce/src/model/InvokeNode.cpp:SCE::InvokeNode::setStateId
 - [implements] sce/src/parsing/InvokeParser.cpp:SCE::InvokeParser::parseFinalizeElement
 - [implements] sce/src/parsing/InvokeParser.cpp:SCE::InvokeParser::parseInvokeNode
 - [implements] sce/src/parsing/StateNodeParser.cpp:SCE::StateNodeParser::parseInvokeElements
@@ -2754,7 +2754,7 @@ None
 - [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::generateInvokeId
 - [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::generateInvokeId
-- [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::getAutoForward
+- [references] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::getAutoForward
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::getAutoForwardSessions
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::loadSCXMLFromFile
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::restoreChildState
@@ -2774,7 +2774,7 @@ None
 - [implements] sce/src/scripting/LuaEngine.cpp:LuaEngine::destroySession
 - [implements] sce/src/scripting/SessionRegistry.cpp:SessionRegistry::getParentSessionId
 - [implements] sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::enterInitialState
-- [implements] sce/include/runtime/InvokeExecutor.h:getAllInvokedSessions
+- [references] sce/include/runtime/InvokeExecutor.h:getAllInvokedSessions
 
 
 
@@ -2802,7 +2802,7 @@ None
 - [implements] sce/include/static/StaticExecutionEngine.h:performMeshInvoke
 - [implements] sce/include/static/StaticExecutionEngine.h:raiseExternal
 - [implements] sce/include/core/InvokeHelper.h:isValidInvokeId
-- [implements] sce/include/mesh/IChildSession.h:invokeIdString
+- [references] sce/include/mesh/IChildSession.h:invokeIdString
 
 
 
@@ -2910,7 +2910,7 @@ The implementation of <invoke>, including communication between parent and child
 - [implements] sce/include/common/FinalizeHelper.h:executeFinalizeWithEvent
 - [implements] sce/include/common/SendHelper.h:SendHelper
 - [implements] sce/include/common/SendHelper.h:sendToParentWithOrigin
-- [implements] sce/include/core/StatePolicyConcepts.h:SCE::Core
+- [references] sce/include/core/StatePolicyConcepts.h:SCE::Core
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventQueues
 - [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
 - [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
@@ -3591,8 +3591,8 @@ Here are some examples of SCXML messages sent between SCXML sessions. Each examp
 
 **Bindings**:
 - [references] sce/include/actions/SendAction.h:content_
-- [implements] sce/include/actions/SendAction.h:setContent
-- [implements] sce/include/common/SCXMLConstants.h:SCE::Constants
+- [references] sce/include/actions/SendAction.h:setContent
+- [references] sce/include/common/SCXMLConstants.h:SCE::Constants
 - [implements] sce/include/common/SendHelper.h:buildHttpPostBody
 - [implements] sce/include/common/SendHelper.h:isHttpTarget
 - [implements] sce/include/common/SendHelper.h:isSupportedSendType
