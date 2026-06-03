@@ -214,6 +214,8 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
 std::vector<ScriptValue> resultToScriptValueArray(const ScriptResult &result, IScriptEngine *engine,
                                                     const std::string &sessionId,
                                                     const std::string &originalExpression) {
+    // §scxml-4.6: <foreach> array element extraction without string round-trip,
+    // preserving type information for objects, arrays, and all primitive types.
     std::vector<ScriptValue> values;
 
     if (!result.isSuccess()) {
