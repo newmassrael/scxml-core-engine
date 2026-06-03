@@ -222,7 +222,7 @@ pub fn lower_typed_guard(
 /// `true` iff `schema` can back a native typed-payload channel. The
 /// generated payload struct emits every declared field, so the channel
 /// is only eligible when all fields resolve to a self-contained native
-/// type. Two field types are excluded:
+/// type. One field type is excluded:
 ///
 ///   * Enum-typed fields (`SceType::Enum`) carry their concrete width
 ///     in a *separate* imported Enum document whose `use`/`include`
@@ -231,17 +231,17 @@ pub fn lower_typed_guard(
 ///     `_event.data` baseline (the cond stays on the script engine)
 ///     rather than emit a payload struct that names an out-of-scope
 ///     type.
-///   * Bytes-typed fields (`SceType::Bytes`) have no native C11 payload
-///     representation yet: `generator::c_type` returns a length-less
-///     `const uint8_t *` placeholder, so the C11 payload struct cannot
-///     carry the field and a `bytes` guard would lower to a comparison
-///     that does not compile (`Vec<u8> == &str` on Rust, an illegal
-///     slice `==` on Go, a silent `bytes == str` → `False` on Python).
-///     A bytes-containing schema therefore keeps the dynamic baseline
-///     uniformly until the bounded-buffer payload representation lands
-///     (see `claudedocs/rfc-eventschema-bytes-guard.md` §3.1) — this is
-///     deliberately uniform across backends so the language-neutral
-///     `native_typed_inject_events` SSOT never splits.
+///
+/// `bytes` fields ARE eligible: every backend carries the payload field
+/// natively (C11 as a no-alloc bounded buffer `uint8_t[CAP]; size_t
+/// _len`, the hosted backends as their owned byte-sequence type) and a
+/// `bytes` guard lowers to a byte-identical equality on all six (RFC
+/// `rfc-eventschema-bytes-guard.md` §3 B4/B5). Forms that have no
+/// representable native lowering — an ordering operator or a
+/// non-printable-ASCII literal on a `bytes` operand — are kept off the
+/// native path by [`guard_is_native_lowerable`]'s per-guard
+/// representability check (RFC §3 B2/B3), not by excluding the schema:
+/// a schema's other guards stay native.
 ///
 /// This is the single eligibility rule shared by the engine-need
 /// analyzer and the codegen path so the two never disagree.
@@ -249,7 +249,7 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
     schema
         .fields
         .iter()
-        .all(|f| !matches!(f.sce_type, SceType::Enum(_) | SceType::Bytes))
+        .all(|f| !matches!(f.sce_type, SceType::Enum(_)))
 }
 
 /// `true` iff `cond` lowers natively on every backend SCE generates —
@@ -283,17 +283,20 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
 ///     lands. The accessor is irrelevant to lowerability (any valid
 ///     identifier renames cleanly), so a fixed placeholder is used.
 ///
-/// Behavior is preserved at this staging point: every non-`bytes` form
-/// that reaches here lowers on all six backends, and `bytes` schemas are
-/// still suppressed upstream by [`schema_is_native_payload_eligible`]
-/// (the RFC §3.1 interim gate) so no `bytes` guard reaches the per-target
-/// lowering yet. The check that makes a *representable* `bytes` equality
-/// pass while an ordering / non-ASCII form fails the verdict lands with
-/// the gate flip (RFC §5 commit 6), where `bytes` first reaches this
-/// path and is covered by the cross-backend conformance fixture; until
-/// then those malformed forms are rejected at validation
-/// (`validation/bytes-comparison-not-equality` + the B2 literal check)
-/// before codegen ever runs.
+/// (e) every comparison touching a `bytes` field is a
+///     natively-representable form —
+///     [`bytes_comparisons_are_native_representable`]. A `bytes` operand
+///     under an ordering operator, or compared against a
+///     non-printable-ASCII literal, has no byte-identical native
+///     lowering (RFC §3 B2/B3); the hosted emitters would mangle it
+///     silently (Go emits an illegal slice `<`; Python a `False`-always
+///     `bytes < str`) rather than fail, so the verdict cannot rely on
+///     the per-target lowering in (d) to reject it. This explicit
+///     pre-check makes the verdict self-sufficient: the analyzer
+///     (`compute_typed_inject_events`) runs it with no validation
+///     barrier ahead of it, so a malformed `bytes` guard must be classed
+///     non-native here, independent of the receive-side validator that
+///     separately rejects the same forms in the forge codegen path.
 pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool {
     if !schema_is_native_payload_eligible(schema) {
         return false;
@@ -304,9 +307,68 @@ pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool 
     if !cond_references_event_data(&ast) || !cond_is_pure_typed_payload(&ast) {
         return false;
     }
+    if !bytes_comparisons_are_native_representable(&ast, schema) {
+        return false;
+    }
     ExprTarget::ALL
         .iter()
         .all(|&target| lower_typed_guard(cond, schema, "ev", target).is_ok())
+}
+
+/// `true` iff every comparison touching a `bytes`-typed `_event.data`
+/// field in `ast` is a form with a byte-identical native lowering on all
+/// six backends: an equality (`===` / `!==`) against a printable-ASCII
+/// string literal. Ordering operators (`<`, `>`, `<=`, `>=`) on a
+/// `bytes` operand and equality against a non-decodable literal have no
+/// such lowering (RFC §3 B2/B3) and make the cond non-native. Built on
+/// the same primitives the receive-side validator uses
+/// ([`is_ordering_comparison`], [`decode_bytes_literal`],
+/// [`extract_event_data_field`]) so the verdict and the diagnostic can
+/// never disagree about which forms are representable. Non-comparison
+/// nodes and comparisons that touch no `bytes` field are transparently
+/// recursed/accepted — the pure-typed-payload check (c) has already
+/// excluded everything but typed fields, literals, and operators.
+fn bytes_comparisons_are_native_representable(ast: &TypedExpr, schema: &EventSchemaModel) -> bool {
+    match &ast.kind {
+        ExprKind::Binary { op, left, right } => {
+            for (field_side, other) in [(left, right), (right, left)] {
+                let Some(field) = extract_event_data_field(field_side, schema) else {
+                    continue;
+                };
+                if !matches!(field.sce_type, SceType::Bytes) {
+                    continue;
+                }
+                // B3: ordering on a bytes operand has no native lowering.
+                if is_ordering_comparison(*op) {
+                    return false;
+                }
+                // B2: equality against a non-printable-ASCII literal has
+                // no byte-identical native constant.
+                if matches!(op, BinOp::StrictEq | BinOp::StrictNeq) {
+                    if let ExprKind::StringLit { value, .. } = &other.kind {
+                        if decode_bytes_literal(value).is_none() {
+                            return false;
+                        }
+                    }
+                }
+            }
+            bytes_comparisons_are_native_representable(left, schema)
+                && bytes_comparisons_are_native_representable(right, schema)
+        }
+        ExprKind::Unary { operand, .. } => {
+            bytes_comparisons_are_native_representable(operand, schema)
+        }
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            bytes_comparisons_are_native_representable(condition, schema)
+                && bytes_comparisons_are_native_representable(consequent, schema)
+                && bytes_comparisons_are_native_representable(alternate, schema)
+        }
+        _ => true,
+    }
 }
 
 /// One transition whose typed `_event.data` guard lowers to a native
@@ -1751,27 +1813,24 @@ mod tests {
         assert!(!guard_is_native_lowerable("_event.data.status === 0", &s));
     }
 
-    // A bytes-typed field has no native C11 payload representation yet
-    // (length-less `const uint8_t *` placeholder), so a bytes-containing
-    // schema is payload-ineligible and its guard keeps the script-engine
-    // baseline uniformly across backends — the honest interim gate before
-    // the bounded-buffer payload representation lands (see
-    // `claudedocs/rfc-eventschema-bytes-guard.md` §3.1). Without this, the
-    // guard `_event.data.raw === 'ack'` was classed native and lowered to
-    // `ev.raw == "ack"`, which does not compile on Rust.
+    // RFC `rfc-eventschema-bytes-guard.md` §3 commit 6 — the gate is
+    // flipped: a bytes field is payload-eligible (it carries natively as
+    // a bounded buffer on C11 / owned byte sequence on the hosted
+    // backends) and an equality guard against a printable-ASCII literal
+    // lowers natively on all six.
     #[test]
-    fn bytes_typed_schema_is_payload_ineligible() {
+    fn bytes_typed_schema_is_payload_eligible() {
         let s = schema("temp.update", vec![field("raw", SceType::Bytes)]);
-        assert!(!schema_is_native_payload_eligible(&s));
-        assert!(!guard_is_native_lowerable("_event.data.raw === 'ack'", &s));
+        assert!(schema_is_native_payload_eligible(&s));
+        assert!(guard_is_native_lowerable("_event.data.raw === 'ack'", &s));
+        assert!(guard_is_native_lowerable("_event.data.raw !== 'ack'", &s));
     }
 
-    // A schema that mixes a numeric field with a bytes field is ineligible
-    // as a whole: the payload struct emits *every* field, so the unrepresentable
-    // bytes field poisons the otherwise-native numeric guard too. The gate
-    // is per-schema, not per-guard.
+    // A schema mixing a numeric field and a bytes field is eligible as a
+    // whole, and the numeric guard stays native (the payload struct
+    // carries both fields).
     #[test]
-    fn schema_with_any_bytes_field_is_payload_ineligible() {
+    fn schema_with_bytes_and_numeric_fields_is_eligible() {
         let s = schema(
             "temp.update",
             vec![
@@ -1779,8 +1838,30 @@ mod tests {
                 field("raw", SceType::Bytes),
             ],
         );
-        assert!(!schema_is_native_payload_eligible(&s));
-        assert!(!guard_is_native_lowerable("_event.data.count === 0", &s));
+        assert!(schema_is_native_payload_eligible(&s));
+        assert!(guard_is_native_lowerable("_event.data.count === 0", &s));
+        assert!(guard_is_native_lowerable("_event.data.raw === 'ack'", &s));
+    }
+
+    // RFC §3 B2/B3 — the per-guard representability pre-check keeps a
+    // non-lowerable bytes form off the native path even though the schema
+    // is eligible: an ordering operator (B3) or a non-printable-ASCII
+    // literal (B2) on a bytes operand is classed non-native (the
+    // receive-side validator separately rejects the same forms).
+    #[test]
+    fn non_representable_bytes_guard_is_not_native() {
+        let s = schema("temp.update", vec![field("raw", SceType::Bytes)]);
+        // B3: ordering on a bytes operand.
+        for op in ["<", ">", "<=", ">="] {
+            assert!(
+                !guard_is_native_lowerable(&format!("_event.data.raw {op} 'ack'"), &s),
+                "ordering '{op}' on bytes must be non-native"
+            );
+        }
+        // B2: non-printable-ASCII literal.
+        assert!(!guard_is_native_lowerable("_event.data.raw === 'café'", &s));
+        // Control: the representable equality form stays native.
+        assert!(guard_is_native_lowerable("_event.data.raw === 'ack'", &s));
     }
 
     #[test]

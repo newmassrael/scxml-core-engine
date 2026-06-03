@@ -227,6 +227,84 @@ fn negative_type_mismatch_rejects_with_typed_diagnostic() {
     }
 }
 
+// ─── Positive: bytes-field schema + by-value equality guard ───
+//     RFC rfc-eventschema-bytes-guard.md §3 — the gate is flipped, so a
+//     bytes field is payload-eligible and an equality guard against a
+//     printable-ASCII literal compiles (lowers natively on all six).
+
+#[test]
+fn positive_bytes_event_schema_compiles() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &["schema_signal_bytes.scxml", "statechart_bytes.scxml"],
+    );
+    let schema_path = &staged[0];
+    let scxml_path = &staged[1];
+    run(&[scxml_path.as_path()], &[schema_path.as_path()])
+        .expect("orchestrator should accept bytes schema + equality guard");
+}
+
+// ─── Negative: ordering operator on a bytes operand (RFC §3 B3) ───
+
+#[test]
+fn negative_bytes_ordering_rejects_with_typed_diagnostic() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "schema_signal_bytes.scxml",
+            "negative_statechart_bytes_ordering.scxml",
+        ],
+    );
+    let schema_path = &staged[0];
+    let scxml_path = &staged[1];
+    let err = run(&[scxml_path.as_path()], &[schema_path.as_path()])
+        .err()
+        .expect("orchestrator should reject an ordering operator on a bytes field");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::BytesComparisonNotEquality { field, op, .. } => {
+                assert_eq!(field, "raw");
+                assert_eq!(op, "<");
+            }
+            other => panic!("expected BytesComparisonNotEquality, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
+// ─── Negative: non-printable-ASCII literal vs bytes field (RFC §3 B2) ─
+
+#[test]
+fn negative_bytes_non_ascii_literal_rejects() {
+    let dir = tempdir().expect("tempdir");
+    let staged = stage_fixtures(
+        dir.path(),
+        &[
+            "schema_signal_bytes.scxml",
+            "negative_statechart_bytes_non_ascii.scxml",
+        ],
+    );
+    let schema_path = &staged[0];
+    let scxml_path = &staged[1];
+    let err = run(&[scxml_path.as_path()], &[schema_path.as_path()])
+        .err()
+        .expect("orchestrator should reject a non-printable-ASCII bytes literal");
+    match err.error {
+        ForgeError::Validation(boxed) => match *boxed {
+            ValidationError::CrossKindTypeMismatch {
+                field, expected, ..
+            } => {
+                assert_eq!(field, "raw");
+                assert_eq!(expected, "bytes");
+            }
+            other => panic!("expected CrossKindTypeMismatch, got {other:?}"),
+        },
+        other => panic!("expected Validation error, got {other:?}"),
+    }
+}
+
 // ─── Negative: EventSchema declared against W3C built-in event ───
 
 #[test]

@@ -150,6 +150,17 @@ name = "forge_codegen_event_schema_smoke"
 path = "tests/forge_codegen_event_schema_smoke.rs"
 required-features = ["cli"]
 
+# RFC rfc-eventschema-bytes-guard.md §6 — cross-backend gate for a
+# `bytes`-field EventSchema transition guard: 6-backend byte-equality
+# form assertions plus a real C++ compile+run (match/non-match) and a
+# C11 freestanding compile of the bounded-buffer + memcmp lowering.
+# Cli-feature gate mirrors the other codegen smoke tests since the
+# harness shells out to `sce-codegen`.
+[[test]]
+name = "event_schema_bytes_guard"
+path = "tests/event_schema_bytes_guard.rs"
+required-features = ["cli"]
+
 # NL→IR Mapping Roadmap Items 1+5 — `sce:req` / `sce:unresolved`
 # annotation comment emission across all six codegen backends. Pair
 # with `codegen_smoke` (compile gate on annotated output) so both
