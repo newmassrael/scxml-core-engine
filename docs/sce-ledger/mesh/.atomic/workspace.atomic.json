@@ -566,7 +566,7 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "onParallelRegionLocalComplete_",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
@@ -596,7 +596,7 @@
         {
           "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
           "symbol": "isValidPatternKind",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
