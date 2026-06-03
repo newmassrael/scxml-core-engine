@@ -2315,7 +2315,7 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::enterState",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/StateMachine.cpp",
@@ -3159,7 +3159,7 @@
         {
           "file": "sce/include/parsing/SemanticError.h",
           "symbol": "SCE::parsing",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/parsing/SemanticError.h",
@@ -3574,7 +3574,7 @@
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::setEventDispatcher",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
@@ -3589,7 +3589,7 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "setScheduler",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
