@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC rfc-eventschema-bytes-guard.md §3 B3 negative fixture: an ordering
+  operator (`<`) on a `bytes`-typed `_event.data.raw`. Lexicographic
+  ordering of an opaque payload byte-blob has no byte-identical native
+  lowering, so the receive-side validator rejects it with
+  `validation/bytes-comparison-not-equality`. Only equality (`===` /
+  `!==`) is permitted on a bytes operand.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_bytes_ordering"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_signal_bytes.scxml" kind="event-schema" as="SignalBytesSchema"/>
+  <state id="waiting">
+    <transition event="signal.received" cond="_event.data.raw &lt; 'ack'" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>

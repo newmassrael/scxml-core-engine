@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC rfc-eventschema-bytes-guard.md §3 positive fixture: a statechart
+  that imports the bytes EventSchema and reads `_event.data.raw` in a
+  transition cond as a by-value byte equality against a printable-ASCII
+  literal. The guard lowers natively on all six backends to that
+  backend's byte-equality primitive (Rust `== b"ack"`, C++
+  `== std::vector<uint8_t>{0x61,0x63,0x6b}`, Go `string(..)== "ack"`,
+  Kotlin `.contentEquals("ack".toByteArray())`, Python `== b"ack"`, C11
+  `_len == 3 && memcmp(.., "ack", 3) == 0`) — the decoded comparison
+  constant (61 63 6b) is byte-identical across all six.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_bytes"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_signal_bytes.scxml" kind="event-schema" as="SignalBytesSchema"/>
+  <state id="waiting">
+    <transition event="signal.received" cond="_event.data.raw === 'ack'" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>

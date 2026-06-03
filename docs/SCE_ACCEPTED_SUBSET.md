@@ -856,9 +856,16 @@ against a `uint32` field) surfaces through
 precedent).
 
 A `bytes`-typed field compares against a printable-ASCII string
-literal by value (`_event.data.raw === 'ack'`). Two
-`bytes`-specific rejections layer on top of the shared receive-side
-checks (RFC `rfc-eventschema-bytes-guard.md` §3):
+literal by value (`_event.data.raw === 'ack'`). Such a guard lowers
+natively on all six backends — each to its own byte-equality
+primitive over the same decoded constant (Rust `== b"ack"`, C++
+`== std::vector<uint8_t>{…}`, Go `string(..)== "ack"`, Kotlin
+`.contentEquals("ack".toByteArray())`, Python `== b"ack"`, C11
+`_len == N && memcmp(.., "ack", N) == 0`) — so no script engine is
+required. The C11 payload field is a no-alloc bounded buffer
+(`uint8_t[CAP]; size_t _len`) whose `CAP` comes from `sce:max-size`
+(default 256). Two `bytes`-specific rejections layer on top of the
+shared receive-side checks (RFC `rfc-eventschema-bytes-guard.md` §3):
 
 - `validation/bytes-comparison-not-equality` — an ordering operator
   (`<`, `>`, `<=`, `>=`) applied to a `bytes` field. Lexicographic

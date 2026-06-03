@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC rfc-eventschema-bytes-guard.md §3 B2 negative fixture: a `bytes`
+  equality against a literal carrying a non-printable-ASCII byte (the
+  multi-byte UTF-8 'é'). Such a literal has no unambiguous cross-backend
+  byte constant, so the receive-side validator rejects it as a
+  type-category mismatch (`validation/cross-kind-type-mismatch`). The
+  printable-ASCII boundary is a validated, forward-compatible literal
+  scope (the byte carrier widens later without a wire-form change).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_bytes_non_ascii"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_signal_bytes.scxml" kind="event-schema" as="SignalBytesSchema"/>
+  <state id="waiting">
+    <transition event="signal.received" cond="_event.data.raw === 'café'" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>
