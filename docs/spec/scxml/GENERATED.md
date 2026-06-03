@@ -403,8 +403,8 @@ The following events are generated automatically by the SCXML implementation und
 - [references] sce/include/core/ParallelTransitionHelper.h:isInternal
 - [implements] sce/include/core/ParallelTransitionHelper.h:sortStatesForExit
 - [references] sce/include/core/ParallelTransitionHelper.h:transitionIndex
-- [implements] sce/include/core/StateEntryHelper.h:calculateAncestorPath
-- [implements] sce/include/core/StateEntryHelper.h:optimizeEntryOrder
+- [references] sce/include/core/StateEntryHelper.h:calculateAncestorPath
+- [references] sce/include/core/StateEntryHelper.h:optimizeEntryOrder
 - [implements] sce/include/runtime/ImmediateModeGuard.h:ImmediateModeGuard
 - [references] sce/include/runtime/StateHierarchyManager.h:initialTransitionCallback_
 - [implements] sce/include/runtime/StateHierarchyManager.h:setInitialTransitionCallback
@@ -422,7 +422,7 @@ The following events are generated automatically by the SCXML implementation und
 - [implements] sce/include/static/StaticExecutionEngine.h:handleHierarchicalTransition
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::setImmediateMode
 - [implements] sce/src/runtime/ActionExecutorImpl.h:setImmediateMode
-- [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::getEventQueues
+- [references] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::getEventQueues
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEventWithPriority
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseInternalEvent
 - [implements] sce/src/runtime/EventRaiserImpl.h:executeEventCallback
@@ -435,12 +435,11 @@ The following events are generated automatically by the SCXML implementation und
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionDirect
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::executeTransitionMicrostep
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::exitState
-- [implements] sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
+- [references] sce/src/runtime/StateMachine.cpp:StateMachine::initializeFromModel
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::processEvent
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::processStateTransitions
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::setupJSEnvironment
 - [implements] sce/src/runtime/StateMachine.cpp:StateMachine::start
-- [implements] sce/src/runtime/StateMachine.cpp:StateMachine::~StateMachine
 - [implements] sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::computeExitSet
 - [implements] sce/src/runtime/TransitionDomainCalculator.cpp:TransitionDomainCalculator::getStateDocumentPosition
 - [implements] sce/src/states/ConcurrentRegion.cpp:ConcurrentRegion::deactivate
