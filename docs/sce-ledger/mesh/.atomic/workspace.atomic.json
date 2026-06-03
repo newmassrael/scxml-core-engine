@@ -498,7 +498,7 @@
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
           "symbol": "SCE::Mesh::Someip",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
