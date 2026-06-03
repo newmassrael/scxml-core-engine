@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC rfc-eventschema-bytes-guard.md §6 — C11 runtime-parity bytes fixture.
+  Imports the bytes EventSchema and guards a transition on
+  `_event.data.raw === 'ack'`. The C11 backend lowers this to a native
+  tagged-union comparison `raw_len == 3 && memcmp(raw, "ack", 3) == 0`
+  (no script engine), so the generated translation unit links zero runtime
+  libraries — the harness target links none, the MCU-clean acceptance
+  proof. The runner injects a typed payload through
+  `..._raise_signal_received_typed` and asserts the guard fires
+  (raw == "ack" → done) / misses (raw == "no" → waiting).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="event_schema_bytes"
+       version="1.0"
+       initial="waiting"
+       datamodel="ecmascript">
+  <sce:import src="schema_signal_bytes.scxml" kind="event-schema" as="SignalBytesSchema"/>
+  <state id="waiting">
+    <transition event="signal.received" cond="_event.data.raw === 'ack'" target="done"/>
+  </state>
+  <state id="done"/>
+</scxml>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC rfc-eventschema-bytes-guard.md §6 — C11 runtime-parity bytes schema.
+  One `bytes` field carried natively as a no-alloc bounded buffer
+  (`uint8_t raw[CAP]; size_t raw_len;`, CAP from sce:max-size). Generic
+  vocabulary (`signal.received` + `raw`). Duplicated under the C test's
+  own resource tree (the import resolves relative to the importing
+  statechart's directory), mirroring the canonical
+  `sce-build/tests/fixtures/event_schema/schema_signal_bytes.scxml`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="schema_signal_bytes"
+       sce:kind="event-schema"
+       sce:event-name="signal.received">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in" sce:max-size="8"/>
+  </datamodel>
+</scxml>

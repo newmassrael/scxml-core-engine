@@ -43,10 +43,17 @@ if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build
 fi
 
+# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §6) rides the same
+# compile+run gate so the Python `bytes == b"ack"` guard is REALLY run — a
+# `bytes == str` regression silently evaluates False and only a runtime
+# transition check catches it.
+BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"
+
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 "$CODEGEN" generate "$FIXTURE" -l python -o "$TMP/" --input-root "$INPUT_ROOT"
+"$CODEGEN" generate "$BYTES_FIXTURE" -l python -o "$TMP/" --input-root "$INPUT_ROOT"
 
 mkdir -p "$GENERATED_DIR"
 find "$GENERATED_DIR" -maxdepth 1 -name '*_sm.py' -delete
