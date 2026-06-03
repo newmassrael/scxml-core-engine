@@ -101,7 +101,7 @@ Source: `docs/sce-ledger/wire/.atomic/workspace.atomic.json`
 - [implements] sce/include/parsing/IXMLParser.h:parseFile
 - [implements] sce/include/parsing/ParseError.h:ParseException
 - [implements] sce/include/parsing/ParseError.h:ParseFileNotFound
-- [implements] sce/include/parsing/ParseError.h:SCE::parsing
+- [references] sce/include/parsing/ParseError.h:SCE::parsing
 - [implements] sce/src/parsing/PugiXMLParser.cpp:PugiXMLParser::parseFile
 - [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseAbstractDocument
 - [implements] sce/src/parsing/SCXMLParser.cpp:SCE::SCXMLParser::parseContent
