@@ -407,7 +407,7 @@ The following events are generated automatically by the SCXML implementation und
 - [references] sce/include/core/StateEntryHelper.h:optimizeEntryOrder
 - [implements] sce/include/runtime/ImmediateModeGuard.h:ImmediateModeGuard
 - [references] sce/include/runtime/StateHierarchyManager.h:initialTransitionCallback_
-- [implements] sce/include/runtime/StateHierarchyManager.h:setInitialTransitionCallback
+- [references] sce/include/runtime/StateHierarchyManager.h:setInitialTransitionCallback
 - [implements] sce/include/runtime/StateMachine.h:StateMachine
 - [implements] sce/include/runtime/StateMachine.h:executeTransitionMicrostep
 - [implements] sce/include/runtime/TransitionDomainCalculator.h:TransitionDomainCalculator
@@ -450,7 +450,7 @@ The following events are generated automatically by the SCXML implementation und
 - [implements] sce/src/states/ConcurrentStateNode.cpp:ConcurrentStateNode::exitParallelState
 - [implements] sce/src/states/StateExitExecutor.cpp:StateExitExecutor::executeActionNodes
 - [implements] sce/include/core/EventProcessingAlgorithms.h:processInternalEventQueue
-- [implements] sce/include/core/EventQueueConcept.h:SCE::Core
+- [references] sce/include/core/EventQueueConcept.h:SCE::Core
 - [implements] sce/include/core/EventQueueManager.h:SCE::Core
 - [references] sce/include/core/EventQueueManager.h:queue_
 - [implements] sce/include/core/HierarchicalStateHelper.h:HierarchicalAlgorithms
@@ -1726,7 +1726,7 @@ None. The manner in which the message is displayed or logged is platform-depende
 - [references] sce/src/runtime/ActionExecutorImpl.h:currentOriginSessionId_
 - [references] sce/src/runtime/ActionExecutorImpl.h:currentOriginType_
 - [references] sce/src/runtime/ActionExecutorImpl.h:currentSendId_
-- [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::getEventQueues
+- [references] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::getEventQueues
 - [implements] sce/src/runtime/EventRaiserImpl.cpp:EventRaiserImpl::raiseEvent
 - [references] sce/src/runtime/EventRaiserImpl.h:invokeId
 - [references] sce/src/runtime/EventRaiserImpl.h:origin
@@ -2003,9 +2003,9 @@ The children of the <assign>element provide an in-line specification of the lega
 - [references] sce/include/common/EventMetadataHelper.h:clearPolicyMetadata
 - [implements] sce/include/common/EventMetadataHelper.h:createDoneInvokeEvent
 - [implements] sce/include/mesh/ChildSessionAdapter.h:getDonedata
-- [implements] sce/include/model/DoneData.h:DoneData
-- [implements] sce/include/model/DoneData.h:setContentExpression
-- [implements] sce/include/model/DoneData.h:setContentLiteral
+- [references] sce/include/model/DoneData.h:DoneData
+- [references] sce/include/model/DoneData.h:setContentExpression
+- [references] sce/include/model/DoneData.h:setContentLiteral
 - [implements] sce/include/model/IStateNode.h:setDoneDataContentExpression
 - [implements] sce/include/model/IStateNode.h:setDoneDataContentLiteral
 - [implements] sce/include/parsing/DoneDataParser.h:setDatamodelType
@@ -2443,7 +2443,7 @@ The SCXML Processor MAY reject documents containing syntactically ill-formed exp
 - [references] sce/include/events/IEventDispatcher.h:targetUri
 - [implements] sce/include/events/ParentEventTarget.h:ParentEventTarget
 - [implements] sce/include/events/PlatformEventRaiserHelper.h:pollScheduler
-- [implements] sce/include/scripting/ISessionRegistry.h:ISessionRegistry
+- [references] sce/include/scripting/ISessionRegistry.h:ISessionRegistry
 - [implements] sce/include/scripting/ISessionRegistry.h:cleanupSession
 - [references] sce/include/scripting/SessionRegistry.h:eventDispatchers_
 - [implements] sce/include/static/StaticExecutionEngine.h:pumpScheduledEvents
@@ -2910,8 +2910,8 @@ The implementation of <invoke>, including communication between parent and child
 - [implements] sce/include/common/SendHelper.h:sendToParentWithOrigin
 - [references] sce/include/core/StatePolicyConcepts.h:SCE::Core
 - [implements] sce/include/static/StaticExecutionEngine.h:processEventQueues
-- [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
-- [implements] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
+- [references] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::captureInvokeState
+- [references] sce/src/runtime/InvokeExecutor.cpp:InvokeExecutor::restoreInvokeState
 - [implements] sce/src/runtime/InvokeExecutor.cpp:SCXMLInvokeHandler::startInvokeInternal
 - [references] sce/include/common/SendHelper.h:SendHelper
 

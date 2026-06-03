@@ -469,7 +469,7 @@
         {
           "file": "sce/include/runtime/StateHierarchyManager.h",
           "symbol": "setInitialTransitionCallback",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/runtime/StateMachine.h",
@@ -684,7 +684,7 @@
         {
           "file": "sce/include/core/EventQueueConcept.h",
           "symbol": "SCE::Core",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/core/EventQueueManager.h",
@@ -2492,7 +2492,7 @@
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
           "symbol": "EventRaiserImpl::getEventQueues",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/EventRaiserImpl.cpp",
@@ -2901,17 +2901,17 @@
         {
           "file": "sce/include/model/DoneData.h",
           "symbol": "DoneData",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/DoneData.h",
           "symbol": "setContentExpression",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/DoneData.h",
           "symbol": "setContentLiteral",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/model/IStateNode.h",
@@ -3454,7 +3454,7 @@
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
           "symbol": "ISessionRegistry",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/scripting/ISessionRegistry.h",
@@ -4403,12 +4403,12 @@
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "InvokeExecutor::captureInvokeState",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
           "symbol": "InvokeExecutor::restoreInvokeState",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/src/runtime/InvokeExecutor.cpp",
