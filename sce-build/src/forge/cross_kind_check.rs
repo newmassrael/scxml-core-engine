@@ -304,6 +304,7 @@ where
         }
         ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
         | ExprKind::BoolLit(_)
         | ExprKind::NullLit
         | ExprKind::Ident(_)
