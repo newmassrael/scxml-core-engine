@@ -2648,16 +2648,6 @@
           "kind": "references"
         },
         {
-          "file": "sce/include/common/AssignmentExecutionHelper.h",
-          "symbol": "AssignmentExecutionHelper",
-          "kind": "implements"
-        },
-        {
-          "file": "sce/include/common/AssignmentExecutionHelper.h",
-          "symbol": "executeAssignment",
-          "kind": "implements"
-        },
-        {
           "file": "sce/include/common/DataModelInitHelper.h",
           "symbol": "initializeVariable",
           "kind": "implements"
@@ -2821,6 +2811,16 @@
         {
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::assignVariable",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/AssignmentExecutionHelper.h",
+          "symbol": "AssignmentExecutionHelper",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/AssignmentExecutionHelper.h",
+          "symbol": "executeAssignment",
           "kind": "implements"
         }
       ],
