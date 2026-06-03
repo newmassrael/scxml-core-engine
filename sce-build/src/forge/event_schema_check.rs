@@ -392,6 +392,7 @@ fn cond_references_event_data(expr: &TypedExpr) -> bool {
         | ExprKind::Raw(_)
         | ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
         | ExprKind::BoolLit(_)
         | ExprKind::NullLit => false,
     }
@@ -423,6 +424,7 @@ fn cond_is_pure_typed_payload(expr: &TypedExpr) -> bool {
         }
         ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
         | ExprKind::BoolLit(_)
         | ExprKind::NullLit => true,
         // Any other Member shape (`frame.x`, `_event.data.a.b`), bare
@@ -677,6 +679,7 @@ fn walk_for_event_data_refs(
         // Leaf nodes — nothing to walk.
         ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
         | ExprKind::BoolLit(_)
         | ExprKind::NullLit
         | ExprKind::Ident(_)

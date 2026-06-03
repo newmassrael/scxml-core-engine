@@ -206,6 +206,7 @@ fn find_unit_mismatch(ast: &TypedExpr) -> Option<UnitMismatch> {
         // Leaves carry no nested arithmetic.
         ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
         | ExprKind::BoolLit(_)
         | ExprKind::NullLit
         | ExprKind::Ident(_)
