@@ -31,7 +31,7 @@ namespace SCE {
  * - Shared assignment execution strategy between Interpreter and AOT engines
  * - Single Source of Truth for system variable detection and assignment logic
  *
- * §scxml-5.3: Data Model Assignment
+ * §scxml-5.4: <assign> element execution (modify the data model)
  * §scxml-5.10: System Variables (_event, _sessionid, _name, _ioprocessors, _x)
  * §scxml-B-2: System Variables are Read-Only (enforced by AssignHelper)
  *
@@ -59,7 +59,7 @@ public:
      * @brief Execute assignment with appropriate strategy based on expression type
      *
      * ARCHITECTURE.md: Zero Duplication - Single Source of Truth for assignment execution
-     * Implements §scxml-5.3 assignment semantics with proper JavaScript reference handling.
+     * Implements §scxml-5.4 <assign> semantics with proper JavaScript reference handling.
      *
      * Strategy:
      * 1. System variable reference (e.g., "Var2 = _event") → executeScript (preserves references)
@@ -92,7 +92,7 @@ public:
             return true;
         }
 
-        // §scxml-5.3: Standard evaluation + assignment strategy
+        // §scxml-5.4: Standard evaluation + assignment strategy
         // Step 1: Evaluate expression
         SCE_LOG_DEBUG("AssignmentExecutionHelper: Evaluating expression: {}", expr);
         auto evalResult = jsEngine.evaluateExpression(sessionId, expr).get();

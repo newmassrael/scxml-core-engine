@@ -1830,8 +1830,6 @@ None.
 - [references] sce/include/common/AssignHelper.h:AssignHelper
 - [references] sce/include/common/AssignHelper.h:getInvalidLocationErrorMessage
 - [references] sce/include/common/AssignHelper.h:isValidLocation
-- [implements] sce/include/common/AssignmentExecutionHelper.h:AssignmentExecutionHelper
-- [implements] sce/include/common/AssignmentExecutionHelper.h:executeAssignment
 - [implements] sce/include/common/DataModelInitHelper.h:initializeVariable
 - [implements] sce/include/runtime/BindingHelper.h:BindingHelper
 - [implements] sce/include/runtime/BindingHelper.h:getDefaultBinding
@@ -1935,6 +1933,8 @@ Authors control when the initial values are assigned to the data elements by mea
 - [implements] sce/include/common/AssignHelper.h:isValidLocation
 - [implements] sce/src/actions/AssignAction.cpp:AssignAction::execute
 - [implements] sce/src/runtime/ActionExecutorImpl.cpp:ActionExecutorImpl::assignVariable
+- [implements] sce/include/common/AssignmentExecutionHelper.h:AssignmentExecutionHelper
+- [implements] sce/include/common/AssignmentExecutionHelper.h:executeAssignment
 
 
 
