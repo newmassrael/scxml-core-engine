@@ -368,7 +368,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Bindings**:
 - [references] sce/include/mesh/MeshEnvelope.h:routing_id
-- [implements] sce/include/mesh/OutboundBuffer.h
+- [references] sce/include/mesh/OutboundBuffer.h
 
 
 
@@ -493,8 +493,8 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 
 **Bindings**:
 - [references] sce/include/mesh/MeshUuidKey.h
-- [implements] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h
-- [implements] sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h
+- [references] sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h
+- [references] sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h
 
 
 
@@ -1780,7 +1780,7 @@ Source: `docs/sce-ledger/mesh/.atomic/workspace.atomic.json`
 - [references] sce/include/mesh/IChildSession.h:sessionId
 - [implements] sce/include/mesh/MeshDispatch.h:dispatchEnvelope
 - [references] sce/include/mesh/MeshEnvelope.h:child_session_id
-- [implements] sce/include/static/StaticExecutionEngine.h
+- [references] sce/include/static/StaticExecutionEngine.h
 
 
 
