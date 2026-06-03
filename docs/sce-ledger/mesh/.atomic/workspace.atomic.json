@@ -294,7 +294,7 @@
         },
         {
           "file": "sce/include/mesh/OutboundBuffer.h",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
@@ -349,11 +349,11 @@
         },
         {
           "file": "sce/include/mesh/transports/SomeipScxmlInvokeEndpoint.h",
-          "kind": "implements"
+          "kind": "references"
         },
         {
           "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
@@ -1487,7 +1487,7 @@
         },
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
-          "kind": "implements"
+          "kind": "references"
         }
       ]
     },
