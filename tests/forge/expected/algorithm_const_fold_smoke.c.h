@@ -6,7 +6,7 @@
 /* */
 /* RFC §5.A: free function with bounded loops, no allocs, no I/O. */
 /* RFC §5.J.5 emitter table: `static T <snake>(...)` with `bytes` */
-/* lowered to the runtime's stack-bounded `sce_forge_bytes_t`. */
+/* lowered to the borrowed `sce_forge_bytes_view_t` (zero-copy). */
 
 #ifndef SCE_FORGE_ALGORITHM_CONST_FOLD_SMOKE_H
 #define SCE_FORGE_ALGORITHM_CONST_FOLD_SMOKE_H
