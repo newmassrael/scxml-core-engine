@@ -499,7 +499,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
     }
 {% endif %}
     if (self->{{ field.id }}_len <= {{ field.max_size }}) {
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->{{ field.id }}, self->{{ field.id }}_len));
+        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, {% if field.is_string %}(const uint8_t*)self->{{ field.id }}{% else %}self->{{ field.id }}{% endif %}, self->{{ field.id }}_len));
     }
 {% endif %}
 {% endfor %}

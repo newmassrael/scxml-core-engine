@@ -259,20 +259,24 @@ fn c11_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
         ),
         "C11 foreach-BC missing get_by_slot dispatch; got:\n{code}"
     );
-    // Cross-algorithm dispatch — C11 prefix-style form
-    // (`<namespace>_<func>` per RFC §5.J.1).
+    // Cross-algorithm dispatch — C7 §A6: the algorithm kind names its
+    // emitted symbol by its `name=` attribute, and C11 has no namespace,
+    // so the cross-doc call is the bare canonical symbol (resolving
+    // against the bare `static inline` definition), not a
+    // `<file_stem>_<func>` prefix.
     assert!(
-        code.contains(
-            "algorithm_keyexpr_intersect_exact_keyexpr_intersect(entry.callback_id, target)"
-        ),
-        "C11 cross-algo dispatch missing prefix call; got:\n{code}"
+        code.contains("keyexpr_intersect(entry.callback_id, target)"),
+        "C11 cross-algo dispatch missing bare call; got:\n{code}"
     );
     assert!(
         code.contains("#include \"local_sub_table.h\""),
         "C11 BC import missing; got:\n{code}"
     );
+    // The algorithm header is named by its `name=` attribute
+    // (`keyexpr_intersect.h`), so the include must reference that file —
+    // not the import's file stem (which is never written as a header).
     assert!(
-        code.contains("#include \"algorithm_keyexpr_intersect_exact.h\""),
+        code.contains("#include \"keyexpr_intersect.h\""),
         "C11 algorithm import missing; got:\n{code}"
     );
 }
@@ -316,15 +320,15 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
             code.contains(dispatch_marker),
             "{lang:?}: foreach-BC missing get_by_slot dispatch; got:\n{code}"
         );
-        // Axis 2: cross-algorithm dispatch surfaces. Kotlin's
-        // wildcard import lifts the bare camelCase name into scope;
-        // every other backend uses a qualified prefix matching its
-        // `build_qualified_call` shape (Rust/Cpp `::`, Go/Python `.`,
-        // C11 `_`).
+        // Axis 2: cross-algorithm dispatch surfaces. Kotlin's wildcard
+        // import and C11's no-namespace model both lift the bare symbol
+        // into scope (C7 §A6); every other backend uses a qualified
+        // prefix matching its `build_qualified_call` shape (Rust/Cpp
+        // `::`, Go/Python `.`).
         let cross_call_marker = match lang {
             Language::Kotlin => "keyexprIntersect(",
             Language::Go => "algorithm_keyexpr_intersect_exact.KeyexprIntersect(",
-            Language::C11 => "algorithm_keyexpr_intersect_exact_keyexpr_intersect(",
+            Language::C11 => "keyexpr_intersect(entry.callback_id, target)",
             Language::Cpp => "AlgorithmKeyexprIntersectExact::keyexpr_intersect(",
             Language::Python => "algorithm_keyexpr_intersect_exact.keyexpr_intersect(",
             Language::Rust => "algorithm_keyexpr_intersect_exact::keyexpr_intersect(",

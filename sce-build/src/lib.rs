@@ -3331,6 +3331,29 @@ fn validate_and_enrich_imports(
                 if let Some(name) = discover_primary_function(&doc, language) {
                     ctx.qualified_call = build_qualified_call(&name, &ctx.namespace, language);
                 }
+                // C7 §A6: the algorithm kind names its emitted symbol by the
+                // `name=` attribute (`parse_algorithm`), not the file stem —
+                // `render_algorithm` emits a bare `static inline T <name>(...)`
+                // and `generate_forge` writes the header as `<snake(name)>.h`.
+                // Two file-stem-based assumptions in the C11 cross-doc path
+                // must therefore be redirected to that canonical symbol:
+                //   1. the `#include` must reference the name-based filename
+                //      (not `<file_stem>.h`, which is never written), and
+                //   2. C11 has no namespace mechanism, so the cross-doc call
+                //      is the bare symbol — `build_qualified_call`'s
+                //      `<namespace>_<fn>` shape dangles against the bare
+                //      definition (the standalone golden locks `static inline
+                //      bool bytes_equal(...)`).
+                // Every other kind sets `name == file_stem` (label.identifier),
+                // so this only diverges for an algorithm carrying a `name=`
+                // attribute distinct from its file stem.
+                if let forge::model::ForgeDocument::Algorithm(am) = &doc {
+                    if matches!(language, generator::Language::C11) {
+                        let sym = filters::to_snake_case(am.name.clone());
+                        ctx.include_stmt = format!("#include \"{sym}.h\"");
+                        ctx.qualified_call = sym;
+                    }
+                }
                 let (params, ret) = discover_stateless_signature(&doc);
                 ctx.param_types = params;
                 ctx.ret_type = ret;
