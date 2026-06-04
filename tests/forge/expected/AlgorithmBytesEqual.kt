@@ -19,7 +19,7 @@ fun bytesEqual(a: ByteArray, b: ByteArray): Boolean {
         return false
     }
     var i: UInt = 0.toUInt()
-    while (i < (a).size) {
+    while (i < (a).size.toUInt()) {
         if (a[i.toInt()].toUByte() != b[i.toInt()].toUByte()) {
             return false
         }

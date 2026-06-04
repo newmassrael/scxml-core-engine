@@ -16,7 +16,7 @@ pub fn bytes_equal(a: &[u8], b: &[u8]) -> bool {
         return false;
     }
     let mut i: u32 = 0;
-    while i < (a).len() {
+    while i < (a).len() as u32 {
         if a[(i) as usize] != b[(i) as usize] {
             return false;
         }
