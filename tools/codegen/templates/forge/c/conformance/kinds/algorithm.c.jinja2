@@ -48,7 +48,7 @@ static void test_{{ f.name }}(void) {
         {{ arg_ty | c_type }} arg{{ loop.index0 }} = cases[i].input_arg{{ loop.index0 }};
 {% endif %}
 {% endfor %}
-        {{ f.output.type | c_type }} actual = {{ f.function | to_snake_case }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
+        {{ f.output.type | c_type }} actual = {{ f.function }}({% for arg_ty in f.args %}{% if arg_ty == "bytes" %}(sce_forge_bytes_view_t){ arg{{ loop.index0 }}.data, arg{{ loop.index0 }}.len }{% else %}arg{{ loop.index0 }}{% endif %}{% if not loop.last %}, {% endif %}{% endfor %});
 {% if f.output.compare == "tolerance" %}
         if (!close_enough((double)actual, (double)cases[i].expected, FLOAT_TOL)) {
             fprintf(stderr,

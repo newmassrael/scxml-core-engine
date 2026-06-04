@@ -19,7 +19,7 @@
             val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
 {% endfor %}
             val expected = {{ "case.jsonObject[\"expected\"]!!" | kt_unmarshal(f.output.type) }}
-            val actual = {{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            val actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% if f.output.compare == "tolerance" %}
             assertClose(actual.toDouble(), expected.toDouble(), "{{ f.name }}")
 {% else %}

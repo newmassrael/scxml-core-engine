@@ -19,17 +19,17 @@
 
 import unittest
 
-from .{{ name }} import {{ name }}
+from .{{ name }} import {{ primary_symbol }}
 
 
 class {{ name_pascal }}TestVectors(unittest.TestCase):
 {% for tv in test_vectors %}
     def test_vector_{{ name }}_l{{ tv.source_line }}(self) -> None:
-        actual = {{ name }}({{ tv.bytes_literal_py }})
+        actual = {{ primary_symbol }}({{ tv.bytes_literal_py }})
         expected = {{ tv.value_literal_py }}
         self.assertEqual(
             actual,
             expected,
-            f"<sce:test-vector> at SCXML L{{ tv.source_line }}: {{ name }}(<{{ tv.hex }}>) returned {actual!r}, expected {expected!r}",
+            f"<sce:test-vector> at SCXML L{{ tv.source_line }}: {{ primary_symbol }}(<{{ tv.hex }}>) returned {actual!r}, expected {expected!r}",
         )
 {% endfor %}

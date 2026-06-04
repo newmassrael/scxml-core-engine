@@ -27,6 +27,6 @@ package com.sce.generated.{{ package }}
 {% endfor %}
 {% endif %}
 
-{{ consts_prelude }}fun {{ name_camel }}({{ params_str }}){% if has_return %}: {{ return_type }}{% endif %} {
+{{ consts_prelude }}fun {{ primary_symbol }}({{ params_str }}){% if has_return %}: {{ return_type }}{% endif %} {
 {{ body }}
 }

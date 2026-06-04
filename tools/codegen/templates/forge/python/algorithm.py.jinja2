@@ -22,5 +22,5 @@
 {% endfor %}
 {% endif %}
 
-{{ consts_prelude }}def {{ name }}({{ params_str }}){% if has_return %} -> {{ return_type }}{% endif %}:
+{{ consts_prelude }}def {{ primary_symbol }}({{ params_str }}){% if has_return %} -> {{ return_type }}{% endif %}:
 {{ body }}

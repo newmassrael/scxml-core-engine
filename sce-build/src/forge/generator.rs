@@ -20615,6 +20615,34 @@ fn lower_algorithm_stmt(
     Ok(())
 }
 
+/// W1 symbol-name SSOT for the `algorithm` kind: the primary callable
+/// symbol an algorithm document emits in `language`, before any cross-doc
+/// qualification (RFC §5.J.5).
+///
+/// This single source replaces the casing rule that was previously
+/// re-encoded in three places — the per-backend template variable picked
+/// for the function declaration (`{{ name }}` / `{{ name_pascal }}` /
+/// `{{ name_camel }}`), the matching call-site in the test-vector sidecar,
+/// and the `Algorithm` arm of `discover_primary_function`. The definition
+/// site (`render_algorithm`), the call site (sidecar + cross-doc resolver),
+/// and the test harness now all read this function, so the casing cannot
+/// drift between where the symbol is defined and where it is called.
+pub(crate) fn forge_algorithm_symbol(name: &str, language: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match language {
+        // C11 emits snake_case identifiers (RFC §5.J.1, matching standard
+        // C library / Linux kernel style); Rust/Python share snake; Cpp's
+        // free function in `namespace SCE::Generated::<Name>` also uses the
+        // verbatim snake symbol (the namespace, not the symbol, carries the
+        // Pascal name).
+        Language::Rust | Language::Python | Language::C11 | Language::Cpp => {
+            filters::to_snake_case(name.to_string())
+        }
+        Language::Kotlin => filters::to_camel_case(name.to_string()),
+        Language::Go => filters::to_pascal_case(name.to_string()),
+    }
+}
+
 fn render_algorithm(
     env: &minijinja::Environment,
     m: &AlgorithmModel,
@@ -20860,15 +20888,12 @@ fn render_algorithm(
         .iter()
         .any(|p| matches!(p.sce_type, SceType::Bytes));
 
-    let snake = filters::to_snake_case(m.name.clone());
-    ctx.insert("name".into(), snake.clone().into());
+    // W1 symbol-name SSOT: the function declaration reads `primary_symbol`
+    // instead of selecting a casing per backend. The module identity vars
+    // (`namespace` / `package`) come from `base_context` and are unaffected.
     ctx.insert(
-        "name_pascal".into(),
-        filters::to_pascal_case(m.name.clone()).into(),
-    );
-    ctx.insert(
-        "name_camel".into(),
-        filters::to_camel_case(m.name.clone()).into(),
+        "primary_symbol".into(),
+        forge_algorithm_symbol(&m.name, lang).into(),
     );
     ctx.insert("params_str".into(), params_str.into());
     ctx.insert("return_type".into(), return_type.into());
@@ -21281,6 +21306,12 @@ fn render_algorithm_test_vector_sidecar(
 
     let mut ctx: std::collections::BTreeMap<String, minijinja::Value> = Default::default();
     ctx.insert("name".into(), snake.clone().into());
+    // W1 symbol-name SSOT: the test-vector call-site invokes the algorithm
+    // under the same symbol `render_algorithm` defined.
+    ctx.insert(
+        "primary_symbol".into(),
+        forge_algorithm_symbol(&m.name, lang).into(),
+    );
     ctx.insert("return_type".into(), return_type_native.clone().into());
     ctx.insert(
         "test_vectors".into(),
@@ -21302,28 +21333,21 @@ fn render_algorithm_test_vector_sidecar(
         lang,
         Language::Cpp | Language::Go | Language::Python | Language::Kotlin
     ) {
-        // Pre-compute Pascal-case so each backend's sidecar can
-        // emit its idiomatic call-site without invoking a Jinja
-        // filter — the forge env (per-language) does not register
-        // `to_pascal_case`/`to_camel_case`, only the
-        // conformance-harness env does via `register_kotlin_filters`.
-        // Per-language consumers:
-        //   - Cpp:    qualified namespace `SCE::Generated::<Pascal>::<name>`
-        //   - Go:     exported function name `<Pascal>(...)` (RFC §5.J.5)
+        // Pre-compute Pascal-case so each backend's sidecar can emit its
+        // test-harness identifiers without invoking a Jinja filter — the
+        // forge env (per-language) does not register `to_pascal_case`,
+        // only the conformance-harness env does via
+        // `register_kotlin_filters`. The function call-site itself reads
+        // `primary_symbol` (W1 SSOT); `name_pascal` now serves only the
+        // non-symbol harness names that are Pascal-cased regardless of the
+        // kind's own primary casing:
+        //   - Cpp:    qualified namespace `SCE::Generated::<Pascal>::`
+        //   - Go:     test function name `TestVector<Pascal>`
         //   - Python: sidecar test class `<Pascal>TestVectors`
         //   - Kotlin: sidecar test class `<Pascal>TestVectors`
         ctx.insert(
             "name_pascal".into(),
             filters::to_pascal_case(m.name.clone()).into(),
-        );
-    }
-    if matches!(lang, Language::Kotlin) {
-        // Kotlin's sidecar additionally consumes `name_camel` for
-        // the algorithm function-call site (camelCase per the
-        // primary `algorithm.kt.jinja2` emit shape).
-        ctx.insert(
-            "name_camel".into(),
-            filters::to_camel_case(m.name.clone()).into(),
         );
     }
     // Render via the same `algorithm_test.<ext>.jinja2` lookup that
