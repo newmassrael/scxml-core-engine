@@ -1541,14 +1541,13 @@ pub fn render_harness(
             } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 let raw_output_id = read_lookup_output_id(&scxml_path)?;
-                // W1 symbol-name SSOT: lower to the exact per-language symbol
-                // render_lookup defines (incl. the C11 flat-scope
-                // `<snake(name)>_<snake(output)>` form, RFC §5.J.2 §3 D1), so
-                // the harness call site reads the bare value and the casing
-                // rule lives in one helper.
-                *function = Some(crate::forge::generator::forge_lookup_symbol(
+                // W1 symbol-name SSOT: lower to the exact symbol render_lookup
+                // defines — the bare call-base plus the C11 flat prefix, via
+                // the same two helpers the codegen uses (RFC §5.J.2 §3 D1).
+                let base = crate::forge::generator::forge_lookup_symbol(&raw_output_id, language);
+                *function = Some(crate::forge::generator::forge_stateless_def_symbol(
                     &fixture_name,
-                    &raw_output_id,
+                    &base,
                     language,
                 ));
                 *output_id = Some(raw_output_id);
@@ -1564,11 +1563,15 @@ pub fn render_harness(
             }
             FixtureSpec::Condition { function, .. } => {
                 // W1 symbol-name SSOT: lower the manifest `function` to the
-                // exact per-language symbol render_condition defines (incl.
-                // the C11 flat-scope `<snake>_check` form, RFC §5.J.2 §3 D1),
-                // so the harness call site reads the bare value and the
-                // casing rule lives in one helper.
-                *function = crate::forge::generator::forge_condition_symbol(function, language);
+                // exact symbol render_condition defines — the bare call-base
+                // plus the C11 flat prefix, via the same two helpers the
+                // codegen uses (RFC §5.J.2 §3 D1).
+                let base = crate::forge::generator::forge_condition_symbol(function, language);
+                *function = crate::forge::generator::forge_stateless_def_symbol(
+                    &fixture_name,
+                    &base,
+                    language,
+                );
             }
             FixtureSpec::Transform {
                 output,
@@ -1576,27 +1579,29 @@ pub fn render_harness(
                 ..
             } => {
                 // W1 symbol-name SSOT: lower each output accessor to the exact
-                // per-language symbol render_transform defines (incl. the C11
-                // flat-scope `<snake(name)>_compute_<output>` form, RFC §5.J.2
-                // §3 D1), so the harness call site reads the bare value and the
-                // casing rule lives in one helper. The output id is the
-                // compound `key` directly; for the scalar output it is the
-                // `compute_`-stripped function (the inverse of
-                // render_transform's `compute_<out.id>` composition).
+                // symbol render_transform defines — the bare call-base plus the
+                // C11 flat prefix, via the same two helpers the codegen uses
+                // (RFC §5.J.2 §3 D1). The output id is the compound `key`
+                // directly; for the scalar output it is the `compute_`-stripped
+                // function (the inverse of render_transform's `compute_<out.id>`
+                // composition).
                 if let Some(out) = output.as_mut() {
                     if let Some(orig) = out.function.as_ref() {
                         let output_id = orig.strip_prefix("compute_").unwrap_or(orig);
-                        out.function = Some(crate::forge::generator::forge_transform_symbol(
+                        let base =
+                            crate::forge::generator::forge_transform_symbol(output_id, language);
+                        out.function = Some(crate::forge::generator::forge_stateless_def_symbol(
                             &fixture_name,
-                            output_id,
+                            &base,
                             language,
                         ));
                     }
                 }
                 for co in compound_outputs.iter_mut() {
-                    co.function = crate::forge::generator::forge_transform_symbol(
+                    let base = crate::forge::generator::forge_transform_symbol(&co.key, language);
+                    co.function = crate::forge::generator::forge_stateless_def_symbol(
                         &fixture_name,
-                        &co.key,
+                        &base,
                         language,
                     );
                 }
@@ -1691,11 +1696,14 @@ pub fn render_harness(
                 *is_l2 = read_procedure_is_l2(&scxml_path)?;
             }
             FixtureSpec::Interpolation { symbol, .. } => {
-                // W1 symbol-name SSOT: derive the per-language accessor symbol
-                // render_interpolation defines so the harness call site reads
-                // the bare `f.symbol` value instead of re-deriving the casing.
-                *symbol = Some(crate::forge::generator::forge_interpolation_symbol(
+                // W1 symbol-name SSOT: derive the exact accessor symbol
+                // render_interpolation defines — the bare call-base plus the
+                // C11 flat prefix, via the same two helpers the codegen uses —
+                // so the harness call site reads the bare `f.symbol` value.
+                let base = crate::forge::generator::forge_interpolation_symbol(language);
+                *symbol = Some(crate::forge::generator::forge_stateless_def_symbol(
                     &fixture_name,
+                    &base,
                     language,
                 ));
             }
