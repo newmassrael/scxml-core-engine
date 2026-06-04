@@ -1809,6 +1809,17 @@ fn binary_operand_type(op: BinOp, left: InferredType, right: InferredType) -> In
 // The only other text transformation C++ does is mapping quote characters in
 // string literals (single → double) and emitting `nullptr` for null.
 
+/// Recognizes the `len(<bytes|str>)` builtin — the length accessor the
+/// two-cursor keyexpr matcher uses to bound `pi < len(pattern)`. Each
+/// emitter lowers it to its native length idiom (C11 `.len`, Rust
+/// `.len()`, Cpp `.size()`, Kotlin `.size`, Go/Python `len(x)`) rather
+/// than the generic `len(args)` call. RFC c7-wildcard W-index Q-W-3.
+fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
+    args.len() == 1
+        && matches!(args[0].ty, InferredType::Bytes | InferredType::Str)
+        && matches!(&callee.kind, ExprKind::Ident(n) | ExprKind::Raw(n) if n == "len")
+}
+
 fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> String {
     // Push-down: propagate Float expectation into arithmetic sub-trees so
     // cpp_coerce appends `.0` to integer literals, preventing C++ integer
@@ -1927,6 +1938,9 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Call { callee, args } => {
+            if is_len_builtin(callee, args) {
+                return format!("({}).size()", emit_cpp(&args[0], InferredType::Unknown));
+            }
             let a: Vec<_> = args
                 .iter()
                 .map(|a| emit_cpp(a, InferredType::Unknown))
@@ -2229,12 +2243,23 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
                 InferredType::Int { .. } => format!("{idx_raw}.toInt()"),
                 _ => idx_raw,
             };
+            // A `bytes` operand is a `ByteArray`; `[i]` yields a signed
+            // `Byte`, so normalize to `UByte` exactly as the foreach arm
+            // does. RFC c7-wildcard W-index Q-W-2.
+            let norm = if matches!(object.ty, InferredType::Bytes) {
+                ".toUByte()"
+            } else {
+                ""
+            };
             format!(
-                "{}[{idx_emit}]",
+                "{}[{idx_emit}]{norm}",
                 wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)),
             )
         }
         ExprKind::Call { callee, args } => {
+            if is_len_builtin(callee, args) {
+                return format!("({}).size", emit_kotlin(&args[0], InferredType::Unknown));
+            }
             let a: Vec<_> = args
                 .iter()
                 .map(|a| emit_kotlin(a, InferredType::Unknown))
@@ -2552,6 +2577,12 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
         ExprKind::Call { callee, args } => {
+            if is_len_builtin(callee, args) {
+                return Ok(format!(
+                    "({}).len()",
+                    emit_rust(&args[0], InferredType::Unknown)?
+                ));
+            }
             let mut emitted_args = Vec::with_capacity(args.len());
             for a in args {
                 emitted_args.push(emit_rust(a, InferredType::Unknown)?);
@@ -2824,6 +2855,12 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             )
         }
         ExprKind::Call { callee, args } => {
+            if is_len_builtin(callee, args) {
+                return Ok(format!(
+                    "len({})",
+                    emit_go(&args[0], InferredType::Unknown)?
+                ));
+            }
             let mut a = Vec::with_capacity(args.len());
             for arg in args {
                 a.push(emit_go(arg, InferredType::Unknown)?);
@@ -3104,6 +3141,9 @@ fn python_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Call { callee, args } => {
+            if is_len_builtin(callee, args) {
+                return format!("len({})", emit_python(&args[0], InferredType::Unknown));
+            }
             let a: Vec<_> = args
                 .iter()
                 .map(|a| emit_python(a, InferredType::Unknown))
@@ -3322,13 +3362,25 @@ fn c_emit_node(expr: &TypedExpr) -> String {
             )
         }
         ExprKind::Index { object, index } => {
+            // A `bytes` operand lowers to `sce_forge_bytes_view_t`
+            // (`{const uint8_t *data; size_t len}`), so a random byte
+            // read projects through `.data` — mirroring the foreach
+            // arm's `src.data[__i]`. RFC c7-wildcard W-index Q-W-1.
+            let accessor = if matches!(object.ty, InferredType::Bytes) {
+                ".data"
+            } else {
+                ""
+            };
             format!(
-                "{}[{}]",
+                "{}{accessor}[{}]",
                 wrap_postfix(object, emit_c(object, InferredType::Unknown)),
                 emit_c(index, InferredType::Unknown),
             )
         }
         ExprKind::Call { callee, args } => {
+            if is_len_builtin(callee, args) {
+                return format!("({}).len", emit_c(&args[0], InferredType::Unknown));
+            }
             let a: Vec<_> = args
                 .iter()
                 .map(|a| emit_c(a, InferredType::Unknown))

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC c7-wildcard W-index — in-atomic consumer fixture (S5).
+
+  Minimal byte-compare over two borrowed `bytes` views. It is the seed
+  shape of the runtime keyexpr matcher: it exercises exactly the two
+  SCE-side expressibility additions the matcher needs, and nothing of
+  the wildcard `*`/`**`/`$*` semantics (those are wz-authored in the
+  W-matcher-fixture step, per Q-C7-8):
+
+    - `len(a)` / `len(b)` — the length builtin (Q-W-3), lowering to each
+      backend's native idiom (C11 `(a).len`, Rust `(a).len()`, Cpp
+      `(a).size()`, Kotlin `(a).size`, Go/Python `len(a)`).
+    - `a[i]` / `b[i]` — random-index byte read into a bytes view
+      (Q-W-1/Q-W-2): C11 projects through `.data`, Kotlin normalizes the
+      signed `Byte` to `UByte`, the other four index natively.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       name="bytes_equal"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="a" type="bytes"/>
+    <sce:param name="b" type="bytes"/>
+    <sce:return type="bool"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="len(a) !== len(b)">
+      <sce:return expr="false"/>
+    </sce:if>
+    <sce:var name="i" type="uint32" init="0"/>
+    <sce:while cond="i &lt; len(a)" max-iter="256">
+      <sce:if cond="a[i] !== b[i]">
+        <sce:return expr="false"/>
+      </sce:if>
+      <sce:assign target="i" expr="i + 1"/>
+    </sce:while>
+    <sce:return expr="true"/>
+  </sce:body>
+</scxml>
