@@ -12,7 +12,38 @@
 
 use crate::helpers::scxml_constants;
 use crate::helpers::unique_id_generator;
-use crate::{sce_string_from_str, SceString};
+use crate::SceString;
+
+/// W3C SCXML 6.2 / C.2: A send-target validation failure.
+///
+/// Returned by [`validate_target`] and [`validate_basic_http_send`]. Each variant
+/// is a fieldless discriminant, so the whole error is one byte -- small enough to
+/// return by value from a no_std stack frame without tripping
+/// `clippy::result_large_err`. (The prior `SceString` payload was a 256-byte
+/// `heapless::String` under no_std, which inflated every `Result` returned from
+/// these validators.) The human-readable reason a caller raises on
+/// `error.execution` / `error.communication` is available via [`Display`];
+/// callers that want to embed the offending target value already hold it, so it
+/// is not duplicated into the error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SendValidationError {
+    /// Target value is syntactically invalid (begins with `!`). The caller
+    /// raises `error.execution` (W3C SCXML 6.2).
+    InvalidTarget,
+
+    /// A BasicHTTP send (`type="BasicHTTPEventProcessor"`) supplied neither
+    /// `target` nor `targetexpr`, both of which it requires (W3C SCXML C.2).
+    MissingHttpTarget,
+}
+
+impl core::fmt::Display for SendValidationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::InvalidTarget => "Invalid target value",
+            Self::MissingHttpTarget => "BasicHTTPEventProcessor requires target attribute",
+        })
+    }
+}
 
 /// W3C SCXML 6.2: Check if target is invalid (starts with '!').
 ///
@@ -71,24 +102,13 @@ pub fn is_http_target(target: &str) -> bool {
 
 /// W3C SCXML 6.2: Validate send target.
 ///
-/// Returns `Ok(())` if valid, `Err(message)` if invalid (error.execution
-/// should be raised). The error string is a [`SceString`] (= `String` under
-/// std, `heapless::String<MAX_EVENT_STRING_LEN>` under no_std).
+/// Returns `Ok(())` if valid, `Err(SendValidationError::InvalidTarget)` if invalid
+/// (the caller raises `error.execution`).
 ///
 /// Ports C++ `SendHelper::validateTarget`.
-pub fn validate_target(target: &str) -> Result<(), SceString> {
+pub fn validate_target(target: &str) -> Result<(), SendValidationError> {
     if is_invalid_target(target) {
-        #[cfg(not(feature = "no_std"))]
-        {
-            Err(format!("Invalid target value: {}", target))
-        }
-        #[cfg(feature = "no_std")]
-        {
-            use core::fmt::Write;
-            let mut s = SceString::new();
-            let _ = write!(&mut s, "Invalid target value: {}", target);
-            Err(s)
-        }
+        Err(SendValidationError::InvalidTarget)
     } else {
         Ok(())
     }
@@ -126,18 +146,17 @@ pub fn is_supported_send_type(send_type: &str) -> bool {
 
 /// W3C SCXML C.2: Validate BasicHTTP send parameters.
 ///
-/// Returns `Ok(())` if valid, `Err(message)` if target is required but missing.
+/// Returns `Ok(())` if valid, `Err(SendValidationError::MissingHttpTarget)` if a
+/// target is required but neither `target` nor `targetexpr` was supplied.
 ///
 /// Ports C++ `SendHelper::validateBasicHttpSend`.
 pub fn validate_basic_http_send(
     send_type: &str,
     target: &str,
     target_expr: &str,
-) -> Result<(), SceString> {
+) -> Result<(), SendValidationError> {
     if requires_target_attribute(send_type) && target.is_empty() && target_expr.is_empty() {
-        Err(sce_string_from_str(
-            "BasicHTTPEventProcessor requires target attribute",
-        ))
+        Err(SendValidationError::MissingHttpTarget)
     } else {
         Ok(())
     }
