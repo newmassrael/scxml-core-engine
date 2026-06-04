@@ -29,7 +29,7 @@
 {% endfor %}
 		var expected {{ f.output.type | go_type }}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
-		actual := {{ f.name }}.{{ f.function | to_pascal_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actual := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% if f.output.compare == "tolerance" %}
 		assertClose(t, float64(actual), float64(expected), ref.FloatTolerance, "{{ f.name }}")
 {% else %}

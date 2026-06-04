@@ -1635,14 +1635,18 @@ pub fn render_harness(
             } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_test_vectors = has_test_vectors_in_file(&scxml_path)?;
-                // RFC §7 A5/A6: C11 algorithm template emits a free function
-                // named exactly `<algorithm_snake>` (no fixture prefix because
-                // the algorithm name *is* the fixture stem in every shipped
-                // SCXML). Rust mirrors via the per-fixture `pub mod` indirection
-                // already imposed by the harness scaffold. No rewrite is
-                // needed; the manifest's `function` value points at the live
-                // symbol on every backend.
-                let _ = function;
+                // W1 symbol-name SSOT: lower the manifest's `function` to the
+                // exact per-language symbol the algorithm template defines,
+                // via the one helper the product codegen and the cross-doc
+                // resolver also read. This replaces the per-language casing
+                // filter (`| to_pascal_case` / `| to_camel_case` /
+                // `| to_snake_case`) the harness fragments used to apply, so
+                // the casing rule lives in one place. RFC §7 A5/A6: the
+                // algorithm name *is* the fixture stem in every shipped SCXML,
+                // so — unlike lookup/condition/transform on C11 — no fixture
+                // prefix is composed; `forge_algorithm_symbol` returns the
+                // bare lowered symbol on every backend.
+                *function = crate::forge::generator::forge_algorithm_symbol(function, language);
             }
             FixtureSpec::Procedure {
                 helpers,

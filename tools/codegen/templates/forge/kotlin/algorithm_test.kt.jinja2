@@ -26,11 +26,11 @@ class {{ name_pascal }}TestVectors {
 {% for tv in test_vectors %}
     @Test
     fun testVector{{ name_pascal }}L{{ tv.source_line }}() {
-        val actual: {{ return_type }} = {{ name_camel }}({{ tv.bytes_literal_kt }})
+        val actual: {{ return_type }} = {{ primary_symbol }}({{ tv.bytes_literal_kt }})
         val expected: {{ return_type }} = {{ tv.value_literal_kt }}
         assertEquals(
             expected, actual,
-            "<sce:test-vector> at SCXML L{{ tv.source_line }}: {{ name_camel }}(<{{ tv.hex }}>) returned $actual, expected $expected"
+            "<sce:test-vector> at SCXML L{{ tv.source_line }}: {{ primary_symbol }}(<{{ tv.hex }}>) returned $actual, expected $expected"
         )
     }
 {% endfor %}

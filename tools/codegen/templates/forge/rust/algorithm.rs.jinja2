@@ -20,6 +20,6 @@
 
 {{ consts_prelude }}#[allow(clippy::all)]
 #[allow(unused_assignments)]
-pub fn {{ name }}({{ params_str }}){% if has_return %} -> {{ return_type }}{% endif %} {
+pub fn {{ primary_symbol }}({{ params_str }}){% if has_return %} -> {{ return_type }}{% endif %} {
 {{ body }}
 }
