@@ -3930,7 +3930,7 @@ fn render_codec(
                 "has_present_if".into(),
                 f.present_if.is_some().into(),
             );
-            if has_present_if_fields || has_repeat_fields || m.has_tlv_chain_fields() || m.has_embed_fields() || has_vle_fields {
+            if has_present_if_fields || has_repeat_fields || m.has_tlv_chain_fields() || m.has_embed_fields() || has_vle_fields || m.has_string_fields() {
                 obj.insert(
                     "present_if_decode_stmt".into(),
                     present_if_streaming_decode_stmt(
@@ -20099,7 +20099,15 @@ fn lower_algorithm_stmt(
                         ));
                     }
                     Language::Cpp => {
-                        let type_name = &imp.type_name;
+                        // `capacity()` is a static member of the imported BC
+                        // struct, not the namespace of the same name. Bare
+                        // `type_name` (`LocalKeyexprTable`) resolves to the
+                        // enclosing namespace `SCE::Generated::LocalKeyexprTable`
+                        // from a foreign algorithm's namespace, so use the
+                        // fully-qualified struct spelling `member_type`
+                        // (`::SCE::Generated::<Pascal>::<Pascal>`) the param
+                        // signature already carries.
+                        let type_name = &imp.member_type;
                         out.push_str(&format!(
                             "{pad}for (std::uint32_t slot_idx = 0; slot_idx < static_cast<std::uint32_t>({type_name}::capacity()); ++slot_idx) {{\n"
                         ));
