@@ -150,8 +150,10 @@ fn cpp_field_match_projects_string_field_to_span() {
 #[test]
 fn go_field_match_projects_string_field_to_byte_slice() {
     let code = compile_field_match_for(Language::Go);
+    // Go exports struct fields in PascalCase (`codec_field_id` SSOT), so the
+    // element-field read binds against `entry.Pattern`, not `entry.pattern`.
     assert!(
-        code.contains("[]byte(entry.pattern)"),
+        code.contains("[]byte(entry.Pattern)"),
         "Go string-field projection missing; got:\n{code}"
     );
 }
@@ -196,7 +198,7 @@ fn field_match_projects_on_all_six_backends() {
             Language::Rust => "entry.pattern.as_bytes()",
             Language::C11 => "(const uint8_t *)entry.pattern, entry.pattern_len",
             Language::Cpp => "reinterpret_cast<const std::uint8_t*>(entry.pattern.data())",
-            Language::Go => "[]byte(entry.pattern)",
+            Language::Go => "[]byte(entry.Pattern)",
             Language::Python => "entry.pattern.encode(\"utf-8\")",
             Language::Kotlin => "entry.pattern.toByteArray(Charsets.UTF_8)",
         };
@@ -785,6 +787,199 @@ fn rust_field_match_multi_file_compiles() {
     assert!(
         output.status.success(),
         "no-alloc cargo build of the keyexpr field-match crate failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+// ── Full field-match compile gates (BC + codec + algorithm) for
+//    Go / Kotlin / Python ────────────────────────────────────────────
+//
+// W1-supplement #1: the C11/Cpp/Rust gates above already compile the
+// *whole* field-match program (bounded-collection + element codec + both
+// algorithms) on a real compiler. Go, Kotlin and Python had only the
+// std-only cross-doc gate, which carries no BC/codec emit — so their
+// bounded-collection + codec code generators had never been held to a
+// real compiler at all. These three gates close that gap at full parity.
+// (The Kotlin gate first surfaced a `const val` mask initialised with a
+// runtime `shl` — rejected by kotlinc, root-fixed to the C11/Go literal
+// form in the BC template.)
+
+fn orchestrate_field_match(lang: Language) -> (tempfile::TempDir, Vec<(String, GeneratedOutput)>) {
+    let dir = tempdir().expect("tempdir");
+    let codec = copy_resource_into(dir.path(), "keyexpr_entry.scxml");
+    let bc = copy_resource_into(dir.path(), "local_keyexpr_table.scxml");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_keyexpr_field_match.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[
+            codec.as_path(),
+            bc.as_path(),
+            inner.as_path(),
+            outer.as_path(),
+        ],
+        &template_dir(lang),
+        lang,
+        &options_for(lang),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+    (dir, outputs)
+}
+
+#[test]
+fn go_field_match_multi_file_compiles() {
+    let (dir, outputs) = orchestrate_field_match(Language::Go);
+
+    let Some(go) = resolve_tool("go") else {
+        eprintln!("SKIP go_field_match_multi_file_compiles: go not on PATH");
+        return;
+    };
+
+    // The element codec imports the Go runtime
+    // (`github.com/newmassrael/sce-forge-runtime/codec`), so the throwaway
+    // module pulls it in by a `replace` directive onto the in-repo runtime.
+    let out_dir = dir.path().join("go_out");
+    fs::create_dir_all(&out_dir).expect("create out dir");
+    let runtime_go = repo_root().join("sce-forge-runtime/go");
+    fs::write(
+        out_dir.join("go.mod"),
+        format!(
+            "module {GO_PREFIX}\n\n\
+             go 1.22\n\n\
+             require github.com/newmassrael/sce-forge-runtime v0.0.0\n\n\
+             replace github.com/newmassrael/sce-forge-runtime => {}\n",
+            runtime_go.to_string_lossy(),
+        ),
+    )
+    .expect("write go.mod");
+    // One package per directory matching the import path `<prefix>/<package>`;
+    // a `<package>_test.go` sidecar shares its primary's directory.
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            let base = filename.strip_suffix(".go").expect("go file");
+            let pkg = base.strip_suffix("_test").unwrap_or(base);
+            let pkg_dir = out_dir.join(pkg);
+            fs::create_dir_all(&pkg_dir).expect("create pkg dir");
+            fs::write(pkg_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+        }
+    }
+
+    let output = Command::new(&go)
+        .args(["build", "./..."])
+        .current_dir(&out_dir)
+        .env("GOFLAGS", "-mod=mod")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run go build");
+    assert!(
+        output.status.success(),
+        "go build of the full keyexpr field-match module failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn kotlin_field_match_multi_file_compiles() {
+    let (dir, outputs) = orchestrate_field_match(Language::Kotlin);
+
+    let Some(kotlinc) = resolve_tool("kotlinc") else {
+        eprintln!("SKIP kotlin_field_match_multi_file_compiles: kotlinc not on PATH");
+        return;
+    };
+
+    // The element codec imports `com.sce.forge.runtime.{SceCursor, SceSink,
+    // CodecError, MutableListSink}`, all defined in the runtime's single
+    // `Codec.kt`; compile it alongside the generated sources. Skip any
+    // `*TestVectors.kt` sidecar (it needs the kotlin-test dependency).
+    let out_dir = dir.path().join("kt_out");
+    fs::create_dir_all(&out_dir).expect("create out dir");
+    let mut sources = Vec::new();
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            if filename.ends_with("TestVectors.kt") {
+                continue;
+            }
+            let path = out_dir.join(filename);
+            fs::write(&path, content).unwrap_or_else(|e| panic!("write {filename}: {e}"));
+            sources.push(path);
+        }
+    }
+    sources.push(
+        repo_root()
+            .join("sce-forge-runtime/kotlin/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt"),
+    );
+
+    let output = Command::new(&kotlinc)
+        .args(&sources)
+        .arg("-d")
+        .arg(out_dir.join("field_match.jar"))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run kotlinc");
+    assert!(
+        output.status.success(),
+        "kotlinc compile of the full keyexpr field-match sources failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn python_field_match_multi_file_imports_and_calls() {
+    let (dir, outputs) = orchestrate_field_match(Language::Python);
+
+    let Some(python) = resolve_tool("python3").or_else(|| resolve_tool("python")) else {
+        eprintln!("SKIP python_field_match_multi_file_imports_and_calls: python3 not on PATH");
+        return;
+    };
+
+    // Lay every module into one package; the element codec imports the
+    // `sce_forge_runtime` package, supplied on PYTHONPATH. Python is
+    // interpreted, so importing the field_match module only binds its
+    // top-level relative imports — the projected call site
+    // (`bytes_equal.bytes_equal(entry.pattern.encode("utf-8"), target)`)
+    // lives inside the function body. To exercise it, insert one entry and
+    // *call* `keyexpr_field_match`: a bad cross-doc symbol or a miscompiled
+    // BC/codec surfaces as an AttributeError / assertion at the call.
+    let out_dir = dir.path().join("py_out");
+    let pkg_dir = out_dir.join("fmpkg");
+    fs::create_dir_all(&pkg_dir).expect("create pkg dir");
+    fs::write(pkg_dir.join("__init__.py"), "").expect("write __init__.py");
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            if filename.ends_with("_test.py") {
+                continue;
+            }
+            fs::write(pkg_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+        }
+    }
+
+    let runtime_py = repo_root().join("sce-forge-runtime/python");
+    let driver = "\
+from fmpkg import keyexpr_field_match as m\n\
+from fmpkg.local_keyexpr_table import LocalKeyexprTable\n\
+from fmpkg.keyexpr_entry import KeyexprEntry\n\
+t = LocalKeyexprTable()\n\
+t.insert(KeyexprEntry(pattern_len=1, pattern='x'))\n\
+assert m.keyexpr_field_match(b'x', t) == 0, 'expected match hit'\n\
+assert m.keyexpr_field_match(b'zz', t) == 0xFFFF, 'expected miss sentinel'\n";
+
+    let output = Command::new(&python)
+        .arg("-c")
+        .arg(driver)
+        .current_dir(&out_dir)
+        .env("PYTHONPATH", &runtime_py)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run python3");
+    assert!(
+        output.status.success(),
+        "python import+call of the full keyexpr field-match package failed\nstderr: {}",
         String::from_utf8_lossy(&output.stderr),
     );
 }
