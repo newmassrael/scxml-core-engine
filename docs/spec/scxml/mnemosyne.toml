@@ -8,7 +8,8 @@
 # Sections are generated from the vendored snapshot by the A1 converter
 # (tools/mnemosyne-adoption/scxml_toc_to_manifest.py) and loaded via
 # `import-sections`. The atomic store (.atomic/workspace.atomic.json) is the
-# canonical ledger going forward; GENERATED.md is its rendered view.
+# sole SSOT (Mnemosyne R400 retired the markdown-doc render path); humans read
+# the committed EPUB (.atomic/epub/, pinned under [workspace.spec_source]).
 #
 # [plugins.set_equality_validator] (code-citation defense over SCE source) is
 # wired at the bottom of this file. It is rolled out one source directory at a
@@ -23,8 +24,6 @@
 # the documented code. Ledger artifacts stay here via the repo-relative paths.
 [workspace]
 root = "../../.."
-docs = ["docs/spec/scxml/GENERATED.md"]
-default_doc = "docs/spec/scxml/GENERATED.md"
 
 # Drift provenance (B2 validate-spec-drift). url/revision/fetched_sha256 mirror
 # tools/mnemosyne-adoption/spec-snapshot/PROVENANCE.json (the B1 drift source).
@@ -33,12 +32,25 @@ url = "https://www.w3.org/TR/scxml/"
 revision = "REC-scxml-20150901"
 fetched_sha256 = "25da59a4a475e9751ad855b639c933b2d465911bb7eed7d33ffd600196e2a209"
 fetched_at = "2026-05-30"
+# EPUB-as-content-SSOT pin (Mnemosyne R405). The committed EPUB is the human-
+# readable rendering of the spec revision and the provenance anchor for every
+# normative_excerpt cache: validate-content-drift re-hashes this file against
+# epub_sha256 and re-hashes each stored excerpt against its text_sha256, so a
+# tampered excerpt or a swapped EPUB fails offline. Produced from the snapshot
+# by tools/mnemosyne-adoption/scxml_toc_to_manifest.py -> medium-forge
+# (--text-scope heading) -> import-epub-excerpts.
+epub_path = "docs/spec/scxml/.atomic/epub/scxml-REC-20150901.epub"
+epub_sha256 = "e1c03dd821e08de897d19715a003df195561c73564e2b8e877d827cbb6a07461"
 
-# Flatten the store + rendered doc directly under this workspace root (no
-# nested docs/ level).
+# Offline content-drift gate (validate-content-drift). reject = a stored excerpt
+# whose text no longer hashes to its text_sha256, or an EPUB whose bytes no
+# longer match epub_sha256, fails the run.
+[content_drift]
+severity = "reject"
+
+# Store lives directly under this workspace root (no nested docs/ level).
 [atomic]
 sidecar_path = "docs/spec/scxml/.atomic/workspace.atomic.json"
-output_path = "docs/spec/scxml/GENERATED.md"
 
 [schema]
 changelog_titles = ["Revision History"]

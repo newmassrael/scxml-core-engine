@@ -55,11 +55,11 @@ W3C_SCXML_URL = "https://www.w3.org/TR/scxml/"
 # "procedure interpret(...)", "Datatypes") has no label.
 LABEL_RE = re.compile(r"^((?:\d+(?:\.\d+)*)|(?:[A-Z](?:\.\d+)*))\s+(.*)$", re.DOTALL)
 
-HEADING_TAGS = {"h2", "h3", "h4"}
+HEADING_TAGS = {"h2", "h3", "h4", "h5", "h6"}
 
 
 class HeadingExtractor(HTMLParser):
-    """Collect (level, anchor, text) for every h2/h3/h4 in document order.
+    """Collect (level, anchor, text) for every h2..h6 in document order.
 
     Anchors come from either the modern form (`<h3 id="X">`) or the legacy form
     (`<h3><a id="X" name="X" />...`); the first id seen for a heading wins.
@@ -119,7 +119,7 @@ def build_sections(headings):
     section_id, parent_section, title, anchor_url."""
     sections = []
     # stack[level] = section_id of the most recent heading at that level.
-    stack = {2: None, 3: None, 4: None}
+    stack = {2: None, 3: None, 4: None, 5: None, 6: None}
     current_appendix = None  # letter of the appendix we are currently inside
 
     for level, anchor, raw in headings:
@@ -180,7 +180,7 @@ def build_sections(headings):
             }
         )
         stack[level] = section_id
-        for deeper in range(level + 1, 5):
+        for deeper in range(level + 1, 7):
             stack[deeper] = None
 
     return sections
