@@ -164,23 +164,27 @@ impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
     }
 }
 
-// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// ── Owned projection (no-alloc bounded-inline native form) ────────────
 // `CodecZenohDeclExtKeyexprInner<'a>` above is a zero-copy view borrowing the decode
-// buffer. AP / async consumers that persist a decoded message beyond the
-// buffer's lifetime call `.into_owned()` for this lifetime-free
+// buffer. Consumers that persist a decoded value beyond the buffer's
+// lifetime — including the self-contained bounded-collection that stores
+// elements by value — call `.try_into_owned()` for this lifetime-free
 // `CodecZenohDeclExtKeyexprInnerOwned`. The rkyv-style Archived(borrowed) ↔ native
-// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
-// / `String` are alloc, so the whole projection is gated; the no-alloc
-// borrowed path above is untouched.
-#[cfg(feature = "alloc")]
+// (owned) split, both generated from the one SCXML source (SSOT). Bounded
+// `String` / `Bytes` fields project to `heapless::String<N>` /
+// `heapless::Vec<u8, N>` (the Rust mirror of C11's `char[N]`), so a leaf
+// codec's owned form is fully no-alloc; only an unbounded owned `Vec`
+// (list / embed / variant body) keeps the `alloc` gate. Construction from
+// the unbounded `&str` / `&[u8]` view re-checks the decode bound, so
+// `try_into_owned` is the fallible direction and `as_borrowed`
+// (same `N`) the infallible inverse.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohDeclExtKeyexprInnerOwned {
     pub inner_header: u8,
     pub id: u64,
-    pub suffix: Option<Vec<u8>>,
+    pub suffix: Option<::sce_forge_runtime::heapless::Vec<u8, 128>>,
 }
 
-#[cfg(feature = "alloc")]
 #[allow(dead_code)]
 impl CodecZenohDeclExtKeyexprInnerOwned {
     // RFC §5.B B1-γ + B5-α read-accessor parity with the borrowed view: pure
@@ -198,27 +202,28 @@ impl CodecZenohDeclExtKeyexprInnerOwned {
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<'a> CodecZenohDeclExtKeyexprInner<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
-    /// [`CodecZenohDeclExtKeyexprInnerOwned`] (alloc). Call at a decode boundary when
-    /// the decoded value must outlive the input buffer — e.g. stored in a
-    /// long-lived enum or moved across an async task. The no-alloc
-    /// borrowed path is unaffected; this method exists only under
-    /// `feature = "alloc"`.
-    pub fn into_owned(self) -> CodecZenohDeclExtKeyexprInnerOwned {
-        CodecZenohDeclExtKeyexprInnerOwned {
+    /// [`CodecZenohDeclExtKeyexprInnerOwned`]. Call at a decode boundary when the
+    /// decoded value must outlive the input buffer — stored in a long-lived
+    /// enum, moved across an async task, or inserted by value into a
+    /// bounded-collection. Bounded `String` / `Bytes` fields copy into
+    /// `heapless::String<N>` / `heapless::Vec<u8, N>`; that copy re-checks
+    /// the decode bound, so the method is fallible
+    /// (`CodecError::TooManyElements` past `N` — the bound and error decode
+    /// enforces). The borrowed zero-copy path is unaffected.
+    pub fn try_into_owned(self) -> Result<CodecZenohDeclExtKeyexprInnerOwned, CodecError> {
+        Ok(CodecZenohDeclExtKeyexprInnerOwned {
             inner_header: self.inner_header,
             id: self.id,
-            suffix: self.suffix.map(|_v| _v.to_vec()),
-        }
+            suffix: self.suffix.map(|_v| ::sce_forge_runtime::heapless::Vec::from_slice(_v).map_err(|_| CodecError::TooManyElements)).transpose()?,
+        })
     }
 }
 
-#[cfg(feature = "alloc")]
 impl CodecZenohDeclExtKeyexprInnerOwned {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
-    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// the inverse of `try_into_owned`. `encode` lives only on the borrowed
     /// view (the owned form is read-only), so an owned consumer reaches it
     /// via `as_borrowed` then `encode` / `encode_to_vec`. Each
     /// field is projected by reference — a cheap re-borrow, not a copy.
