@@ -143,7 +143,7 @@ fn rust_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
 fn cpp_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     let code = compile_match_first_for(Language::Cpp);
     assert!(
-        code.contains("for (std::uint32_t slot_idx = 0; slot_idx < static_cast<std::uint32_t>(LocalSubTable::capacity()); ++slot_idx) {"),
+        code.contains("for (std::uint32_t slot_idx = 0; slot_idx < static_cast<std::uint32_t>(::SCE::Generated::LocalSubTable::LocalSubTable::capacity()); ++slot_idx) {"),
         "Cpp foreach-BC missing index loop; got:\n{code}"
     );
     assert!(

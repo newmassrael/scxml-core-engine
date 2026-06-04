@@ -156,7 +156,7 @@ fn rust_foreach_bc_emits_index_loop_with_get_by_slot() {
 fn cpp_foreach_bc_emits_index_loop_with_get_by_slot() {
     let code = compile_algo_for(Language::Cpp);
     assert!(
-        code.contains("for (std::uint32_t slot_idx = 0; slot_idx < static_cast<std::uint32_t>(LocalSubTable::capacity()); ++slot_idx) {"),
+        code.contains("for (std::uint32_t slot_idx = 0; slot_idx < static_cast<std::uint32_t>(::SCE::Generated::LocalSubTable::LocalSubTable::capacity()); ++slot_idx) {"),
         "Cpp foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
