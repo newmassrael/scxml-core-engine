@@ -4485,41 +4485,24 @@ fn discover_primary_function(
         ),
         forge::model::ForgeDocument::Transform(m) => {
             let output_id = m.outputs.first()?.id.clone();
-            // W1 symbol-name SSOT: the cross-doc callsite resolves to the
-            // first output's accessor. Every backend reads
-            // forge_transform_symbol except C11, where the callsite uses the
-            // bare `compute_<snake(output)>` base and build_qualified_call
-            // re-prepends `<namespace>_` — landing on the emitted
-            // `<m.name>_compute_<output>` rather than doubling it.
-            Some(match language {
-                generator::Language::C11 => {
-                    format!("compute_{}", filters::to_snake_case(output_id))
-                }
-                _ => forge::generator::forge_transform_symbol(&m.name, &output_id, *language),
-            })
+            // W1 symbol-name SSOT: the cross-doc callsite resolves to the first
+            // output's bare call-base (C11 returns `compute_<snake(output)>`);
+            // build_qualified_call re-prepends `<namespace>_` on C11, landing
+            // on the emitted `<m.name>_compute_<output>`.
+            Some(forge::generator::forge_transform_symbol(&output_id, *language))
         }
         forge::model::ForgeDocument::Condition(m) => {
-            // W1 symbol-name SSOT: every backend reads forge_condition_symbol
-            // except C11, where the cross-file callsite uses the bare `check`
-            // base and build_qualified_call re-prepends the `<namespace>_`
-            // module prefix — emitting `<m.name>_check` rather than doubling
-            // it (RFC §5.J.2 §3 D1).
-            Some(match language {
-                generator::Language::C11 => "check".to_string(),
-                _ => forge::generator::forge_condition_symbol(&m.name, *language),
-            })
+            // W1 symbol-name SSOT: the cross-doc callsite is the bare call-base
+            // (C11 returns `check`); build_qualified_call re-prepends the
+            // `<namespace>_` module prefix on C11, emitting `<m.name>_check`.
+            Some(forge::generator::forge_condition_symbol(&m.name, *language))
         }
         forge::model::ForgeDocument::Lookup(m) => {
-            // W1 symbol-name SSOT: every backend reads forge_lookup_symbol
-            // except C11, where the cross-file callsite uses the bare
-            // `<snake(output_id)>` base (no `lookup_` prefix, no module
-            // prefix) and build_qualified_call re-prepends `<namespace>_`
-            // — landing on the emitted `<m.name>_<output_id>` rather than
-            // doubling it (RFC §5.J.2 §3 D1).
-            Some(match language {
-                generator::Language::C11 => filters::to_snake_case(m.output.id.clone()),
-                _ => forge::generator::forge_lookup_symbol(&m.name, &m.output.id, *language),
-            })
+            // W1 symbol-name SSOT: the cross-doc callsite is the bare call-base
+            // (C11 returns the verb-less `<snake(output_id)>`);
+            // build_qualified_call re-prepends `<namespace>_` on C11, landing
+            // on the emitted `<m.name>_<output_id>`.
+            Some(forge::generator::forge_lookup_symbol(&m.output.id, *language))
         }
         forge::model::ForgeDocument::Interpolation(m) => {
             // W1 symbol-name SSOT: the def≠call kind. render_interpolation
@@ -4531,19 +4514,15 @@ fn discover_primary_function(
             // import include_stmt; C11 uses the bare `lookup` base and
             // build_qualified_call re-prepends `<namespace>_` → `<m.name>_lookup`.
             let pascal = filters::to_pascal_case(m.name.clone());
+            let base = forge::generator::forge_interpolation_symbol(*language);
             Some(match language {
-                generator::Language::Cpp | generator::Language::Rust => format!(
-                    "{pascal}::{}",
-                    forge::generator::forge_interpolation_symbol(&m.name, *language)
-                ),
-                generator::Language::Kotlin => format!(
-                    "{pascal}.{}",
-                    forge::generator::forge_interpolation_symbol(&m.name, *language)
-                ),
-                generator::Language::C11 => "lookup".to_string(),
-                generator::Language::Go | generator::Language::Python => {
-                    forge::generator::forge_interpolation_symbol(&m.name, *language)
+                generator::Language::Cpp | generator::Language::Rust => {
+                    format!("{pascal}::{base}")
                 }
+                generator::Language::Kotlin => format!("{pascal}.{base}"),
+                generator::Language::Go
+                | generator::Language::Python
+                | generator::Language::C11 => base,
             })
         }
         // Stateful kinds (Codec, Validator, Procedure, Filter, Observer, Timer, Link)
@@ -4624,9 +4603,10 @@ fn build_qualified_call(
         // C has no namespace mechanism — convention prefixes the module
         // name onto every exported function so cross-file imports never
         // collide. RFC §5.J.1 standardises on `<module>_<func>` to mirror
-        // POSIX / lwIP / FreeRTOS style; the M2+ lookup template will
-        // emit `temp_convert_lookup_output(...)` to match this contract.
-        generator::Language::C11 => format!("{namespace}_{func_name}"),
+        // POSIX / lwIP / FreeRTOS style. Routed through the W1 SSOT
+        // `forge_c11_flat` so the definition sites and this callsite flatten
+        // identically (`namespace` is already snake — the op is idempotent).
+        generator::Language::C11 => forge::generator::forge_c11_flat(namespace, func_name),
     }
 }
 
