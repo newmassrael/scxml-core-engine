@@ -15,7 +15,7 @@ func BytesEqual(a []byte, b []byte) bool {
         return false;
     }
     var i uint32 = 0
-    for i < len(a) {
+    for i < uint32(len(a)) {
         if (a[i] != b[i]) {
             return false;
         }
