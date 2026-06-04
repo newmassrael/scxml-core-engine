@@ -15,6 +15,8 @@
     raise + send (internal / external / delayed / parent): the dispatch
     paths that build send_id and event metadata as SceString, the scheduler
     path, and the parent-absent error.communication branch.
+    cancel (static sendid): the engine.cancel_event(&str) emission path
+    (the sendidexpr form is script-engine-gated, so no_std never emits it).
 
   Intentionally script-free, invoke-free, http-free so the document is a valid
   no_std target (those constructs are codegen-rejected for the no_std backend).
@@ -30,7 +32,7 @@
           <raise event="e1"/>
           <send event="ev_internal" target="#_internal"/>
           <send event="ev_external"/>
-          <send event="ev_delayed" delay="5ms"/>
+          <send event="ev_delayed" id="d_delayed" delay="5ms"/>
           <send event="ev_parent" target="#_parent"/>
         </onentry>
         <transition event="e1" target="a2"/>
@@ -38,7 +40,10 @@
         <transition event="ev_internal" target="a2"/>
         <transition event="error.communication" target="a3"/>
       </state>
-      <state id="a2"><transition event="e1" target="a1"/><transition event="back" target="ha_deep"/></state>
+      <state id="a2">
+        <onentry><cancel sendid="d_delayed"/></onentry>
+        <transition event="e1" target="a1"/><transition event="back" target="ha_deep"/>
+      </state>
       <state id="a3"><transition event="e1" target="a1"/></state>
     </state>
     <state id="rb" initial="b1">
