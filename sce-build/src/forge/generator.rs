@@ -2823,12 +2823,12 @@ fn rust_owned_field_keys(
     // later opt match without clones.
     #[derive(Clone, Copy)]
     enum Conv {
-        Move,         // value already owned (Copy scalar / non-borrowed body)
-        ToVec,        // &[u8] -> Vec<u8>
-        StringFrom,   // &str  -> String
-        IntoOwned,    // borrowed body -> {Body}Owned
-        ListBorrowed, // list of borrowed bodies -> Vec<{Body}Owned>
-        ListOwned,    // list of owned bodies     -> Vec<{Body}>
+        Move,          // value already owned (Copy scalar / non-borrowed body)
+        BytesBounded,  // &[u8] -> heapless::Vec<u8, N>   (fallible try_into_owned)
+        StringBounded, // &str  -> heapless::String<N>    (fallible try_into_owned)
+        IntoOwned,     // borrowed body -> {Body}Owned (fallible try_into_owned)
+        ListBorrowed,  // list of borrowed bodies -> Vec<{Body}Owned>
+        ListOwned,     // list of owned bodies     -> Vec<{Body}>
     }
 
     let id = l.codec_field_id(&f.id);
@@ -2859,42 +2859,79 @@ fn rust_owned_field_keys(
             (body_type, Conv::Move)
         }
     } else {
+        // No-alloc bounded-inline owned storage (RFC c7-wildcard W3): a
+        // bounded `String` / `Bytes` field's owned mirror is the
+        // `heapless::String<N>` / `heapless::Vec<u8, N>` form (N =
+        // `resolve_bytes_max`), the exact analog of C11's `char[N]` and the
+        // representation the no-alloc, self-contained bounded-collection
+        // stores. Construction from the borrowed `&str` / `&[u8]` view is
+        // fallible (the view is not length-bounded at the type level — the
+        // decode bound is enforced again here), so `into_owned` is the
+        // fallible `try_into_owned -> Result` direction; `as_borrowed`
+        // (same `N`) stays infallible.
         match f.sce_type {
-            SceType::Bytes => ("Vec<u8>".to_string(), Conv::ToVec),
-            SceType::String => ("alloc::string::String".to_string(), Conv::StringFrom),
+            SceType::Bytes => {
+                let max = crate::forge::limits::resolve_bytes_max(f.max_size);
+                (
+                    format!("::sce_forge_runtime::heapless::Vec<u8, {max}>"),
+                    Conv::BytesBounded,
+                )
+            }
+            SceType::String => {
+                let max = crate::forge::limits::resolve_bytes_max(f.max_size);
+                (
+                    format!("::sce_forge_runtime::heapless::String<{max}>"),
+                    Conv::StringBounded,
+                )
+            }
             _ => (l.type_name(&f.sce_type).to_string(), Conv::Move),
         }
     };
 
-    let apply = |e: &str| -> String {
+    // Returns `(expr, fallible)`: for a fallible conv `expr` is a
+    // `Result<_, CodecError>` the caller threads through `?` (scalar) or
+    // `.transpose()?` (Option); for an infallible conv `expr` is the value.
+    let apply = |e: &str| -> (String, bool) {
         match conv {
-            Conv::Move => e.to_string(),
-            Conv::ToVec => format!("{e}.to_vec()"),
-            Conv::StringFrom => format!("alloc::string::String::from({e})"),
-            Conv::IntoOwned => format!("{e}.into_owned()"),
-            Conv::ListBorrowed => {
-                format!("{e}.into_iter().map(|_e| _e.into_owned()).collect()")
-            }
-            Conv::ListOwned => format!("{e}.into_iter().collect()"),
+            Conv::Move => (e.to_string(), false),
+            Conv::BytesBounded => (
+                format!(
+                    "::sce_forge_runtime::heapless::Vec::from_slice({e}).map_err(|_| CodecError::TooManyElements)"
+                ),
+                true,
+            ),
+            Conv::StringBounded => (
+                format!(
+                    "::sce_forge_runtime::heapless::String::try_from({e}).map_err(|_| CodecError::TooManyElements)"
+                ),
+                true,
+            ),
+            Conv::IntoOwned => (format!("{e}.try_into_owned()"), true),
+            Conv::ListBorrowed => (
+                format!("{e}.into_iter().map(|_e| _e.try_into_owned()).collect::<Result<_, _>>()"),
+                true,
+            ),
+            Conv::ListOwned => (format!("{e}.into_iter().collect()"), false),
         }
     };
 
     let self_ref = format!("self.{id}");
     if opt {
+        let (inner_expr, fallible) = apply("_v");
         let expr = match conv {
             // Option<Copy/owned scalar> moves wholesale — no per-element map.
             Conv::Move => self_ref,
-            // `String::from` is a free function → point-free `.map(String::from)`
-            // (a closure here trips clippy::redundant_closure, a default lint).
-            // The method-call convs below stay closures: their point-free form
-            // (`.map(Vec::to_vec)` etc.) is only flagged by the pedantic
-            // clippy::redundant_closure_for_method_calls, off by default.
-            Conv::StringFrom => format!("{self_ref}.map(alloc::string::String::from)"),
-            _ => format!("{self_ref}.map(|_v| {})", apply("_v")),
+            _ if fallible => format!("{self_ref}.map(|_v| {inner_expr}).transpose()?"),
+            _ => format!("{self_ref}.map(|_v| {inner_expr})"),
         };
         Ok((format!("Option<{inner_ty}>"), expr))
     } else {
-        let expr = apply(&self_ref);
+        let (val_expr, fallible) = apply(&self_ref);
+        let expr = if fallible {
+            format!("{val_expr}?")
+        } else {
+            val_expr
+        };
         Ok((inner_ty, expr))
     }
 }
@@ -4559,7 +4596,10 @@ fn render_codec(
                 if matches!(lang, crate::generator::Language::Rust) {
                     let (owned_body_type, owned_body_into) =
                         if import_codec_borrowed(imports, &arm.body_alias) {
-                            (format!("{body_type}Owned"), "_b.into_owned()".to_string())
+                            (
+                                format!("{body_type}Owned"),
+                                "_b.try_into_owned()?".to_string(),
+                            )
                         } else {
                             (body_type.clone(), "_b".to_string())
                         };
@@ -4701,7 +4741,7 @@ fn render_codec(
                         if import_codec_borrowed(imports, &d.body_alias) {
                             (
                                 format!("{body_type}Owned"),
-                                "body: body.into_owned()".to_string(),
+                                "body: body.try_into_owned()?".to_string(),
                             )
                         } else {
                             (body_type.clone(), "body".to_string())
@@ -5164,6 +5204,21 @@ fn render_codec(
                 .into()
             })
             .collect();
+        // A pure-scalar leaf codec's owned mirror is now fully no-alloc —
+        // bounded `String` / `Bytes` fields project to `heapless::String<N>`
+        // / `heapless::Vec<u8, N>` (RFC c7-wildcard W3), so the mirror needs
+        // no `alloc`. List / embed / variant codecs still carry an unbounded
+        // owned `Vec` (or pull in an alloc-gated body mirror), so their
+        // `{Codec}Owned` stays `#[cfg(feature = "alloc")]` until the bounded-
+        // inline projection is extended to those shapes. The bounded-string-
+        // element bounded-collection (the W3 consumer) stores exactly the
+        // no-alloc leaf form.
+        let owned_needs_alloc = m.has_repeat_fields()
+            || m.has_tlv_chain_fields()
+            || m.has_embed_fields()
+            || m.variant.is_some()
+            || !owned_imports.is_empty();
+        ctx.insert("owned_needs_alloc".into(), owned_needs_alloc.into());
         ctx.insert(
             "owned_imports".into(),
             serde_json::Value::Array(owned_imports),
@@ -14028,12 +14083,42 @@ fn render_bounded_collection_rust(
         .map(|t| rust_type(t).to_string())
         .unwrap_or_default();
 
+    // RFC c7-wildcard W3: a bounded-collection is an owned, self-contained,
+    // no-alloc container, so it stores the element codec's owned mirror —
+    // not the borrowed zero-copy view (whose `&'a str` / `&'a [u8]` would
+    // infect the whole collection with the decode buffer's lifetime). The
+    // owned mirror `{Element}Owned` is emitted only for a borrowed element
+    // (one carrying a `String` / `Bytes` field, now projected to a no-alloc
+    // `heapless::String<N>` / `heapless::Vec<u8, N>`); a lifetime-free
+    // element (scalars only, e.g. an interned `uint32` id) is already its
+    // own owned form and is stored directly. Borrowed-ness is read from the
+    // element-type field schema the orchestrator resolves (`is_borrowed`'s
+    // direct-scalar rule); this matches the codec's `emit_owned` gate so
+    // the referenced type always exists.
+    let element_borrowed = options
+        .element_type_field_schemas
+        .as_ref()
+        .and_then(|schemas| schemas.get(&element_snake))
+        .map(|schema| {
+            schema
+                .iter()
+                .any(|(_, ty, _)| matches!(ty, SceType::String | SceType::Bytes))
+        })
+        .unwrap_or(false);
+    let element_stored = if element_borrowed {
+        format!("{element_pascal}Owned")
+    } else {
+        element_pascal.clone()
+    };
+
     let ctx = minijinja::context! {
         name => &m.name,
         pascal => pascal,
         snake => snake,
         element_pascal => element_pascal,
         element_snake => element_snake,
+        element_stored => element_stored,
+        element_borrowed => element_borrowed,
         capacity => inputs.capacity,
         on_overflow => inputs.on_overflow_str,
         overflow_is_oldest_wins => inputs.overflow_is_oldest_wins,

@@ -30,13 +30,17 @@ fn test_vector_codec_length_ref_uint32_le_l21() {
         decoded.payload, b"",
         "<sce:test-vector> at SCXML L21: field `payload` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecLengthRefUint32Le::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L21: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L21: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.payload_len, 0x0u32,
         "<sce:test-vector> at SCXML L21: into_owned field `payload_len` mismatch"
@@ -85,13 +89,17 @@ fn test_vector_codec_length_ref_uint32_le_l25() {
         decoded.payload, b"\xaa\xbb\xcc\xdd",
         "<sce:test-vector> at SCXML L25: field `payload` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecLengthRefUint32Le::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L25: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L25: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.payload_len, 0x4u32,
         "<sce:test-vector> at SCXML L25: into_owned field `payload_len` mismatch"
@@ -140,13 +148,17 @@ fn test_vector_codec_length_ref_uint32_le_l29() {
         decoded.payload, b"\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff",
         "<sce:test-vector> at SCXML L29: field `payload` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecLengthRefUint32Le::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L29: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L29: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.payload_len, 0x100u32,
         "<sce:test-vector> at SCXML L29: into_owned field `payload_len` mismatch"

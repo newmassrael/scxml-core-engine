@@ -30,13 +30,17 @@ fn test_vector_codec_zenoh_fragment_l35() {
         decoded.payload, b"",
         "<sce:test-vector> at SCXML L35: field `payload` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecZenohFragment::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L35: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L35: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.sn, 0x0u64,
         "<sce:test-vector> at SCXML L35: into_owned field `sn` mismatch"
@@ -85,13 +89,17 @@ fn test_vector_codec_zenoh_fragment_l39() {
         decoded.payload, b"\xca\xfe",
         "<sce:test-vector> at SCXML L39: field `payload` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecZenohFragment::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L39: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L39: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.sn, 0x1u64,
         "<sce:test-vector> at SCXML L39: into_owned field `sn` mismatch"
@@ -140,13 +148,17 @@ fn test_vector_codec_zenoh_fragment_l43() {
         decoded.payload, b"\xaa\xbb\xcc",
         "<sce:test-vector> at SCXML L43: field `payload` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecZenohFragment::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L43: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L43: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.sn, 0x7fu64,
         "<sce:test-vector> at SCXML L43: into_owned field `sn` mismatch"
@@ -195,13 +207,17 @@ fn test_vector_codec_zenoh_fragment_l47() {
         decoded.payload, b"\xde\xad",
         "<sce:test-vector> at SCXML L47: field `payload` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecZenohFragment::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L47: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L47: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.sn, 0x80u64,
         "<sce:test-vector> at SCXML L47: into_owned field `sn` mismatch"

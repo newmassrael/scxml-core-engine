@@ -30,13 +30,17 @@ fn test_vector_codec_zenoh_locator_l38() {
         decoded.locator, "",
         "<sce:test-vector> at SCXML L38: field `locator` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecZenohLocator::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L38: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L38: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.locator_len, 0x0u64,
         "<sce:test-vector> at SCXML L38: into_owned field `locator_len` mismatch"
@@ -85,13 +89,17 @@ fn test_vector_codec_zenoh_locator_l42() {
         decoded.locator, "abc",
         "<sce:test-vector> at SCXML L42: field `locator` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecZenohLocator::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L42: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L42: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.locator_len, 0x3u64,
         "<sce:test-vector> at SCXML L42: into_owned field `locator_len` mismatch"
@@ -140,13 +148,17 @@ fn test_vector_codec_zenoh_locator_l46() {
         decoded.locator, "tcp/127.0.0.1:7447",
         "<sce:test-vector> at SCXML L46: field `locator` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecZenohLocator::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L46: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L46: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.locator_len, 0x12u64,
         "<sce:test-vector> at SCXML L46: into_owned field `locator_len` mismatch"
@@ -195,13 +207,17 @@ fn test_vector_codec_zenoh_locator_l50() {
         decoded.locator, "héllo",
         "<sce:test-vector> at SCXML L50: field `locator` mismatch"
     );
-    // Owned-projection round-trip (consumer-requested; acceptance #2):
-    // deep-copy the borrowed decode into its owned mirror and assert
-    // every field still equals the oracle. Owned `Vec<u8>` / `String`
-    // fields compare directly against the `&[u8]` / `&str` literals.
+    // Owned-projection round-trip (acceptance #2): deep-copy the borrowed
+    // decode into its no-alloc owned mirror and assert every field still
+    // equals the oracle. Owned `heapless::Vec<u8, N>` / `heapless::String<N>`
+    // fields compare directly against the `&[u8]` / `&str` literals (both
+    // deref to the slice / str). `try_into_owned` is fallible (the bounded
+    // copy re-checks the decode bound); the decode above already proved the
+    // value fits, so the projection cannot fail here.
     let owned = CodecZenohLocator::decode(&mut SceCursor::new(expected))
         .expect("<sce:test-vector> at SCXML L50: decode for into_owned failed")
-        .into_owned();
+        .try_into_owned()
+        .expect("<sce:test-vector> at SCXML L50: try_into_owned exceeded a bounded field");
     assert_eq!(
         owned.locator_len, 0x6u64,
         "<sce:test-vector> at SCXML L50: into_owned field `locator_len` mismatch"

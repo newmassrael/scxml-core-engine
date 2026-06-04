@@ -31,7 +31,7 @@
 {# Cross-doc element-type import (spec lines 2566-2567). C6-β's
    `collection/element-type-not-a-kind` validator guarantees this
    name resolves to a codec/procedure kind before reaching here. #}
-use super::{{ element_snake }}::{{ element_pascal }};
+use super::{{ element_snake }}::{{ element_stored }};
 
 /// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
 /// is resolved from `machines.<m>.limits.<k>` at codegen time per
@@ -92,9 +92,9 @@ pub struct {{ pascal }}OverflowError;
    feature configurations so generated test code doesn't need
    feature-aware imports. #}
 #[cfg(not(feature = "no_std"))]
-type {{ pascal }}Backing = ::std::vec::Vec<Option<{{ element_pascal }}>>;
+type {{ pascal }}Backing = ::std::vec::Vec<Option<{{ element_stored }}>>;
 #[cfg(feature = "no_std")]
-type {{ pascal }}Backing = ::heapless::Vec<Option<{{ element_pascal }}>, CAPACITY>;
+type {{ pascal }}Backing = ::heapless::Vec<Option<{{ element_stored }}>, CAPACITY>;
 
 /// `{{ pascal }}` — RFC §5.L bounded-collection over element type
 /// `{{ element_pascal }}`. Capacity `{{ capacity }}`,
@@ -200,7 +200,7 @@ impl {{ pascal }} {
     /// `<sce:on-overflow>diagnostic-event</sce:on-overflow>`. Under
     /// `<sce:on-overflow>oldest-wins</sce:on-overflow>` the oldest
     /// slot is evicted and reused — the function returns `Ok`.
-    pub fn insert(&mut self, elem: {{ element_pascal }}) -> Result<{{ pascal }}Handle, {{ pascal }}OverflowError> {
+    pub fn insert(&mut self, elem: {{ element_stored }}) -> Result<{{ pascal }}Handle, {{ pascal }}OverflowError> {
         if let Some(slot) = self.first_free_slot() {
             self.slots[slot] = Some(elem);
             self.bit_mark(slot);
@@ -251,7 +251,7 @@ impl {{ pascal }} {
     /// Look up the entry referenced by `handle` (spec line 2614).
     /// Returns `None` when the slot is free OR when the handle's
     /// generation does not match (use-after-remove detection).
-    pub fn get(&self, handle: {{ pascal }}Handle) -> Option<&{{ element_pascal }}> {
+    pub fn get(&self, handle: {{ pascal }}Handle) -> Option<&{{ element_stored }}> {
         let slot = handle.slot() as usize;
         if slot >= CAPACITY {
             return None;
@@ -273,7 +273,7 @@ impl {{ pascal }} {
     /// indices directly). Backs the C7 `<sce:foreach in="<bc-alias>">`
     /// index-loop lowering across all 6 backends (Q-C7-2 (c) lock
     /// 2026-05-13).
-    pub fn get_by_slot(&self, slot: u32) -> Option<&{{ element_pascal }}> {
+    pub fn get_by_slot(&self, slot: u32) -> Option<&{{ element_stored }}> {
         let slot = slot as usize;
         if slot >= CAPACITY {
             return None;
@@ -306,7 +306,7 @@ impl {{ pascal }} {
     /// Iterate occupied entries in slot-index order (spec line 2616).
     /// Under `<sce:ordering>insertion</sce:ordering>` the slot order
     /// matches insertion order (validated by parse-time gates).
-    pub fn iter(&self) -> impl Iterator<Item = &{{ element_pascal }}> {
+    pub fn iter(&self) -> impl Iterator<Item = &{{ element_stored }}> {
         self.slots.iter().filter_map(|s| s.as_ref())
     }
 }

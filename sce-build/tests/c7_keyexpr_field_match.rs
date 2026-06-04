@@ -515,3 +515,102 @@ fn cpp_field_match_multi_file_compiles_werror() {
         String::from_utf8_lossy(&output.stderr),
     );
 }
+
+// ── Full Rust field-match compile gate (no-alloc, real cargo build) ──
+//
+// RFC c7-wildcard W3: a bounded-collection is an owned, self-contained,
+// no-alloc container, so it stores the element codec's owned mirror —
+// which for a borrowed element (a `String` / `Bytes` field) is now the
+// no-alloc bounded-inline `{Element}Owned` (`heapless::String<N>`), not
+// the borrowed `{Element}<'a>` view (whose lifetime would otherwise infect
+// the whole collection). This gate compiles the *whole* field-match
+// program — element codec, bounded-collection, and both algorithms —
+// against the real `sce-forge-runtime` with DEFAULT features (no `alloc`),
+// proving the collection over a bounded-string element is genuinely
+// no-alloc and self-contained, at C11 parity. The orchestrator path feeds
+// the element-type field schema that drives the borrowed-element →
+// owned-mirror storage decision (single-file `generate` cannot).
+#[test]
+fn rust_field_match_multi_file_compiles() {
+    let dir = tempdir().expect("tempdir");
+    let codec = copy_resource_into(dir.path(), "keyexpr_entry.scxml");
+    let bc = copy_resource_into(dir.path(), "local_keyexpr_table.scxml");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_keyexpr_field_match.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[
+            codec.as_path(),
+            bc.as_path(),
+            inner.as_path(),
+            outer.as_path(),
+        ],
+        &template_dir(Language::Rust),
+        Language::Rust,
+        &options_for(Language::Rust),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+
+    let Some(cargo) = resolve_tool("cargo") else {
+        eprintln!("SKIP rust_field_match_multi_file_compiles: cargo not on PATH");
+        return;
+    };
+
+    // A throwaway crate that depends on the real runtime by path and
+    // declares every emitted primary module at the crate root, so the
+    // cross-doc `use super::<module>;` references resolve. Detached from
+    // the parent workspace via an empty `[workspace]` table.
+    let crate_dir = dir.path().join("kxfm");
+    let src_dir = crate_dir.join("src");
+    fs::create_dir_all(&src_dir).expect("create src dir");
+    let mut modules = Vec::new();
+    for (_doc, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            fs::write(src_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+            if let Some(stem) = filename.strip_suffix(".rs") {
+                if !stem.ends_with("_test") {
+                    modules.push(stem.to_string());
+                }
+            }
+        }
+    }
+    let lib_rs: String = modules.iter().map(|m| format!("pub mod {m};\n")).collect();
+    fs::write(src_dir.join("lib.rs"), lib_rs).expect("write lib.rs");
+
+    let runtime_path = repo_root().join("sce-forge-runtime/rust");
+    let cargo_toml = format!(
+        "[package]\n\
+         name = \"kxfm_compile_gate\"\n\
+         version = \"0.0.0\"\n\
+         edition = \"2021\"\n\
+         \n\
+         [lib]\n\
+         path = \"src/lib.rs\"\n\
+         \n\
+         [dependencies]\n\
+         sce-forge-runtime = {{ path = {runtime:?} }}\n\
+         \n\
+         [workspace]\n",
+        runtime = runtime_path.to_string_lossy(),
+    );
+    fs::write(crate_dir.join("Cargo.toml"), cargo_toml).expect("write Cargo.toml");
+
+    // Isolated target dir so this build never contends with the parent
+    // `cargo test` invocation's target lock. DEFAULT features → no `alloc`.
+    let output = Command::new(&cargo)
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(crate_dir.join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", dir.path().join("target"))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run cargo build");
+    assert!(
+        output.status.success(),
+        "no-alloc cargo build of the keyexpr field-match crate failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
