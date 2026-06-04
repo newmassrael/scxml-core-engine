@@ -682,6 +682,54 @@ fn forge_cpp_algorithm_crc16_test_vector_sidecar() {
     );
 }
 
+// ── RFC c7-wildcard W-index: bytes-view random index + `len` builtin ──
+// `algorithm_bytes_equal` exercises `a[i]`/`b[i]` (bytes-view index,
+// Q-W-1/2) and `len(a)`/`len(b)` (length builtin, Q-W-3) on all six
+// backends. Drift guard for the S3 (Index emit) + S4 (len builtin)
+// expressibility the runtime keyexpr matcher is built from.
+
+#[test]
+fn forge_cpp_algorithm_bytes_equal() {
+    assert_standalone_forge("algorithm_bytes_equal", "algorithm_bytes_equal.h");
+}
+
+#[test]
+fn forge_rust_algorithm_bytes_equal() {
+    assert_standalone_forge_rust("algorithm_bytes_equal", "algorithm_bytes_equal.rs");
+}
+
+#[test]
+fn forge_kotlin_algorithm_bytes_equal() {
+    assert_standalone_forge_kotlin("algorithm_bytes_equal", "AlgorithmBytesEqual.kt");
+}
+
+#[test]
+fn forge_go_algorithm_bytes_equal() {
+    assert_standalone_forge_lang(
+        "algorithm_bytes_equal",
+        "algorithm_bytes_equal.go",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_python_algorithm_bytes_equal() {
+    assert_standalone_forge_lang(
+        "algorithm_bytes_equal",
+        "algorithm_bytes_equal.py",
+        sce_build::generator::Language::Python,
+    );
+}
+
+#[test]
+fn forge_c11_algorithm_bytes_equal() {
+    assert_standalone_forge_lang(
+        "algorithm_bytes_equal",
+        "algorithm_bytes_equal.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
 // ── RFC §5.B B5-θ codec test-vector sidecars (Rust + C11 trunk) ───
 //
 // 3 fixtures × 2 backends = 6 positive sidecar emissions; each row
