@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: e8782a5c8351481fc8f6e7fcdb09caae80cbe9e47c6019dcf15afff703e3c3b3
-// generated-at: 1780407549
+// template-hash: b54483029156719493b67bab1ba0270f7cbbd9e4ba4ab1e2c6d39e74fc9e1571
+// generated-at: 1780541051
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -75,6 +75,9 @@
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
+// Watching-zenoh RFC §5.J.2: `.push_bounded()` on the microstep conflict-resolution
+// buffers (std `Vec` / no_std capacity-bounded `heapless::Vec`).
+use sce_rust_runtime::BoundedPush;
 
 // W3C SCXML Appendix D: Transition descriptor for parallel state microstep execution
 #[derive(Debug, Clone)]
@@ -86,6 +89,14 @@ struct TransitionInfo {
     is_internal: bool,
     is_targetless: bool,
 }
+
+// Watching-zenoh RFC §5.J.2: microstep conflict-resolution buffers. Under std
+// these are unbounded `Vec`; under no_std they are heapless, capacity-bounded
+// at `MAX_ENABLED_TRANSITIONS` (the runtime owns the no_std collection choice —
+// single source of truth, like `SceString` / `StateChain`). State-list buffers
+// reuse the depth-bounded `StateChain` alias directly.
+type TransitionList = ::std::vec::Vec<TransitionInfo>;
+type IndexList = ::std::vec::Vec<usize>;
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -136,7 +147,12 @@ pub struct Test417Policy {
     // under no_std. The std alias preserves the existing ABI; the no_std alias keeps
     // the generated code allocator-free.
     active_states: ::sce_rust_runtime::helpers::hierarchy::StateChain<Test417State>,
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
+    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
+    //
+    // Watching-zenoh RFC §5.J.2: gated to !no_std. Under `--no-std` both the
+    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
+    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
+    // session identity is ever tracked and the alloc-coupled `String` is omitted.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -144,9 +160,12 @@ pub struct Test417Policy {
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
-    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
+    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
+    // Watching-zenoh RFC §5.J.2: gated to !no_std — `<invoke>` is codegen-rejected
+    // under no_std, so a machine is never instantiated as a child and this
+    // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
-    // W3C SCXML 6.5: Child session ID for finalize origin matching
+    // W3C SCXML 6.5: Child session ID for finalize origin matching.
     pub child_session_id: String,
 }
 
@@ -512,10 +531,10 @@ impl StatePolicy for Test417Policy {
                 // W3C SCXML 3.6: Enter through hierarchy to reach initial target(s)
                 for &target in &initial_children {
                     // Build entry chain from state to target
-                    let mut chain = Vec::new();
+                    let mut chain = ::sce_rust_runtime::helpers::hierarchy::new_chain();
                     let mut current = target;
                     while current != state {
-                        chain.push(current);
+                        ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut chain, current);
                         match Self::get_parent(current) {
                             Some(parent) => current = parent,
                             None => break,
@@ -548,7 +567,9 @@ impl StatePolicy for Test417Policy {
         // W3C SCXML 3.4 + 3.13: Parallel state exit order
         if Self::is_parallel_state(state) {
             // W3C SCXML 3.4: Collect all active descendants of this parallel state
-            let mut descendants_to_exit: Vec<Self::State> = self
+            let mut descendants_to_exit: ::sce_rust_runtime::helpers::hierarchy::StateChain<
+                Self::State,
+            > = self
                 .active_states
                 .iter()
                 .filter(|&&s| s != state && Self::is_descendant_of(s, state))
@@ -556,8 +577,9 @@ impl StatePolicy for Test417Policy {
                 .collect();
 
             // W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
-            descendants_to_exit
-                .sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+            ::sce_rust_runtime::stable_sort_by(&mut descendants_to_exit, |a, b| {
+                Self::get_document_order(*b).cmp(&Self::get_document_order(*a))
+            });
 
             // Exit each active descendant (deepest first)
             for descendant in descendants_to_exit {
@@ -582,11 +604,13 @@ impl StatePolicy for Test417Policy {
         // W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
         if event == Self::null_event() {
             // W3C SCXML Appendix D: Eventless transitions - collect then execute
-            let mut enabled_transitions: Vec<TransitionInfo> = Vec::new();
+            let mut enabled_transitions: TransitionList = TransitionList::new();
             let mut states_to_check = self.active_states.clone();
 
             // Sort by document order for consistent processing
-            states_to_check.sort_by_key(|&s| Self::get_document_order(s));
+            ::sce_rust_runtime::stable_sort_by_key(&mut states_to_check, |&s| {
+                Self::get_document_order(s)
+            });
 
             for active_state in &states_to_check {
                 // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
@@ -616,7 +640,7 @@ impl StatePolicy for Test417Policy {
             }
         } else {
             // W3C SCXML Appendix D: External events - collect then execute
-            let mut enabled_transitions: Vec<TransitionInfo> = Vec::new();
+            let mut enabled_transitions: TransitionList = TransitionList::new();
 
             for &active_state in &self.active_states.clone() {
                 let is_non_atomic =
@@ -700,7 +724,7 @@ impl Test417Policy {
         current_state: &mut Test417State,
         transition_taken: &mut bool,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        mut collect_mode: Option<&mut Vec<TransitionInfo>>,
+        mut collect_mode: Option<&mut TransitionList>,
     ) -> bool {
         match check_state {
             Test417State::Fail => false,
@@ -715,7 +739,7 @@ impl Test417Policy {
                     self.last_transition_is_targetless = false;
 
                     if let Some(ref mut collect) = collect_mode {
-                        collect.push(TransitionInfo {
+                        collect.push_bounded(TransitionInfo {
                             source: check_state,
                             target: Test417State::Fail,
                             transition_index: 0,
@@ -741,7 +765,7 @@ impl Test417Policy {
                     self.last_transition_is_targetless = false;
 
                     if let Some(ref mut collect) = collect_mode {
-                        collect.push(TransitionInfo {
+                        collect.push_bounded(TransitionInfo {
                             source: check_state,
                             target: Test417State::Pass,
                             transition_index: 0,
@@ -766,7 +790,7 @@ impl Test417Policy {
                     self.last_transition_is_internal = false;
                     self.last_transition_is_targetless = false;
                     if let Some(ref mut collect) = collect_mode {
-                        collect.push(TransitionInfo {
+                        collect.push_bounded(TransitionInfo {
                             source: check_state,
                             target: Test417State::S1p11final,
                             transition_index: 0,
@@ -792,7 +816,7 @@ impl Test417Policy {
                     self.last_transition_is_internal = false;
                     self.last_transition_is_targetless = false;
                     if let Some(ref mut collect) = collect_mode {
-                        collect.push(TransitionInfo {
+                        collect.push_bounded(TransitionInfo {
                             source: check_state,
                             target: Test417State::S1p12final,
                             transition_index: 0,
@@ -814,12 +838,12 @@ impl Test417Policy {
     }
 
     // W3C SCXML Appendix D.2: Remove conflicting transitions
-    fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> Vec<TransitionInfo> {
-        let mut filtered: Vec<TransitionInfo> = Vec::new();
+    fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> TransitionList {
+        let mut filtered: TransitionList = TransitionList::new();
 
         for t1 in enabled {
             let mut dominated = false;
-            let mut to_remove: Vec<usize> = Vec::new();
+            let mut to_remove: IndexList = IndexList::new();
 
             for (idx, t2) in filtered.iter().enumerate() {
                 // W3C SCXML Appendix D.2: Check if exit sets intersect
@@ -861,12 +885,12 @@ impl Test417Policy {
                 if has_conflict {
                     // W3C SCXML Appendix D.2: Preemption rules
                     if t1.target == t2.source {
-                        to_remove.push(idx);
+                        to_remove.push_bounded(idx);
                     } else if t2.target == t1.source {
                         dominated = true;
                         break;
                     } else if Self::is_descendant_of(t1.source, t2.source) {
-                        to_remove.push(idx);
+                        to_remove.push_bounded(idx);
                     } else {
                         dominated = true;
                         break;
@@ -879,7 +903,7 @@ impl Test417Policy {
                 for &idx in to_remove.iter().rev() {
                     filtered.remove(idx);
                 }
-                filtered.push(t1.clone());
+                filtered.push_bounded(t1.clone());
             }
         }
 
@@ -895,10 +919,10 @@ impl Test417Policy {
         target: Test417State,
         is_internal: bool,
         is_targetless: bool,
-    ) -> Vec<Test417State> {
+    ) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<Test417State> {
         // W3C SCXML 5.9.2: Targetless transitions execute actions only — no exit/entry
         if is_targetless {
-            return Vec::new();
+            return ::sce_rust_runtime::helpers::hierarchy::new_chain();
         }
 
         // W3C SCXML 3.13: Internal transition to a compound descendant — source stays active.
@@ -911,7 +935,7 @@ impl Test417Policy {
             && Self::is_descendant_of(target, source)
             && target != source
         {
-            return Vec::new();
+            return ::sce_rust_runtime::helpers::hierarchy::new_chain();
         }
 
         // W3C SCXML 3.12: Find LCA of source and target by walking up from source
@@ -936,10 +960,10 @@ impl Test417Policy {
         };
 
         // W3C SCXML Appendix D.2: Collect states from source up to (excluding) LCA
-        let mut exit_set = Vec::new();
+        let mut exit_set = ::sce_rust_runtime::helpers::hierarchy::new_chain();
         let mut current = source;
         loop {
-            exit_set.push(current);
+            ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut exit_set, current);
             match Self::get_parent(current) {
                 Some(parent) => {
                     if let Some(lca_state) = lca {
@@ -971,7 +995,8 @@ impl Test417Policy {
         // W3C SCXML 3.13: Transition domain = LCCA(source, target). When there is no
         // common ancestor (top-level sibling transition), we exit every active ancestor
         // of source up to the root — modelled here as `domain = None`.
-        let mut states_to_exit: Vec<Test417State> = Vec::new();
+        let mut states_to_exit: ::sce_rust_runtime::helpers::hierarchy::StateChain<Test417State> =
+            ::sce_rust_runtime::helpers::hierarchy::new_chain();
         for trans in transitions {
             if trans.is_targetless {
                 continue;
@@ -1019,14 +1044,18 @@ impl Test417Policy {
                     }
                 };
                 if should_exit && !states_to_exit.contains(&active_state) {
-                    states_to_exit.push(active_state);
+                    ::sce_rust_runtime::helpers::hierarchy::push_chain(
+                        &mut states_to_exit,
+                        active_state,
+                    );
                 }
             }
         }
 
         // Sort by reverse document order (deepest first)
-        states_to_exit
-            .sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+        ::sce_rust_runtime::stable_sort_by(&mut states_to_exit, |a, b| {
+            Self::get_document_order(*b).cmp(&Self::get_document_order(*a))
+        });
 
         // Snapshot active states for history recording
         let active_snapshot = self.active_states.clone();
@@ -1037,8 +1066,11 @@ impl Test417Policy {
         }
 
         // W3C SCXML Appendix D.2 Step 3: Execute transition content
-        let mut sorted_transitions = transitions.to_vec();
-        sorted_transitions.sort_by_key(|t| Self::get_document_order(t.source));
+        let mut sorted_transitions: TransitionList =
+            ::sce_rust_runtime::bounded_clone_slice(transitions);
+        ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| {
+            Self::get_document_order(t.source)
+        });
 
         for trans in &sorted_transitions {
             if trans.has_actions {
@@ -1048,7 +1080,9 @@ impl Test417Policy {
         }
 
         // W3C SCXML Appendix D.2 Step 4-5: Enter target states
-        sorted_transitions.sort_by_key(|t| Self::get_document_order(t.target));
+        ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| {
+            Self::get_document_order(t.target)
+        });
 
         for trans in &sorted_transitions {
             if trans.is_targetless {

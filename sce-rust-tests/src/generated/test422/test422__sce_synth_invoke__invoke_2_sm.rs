@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: e8782a5c8351481fc8f6e7fcdb09caae80cbe9e47c6019dcf15afff703e3c3b3
-// generated-at: 1780407549
+// template-hash: b54483029156719493b67bab1ba0270f7cbbd9e4ba4ab1e2c6d39e74fc9e1571
+// generated-at: 1780541051
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -107,7 +107,12 @@ pub struct Test422SceSynthInvokeInvoke2Policy {
     last_transition_is_internal: bool,
     last_transition_is_targetless: bool,
     last_transition_source_state: Test422SceSynthInvokeInvoke2State,
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
+    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
+    //
+    // Watching-zenoh RFC §5.J.2: gated to !no_std. Under `--no-std` both the
+    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
+    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
+    // session identity is ever tracked and the alloc-coupled `String` is omitted.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -115,9 +120,12 @@ pub struct Test422SceSynthInvokeInvoke2Policy {
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
-    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
+    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
+    // Watching-zenoh RFC §5.J.2: gated to !no_std — `<invoke>` is codegen-rejected
+    // under no_std, so a machine is never instantiated as a child and this
+    // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
-    // W3C SCXML 6.5: Child session ID for finalize origin matching
+    // W3C SCXML 6.5: Child session ID for finalize origin matching.
     pub child_session_id: String,
 }
 

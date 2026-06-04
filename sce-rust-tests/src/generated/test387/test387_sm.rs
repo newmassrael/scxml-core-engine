@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: e8782a5c8351481fc8f6e7fcdb09caae80cbe9e47c6019dcf15afff703e3c3b3
-// generated-at: 1780407549
+// template-hash: b54483029156719493b67bab1ba0270f7cbbd9e4ba4ab1e2c6d39e74fc9e1571
+// generated-at: 1780541051
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -132,14 +132,39 @@ pub struct Test387Policy {
     last_transition_is_targetless: bool,
     last_transition_source_state: Test387State,
     // W3C SCXML 3.11: History state s0HistDeep (deep)
-    history_s0HistDeep: Option<Vec<Test387State>>,
+    //
+    // Watching-zenoh RFC §5.J.2: the recorded configuration is a
+    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
+    // under no_std), mirroring `active_states`. Recorded history is always a
+    // subset of the active configuration, so it cannot exceed the depth bound.
+    history_s0HistDeep: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<Test387State>>,
     // W3C SCXML 3.11: History state s0HistShallow (shallow)
-    history_s0HistShallow: Option<Vec<Test387State>>,
+    //
+    // Watching-zenoh RFC §5.J.2: the recorded configuration is a
+    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
+    // under no_std), mirroring `active_states`. Recorded history is always a
+    // subset of the active configuration, so it cannot exceed the depth bound.
+    history_s0HistShallow: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<Test387State>>,
     // W3C SCXML 3.11: History state s1HistDeep (deep)
-    history_s1HistDeep: Option<Vec<Test387State>>,
+    //
+    // Watching-zenoh RFC §5.J.2: the recorded configuration is a
+    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
+    // under no_std), mirroring `active_states`. Recorded history is always a
+    // subset of the active configuration, so it cannot exceed the depth bound.
+    history_s1HistDeep: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<Test387State>>,
     // W3C SCXML 3.11: History state s1HistShallow (shallow)
-    history_s1HistShallow: Option<Vec<Test387State>>,
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
+    //
+    // Watching-zenoh RFC §5.J.2: the recorded configuration is a
+    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
+    // under no_std), mirroring `active_states`. Recorded history is always a
+    // subset of the active configuration, so it cannot exceed the depth bound.
+    history_s1HistShallow: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<Test387State>>,
+    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
+    //
+    // Watching-zenoh RFC §5.J.2: gated to !no_std. Under `--no-std` both the
+    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
+    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
+    // session identity is ever tracked and the alloc-coupled `String` is omitted.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
@@ -147,9 +172,12 @@ pub struct Test387Policy {
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
-    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
+    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
+    // Watching-zenoh RFC §5.J.2: gated to !no_std — `<invoke>` is codegen-rejected
+    // under no_std, so a machine is never instantiated as a child and this
+    // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
-    // W3C SCXML 6.5: Child session ID for finalize origin matching
+    // W3C SCXML 6.5: Child session ID for finalize origin matching.
     pub child_session_id: String,
 }
 
@@ -541,47 +569,59 @@ impl StatePolicy for Test387Policy {
     ) {
         // W3C SCXML 3.11: Record history before exiting compound states
         if state == Test387State::S0 {
-            // W3C SCXML 3.11: Deep history - record all active descendants
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
-                .filter(|&&s| {
-                    Self::is_descendant_of(s, Test387State::S0)
-                        && !Self::is_compound_state(s)
-                        && !Self::is_parallel_state(s)
-                })
-                .copied()
-                .collect();
+            // W3C SCXML 3.11: Deep history - record all active descendants.
+            // Watching-zenoh RFC §5.J.2: [`StateChain`] alias (heapless under
+            // no_std); recorded history is a subset of the active configuration
+            // so it stays within MAX_HIERARCHY_DEPTH.
+            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
+                pre_transition_active
+                    .iter()
+                    .filter(|&&s| {
+                        Self::is_descendant_of(s, Test387State::S0)
+                            && !Self::is_compound_state(s)
+                            && !Self::is_parallel_state(s)
+                    })
+                    .copied()
+                    .collect();
             self.history_s0HistDeep = Some(filtered);
         }
         if state == Test387State::S0 {
-            // W3C SCXML 3.11: Shallow history - record direct children only
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
-                .filter(|&&s| Self::get_parent(s) == Some(Test387State::S0))
-                .copied()
-                .collect();
+            // W3C SCXML 3.11: Shallow history - record direct children only.
+            // Watching-zenoh RFC §5.J.2: [`StateChain`] alias (heapless under no_std).
+            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
+                pre_transition_active
+                    .iter()
+                    .filter(|&&s| Self::get_parent(s) == Some(Test387State::S0))
+                    .copied()
+                    .collect();
             self.history_s0HistShallow = Some(filtered);
         }
         if state == Test387State::S1 {
-            // W3C SCXML 3.11: Deep history - record all active descendants
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
-                .filter(|&&s| {
-                    Self::is_descendant_of(s, Test387State::S1)
-                        && !Self::is_compound_state(s)
-                        && !Self::is_parallel_state(s)
-                })
-                .copied()
-                .collect();
+            // W3C SCXML 3.11: Deep history - record all active descendants.
+            // Watching-zenoh RFC §5.J.2: [`StateChain`] alias (heapless under
+            // no_std); recorded history is a subset of the active configuration
+            // so it stays within MAX_HIERARCHY_DEPTH.
+            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
+                pre_transition_active
+                    .iter()
+                    .filter(|&&s| {
+                        Self::is_descendant_of(s, Test387State::S1)
+                            && !Self::is_compound_state(s)
+                            && !Self::is_parallel_state(s)
+                    })
+                    .copied()
+                    .collect();
             self.history_s1HistDeep = Some(filtered);
         }
         if state == Test387State::S1 {
-            // W3C SCXML 3.11: Shallow history - record direct children only
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
-                .filter(|&&s| Self::get_parent(s) == Some(Test387State::S1))
-                .copied()
-                .collect();
+            // W3C SCXML 3.11: Shallow history - record direct children only.
+            // Watching-zenoh RFC §5.J.2: [`StateChain`] alias (heapless under no_std).
+            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
+                pre_transition_active
+                    .iter()
+                    .filter(|&&s| Self::get_parent(s) == Some(Test387State::S1))
+                    .copied()
+                    .collect();
             self.history_s1HistShallow = Some(filtered);
         }
     }

@@ -151,6 +151,31 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 /// so this constant only affects the `--features=no_std` variant.
 pub const MAX_SCHEDULED_EVENTS: usize = 32;
 
+/// Maximum number of simultaneously-enabled transitions selected in a single
+/// microstep under `--features=no_std`.
+///
+/// Bounds the `heapless::Vec<TransitionInfo, _>` / `heapless::Vec<usize, _>`
+/// conflict-resolution buffers emitted by the parallel-state transition
+/// algorithm (`tools/codegen/templates/rust/{process_transition,conflict_resolution}.rs.jinja2`).
+/// W3C SCXML Appendix D.2 selects at most one enabled transition per active
+/// atomic state, and the active configuration is itself bounded by
+/// [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`] (16), so the enabled set
+/// cannot exceed that. v1 value 32 gives a 2× margin.
+///
+/// The std build keeps unbounded `Vec` so this constant only affects the
+/// `--features=no_std` variant. Per-document tunable deferred until an MCU
+/// consumer surfaces a concrete over/under-fit signal (`feedback_planned_not_yagni`).
+pub const MAX_ENABLED_TRANSITIONS: usize = 32;
+
+/// Capacity of the microstep transition-dedup set under `--features=no_std`.
+///
+/// The std build dedups enabled transitions with `std::collections::HashSet`;
+/// the no_std build uses `heapless::FnvIndexSet<(State, usize), _>`, whose
+/// capacity must be a power of two. 64 is the next power of two above
+/// 2× [`MAX_ENABLED_TRANSITIONS`], so the set never rehashes-to-full for any
+/// microstep the buffers above can hold.
+pub const MAX_MICROSTEP_DEDUP_SLOTS: usize = 64;
+
 /// Maximum byte length of an event metadata string under `--features=no_std`.
 ///
 /// Bounds the capacity of [`SceString`] for `EventMetadata.data`,
@@ -200,6 +225,122 @@ pub fn sce_string_from_str(s: &str) -> SceString {
     {
         SceString::try_from(s).unwrap_or_default()
     }
+}
+
+/// Re-export of the `heapless` crate for generated no_std state machines.
+///
+/// Generated code emits `sce_rust_runtime::heapless::FnvIndexSet<…>` for the
+/// microstep transition-dedup set so a no_std consumer crate does not have to
+/// declare `heapless` as a direct dependency — the runtime owns the no_std
+/// collection choices (single source of truth, mirroring [`SceString`] /
+/// [`crate::helpers::hierarchy::StateChain`]).
+#[cfg(feature = "no_std")]
+pub use ::heapless;
+
+/// Push into a microstep buffer uniformly under std and no_std.
+///
+/// Method form (not a free function) so generated call sites work through an
+/// `&mut &mut Buf` collector binding via receiver auto-reborrow. Implemented
+/// for both the std `Vec<T>` and the no_std `heapless::Vec<T, N>`, so it covers
+/// the transition-count-bounded conflict-resolution buffers
+/// (`TransitionList` / `IndexList`). Under no_std the push fails loud on
+/// overflow — the capacity ([`MAX_ENABLED_TRANSITIONS`]) is sized to the W3C
+/// Appendix D.2 enabled-set bound, so overflow indicates a capacity to raise,
+/// not a recoverable condition. Mirrors the depth-bounded
+/// [`crate::helpers::hierarchy::push_chain`] for `StateChain`.
+pub trait BoundedPush<T> {
+    /// Append `item`, panicking on a no_std capacity overflow (see trait docs).
+    fn push_bounded(&mut self, item: T);
+}
+
+#[cfg(not(feature = "no_std"))]
+impl<T> BoundedPush<T> for ::std::vec::Vec<T> {
+    #[inline]
+    fn push_bounded(&mut self, item: T) {
+        self.push(item);
+    }
+}
+
+#[cfg(feature = "no_std")]
+impl<T, const N: usize> BoundedPush<T> for ::heapless::Vec<T, N> {
+    #[inline]
+    fn push_bounded(&mut self, item: T) {
+        if self.push(item).is_err() {
+            panic!(
+                "SCE no_std microstep buffer overflow (capacity {N}); raise the \
+                 relevant capacity constant (MAX_ENABLED_TRANSITIONS)"
+            );
+        }
+    }
+}
+
+/// Clone a slice into an owned microstep buffer uniformly under std and no_std.
+///
+/// Under std this is `[T]::to_vec`. Under no_std this is
+/// `heapless::Vec::from_slice` with the same fail-loud overflow contract as
+/// [`bounded_push`]. Used by the Appendix D.2 microstep executor to take an
+/// owned, re-sortable copy of the enabled-transition slice.
+#[cfg(not(feature = "no_std"))]
+#[inline]
+pub fn bounded_clone_slice<T: Clone>(src: &[T]) -> ::std::vec::Vec<T> {
+    src.to_vec()
+}
+
+/// no_std variant of [`bounded_clone_slice`]. See the std-variant doc-comment.
+#[cfg(feature = "no_std")]
+#[inline]
+pub fn bounded_clone_slice<T: Clone, const N: usize>(src: &[T]) -> ::heapless::Vec<T, N> {
+    ::heapless::Vec::from_slice(src).unwrap_or_else(|_| {
+        panic!(
+            "SCE no_std transition buffer overflow (capacity {N}); raise \
+             MAX_ENABLED_TRANSITIONS"
+        )
+    })
+}
+
+/// Stable in-place sort by a comparator, uniform across std and no_std.
+///
+/// Under std this is `[T]::sort_by`. Under no_std it is a stable in-place
+/// insertion sort — `[T]::sort_by` requires `alloc` for its merge buffer, which
+/// a no-allocator no_std build cannot provide. The W3C Appendix D.2 microstep
+/// sorts states/transitions whose count is bounded by `MAX_HIERARCHY_DEPTH` /
+/// [`MAX_ENABLED_TRANSITIONS`], so the O(n²) insertion sort is negligible. Both
+/// variants are stable, so generated machines sort identically under std and
+/// no_std (preserving W3C document-order tie-breaking among same-source
+/// transitions).
+#[cfg(not(feature = "no_std"))]
+#[inline]
+pub fn stable_sort_by<T, F: FnMut(&T, &T) -> ::core::cmp::Ordering>(buf: &mut [T], compare: F) {
+    buf.sort_by(compare);
+}
+
+/// no_std variant of [`stable_sort_by`]. See the std-variant doc-comment.
+#[cfg(feature = "no_std")]
+pub fn stable_sort_by<T, F: FnMut(&T, &T) -> ::core::cmp::Ordering>(buf: &mut [T], mut compare: F) {
+    for i in 1..buf.len() {
+        let mut j = i;
+        while j > 0 && compare(&buf[j - 1], &buf[j]) == ::core::cmp::Ordering::Greater {
+            buf.swap(j - 1, j);
+            j -= 1;
+        }
+    }
+}
+
+/// Stable in-place sort by an extracted key, uniform across std and no_std.
+///
+/// Under std this is `[T]::sort_by_key`; under no_std it delegates to the
+/// insertion-sort [`stable_sort_by`]. See that function's doc-comment.
+#[cfg(not(feature = "no_std"))]
+#[inline]
+pub fn stable_sort_by_key<T, K: Ord, F: FnMut(&T) -> K>(buf: &mut [T], f: F) {
+    buf.sort_by_key(f);
+}
+
+/// no_std variant of [`stable_sort_by_key`]. See the std-variant doc-comment.
+#[cfg(feature = "no_std")]
+#[inline]
+pub fn stable_sort_by_key<T, K: Ord, F: FnMut(&T) -> K>(buf: &mut [T], mut f: F) {
+    stable_sort_by(buf, |a, b| f(a).cmp(&f(b)));
 }
 
 pub mod engine;

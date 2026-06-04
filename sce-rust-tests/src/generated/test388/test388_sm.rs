@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: e8782a5c8351481fc8f6e7fcdb09caae80cbe9e47c6019dcf15afff703e3c3b3
-// generated-at: 1780407549
+// template-hash: b54483029156719493b67bab1ba0270f7cbbd9e4ba4ab1e2c6d39e74fc9e1571
+// generated-at: 1780541051
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -127,26 +127,45 @@ pub struct Test388Policy {
     // W3C SCXML 5.10.1: External event flag for _event.type classification
     next_event_is_external: bool,
     // W3C SCXML 5.10: Event name for _event.name binding
-    pending_event_name: String,
+    //
+    // Watching-zenoh RFC §5.J.2: typed as the runtime crate's [`SceString`]
+    // alias — `String` under std (unchanged ABI), `heapless::String<MAX_EVENT_STRING_LEN>`
+    // under no_std — so the emitted field is allocator-free on MCU targets.
+    pending_event_name: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10: Event data for _event.data binding
-    pending_event_data: String,
+    pending_event_data: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10.1: Event type for _event.type binding
-    pending_event_type: String,
+    pending_event_type: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10.1: Event sendid for _event.sendid binding
-    pending_event_sendid: String,
+    pending_event_sendid: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10.1: Event origin for _event.origin binding
-    pending_event_origin: String,
+    pending_event_origin: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10.1: Event origintype for _event.origintype binding
-    pending_event_origintype: String,
+    pending_event_origintype: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
-    pending_event_invokeid: String,
+    pending_event_invokeid: ::sce_rust_runtime::SceString,
     // W3C SCXML 3.11: History state s0HistDeep (deep)
-    history_s0HistDeep: Option<Vec<Test388State>>,
+    //
+    // Watching-zenoh RFC §5.J.2: the recorded configuration is a
+    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
+    // under no_std), mirroring `active_states`. Recorded history is always a
+    // subset of the active configuration, so it cannot exceed the depth bound.
+    history_s0HistDeep: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<Test388State>>,
     // W3C SCXML 3.11: History state s0HistShallow (shallow)
-    history_s0HistShallow: Option<Vec<Test388State>>,
+    //
+    // Watching-zenoh RFC §5.J.2: the recorded configuration is a
+    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
+    // under no_std), mirroring `active_states`. Recorded history is always a
+    // subset of the active configuration, so it cannot exceed the depth bound.
+    history_s0HistShallow: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<Test388State>>,
     // W3C SCXML 5.3: Datamodel variables
     var1: i64,
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
+    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
+    //
+    // Watching-zenoh RFC §5.J.2: gated to !no_std. Under `--no-std` both the
+    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
+    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
+    // session identity is ever tracked and the alloc-coupled `String` is omitted.
     pub session_id: Option<String>,
     // Engine DI Parity RFC (Path B+): per-instance script engine. The
     // constructor parameter is mandatory whenever `model.needs_script_engine`
@@ -159,9 +178,12 @@ pub struct Test388Policy {
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
-    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
+    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
+    // Watching-zenoh RFC §5.J.2: gated to !no_std — `<invoke>` is codegen-rejected
+    // under no_std, so a machine is never instantiated as a child and this
+    // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
-    // W3C SCXML 6.5: Child session ID for finalize origin matching
+    // W3C SCXML 6.5: Child session ID for finalize origin matching.
     pub child_session_id: String,
 }
 
@@ -175,13 +197,13 @@ impl Test388Policy {
             last_transition_index: 0,
             has_transition_actions: false,
             next_event_is_external: false,
-            pending_event_name: String::new(),
-            pending_event_data: String::new(),
-            pending_event_type: String::new(),
-            pending_event_sendid: String::new(),
-            pending_event_origin: String::new(),
-            pending_event_origintype: String::new(),
-            pending_event_invokeid: String::new(),
+            pending_event_name: ::sce_rust_runtime::SceString::new(),
+            pending_event_data: ::sce_rust_runtime::SceString::new(),
+            pending_event_type: ::sce_rust_runtime::SceString::new(),
+            pending_event_sendid: ::sce_rust_runtime::SceString::new(),
+            pending_event_origin: ::sce_rust_runtime::SceString::new(),
+            pending_event_origintype: ::sce_rust_runtime::SceString::new(),
+            pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             history_s0HistDeep: None,
             history_s0HistShallow: None,
             var1: 0,
@@ -536,7 +558,8 @@ impl StatePolicy for Test388Policy {
     // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
     fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
         self.pending_event_data = metadata.data.clone();
-        self.pending_event_type = metadata.event_type.as_str().to_string();
+        self.pending_event_type =
+            ::sce_rust_runtime::sce_string_from_str(metadata.event_type.as_str());
         self.pending_event_sendid = metadata.send_id.clone();
         self.pending_event_origin = metadata.origin.clone();
         self.pending_event_origintype = metadata.origin_type.clone();
@@ -650,25 +673,31 @@ impl StatePolicy for Test388Policy {
     ) {
         // W3C SCXML 3.11: Record history before exiting compound states
         if state == Test388State::S0 {
-            // W3C SCXML 3.11: Deep history - record all active descendants
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
-                .filter(|&&s| {
-                    Self::is_descendant_of(s, Test388State::S0)
-                        && !Self::is_compound_state(s)
-                        && !Self::is_parallel_state(s)
-                })
-                .copied()
-                .collect();
+            // W3C SCXML 3.11: Deep history - record all active descendants.
+            // Watching-zenoh RFC §5.J.2: [`StateChain`] alias (heapless under
+            // no_std); recorded history is a subset of the active configuration
+            // so it stays within MAX_HIERARCHY_DEPTH.
+            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
+                pre_transition_active
+                    .iter()
+                    .filter(|&&s| {
+                        Self::is_descendant_of(s, Test388State::S0)
+                            && !Self::is_compound_state(s)
+                            && !Self::is_parallel_state(s)
+                    })
+                    .copied()
+                    .collect();
             self.history_s0HistDeep = Some(filtered);
         }
         if state == Test388State::S0 {
-            // W3C SCXML 3.11: Shallow history - record direct children only
-            let filtered: Vec<Self::State> = pre_transition_active
-                .iter()
-                .filter(|&&s| Self::get_parent(s) == Some(Test388State::S0))
-                .copied()
-                .collect();
+            // W3C SCXML 3.11: Shallow history - record direct children only.
+            // Watching-zenoh RFC §5.J.2: [`StateChain`] alias (heapless under no_std).
+            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
+                pre_transition_active
+                    .iter()
+                    .filter(|&&s| Self::get_parent(s) == Some(Test388State::S0))
+                    .copied()
+                    .collect();
             self.history_s0HistShallow = Some(filtered);
         }
     }
