@@ -172,6 +172,34 @@ log_step "Stage 2/7 — cargo clippy --workspace --all-targets -- -D warnings"
 cargo clippy --workspace --all-targets -- -D warnings \
     || fail_step "Stage 2 (cargo clippy)"
 
+# ── Stage 2b: no_std MCU-target mirror (sce-rust-runtime-no-std.yml) ─
+# Stage 2 above only lints the host target with default features, so it
+# never sees the `heapless`-sized types the `no_std` cfg selects — a
+# regression that compiles on host but breaks the bare-metal build (a
+# reintroduced `std::*` import, an alloc-coupled emission, or a no_std-
+# only clippy lint like result_large_err) slips every host-target gate
+# and surfaces only on the cloud no_std workflow. Mirror that workflow
+# here: build + clippy the runtime for thumbv7em, then generate and
+# compile the allocator-free probe machine (reusing the Stage 1
+# sce-codegen build). `rustup target add` is idempotent — a no-op when
+# the target is already present, an auto-install otherwise — so the gate
+# always runs rather than silently skipping on a fresh checkout.
+log_step "Stage 2b/7 — no_std MCU build + clippy + probe (thumbv7em-none-eabihf)"
+rustup target add thumbv7em-none-eabihf >/dev/null 2>&1 || true
+cargo build -p sce-rust-runtime --no-default-features --features=no_std \
+    --target=thumbv7em-none-eabihf \
+    || fail_step "Stage 2b (no_std runtime build)"
+cargo clippy -p sce-rust-runtime --no-default-features --features=no_std \
+    --target=thumbv7em-none-eabihf -- -D warnings \
+    || fail_step "Stage 2b (no_std runtime clippy)"
+"$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
+    -l rust --no-std --output-dir sce-nostd-build-probe/src \
+    sce-build/tests/fixtures/no_std/parallel_history_probe.scxml >/dev/null 2>&1 \
+    || fail_step "Stage 2b (no_std probe generation)"
+cargo build --manifest-path sce-nostd-build-probe/Cargo.toml \
+    --target=thumbv7em-none-eabihf \
+    || fail_step "Stage 2b (no_std probe compile)"
+
 # ── Stage 3: embed/MANIFEST.json drift (mirror verify_embed_manifest) ─
 # embed/MANIFEST.json is the tracked snapshot of the embeddable public
 # API surface. A header edit under sce/include/ that forgets
