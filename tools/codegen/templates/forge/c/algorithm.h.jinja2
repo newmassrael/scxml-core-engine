@@ -21,7 +21,7 @@
 {% if needs_span %}#include "sce/forge/bytes.h"  /* sce_forge_bytes_view_t */
 {% endif %}{% if all_imports %}{% for imp in all_imports %}{{ imp.include_stmt }}
 {% endfor %}{% endif %}
-{{ consts_prelude }}static inline {{ return_type }} {{ name }}({{ params_str }}) {
+{{ consts_prelude }}static inline {{ return_type }} {{ primary_symbol }}({{ params_str }}) {
 {{ body }}
 }
 

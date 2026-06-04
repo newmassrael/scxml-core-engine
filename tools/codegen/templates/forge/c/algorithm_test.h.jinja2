@@ -33,14 +33,14 @@ static inline int test_vector_{{ name }}(void) {
         memcpy(input.data, row_bytes, sizeof row_bytes);
         input.len = sizeof row_bytes;
 {% endif %}
-        {{ return_type }} actual = {{ name }}((sce_forge_bytes_view_t){ input.data, input.len });
+        {{ return_type }} actual = {{ primary_symbol }}((sce_forge_bytes_view_t){ input.data, input.len });
 {% else %}
-        {{ return_type }} actual = {{ name }}();
+        {{ return_type }} actual = {{ primary_symbol }}();
 {% endif %}
         const {{ return_type }} expected = {{ tv.value_literal_c }};
         if (actual != expected) {
             fprintf(stderr,
-                "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: actual={{ tv.printf_fmt }} expected={{ tv.printf_fmt }}\n",
+                "FAIL: {{ primary_symbol }} test_vector @SCXML L{{ tv.source_line }}: actual={{ tv.printf_fmt }} expected={{ tv.printf_fmt }}\n",
                 ({{ tv.printf_cast }})actual, ({{ tv.printf_cast }})expected);
             ++failures;
         }

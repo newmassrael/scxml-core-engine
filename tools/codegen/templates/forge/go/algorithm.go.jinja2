@@ -22,6 +22,6 @@ import (
 )
 {% endif %}
 
-{{ consts_prelude }}func {{ name_pascal }}({{ params_str }}){% if has_return %} {{ return_type }}{% endif %} {
+{{ consts_prelude }}func {{ primary_symbol }}({{ params_str }}){% if has_return %} {{ return_type }}{% endif %} {
 {{ body }}
 }
