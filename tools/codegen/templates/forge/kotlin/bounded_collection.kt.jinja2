@@ -45,8 +45,12 @@ const val CAPACITY: Int = {{ capacity }}
 const val SLOT_BITS: Int = 16
 /// Generation-counter bit width inside the packed `{{ pascal }}Handle.raw`.
 const val GEN_BITS: Int = 16
-const val SLOT_MASK: UInt = ((1u shl SLOT_BITS) - 1u)
-const val GEN_MASK: UInt = ((1u shl GEN_BITS) - 1u)
+{# Kotlin `const val` requires a compile-time-constant initializer; a `shl`
+   derivation (valid in Rust `const` / Cpp `constexpr`) is rejected, so the
+   16-bit mask is emitted as a literal, matching the C11 `((uint32_t)0xFFFFu)`
+   and Go `0xFFFF` form (SLOT_BITS/GEN_BITS are a fixed 16 on every backend). #}
+const val SLOT_MASK: UInt = 0xFFFFu
+const val GEN_MASK: UInt = 0xFFFFu
 
 /// Stable `UInt`-wide handle into `{{ pascal }}` (spec lines
 /// 2621-2622). Inline value class so the type-safe wrapper costs
