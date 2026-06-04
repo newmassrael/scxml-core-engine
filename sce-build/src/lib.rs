@@ -1763,6 +1763,7 @@ pub fn compile_forge_from_parsed(
         &parsed.imports,
         base_dir,
         &language,
+        options,
         label.diagnostic_label,
     )?;
 
@@ -3045,6 +3046,7 @@ fn validate_and_enrich_imports(
     imports: &[forge::model::ForgeImport],
     base_dir: &Path,
     language: &generator::Language,
+    options: &crate::ForgeCompileOptions,
     importing_doc: &str,
 ) -> Result<(), forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{ImportError, Located};
@@ -3136,6 +3138,32 @@ fn validate_and_enrich_imports(
 
         if let Some(parsed) = forge::parser::parse_forge_with_imports(&content, imported_label)? {
             let doc = parsed.document;
+            // Identity SSOT: recompute the name-derived emission context
+            // (`#include` / `use` / `import`, namespace, type/member type)
+            // from the imported document's authoritative
+            // `ForgeDocument::name()` rather than the provisional file stem
+            // `resolve_single_import` keyed on. The two agree for every kind
+            // whose model name == file stem; only an `algorithm` carrying a
+            // `name=` attribute distinct from its file stem diverges, and
+            // there the imported document emits its file / namespace / module
+            // from `name()` (see `generate_forge`), so the stem-based
+            // provisional values dangle. This recompute lands the cross-doc
+            // reference on the symbols the imported document actually emits,
+            // uniformly across all six backends (the per-kind C11-only patch
+            // that previously corrected only the include is now subsumed —
+            // see the cross-doc call SSOT below).
+            {
+                let id = forge::generator::forge_import_identity(
+                    doc.name(),
+                    language,
+                    ctx.is_stateful,
+                    options,
+                );
+                ctx.include_stmt = id.include_stmt;
+                ctx.type_name = id.type_name;
+                ctx.namespace = id.namespace;
+                ctx.member_type = id.member_type;
+            }
             // RFC §5.B variant primitive (B1-β) + B5-ε surface G:
             // codec imports carry their *full recursive* max_frame_bytes
             // forward so the parent codec's variant emit / TLV chain
@@ -3261,13 +3289,10 @@ fn validate_and_enrich_imports(
                     let _ = v; // variant existence already gated this branch
                     let needs_variant_import = imp.embed_dispatch.is_some();
                     if matches!(*language, generator::Language::Rust) && needs_variant_import {
-                        let snake = std::path::Path::new(&imp.src)
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .map_or_else(
-                                || ctx.alias.clone(),
-                                |s| filters::to_snake_case(s.to_string()),
-                            );
+                        // Identity SSOT: the imported module is named from the
+                        // codec's `ForgeDocument::name()`, same source the
+                        // general recompute above uses — never the file stem.
+                        let snake = filters::to_snake_case(doc.name().to_string());
                         ctx.include_stmt = format!(
                             "use super::{snake}::{{{pascal}, {pascal}Variant}};",
                             snake = snake,
@@ -3328,31 +3353,15 @@ fn validate_and_enrich_imports(
                 };
             }
             if !ctx.is_stateful {
+                // `ctx.namespace` was recomputed from `doc.name()` above, so
+                // the qualifier composes against the symbols the imported
+                // document actually emits. `forge_qualified_call` carries the
+                // sole kind-specific exception (C11 algorithm → bare symbol);
+                // the `#include` is already correct from the identity SSOT
+                // recompute, so no per-kind include patch is needed here.
                 if let Some(name) = discover_primary_function(&doc, language) {
-                    ctx.qualified_call = build_qualified_call(&name, &ctx.namespace, language);
-                }
-                // C7 §A6: the algorithm kind names its emitted symbol by the
-                // `name=` attribute (`parse_algorithm`), not the file stem —
-                // `render_algorithm` emits a bare `static inline T <name>(...)`
-                // and `generate_forge` writes the header as `<snake(name)>.h`.
-                // Two file-stem-based assumptions in the C11 cross-doc path
-                // must therefore be redirected to that canonical symbol:
-                //   1. the `#include` must reference the name-based filename
-                //      (not `<file_stem>.h`, which is never written), and
-                //   2. C11 has no namespace mechanism, so the cross-doc call
-                //      is the bare symbol — `build_qualified_call`'s
-                //      `<namespace>_<fn>` shape dangles against the bare
-                //      definition (the standalone golden locks `static inline
-                //      bool bytes_equal(...)`).
-                // Every other kind sets `name == file_stem` (label.identifier),
-                // so this only diverges for an algorithm carrying a `name=`
-                // attribute distinct from its file stem.
-                if let forge::model::ForgeDocument::Algorithm(am) = &doc {
-                    if matches!(language, generator::Language::C11) {
-                        let sym = filters::to_snake_case(am.name.clone());
-                        ctx.include_stmt = format!("#include \"{sym}.h\"");
-                        ctx.qualified_call = sym;
-                    }
+                    ctx.qualified_call =
+                        forge_qualified_call(&doc, &name, &ctx.namespace, language);
                 }
                 let (params, ret) = discover_stateless_signature(&doc);
                 ctx.param_types = params;
@@ -4669,6 +4678,35 @@ fn build_qualified_call(
         // emit `temp_convert_lookup_output(...)` to match this contract.
         generator::Language::C11 => format!("{namespace}_{func_name}"),
     }
+}
+
+/// SSOT for the cross-doc stateless call qualifier. Wraps
+/// [`build_qualified_call`] with the one kind-specific exception that the
+/// generic `<namespace>_<func>` C11 shape cannot express: the `algorithm`
+/// kind.
+///
+/// `render_algorithm`'s C11 arm emits the function under its bare `name=`
+/// symbol with **no** module prefix (the module *is* the function), so a
+/// cross-doc call must be that bare symbol — `build_qualified_call`'s
+/// `<namespace>_<func>` would compose `bytes_equal_bytes_equal` against
+/// the defined `bytes_equal` and dangle. Every other C11 stateless kind
+/// (lookup / condition) prefixes the module name onto its emitted symbol
+/// (`<name>_<output>` / `<name>_check`), so the generic shape is correct
+/// for them. Folding the exception here keeps the call-shaping rule in
+/// one place instead of a compute-then-patch override at the enrichment
+/// site.
+fn forge_qualified_call(
+    doc: &forge::model::ForgeDocument,
+    func_name: &str,
+    namespace: &str,
+    language: &generator::Language,
+) -> String {
+    if matches!(doc, forge::model::ForgeDocument::Algorithm(_))
+        && matches!(language, generator::Language::C11)
+    {
+        return func_name.to_string();
+    }
+    build_qualified_call(func_name, namespace, language)
 }
 
 /// Build a forge dependency manifest from a directory of SCXML files.
