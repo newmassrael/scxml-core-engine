@@ -30,12 +30,7 @@
 #include <stdint.h>
 
 #include "sce/forge/limits.h"
-
-/* Bytes container — fixed-cap stack-only buffer. */
-typedef struct {
-    uint8_t data[SCE_FORGE_BYTES_DEFAULT_MAX];
-    size_t len;
-} sce_forge_bytes_t;
+#include "sce/forge/bytes.h"  /* sce_forge_bytes_t (relocated to the shared bytes header) */
 
 /* Service request dispatched by `<send sce:service=...>`. */
 typedef struct {

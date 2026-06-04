@@ -33,7 +33,7 @@ static inline int test_vector_{{ name }}(void) {
         memcpy(input.data, row_bytes, sizeof row_bytes);
         input.len = sizeof row_bytes;
 {% endif %}
-        {{ return_type }} actual = {{ name }}(input);
+        {{ return_type }} actual = {{ name }}((sce_forge_bytes_view_t){ input.data, input.len });
 {% else %}
         {{ return_type }} actual = {{ name }}();
 {% endif %}

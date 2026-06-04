@@ -10,7 +10,7 @@
 /* */
 /* RFC §5.A: free function with bounded loops, no allocs, no I/O. */
 /* RFC §5.J.5 emitter table: `static T <snake>(...)` with `bytes` */
-/* lowered to the runtime's stack-bounded `sce_forge_bytes_t`. */
+/* lowered to the borrowed `sce_forge_bytes_view_t` (zero-copy). */
 
 #ifndef {{ guard }}
 #define {{ guard }}
@@ -18,7 +18,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-{% if needs_span %}#include "sce/forge/procedure.h"  /* sce_forge_bytes_t */
+{% if needs_span %}#include "sce/forge/bytes.h"  /* sce_forge_bytes_view_t */
 {% endif %}{% if all_imports %}{% for imp in all_imports %}
 {{ imp.include_stmt }}{% endfor %}
 {% endif %}

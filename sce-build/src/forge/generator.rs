@@ -19622,17 +19622,19 @@ fn render_observer(
 /// emit a non-owning view (`std::span<const uint8_t>`) rather than
 /// `const std::vector<uint8_t>&`, because RFC §5.J.5 forbids STL
 /// containers in the algorithm emit and span is the named
-/// alternative. C11 lowers `bytes` to the runtime's stack-bounded
-/// `sce_forge_bytes_t` value type — its `.data[i]` / `.len` shape is
-/// what `lower_algorithm_stmt`'s foreach arm reads, and pass-by-value
-/// matches the procedure runtime contract (RFC §5.J.2 F1: no heap,
-/// fixed-cap copies). Other types and other languages reuse the
-/// existing `param_type` helper unchanged.
+/// alternative. C11 lowers `bytes` to the borrowed `sce_forge_bytes_view_t`
+/// (`{const uint8_t *data; size_t len}`) — its `.data[i]` / `.len` shape is
+/// what `lower_algorithm_stmt`'s foreach arm reads, and the zero-copy view
+/// matches the other five backends (all already borrow: Cpp `std::span`,
+/// Rust `&[u8]`, Go `[]byte`, …). A pure function reads its input, so it
+/// takes the view, never the owned 256-byte `sce_forge_bytes_t` copy (RFC
+/// `claudedocs/rfc-c7-wildcard-keyexpr-expressibility.md` §8 Smell 4 —
+/// borrowed-by-default). Other types and languages reuse `param_type`.
 fn algorithm_param_type(lang: crate::generator::Language, ty: &SceType) -> String {
     use crate::generator::Language;
     match (lang, ty) {
         (Language::Cpp, SceType::Bytes) => "std::span<const std::uint8_t>".to_string(),
-        (Language::C11, SceType::Bytes) => "sce_forge_bytes_t".to_string(),
+        (Language::C11, SceType::Bytes) => "sce_forge_bytes_view_t".to_string(),
         _ => LangCtx::new(lang).param_type(ty),
     }
 }
