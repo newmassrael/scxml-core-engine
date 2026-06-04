@@ -180,14 +180,20 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     }
 }
 
-// ── Owned projection (consumer-requested; alloc-gated) ────────────────
+// ── Owned projection (no-alloc bounded-inline native form) ────────────
 // `CodecZenohNetworkEnvelope<'a>` above is a zero-copy view borrowing the decode
-// buffer. AP / async consumers that persist a decoded message beyond the
-// buffer's lifetime call `.into_owned()` for this lifetime-free
+// buffer. Consumers that persist a decoded value beyond the buffer's
+// lifetime — including the self-contained bounded-collection that stores
+// elements by value — call `.try_into_owned()` for this lifetime-free
 // `CodecZenohNetworkEnvelopeOwned`. The rkyv-style Archived(borrowed) ↔ native
-// (owned) split — both generated from the one SCXML source (SSOT). `Vec`
-// / `String` are alloc, so the whole projection is gated; the no-alloc
-// borrowed path above is untouched.
+// (owned) split, both generated from the one SCXML source (SSOT). Bounded
+// `String` / `Bytes` fields project to `heapless::String<N>` /
+// `heapless::Vec<u8, N>` (the Rust mirror of C11's `char[N]`), so a leaf
+// codec's owned form is fully no-alloc; only an unbounded owned `Vec`
+// (list / embed / variant body) keeps the `alloc` gate. Construction from
+// the unbounded `&str` / `&[u8]` view re-checks the decode bound, so
+// `try_into_owned` is the fallible direction and `try_as_borrowed`
+// (same `N`) the infallible inverse.
 #[cfg(feature = "alloc")]
 use super::codec_zenoh_interest::CodecZenohInterestOwned;
 #[cfg(feature = "alloc")]
@@ -207,6 +213,13 @@ pub struct CodecZenohNetworkEnvelopeOwned {
 }
 
 #[cfg(feature = "alloc")]
+// Bounded `String` / `Bytes` fields store inline (`heapless::String<N>` /
+// `heapless::Vec<u8, N>`) in the owned mirror — the no-alloc native form,
+// the Rust analog of C11's `char[N]` tagged union. That makes the arm
+// bodies inherently size-disparate; the lint's only remedy is boxing the
+// large arm, which reintroduces the `alloc` dependency this inline form
+// exists to avoid. The size is the deliberate no-alloc trade-off.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq)]
 pub enum CodecZenohNetworkEnvelopeOwnedVariant {
     CodecZenohInterest(CodecZenohInterestOwned),
@@ -224,18 +237,20 @@ pub enum CodecZenohNetworkEnvelopeOwnedVariant {
 
 #[cfg(feature = "alloc")]
 impl<'a> CodecZenohNetworkEnvelopeVariant<'a> {
-    /// Deep-copy this borrowed variant body into its owned mirror.
-    pub fn into_owned(self) -> CodecZenohNetworkEnvelopeOwnedVariant {
-        match self {
-            CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b.into_owned()),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b.into_owned()),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(_b.into_owned()),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(_b.into_owned()),
+    /// Deep-copy this borrowed variant body into its owned mirror. Fallible
+    /// because a borrowed arm body's `try_into_owned` re-checks its bounded
+    /// fields against their inline capacity (the same bound decode enforces).
+    pub fn try_into_owned(self) -> Result<CodecZenohNetworkEnvelopeOwnedVariant, CodecError> {
+        Ok(match self {
+            CodecZenohNetworkEnvelopeVariant::CodecZenohInterest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohInterest(_b.try_into_owned()?),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohResponseFinal(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponseFinal(_b.try_into_owned()?),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohResponse(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohResponse(_b.try_into_owned()?),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohRequest(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohRequest(_b.try_into_owned()?),
             CodecZenohNetworkEnvelopeVariant::CodecZenohPush(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohPush(_b),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(_b.into_owned()),
-            CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(_b.into_owned()),
-            CodecZenohNetworkEnvelopeVariant::Default { tag, body } => CodecZenohNetworkEnvelopeOwnedVariant::Default { tag, body: body.into_owned() },
-        }
+            CodecZenohNetworkEnvelopeVariant::CodecZenohDeclare(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohDeclare(_b.try_into_owned()?),
+            CodecZenohNetworkEnvelopeVariant::CodecZenohOam(_b) => CodecZenohNetworkEnvelopeOwnedVariant::CodecZenohOam(_b.try_into_owned()?),
+            CodecZenohNetworkEnvelopeVariant::Default { tag, body } => CodecZenohNetworkEnvelopeOwnedVariant::Default { tag, body: body.try_into_owned()? },
+        })
     }
 }
 
@@ -261,22 +276,25 @@ impl CodecZenohNetworkEnvelopeOwnedVariant {
 #[cfg(feature = "alloc")]
 impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// Deep-copy this borrowed zero-copy view into an owned, lifetime-free
-    /// [`CodecZenohNetworkEnvelopeOwned`] (alloc). Call at a decode boundary when
-    /// the decoded value must outlive the input buffer — e.g. stored in a
-    /// long-lived enum or moved across an async task. The no-alloc
-    /// borrowed path is unaffected; this method exists only under
-    /// `feature = "alloc"`.
-    pub fn into_owned(self) -> CodecZenohNetworkEnvelopeOwned {
-        CodecZenohNetworkEnvelopeOwned {
-            body: self.body.into_owned(),
-        }
+    /// [`CodecZenohNetworkEnvelopeOwned`]. Call at a decode boundary when the
+    /// decoded value must outlive the input buffer — stored in a long-lived
+    /// enum, moved across an async task, or inserted by value into a
+    /// bounded-collection. Bounded `String` / `Bytes` fields copy into
+    /// `heapless::String<N>` / `heapless::Vec<u8, N>`; that copy re-checks
+    /// the decode bound, so the method is fallible
+    /// (`CodecError::TooManyElements` past `N` — the bound and error decode
+    /// enforces). The borrowed zero-copy path is unaffected.
+    pub fn try_into_owned(self) -> Result<CodecZenohNetworkEnvelopeOwned, CodecError> {
+        Ok(CodecZenohNetworkEnvelopeOwned {
+            body: self.body.try_into_owned()?,
+        })
     }
 }
 
 #[cfg(feature = "alloc")]
 impl CodecZenohNetworkEnvelopeOwned {
     /// Re-borrow this owned value back into the zero-copy borrowed view —
-    /// the inverse of `into_owned`. `encode` lives only on the borrowed
+    /// the inverse of `try_into_owned`. `encode` lives only on the borrowed
     /// view (the owned form is read-only), so an owned consumer reaches it
     /// via `try_as_borrowed` then `encode` / `encode_to_vec`. Each
     /// field is projected by reference — a cheap re-borrow, not a copy.

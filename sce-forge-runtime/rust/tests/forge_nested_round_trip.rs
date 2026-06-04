@@ -74,7 +74,9 @@ fn nested_fallible_projection_round_trips() {
     let wire = parent.encode_to_vec();
 
     // borrowed -> owned -> (fallible) borrowed -> re-encode == original wire.
-    let owned = parent.into_owned();
+    let owned = parent
+        .try_into_owned()
+        .expect("every bounded field is within capacity, so try_into_owned must succeed");
     let reborrowed = owned
         .try_as_borrowed()
         .expect("every list is within max-count, so projection must succeed");
@@ -88,7 +90,8 @@ fn nested_fallible_projection_round_trips() {
     let mut cursor = SceCursor::new(&wire);
     let decoded_owned = CodecNestedParent::decode(&mut cursor)
         .expect("decode of self-produced wire must succeed")
-        .into_owned();
+        .try_into_owned()
+        .expect("decoded value is within every bound, so try_into_owned must succeed");
     assert_eq!(cursor.remaining(), 0, "decode must consume every byte");
     assert_eq!(
         decoded_owned, owned,
@@ -107,7 +110,7 @@ fn nested_projection_rejects_overflowing_list() {
             n: 1,
             locs: vec![CodecZenohLocatorOwned {
                 locator_len: 1,
-                locator: String::from("a"),
+                locator: sce_forge_runtime::heapless::String::try_from("a").unwrap(),
             }],
         }
     }
