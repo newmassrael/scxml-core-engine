@@ -1090,27 +1090,11 @@ fn render_transform(
                 expected,
             )?;
 
-            let fn_name = match lang {
-                Language::Go => format!("Compute{}", filters::to_pascal_case(out.id.clone())),
-                Language::Rust | Language::Python => {
-                    format!("compute_{}", filters::to_snake_case(out.id.clone()))
-                }
-                // RFC §5.J.2 §3 D1 (mirroring Lookup): C11 has a flat scope,
-                // so fully-qualify the exported function with `<m.name>_` to
-                // keep two transforms whose output ids collide (e.g. both
-                // `temperature`) from clashing in a single TU. This also
-                // matches what `build_qualified_call` produces at every
-                // cross-file callsite (`{namespace}_{discover_primary_function}`),
-                // so `crossfile_validator_transform` and any other future
-                // C11 transform import resolves to the same symbol the
-                // generated header declares.
-                Language::C11 => format!(
-                    "{}_compute_{}",
-                    filters::to_snake_case(m.name.clone()),
-                    filters::to_snake_case(out.id.clone()),
-                ),
-                _ => format!("compute{}", filters::to_pascal_case(out.id.clone())),
-            };
+            // W1 symbol-name SSOT: the per-output accessor symbol (incl. the
+            // C11 flat-scope `<snake(name)>_compute_<snake(output)>` form,
+            // RFC §5.J.2 §3 D1) comes from the one helper the cross-doc
+            // resolver and conformance harness also read.
+            let fn_name = forge_transform_symbol(&m.name, &out.id, lang);
 
             let mut obj = serde_json::Map::new();
             obj.insert("ret_type".into(), l.type_name(&out.sce_type).into());
@@ -1169,21 +1153,10 @@ fn render_lookup(
     let l = LangCtx::new(lang);
 
     let enum_name = filters::to_pascal_case(m.output.id.clone());
-    let func_name = match lang {
-        Language::Go => format!("Lookup{}", filters::to_pascal_case(m.output.id.clone())),
-        Language::Rust | Language::Python => {
-            format!("lookup_{}", filters::to_snake_case(m.output.id.clone()))
-        }
-        // RFC §5.J.2 §3 D1: C11 has a flat scope, so fully-qualify with the
-        // fixture name to keep two lookups whose output ids collide
-        // (e.g. both `status`) from clashing in a single TU.
-        Language::C11 => format!(
-            "{}_{}",
-            filters::to_snake_case(m.name.clone()),
-            filters::to_snake_case(m.output.id.clone()),
-        ),
-        _ => format!("lookup{}", filters::to_pascal_case(m.output.id.clone())),
-    };
+    // W1 symbol-name SSOT: the accessor symbol (incl. the C11 flat-scope
+    // `<snake(name)>_<snake(output)>` form, RFC §5.J.2 §3 D1) comes from the
+    // one helper the cross-doc resolver and conformance harness also read.
+    let func_name = forge_lookup_symbol(&m.name, &m.output.id, lang);
     let input_id = l.local_id(&m.input.id);
 
     let output_is_string = m.output_is_string();
@@ -2625,24 +2598,15 @@ fn render_condition(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    use crate::generator::Language;
     let l = LangCtx::new(lang);
 
     let go_renames = l.go_rename_pairs(m.inputs.iter().map(|f| f.id.as_str()));
     let renames = rename_map(&go_renames);
 
-    let func_name = match lang {
-        Language::Go => filters::to_pascal_case(m.name.clone()),
-        // RFC §5.J.2 §3 D1: C11 has flat scope, so cross-file imports
-        // resolve callsites via `<namespace>_<discover_primary_function>`.
-        // Mirror the transform `<m.name>_compute_<id>` shape with a
-        // condition-specific suffix so namespace-prefixed callsites stay
-        // distinct from the bare m.name. Single-output kind, so the
-        // suffix is the constant `check` rather than the output id.
-        Language::C11 => format!("{}_check", filters::to_snake_case(m.name.clone())),
-        Language::Rust | Language::Python => filters::to_snake_case(m.name.clone()),
-        _ => filters::to_camel_case(m.name.clone()),
-    };
+    // W1 symbol-name SSOT: the function symbol (incl. the C11 flat-scope
+    // `<snake>_check` form, RFC §5.J.2 §3 D1) comes from the one helper the
+    // cross-doc resolver and the conformance harness also read.
+    let func_name = forge_condition_symbol(&m.name, lang);
 
     let params = l.param_str(&m.inputs);
 
@@ -19388,6 +19352,13 @@ fn render_interpolation(
     ctx.insert("output_type".into(), l.type_name(&m.output.sce_type).into());
     ctx.insert("params".into(), l.param_str(&m.inputs).into());
     ctx.insert("out_of_bounds".into(), m.out_of_bounds.as_str().into());
+    // W1 symbol-name SSOT: the accessor member symbol (incl. the C11
+    // flat-scope `<snake>_lookup` form) comes from the one helper the
+    // cross-doc resolver and conformance harness also read.
+    ctx.insert(
+        "member_symbol".into(),
+        forge_interpolation_symbol(&m.name, lang).into(),
+    );
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert(
         "imports".into(),
@@ -20640,6 +20611,109 @@ pub(crate) fn forge_algorithm_symbol(name: &str, language: crate::generator::Lan
         }
         Language::Kotlin => filters::to_camel_case(name.to_string()),
         Language::Go => filters::to_pascal_case(name.to_string()),
+    }
+}
+
+/// W1 symbol-name SSOT for the `condition` kind: the function symbol
+/// `render_condition` defines, also read by the conformance harness call
+/// site. Mirrors `forge_algorithm_symbol` but condition's idiomatic casing
+/// differs (camelCase free function on Cpp/Kotlin, not snake) and C11 bakes
+/// the flat-scope `<snake>_check` form (RFC §5.J.2 §3 D1) since C has no
+/// namespace. `discover_primary_function` reads this for every backend
+/// except C11, where the cross-doc callsite uses the bare `check` base and
+/// `build_qualified_call` re-prepends the `<namespace>_` module prefix.
+pub(crate) fn forge_condition_symbol(name: &str, language: crate::generator::Language) -> String {
+    use crate::generator::Language;
+    match language {
+        Language::Go => filters::to_pascal_case(name.to_string()),
+        Language::C11 => format!("{}_check", filters::to_snake_case(name.to_string())),
+        Language::Rust | Language::Python => filters::to_snake_case(name.to_string()),
+        Language::Cpp | Language::Kotlin => filters::to_camel_case(name.to_string()),
+    }
+}
+
+/// W1 symbol-name SSOT for the `lookup` kind: the function symbol
+/// `render_lookup` defines (also read by the conformance harness). The
+/// symbol is keyed on the OUTPUT id (a lookup names its accessor after what
+/// it returns), with a `lookup`/`Lookup` verb prefix on the cased output id.
+/// C11 has no namespace, so it fully-qualifies as `<snake(name)>_<snake(
+/// output)>` (RFC §5.J.2 §3 D1) to keep two lookups whose output ids collide
+/// from clashing in one TU. `discover_primary_function` reads this for every
+/// backend except C11, where the cross-doc callsite uses the bare
+/// `<snake(output)>` base and `build_qualified_call` re-prepends the module.
+pub(crate) fn forge_lookup_symbol(
+    name: &str,
+    output_id: &str,
+    language: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    match language {
+        Language::Go => format!("Lookup{}", filters::to_pascal_case(output_id.to_string())),
+        Language::Cpp | Language::Kotlin => {
+            format!("lookup{}", filters::to_pascal_case(output_id.to_string()))
+        }
+        Language::Rust | Language::Python => {
+            format!("lookup_{}", filters::to_snake_case(output_id.to_string()))
+        }
+        Language::C11 => format!(
+            "{}_{}",
+            filters::to_snake_case(name.to_string()),
+            filters::to_snake_case(output_id.to_string()),
+        ),
+    }
+}
+
+/// W1 symbol-name SSOT for the `transform` kind: the per-output accessor
+/// symbol `render_transform` defines (also read by the conformance harness).
+/// A transform emits one `compute`-prefixed free function per output, keyed
+/// on the output id. C11 fully-qualifies as `<snake(name)>_compute_<snake(
+/// output)>` (RFC §5.J.2 §3 D1) since C has no namespace.
+/// `discover_primary_function` reads this for the first output on every
+/// backend except C11, where the cross-doc callsite uses the bare
+/// `compute_<snake(output)>` base and `build_qualified_call` re-prepends the
+/// module prefix.
+pub(crate) fn forge_transform_symbol(
+    name: &str,
+    output_id: &str,
+    language: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    match language {
+        Language::Go => format!("Compute{}", filters::to_pascal_case(output_id.to_string())),
+        Language::Cpp | Language::Kotlin => {
+            format!("compute{}", filters::to_pascal_case(output_id.to_string()))
+        }
+        Language::Rust | Language::Python => {
+            format!("compute_{}", filters::to_snake_case(output_id.to_string()))
+        }
+        Language::C11 => format!(
+            "{}_compute_{}",
+            filters::to_snake_case(name.to_string()),
+            filters::to_snake_case(output_id.to_string()),
+        ),
+    }
+}
+
+/// W1 symbol-name SSOT for the `interpolation` kind: the accessor member
+/// `render_interpolation` defines on its `<Pascal>` wrapper, also read by the
+/// conformance harness. The member is the constant `lookup`, exported as
+/// PascalCase `Lookup` on Go (package-level free function) and flattened to
+/// `<snake(name)>_lookup` on C11 (no namespace, RFC §5.J.2 §3 D1). This is
+/// the def≠call kind: `discover_primary_function` wraps the member in the
+/// cross-doc qualifier (`<Pascal>::lookup` on Cpp/Rust, `<Pascal>.lookup` on
+/// Kotlin) and, on C11, returns the bare `lookup` base so
+/// build_qualified_call re-prepends the `<namespace>_` module prefix.
+pub(crate) fn forge_interpolation_symbol(
+    name: &str,
+    language: crate::generator::Language,
+) -> String {
+    use crate::generator::Language;
+    match language {
+        Language::Go => "Lookup".to_string(),
+        Language::Cpp | Language::Kotlin | Language::Rust | Language::Python => {
+            "lookup".to_string()
+        }
+        Language::C11 => format!("{}_lookup", filters::to_snake_case(name.to_string())),
     }
 }
 

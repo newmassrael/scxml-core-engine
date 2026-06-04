@@ -10,7 +10,7 @@
 {% endfor %}
 		var expected bool
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
-		actual := {{ f.name }}.{{ f.function | to_pascal_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actual := {{ f.name }}.{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
 		if actual != expected {
 			t.Errorf("{{ f.name }}: actual=%v expected=%v", actual, expected)
 		}

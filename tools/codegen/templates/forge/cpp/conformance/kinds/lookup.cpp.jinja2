@@ -12,12 +12,12 @@
 {% endfor %}
         auto expected = c["expected"].get<{{ f.output.type | cpp_type }}>();
 {% if f.on_miss == "error" %}
-        auto actual_opt = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        auto actual_opt = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
         CHECK(actual_opt.has_value(), "{{ f.name }}: happy-path lookup miss");
         if (!actual_opt.has_value()) continue;
         auto actual = actual_opt.value();
 {% else %}
-        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
 {% endif %}
 {% if f.output.compare == "tolerance" %}
         assert_close(static_cast<double>(actual), static_cast<double>(expected), tol, "{{ f.name }}");
@@ -34,7 +34,7 @@
         auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
 {% endfor %}
         auto expected = c["expected"].get<std::string>();
-        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
         auto actual_str = {{ f.name | to_camel_case }}_value_name(actual);
         CHECK(actual_str == expected, "{{ f.name }}: actual=%s expected=%s",
               actual_str.c_str(), expected.c_str());

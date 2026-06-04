@@ -9,6 +9,6 @@
             val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
 {% endfor %}
             val expected = case.jsonObject["expected"]!!.jsonPrimitive.boolean
-            val actual = {{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            val actual = {{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
             assertEquals(expected, actual, "{{ f.name }}")
         }

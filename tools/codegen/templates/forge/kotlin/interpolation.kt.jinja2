@@ -31,7 +31,7 @@ object {{ struct_name }} {
     private val VALUES = doubleArrayOf({% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% endif %}
 
-    fun lookup({{ params }}): {{ output_type }} {
+    fun {{ member_symbol }}({{ params }}): {{ output_type }} {
 {% if is_bilinear %}
         return bilinear(
             {{ axes[0].var_name }}, {{ axes[1].var_name }}, VALUES,

@@ -25,7 +25,7 @@ var values = [][]float64{
 var values = []float64{ {% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %} }
 {% endif %}
 
-func Lookup({{ params }}) {{ output_type }} {
+func {{ member_symbol }}({{ params }}) {{ output_type }} {
 {% if is_bilinear %}
 	return interpolation.Bilinear(
 		{{ axes[0].var_name }}, {{ axes[1].var_name }}, values,

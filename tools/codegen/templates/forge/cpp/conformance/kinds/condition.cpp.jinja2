@@ -8,6 +8,6 @@
         auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
 {% endfor %}
         auto expected = c["expected"].get<bool>();
-        bool actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        bool actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
         CHECK(actual == expected, "{{ f.name }}: actual=%d expected=%d", static_cast<int>(actual), static_cast<int>(expected));
     }

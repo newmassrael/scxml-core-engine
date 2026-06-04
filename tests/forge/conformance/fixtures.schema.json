@@ -115,6 +115,13 @@
             },
             "output": {
               "$ref": "#/definitions/ScalarOutput"
+            },
+            "symbol": {
+              "description": "W1 symbol-name SSOT: the per-language accessor symbol render_interpolation defines, derived at harness-rendering time from `forge_interpolation_symbol` (the conformance call site reads it via `f.symbol`). Like Lookup's `function`, it is never present in fixtures.json — the manifest carries only structural data.",
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         },

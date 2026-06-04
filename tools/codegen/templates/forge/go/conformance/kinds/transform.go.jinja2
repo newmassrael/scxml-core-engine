@@ -11,7 +11,7 @@
 {% if f.output %}
 		var expected float64
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
-		actual := {{ f.name }}.{{ f.output.function | to_pascal_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actual := {{ f.name }}.{{ f.output.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
 		assertClose(t, actual, expected, ref.FloatTolerance, "{{ f.name }}")
 {% else %}
 		var expected struct {
@@ -21,7 +21,7 @@
 		}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
 {% for co in f.compound_outputs %}
-		actual{{ co.key | to_pascal_case }} := {{ f.name }}.{{ co.function | to_pascal_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actual{{ co.key | to_pascal_case }} := {{ f.name }}.{{ co.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% if co.compare == "tolerance" %}
 		assertClose(t, actual{{ co.key | to_pascal_case }}, expected.{{ co.key | to_pascal_case }}, ref.FloatTolerance, "{{ f.name }} {{ co.key }}")
 {% else %}
