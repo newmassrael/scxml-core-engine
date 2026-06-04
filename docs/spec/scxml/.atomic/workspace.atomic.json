@@ -2,7 +2,7 @@
   "sections": {
     "scxml-1": {
       "title": "Terminology",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "normative_excerpt": {
         "text": "The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RECOMMENDED, MAY, and OPTIONAL in this specification are to be interpreted as described in [RFC 2119]. The terms base URI and relative URI are used in this specification as they are defined in [RFC 2396]. All sections not marked as \"informative\" are normative.",
@@ -13,7 +13,7 @@
     },
     "scxml-2": {
       "title": "Overview",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "normative_excerpt": {
         "text": "[This section is informative.] This document outlines State Chart XML (SCXML), which is a general-purpose event-based state machine language that combines concepts from CCXML and Harel State Tables. CCXML [CCXML 1.0] is an event-based state machine language designed to support call control features in Voice Applications (specifically including VoiceXML but not limited to it). The CCXML 1.0 specification defines both a state machine and event handing syntax and a standardized set of call control elements. Harel State Tables are a state machine notation that was developed by the mathematician David Harel [Harel and Politi] and is included in UML [UML 2.3]. They offer a clean and well-thought out semantics for sophisticated constructs such as parallel states. They have been defined as a graphical specification language, however, and hence do not have an XML representation. The goal of this document is to combine Harel semantics with an XML syntax that is a logical extension of CCXML's state and event notation. 3 Core Constructs presents the core state machine concepts, while 4 Executable Content contains an extensible set of actions that the state machine can take in response to events. 5 Data Model and Data Manipulation defines constructs for storing and modifying data, while 6 External Communications provides the capability of communicating with external entities.",
@@ -24,12 +24,12 @@
     },
     "scxml-3": {
       "title": "Core Constructs",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active"
     },
     "scxml-3.1": {
       "title": "Introduction",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -41,7 +41,7 @@
     },
     "scxml-3.1.1": {
       "title": "Basic State Machine Notation",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -53,7 +53,7 @@
     },
     "scxml-3.1.2": {
       "title": "Compound States",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -65,7 +65,7 @@
     },
     "scxml-3.1.3": {
       "title": "Parallel States",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -77,7 +77,7 @@
     },
     "scxml-3.1.4": {
       "title": "Initial, Final, and History States",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -89,7 +89,7 @@
     },
     "scxml-3.1.5": {
       "title": "'Type' and Transitions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -101,7 +101,7 @@
     },
     "scxml-3.10": {
       "title": "<history>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -235,7 +235,7 @@
     },
     "scxml-3.10.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.10",
       "decision_status": "active",
       "normative_excerpt": {
@@ -247,7 +247,7 @@
     },
     "scxml-3.10.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.10",
       "decision_status": "active",
       "normative_excerpt": {
@@ -259,7 +259,7 @@
     },
     "scxml-3.11": {
       "title": "Legal State Configurations and Specifications",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -293,7 +293,7 @@
     },
     "scxml-3.12": {
       "title": "SCXML Events",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -312,7 +312,7 @@
     },
     "scxml-3.12.1": {
       "title": "Event Descriptors",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.12",
       "decision_status": "active",
       "bindings": [
@@ -346,7 +346,7 @@
     },
     "scxml-3.12.2": {
       "title": "Errors",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.12",
       "decision_status": "active",
       "normative_excerpt": {
@@ -358,7 +358,7 @@
     },
     "scxml-3.12.3": {
       "title": "List of Errors and Events",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.12",
       "decision_status": "active",
       "normative_excerpt": {
@@ -370,7 +370,7 @@
     },
     "scxml-3.13": {
       "title": "Selecting and Executing Transitions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -827,7 +827,7 @@
     },
     "scxml-3.14": {
       "title": "IDs",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -839,7 +839,7 @@
     },
     "scxml-3.2": {
       "title": "<scxml>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -883,7 +883,7 @@
     },
     "scxml-3.2.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -895,7 +895,7 @@
     },
     "scxml-3.2.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -907,7 +907,7 @@
     },
     "scxml-3.3": {
       "title": "<state>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -1065,7 +1065,7 @@
     },
     "scxml-3.3.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1077,7 +1077,7 @@
     },
     "scxml-3.3.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1089,7 +1089,7 @@
     },
     "scxml-3.4": {
       "title": "<parallel>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -1246,7 +1246,7 @@
     },
     "scxml-3.4.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1258,7 +1258,7 @@
     },
     "scxml-3.4.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1270,7 +1270,7 @@
     },
     "scxml-3.5": {
       "title": "<transition>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -1289,7 +1289,7 @@
     },
     "scxml-3.5.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1301,7 +1301,7 @@
     },
     "scxml-3.5.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1313,7 +1313,7 @@
     },
     "scxml-3.6": {
       "title": "<initial>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -1337,7 +1337,7 @@
     },
     "scxml-3.6.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.6",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1349,7 +1349,7 @@
     },
     "scxml-3.6.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.6",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1361,7 +1361,7 @@
     },
     "scxml-3.7": {
       "title": "<final>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -1439,7 +1439,7 @@
     },
     "scxml-3.7.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.7",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1451,7 +1451,7 @@
     },
     "scxml-3.7.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.7",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1463,7 +1463,7 @@
     },
     "scxml-3.8": {
       "title": "<onentry>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -1572,7 +1572,7 @@
     },
     "scxml-3.8.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.8",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1584,7 +1584,7 @@
     },
     "scxml-3.8.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.8",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1596,7 +1596,7 @@
     },
     "scxml-3.9": {
       "title": "<onexit>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
       "bindings": [
@@ -1695,7 +1695,7 @@
     },
     "scxml-3.9.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.9",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1707,7 +1707,7 @@
     },
     "scxml-3.9.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-3.9",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1719,12 +1719,12 @@
     },
     "scxml-4": {
       "title": "Executable Content",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active"
     },
     "scxml-4.1": {
       "title": "Introduction",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1736,7 +1736,7 @@
     },
     "scxml-4.10": {
       "title": "Extensibility of Executable Content",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1748,7 +1748,7 @@
     },
     "scxml-4.2": {
       "title": "<raise>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1760,7 +1760,7 @@
     },
     "scxml-4.2.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1772,7 +1772,7 @@
     },
     "scxml-4.2.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1784,7 +1784,7 @@
     },
     "scxml-4.3": {
       "title": "<if>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1796,7 +1796,7 @@
     },
     "scxml-4.3.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1808,7 +1808,7 @@
     },
     "scxml-4.3.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1820,7 +1820,7 @@
     },
     "scxml-4.4": {
       "title": "<elseif>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1832,7 +1832,7 @@
     },
     "scxml-4.4.1": {
       "title": "Overview",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1844,7 +1844,7 @@
     },
     "scxml-4.5": {
       "title": "<else>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1856,7 +1856,7 @@
     },
     "scxml-4.5.1": {
       "title": "Overview",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1868,7 +1868,7 @@
     },
     "scxml-4.5.2": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1880,7 +1880,7 @@
     },
     "scxml-4.6": {
       "title": "<foreach>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "bindings": [
@@ -1949,7 +1949,7 @@
     },
     "scxml-4.6.1": {
       "title": "Overview",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.6",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1961,7 +1961,7 @@
     },
     "scxml-4.6.2": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.6",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1973,7 +1973,7 @@
     },
     "scxml-4.6.3": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.6",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1985,7 +1985,7 @@
     },
     "scxml-4.7": {
       "title": "<log>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -1997,7 +1997,7 @@
     },
     "scxml-4.7.1": {
       "title": "Overview",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.7",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2009,7 +2009,7 @@
     },
     "scxml-4.7.2": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.7",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2021,7 +2021,7 @@
     },
     "scxml-4.7.3": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4.7",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2033,7 +2033,7 @@
     },
     "scxml-4.8": {
       "title": "Other Executable Content",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2045,7 +2045,7 @@
     },
     "scxml-4.9": {
       "title": "Evaluation of Executable Content",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2057,12 +2057,12 @@
     },
     "scxml-5": {
       "title": "Data Model and Data Manipulation",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active"
     },
     "scxml-5.1": {
       "title": "Introduction",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2074,7 +2074,7 @@
     },
     "scxml-5.10": {
       "title": "System Variables",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "bindings": [
@@ -2443,7 +2443,7 @@
     },
     "scxml-5.10.1": {
       "title": "The Internal Structure of Events",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.10",
       "decision_status": "active",
       "bindings": [
@@ -2621,7 +2621,7 @@
     },
     "scxml-5.2": {
       "title": "<datamodel>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2633,7 +2633,7 @@
     },
     "scxml-5.2.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2645,7 +2645,7 @@
     },
     "scxml-5.2.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.2",
       "decision_status": "active",
       "bindings": [
@@ -2699,7 +2699,7 @@
     },
     "scxml-5.3": {
       "title": "<data>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "bindings": [
@@ -2823,7 +2823,7 @@
     },
     "scxml-5.3.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2835,7 +2835,7 @@
     },
     "scxml-5.3.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2847,7 +2847,7 @@
     },
     "scxml-5.3.3": {
       "title": "Data Binding",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2859,7 +2859,7 @@
     },
     "scxml-5.4": {
       "title": "<assign>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "bindings": [
@@ -2908,7 +2908,7 @@
     },
     "scxml-5.4.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2920,7 +2920,7 @@
     },
     "scxml-5.4.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.4",
       "decision_status": "active",
       "normative_excerpt": {
@@ -2932,7 +2932,7 @@
     },
     "scxml-5.5": {
       "title": "<donedata>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "bindings": [
@@ -3096,7 +3096,7 @@
     },
     "scxml-5.5.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3108,7 +3108,7 @@
     },
     "scxml-5.5.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3120,7 +3120,7 @@
     },
     "scxml-5.6": {
       "title": "<content>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3132,7 +3132,7 @@
     },
     "scxml-5.6.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.6",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3144,7 +3144,7 @@
     },
     "scxml-5.6.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.6",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3156,7 +3156,7 @@
     },
     "scxml-5.7": {
       "title": "<param>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "bindings": [
@@ -3180,7 +3180,7 @@
     },
     "scxml-5.7.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.7",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3192,7 +3192,7 @@
     },
     "scxml-5.7.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.7",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3204,7 +3204,7 @@
     },
     "scxml-5.8": {
       "title": "<script>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "bindings": [
@@ -3278,7 +3278,7 @@
     },
     "scxml-5.8.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.8",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3290,7 +3290,7 @@
     },
     "scxml-5.8.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.8",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3302,7 +3302,7 @@
     },
     "scxml-5.9": {
       "title": "Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
       "bindings": [
@@ -3346,7 +3346,7 @@
     },
     "scxml-5.9.1": {
       "title": "Conditional Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
       "bindings": [
@@ -3390,7 +3390,7 @@
     },
     "scxml-5.9.2": {
       "title": "Location Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3402,7 +3402,7 @@
     },
     "scxml-5.9.3": {
       "title": "Legal Data Values and Value Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3414,7 +3414,7 @@
     },
     "scxml-5.9.4": {
       "title": "Errors in Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3426,12 +3426,12 @@
     },
     "scxml-6": {
       "title": "External Communications",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active"
     },
     "scxml-6.1": {
       "title": "Introduction",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3443,7 +3443,7 @@
     },
     "scxml-6.2": {
       "title": "<send>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6",
       "decision_status": "active",
       "bindings": [
@@ -3727,7 +3727,7 @@
     },
     "scxml-6.2.1": {
       "title": "Overview",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3739,7 +3739,7 @@
     },
     "scxml-6.2.2": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3751,7 +3751,7 @@
     },
     "scxml-6.2.3": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
       "bindings": [
@@ -3790,7 +3790,7 @@
     },
     "scxml-6.2.4": {
       "title": "The Target of Send",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
       "bindings": [
@@ -3809,7 +3809,7 @@
     },
     "scxml-6.2.5": {
       "title": "The Type of Send",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3821,7 +3821,7 @@
     },
     "scxml-6.2.6": {
       "title": "Message Content",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3833,7 +3833,7 @@
     },
     "scxml-6.3": {
       "title": "<cancel>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6",
       "decision_status": "active",
       "bindings": [
@@ -3912,7 +3912,7 @@
     },
     "scxml-6.3.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.3",
       "decision_status": "active",
       "bindings": [
@@ -3936,7 +3936,7 @@
     },
     "scxml-6.3.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.3",
       "decision_status": "active",
       "normative_excerpt": {
@@ -3948,7 +3948,7 @@
     },
     "scxml-6.4": {
       "title": "<invoke>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6",
       "decision_status": "active",
       "bindings": [
@@ -4317,7 +4317,7 @@
     },
     "scxml-6.4.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.4",
       "decision_status": "active",
       "bindings": [
@@ -4361,7 +4361,7 @@
     },
     "scxml-6.4.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.4",
       "decision_status": "active",
       "bindings": [
@@ -4380,7 +4380,7 @@
     },
     "scxml-6.4.3": {
       "title": "Implementation of <invoke>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.4",
       "decision_status": "active",
       "bindings": [
@@ -4474,7 +4474,7 @@
     },
     "scxml-6.4.4": {
       "title": "Data Sharing",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.4",
       "decision_status": "active",
       "coverage_expectation": "informative",
@@ -4487,7 +4487,7 @@
     },
     "scxml-6.5": {
       "title": "<finalize>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6",
       "decision_status": "active",
       "bindings": [
@@ -4541,7 +4541,7 @@
     },
     "scxml-6.5.1": {
       "title": "Attribute Details",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.5",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4553,7 +4553,7 @@
     },
     "scxml-6.5.2": {
       "title": "Children",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-6.5",
       "decision_status": "active",
       "bindings": [
@@ -4587,7 +4587,7 @@
     },
     "scxml-A": {
       "title": "Conformance",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "normative_excerpt": {
         "text": "[This section is normative.]",
@@ -4598,7 +4598,7 @@
     },
     "scxml-A-1": {
       "title": "Conforming Documents",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-A",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4610,7 +4610,7 @@
     },
     "scxml-A-2": {
       "title": "Conforming Processors",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-A",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4622,7 +4622,7 @@
     },
     "scxml-B": {
       "title": "Data Models",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "normative_excerpt": {
         "text": "[This section is normative.] The 'datamodel' attribute on <scxml> defines the data model that the document uses. The data model includes the underlying data structure plus languages for boolean expressions, location expressions, value expressions, and scripting. A conformant SCXML document MAY specify the data model it uses. Conformant SCXML processors MUST support the null data model, and MAY support other data models, including the ECMAScript and XPath data models. The ECMAScript and XPath model definitions given here are normative in the sense that they define how implementations that support one of these languages MUST behave. The intent is to ensure interoperability among all processors that support ECMAScript, and all those that support XPath, without requiring all implementations to support either of those data model languages. The definition of a data model MUST: Specify the boolean expression language used as the value of the 'cond' attribute in <transition>, <if> and <elseif> This language MUST not have side effects and MUST include the predicate 'In', which takes a single argument, the id of a state in the enclosing state machine, and returns 'true' if the state machine is in that state. Specify the location expression language that is used as the value of the 'location' attribute of the <assign> tag. Specify the value expression language that is used as the value of the 'expr' attribute of the <data> and <assign> elements. Specify the scripting language used inside the <script> element",
@@ -4633,7 +4633,7 @@
     },
     "scxml-B-1": {
       "title": "The Null Data Model",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4645,7 +4645,7 @@
     },
     "scxml-B-1-1": {
       "title": "Data Model",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4657,7 +4657,7 @@
     },
     "scxml-B-1-2": {
       "title": "Conditional Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4669,7 +4669,7 @@
     },
     "scxml-B-1-3": {
       "title": "Location Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4681,7 +4681,7 @@
     },
     "scxml-B-1-4": {
       "title": "Value Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4693,7 +4693,7 @@
     },
     "scxml-B-1-5": {
       "title": "Scripting",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4705,7 +4705,7 @@
     },
     "scxml-B-1-6": {
       "title": "System Variables",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4717,7 +4717,7 @@
     },
     "scxml-B-1-7": {
       "title": "Unsupported Elements",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4729,7 +4729,7 @@
     },
     "scxml-B-2": {
       "title": "The ECMAScript Data Model",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B",
       "decision_status": "active",
       "bindings": [
@@ -4978,7 +4978,7 @@
     },
     "scxml-B-2-1": {
       "title": "Data Model",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -4990,7 +4990,7 @@
     },
     "scxml-B-2-10": {
       "title": "Scripting",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5002,7 +5002,7 @@
     },
     "scxml-B-2-11": {
       "title": "<foreach>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5014,7 +5014,7 @@
     },
     "scxml-B-2-2": {
       "title": "Scoping",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "bindings": [
@@ -5048,7 +5048,7 @@
     },
     "scxml-B-2-3": {
       "title": "Conditional Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "bindings": [
@@ -5067,7 +5067,7 @@
     },
     "scxml-B-2-4": {
       "title": "Location Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5079,7 +5079,7 @@
     },
     "scxml-B-2-5": {
       "title": "Value Expressions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5091,7 +5091,7 @@
     },
     "scxml-B-2-6": {
       "title": "<content>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5103,7 +5103,7 @@
     },
     "scxml-B-2-7": {
       "title": "<assign>",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5115,7 +5115,7 @@
     },
     "scxml-B-2-8": {
       "title": "System Variables",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5127,7 +5127,7 @@
     },
     "scxml-B-2-8-1": {
       "title": "_event.data",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2-8",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5139,7 +5139,7 @@
     },
     "scxml-B-2-9": {
       "title": "Serialization",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5151,7 +5151,7 @@
     },
     "scxml-C": {
       "title": "Event I/O Processors",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "normative_excerpt": {
         "text": "[This section is normative.]",
@@ -5162,7 +5162,7 @@
     },
     "scxml-C-1": {
       "title": "SCXML Event I/O Processor",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-C",
       "decision_status": "active",
       "bindings": [
@@ -5236,7 +5236,7 @@
     },
     "scxml-C-1-1": {
       "title": "_ioprocessors Value",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-C-1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5248,7 +5248,7 @@
     },
     "scxml-C-1-2": {
       "title": "Examples",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-C-1",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5260,7 +5260,7 @@
     },
     "scxml-C-2": {
       "title": "Basic HTTP Event I/O Processor",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-C",
       "decision_status": "active",
       "bindings": [
@@ -5419,7 +5419,7 @@
     },
     "scxml-C-2-1": {
       "title": "Receiving Events",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-C-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5431,7 +5431,7 @@
     },
     "scxml-C-2-2": {
       "title": "Sending Events",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-C-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5443,7 +5443,7 @@
     },
     "scxml-C-2-3": {
       "title": "_ioprocessors Value",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-C-2",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5455,7 +5455,7 @@
     },
     "scxml-D": {
       "title": "Algorithm for SCXML Interpretation",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "bindings": [
         {
@@ -5473,7 +5473,7 @@
     },
     "scxml-D-Algorithm": {
       "title": "Algorithm",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5485,7 +5485,7 @@
     },
     "scxml-D-Datatypes": {
       "title": "Datatypes",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-Algorithm",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5497,7 +5497,7 @@
     },
     "scxml-D-GlobalVariables": {
       "title": "Global variables",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-Algorithm",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5509,7 +5509,7 @@
     },
     "scxml-D-InformalSemantics": {
       "title": "Informal Semantics",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5521,7 +5521,7 @@
     },
     "scxml-D-Predicates": {
       "title": "Predicates",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-Algorithm",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5533,7 +5533,7 @@
     },
     "scxml-D-PrelimaryDefinitions": {
       "title": "Preliminary definitions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-InformalSemantics",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5545,7 +5545,7 @@
     },
     "scxml-D-PrinciplesandConstraints": {
       "title": "Principles and Constraints",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-InformalSemantics",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5557,7 +5557,7 @@
     },
     "scxml-D-ProceduresandFunctions": {
       "title": "Procedures and Functions",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-Algorithm",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5569,7 +5569,7 @@
     },
     "scxml-D-addAncestorStatesToEnter": {
       "title": "procedure addAncestorStatesToEnter(state, ancestor, statesToEnter, statesForDefaultEntry, defaultHistoryContent)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5581,7 +5581,7 @@
     },
     "scxml-D-addDescendantStatesToEnter": {
       "title": "procedure addDescendantStatesToEnter(state,statesToEnter,statesForDefaultEntry, defaultHistoryContent)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5593,7 +5593,7 @@
     },
     "scxml-D-computeEntrySet": {
       "title": "procedure computeEntrySet(transitions, statesToEnter, statesForDefaultEntry, defaultHistoryContent)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5605,7 +5605,7 @@
     },
     "scxml-D-computeExitSet": {
       "title": "procedure computeExitSet(enabledTransitions)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5617,7 +5617,7 @@
     },
     "scxml-D-enterStates": {
       "title": "procedure enterStates(enabledTransitions)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5629,7 +5629,7 @@
     },
     "scxml-D-executeTransitionContent": {
       "title": "procedure executeTransitionContent(enabledTransitions)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5641,7 +5641,7 @@
     },
     "scxml-D-exitInterpreter": {
       "title": "procedure exitInterpreter()",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5653,7 +5653,7 @@
     },
     "scxml-D-exitStates": {
       "title": "procedure exitStates(enabledTransitions)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5665,7 +5665,7 @@
     },
     "scxml-D-findLCCA": {
       "title": "function findLCCA(stateList)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5677,7 +5677,7 @@
     },
     "scxml-D-getChildStates": {
       "title": "function getChildStates(state1)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5689,7 +5689,7 @@
     },
     "scxml-D-getEffectiveTargetStates": {
       "title": "function getEffectiveTargetStates(transition)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5701,7 +5701,7 @@
     },
     "scxml-D-getProperAncestors": {
       "title": "function getProperAncestors(state1, state2)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5713,7 +5713,7 @@
     },
     "scxml-D-getTransitionDomain": {
       "title": "function getTransitionDomain(transition)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5725,7 +5725,7 @@
     },
     "scxml-D-interpret": {
       "title": "procedure interpret(scxml,id)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5737,7 +5737,7 @@
     },
     "scxml-D-isDescendant": {
       "title": "function isDescendant(state1, state2)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5749,7 +5749,7 @@
     },
     "scxml-D-isInFinalState": {
       "title": "procedure isInFinalState(s)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5761,7 +5761,7 @@
     },
     "scxml-D-mainEventLoop": {
       "title": "procedure mainEventLoop()",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "bindings": [
@@ -5790,7 +5790,7 @@
     },
     "scxml-D-microstepProcedure": {
       "title": "procedure microstep(enabledTransitions)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5802,7 +5802,7 @@
     },
     "scxml-D-removeConflictingTransitions": {
       "title": "function removeConflictingTransitions(enabledTransitions)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5814,7 +5814,7 @@
     },
     "scxml-D-selectEventlessTransitions": {
       "title": "function selectEventlessTransitions()",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5826,7 +5826,7 @@
     },
     "scxml-D-selectTransitions": {
       "title": "function selectTransitions(event)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5838,7 +5838,7 @@
     },
     "scxml-E": {
       "title": "Schema",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "normative_excerpt": {
         "text": "[This section is informative.] Schemas for SCXML can be found in www.w3.org/2011/04/SCXML. Two sets of schemas are available. One uses Schema 1.0 and is relatively loose, in the sense that it does not enforce all the restrictions contained in this specification. Its master schema is http://www.w3.org/2011/04/SCXML/scxml.xsd. The other set of schemas uses Schema 1.1, in particular the <assert> element, and is stricter. Its master schema is http://www.w3.org/2011/04/SCXML/scxml-strict.xsd.",
@@ -5849,7 +5849,7 @@
     },
     "scxml-F": {
       "title": "Related Work",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "normative_excerpt": {
         "text": "[This section is informative.] A number of other XML-based state machine notations have been developed, but none serves the same purpose as SCXML. XMI [UML XMI] is a notation developed for representing UML diagrams, including Harel statecharts. However it is intended as a machine interchange format and is not readily authorable by humans. ebXML [ebXML] is a language for business process specification intended to support B2B e-commerce applications. It contains a state machine language that is in some ways similar to the one presented here, but its syntax and semantics are closely tied to its intended use in e-commerce. It is therefore not suitable as a general-purpose state machine language. XTND [XTND], also called XML Transition Network Definition, is a notation for simple finite state machines but lacks Harel's notions of hierarchical and parallel states and are thus not suitable for a general-purpose state machine that is semantically equivalent to Harel state charts.",
@@ -5860,7 +5860,7 @@
     },
     "scxml-G": {
       "title": "Examples",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "normative_excerpt": {
         "text": "[This section is informative.]",
@@ -5871,7 +5871,7 @@
     },
     "scxml-G-1": {
       "title": "Language Overview",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-G",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5883,7 +5883,7 @@
     },
     "scxml-G-2": {
       "title": "Microwave Example",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-G",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5895,7 +5895,7 @@
     },
     "scxml-G-3": {
       "title": "Microwave Example (Using parallel)",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-G",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5907,7 +5907,7 @@
     },
     "scxml-G-4": {
       "title": "Calculator Example",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-G",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5919,7 +5919,7 @@
     },
     "scxml-G-5": {
       "title": "Examples of Invoke and finalize",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-G",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5931,7 +5931,7 @@
     },
     "scxml-G-6": {
       "title": "Inline Content and Namespaces",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-G",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5943,7 +5943,7 @@
     },
     "scxml-G-7": {
       "title": "Custom Action Elements",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-G",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5955,7 +5955,7 @@
     },
     "scxml-H": {
       "title": "MIME Type",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active",
       "normative_excerpt": {
         "text": "[This section is normative.] This appendix registers a new MIME media type, \"application/scxml+xml\". The \"application/scxml+xml\" media type is being submitted to the IESG for review, approval, and registration with IANA.",
@@ -5966,7 +5966,7 @@
     },
     "scxml-H-1": {
       "title": "Registration of MIME media type application/scxml+xml",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-H",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5978,7 +5978,7 @@
     },
     "scxml-H-2": {
       "title": "Fragment Identifiers",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-H",
       "decision_status": "active",
       "normative_excerpt": {
@@ -5990,12 +5990,12 @@
     },
     "scxml-I": {
       "title": "References",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "decision_status": "active"
     },
     "scxml-I-1": {
       "title": "Normative References",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-I",
       "decision_status": "active",
       "normative_excerpt": {
@@ -6007,7 +6007,7 @@
     },
     "scxml-I-2": {
       "title": "Informative References",
-      "parent_doc": "docs/GENERATED.md",
+      "parent_doc": "scxml",
       "parent_section": "scxml-I",
       "decision_status": "active",
       "normative_excerpt": {
