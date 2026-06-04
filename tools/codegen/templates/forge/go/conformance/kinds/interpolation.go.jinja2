@@ -10,6 +10,6 @@
 {% endfor %}
 		var expected float64
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
-		actual := {{ f.name }}.Lookup({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		actual := {{ f.name }}.{{ f.symbol }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
 		assertClose(t, actual, expected, ref.FloatTolerance, "{{ f.name }}")
 	}

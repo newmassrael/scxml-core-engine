@@ -218,6 +218,13 @@ pub enum FixtureSpec {
     Interpolation {
         args: Vec<CanonicalType>,
         output: ScalarOutput,
+        /// W1 symbol-name SSOT: the per-language accessor symbol
+        /// render_interpolation defines, derived at harness-rendering time
+        /// from `forge_interpolation_symbol` (the conformance call site reads
+        /// it via `f.symbol`). Like Lookup's `function`, it is never present
+        /// in fixtures.json — the manifest carries only structural data.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        symbol: Option<String>,
     },
     Transform {
         args: Vec<CanonicalType>,
@@ -1534,24 +1541,16 @@ pub fn render_harness(
             } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 let raw_output_id = read_lookup_output_id(&scxml_path)?;
-                // C11 (RFC §5.J.2 §3 D1) emits fully-qualified `<m.name>_<output_id>`
-                // because its flat scope cannot rely on namespace + enum-class
-                // disambiguation the way every other backend does. The other
-                // five backends keep the historical `lookup_<output_id>` shape
-                // — the namespace / enum class layer of their generated code
-                // already carries the fixture identity.
-                *function = Some(if matches!(language, Language::C11) {
-                    format!(
-                        "{}_{}",
-                        crate::filters::to_snake_case(fixture_name.clone()),
-                        crate::filters::to_snake_case(raw_output_id.clone()),
-                    )
-                } else {
-                    format!(
-                        "lookup_{}",
-                        crate::filters::to_snake_case(raw_output_id.clone()),
-                    )
-                });
+                // W1 symbol-name SSOT: lower to the exact per-language symbol
+                // render_lookup defines (incl. the C11 flat-scope
+                // `<snake(name)>_<snake(output)>` form, RFC §5.J.2 §3 D1), so
+                // the harness call site reads the bare value and the casing
+                // rule lives in one helper.
+                *function = Some(crate::forge::generator::forge_lookup_symbol(
+                    &fixture_name,
+                    &raw_output_id,
+                    language,
+                ));
                 *output_id = Some(raw_output_id);
                 // String-output lookups: derive enum variant names from SCXML
                 // entries so the harness can generate enum-to-string helpers.
@@ -1564,46 +1563,42 @@ pub fn render_harness(
                 *has_state = read_validator_has_state(&scxml_path)?;
             }
             FixtureSpec::Condition { function, .. } => {
-                // RFC §5.J.2 §3 D1: C11 condition exports a fully-qualified
-                // `<m.name>_check` symbol (mirrors transform's `_compute_<id>`
-                // shape). Rewrite the harness's bare callsite so it lands on
-                // the qualified symbol; non-C11 backends keep the original
-                // function name and rely on namespace/package scoping.
-                if matches!(language, Language::C11) {
-                    *function = format!(
-                        "{}_check",
-                        crate::filters::to_snake_case(fixture_name.clone()),
-                    );
-                }
+                // W1 symbol-name SSOT: lower the manifest `function` to the
+                // exact per-language symbol render_condition defines (incl.
+                // the C11 flat-scope `<snake>_check` form, RFC §5.J.2 §3 D1),
+                // so the harness call site reads the bare value and the
+                // casing rule lives in one helper.
+                *function = crate::forge::generator::forge_condition_symbol(function, language);
             }
             FixtureSpec::Transform {
                 output,
                 compound_outputs,
                 ..
             } => {
-                // RFC §5.J.2 §3 D1: prefix transform function names with the
-                // fixture name in C11 so the harness call sites match what
-                // `render_transform` exports (full-qual flat-scope identifier).
-                // Non-C11 backends rely on namespace/package scoping and need
-                // no rewrite — the `function` field stays in its bare form.
-                if matches!(language, Language::C11) {
-                    let prefix = crate::filters::to_snake_case(fixture_name.clone());
-                    if let Some(out) = output.as_mut() {
-                        if let Some(orig) = out.function.clone() {
-                            out.function = Some(format!(
-                                "{}_{}",
-                                prefix,
-                                crate::filters::to_snake_case(orig),
-                            ));
-                        }
+                // W1 symbol-name SSOT: lower each output accessor to the exact
+                // per-language symbol render_transform defines (incl. the C11
+                // flat-scope `<snake(name)>_compute_<output>` form, RFC §5.J.2
+                // §3 D1), so the harness call site reads the bare value and the
+                // casing rule lives in one helper. The output id is the
+                // compound `key` directly; for the scalar output it is the
+                // `compute_`-stripped function (the inverse of
+                // render_transform's `compute_<out.id>` composition).
+                if let Some(out) = output.as_mut() {
+                    if let Some(orig) = out.function.as_ref() {
+                        let output_id = orig.strip_prefix("compute_").unwrap_or(orig);
+                        out.function = Some(crate::forge::generator::forge_transform_symbol(
+                            &fixture_name,
+                            output_id,
+                            language,
+                        ));
                     }
-                    for co in compound_outputs.iter_mut() {
-                        co.function = format!(
-                            "{}_{}",
-                            prefix,
-                            crate::filters::to_snake_case(co.function.clone()),
-                        );
-                    }
+                }
+                for co in compound_outputs.iter_mut() {
+                    co.function = crate::forge::generator::forge_transform_symbol(
+                        &fixture_name,
+                        &co.key,
+                        language,
+                    );
                 }
             }
             FixtureSpec::Codec {
@@ -1694,6 +1689,15 @@ pub fn render_harness(
                 // (`c11_supported_kind`) can gate by procedure level
                 // without re-parsing each candidate fixture.
                 *is_l2 = read_procedure_is_l2(&scxml_path)?;
+            }
+            FixtureSpec::Interpolation { symbol, .. } => {
+                // W1 symbol-name SSOT: derive the per-language accessor symbol
+                // render_interpolation defines so the harness call site reads
+                // the bare `f.symbol` value instead of re-deriving the casing.
+                *symbol = Some(crate::forge::generator::forge_interpolation_symbol(
+                    &fixture_name,
+                    language,
+                ));
             }
             _ => {}
         }

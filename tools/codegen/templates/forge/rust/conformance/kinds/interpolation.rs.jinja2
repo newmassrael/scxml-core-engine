@@ -9,6 +9,6 @@
         let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
 {% endfor %}
         let expected = case["expected"].as_f64().expect("expected is number");
-        let actual = {{ f.name | to_pascal_case }}::lookup({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        let actual = {{ f.name | to_pascal_case }}::{{ f.symbol }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
         assert_close(actual, expected, tol, "{{ f.name }}");
     }
