@@ -321,6 +321,12 @@ fn lower_stateful_import_calls(ast: &mut TypedExpr, lowerings: &[ImportLowering]
             lower_stateful_import_calls(object, lowerings);
             lower_stateful_import_calls(index, lowerings);
         }
+        ExprKind::BytesView { source, len } => {
+            lower_stateful_import_calls(source, lowerings);
+            if let Some(len) = len {
+                lower_stateful_import_calls(len, lowerings);
+            }
+        }
         ExprKind::Raw(_)
         | ExprKind::Ident(_)
         | ExprKind::NumberLit(_)
@@ -454,6 +460,7 @@ fn shape_name(kind: &ExprKind) -> &'static str {
         ExprKind::Member { .. } => "member access",
         ExprKind::Index { .. } => "index expression",
         ExprKind::Call { .. } => "call expression",
+        ExprKind::BytesView { .. } => "bytes-view projection",
     }
 }
 
@@ -544,6 +551,35 @@ pub(crate) enum ExprKind {
     Call {
         callee: Box<TypedExpr>,
         args: Vec<TypedExpr>,
+    },
+    /// A borrowed `bytes`-view projection of a `Str`-typed source. Not
+    /// produced by the parser — [`infer_types`] wraps a call argument in
+    /// this node when the argument is `Str`-typed and the resolved callee
+    /// parameter is `Bytes` (and only when the TypeCtx enables
+    /// `project_str_args_as_bytes_view` — the algorithm kind). It lowers a
+    /// bounded-string element field (`entry.pattern`) to each backend's
+    /// borrowed byte-view idiom at the call site: Rust `.as_bytes()`, C11
+    /// a `sce_forge_bytes_view_t` over `{src, src_len}`, Cpp a
+    /// `std::span<const std::uint8_t>` over the string's data/size, Go
+    /// `[]byte(src)`, Python `src.encode("utf-8")`, Kotlin
+    /// `src.toByteArray(Charsets.UTF_8)`. The decode-once-here design
+    /// keeps the "this Str is passed as bytes" decision in a single place
+    /// (`infer_types`) so emitters only render the resulting node — the
+    /// same shape as the [`BytesLit`] string→bytes literal rewrite. See
+    /// `claudedocs/rfc-c7-wildcard-keyexpr-expressibility.md` Q-W-5.
+    ///
+    /// [`BytesLit`]: ExprKind::BytesLit
+    BytesView {
+        source: Box<TypedExpr>,
+        /// The C11 length sibling expression (`entry.pattern_len`), resolved
+        /// at projection time from the codec's `length_field` SSOT — never a
+        /// `<field>_len` guess (RFC §8 Smell A fix). Only the C11 emit
+        /// consumes it (a `char[N]` array carries no inherent length); every
+        /// other backend reads the length from the string type itself
+        /// (`.as_bytes()` / `.size()` / `len(...)`). `None` when the source
+        /// is not a recognised element-field member — the C11 emit then
+        /// falls back to the `<src>_len` sibling convention.
+        len: Option<Box<TypedExpr>>,
     },
 }
 
@@ -1367,6 +1403,12 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
                 rename_identifiers(arg, renames);
             }
         }
+        ExprKind::BytesView { source, len } => {
+            rename_identifiers(source, renames);
+            if let Some(len) = len {
+                rename_identifiers(len, renames);
+            }
+        }
         ExprKind::Raw(_)
         | ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
@@ -1611,33 +1653,110 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             for a in args.iter_mut() {
                 infer_types(a, ctx);
             }
-            // If the callee is a bare identifier registered in the function
-            // signature table, we know the return type. For member calls
-            // like `frame.encode()`, form the qualified key `"{obj}.{method}"`
-            // and look it up — stateful import methods are registered there
-            // by `insert_stateful_imports`.
-            if let ExprKind::Ident(name) = &callee.kind {
-                if let Some(sig) = ctx.lookup_func(name.as_str()) {
-                    sig.ret
-                } else {
-                    InferredType::Unknown
-                }
-            } else if let ExprKind::Member { object, property } = &callee.kind {
-                if let ExprKind::Ident(obj_name) = &object.kind {
-                    let qualified = format!("{}.{}", obj_name, property);
-                    if let Some(sig) = ctx.lookup_func(&qualified) {
-                        sig.ret
+            // Resolve the callee's signature. A bare identifier names a
+            // stateless import (cross-algorithm dispatch, transform,
+            // condition, lookup); a `obj.method` member call names a
+            // stateful import method (registered as `"{obj}.{method}"` by
+            // `insert_stateful_imports`). Capture `(ret, params)` by value
+            // so the argument-projection pass below can borrow `args`
+            // mutably after the immutable `ctx` lookup ends.
+            let resolved: Option<(InferredType, Vec<InferredType>)> = match &callee.kind {
+                ExprKind::Ident(name) => ctx
+                    .lookup_func(name.as_str())
+                    .map(|s| (s.ret, s.params.clone())),
+                ExprKind::Member { object, property } => {
+                    if let ExprKind::Ident(obj_name) = &object.kind {
+                        let qualified = format!("{}.{}", obj_name, property);
+                        ctx.lookup_func(&qualified)
+                            .map(|s| (s.ret, s.params.clone()))
                     } else {
-                        InferredType::Unknown
+                        None
                     }
-                } else {
-                    InferredType::Unknown
                 }
-            } else {
-                InferredType::Unknown
+                _ => None,
+            };
+            match resolved {
+                Some((ret, params)) => {
+                    // RFC c7-wildcard W-project (Q-W-5 (a) lock): a `Str`
+                    // argument flowing into a `bytes` parameter is a
+                    // bounded-string field used as bytes — project it to a
+                    // borrowed `bytes` view so the call site emits each
+                    // backend's byte-view idiom. A `Bytes` argument (an
+                    // upstream view param) passes through unprojected; a
+                    // numeric / `Unknown` argument is left verbatim (the
+                    // pre-W-project behaviour — a genuine mistype then
+                    // surfaces as a host-language type error rather than a
+                    // silent reinterpretation). Gated to the algorithm kind
+                    // via the TypeCtx flag.
+                    if ctx.project_str_args_as_bytes_view {
+                        for (i, a) in args.iter_mut().enumerate() {
+                            if matches!(params.get(i), Some(InferredType::Bytes))
+                                && matches!(a.ty, InferredType::Str)
+                            {
+                                project_str_as_bytes_view(a, ctx);
+                            }
+                        }
+                    }
+                    ret
+                }
+                None => InferredType::Unknown,
             }
         }
+        ExprKind::BytesView { source, len } => {
+            infer_types(source, ctx);
+            if let Some(len) = len {
+                infer_types(len, ctx);
+            }
+            InferredType::Bytes
+        }
     };
+}
+
+/// RFC c7-wildcard W-project: rewrite `node` in place into a
+/// [`ExprKind::BytesView`] carrying the original `Str`-typed node as its
+/// source, typing the result `Bytes`. Mirrors the in-place node rewrite
+/// of [`reinterpret_string_as_bytes`]. Called from the `Call` inference
+/// arm for a `Str` argument that flows into a `bytes` parameter.
+///
+/// When the source is an element-field member (`entry.pattern`) whose C11
+/// length sibling is registered in `ctx` (from the codec `length_field`
+/// SSOT — §8 Smell A fix), the rewrite attaches an explicit `len` node
+/// `entry.<len_member>` so the C11 emit pairs the *actual* length member
+/// rather than guessing `<src>_len`. `len` is `None` for any other source
+/// shape; only the C11 emit reads it.
+fn project_str_as_bytes_view(node: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    // Resolve the length sibling before moving the source out of `node`.
+    let len = if let ExprKind::Member { object, property } = &node.kind {
+        flatten_member_path(object)
+            .map(|base| format!("{base}.{property}"))
+            .and_then(|path| ctx.lookup_member_len_field(&path))
+            .map(|len_member| {
+                Box::new(TypedExpr {
+                    kind: ExprKind::Member {
+                        object: object.clone(),
+                        property: len_member.to_string(),
+                    },
+                    // The length sibling is a small unsigned count; its
+                    // precise width does not affect the C11 emit (it
+                    // initialises a `size_t`), so `Unknown` is faithful.
+                    ty: InferredType::Unknown,
+                })
+            })
+    } else {
+        None
+    };
+    let source = std::mem::replace(
+        node,
+        TypedExpr {
+            kind: ExprKind::NullLit,
+            ty: InferredType::Unknown,
+        },
+    );
+    node.kind = ExprKind::BytesView {
+        source: Box::new(source),
+        len,
+    };
+    node.ty = InferredType::Bytes;
 }
 
 /// True if a numeric literal's text shape is float-like (has `.`, `e`, `E`).
@@ -1949,6 +2068,15 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
                 "{}({})",
                 wrap_postfix(callee, emit_cpp(callee, InferredType::Unknown)),
                 a.join(", "),
+            )
+        }
+        ExprKind::BytesView { source, .. } => {
+            // RFC c7-wildcard W-project: a bounded-string field projected to
+            // the algorithm `bytes` param type — `std::span<const
+            // std::uint8_t>` over the string's data()/size().
+            let s = emit_cpp(source, InferredType::Unknown);
+            format!(
+                "std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>({s}.data()), {s}.size())"
             )
         }
     }
@@ -2268,6 +2396,14 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
                 "{}({})",
                 wrap_postfix(callee, emit_kotlin(callee, InferredType::Unknown)),
                 a.join(", "),
+            )
+        }
+        ExprKind::BytesView { source, .. } => {
+            // RFC c7-wildcard W-project: bounded-string field → `ByteArray`
+            // (the algorithm `bytes` param type), UTF-8 encoded.
+            format!(
+                "{}.toByteArray(Charsets.UTF_8)",
+                emit_kotlin(source, InferredType::Unknown)
             )
         }
     }
@@ -2593,6 +2729,11 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 emitted_args.join(", "),
             )
         }
+        ExprKind::BytesView { source, .. } => {
+            // RFC c7-wildcard W-project: bounded-string field (`&str`) → the
+            // algorithm `bytes` param type (`&[u8]`) via `.as_bytes()`.
+            format!("{}.as_bytes()", emit_rust(source, InferredType::Unknown)?)
+        }
     })
 }
 
@@ -2870,6 +3011,11 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
                 wrap_postfix(callee, emit_go(callee, InferredType::Unknown)?),
                 a.join(", "),
             )
+        }
+        ExprKind::BytesView { source, .. } => {
+            // RFC c7-wildcard W-project: bounded-string field (`string`) →
+            // the algorithm `bytes` param type (`[]byte`).
+            format!("[]byte({})", emit_go(source, InferredType::Unknown)?)
         }
     })
 }
@@ -3154,6 +3300,14 @@ fn python_emit_node(expr: &TypedExpr) -> String {
                 a.join(", "),
             )
         }
+        ExprKind::BytesView { source, .. } => {
+            // RFC c7-wildcard W-project: bounded-string field (`str`) → the
+            // algorithm `bytes` param type (`bytes`), UTF-8 encoded.
+            format!(
+                "{}.encode(\"utf-8\")",
+                emit_python(source, InferredType::Unknown)
+            )
+        }
     }
 }
 
@@ -3391,6 +3545,23 @@ fn c_emit_node(expr: &TypedExpr) -> String {
                 a.join(", "),
             )
         }
+        ExprKind::BytesView { source, len } => {
+            // RFC c7-wildcard W-project: a bounded-string field projects to
+            // the algorithm `bytes` param type `sce_forge_bytes_view_t`
+            // (`{const uint8_t *data; size_t len}`). The C11 string field
+            // lowers to `char <f>[N]` plus a length sibling whose member
+            // name comes from the codec `length_field` SSOT (carried on the
+            // node's `len` — §8 Smell A fix); the view is
+            // `{ (const uint8_t *)<f>, <len> }`. `len` is `None` only for an
+            // unrecognised source shape, where the `<f>_len` sibling
+            // convention is the faithful fallback.
+            let s = emit_c(source, InferredType::Unknown);
+            let len_expr = match len {
+                Some(l) => emit_c(l, InferredType::Unknown),
+                None => format!("{s}_len"),
+            };
+            format!("(sce_forge_bytes_view_t){{ (const uint8_t *){s}, {len_expr} }}")
+        }
     }
 }
 
@@ -3616,6 +3787,89 @@ mod tests {
         assert_eq!(tp_with("a > b", ExprTarget::C, &ctx), "strcmp(a, b) > 0");
         assert_eq!(tp_with("a <= b", ExprTarget::C, &ctx), "strcmp(a, b) <= 0");
         assert_eq!(tp_with("a >= b", ExprTarget::C, &ctx), "strcmp(a, b) >= 0");
+    }
+
+    // ── W-project: Str-arg → borrowed bytes-view projection ─────
+    // A `Str` argument flowing into a `bytes` parameter is projected to a
+    // borrowed view at the call site (Q-W-5). The C11 view's length must
+    // come from the codec `length_field` SSOT registered in the TypeCtx
+    // (§8 Smell A), never a `<field>_len` guess.
+    fn projection_ctx() -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.project_str_args_as_bytes_view = true;
+        ctx.insert_func(
+            "eq",
+            FuncSig {
+                params: vec![InferredType::Bytes, InferredType::Bytes],
+                ret: InferredType::Bool,
+            },
+        );
+        ctx.insert_var("entry.pattern", InferredType::Str);
+        ctx.insert_var("target", InferredType::Bytes);
+        ctx
+    }
+
+    #[test]
+    fn c_bytes_view_projection_uses_codec_length_field_ssot() {
+        // The length sibling name deliberately does NOT match the `_len`
+        // convention — a guessing emit would wrongly produce
+        // `entry.pattern_len`. The SSOT-driven emit must use `entry.klen`.
+        let mut ctx = projection_ctx();
+        ctx.insert_member_len_field("entry.pattern", "klen");
+        assert_eq!(
+            tp_with("eq(entry.pattern, target)", ExprTarget::C, &ctx),
+            "eq((sce_forge_bytes_view_t){ (const uint8_t *)entry.pattern, entry.klen }, target)"
+        );
+    }
+
+    #[test]
+    fn c_bytes_view_projection_passes_through_existing_bytes_arg() {
+        // `target` is already a `bytes` view param — it is NOT re-wrapped;
+        // only the `Str` field argument is projected.
+        let mut ctx = projection_ctx();
+        ctx.insert_member_len_field("entry.pattern", "klen");
+        let out = tp_with("eq(target, entry.pattern)", ExprTarget::C, &ctx);
+        assert_eq!(
+            out,
+            "eq(target, (sce_forge_bytes_view_t){ (const uint8_t *)entry.pattern, entry.klen })"
+        );
+    }
+
+    #[test]
+    fn c_bytes_view_projection_falls_back_to_len_sibling_when_unregistered() {
+        // No length sibling registered: the C11 emit falls back to the
+        // `<src>_len` sibling convention (faithful for an auto-`_len`
+        // bytes field, which is the only shape that reaches the fallback).
+        let ctx = projection_ctx();
+        assert_eq!(
+            tp_with("eq(entry.pattern, target)", ExprTarget::C, &ctx),
+            "eq((sce_forge_bytes_view_t){ (const uint8_t *)entry.pattern, entry.pattern_len }, target)"
+        );
+    }
+
+    #[test]
+    fn rust_bytes_view_projection_uses_as_bytes() {
+        // Non-C11 backends ignore the C11 length node and read the length
+        // from the string type itself.
+        let mut ctx = projection_ctx();
+        ctx.insert_member_len_field("entry.pattern", "klen");
+        assert_eq!(
+            tp_with("eq(entry.pattern, target)", ExprTarget::Rust, &ctx),
+            "eq(entry.pattern.as_bytes(), target)"
+        );
+    }
+
+    #[test]
+    fn projection_does_not_fire_without_algorithm_flag() {
+        // Outside the algorithm kind the flag is off → no projection, the
+        // arg is emitted verbatim (pre-W-project behaviour preserved).
+        let mut ctx = projection_ctx();
+        ctx.project_str_args_as_bytes_view = false;
+        ctx.insert_member_len_field("entry.pattern", "klen");
+        assert_eq!(
+            tp_with("eq(entry.pattern, target)", ExprTarget::C, &ctx),
+            "eq(entry.pattern, target)"
+        );
     }
 
     // ── Bytes equality (RFC §3 B1/B5) ───────────────────────────

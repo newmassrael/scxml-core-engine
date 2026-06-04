@@ -19767,6 +19767,76 @@ fn collect_algorithm_local_types(
     Ok(())
 }
 
+/// RFC c7-wildcard W-project: collect `("<item>.<field>", SceType)` pairs
+/// for every `<sce:foreach item="entry" in="<bc-alias>">` whose source is
+/// a bounded-collection import with a resolved element-type schema. These
+/// register the foreach item's element fields in the algorithm TypeCtx so
+/// the typed-expression pipeline infers `entry.pattern` as `Str` (and
+/// `entry.callback_id` as `uint32`) — the inference the bounded-string-
+/// field → borrowed-`bytes`-view call-site projection (Q-W-5 (a) lock)
+/// keys on. `schemas` is keyed by element-type snake name, matching
+/// [`ImportContext::bc_element_snake`]; an absent entry (deploy-key path,
+/// CLI single-file path) simply contributes nothing and the projection
+/// does not fire.
+///
+/// For each byte-addressable (`bytes` / `String`) field it also records a
+/// `("<item>.<field>", "<len_member>")` pair in `out_len`: the C11 length
+/// sibling member, taken from the codec SSOT — the explicit `length_field`
+/// when present, else the `<field>_len` the codec emit auto-names for a
+/// tail/fixed `bytes` field. The projection reads this so the borrowed
+/// view carries the *actual* length sibling, never a `_len` guess. Walks
+/// the same nested-block structure as [`collect_algorithm_local_types`].
+fn collect_bc_foreach_member_types(
+    stmts: &[AlgorithmStmt],
+    imports: &[ImportContext],
+    schemas: &std::collections::HashMap<String, crate::ElementFieldSchema>,
+    out: &mut Vec<(String, SceType)>,
+    out_len: &mut Vec<(String, String)>,
+) {
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Foreach { item, source, body } => {
+                if let Some(imp) = imports
+                    .iter()
+                    .find(|i| i.alias.as_str() == source.as_str() && i.kind == "bounded-collection")
+                {
+                    if let Some(elem_snake) = imp.bc_element_snake.as_ref() {
+                        if let Some(fields) = schemas.get(elem_snake) {
+                            for (fname, fty, len_field) in fields {
+                                let path = format!("{item}.{fname}");
+                                out.push((path.clone(), fty.clone()));
+                                if matches!(fty, SceType::Bytes | SceType::String) {
+                                    let len_member =
+                                        len_field.clone().unwrap_or_else(|| format!("{fname}_len"));
+                                    out_len.push((path, len_member));
+                                }
+                            }
+                        }
+                    }
+                }
+                collect_bc_foreach_member_types(body, imports, schemas, out, out_len);
+            }
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_bc_foreach_member_types(then_body, imports, schemas, out, out_len);
+                if let Some(eb) = else_body {
+                    collect_bc_foreach_member_types(eb, imports, schemas, out, out_len);
+                }
+            }
+            AlgorithmStmt::While { body, .. } => {
+                collect_bc_foreach_member_types(body, imports, schemas, out, out_len);
+            }
+            AlgorithmStmt::Var { .. }
+            | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Return { .. }
+            | AlgorithmStmt::Call { .. } => {}
+        }
+    }
+}
+
 /// Lower an algorithm body into a multi-line code string in the
 /// target language. Each statement consumes the type context built by
 /// `collect_algorithm_local_types`; nested blocks reuse the same flat
@@ -20554,7 +20624,7 @@ fn render_algorithm(
     lang: crate::generator::Language,
     options: &crate::ForgeCompileOptions,
 ) -> Result<String, ForgeError> {
-    use crate::forge::types::{InferredType, TypeCtx};
+    use crate::forge::types::{FuncSig, InferredType, TypeCtx};
     use crate::generator::Language;
     // RFC §5.B B2-test-vector: closure rotation complete — every
     // backend (Rust + C11 + Kotlin + Cpp + Go + Python) now ships
@@ -20621,10 +20691,45 @@ fn render_algorithm(
     }
     collect_algorithm_local_types(&m.body, &mut env_pairs, &mut seen)?;
 
+    // RFC c7-wildcard W-project: register element fields of every
+    // `<sce:foreach item in="<bc>">` as `"<item>.<field>"` so
+    // `infer_types` types `entry.pattern` (Str) / `entry.callback_id`
+    // (uint32). Owned strings live in `member_field_pairs` for the
+    // lifetime of `type_ctx`, mirroring `env_pairs`. Empty when the
+    // element schema was not threaded (deploy / CLI single-file path) —
+    // the byte-view projection then does not fire and args fall through
+    // verbatim, exactly as in pre-W-project C7 cross-algo dispatch.
+    let mut member_field_pairs: Vec<(String, SceType)> = Vec::new();
+    // `member_len_pairs` carries `("<item>.<field>", "<len_member>")` so the
+    // projection resolves the C11 length sibling from the codec SSOT rather
+    // than guessing `<field>_len` (Q-W-5; §8 Smell A fix). Owned for the
+    // lifetime of `type_ctx`, like `member_field_pairs`.
+    let mut member_len_pairs: Vec<(String, String)> = Vec::new();
+    if let Some(schemas) = options.element_type_field_schemas.as_ref() {
+        collect_bc_foreach_member_types(
+            &m.body,
+            imports,
+            schemas,
+            &mut member_field_pairs,
+            &mut member_len_pairs,
+        );
+    }
+
     let mut type_ctx = TypeCtx::new();
     for (name, ty) in &env_pairs {
         type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
     }
+    for (name, ty) in &member_field_pairs {
+        type_ctx.insert_var(name.as_str(), InferredType::from_sce_type(ty));
+    }
+    for (path, len_member) in &member_len_pairs {
+        type_ctx.insert_member_len_field(path.as_str(), len_member.as_str());
+    }
+    // RFC c7-wildcard W-project: only the algorithm kind projects a `Str`
+    // argument into a borrowed `bytes` view at a call site (Q-W-5 (a)).
+    // The per-backend `BytesView` emit assumes the algorithm-kind string
+    // representation, so the flag stays off for every other kind.
+    type_ctx.project_str_args_as_bytes_view = true;
     // RFC §5.F `<sce:const name="X" type="array<elem, N>">` registers X
     // as an indexable container with element type elem so `X[idx]` is
     // typed as `elem` instead of falling through to `Unknown`. Required
@@ -20636,6 +20741,32 @@ fn render_algorithm(
     for c in &m.consts {
         if let crate::forge::model::AlgorithmConstType::Array { elem, .. } = &c.sce_type {
             type_ctx.insert_array_elem(c.name.as_str(), InferredType::from_sce_type(elem));
+        }
+    }
+
+    // RFC c7-wildcard W-project: register each cross-algorithm import's
+    // signature under its alias so `infer_types` resolves the param /
+    // return types of an `eq(a, b)` dispatch. The bounded-string
+    // element-field → borrowed-`bytes`-view projection (Q-W-5 (a) lock)
+    // keys on a `bytes` parameter receiving a `Str` argument; without the
+    // registered FuncSig the argument would infer `Unknown` and the
+    // projection could neither fire nor reject a mistyped argument. This
+    // is stateless-import parity for the algorithm kind, which builds its
+    // TypeCtx inline rather than via the `type_ctx::*` builders. The alias
+    // also lives in the rename map (`const_renames`), but that only
+    // rewrites the callee spelling — not its type.
+    for imp in imports {
+        if imp.kind == "algorithm" {
+            let params = imp
+                .param_types
+                .iter()
+                .map(InferredType::from_sce_type)
+                .collect();
+            let ret = imp
+                .ret_type
+                .as_ref()
+                .map_or(InferredType::Unknown, InferredType::from_sce_type);
+            type_ctx.insert_func(imp.alias.as_str(), FuncSig { params, ret });
         }
     }
 
