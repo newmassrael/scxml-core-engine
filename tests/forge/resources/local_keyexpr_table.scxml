@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC c7-wildcard W-project — bounded-collection holding `keyexpr_entry`
+  elements (bounded-string `pattern` field). Mirrors the C7
+  `local_sub_table.scxml`, but the element-type carries a runtime-
+  variable keyexpr string instead of an interned uint32 id, so an
+  algorithm-over-BC body can project `entry.pattern` into a borrowed
+  `bytes` view at a byte-compare call site (Q-W-5 (a) lock). Capacity 8
+  keeps the C11 deref-copy + uniform index-loop emit small enough to
+  inspect by hand while still covering the get_by_slot path.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="bounded-collection"
+       name="local_keyexpr_table"
+       version="1.0">
+  <sce:element-type>keyexpr_entry</sce:element-type>
+  <sce:capacity const="8"/>
+</scxml>

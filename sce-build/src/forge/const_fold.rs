@@ -665,6 +665,15 @@ fn eval_node(node: &TypedExpr, scope: &Scope) -> Result<EvalValue, ConstFoldKind
              (RFC §5.F bound 3 — host interpreter is pure)"
                 .to_string(),
         )),
+        // RFC c7-wildcard W-project: a `BytesView` is produced only by the
+        // algorithm-kind call-site projection — it never appears in a
+        // build-time `<sce:fold>` body, which the parser-produced AST feeds
+        // here verbatim. Treated as not-foldable for exhaustiveness.
+        ExprKind::BytesView { .. } => Err(ConstFoldKind::NotFoldable(
+            "borrowed-bytes-view projection is not a fold-time value \
+             (algorithm-kind call-site node)"
+                .to_string(),
+        )),
     }
 }
 

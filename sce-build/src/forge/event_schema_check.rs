@@ -463,6 +463,11 @@ fn cond_references_event_data(expr: &TypedExpr) -> bool {
         ExprKind::Call { callee, args } => {
             cond_references_event_data(callee) || args.iter().any(cond_references_event_data)
         }
+        // RFC c7-wildcard W-project: a `BytesView` projection is produced
+        // only by the algorithm-kind transpile; it cannot reach an
+        // EventSchema typed-guard AST. The transparent recursion keeps the
+        // predicate exhaustive without asserting unreachability.
+        ExprKind::BytesView { source, .. } => cond_references_event_data(source),
         ExprKind::Ident(_)
         | ExprKind::Raw(_)
         | ExprKind::NumberLit(_)
@@ -502,6 +507,10 @@ fn cond_is_pure_typed_payload(expr: &TypedExpr) -> bool {
         | ExprKind::BytesLit { .. }
         | ExprKind::BoolLit(_)
         | ExprKind::NullLit => true,
+        // RFC c7-wildcard W-project: a `BytesView` is algorithm-kind only
+        // and cannot reach this statechart-side predicate; recurse
+        // transparently to stay exhaustive.
+        ExprKind::BytesView { source, .. } => cond_is_pure_typed_payload(source),
         // Any other Member shape (`frame.x`, `_event.data.a.b`), bare
         // Ident (datamodel var), Call, Index, or Raw fragment references
         // something the payload `matches!` cannot bind.
@@ -750,6 +759,18 @@ fn walk_for_event_data_refs(
             )?;
             walk_for_event_data_refs(
                 index,
+                schema,
+                imported_enums,
+                transition,
+                statechart_name,
+                diag_label,
+            )?;
+        }
+        // RFC c7-wildcard W-project: algorithm-kind-only node; recurse
+        // transparently to stay exhaustive (unreachable on this path).
+        ExprKind::BytesView { source, .. } => {
+            walk_for_event_data_refs(
+                source,
                 schema,
                 imported_enums,
                 transition,

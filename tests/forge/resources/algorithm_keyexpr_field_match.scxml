@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC c7-wildcard W-project — in-atomic consumer fixture (Q-W-5 (a) +
+  Q-W-8 W-project lock). Outer algorithm: iterates the bounded-
+  collection `keys` (whose element-type `keyexpr_entry` carries a
+  bounded-string `pattern` field) and dispatches into W-index's
+  `bytes_equal` to compare each stored keyexpr against the incoming
+  `target`.
+
+  This exercises exactly the one SCE-side expressibility addition
+  W-project introduces, and nothing of the wildcard `*`/`**`/`$*`
+  semantics (those are wz-authored in the W-matcher-fixture step, per
+  Q-C7-8):
+
+    - `eq(entry.pattern, target)` — the bounded-string element-field
+      `entry.pattern` projects to a borrowed `bytes` view at the call
+      site (Rust `entry.pattern.as_bytes()`, C11 a
+      `sce_forge_bytes_view_t` over `{entry.pattern, entry.pattern_len}`,
+      Go `[]byte(entry.pattern)`, …). The second argument `target` is
+      already a borrowed `bytes` view (the outer's own `bytes` param),
+      so it passes through unprojected — the two argument forms that
+      flow into one `bytes` parameter list.
+
+  The byte-compare body itself lives in `bytes_equal` (no glob
+  semantics here); this fixture is the BC-field → bytes-arg projection
+  demo, mirroring the C7 `algorithm_keyexpr_match_first.scxml` shape.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       name="keyexpr_field_match"
+       version="1.0">
+  <sce:import kind="bounded-collection" src="local_keyexpr_table.scxml" as="keys"/>
+  <sce:import kind="algorithm" src="algorithm_bytes_equal.scxml" as="eq"/>
+  <sce:signature>
+    <sce:param name="target" type="bytes"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:foreach item="entry" in="keys">
+      <sce:if cond="eq(entry.pattern, target)">
+        <sce:return expr="0"/>
+      </sce:if>
+    </sce:foreach>
+    <sce:return expr="0xFFFF"/>
+  </sce:body>
+</scxml>

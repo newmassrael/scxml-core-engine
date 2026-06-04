@@ -302,6 +302,10 @@ where
             walk_expression(object, on_member);
             walk_expression(index, on_member);
         }
+        // RFC c7-wildcard W-project: algorithm-kind-only projection node;
+        // recurse into its source so a member reference inside still
+        // surfaces (unreachable on the import-surface check path).
+        ExprKind::BytesView { source, .. } => walk_expression(source, on_member),
         ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
         | ExprKind::BytesLit { .. }

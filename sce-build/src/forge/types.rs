@@ -555,6 +555,29 @@ pub struct TypeCtx<'a> {
     /// arithmetic widening cannot insert `.toInt()` at the index access
     /// (the index node has no parent-type signal otherwise).
     pub array_elems: HashMap<&'a str, InferredType>,
+    /// RFC c7-wildcard W-project: when `true`, [`infer_types`] projects a
+    /// `Str` argument that flows into a `bytes` function parameter into a
+    /// borrowed `bytes` view (an [`ExprKind::BytesView`] node), so a
+    /// bounded-string element field (`entry.pattern`) lowers to each
+    /// backend's byte-view idiom at the call site (Q-W-5 (a) lock). Set
+    /// only by the algorithm renderer — the projection's per-backend emit
+    /// assumes the algorithm-kind string representation (a codec
+    /// `&str` / `std::string` / `char[N]+_len` field), so leaving it
+    /// `false` everywhere else keeps codec / procedure expression
+    /// inference byte-identical to pre-W-project.
+    ///
+    /// [`ExprKind::BytesView`]: crate::forge::expr::ExprKind::BytesView
+    /// [`infer_types`]: crate::forge::expr::infer_types
+    pub project_str_args_as_bytes_view: bool,
+    /// RFC c7-wildcard W-project (§8 Smell A fix): qualified member path
+    /// (`"entry.pattern"`) → its **length sibling member name**
+    /// (`"pattern_len"`). Populated by the algorithm renderer from the
+    /// element-type codec's `length_field` SSOT (or the auto `<field>_len`
+    /// for a tail/fixed `bytes` field). The `BytesView` projection consults
+    /// this so the C11 borrowed view references the actual length member
+    /// instead of guessing `<field>_len`. Empty for every other kind and
+    /// for algorithms with no byte-addressable element field.
+    pub member_len_fields: HashMap<&'a str, &'a str>,
 }
 
 impl<'a> TypeCtx<'a> {
@@ -563,7 +586,19 @@ impl<'a> TypeCtx<'a> {
             vars: HashMap::new(),
             funcs: HashMap::new(),
             array_elems: HashMap::new(),
+            project_str_args_as_bytes_view: false,
+            member_len_fields: HashMap::new(),
         }
+    }
+
+    /// Register a member path's C11 length sibling (W-project §8 Smell A).
+    pub fn insert_member_len_field(&mut self, path: &'a str, len_member: &'a str) {
+        self.member_len_fields.insert(path, len_member);
+    }
+
+    /// Look up a member path's C11 length sibling member name, if recorded.
+    pub fn lookup_member_len_field(&self, path: &str) -> Option<&'a str> {
+        self.member_len_fields.get(path).copied()
     }
 
     /// Look up an identifier's type. Returns `Unknown` if absent so that
