@@ -24,6 +24,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use tempfile::tempdir;
 
@@ -113,9 +114,14 @@ fn rust_field_match_projects_string_field_to_byte_slice() {
 #[test]
 fn c11_field_match_projects_string_field_to_byte_view() {
     let code = compile_field_match_for(Language::C11);
+    // C7 §A6: the cross-algorithm call is the imported algorithm's bare
+    // canonical symbol (`bytes_equal`), not the file-stem-prefixed
+    // `algorithm_bytes_equal_bytes_equal` — C11 has no namespace and the
+    // algorithm kind names its emitted symbol by the `name=` attribute, so
+    // the bare call resolves against the bare `static inline` definition.
     assert!(
         code.contains(
-            "algorithm_bytes_equal_bytes_equal((sce_forge_bytes_view_t){ (const uint8_t *)entry.pattern, entry.pattern_len }, target)"
+            "bytes_equal((sce_forge_bytes_view_t){ (const uint8_t *)entry.pattern, entry.pattern_len }, target)"
         ),
         "C11 string-field projection missing; got:\n{code}"
     );
@@ -187,4 +193,109 @@ fn field_match_projects_on_all_six_backends() {
             "{lang:?}: string-field projection `{projection_marker}` missing; got:\n{code}"
         );
     }
+}
+
+// ── §A6 multi-file C11 compile gate ───────────────────────────────
+//
+// The substring tests above pin the projected call-site form; this gate
+// proves the *whole* generated multi-file C11 program compiles clean.
+// It exercises the three cross-doc codegen fixes the keyexpr matcher
+// depends on (RFC c7-wildcard §A6), each of which produced non-compiling
+// C before:
+//   (a) one `#include` per line — the import loop previously concatenated
+//       `#include "a.h"#include "b.h"static inline…` onto a single line;
+//   (b) the bare cross-algorithm call `bytes_equal(...)` resolving against
+//       the bare `static inline` definition — was `<file_stem>_<fn>`, a
+//       dangling symbol;
+//   (c) the codec string-field encode casting `char*` → `const uint8_t*`
+//       — was a `-Werror=pointer-sign` failure;
+// plus the name-based `#include "bytes_equal.h"` matching the header
+// filename `generate_forge` actually emits (named by the algorithm's
+// `name=` attribute, not its file stem).
+
+fn resolve_tool(name: &str) -> Option<PathBuf> {
+    let out = Command::new("which").arg(name).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(out.stdout).ok()?;
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(trimmed))
+    }
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .canonicalize()
+        .expect("canonicalize repo root")
+}
+
+#[test]
+fn c11_field_match_multi_file_compiles_werror() {
+    let dir = tempdir().expect("tempdir");
+    let codec = copy_resource_into(dir.path(), "keyexpr_entry.scxml");
+    let bc = copy_resource_into(dir.path(), "local_keyexpr_table.scxml");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_keyexpr_field_match.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[
+            codec.as_path(),
+            bc.as_path(),
+            inner.as_path(),
+            outer.as_path(),
+        ],
+        &template_dir(Language::C11),
+        Language::C11,
+        &options_for(Language::C11),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+
+    // Lay every generated header into one directory so the name-based
+    // `#include`s resolve against the files actually emitted.
+    let out_dir = dir.path().join("c11_out");
+    fs::create_dir_all(&out_dir).expect("create out dir");
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            fs::write(out_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+        }
+    }
+
+    let Some(cc) = resolve_tool("gcc").or_else(|| resolve_tool("clang")) else {
+        eprintln!("SKIP c11_field_match_multi_file_compiles_werror: gcc/clang not on PATH");
+        return;
+    };
+
+    let driver = out_dir.join("drive_field_match.c");
+    fs::write(
+        &driver,
+        "#include \"keyexpr_field_match.h\"\nint main(void) { return 0; }\n",
+    )
+    .expect("write driver");
+
+    let runtime_inc = repo_root().join("sce-forge-runtime/c/include");
+    let output = Command::new(&cc)
+        .args(["-std=c11", "-c", "-Wall", "-Wextra", "-Werror"])
+        .arg("-I")
+        .arg(&runtime_inc)
+        .arg("-I")
+        .arg(&out_dir)
+        .arg("-o")
+        .arg(out_dir.join("drive_field_match.o"))
+        .arg(&driver)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run c11 compiler");
+    assert!(
+        output.status.success(),
+        "multi-file C11 compile of the keyexpr field-match program failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
 }
