@@ -43,11 +43,15 @@ concurrency:
 
 env:
   # Pin to a Mnemosyne commit, never a branch; --locked builds against its
-  # committed Cargo.lock for a reproducible binary. 73986cef ships the binding-kind
-  # schema (Section.bindings[] + kind=implements|references, store schema v6) replacing
-  # the v4 implementations[] array; see claudedocs/mnemosyne-binding-kind-design.md.
-  # Carries forward [workspace] root anchor resolve + R382 tree-sitter-cpp resolver.
-  MNEMOSYNE_REV: 73986cef39f50018f5a9a013c2f8b4eb6514b442
+  # committed Cargo.lock for a reproducible binary. 819ba87 (R407) is the
+  # EPUB-as-content-SSOT line: R400 retired the markdown-doc render path (store
+  # is the sole SSOT, no GENERATED.md round-trip), R402-R405 add the offline
+  # content-drift gate (NormativeExcerpt.text_sha256 + committed-EPUB file pin,
+  # store schema v8), and R407 medium-forge --text-scope heading projects each
+  # section's heading-delimited body so the scxml ledger excerpts come from the
+  # pinned EPUB. The scxml store is v8; mesh/wire stay v6 (the v8 CLI reads
+  # them, validate is read-only). See claudedocs/rfc-epub-ssot-adoption-poc.md.
+  MNEMOSYNE_REV: 819ba87d9fe09349fa42654ab6bfad2c1f226dec
 
 jobs:
   citations:
@@ -72,11 +76,14 @@ jobs:
           cargo install --git https://github.com/newmassrael/mnemosyne \
             --rev "${MNEMOSYNE_REV}" --locked mnemosyne-cli
 
-      - name: Validate citations + ledger round-trip (per workspace)
+      - name: Validate citations + excerpt content drift (per workspace)
         run: |
           set -euo pipefail
           for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire; do
             echo "::group::${ws}"
-            ( cd "${ws}" && mnemosyne-cli validate-workspace && mnemosyne-cli validate-code-refs )
+            ( cd "${ws}" \
+                && mnemosyne-cli validate-workspace \
+                && mnemosyne-cli validate-code-refs \
+                && mnemosyne-cli validate-content-drift )
             echo "::endgroup::"
           done

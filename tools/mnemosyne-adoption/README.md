@@ -24,10 +24,8 @@ network-touching step isolated to a dedicated CI job.
 |------|------|
 | `spec-snapshot/scxml-REC-20150901.html` | Vendored W3C SCXML Recommendation snapshot (offline input) |
 | `spec-snapshot/PROVENANCE.json` | URL + revision + `fetched_sha256` + date for the snapshot |
-| `scxml_toc_to_manifest.py` | **A1**: vendored spec HTML -> Mnemosyne bulk-section-create manifest + anchor map |
+| `scxml_toc_to_manifest.py` | **A1**: vendored spec HTML -> Mnemosyne bulk-section-create manifest + anchor map (h2..h6) |
 | `check_spec_drift.py` | **B1**: snapshot integrity (offline) + upstream re-fetch (online) drift check |
-| `scxml_extract_excerpts.py` | **R2**: vendored spec HTML -> per-section normative excerpt JSON |
-| `apply_excerpts.py` | **R2** driver: feed excerpts JSON into a workspace via `set-section-normative-excerpt` |
 | `migrate_citations.py` | **R3**: rewrite prose `W3C SCXML <n>.<m>` citations in source comments to the `§scxml-<id>` form |
 | `sce_mesh_md_to_manifest.py` | **C**: SCE_MESH.md markdown headings -> Mnemosyne manifest for the `mesh` design-ledger namespace |
 | `sce_wire_rfc_to_manifest.py` | **C**: Wire RFC milestone waves (W0..W5) -> Mnemosyne manifest for the `wire` design-ledger namespace |
@@ -45,10 +43,11 @@ Standard library only (`html.parser.HTMLParser` for parsing); deterministic
 regenerable, neither committed):
 
 - **manifest** — `[{section_id, parent_doc, title, parent_section?}]`, the input
-  shape for Mnemosyne's future bulk-section-create primitive (A2). Skeleton
-  only: `normative_excerpt` is added per section later, using the anchor map.
+  shape for `import-sections`. Skeleton only: `normative_excerpt` is projected
+  from the EPUB later (see "EPUB-as-content-SSOT" below).
 - **anchor map** — `{section_id: {anchor_url, source_revision}}`, preserving the
-  spec `#anchor` (lost from the section id) for the excerpt-assembly step.
+  spec `#anchor` (lost from the section id) and feeding medium-forge as the
+  `id -> anchor` map for EPUB section location + text extraction.
 
 ### Section-id naming policy
 
@@ -94,23 +93,48 @@ dispatch, so an upstream change or network failure never breaks the engine
 build. The `fetched_sha256` format (`^[0-9a-f]{64}$`) is the value Mnemosyne's
 `B2` rev-diff scan consumes.
 
-## R2 — normative excerpts
+## EPUB-as-content-SSOT — normative excerpts (Mnemosyne R401-R407)
+
+The per-section `normative_excerpt.text` is a **derived cache projected from a
+committed EPUB**, not hand-authored. The EPUB is the human-readable rendering of
+the spec revision and the provenance anchor; `text_sha256` lets the store
+re-validate every excerpt offline. SCE owns only the section-id naming (A1); the
+generic HTML->EPUB conversion is Mnemosyne's general-purpose `medium-forge`
+(spec-agnostic, **not vendored here** — used at author-time from the Mnemosyne
+checkout). The old SCE-specific extractor + `set-section-normative-excerpt` apply
+driver were retired once `medium-forge --text-scope heading` (R407) generalized
+the same heading-delimited extraction.
 
 ```bash
-# extract one excerpt per section (vendored HTML -> JSON), then apply to a workspace
-python3 tools/mnemosyne-adoption/scxml_extract_excerpts.py --out out/scxml-excerpts.json
+# 1. anchor map (id -> anchor_url) from the SCE-specific A1 converter
+python3 tools/mnemosyne-adoption/scxml_toc_to_manifest.py \
+    --anchor-map out/scxml-anchor-map.json
+
+# 2. EPUB + v2 anchor map (per-section text + text_sha256) from medium-forge.
+#    --text-scope heading = each section's direct body up to the next heading
+#    (h1..h6), heading excluded — matches the SCE section granularity so sub-div
+#    ids (e.g. the Appendix-D h4 helpers, the B.2.8.1 h5) do not collapse.
+python3 <mnemosyne>/tools/medium-forge/convert.py \
+    --html tools/mnemosyne-adoption/spec-snapshot/scxml-REC-20150901.html \
+    --anchor-map out/scxml-anchor-map.json --out out/ \
+    --content-xpath "//div[@class='div1']" --text-scope heading \
+    --revision REC-scxml-20150901 --source-url https://www.w3.org/TR/scxml/ \
+    --title SCXML
+
+# 3. project text + text_sha256 into the store (preserves authored
+#    anchor_url + source_revision); then pin the EPUB and gate offline drift
 cd docs/spec/scxml
-python3 ../../../tools/mnemosyne-adoption/apply_excerpts.py --excerpts out/scxml-excerpts.json
+mnemosyne-cli import-epub-excerpts --anchors ../../../out/anchors.json
+mnemosyne-cli validate-content-drift          # re-hashes every excerpt + the pinned EPUB
 ```
 
-A section's excerpt is its **direct body text** (between its heading and the
-next heading of any level); container sections with no direct prose are omitted.
-The extractor imports A1 so the section-id mapping stays single-source. The apply
-driver calls `set-section-normative-excerpt` per section (`--no-regenerate`, one
-final render); `normative_excerpt` is frozen after first set, so it runs once on
-the skeleton. For the vendored snapshot this yields 191 excerpts over the 196
-sections. The result is the vendored quote Mnemosyne renders (B3 read-path) and
-anchors for drift (B2).
+The committed EPUB is pinned in `mnemosyne.toml` (`[workspace.spec_source]`
+`epub_path` + `epub_sha256`, `[content_drift] severity = "reject"`). For the
+vendored snapshot this yields 192 excerpts over 197 sections (5 pure-container
+headings carry no direct body). A new section whose id appears in the anchor map
+but not yet in the store is created first via `import-sections` (the manifest
+entry carries the full `normative_excerpt` so `sha256(text) == text_sha256` is
+verified at import).
 
 ## R3 — migrate code citations to `§scxml-<id>`
 
@@ -235,8 +259,11 @@ all three namespaces. Because `mnemosyne-cli` is an external Rust binary (a
 separate repo, intentionally not vendored), the job installs it at a pinned
 Mnemosyne revision via `cargo install --git ... --rev <sha> --locked` and caches
 it by that rev — the consumer CI pattern from Mnemosyne's SCHEMA_GUIDE. It then
-runs `validate-workspace` + `validate-code-refs` in each workspace, so a
-hallucinated §<ns>-<id> citation (reject) or a hand-edited ledger view (round-trip
-drift) fails the build. Bump `MNEMOSYNE_REV` deliberately, re-validating the three
+runs `validate-workspace` + `validate-code-refs` in each workspace (so a
+hallucinated §<ns>-<id> citation fails the build), plus `validate-content-drift`
+on the scxml workspace (so a tampered `normative_excerpt` or a swapped EPUB fails
+offline against the pinned `epub_sha256`). The store is the sole SSOT
+(Mnemosyne R400 retired the GENERATED.md render path, so there is no round-trip
+view to drift). Bump `MNEMOSYNE_REV` deliberately, re-validating the three
 workspaces locally against the new rev first; the closed-loop tooling tests
 (which self-skip without the CLI) cover the migrators' grammar contract.
