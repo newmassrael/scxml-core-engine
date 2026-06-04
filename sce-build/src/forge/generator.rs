@@ -20228,13 +20228,16 @@ fn lower_algorithm_stmt(
                         ));
                     }
                     Language::Go => {
-                        let snake = &imp.namespace;
-                        let pascal = &imp.type_name;
-                        let _ = snake;
-                        // Go BC package-level capacity constant is
-                        // `<Pascal>Capacity` per the BC template.
+                        // The BC package-level capacity constant
+                        // `<Pascal>Capacity` (per the BC template) is exported
+                        // from the BC's own Go package, so a foreign
+                        // algorithm must qualify it with the package selector.
+                        // `member_type` (`<snake>.<Pascal>`) already carries
+                        // that selector — the same fully-qualified spelling
+                        // the Cpp arm above uses for `capacity()`.
+                        let member_type = &imp.member_type;
                         out.push_str(&format!(
-                            "{pad}for slotIdx := uint32(0); slotIdx < {pascal}Capacity; slotIdx++ {{\n"
+                            "{pad}for slotIdx := uint32(0); slotIdx < {member_type}Capacity; slotIdx++ {{\n"
                         ));
                         out.push_str(&format!(
                             "{pad}    {it}, ok := {alias}.GetBySlot(slotIdx)\n"
