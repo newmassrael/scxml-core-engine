@@ -22,12 +22,10 @@
 # explicit repo-relative paths below ([workspace] root + R386 anchor resolve).
 [workspace]
 root = "../../.."
-docs = ["docs/sce-ledger/wire/GENERATED.md"]
-default_doc = "docs/sce-ledger/wire/GENERATED.md"
 
+# Store is the sole SSOT (Mnemosyne R400 retired the markdown-doc render path).
 [atomic]
 sidecar_path = "docs/sce-ledger/wire/.atomic/workspace.atomic.json"
-output_path = "docs/sce-ledger/wire/GENERATED.md"
 
 [schema]
 changelog_titles = ["Revision History"]

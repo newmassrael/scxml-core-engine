@@ -53,8 +53,8 @@ regenerable, neither committed):
 
 This is SCE's own policy (its SSOT is the converter module). Ids in the manifest
 are **bare** (no § sigil) — `import-sections` stores `section_id` literally, so a
-§ would double on render (`§§scxml-1`). The § is the *citation* form used in code
-and in the rendered heading.
+sigil would be stored as part of the id (`§§scxml-1` when later cited). The § is
+the *citation* form added in code comments, not part of the stored id.
 
 | Spec heading | stored id (manifest) | cited as | Rule |
 |--------------|----------------------|----------|------|
@@ -211,7 +211,7 @@ source being an internal markdown doc rather than a vendored HTML standard:
 - **No external upstream**: `SCE_MESH.md` is tracked in this repo, so there is no
   vendored snapshot, no `[workspace.spec_source]`, and no drift CI. The manifest
   is skeleton only (no `normative_excerpt`): the ledger exists to make `§mesh-<n>`
-  cites resolve for the gate, not to render a vendored quote.
+  cites resolve for the gate, not to store a vendored quote.
 
 `docs/sce-ledger/mesh/mnemosyne.toml` declares `section_namespace = "mesh"`. The
 mesh citations are migrated from bare `§<n>` to `§mesh-<n>` with
