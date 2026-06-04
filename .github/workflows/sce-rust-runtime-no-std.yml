@@ -57,6 +57,7 @@ jobs:
       with:
         toolchain: stable
         targets: thumbv7em-none-eabihf
+        components: clippy
 
     - name: Cache Cargo
       uses: actions/cache@v5
@@ -80,6 +81,21 @@ jobs:
           --no-default-features \
           --features=no_std \
           --target=thumbv7em-none-eabihf
+
+    # Lints the no_std runtime variant under the same target. The host-target
+    # clippy runs (default-features) never see the `heapless::String`-sized
+    # error/collection types the `no_std` cfg selects, so a lint that only
+    # fires under no_std — e.g. `clippy::result_large_err` from returning a
+    # 256-byte `SceString` by value — slips past every other gate. Running
+    # clippy here, with `-D warnings`, makes such a regression a hard failure.
+    - name: Clippy sce-rust-runtime (no_std, MCU target)
+      run: |
+        cargo clippy \
+          -p sce-rust-runtime \
+          --no-default-features \
+          --features=no_std \
+          --target=thumbv7em-none-eabihf \
+          -- -D warnings
 
     # Proves *generated* machines (not just the runtime) are allocator-free.
     # The runtime build above cannot catch a `tools/codegen/templates/rust/`
