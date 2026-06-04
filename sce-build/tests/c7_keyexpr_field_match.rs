@@ -441,6 +441,180 @@ fn rust_cross_doc_algorithm_compiles() {
     );
 }
 
+// ── Cross-doc identity-SSOT real-compile gates (Go / Kotlin / Python) ─
+//
+// W1-supplement: the C11/Cpp/Rust cross-doc gates above prove the name-based
+// import resolves and the qualified call binds on a real compiler. Go, Kotlin
+// and Python were previously substring-only (the `*_projects_*` assertions),
+// the one place a symbol-name drift could pass SCE-green yet break a consumer
+// build. These gates close that gap with the same minimal std-only
+// `algorithm_xdoc_compile` (`name="xdoc_eq_caller"`) → `algorithm_bytes_equal`
+// (`name="bytes_equal"`) shape, both names diverging from their file stem.
+
+#[test]
+fn go_cross_doc_algorithm_compiles() {
+    let dir = tempdir().expect("tempdir");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_xdoc_compile.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[inner.as_path(), outer.as_path()],
+        &template_dir(Language::Go),
+        Language::Go,
+        &options_for(Language::Go),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+
+    let Some(go) = resolve_tool("go") else {
+        eprintln!("SKIP go_cross_doc_algorithm_compiles: go not on PATH");
+        return;
+    };
+
+    let out_dir = dir.path().join("go_out");
+    fs::create_dir_all(&out_dir).expect("create out dir");
+    fs::write(
+        out_dir.join("go.mod"),
+        format!("module {GO_PREFIX}\n\ngo 1.22\n"),
+    )
+    .expect("write go.mod");
+    // Go packages live one-per-directory matching their import path
+    // (`<prefix>/<package>`); the generated file is the flat `<package>.go`,
+    // so place each into `<out>/<package>/`. A `<package>_test.go` sidecar
+    // (none here — the fixture carries no test vectors) would share its
+    // primary's directory.
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            let base = filename.strip_suffix(".go").expect("go file");
+            let pkg = base.strip_suffix("_test").unwrap_or(base);
+            let pkg_dir = out_dir.join(pkg);
+            fs::create_dir_all(&pkg_dir).expect("create pkg dir");
+            fs::write(pkg_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+        }
+    }
+
+    let output = Command::new(&go)
+        .args(["build", "./..."])
+        .current_dir(&out_dir)
+        .env("GOFLAGS", "-mod=mod")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run go build");
+    assert!(
+        output.status.success(),
+        "go build of the cross-doc algorithm module failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn kotlin_cross_doc_algorithm_compiles() {
+    let dir = tempdir().expect("tempdir");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_xdoc_compile.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[inner.as_path(), outer.as_path()],
+        &template_dir(Language::Kotlin),
+        Language::Kotlin,
+        &options_for(Language::Kotlin),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+
+    let Some(kotlinc) = resolve_tool("kotlinc") else {
+        eprintln!("SKIP kotlin_cross_doc_algorithm_compiles: kotlinc not on PATH");
+        return;
+    };
+
+    let out_dir = dir.path().join("kt_out");
+    fs::create_dir_all(&out_dir).expect("create out dir");
+    // Kotlin resolves the cross-package wildcard import within a single
+    // compilation, so all primary `.kt` files compile together. Skip any
+    // `*TestVectors.kt` sidecar (none here) — it needs the kotlin-test dep.
+    let mut sources = Vec::new();
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            if filename.ends_with("TestVectors.kt") {
+                continue;
+            }
+            let path = out_dir.join(filename);
+            fs::write(&path, content).unwrap_or_else(|e| panic!("write {filename}: {e}"));
+            sources.push(path);
+        }
+    }
+
+    let output = Command::new(&kotlinc)
+        .args(&sources)
+        .arg("-d")
+        .arg(out_dir.join("xdoc.jar"))
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run kotlinc");
+    assert!(
+        output.status.success(),
+        "kotlinc compile of the cross-doc algorithm sources failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn python_cross_doc_algorithm_imports() {
+    let dir = tempdir().expect("tempdir");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_xdoc_compile.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[inner.as_path(), outer.as_path()],
+        &template_dir(Language::Python),
+        Language::Python,
+        &options_for(Language::Python),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+
+    let Some(python) = resolve_tool("python3").or_else(|| resolve_tool("python")) else {
+        eprintln!("SKIP python_cross_doc_algorithm_imports: python3 not on PATH");
+        return;
+    };
+
+    // Python is interpreted; the cross-doc `from . import bytes_equal` only
+    // resolves inside a package, so lay both modules into one package dir and
+    // *import + call* the caller. Importing runs the relative import (binds
+    // the sibling module); calling resolves `bytes_equal.bytes_equal` — a
+    // bad cross-doc symbol would surface as an AttributeError at the call.
+    let out_dir = dir.path().join("py_out");
+    let pkg_dir = out_dir.join("xdoc_pkg");
+    fs::create_dir_all(&pkg_dir).expect("create pkg dir");
+    fs::write(pkg_dir.join("__init__.py"), "").expect("write __init__.py");
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            if filename.ends_with("_test.py") {
+                continue;
+            }
+            fs::write(pkg_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+        }
+    }
+
+    let output = Command::new(&python)
+        .arg("-c")
+        .arg("from xdoc_pkg import xdoc_eq_caller as m; m.xdoc_eq_caller(b'a', b'a')")
+        .current_dir(&out_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run python3");
+    assert!(
+        output.status.success(),
+        "python import+call of the cross-doc algorithm package failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 // ── Full C++ field-match compile gate (BC + codec + algorithm) ────
 //
 // The cross-doc gate above isolates identity on a std-only shape; this
