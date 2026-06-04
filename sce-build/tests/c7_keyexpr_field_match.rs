@@ -440,3 +440,78 @@ fn rust_cross_doc_algorithm_compiles() {
         String::from_utf8_lossy(&output.stderr),
     );
 }
+
+// ── Full C++ field-match compile gate (BC + codec + algorithm) ────
+//
+// The cross-doc gate above isolates identity on a std-only shape; this
+// gate compiles the *whole* field-match program — the bounded-collection
+// (`LocalKeyexprTable`), the element codec (`keyexpr_entry`), and both
+// algorithm headers — so the C++ BC/codec emit is held to the same
+// real-compiler bar the C11 program already meets. It exercises the W2
+// emit fixes the matcher depends on: the BC `capacity()` static accessor,
+// the codec `decode` reading fields off `out` rather than free locals in
+// a designated initializer, and the `cursor`/writer parameters being used
+// (no `-Werror=unused-parameter`).
+#[test]
+fn cpp_field_match_multi_file_compiles_werror() {
+    let dir = tempdir().expect("tempdir");
+    let codec = copy_resource_into(dir.path(), "keyexpr_entry.scxml");
+    let bc = copy_resource_into(dir.path(), "local_keyexpr_table.scxml");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_keyexpr_field_match.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[
+            codec.as_path(),
+            bc.as_path(),
+            inner.as_path(),
+            outer.as_path(),
+        ],
+        &template_dir(Language::Cpp),
+        Language::Cpp,
+        &options_for(Language::Cpp),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+
+    let out_dir = dir.path().join("cpp_field_out");
+    fs::create_dir_all(&out_dir).expect("create out dir");
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            fs::write(out_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+        }
+    }
+
+    let Some(cxx) = resolve_tool("g++").or_else(|| resolve_tool("clang++")) else {
+        eprintln!("SKIP cpp_field_match_multi_file_compiles_werror: g++/clang++ not on PATH");
+        return;
+    };
+
+    let driver = out_dir.join("drive_field_match.cpp");
+    fs::write(
+        &driver,
+        "#include \"keyexpr_field_match.h\"\nint main() { return 0; }\n",
+    )
+    .expect("write driver");
+
+    let runtime_inc = repo_root().join("sce-forge-runtime/cpp/include");
+    let output = Command::new(&cxx)
+        .args(["-std=c++20", "-c", "-Wall", "-Wextra", "-Werror"])
+        .arg("-I")
+        .arg(&runtime_inc)
+        .arg("-I")
+        .arg(&out_dir)
+        .arg("-o")
+        .arg(out_dir.join("drive_field_match.o"))
+        .arg(&driver)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run c++ compiler");
+    assert!(
+        output.status.success(),
+        "multi-file C++ compile of the keyexpr field-match program failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
