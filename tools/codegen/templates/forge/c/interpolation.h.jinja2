@@ -39,7 +39,7 @@ static const {{ output_type }} {{ snake }}_values[{{ rows }}][{{ cols }}] = {
 static const {{ output_type }} {{ snake }}_values[{{ rows }}] = { {% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %} };
 {% endif %}
 
-static inline {{ output_type }} {{ snake }}_lookup({{ params }}) {
+static inline {{ output_type }} {{ member_symbol }}({{ params }}) {
 {% if is_bilinear %}
     /* 2D bilinear: clamp on both axes, then bilinear over the 2x2 cell. */
     {{ output_type }} x = ({{ output_type }}){{ axes[0].input_id_snake }};

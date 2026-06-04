@@ -30,7 +30,7 @@ impl {{ struct_name }} {
     const VALUES: [{{ output_type }}; {{ axes[0].size }}] = [{% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %}];
 {% endif %}
 
-    pub fn lookup({{ params }}) -> {{ output_type }} {
+    pub fn {{ member_symbol }}({{ params }}) -> {{ output_type }} {
 {% if is_bilinear %}
         bilinear(
             &Self::{{ axes[0].var_name }},

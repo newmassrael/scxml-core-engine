@@ -10,13 +10,13 @@
 {% endfor %}
 {% if f.output %}
             val expected = case.jsonObject["expected"]!!.jsonPrimitive.double
-            val actual = {{ f.output.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            val actual = {{ f.output.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
             assertClose(actual, expected, "{{ f.name }}")
 {% else %}
             val expected = case.jsonObject["expected"]!!.jsonObject
 {% for co in f.compound_outputs %}
             val expected_{{ co.key }} = {{ ("expected[\"" ~ co.key ~ "\"]!!") | kt_unmarshal(co["type"]) }}
-            val actual_{{ co.key }} = {{ co.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            val actual_{{ co.key }} = {{ co.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% if co.compare == "tolerance" %}
             assertClose(actual_{{ co.key }}, expected_{{ co.key }}, "{{ f.name }} {{ co.key }}")
 {% else %}

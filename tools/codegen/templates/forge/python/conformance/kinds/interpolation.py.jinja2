@@ -5,5 +5,5 @@
         for case in spec["cases"]:
             args = case["args"]
             expected = case["expected"]
-            actual = {{ f.name }}.lookup(*args)
+            actual = {{ f.name }}.{{ f.symbol }}(*args)
             self.assert_close(actual, expected, "{{ f.name }}")

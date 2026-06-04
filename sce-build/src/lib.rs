@@ -4485,100 +4485,64 @@ fn discover_primary_function(
         ),
         forge::model::ForgeDocument::Transform(m) => {
             let output_id = m.outputs.first()?.id.clone();
+            // W1 symbol-name SSOT: the cross-doc callsite resolves to the
+            // first output's accessor. Every backend reads
+            // forge_transform_symbol except C11, where the callsite uses the
+            // bare `compute_<snake(output)>` base and build_qualified_call
+            // re-prepends `<namespace>_` — landing on the emitted
+            // `<m.name>_compute_<output>` rather than doubling it.
             Some(match language {
-                generator::Language::Cpp | generator::Language::Kotlin => {
-                    format!("compute{}", filters::to_pascal_case(output_id))
-                }
-                // C11 emits snake_case identifiers (RFC §5.J.1, matching
-                // standard C library naming and Linux kernel style); the
-                // template-level emitter is M2+ but the discovery contract
-                // must already return the name M2 will produce.
-                generator::Language::Rust
-                | generator::Language::Python
-                | generator::Language::C11 => {
+                generator::Language::C11 => {
                     format!("compute_{}", filters::to_snake_case(output_id))
                 }
-                generator::Language::Go => {
-                    format!("Compute{}", filters::to_pascal_case(output_id))
-                }
+                _ => forge::generator::forge_transform_symbol(&m.name, &output_id, *language),
             })
         }
         forge::model::ForgeDocument::Condition(m) => {
+            // W1 symbol-name SSOT: every backend reads forge_condition_symbol
+            // except C11, where the cross-file callsite uses the bare `check`
+            // base and build_qualified_call re-prepends the `<namespace>_`
+            // module prefix — emitting `<m.name>_check` rather than doubling
+            // it (RFC §5.J.2 §3 D1).
             Some(match language {
-                generator::Language::Cpp | generator::Language::Kotlin => {
-                    filters::to_camel_case(m.name.clone())
-                }
-                // RFC §5.J.2 §3 D1: C11 cross-file callsites compose
-                // `<namespace>_<this>` via build_qualified_call. Mirror
-                // the transform `compute_<id>` pattern with a constant
-                // `check` suffix so the resolver lands on the function
-                // emitted by render_condition's C11 arm
-                // (`<m.name>_check`) instead of doubling the prefix.
                 generator::Language::C11 => "check".to_string(),
-                generator::Language::Rust
-                | generator::Language::Python => {
-                    filters::to_snake_case(m.name.clone())
-                }
-                generator::Language::Go => {
-                    filters::to_pascal_case(m.name.clone())
-                }
+                _ => forge::generator::forge_condition_symbol(&m.name, *language),
             })
         }
         forge::model::ForgeDocument::Lookup(m) => {
+            // W1 symbol-name SSOT: every backend reads forge_lookup_symbol
+            // except C11, where the cross-file callsite uses the bare
+            // `<snake(output_id)>` base (no `lookup_` prefix, no module
+            // prefix) and build_qualified_call re-prepends `<namespace>_`
+            // — landing on the emitted `<m.name>_<output_id>` rather than
+            // doubling it (RFC §5.J.2 §3 D1).
             Some(match language {
-                generator::Language::Cpp | generator::Language::Kotlin => {
-                    format!("lookup{}", filters::to_pascal_case(m.output.id.clone()))
-                }
-                generator::Language::Rust
-                | generator::Language::Python => {
-                    format!("lookup_{}", filters::to_snake_case(m.output.id.clone()))
-                }
-                // RFC §5.J.2 §3 D1: C11 has a flat scope, so render_lookup
-                // emits `<m.name>_<output_id>`; build_qualified_call C11
-                // composes `<namespace>_<func_name>` and the namespace is
-                // already the imported file's stem (= `<m.name>` snake).
-                // Returning just `<output_id>` here (without the `lookup_`
-                // prefix that Rust/Python use) keeps the cross-file
-                // callsite landing on the actual emitted function rather
-                // than `<m.name>_lookup_<output_id>`. Mirrors the same
-                // mirror-pattern fix applied to Condition C11
-                // (`"check"`-suffix constant).
-                generator::Language::C11 => {
-                    filters::to_snake_case(m.output.id.clone())
-                }
-                generator::Language::Go => {
-                    format!("Lookup{}", filters::to_pascal_case(m.output.id.clone()))
-                }
+                generator::Language::C11 => filters::to_snake_case(m.output.id.clone()),
+                _ => forge::generator::forge_lookup_symbol(&m.name, &m.output.id, *language),
             })
         }
         forge::model::ForgeDocument::Interpolation(m) => {
-            // Cpp / Kotlin / Rust render_interpolation emits a struct/object/
-            // impl wrapper named `<Pascal>` with a `lookup` member. The
-            // bare callsite `lookup(...)` resolves only when called from
-            // inside that wrapper; cross-file consumers need the wrapper
-            // qualifier (cpp `<Pascal>::lookup`, kotlin `<Pascal>.lookup`,
-            // rust `<Pascal>::lookup`). Go / Python / C11 emit free
-            // functions / package-level `Lookup` so the bare name is
-            // already resolvable through the import include_stmt. This
-            // mirrors the conformance harness fragments (cpp uses
-            // `<Pascal>::<Pascal>::lookup`, rust `<Pascal>::lookup`,
-            // kotlin `<Pascal>.lookup`) — the cross-file callsite
-            // contract has to match those for the imported symbol to
-            // resolve.
+            // W1 symbol-name SSOT: the def≠call kind. render_interpolation
+            // defines the accessor (forge_interpolation_symbol) as a member
+            // of a `<Pascal>` wrapper (struct/object/impl) on Cpp/Kotlin/Rust,
+            // a free `Lookup` on Go, a module-level `lookup` on Python, and a
+            // flat `<snake>_lookup` on C11. Cross-file consumers need the
+            // wrapper qualifier; Go/Python resolve the bare name via the
+            // import include_stmt; C11 uses the bare `lookup` base and
+            // build_qualified_call re-prepends `<namespace>_` → `<m.name>_lookup`.
             let pascal = filters::to_pascal_case(m.name.clone());
             Some(match language {
-                generator::Language::Cpp | generator::Language::Rust => {
-                    format!("{pascal}::lookup")
-                }
-                generator::Language::Kotlin => {
-                    format!("{pascal}.lookup")
-                }
-                generator::Language::Python
-                | generator::Language::C11 => {
-                    "lookup".to_string()
-                }
-                generator::Language::Go => {
-                    "Lookup".to_string()
+                generator::Language::Cpp | generator::Language::Rust => format!(
+                    "{pascal}::{}",
+                    forge::generator::forge_interpolation_symbol(&m.name, *language)
+                ),
+                generator::Language::Kotlin => format!(
+                    "{pascal}.{}",
+                    forge::generator::forge_interpolation_symbol(&m.name, *language)
+                ),
+                generator::Language::C11 => "lookup".to_string(),
+                generator::Language::Go | generator::Language::Python => {
+                    forge::generator::forge_interpolation_symbol(&m.name, *language)
                 }
             })
         }

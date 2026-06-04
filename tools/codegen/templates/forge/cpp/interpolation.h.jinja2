@@ -38,7 +38,7 @@ struct {{ struct_name }} {
     static constexpr {{ output_type }} VALUES[] = { {% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endfor %} };
 {% endif %}
 
-    static {{ output_type }} lookup({{ params }}) {
+    static {{ output_type }} {{ member_symbol }}({{ params }}) {
 {% if is_bilinear %}
         return SCE::Forge::bilinear(
             {{ axes[0].var_name }}, {{ axes[1].var_name }}, VALUES,

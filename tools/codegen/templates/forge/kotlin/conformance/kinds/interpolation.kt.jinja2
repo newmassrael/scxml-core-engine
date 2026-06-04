@@ -9,6 +9,6 @@
             val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
 {% endfor %}
             val expected = case.jsonObject["expected"]!!.jsonPrimitive.double
-            val actual = {{ f.name | to_pascal_case }}.lookup({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+            val actual = {{ f.name | to_pascal_case }}.{{ f.symbol }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
             assertClose(actual, expected, "{{ f.name }}")
         }
