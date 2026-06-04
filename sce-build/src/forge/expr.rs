@@ -1699,6 +1699,15 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                     }
                     ret
                 }
+                // RFC c7-wildcard W-index: the `len(<bytes|str>)` builtin is
+                // not a registered signature, but its result is an integer
+                // length, not `Unknown`. Typing it `UntypedInt` lets the
+                // surrounding comparison adopt the *other* operand's concrete
+                // width (`join_arith(Int{32}, UntypedInt) = Int{32}`) instead
+                // of being poisoned to `Unknown`, so a context like
+                // `i < len(a)` (`i: u32`) can width-coerce the always-wider
+                // host length type (`usize` / `size_t`) at emit time.
+                None if is_len_builtin(callee, args) => InferredType::UntypedInt,
                 None => InferredType::Unknown,
             }
         }
@@ -2624,6 +2633,24 @@ fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprErr
             } else {
                 format!("{prefix}{inner}")
             });
+        }
+    }
+    // Push-down: `len(x)` lowers to Rust's `.len()`, which is always
+    // `usize`. In a concrete-integer context (e.g. `i < len(a)` where
+    // `i: u32`, or `len(a) !== len(b)` unified to a sized int), emit the
+    // width-coercing `as` so the comparison typechecks. `rust_emit_node`
+    // is width-blind and `rust_coerce` trusts the node's inferred type —
+    // which the always-`usize` `.len()` does not actually carry, so the
+    // cast must be injected here where the `expected` width is known.
+    if let ExprKind::Call { callee, args } = &expr.kind {
+        if is_len_builtin(callee, args) {
+            if let InferredType::Int { signed, bits } = expected {
+                let inner = emit_rust(&args[0], InferredType::Unknown)?;
+                return Ok(format!(
+                    "({inner}).len() as {}",
+                    rust_int_type(signed, bits)
+                ));
+            }
         }
     }
     let raw = rust_emit_node(expr)?;
