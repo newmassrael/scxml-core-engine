@@ -148,6 +148,19 @@ pub fn transpile_typed(
         rename_identifiers(&mut ast, renames);
     }
 
+    // RFC c7-wildcard W-project: Go exports struct fields in PascalCase
+    // (the `codec_field_id` SSOT). Inside an algorithm body every member
+    // access is a read of a codec element field (the foreach item's
+    // fields), so the access must use the exported spelling to bind
+    // against the generated Go struct — `entry.pattern` → `entry.Pattern`.
+    // Gated to the algorithm kind via `project_str_args_as_bytes_view`
+    // (the same flag that enables bytes-view projection); statechart guard
+    // paths, whose internal `_event.data` payload struct is unexported by
+    // design, never set it and keep their verbatim leaf-property emit.
+    if matches!(target, ExprTarget::Go) && ctx.project_str_args_as_bytes_view {
+        export_go_member_properties(&mut ast);
+    }
+
     match target {
         ExprTarget::Cpp => Ok(emit_cpp(&ast, expected)),
         ExprTarget::Kotlin => Ok(emit_kotlin(&ast, expected)),
@@ -1410,6 +1423,59 @@ fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
             }
         }
         ExprKind::Raw(_)
+        | ExprKind::NumberLit(_)
+        | ExprKind::StringLit { .. }
+        | ExprKind::BytesLit { .. }
+        | ExprKind::BoolLit(_)
+        | ExprKind::NullLit => {}
+    }
+}
+
+/// PascalCase every `Member` access property so Go member reads bind
+/// against the exported codec struct fields (`entry.pattern` →
+/// `entry.Pattern`). Uses the same `to_pascal_case` transform as the Go
+/// arm of `codec_field_id`, the single source of truth for Go struct
+/// field casing. Runs only for the algorithm kind (see the gate in
+/// [`transpile_typed`]); within that kind every member access is a codec
+/// element-field read, so PascalCasing the leaf is always correct.
+fn export_go_member_properties(ast: &mut TypedExpr) {
+    match &mut ast.kind {
+        ExprKind::Member { object, property } => {
+            *property = crate::filters::to_pascal_case(property.clone());
+            export_go_member_properties(object);
+        }
+        ExprKind::Binary { left, right, .. } => {
+            export_go_member_properties(left);
+            export_go_member_properties(right);
+        }
+        ExprKind::Unary { operand, .. } => export_go_member_properties(operand),
+        ExprKind::Conditional {
+            condition,
+            consequent,
+            alternate,
+        } => {
+            export_go_member_properties(condition);
+            export_go_member_properties(consequent);
+            export_go_member_properties(alternate);
+        }
+        ExprKind::Index { object, index } => {
+            export_go_member_properties(object);
+            export_go_member_properties(index);
+        }
+        ExprKind::Call { callee, args } => {
+            export_go_member_properties(callee);
+            for arg in args {
+                export_go_member_properties(arg);
+            }
+        }
+        ExprKind::BytesView { source, len } => {
+            export_go_member_properties(source);
+            if let Some(len) = len {
+                export_go_member_properties(len);
+            }
+        }
+        ExprKind::Raw(_)
+        | ExprKind::Ident(_)
         | ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }
         | ExprKind::BytesLit { .. }
@@ -3913,6 +3979,38 @@ mod tests {
             tp_with("eq(entry.pattern, target)", ExprTarget::C, &ctx),
             "eq(entry.pattern, target)"
         );
+    }
+
+    #[test]
+    fn go_member_access_exports_struct_field_in_algorithm() {
+        // RFC c7-wildcard W-project: Go exports struct fields in PascalCase
+        // (the `codec_field_id` SSOT). In the algorithm kind the element-
+        // field read must bind against `entry.Pattern`, not `entry.pattern`,
+        // and the projected `bytes`-view wraps the exported spelling.
+        let ctx = projection_ctx();
+        assert_eq!(
+            tp_with("eq(entry.pattern, target)", ExprTarget::Go, &ctx),
+            "eq([]byte(entry.Pattern), target)"
+        );
+    }
+
+    #[test]
+    fn go_member_access_stays_verbatim_without_algorithm_flag() {
+        // The PascalCase export is gated to the algorithm kind. A statechart
+        // guard path (flag off) keeps its verbatim leaf-property emit so it
+        // binds against the unexported `_event.data` payload struct — the
+        // `entry.Pattern` rewrite must never leak here.
+        let mut renames = HashMap::new();
+        renames.insert("_event.data", "ev");
+        let out = transpile_typed(
+            "_event.data.elapsed_ms",
+            ExprTarget::Go,
+            &empty_ctx(),
+            &renames,
+            InferredType::Unknown,
+        )
+        .unwrap();
+        assert_eq!(out, "ev.elapsed_ms");
     }
 
     // ── Bytes equality (RFC §3 B1/B5) ───────────────────────────
