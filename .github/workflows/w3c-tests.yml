@@ -42,7 +42,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         submodules: recursive
 
@@ -74,7 +74,7 @@ jobs:
         toolchain: stable
 
     - name: Cache Cargo
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -96,7 +96,7 @@ jobs:
         cd ..
 
     - name: Cache CMake Build
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           build/CMakeCache.txt
@@ -107,7 +107,7 @@ jobs:
           ${{ runner.os }}-cmake-${{ github.repository }}-
 
     - name: Setup ccache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.ccache
         key: ${{ runner.os }}-ccache-${{ github.sha }}
@@ -352,7 +352,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -360,7 +360,7 @@ jobs:
         toolchain: stable
 
     - name: Cache Cargo
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -446,7 +446,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -454,7 +454,7 @@ jobs:
         toolchain: stable
 
     - name: Cache Cargo (codegen)
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -474,7 +474,7 @@ jobs:
         java-version: '17'
 
     - name: Cache Gradle
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.gradle/caches
@@ -548,7 +548,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         submodules: recursive
 
@@ -573,7 +573,7 @@ jobs:
         toolchain: stable
 
     - name: Cache Cargo (codegen)
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -587,7 +587,7 @@ jobs:
       run: cargo build --bin sce-codegen --features cli --release -p sce-build
 
     - name: Cache CMake Build
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           build_python/CMakeCache.txt
@@ -668,7 +668,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -676,7 +676,7 @@ jobs:
         toolchain: stable
 
     - name: Cache Cargo (codegen)
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -769,7 +769,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -777,7 +777,7 @@ jobs:
         toolchain: stable
 
     - name: Cache Cargo (codegen)
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: |
           ~/.cargo/registry
@@ -876,7 +876,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Download All Artifacts
       uses: actions/download-artifact@v4

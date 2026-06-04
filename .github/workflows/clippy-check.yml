@@ -51,7 +51,7 @@ jobs:
 
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Install Rust Toolchain (with clippy)
       uses: dtolnay/rust-toolchain@stable
