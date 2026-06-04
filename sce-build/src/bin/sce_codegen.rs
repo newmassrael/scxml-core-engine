@@ -586,13 +586,20 @@ enum Commands {
         /// `codegen/no-std-script-not-supported` /
         /// `codegen/no-std-http-not-supported`.
         ///
-        /// Note: B-β reserves the flag and gates the diagnostics.
-        /// Actual no_std code emission (`#![no_std]` attribute +
-        /// `use core::time::Duration` + heapless adoption in the
-        /// runtime crate) lands in Atomic B-γ. Today a clean (no
-        /// script, no HTTP) document still generates std-flavored
-        /// code when `--no-std` is passed; the flag's role is
-        /// validation + future-intent declaration.
+        /// Emission: `--no-std` produces allocator-free code —
+        /// `#![no_std]`, `core::time::Duration`, the runtime's
+        /// `SceString` / `StateChain` aliases (heapless under no_std)
+        /// for event-metadata and state-list fields, `NoOpHal` as the
+        /// default `Hal`, and elision of the invoke/script-engine
+        /// machinery (`session_id` / `invoke_id` / parent queue). An
+        /// atomic / simple-hierarchy document compiles for
+        /// `thumbv7em-none-eabihf` with no global allocator.
+        ///
+        /// Known gap: machines with parallel states or conflict
+        /// resolution still emit `Vec<TransitionInfo>` /
+        /// `Vec<State>` transition buffers that require `alloc`; the
+        /// bounded-capacity port of those buffers is the remaining
+        /// no_std codegen milestone (see watching-zenoh RFC §5.J.2).
         #[arg(long)]
         no_std: bool,
         /// Override the directory used for the §6.2.6 `source-hash`

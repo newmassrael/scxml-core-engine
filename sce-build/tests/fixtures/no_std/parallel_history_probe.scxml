@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Watching-zenoh RFC 5.J.2 no_std MCU-target compile gate fixture.
+
+  Exercises every construct whose Rust no_std emission is allocator-free yet
+  was historically std-coupled (Vec, sort_by, HashSet, StdHal), so a
+  regression that reintroduces an alloc dependency fails the thumbv7em-none-eabihf
+  compile in the sce-rust-runtime no_std CI workflow:
+
+    nested parallel + multiple regions: conflict-resolution buffers
+    (remove_conflicting_transitions, compute_exit_set, TransitionList,
+    IndexList, StateChain) plus the FnvIndexSet dedup set.
+    history shallow and deep: StateChain history fields.
+    many same and different source transitions: stable_sort_by ordering.
+
+  Intentionally script-free, invoke-free, send-free so the document is a valid
+  no_std target (those constructs are codegen-rejected for the no_std backend).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="top" name="parallel_history_probe">
+  <parallel id="top">
+    <state id="ra" initial="a1">
+      <history id="ha_deep" type="deep"><transition target="a1"/></history>
+      <state id="a1"><transition event="e1" target="a2"/><transition event="e2" target="a3"/></state>
+      <state id="a2"><transition event="e1" target="a1"/><transition event="back" target="ha_deep"/></state>
+      <state id="a3"><transition event="e1" target="a1"/></state>
+    </state>
+    <state id="rb" initial="b1">
+      <history id="hb_shallow" type="shallow"><transition target="b1"/></history>
+      <state id="b1"><transition event="e1" target="b2"/></state>
+      <state id="b2"><transition event="e2" target="b1"/><transition event="back" target="hb_shallow"/></state>
+    </state>
+    <state id="rc">
+      <parallel id="pc">
+        <state id="c1"><transition event="e1" target="c1"/></state>
+        <state id="c2"><transition event="e2" target="c2"/></state>
+      </parallel>
+    </state>
+  </parallel>
+</scxml>

@@ -15,12 +15,12 @@
 
 {% if model.has_parallel_states %}
     // W3C SCXML Appendix D.2: Remove conflicting transitions
-    fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> Vec<TransitionInfo> {
-        let mut filtered: Vec<TransitionInfo> = Vec::new();
+    fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> TransitionList {
+        let mut filtered: TransitionList = TransitionList::new();
 
         for t1 in enabled {
             let mut dominated = false;
-            let mut to_remove: Vec<usize> = Vec::new();
+            let mut to_remove: IndexList = IndexList::new();
 
             for (idx, t2) in filtered.iter().enumerate() {
                 // W3C SCXML Appendix D.2: Check if exit sets intersect
@@ -60,12 +60,12 @@
                 if has_conflict {
                     // W3C SCXML Appendix D.2: Preemption rules
                     if t1.target == t2.source {
-                        to_remove.push(idx);
+                        to_remove.push_bounded(idx);
                     } else if t2.target == t1.source {
                         dominated = true;
                         break;
                     } else if Self::is_descendant_of(t1.source, t2.source) {
-                        to_remove.push(idx);
+                        to_remove.push_bounded(idx);
                     } else {
                         dominated = true;
                         break;
@@ -78,7 +78,7 @@
                 for &idx in to_remove.iter().rev() {
                     filtered.remove(idx);
                 }
-                filtered.push(t1.clone());
+                filtered.push_bounded(t1.clone());
             }
         }
 
@@ -89,10 +89,10 @@
     // Matches C++ `ParallelTransitionHelper::computeExitSet` — returns all states
     // from `source` up to (but not including) LCA(source, target). For internal
     // transitions where the target is a descendant of the source, returns empty.
-    fn compute_exit_set(source: {{ machine_name }}State, target: {{ machine_name }}State, is_internal: bool, is_targetless: bool) -> Vec<{{ machine_name }}State> {
+    fn compute_exit_set(source: {{ machine_name }}State, target: {{ machine_name }}State, is_internal: bool, is_targetless: bool) -> ::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State> {
         // W3C SCXML 5.9.2: Targetless transitions execute actions only — no exit/entry
         if is_targetless {
-            return Vec::new();
+            return ::sce_rust_runtime::helpers::hierarchy::new_chain();
         }
 
         // W3C SCXML 3.13: Internal transition to a compound descendant — source stays active.
@@ -103,7 +103,7 @@
             && Self::is_compound_state(source) && !Self::is_parallel_state(source)
             && Self::is_descendant_of(target, source) && target != source
         {
-            return Vec::new();
+            return ::sce_rust_runtime::helpers::hierarchy::new_chain();
         }
 
         // W3C SCXML 3.12: Find LCA of source and target by walking up from source
@@ -128,10 +128,10 @@
         };
 
         // W3C SCXML Appendix D.2: Collect states from source up to (excluding) LCA
-        let mut exit_set = Vec::new();
+        let mut exit_set = ::sce_rust_runtime::helpers::hierarchy::new_chain();
         let mut current = source;
         loop {
-            exit_set.push(current);
+            ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut exit_set, current);
             match Self::get_parent(current) {
                 Some(parent) => {
                     if let Some(lca_state) = lca {
@@ -163,7 +163,7 @@
         // W3C SCXML 3.13: Transition domain = LCCA(source, target). When there is no
         // common ancestor (top-level sibling transition), we exit every active ancestor
         // of source up to the root — modelled here as `domain = None`.
-        let mut states_to_exit: Vec<{{ machine_name }}State> = Vec::new();
+        let mut states_to_exit: ::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State> = ::sce_rust_runtime::helpers::hierarchy::new_chain();
         for trans in transitions {
             if trans.is_targetless {
                 continue;
@@ -209,13 +209,13 @@
                     }
                 };
                 if should_exit && !states_to_exit.contains(&active_state) {
-                    states_to_exit.push(active_state);
+                    ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut states_to_exit, active_state);
                 }
             }
         }
 
         // Sort by reverse document order (deepest first)
-        states_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+        ::sce_rust_runtime::stable_sort_by(&mut states_to_exit, |a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
 
         // Snapshot active states for history recording
         let active_snapshot = self.active_states.clone();
@@ -226,8 +226,8 @@
         }
 
         // W3C SCXML Appendix D.2 Step 3: Execute transition content
-        let mut sorted_transitions = transitions.to_vec();
-        sorted_transitions.sort_by_key(|t| Self::get_document_order(t.source));
+        let mut sorted_transitions: TransitionList = ::sce_rust_runtime::bounded_clone_slice(transitions);
+        ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| Self::get_document_order(t.source));
 
         for trans in &sorted_transitions {
             if trans.has_actions {
@@ -244,7 +244,7 @@
         }
 
         // W3C SCXML Appendix D.2 Step 4-5: Enter target states
-        sorted_transitions.sort_by_key(|t| Self::get_document_order(t.target));
+        ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| Self::get_document_order(t.target));
 
         for trans in &sorted_transitions {
             if trans.is_targetless {

@@ -1,0 +1,3 @@
+# Build artifacts for the detached probe crate (compiled fresh by the gate).
+/target
+Cargo.lock
