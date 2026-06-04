@@ -2936,6 +2936,22 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
             });
         }
     }
+    // Push-down: `len(x)` lowers to Go's `len(...)`, which returns a concrete
+    // `int` — NOT an untyped constant, so there is no implicit int→uintN
+    // conversion (`i < len(a)` with `i: uint32` is a Go type error). In a
+    // sized-integer context wrap the builtin in the target type. `go_coerce`
+    // cannot do this: it types `len(x)` as `UntypedInt` (the infer lattice's
+    // always-wider stand-in) and short-circuits `UntypedInt → _` to a no-op
+    // on the untyped-constant assumption. Mirrors the Rust `.len() as uN`
+    // push-down (RFC c7-wildcard W-index Q-W-3).
+    if let ExprKind::Call { callee, args } = &expr.kind {
+        if is_len_builtin(callee, args) {
+            if let InferredType::Int { signed, bits } = expected {
+                let inner = emit_go(&args[0], InferredType::Unknown)?;
+                return Ok(format!("{}(len({inner}))", go_int_type(signed, bits)));
+            }
+        }
+    }
     let raw = go_emit_node(expr)?;
     Ok(go_coerce(raw, expr.ty, expected, expr))
 }
