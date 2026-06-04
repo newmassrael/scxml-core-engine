@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: b54483029156719493b67bab1ba0270f7cbbd9e4ba4ab1e2c6d39e74fc9e1571
-// generated-at: 1780541051
+// template-hash: 7197aba2d6c1e9ac23142e9725b0b92b81ba30d30925873778f22c9cb1e581d7
+// generated-at: 1780548564
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -544,7 +544,7 @@ impl StatePolicy for Test173Policy {
                     }
 
                     {
-                        let send_id = "__send_0".to_string();
+                        let send_id = ::sce_rust_runtime::sce_string_from_str("__send_0");
 
                         let event_data: &str = "";
 
@@ -604,7 +604,8 @@ impl StatePolicy for Test173Policy {
                                     let mut meta = sce_rust_runtime::EventWithMetadata::new(
                                         Test173Event::Event1,
                                     );
-                                    meta.metadata.data = event_data.to_string();
+                                    meta.metadata.data =
+                                        ::sce_rust_runtime::sce_string_from_str(event_data);
                                     engine.raise(meta);
                                 }
                             } else {
@@ -614,9 +615,10 @@ impl StatePolicy for Test173Policy {
                                     );
                                     meta.metadata = sce_rust_runtime::EventMetadata::external(
                                         send_id.clone(),
-                                        String::new(),
+                                        ::sce_rust_runtime::SceString::new(),
                                     );
-                                    meta.metadata.data = event_data.to_string();
+                                    meta.metadata.data =
+                                        ::sce_rust_runtime::sce_string_from_str(event_data);
                                     engine.raise_external_with_meta(meta);
                                 }
                             }

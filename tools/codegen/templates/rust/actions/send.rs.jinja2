@@ -10,11 +10,11 @@
 #}
 {
 {% if action.id %}
-    let send_id = "{{ action.id }}".to_string();
+    let send_id = ::sce_rust_runtime::sce_string_from_str("{{ action.id }}");
 {% elif action.auto_send_id %}
-    let send_id = "{{ action.auto_send_id }}".to_string();
+    let send_id = ::sce_rust_runtime::sce_string_from_str("{{ action.auto_send_id }}");
 {% else %}
-    let send_id = String::new();
+    let send_id = ::sce_rust_runtime::SceString::new();
 {% endif %}
 
 {% if action.idlocation %}
@@ -232,7 +232,7 @@
 {% if action.event %}
     {
         let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
-        meta.metadata.data = event_data.to_string();
+        meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
         engine.raise(meta);
     }
 {% elif action.eventexpr %}
@@ -245,7 +245,7 @@
             Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
                 if let Some(evt) = Self::get_event_from_name(&event_name) {
                     let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-                    meta.metadata.data = event_data.to_string();
+                    meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
                     engine.raise(meta);
                 }
             }
@@ -375,7 +375,7 @@
 {% if action.event %}
         {
             let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
-            meta.metadata.data = event_data.to_string();
+            meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
             engine.raise(meta);
         }
 {% elif action.eventexpr %}
@@ -388,7 +388,7 @@
                 Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
                     if let Some(evt) = Self::get_event_from_name(&event_name) {
                         let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-                        meta.metadata.data = event_data.to_string();
+                        meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
                         engine.raise(meta);
                     }
                 }
@@ -400,8 +400,8 @@
 {% if action.event %}
         {
             let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
-            meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
-            meta.metadata.data = event_data.to_string();
+            meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
+            meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
             engine.raise_external_with_meta(meta);
         }
 {% elif action.eventexpr %}
@@ -424,6 +424,16 @@
 {% elif not action.targetexpr and action.target == '#_parent' %}
     // W3C SCXML 6.2/6.4.5: Send to parent state machine via #_parent
 {% if action.event %}
+{% if no_std %}
+    // Watching-zenoh RFC §5.J.2: no_std codegen-rejects `<invoke>`, so a machine
+    // is never instantiated as a child and has no parent engine queue (the
+    // `parent_external_queue` field is elided). A #_parent send therefore always
+    // takes the parent-absent branch: error.communication.
+{% if 'error.communication' in model.events %}
+    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+        {{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}));
+{% endif %}
+{% else %}
     if let Some(ref parent_queue) = self.parent_external_queue {
         if let Ok(mut q) = parent_queue.lock() {
             q.push(("{{ action.event }}".to_string(), event_data.to_string()));
@@ -434,6 +444,7 @@
             {{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}));
 {% endif %}
     }
+{% endif %}
 {% endif %}
 {% elif not action.targetexpr and action.target and action.target is startingwith('#_') and action.target != '#_internal' and action.target != '#_parent' and model.invokes | scxml is defined and model.invokes | scxml | selectattr('invoke_id', 'equalto', action.target | slice_from(2)) | list %}
 {# W3C SCXML 6.4: Send to child invoke via #_<invokeId> target #}
@@ -450,8 +461,8 @@
     {
         let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
         // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
-        meta.metadata.data = event_data.to_string();
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
+        meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
         engine.raise_external_with_meta(meta);
     }
 {% endif %}
@@ -461,8 +472,8 @@
     {
         let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
         // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
-        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
-        meta.metadata.data = event_data.to_string();
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
+        meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
         engine.raise_external_with_meta(meta);
     }
 {% elif action.eventexpr %}
