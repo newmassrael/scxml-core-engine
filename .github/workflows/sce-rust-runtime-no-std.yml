@@ -20,6 +20,8 @@ on:
     paths:
       - 'sce-rust-runtime/**'
       - 'tools/codegen/templates/rust/**'
+      - 'sce-nostd-build-probe/**'
+      - 'sce-build/tests/fixtures/no_std/**'
       - 'Cargo.lock'
       - 'Cargo.toml'
       - '.cargo/config.toml'
@@ -29,6 +31,8 @@ on:
     paths:
       - 'sce-rust-runtime/**'
       - 'tools/codegen/templates/rust/**'
+      - 'sce-nostd-build-probe/**'
+      - 'sce-build/tests/fixtures/no_std/**'
       - 'Cargo.lock'
       - 'Cargo.toml'
       - '.cargo/config.toml'
@@ -75,4 +79,28 @@ jobs:
           -p sce-rust-runtime \
           --no-default-features \
           --features=no_std \
+          --target=thumbv7em-none-eabihf
+
+    # Proves *generated* machines (not just the runtime) are allocator-free.
+    # The runtime build above cannot catch a `tools/codegen/templates/rust/`
+    # regression that reintroduces `alloc` into emitted code (raw `Vec`,
+    # `[T]::sort_by`, `String`, `StdHal`, a direct `heapless` reference, ...).
+    # The probe crate compiles a generated `--no-std` machine exercising the
+    # historically std-coupled constructs (nested parallel + conflict
+    # resolution, shallow/deep history, many transitions) for the bare-metal
+    # target with no `#[global_allocator]`; any reachable `alloc` symbol is a
+    # hard compile error. See sce-nostd-build-probe/README.md.
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+
+    - name: Generate the no_std probe machine
+      run: |
+        target/release/sce-codegen --workspace-root . generate -l rust --no-std \
+          --output-dir sce-nostd-build-probe/src \
+          sce-build/tests/fixtures/no_std/parallel_history_probe.scxml
+
+    - name: Compile the generated no_std machine (MCU target, no allocator)
+      run: |
+        cargo build \
+          --manifest-path sce-nostd-build-probe/Cargo.toml \
           --target=thumbv7em-none-eabihf

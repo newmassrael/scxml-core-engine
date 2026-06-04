@@ -82,6 +82,11 @@
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
+{% if model.has_parallel_states %}
+// Watching-zenoh RFC §5.J.2: `.push_bounded()` on the microstep conflict-resolution
+// buffers (std `Vec` / no_std capacity-bounded `heapless::Vec`).
+use sce_rust_runtime::BoundedPush;
+{% endif %}
 {% if model.event_queue_capacity %}
 
 // Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3 Atomic
@@ -109,6 +114,19 @@ struct TransitionInfo {
     is_internal: bool,
     is_targetless: bool,
 }
+
+// Watching-zenoh RFC §5.J.2: microstep conflict-resolution buffers. Under std
+// these are unbounded `Vec`; under no_std they are heapless, capacity-bounded
+// at `MAX_ENABLED_TRANSITIONS` (the runtime owns the no_std collection choice —
+// single source of truth, like `SceString` / `StateChain`). State-list buffers
+// reuse the depth-bounded `StateChain` alias directly.
+{% if no_std %}
+type TransitionList = ::sce_rust_runtime::heapless::Vec<TransitionInfo, { ::sce_rust_runtime::MAX_ENABLED_TRANSITIONS }>;
+type IndexList = ::sce_rust_runtime::heapless::Vec<usize, { ::sce_rust_runtime::MAX_ENABLED_TRANSITIONS }>;
+{% else %}
+type TransitionList = ::std::vec::Vec<TransitionInfo>;
+type IndexList = ::std::vec::Vec<usize>;
+{% endif %}
 {% endif %}
 
 // ======================================================================
@@ -176,11 +194,15 @@ pub struct {{ machine_name }}Policy {
 {% endif %}
 {% if model.needs_event_name %}
     // W3C SCXML 5.10: Event name for _event.name binding
-    pending_event_name: String,
+    //
+    // Watching-zenoh RFC §5.J.2: typed as the runtime crate's [`SceString`]
+    // alias — `String` under std (unchanged ABI), `heapless::String<MAX_EVENT_STRING_LEN>`
+    // under no_std — so the emitted field is allocator-free on MCU targets.
+    pending_event_name: ::sce_rust_runtime::SceString,
 {% endif %}
 {% if model.needs_event_data %}
     // W3C SCXML 5.10: Event data for _event.data binding
-    pending_event_data: String,
+    pending_event_data: ::sce_rust_runtime::SceString,
 {% endif %}
 {% if event_payload_type != '()' %}
     // NL→IR Item C1 Path A: typed `_event.data` payload for the current
@@ -190,27 +212,32 @@ pub struct {{ machine_name }}Policy {
 {% endif %}
 {% if model.needs_event_type %}
     // W3C SCXML 5.10.1: Event type for _event.type binding
-    pending_event_type: String,
+    pending_event_type: ::sce_rust_runtime::SceString,
 {% endif %}
 {% if model.needs_event_sendid %}
     // W3C SCXML 5.10.1: Event sendid for _event.sendid binding
-    pending_event_sendid: String,
+    pending_event_sendid: ::sce_rust_runtime::SceString,
 {% endif %}
 {% if model.needs_event_origin %}
     // W3C SCXML 5.10.1: Event origin for _event.origin binding
-    pending_event_origin: String,
+    pending_event_origin: ::sce_rust_runtime::SceString,
 {% endif %}
 {% if model.needs_event_origintype %}
     // W3C SCXML 5.10.1: Event origintype for _event.origintype binding
-    pending_event_origintype: String,
+    pending_event_origintype: ::sce_rust_runtime::SceString,
 {% endif %}
 {% if model.needs_event_invokeid %}
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
-    pending_event_invokeid: String,
+    pending_event_invokeid: ::sce_rust_runtime::SceString,
 {% endif %}
 {% for history_id, history_info in model.history_states | dictsort %}
     // W3C SCXML 3.11: History state {{ history_id }} ({{ history_info.type }})
-    history_{{ history_id }}: Option<Vec<{{ machine_name }}State>>,
+    //
+    // Watching-zenoh RFC §5.J.2: the recorded configuration is a
+    // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
+    // under no_std), mirroring `active_states`. Recorded history is always a
+    // subset of the active configuration, so it cannot exceed the depth bound.
+    history_{{ history_id }}: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<{{ machine_name }}State>>,
 {% endfor %}
 {% if model.variables %}
     // W3C SCXML 5.3: Datamodel variables
@@ -218,14 +245,21 @@ pub struct {{ machine_name }}Policy {
 {% if var.type == 'int' %}
     {{ var.id | to_snake_case }}: i64,
 {% elif var.type == 'string' %}
-    {{ var.id | to_snake_case }}: String,
+    {{ var.id | to_snake_case }}: ::sce_rust_runtime::SceString,
 {% elif var.type == 'bool' %}
     {{ var.id | to_snake_case }}: bool,
 {% endif %}
 {% endfor %}
 {% endif %}
-    // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
+{% if not no_std %}
+    // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
+    //
+    // Watching-zenoh RFC §5.J.2: gated to !no_std. Under `--no-std` both the
+    // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
+    // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
+    // session identity is ever tracked and the alloc-coupled `String` is omitted.
     pub session_id: Option<String>,
+{% endif %}
 {% if model.needs_script_engine %}
     // Engine DI Parity RFC (Path B+): per-instance script engine. The
     // constructor parameter is mandatory whenever `model.needs_script_engine`
@@ -261,10 +295,15 @@ pub struct {{ machine_name }}Policy {
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
 {% endif %}
-    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
+{% if not no_std %}
+    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
+    // Watching-zenoh RFC §5.J.2: gated to !no_std — `<invoke>` is codegen-rejected
+    // under no_std, so a machine is never instantiated as a child and this
+    // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
-    // W3C SCXML 6.5: Child session ID for finalize origin matching
+    // W3C SCXML 6.5: Child session ID for finalize origin matching.
     pub child_session_id: String,
+{% endif %}
 }
 
 impl {{ machine_name }}Policy {
@@ -291,28 +330,28 @@ impl {{ machine_name }}Policy {
             next_event_is_external: false,
 {% endif %}
 {% if model.needs_event_name %}
-            pending_event_name: String::new(),
+            pending_event_name: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% if model.needs_event_data %}
-            pending_event_data: String::new(),
+            pending_event_data: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% if event_payload_type != '()' %}
             pending_payload: {{ event_payload_type }}::default(),
 {% endif %}
 {% if model.needs_event_type %}
-            pending_event_type: String::new(),
+            pending_event_type: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% if model.needs_event_sendid %}
-            pending_event_sendid: String::new(),
+            pending_event_sendid: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% if model.needs_event_origin %}
-            pending_event_origin: String::new(),
+            pending_event_origin: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% if model.needs_event_origintype %}
-            pending_event_origintype: String::new(),
+            pending_event_origintype: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% if model.needs_event_invokeid %}
-            pending_event_invokeid: String::new(),
+            pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% for history_id, _ in model.history_states | dictsort %}
             history_{{ history_id }}: None,
@@ -323,16 +362,18 @@ impl {{ machine_name }}Policy {
             {{ var.id | to_snake_case }}: {{ var.expr if var.expr else '0' }},
 {% elif var.type == 'string' %}
 {% if var.expr %}
-            {{ var.id | to_snake_case }}: {{ var.expr | to_rust_string_expr }}.to_string(),
+            {{ var.id | to_snake_case }}: ::sce_rust_runtime::sce_string_from_str({{ var.expr | to_rust_string_expr }}),
 {% else %}
-            {{ var.id | to_snake_case }}: String::new(),
+            {{ var.id | to_snake_case }}: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% elif var.type == 'bool' %}
             {{ var.id | to_snake_case }}: {{ 'true' if var.expr and var.expr.lower() == 'true' else 'false' }},
 {% endif %}
 {% endfor %}
 {% endif %}
+{% if not no_std %}
             session_id: None,
+{% endif %}
 {% if model.needs_script_engine %}
             script_engine_initialized: false,
 {% if model.has_parallel_states or model.uses_in_predicate %}
@@ -353,9 +394,9 @@ impl {{ machine_name }}Policy {
 {% endfor %}
 {% if not no_std %}
             parent_external_queue: None,
-{% endif %}
             invoke_id: String::new(),
             child_session_id: String::new(),
+{% endif %}
         }
     }
 
@@ -388,7 +429,17 @@ impl StatePolicy for {{ machine_name }}Policy {
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = {{ event_payload_type }};
+{% if no_std %}
+    // Watching-zenoh RFC §5.J.2: under no_std the std-backed `StdHal`
+    // (`std::time::Instant` / `OnceLock`) does not implement `Hal`. The
+    // generated machine defaults to `NoOpHal` so the no_std surface compiles
+    // standalone. `NoOpHal` reports zero ticks and panics on `wake`/`irq_save`
+    // (fail-loud per sce-rust-runtime hal docs) — an MCU consumer driving the
+    // engine externally must provide a real `Hal` impl.
+    type Hal = sce_rust_runtime::NoOpHal;
+{% else %}
     type Hal = sce_rust_runtime::StdHal;
+{% endif %}
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = {{ 'true' if model.has_parallel_states else 'false' }};
@@ -660,7 +711,7 @@ impl StatePolicy for {{ machine_name }}Policy {
         self.pending_event_data = metadata.data.clone();
 {% endif %}
 {% if model.needs_event_type %}
-        self.pending_event_type = metadata.event_type.as_str().to_string();
+        self.pending_event_type = ::sce_rust_runtime::sce_string_from_str(metadata.event_type.as_str());
 {% endif %}
 {% if model.needs_event_sendid %}
         self.pending_event_sendid = metadata.send_id.clone();
@@ -762,7 +813,7 @@ impl {{ machine_name }}Policy {
         current_state: &mut {{ machine_name }}State,
         transition_taken: &mut bool,
         engine: &mut sce_rust_runtime::Engine<Self>,
-        mut collect_mode: Option<&mut Vec<TransitionInfo>>,
+        mut collect_mode: Option<&mut TransitionList>,
     ) -> bool {
 {% else %}
     fn try_transition_in_state(
@@ -828,7 +879,7 @@ impl {{ machine_name }}Policy {
 {% if trans.history_target is defined and trans.history_target %}
                             // W3C SCXML 3.11: History transition - resolve at runtime
                             let resolved_target = self.resolve_history_target_{{ trans.history_target }}();
-                            collect.push(TransitionInfo {
+                            collect.push_bounded(TransitionInfo {
                                 source: check_state, target: resolved_target,
                                 transition_index: {{ trans.transition_index }},
                                 has_actions: {{ 'true' if trans.actions else 'false' }},
@@ -836,7 +887,7 @@ impl {{ machine_name }}Policy {
                                 is_targetless: false,
                             });
 {% else %}
-                            collect.push(TransitionInfo {
+                            collect.push_bounded(TransitionInfo {
                                 source: check_state, target: {{ machine_name }}State::{{ trans.target | to_state_variant }},
                                 transition_index: {{ trans.transition_index }},
                                 has_actions: {{ 'true' if trans.actions else 'false' }},
@@ -845,7 +896,7 @@ impl {{ machine_name }}Policy {
                             });
 {% endif %}
 {% else %}
-                            collect.push(TransitionInfo {
+                            collect.push_bounded(TransitionInfo {
                                 source: check_state, target: check_state,
                                 transition_index: {{ trans.transition_index }},
                                 has_actions: {{ 'true' if trans.actions else 'false' }},
@@ -916,7 +967,7 @@ impl {{ machine_name }}Policy {
 {% if transition.target %}
 {% if transition.history_target is defined and transition.history_target %}
                             let resolved_target = self.resolve_history_target_{{ transition.history_target }}();
-                            collect.push(TransitionInfo {
+                            collect.push_bounded(TransitionInfo {
                                 source: check_state, target: resolved_target,
                                 transition_index: {{ transition.transition_index }},
                                 has_actions: {{ 'true' if transition.actions else 'false' }},
@@ -924,7 +975,7 @@ impl {{ machine_name }}Policy {
                                 is_targetless: false,
                             });
 {% else %}
-                            collect.push(TransitionInfo {
+                            collect.push_bounded(TransitionInfo {
                                 source: check_state, target: {{ machine_name }}State::{{ transition.target | to_state_variant }},
                                 transition_index: {{ transition.transition_index }},
                                 has_actions: {{ 'true' if transition.actions else 'false' }},
@@ -933,7 +984,7 @@ impl {{ machine_name }}Policy {
                             });
 {% endif %}
 {% else %}
-                            collect.push(TransitionInfo {
+                            collect.push_bounded(TransitionInfo {
                                 source: check_state, target: check_state,
                                 transition_index: {{ transition.transition_index }},
                                 has_actions: {{ 'true' if transition.actions else 'false' }},
@@ -974,7 +1025,7 @@ impl {{ machine_name }}Policy {
 {% if transition.target %}
 {% if transition.history_target is defined and transition.history_target %}
                         let resolved_target = self.resolve_history_target_{{ transition.history_target }}();
-                        collect.push(TransitionInfo {
+                        collect.push_bounded(TransitionInfo {
                             source: check_state, target: resolved_target,
                             transition_index: {{ transition.transition_index }},
                             has_actions: {{ 'true' if transition.actions else 'false' }},
@@ -982,7 +1033,7 @@ impl {{ machine_name }}Policy {
                             is_targetless: false,
                         });
 {% else %}
-                        collect.push(TransitionInfo {
+                        collect.push_bounded(TransitionInfo {
                             source: check_state, target: {{ machine_name }}State::{{ transition.target | to_state_variant }},
                             transition_index: {{ transition.transition_index }},
                             has_actions: {{ 'true' if transition.actions else 'false' }},
@@ -991,7 +1042,7 @@ impl {{ machine_name }}Policy {
                         });
 {% endif %}
 {% else %}
-                        collect.push(TransitionInfo {
+                        collect.push_bounded(TransitionInfo {
                             source: check_state, target: check_state,
                             transition_index: {{ transition.transition_index }},
                             has_actions: {{ 'true' if transition.actions else 'false' }},

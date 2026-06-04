@@ -286,10 +286,10 @@
                 // W3C SCXML 3.6: Enter through hierarchy to reach initial target(s)
                 for &target in &initial_children {
                     // Build entry chain from state to target
-                    let mut chain = Vec::new();
+                    let mut chain = ::sce_rust_runtime::helpers::hierarchy::new_chain();
                     let mut current = target;
                     while current != state {
-                        chain.push(current);
+                        ::sce_rust_runtime::helpers::hierarchy::push_chain(&mut chain, current);
                         match Self::get_parent(current) {
                             Some(parent) => current = parent,
                             None => break,
@@ -323,13 +323,13 @@
         // W3C SCXML 3.4 + 3.13: Parallel state exit order
         if Self::is_parallel_state(state) {
             // W3C SCXML 3.4: Collect all active descendants of this parallel state
-            let mut descendants_to_exit: Vec<Self::State> = self.active_states.iter()
+            let mut descendants_to_exit: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> = self.active_states.iter()
                 .filter(|&&s| s != state && Self::is_descendant_of(s, state))
                 .copied()
                 .collect();
 
             // W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
-            descendants_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+            ::sce_rust_runtime::stable_sort_by(&mut descendants_to_exit, |a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
 
             // Exit each active descendant (deepest first)
             for descendant in descendants_to_exit {
@@ -346,15 +346,19 @@
 {% for history_id, history_info in model.history_states | dictsort %}
         if state == {{ machine_name }}State::{{ history_info.parent | to_state_variant }} {
 {% if history_info.type == 'deep' %}
-            // W3C SCXML 3.11: Deep history - record all active descendants
-            let filtered: Vec<Self::State> = pre_transition_active.iter()
+            // W3C SCXML 3.11: Deep history - record all active descendants.
+            // Watching-zenoh RFC §5.J.2: [`StateChain`] alias (heapless under
+            // no_std); recorded history is a subset of the active configuration
+            // so it stays within MAX_HIERARCHY_DEPTH.
+            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> = pre_transition_active.iter()
                 .filter(|&&s| Self::is_descendant_of(s, {{ machine_name }}State::{{ history_info.parent | to_state_variant }})
                     && !Self::is_compound_state(s) && !Self::is_parallel_state(s))
                 .copied()
                 .collect();
 {% else %}
-            // W3C SCXML 3.11: Shallow history - record direct children only
-            let filtered: Vec<Self::State> = pre_transition_active.iter()
+            // W3C SCXML 3.11: Shallow history - record direct children only.
+            // Watching-zenoh RFC §5.J.2: [`StateChain`] alias (heapless under no_std).
+            let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> = pre_transition_active.iter()
                 .filter(|&&s| Self::get_parent(s) == Some({{ machine_name }}State::{{ history_info.parent | to_state_variant }}))
                 .copied()
                 .collect();
