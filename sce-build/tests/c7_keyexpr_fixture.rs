@@ -203,7 +203,9 @@ fn kotlin_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
 fn go_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     let code = compile_match_first_for(Language::Go);
     assert!(
-        code.contains("for slotIdx := uint32(0); slotIdx < LocalSubTableCapacity; slotIdx++ {"),
+        code.contains(
+            "for slotIdx := uint32(0); slotIdx < local_sub_table.LocalSubTableCapacity; slotIdx++ {"
+        ),
         "Go foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
@@ -212,9 +214,11 @@ fn go_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     );
     // Cross-algorithm dispatch — Go package-qualified form. Identity SSOT:
     // the package is named from the algorithm's `name=` attribute
-    // (`keyexpr_intersect`), not its file stem.
+    // (`keyexpr_intersect`), not its file stem. The element field read is
+    // exported PascalCase (`entry.CallbackId`) to bind against the Go codec
+    // struct field (`codec_field_id` SSOT).
     assert!(
-        code.contains("keyexpr_intersect.KeyexprIntersect(entry.callback_id, target)"),
+        code.contains("keyexpr_intersect.KeyexprIntersect(entry.CallbackId, target)"),
         "Go cross-algo dispatch missing qualified call; got:\n{code}"
     );
 }

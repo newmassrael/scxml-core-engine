@@ -198,7 +198,9 @@ fn kotlin_foreach_bc_emits_index_loop_with_get_by_slot() {
 fn go_foreach_bc_emits_index_loop_with_get_by_slot() {
     let code = compile_algo_for(Language::Go);
     assert!(
-        code.contains("for slotIdx := uint32(0); slotIdx < LocalSubTableCapacity; slotIdx++ {"),
+        code.contains(
+            "for slotIdx := uint32(0); slotIdx < local_sub_table.LocalSubTableCapacity; slotIdx++ {"
+        ),
         "Go foreach-BC missing index loop; got:\n{code}"
     );
     assert!(
