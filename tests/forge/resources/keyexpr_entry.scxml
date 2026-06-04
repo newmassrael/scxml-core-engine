@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC c7-wildcard W-project — element-type codec for the bounded-string
+  element-field projection (Q-W-5 (a) lock). Sibling of the C7
+  `subscription_entry.scxml`, but the matchable field is a bounded
+  UTF-8 keyexpr string rather than an interned uint32 id — the runtime-
+  variable representation the wildcard matcher requires (RFC §1 G2).
+
+  Single bounded-string field `pattern` (sce:max-size="32") with its
+  length sibling `pattern_len`. The `char pattern[32]; uint8_t
+  pattern_len` C11 pair (and the `&'a str` / `std::string` / `string` /
+  `str` form on the other backends) is what an algorithm-over-BC body
+  projects to a borrowed `bytes` view when it passes `entry.pattern`
+  into a byte-compare algorithm (W-index's `bytes_equal`). The wire
+  layout mirrors `codec_zenoh_locator.scxml`'s non-gated length-ref
+  string.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="codec"
+       name="keyexpr_entry"
+       version="1.0">
+  <datamodel>
+    <sce:field id="pattern_len" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="pattern" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
+               sce:length-field="pattern_len" sce:max-size="32"/>
+  </datamodel>
+</scxml>

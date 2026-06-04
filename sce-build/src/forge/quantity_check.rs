@@ -203,6 +203,10 @@ fn find_unit_mismatch(ast: &TypedExpr) -> Option<UnitMismatch> {
             }
             None
         }
+        // RFC c7-wildcard W-project: algorithm-kind-only projection node;
+        // recurse into its source (unreachable on the unit-mismatch path,
+        // which runs over typed numeric expressions).
+        ExprKind::BytesView { source, .. } => find_unit_mismatch(source),
         // Leaves carry no nested arithmetic.
         ExprKind::NumberLit(_)
         | ExprKind::StringLit { .. }

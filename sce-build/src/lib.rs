@@ -1497,6 +1497,13 @@ fn load_target_plugin_for_compile(
     }
 }
 
+/// RFC c7-wildcard W-project: one element-type's field schema, in
+/// declaration order. Each entry is `(field_id, SceType, length_field)`,
+/// where `length_field` is the codec's explicit `sce:length-field` — the
+/// C11 borrowed-byte-view length sibling SSOT — or `None` for a tail/fixed
+/// `bytes` field (auto `<field>_len`) or a procedure field.
+pub type ElementFieldSchema = Vec<(String, forge::model::SceType, Option<String>)>;
+
 /// Options that steer forge cross-file codegen beyond the plain
 /// `(content, name, language, base_dir)` tuple. New language-specific
 /// knobs get added as fields here so `compile_forge_with_imports`
@@ -1583,6 +1590,23 @@ pub struct ForgeCompileOptions {
     /// sibling synthesized, no self-check — matching pre-C10 behavior
     /// verbatim.
     pub listener_links: Option<std::collections::BTreeSet<String>>,
+    /// RFC c7-wildcard W-project: element-type `(field_id, SceType)`
+    /// schemas keyed by the element-type's **snake-cased name** (the same
+    /// form [`ImportContext::bc_element_snake`] carries —
+    /// `to_snake_case(BoundedCollectionModel.element_type)`). Populated by
+    /// [`compile_scxml_with_imports`] from `element_type_candidates` so an
+    /// algorithm iterating a BC (`<sce:foreach item="entry" in="keys">`)
+    /// can type each `entry.<field>` access — `entry.pattern` → `Str`,
+    /// `entry.callback_id` → `uint32`. That inference is what the
+    /// bounded-string-field → borrowed-`bytes`-view call-site projection
+    /// (Q-W-5 (a) lock) keys on. Keyed by element name (not BC name)
+    /// because `render_algorithm` recovers the element snake from the BC
+    /// import's `bc_element_snake`, whereas the BC's own model name is not
+    /// reliably reconstructible from the file-stem-derived import context.
+    /// `None` on deploy-unaware single-file paths (`sce_codegen` CLI,
+    /// `compile_forge_with_imports`); the projection then does not fire and
+    /// the arg falls through verbatim, exactly as in pre-W-project C7.
+    pub element_type_field_schemas: Option<std::collections::HashMap<String, ElementFieldSchema>>,
 }
 
 /// RFC §5.D + §5.I C2-β cross-core worker placement entry. Populated
@@ -2514,6 +2538,26 @@ pub fn compile_scxml_with_imports(
                 ))
             })
             .collect();
+    // RFC c7-wildcard W-project: element-type field schemas keyed by the
+    // element-type snake name, resolved from the same candidate map. An
+    // algorithm iterating a BC types each `entry.<field>` from this so the
+    // bounded-string-field → bytes-view projection (Q-W-5) can fire and so
+    // a mistyped argument (`entry.callback_id` into a `bytes` param) is
+    // caught rather than silently miscompiled. Independent of the
+    // `<sce:index-by>` / capacity resolution above (that map is keyed by
+    // BC name; this is keyed by element name to match what the BC import
+    // context carries — see `ForgeCompileOptions::element_type_field_schemas`).
+    let element_type_field_schemas: std::collections::HashMap<String, ElementFieldSchema> =
+        bounded_collections_for_xref
+            .iter()
+            .filter_map(|(_label, bc)| {
+                let element_doc = element_type_candidates.get(&bc.element_type)?;
+                Some((
+                    filters::to_snake_case(bc.element_type.clone()),
+                    extract_bounded_collection_element_field_sce_types(element_doc),
+                ))
+            })
+            .collect();
     // C10-α: thread the orchestrator-resolved listener-link set into
     // the per-doc ForgeCompileOptions so each `render_link_*` template
     // can synthesize the Sibling half + the post-render self-check
@@ -2524,7 +2568,9 @@ pub fn compile_scxml_with_imports(
     // per Q-η5 (a)).
     let listener_links_override: Option<std::collections::BTreeSet<String>> =
         deploy.map(|_| listener_links.clone());
-    let needs_override = !bc_resolutions.is_empty() || listener_links_override.is_some();
+    let needs_override = !bc_resolutions.is_empty()
+        || listener_links_override.is_some()
+        || !element_type_field_schemas.is_empty();
     let bc_options_override = if !needs_override {
         None
     } else {
@@ -2534,6 +2580,9 @@ pub fn compile_scxml_with_imports(
         }
         if let Some(ll) = listener_links_override {
             overridden.listener_links = Some(ll);
+        }
+        if !element_type_field_schemas.is_empty() {
+            overridden.element_type_field_schemas = Some(element_type_field_schemas);
         }
         Some(overridden)
     };
@@ -3872,6 +3921,42 @@ pub fn validate_cross_doc_listener_roles(
 /// element-type before this helper runs from the orchestrator
 /// populator, so a `None` return here would imply the model layout
 /// changed since validation — unreachable on a healthy build.
+/// RFC c7-wildcard W-project: the element-type's full
+/// `(field_id, SceType, length_field)` schema, in declaration order.
+/// Mirrors [`extract_bounded_collection_index_field_sce_type`] but returns
+/// every field rather than one named axis, so an algorithm iterating the
+/// BC can type each `entry.<field>` access.
+///
+/// The third tuple slot is the codec field's **explicit** `length_field`
+/// (the `sce:length-field` source), carried so the C11 borrowed-bytes-view
+/// projection (Q-W-5) references the *actual* length sibling rather than
+/// guessing `<field>_len`. `None` for a procedure field, or for a codec
+/// field with no length reference (a tail / fixed `bytes` field, whose C11
+/// length sibling the codec emit auto-names `<field>_len` — there the
+/// convention is structurally guaranteed, so `None` is a faithful signal
+/// to use it). Same element-doc admission as the single-field extractor
+/// (codec / procedure only — the element-type candidate map holds no other
+/// kind).
+fn extract_bounded_collection_element_field_sce_types(
+    element_doc: &forge::model::ForgeDocument,
+) -> ElementFieldSchema {
+    use forge::model::ForgeDocument;
+    match element_doc {
+        ForgeDocument::Codec(codec) => codec
+            .fields
+            .iter()
+            .map(|f| (f.id.clone(), f.sce_type.clone(), f.length_field.clone()))
+            .collect(),
+        ForgeDocument::Procedure(proc) => proc
+            .inputs
+            .iter()
+            .chain(proc.internals.iter())
+            .map(|f| (f.id.clone(), f.sce_type.clone(), None))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn extract_bounded_collection_index_field_sce_type(
     element_doc: &forge::model::ForgeDocument,
     field: &str,
@@ -4149,6 +4234,25 @@ fn discover_stateless_signature(
             // float64. Without opening up the Interpolation model further, we
             // treat parameters as empty (opaque) and return Float64.
             (Vec::new(), Some(SceType::Float64))
+        }
+        // RFC §5.A Algorithm: a stateless free function whose signature is
+        // the declared `<sce:signature>` (params in positional order, an
+        // optional return). Capturing it here lets `infer_types` resolve the
+        // param/return types of a cross-algorithm dispatch (`eq(a, b)`), which
+        // the c7-wildcard W-project byte-view projection consumes: a `bytes`
+        // parameter receiving a bounded-string element field is projected to a
+        // borrowed view at the call site (Q-W-5 (a) lock). Before this arm the
+        // catch-all left `param_types`/`ret_type` empty, so cross-algorithm
+        // calls inferred `Unknown` (harmless for C7's verbatim-arg dispatch,
+        // insufficient for the type-driven projection).
+        ForgeDocument::Algorithm(m) => {
+            let params: Vec<SceType> = m
+                .signature
+                .params
+                .iter()
+                .map(|p| p.sce_type.clone())
+                .collect();
+            (params, m.signature.return_type.clone())
         }
         _ => (Vec::new(), None),
     }
