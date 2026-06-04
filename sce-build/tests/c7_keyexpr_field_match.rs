@@ -105,8 +105,12 @@ fn extract_field_match(outputs: &[(String, GeneratedOutput)]) -> String {
 #[test]
 fn rust_field_match_projects_string_field_to_byte_slice() {
     let code = compile_field_match_for(Language::Rust);
+    // Identity SSOT: the imported module is named from the algorithm's
+    // `name=` attribute (`bytes_equal`), not its file stem
+    // (`algorithm_bytes_equal`) — `generate_forge` writes the module as
+    // `bytes_equal.rs` and the cross-doc `use super::bytes_equal;` resolves it.
     assert!(
-        code.contains("algorithm_bytes_equal::bytes_equal(entry.pattern.as_bytes(), target)"),
+        code.contains("bytes_equal::bytes_equal(entry.pattern.as_bytes(), target)"),
         "Rust string-field projection missing; got:\n{code}"
     );
 }
@@ -130,9 +134,14 @@ fn c11_field_match_projects_string_field_to_byte_view() {
 #[test]
 fn cpp_field_match_projects_string_field_to_span() {
     let code = compile_field_match_for(Language::Cpp);
+    // Identity SSOT: the imported namespace is named from the algorithm's
+    // `name=` attribute (`SCE::Generated::BytesEqual`), not its file stem
+    // (`AlgorithmBytesEqual`) — `generate_forge` emits the definition in
+    // `namespace SCE::Generated::BytesEqual` and the cross-doc call qualifies
+    // against it.
     assert!(
         code.contains(
-            "AlgorithmBytesEqual::bytes_equal(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(entry.pattern.data()), entry.pattern.size()), target)"
+            "BytesEqual::bytes_equal(std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(entry.pattern.data()), entry.pattern.size()), target)"
         ),
         "Cpp string-field projection missing; got:\n{code}"
     );
@@ -150,8 +159,11 @@ fn go_field_match_projects_string_field_to_byte_slice() {
 #[test]
 fn python_field_match_projects_string_field_to_bytes() {
     let code = compile_field_match_for(Language::Python);
+    // Identity SSOT: the imported module is named from the algorithm's
+    // `name=` attribute (`bytes_equal`), not its file stem
+    // (`algorithm_bytes_equal`) — `from . import bytes_equal` resolves it.
     assert!(
-        code.contains("algorithm_bytes_equal.bytes_equal(entry.pattern.encode(\"utf-8\"), target)"),
+        code.contains("bytes_equal.bytes_equal(entry.pattern.encode(\"utf-8\"), target)"),
         "Python string-field projection missing; got:\n{code}"
     );
 }
@@ -296,6 +308,135 @@ fn c11_field_match_multi_file_compiles_werror() {
     assert!(
         output.status.success(),
         "multi-file C11 compile of the keyexpr field-match program failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+// ── Cross-doc identity-SSOT real-compile gates (g++ + rustc) ──────
+//
+// The field_match fixture above drags in the bounded-collection + codec
+// emit, whose C++ output carries pre-existing, identity-unrelated defects
+// (a missing static `capacity()`, a designated-initializer in a static
+// `decode`, unused-parameter stubs) that are out of scope for the
+// cross-doc identity fix and tracked separately. To verify the identity
+// SSOT itself on a real compiler — that the name-based `#include` / `use`
+// resolves and the qualified call binds against the imported algorithm's
+// emitted symbol — these gates compile the smallest cross-doc shape:
+// `algorithm_xdoc_compile` (`name="xdoc_eq_caller"`) importing
+// `algorithm_bytes_equal` (`name="bytes_equal"`). Both documents carry a
+// `name=` that diverges from their file stem, so a stem-keyed reference
+// would dangle. The program is std-only (free functions, no BC/codec), so
+// the gates need only g++ (C++20) / rustc.
+
+#[test]
+fn cpp_cross_doc_algorithm_compiles_werror() {
+    let dir = tempdir().expect("tempdir");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_xdoc_compile.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[inner.as_path(), outer.as_path()],
+        &template_dir(Language::Cpp),
+        Language::Cpp,
+        &options_for(Language::Cpp),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+
+    let out_dir = dir.path().join("cpp_out");
+    fs::create_dir_all(&out_dir).expect("create out dir");
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            fs::write(out_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+        }
+    }
+
+    let Some(cxx) = resolve_tool("g++").or_else(|| resolve_tool("clang++")) else {
+        eprintln!("SKIP cpp_cross_doc_algorithm_compiles_werror: g++/clang++ not on PATH");
+        return;
+    };
+
+    let driver = out_dir.join("drive_xdoc.cpp");
+    fs::write(
+        &driver,
+        "#include \"xdoc_eq_caller.h\"\nint main() { return 0; }\n",
+    )
+    .expect("write driver");
+
+    let output = Command::new(&cxx)
+        .args(["-std=c++20", "-c", "-Wall", "-Wextra", "-Werror"])
+        .arg("-I")
+        .arg(&out_dir)
+        .arg("-o")
+        .arg(out_dir.join("drive_xdoc.o"))
+        .arg(&driver)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run c++ compiler");
+    assert!(
+        output.status.success(),
+        "C++ compile of the cross-doc algorithm program failed\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn rust_cross_doc_algorithm_compiles() {
+    let dir = tempdir().expect("tempdir");
+    let inner = copy_resource_into(dir.path(), "algorithm_bytes_equal.scxml");
+    let outer = copy_resource_into(dir.path(), "algorithm_xdoc_compile.scxml");
+    let outputs = compile_scxml_with_imports(
+        &[],
+        &[inner.as_path(), outer.as_path()],
+        &template_dir(Language::Rust),
+        Language::Rust,
+        &options_for(Language::Rust),
+        None,
+    )
+    .expect("orchestrator codegen succeeds");
+
+    let Some(rustc) = resolve_tool("rustc") else {
+        eprintln!("SKIP rust_cross_doc_algorithm_compiles: rustc not on PATH");
+        return;
+    };
+
+    let out_dir = dir.path().join("rust_out");
+    fs::create_dir_all(&out_dir).expect("create out dir");
+    let mut modules = Vec::new();
+    for (_src, generated) in &outputs {
+        for (filename, content) in &generated.files {
+            fs::write(out_dir.join(filename), content)
+                .unwrap_or_else(|e| panic!("write {filename}: {e}"));
+            // The primary module files are `<name>.rs`; skip the
+            // `<name>_test.rs` test-vector sidecars (they carry `#[test]`
+            // harness fns the lib crate does not need to resolve identity).
+            if let Some(stem) = filename.strip_suffix(".rs") {
+                if !stem.ends_with("_test") {
+                    modules.push(stem.to_string());
+                }
+            }
+        }
+    }
+    // Assemble a crate root declaring every emitted module so the
+    // cross-doc `use super::<module>;` resolves against the crate root.
+    let lib: String = modules.iter().map(|m| format!("pub mod {m};\n")).collect();
+    let lib_rs = out_dir.join("lib.rs");
+    fs::write(&lib_rs, lib).expect("write lib.rs");
+
+    let output = Command::new(&rustc)
+        .args(["--edition", "2021", "--crate-type=lib"])
+        .arg("-o")
+        .arg(out_dir.join("libxdoc.rlib"))
+        .arg(&lib_rs)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run rustc");
+    assert!(
+        output.status.success(),
+        "rustc compile of the cross-doc algorithm crate failed\nstderr: {}",
         String::from_utf8_lossy(&output.stderr),
     );
 }

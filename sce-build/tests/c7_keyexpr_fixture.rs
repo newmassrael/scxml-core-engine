@@ -121,11 +121,11 @@ fn rust_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
     );
     // Cross-algorithm dispatch — `km(entry.callback_id, target)`
     // alias-rename emits the imported algorithm's qualified call
-    // (`<namespace>::<func>` for Rust).
+    // (`<namespace>::<func>` for Rust). Identity SSOT: the module is named
+    // from the algorithm's `name=` attribute (`keyexpr_intersect`), not its
+    // file stem (`algorithm_keyexpr_intersect_exact`).
     assert!(
-        code.contains(
-            "algorithm_keyexpr_intersect_exact::keyexpr_intersect(entry.callback_id, target)"
-        ),
+        code.contains("keyexpr_intersect::keyexpr_intersect(entry.callback_id, target)"),
         "Rust cross-algo dispatch missing qualified call; got:\n{code}"
     );
     // Both BC and algorithm imports surface as `use super::*` lines.
@@ -134,7 +134,7 @@ fn rust_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
         "Rust BC import missing; got:\n{code}"
     );
     assert!(
-        code.contains("use super::algorithm_keyexpr_intersect_exact;"),
+        code.contains("use super::keyexpr_intersect;"),
         "Rust algorithm import missing; got:\n{code}"
     );
 }
@@ -150,19 +150,21 @@ fn cpp_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
         code.contains("auto entry_opt = subs.get_by_slot(slot_idx);"),
         "Cpp foreach-BC missing get_by_slot dispatch; got:\n{code}"
     );
-    // Cross-algorithm dispatch — Cpp qualified call form.
+    // Cross-algorithm dispatch — Cpp qualified call form. Identity SSOT:
+    // the namespace is named from the algorithm's `name=` attribute
+    // (`SCE::Generated::KeyexprIntersect`), not its file stem.
     assert!(
-        code.contains(
-            "AlgorithmKeyexprIntersectExact::keyexpr_intersect(entry.callback_id, target)"
-        ),
+        code.contains("KeyexprIntersect::keyexpr_intersect(entry.callback_id, target)"),
         "Cpp cross-algo dispatch missing qualified call; got:\n{code}"
     );
     assert!(
         code.contains("#include \"local_sub_table.h\""),
         "Cpp BC import missing; got:\n{code}"
     );
+    // The algorithm header is named by its `name=` attribute
+    // (`keyexpr_intersect.h`), not the import's file stem.
     assert!(
-        code.contains("#include \"algorithm_keyexpr_intersect_exact.h\""),
+        code.contains("#include \"keyexpr_intersect.h\""),
         "Cpp algorithm import missing; got:\n{code}"
     );
 }
@@ -189,8 +191,10 @@ fn kotlin_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
         code.contains("import com.sce.generated.local_sub_table.*"),
         "Kotlin BC wildcard import missing; got:\n{code}"
     );
+    // Identity SSOT: the package is named from the algorithm's `name=`
+    // attribute (`keyexpr_intersect`), not its file stem.
     assert!(
-        code.contains("import com.sce.generated.algorithm_keyexpr_intersect_exact.*"),
+        code.contains("import com.sce.generated.keyexpr_intersect.*"),
         "Kotlin algorithm wildcard import missing; got:\n{code}"
     );
 }
@@ -206,11 +210,11 @@ fn go_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
         code.contains("entry, ok := subs.GetBySlot(slotIdx)"),
         "Go foreach-BC missing GetBySlot dispatch; got:\n{code}"
     );
-    // Cross-algorithm dispatch — Go package-qualified form.
+    // Cross-algorithm dispatch — Go package-qualified form. Identity SSOT:
+    // the package is named from the algorithm's `name=` attribute
+    // (`keyexpr_intersect`), not its file stem.
     assert!(
-        code.contains(
-            "algorithm_keyexpr_intersect_exact.KeyexprIntersect(entry.callback_id, target)"
-        ),
+        code.contains("keyexpr_intersect.KeyexprIntersect(entry.callback_id, target)"),
         "Go cross-algo dispatch missing qualified call; got:\n{code}"
     );
 }
@@ -227,11 +231,11 @@ fn python_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
         "Python foreach-BC missing get_by_slot dispatch; got:\n{code}"
     );
     // Cross-algorithm dispatch — Python module-qualified form
-    // (`from . import <snake>` + `<snake>.<func>(...)`).
+    // (`from . import <snake>` + `<snake>.<func>(...)`). Identity SSOT: the
+    // module is named from the algorithm's `name=` attribute
+    // (`keyexpr_intersect`), not its file stem.
     assert!(
-        code.contains(
-            "algorithm_keyexpr_intersect_exact.keyexpr_intersect(entry.callback_id, target)"
-        ),
+        code.contains("keyexpr_intersect.keyexpr_intersect(entry.callback_id, target)"),
         "Python cross-algo dispatch missing qualified call; got:\n{code}"
     );
     assert!(
@@ -239,7 +243,7 @@ fn python_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
         "Python BC import missing; got:\n{code}"
     );
     assert!(
-        code.contains("from . import algorithm_keyexpr_intersect_exact"),
+        code.contains("from . import keyexpr_intersect"),
         "Python algorithm import missing; got:\n{code}"
     );
 }
@@ -325,13 +329,16 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
         // into scope (C7 §A6); every other backend uses a qualified
         // prefix matching its `build_qualified_call` shape (Rust/Cpp
         // `::`, Go/Python `.`).
+        // Identity SSOT: every qualifier is named from the algorithm's
+        // `name=` attribute (`keyexpr_intersect` / `KeyexprIntersect`), not
+        // its file stem (`algorithm_keyexpr_intersect_exact`).
         let cross_call_marker = match lang {
             Language::Kotlin => "keyexprIntersect(",
-            Language::Go => "algorithm_keyexpr_intersect_exact.KeyexprIntersect(",
+            Language::Go => "keyexpr_intersect.KeyexprIntersect(",
             Language::C11 => "keyexpr_intersect(entry.callback_id, target)",
-            Language::Cpp => "AlgorithmKeyexprIntersectExact::keyexpr_intersect(",
-            Language::Python => "algorithm_keyexpr_intersect_exact.keyexpr_intersect(",
-            Language::Rust => "algorithm_keyexpr_intersect_exact::keyexpr_intersect(",
+            Language::Cpp => "KeyexprIntersect::keyexpr_intersect(",
+            Language::Python => "keyexpr_intersect.keyexpr_intersect(",
+            Language::Rust => "keyexpr_intersect::keyexpr_intersect(",
         };
         assert!(
             code.contains(cross_call_marker),

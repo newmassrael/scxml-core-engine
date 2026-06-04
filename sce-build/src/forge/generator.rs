@@ -325,6 +325,119 @@ fn normalized_go_prefix(options: &crate::ForgeCompileOptions) -> Option<&str> {
         .map(|p| p.trim_end_matches('/'))
 }
 
+/// The name-derived subset of an import's emission context: the
+/// `#include` / `use` / `import` statement and the namespace / type
+/// names that depend solely on the imported document's *canonical
+/// identity*. Every field is a pure function of
+/// `(canonical_name, lang, is_stateful)` (plus the Go module prefix).
+///
+/// This split exists because the pipeline learns the canonical identity
+/// twice: [`resolve_single_import`] runs *before* the imported document
+/// is parsed and can only see the import's file stem, while
+/// `validate_and_enrich_imports` runs *after* the parse and holds the
+/// authoritative [`ForgeDocument::name`]. The two agree for every kind
+/// whose model name equals its file stem (all kinds derive their name
+/// from `label.identifier` = the stem, except `algorithm`, which honours
+/// an explicit `name=` attribute). For an algorithm whose `name=`
+/// diverges from its file stem, the imported document emits its file,
+/// namespace, and symbols from `name()` (see `generate_forge`), so the
+/// stem-based provisional identity dangles — the enrichment pass
+/// recomputes it from `name()` to land the cross-doc reference on the
+/// symbols the imported document actually emits.
+pub(crate) struct ImportIdentity {
+    pub(crate) include_stmt: String,
+    pub(crate) type_name: String,
+    pub(crate) namespace: String,
+    pub(crate) member_type: String,
+}
+
+/// Single source of truth for the per-language cross-doc identity matrix.
+/// Both [`resolve_single_import`] (provisional, keyed on the file stem)
+/// and `validate_and_enrich_imports` (authoritative, keyed on
+/// `ForgeDocument::name`) route through here — no caller may re-derive
+/// `include_stmt` / `namespace` / `member_type` from a name inline. The
+/// stem-vs-name split being encoded in two places was the root cause of
+/// the cross-doc `#include` / `use` / `import` dangle when `name != stem`.
+pub(crate) fn forge_import_identity(
+    canonical: &str,
+    lang: &crate::generator::Language,
+    is_stateful: bool,
+    options: &crate::ForgeCompileOptions,
+) -> ImportIdentity {
+    use crate::generator::Language;
+    let pascal = filters::to_pascal_case(canonical.to_string());
+    let snake = filters::to_snake_case(canonical.to_string());
+    match lang {
+        // RFC §5.A: free function / struct in `namespace SCE::Generated::<Pascal>`.
+        Language::Cpp => ImportIdentity {
+            include_stmt: format!("#include \"{snake}.h\""),
+            type_name: pascal.clone(),
+            namespace: format!("SCE::Generated::{pascal}"),
+            member_type: format!("::SCE::Generated::{pascal}::{pascal}"),
+        },
+        // Every imported kind lives in its own sibling package
+        // (`com.sce.generated.<snake>`); the wildcard import brings the
+        // class (stateful) or free functions (stateless) into scope.
+        Language::Kotlin => ImportIdentity {
+            include_stmt: format!("import com.sce.generated.{snake}.*"),
+            type_name: pascal.clone(),
+            namespace: pascal.clone(),
+            member_type: pascal,
+        },
+        // Stateful kinds generate a Pascal-named struct (import the type
+        // directly); stateless kinds emit free functions (import the
+        // module path so `build_qualified_call`'s `snake::func(...)`
+        // resolves).
+        Language::Rust => ImportIdentity {
+            include_stmt: if is_stateful {
+                format!("use super::{snake}::{pascal};")
+            } else {
+                format!("use super::{snake};")
+            },
+            type_name: pascal.clone(),
+            namespace: snake,
+            member_type: pascal,
+        },
+        // `resolve_imports` validates `go_module_prefix` up front, so a
+        // `None` here is an internal invariant violation — the explicit
+        // message carries the bug's location.
+        Language::Go => {
+            let prefix = normalized_go_prefix(options)
+                .expect("resolve_imports must validate go_module_prefix before reaching Go arm");
+            ImportIdentity {
+                include_stmt: format!("\t\"{prefix}/{snake}\""),
+                type_name: pascal.clone(),
+                namespace: snake.clone(),
+                member_type: format!("{snake}.{pascal}"),
+            }
+        }
+        // Stateful kinds expose a dataclass (`from .snake import Pascal`);
+        // stateless kinds only emit free functions (import the module so
+        // `build_qualified_call`'s `snake.func(...)` resolves).
+        Language::Python => ImportIdentity {
+            include_stmt: if is_stateful {
+                format!("from .{snake} import {pascal}")
+            } else {
+                format!("from . import {snake}")
+            },
+            type_name: pascal.clone(),
+            namespace: snake,
+            member_type: pascal,
+        },
+        // RFC §5.J.1: C11 has no namespace concept — plain
+        // `#include "<snake>.h"`; the module name rides as a function
+        // prefix at every callsite (see `build_qualified_call`). For
+        // stateful imports `member_type` is the imported document's
+        // typedef'd struct name (`<snake>_t`).
+        Language::C11 => ImportIdentity {
+            include_stmt: format!("#include \"{snake}.h\""),
+            type_name: pascal.clone(),
+            namespace: snake.clone(),
+            member_type: format!("{snake}_t"),
+        },
+    }
+}
+
 /// Validate `options` against the per-language invariants the emitter
 /// relies on. Keeps all option-rejection logic in one place so the
 /// `resolve_single_import` arms can treat their inputs as already-sane.
@@ -394,285 +507,77 @@ fn resolve_single_import(
         .unwrap_or(&imp.src)
         .to_string();
 
-    let pascal = filters::to_pascal_case(stem.clone());
-    let snake = filters::to_snake_case(stem.clone());
     let is_stateful = imp.kind.needs_instance();
 
-    match lang {
-        crate::generator::Language::Cpp => {
-            let ns = pascal.clone();
-            let type_name = pascal.clone();
-            ImportContext {
-                alias: imp.alias.clone(),
-                kind: imp.kind.to_string(),
-                include_stmt: format!("#include \"{snake}.h\""),
-                type_name: type_name.clone(),
-                is_stateful,
-                member_name: format!("{}_", imp.alias),
-                member_type: format!("::SCE::Generated::{ns}::{type_name}"),
-                namespace: format!("SCE::Generated::{ns}"),
-                qualified_call: String::new(),
-                param_types: Vec::new(),
-                ret_type: None,
-                member_field_types: Vec::new(),
-                member_method_sigs: Vec::new(),
-                go_init_expr: String::new(),
-                codec_max_bytes: None,
-                codec_first_flags: None,
-                codec_emits_default_ctor: false,
-                codec_is_borrowed: false,
-                codec_as_borrowed_fallible: false,
-                buffer_pool_slot_size: None,
-                bc_element_snake: None,
-                embed_dispatch: imp.embed_dispatch.clone(),
-                codec_variant_arms_for_inversion: None,
-                codec_variant_has_default_arm: None,
-                codec_variant_is_caller_tag: false,
-                codec_flag_inputs: Vec::new(),
-                flag_binds: imp.flag_binds.clone(),
-                enum_qualified_type: String::new(),
-            }
+    // Provisional identity, keyed on the file stem. `resolve_single_import`
+    // runs before the imported document is parsed, so the stem is the only
+    // name available; `validate_and_enrich_imports` recomputes this from
+    // `ForgeDocument::name()` once the parse lands (the two agree for every
+    // kind whose model name == file stem — see [`forge_import_identity`]).
+    let id = forge_import_identity(&stem, lang, is_stateful, options);
+
+    // Alias-derived instance field name: Cpp / C11 suffix the alias with
+    // `_`; Go exports a PascalCase field; the rest use the bare alias.
+    let member_name = match lang {
+        crate::generator::Language::Cpp | crate::generator::Language::C11 => {
+            format!("{}_", imp.alias)
         }
-        crate::generator::Language::Kotlin => {
-            // Every imported kind lives in its own sibling package
-            // (`com.sce.generated.<snake>`), so both stateful and stateless
-            // imports need an explicit import statement — a wildcard import
-            // brings the class name (for stateful) or free functions (for
-            // stateless) into unqualified scope. The earlier "stateful imports
-            // assume same package" assumption silently produced uncompilable
-            // Kotlin goldens because the generated procedure file referenced
-            // the imported class by bare name with no import in scope.
-            let include_stmt = format!("import com.sce.generated.{snake}.*");
-            ImportContext {
-                alias: imp.alias.clone(),
-                kind: imp.kind.to_string(),
-                include_stmt,
-                type_name: pascal.clone(),
-                is_stateful,
-                member_name: imp.alias.clone(),
-                member_type: pascal.clone(),
-                namespace: pascal.clone(),
-                qualified_call: String::new(),
-                param_types: Vec::new(),
-                ret_type: None,
-                member_field_types: Vec::new(),
-                member_method_sigs: Vec::new(),
-                go_init_expr: String::new(),
-                codec_max_bytes: None,
-                codec_first_flags: None,
-                codec_emits_default_ctor: false,
-                codec_is_borrowed: false,
-                codec_as_borrowed_fallible: false,
-                buffer_pool_slot_size: None,
-                bc_element_snake: None,
-                embed_dispatch: imp.embed_dispatch.clone(),
-                codec_variant_arms_for_inversion: None,
-                codec_variant_has_default_arm: None,
-                codec_variant_is_caller_tag: false,
-                codec_flag_inputs: Vec::new(),
-                flag_binds: imp.flag_binds.clone(),
-                enum_qualified_type: String::new(),
-            }
+        crate::generator::Language::Go => filters::to_pascal_case(imp.alias.to_string()),
+        crate::generator::Language::Kotlin
+        | crate::generator::Language::Rust
+        | crate::generator::Language::Python => imp.alias.clone(),
+    };
+
+    // Go-only per-kind init expression for the procedure's `newPolicy()`
+    // constructor. Empty when zero-value init is correct (codec is
+    // plain-data — every field zero-init OK); non-empty when the kind's
+    // runtime state needs an explicit factory call (filter holds an
+    // internal pointer that `New<Pascal>()` must allocate to avoid a
+    // nil-deref on the first Update). Keyed on `imp.kind` so adding a new
+    // stateful kind lands a decision here rather than silently
+    // zero-initializing a pointer-bearing struct. Uses the stem-derived
+    // snake/pascal directly because a Go cross-doc init only fires for
+    // stateful kinds, whose model name always equals the file stem.
+    let go_init_expr = if matches!(lang, crate::generator::Language::Go) && is_stateful {
+        let snake = filters::to_snake_case(stem.clone());
+        let pascal = filters::to_pascal_case(stem.clone());
+        match imp.kind {
+            ForgeKind::Filter => format!("*{snake}.New{pascal}()"),
+            _ => String::new(),
         }
-        crate::generator::Language::Rust => {
-            // Stateful kinds generate a Pascal-named struct — import the type
-            // directly so the `<alias>: PascalType` member declaration resolves.
-            // Stateless kinds generate free functions (`pub fn compute_*`) with
-            // no type wrapper; importing `use super::snake::Pascal;` would pull
-            // in a non-existent symbol. Import the module path instead so the
-            // `build_qualified_call` output `snake::compute_*(...)` resolves.
-            let include_stmt = if is_stateful {
-                format!("use super::{snake}::{pascal};")
-            } else {
-                format!("use super::{snake};")
-            };
-            ImportContext {
-                alias: imp.alias.clone(),
-                kind: imp.kind.to_string(),
-                include_stmt,
-                type_name: pascal.clone(),
-                is_stateful,
-                member_name: imp.alias.clone(),
-                member_type: pascal.clone(),
-                namespace: snake.clone(),
-                qualified_call: String::new(),
-                param_types: Vec::new(),
-                ret_type: None,
-                member_field_types: Vec::new(),
-                member_method_sigs: Vec::new(),
-                go_init_expr: String::new(),
-                codec_max_bytes: None,
-                codec_first_flags: None,
-                codec_emits_default_ctor: false,
-                codec_is_borrowed: false,
-                codec_as_borrowed_fallible: false,
-                buffer_pool_slot_size: None,
-                bc_element_snake: None,
-                embed_dispatch: imp.embed_dispatch.clone(),
-                codec_variant_arms_for_inversion: None,
-                codec_variant_has_default_arm: None,
-                codec_variant_is_caller_tag: false,
-                codec_flag_inputs: Vec::new(),
-                flag_binds: imp.flag_binds.clone(),
-                enum_qualified_type: String::new(),
-            }
-        }
-        crate::generator::Language::Go => {
-            // `resolve_imports` rejects Go imports without a module
-            // prefix up front, so reaching this branch with `None` is an
-            // internal invariant violation — unwrap with an explicit
-            // message so the panic carries the bug's location rather
-            // than an opaque `Option::unwrap` trace.
-            let prefix = normalized_go_prefix(options)
-                .expect("resolve_imports must validate go_module_prefix before reaching Go arm");
-            let import_path = format!("{prefix}/{snake}");
-            let go_pascal = filters::to_pascal_case(imp.alias.to_string());
-            // Per-kind init expression for the procedure's newPolicy()
-            // constructor. Empty for kinds whose Go zero-value happens to
-            // be a valid initial state (codec is plain-data — every field
-            // zero-init OK); non-empty for kinds whose runtime state needs
-            // an explicit factory call (filter holds an internal pointer
-            // to the runtime's filter implementation, which must be
-            // allocated by `New<Pascal>()` to avoid a nil-deref on the
-            // first Update call). The match is keyed on `imp.kind` so
-            // adding a new stateful kind to the model lands a decision at
-            // this site rather than silently zero-initializing a
-            // pointer-bearing struct.
-            let go_init_expr = if is_stateful {
-                match imp.kind {
-                    ForgeKind::Filter => format!("*{snake}.New{pascal}()"),
-                    // Codec: plain-data struct, zero-value is the
-                    // canonical "empty frame" initial state.
-                    ForgeKind::Codec => String::new(),
-                    // Other stateful kinds (validator/procedure/observer/
-                    // timer) have no fixture consumer for cross-file
-                    // import yet. When the first one lands, decide here
-                    // whether zero-init is correct or a factory call is
-                    // needed by inspecting the kind's Go runtime
-                    // contract (e.g. observer's monitor-fn wiring).
-                    _ => String::new(),
-                }
-            } else {
-                String::new()
-            };
-            ImportContext {
-                alias: imp.alias.clone(),
-                kind: imp.kind.to_string(),
-                include_stmt: format!("\t\"{import_path}\""),
-                type_name: pascal.clone(),
-                is_stateful,
-                member_name: go_pascal,
-                member_type: format!("{snake}.{pascal}"),
-                namespace: snake.clone(),
-                qualified_call: String::new(),
-                param_types: Vec::new(),
-                ret_type: None,
-                member_field_types: Vec::new(),
-                member_method_sigs: Vec::new(),
-                go_init_expr,
-                codec_max_bytes: None,
-                codec_first_flags: None,
-                codec_emits_default_ctor: false,
-                codec_is_borrowed: false,
-                codec_as_borrowed_fallible: false,
-                buffer_pool_slot_size: None,
-                bc_element_snake: None,
-                embed_dispatch: imp.embed_dispatch.clone(),
-                codec_variant_arms_for_inversion: None,
-                codec_variant_has_default_arm: None,
-                codec_variant_is_caller_tag: false,
-                codec_flag_inputs: Vec::new(),
-                flag_binds: imp.flag_binds.clone(),
-                enum_qualified_type: String::new(),
-            }
-        }
-        crate::generator::Language::Python => {
-            // Stateful kinds expose a dataclass — a `from .snake import Pascal`
-            // brings the class name into scope for the `self.alias: Pascal =
-            // Pascal()` member declaration. Stateless kinds only emit free
-            // functions; the Pascal name has no class. Import the module
-            // instead so the `build_qualified_call` output `snake.func(...)`
-            // resolves at the call site.
-            let include_stmt = if is_stateful {
-                format!("from .{snake} import {pascal}")
-            } else {
-                format!("from . import {snake}")
-            };
-            ImportContext {
-                alias: imp.alias.clone(),
-                kind: imp.kind.to_string(),
-                include_stmt,
-                type_name: pascal.clone(),
-                is_stateful,
-                member_name: imp.alias.clone(),
-                member_type: pascal.clone(),
-                namespace: snake.clone(),
-                qualified_call: String::new(),
-                param_types: Vec::new(),
-                ret_type: None,
-                member_field_types: Vec::new(),
-                member_method_sigs: Vec::new(),
-                go_init_expr: String::new(),
-                codec_max_bytes: None,
-                codec_first_flags: None,
-                codec_emits_default_ctor: false,
-                codec_is_borrowed: false,
-                codec_as_borrowed_fallible: false,
-                buffer_pool_slot_size: None,
-                bc_element_snake: None,
-                embed_dispatch: imp.embed_dispatch.clone(),
-                codec_variant_arms_for_inversion: None,
-                codec_variant_has_default_arm: None,
-                codec_variant_is_caller_tag: false,
-                codec_flag_inputs: Vec::new(),
-                flag_binds: imp.flag_binds.clone(),
-                enum_qualified_type: String::new(),
-            }
-        }
-        crate::generator::Language::C11 => {
-            // RFC §5.J.1: C11 cross-file imports use plain `#include "<snake>.h"`.
-            // No namespace concept exists; the module name is encoded as a
-            // function prefix at every callsite (see `build_qualified_call`).
-            // The shape mirrors C++ but routes through the M2+ C11 emitter.
-            //
-            // For stateful imports (codec/filter/observer/validator/procedure),
-            // `member_type` is the imported document's typedef'd struct name
-            // (`<snake>_t`) so the procedure's state struct can declare it
-            // by-value. The C11 codec template emits `typedef struct {...}
-            // <snake>_t;` (`tools/codegen/templates/forge/c/codec.h.jinja2:23-27`),
-            // which is what the procedure embeds and addresses via
-            // `&_st->{member_name}` when calling the matching free function.
-            ImportContext {
-                alias: imp.alias.clone(),
-                kind: imp.kind.to_string(),
-                include_stmt: format!("#include \"{snake}.h\""),
-                type_name: pascal.clone(),
-                is_stateful,
-                member_name: format!("{}_", imp.alias),
-                member_type: format!("{snake}_t"),
-                namespace: snake.clone(),
-                qualified_call: String::new(),
-                param_types: Vec::new(),
-                ret_type: None,
-                member_field_types: Vec::new(),
-                member_method_sigs: Vec::new(),
-                go_init_expr: String::new(),
-                codec_max_bytes: None,
-                codec_first_flags: None,
-                codec_emits_default_ctor: false,
-                codec_is_borrowed: false,
-                codec_as_borrowed_fallible: false,
-                buffer_pool_slot_size: None,
-                bc_element_snake: None,
-                embed_dispatch: imp.embed_dispatch.clone(),
-                codec_variant_arms_for_inversion: None,
-                codec_variant_has_default_arm: None,
-                codec_variant_is_caller_tag: false,
-                codec_flag_inputs: Vec::new(),
-                flag_binds: imp.flag_binds.clone(),
-                enum_qualified_type: String::new(),
-            }
-        }
+    } else {
+        String::new()
+    };
+
+    ImportContext {
+        alias: imp.alias.clone(),
+        kind: imp.kind.to_string(),
+        include_stmt: id.include_stmt,
+        type_name: id.type_name,
+        is_stateful,
+        member_name,
+        member_type: id.member_type,
+        namespace: id.namespace,
+        qualified_call: String::new(),
+        param_types: Vec::new(),
+        ret_type: None,
+        member_field_types: Vec::new(),
+        member_method_sigs: Vec::new(),
+        go_init_expr,
+        codec_max_bytes: None,
+        codec_first_flags: None,
+        codec_emits_default_ctor: false,
+        codec_is_borrowed: false,
+        codec_as_borrowed_fallible: false,
+        buffer_pool_slot_size: None,
+        bc_element_snake: None,
+        embed_dispatch: imp.embed_dispatch.clone(),
+        codec_variant_arms_for_inversion: None,
+        codec_variant_has_default_arm: None,
+        codec_variant_is_caller_tag: false,
+        codec_flag_inputs: Vec::new(),
+        flag_binds: imp.flag_binds.clone(),
+        enum_qualified_type: String::new(),
     }
 }
 

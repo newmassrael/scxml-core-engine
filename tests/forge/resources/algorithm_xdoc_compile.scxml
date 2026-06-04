@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  RFC c7-wildcard — cross-doc identity-SSOT compile fixture. The smallest
+  shape that exercises the algorithm-imports-algorithm path with a
+  `name=` attribute that diverges from the file stem on BOTH documents:
+
+    - this caller's file stem is `algorithm_xdoc_compile` but its
+      `name=` is `xdoc_eq_caller`;
+    - the import target's file stem is `algorithm_bytes_equal` but its
+      `name=` is `bytes_equal`.
+
+  `generate_forge` names each emitted file / namespace / module from
+  `name()`, so a stem-keyed cross-doc reference would dangle. This
+  fixture is deliberately free of bounded-collection / codec imports so
+  the generated program is std-only on every backend — a real compiler
+  (g++ / rustc) can verify the cross-doc `#include` / `use` resolves and
+  the qualified call binds against the imported algorithm's emitted
+  symbol, isolating the identity SSOT from the unrelated BC/codec emit.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       name="xdoc_eq_caller"
+       version="1.0">
+  <sce:import kind="algorithm" src="algorithm_bytes_equal.scxml" as="eq"/>
+  <sce:signature>
+    <sce:param name="a" type="bytes"/>
+    <sce:param name="b" type="bytes"/>
+    <sce:return type="uint16"/>
+  </sce:signature>
+  <sce:body>
+    <sce:if cond="eq(a, b)">
+      <sce:return expr="1"/>
+    </sce:if>
+    <sce:return expr="0"/>
+  </sce:body>
+</scxml>
