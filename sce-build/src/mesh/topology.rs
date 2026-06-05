@@ -3530,6 +3530,46 @@ topology:
     }
 
     #[test]
+    fn pattern_validation_detects_field_get_on_shm() {
+        // shm is one-way with no reverse path — FieldAccess (which needs
+        // the §8.3 field.notify reply) is unrealisable, so the descriptor
+        // advertises FireForget only. field.get over shm must be rejected
+        // at build time rather than silently never receiving its reply.
+        const FIELD_GET_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" name="tester" initial="s">
+    <state id="s">
+        <onentry>
+            <send target="#service" event="field.get.vehicle_speed"/>
+        </onentry>
+    </state>
+</scxml>"##;
+        let deploy = parse_deploy_str(
+            r##"version: "1.0"
+topology:
+  ecu1:
+    machines:
+      tester: { source: tester.scxml, bindings: { "#service": { transport: shm } } }
+      service: { source: service.scxml }
+"##,
+        )
+        .unwrap();
+        let model = parse_model(FIELD_GET_SCXML, "tester");
+
+        let violations = validate_pattern_capability(&summary_for(&model), &deploy, "tester");
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].event, "field.get.vehicle_speed");
+        assert_eq!(violations[0].transport, "shm");
+        assert_eq!(
+            violations[0].pattern,
+            super::super::pattern::CommunicationPattern::FieldGet
+        );
+        assert_eq!(
+            violations[0].required,
+            super::super::transport::TransportCapability::FieldAccess
+        );
+    }
+
+    #[test]
     fn pattern_validation_detects_subscribe_on_can() {
         // CAN does not support pub/sub — event.subscribe should fail.
         let deploy = parse_deploy_str(
