@@ -327,7 +327,21 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
             has_per_target_field: true,
             has_shared_session: false,
         },
-        capabilities: &[FireForget, FieldAccess],
+        // FireForget only. A `ShmChannel` is a per-target one-way ring
+        // (sender SM → receiver SM, ShmChannel.h) with no reverse path,
+        // so every pattern requiring a reply leg is unrealisable here:
+        // RequestReply needs `service.response`, and FieldAccess needs
+        // the SCE_MESH.md §8.3 `field.notify` reply to a
+        // `field.get`/`field.set` request. The field reply machinery
+        // (`handleServerResponse`, getter/setter receive handlers) is
+        // emitted only for the someip/zenoh transport arms; shm's send
+        // arm is a bare one-way `channel.send(env)`. Advertising
+        // FieldAccess would let `field.get` over shm pass
+        // `validate_pattern_capability` at build time and then silently
+        // never receive its reply at runtime. Same exclusion rationale
+        // as RequestReply (covered by the `mesh_pattern_capability_rejection`
+        // negative test). Inter-machine field access uses someip/zenoh.
+        capabilities: &[FireForget],
         implemented: true,
         required_binding_fields: &[],
         // Single shared ring per channel with READY_MAGIC gating — a
@@ -928,10 +942,14 @@ mod tests {
     }
 
     #[test]
-    fn shm_fire_forget_and_field() {
+    fn shm_fire_forget_only() {
+        // shm is a one-way per-target ring with no reverse path: every
+        // reply-bearing pattern (RequestReply via service.response,
+        // FieldAccess via field.notify) is unrealisable, so the descriptor
+        // advertises FireForget alone. See the capability comment in lookup().
         let d = lookup("shm").unwrap();
         assert!(d.capabilities.contains(&FireForget));
-        assert!(d.capabilities.contains(&FieldAccess));
+        assert!(!d.capabilities.contains(&FieldAccess));
         assert!(!d.capabilities.contains(&RequestReply));
         assert!(!d.capabilities.contains(&PubSub));
     }
