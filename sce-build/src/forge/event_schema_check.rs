@@ -1445,7 +1445,7 @@ pub fn check_send_side(
         }
         // Onentry / onexit handler bodies — each block is a
         // document-ordered sequence of executable-content actions
-        // (W3C SCXML §3.8, §3.9).
+        // (§scxml-3.8, §3.9).
         for block in &state.on_entry_blocks {
             walk_actions(
                 block,
@@ -1589,7 +1589,7 @@ fn check_send_action(
 ///   [`ValidationError::CrossKindTypeMismatch`] (reused per Item 4
 ///   precedent).
 ///
-/// W3C SCXML 6.2.4 mandates exactly one of `expr` / `location` on
+/// §scxml-6.2.4 mandates exactly one of `expr` / `location` on
 /// every `<param>`; the location form (`<param name="X" location="Y"/>`,
 /// data-model variable assignment) is not statically typeable
 /// without the typed datamodel pipeline and is left for the existing

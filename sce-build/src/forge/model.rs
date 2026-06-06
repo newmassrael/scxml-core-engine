@@ -960,7 +960,7 @@ pub struct RateOfChangeRule {
 
 /// A `<send>` action within `<onentry>` of a procedure state.
 /// Dispatches a service request through the procedure's service handler.
-/// W3C SCXML 6.2 + SCE extensions (sce:service, sce:subfunc, sce:addr, sce:payload).
+/// §scxml-6.2 + SCE extensions (sce:service, sce:subfunc, sce:addr, sce:payload).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ProcedureSendAction {

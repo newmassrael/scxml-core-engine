@@ -110,6 +110,11 @@ paths = [
     "sce/include/model",
     "sce/include/mesh",
     "sce/include/SCXMLTypes.h",
+    # Rust code generator (sce-build crate). Its W3C SCXML cites were
+    # migrated from prose to §scxml- form by migrate_citations.py and
+    # bound under Section.implementations, so the same hallucination /
+    # binding gates that cover the C++ engine now cover the Rust codegen.
+    "sce-build/src",
 ]
 severity_missing = "reject"
 # Path B curated: every §scxml-<id> cite is bound to a ratified
@@ -141,3 +146,12 @@ section_namespace = "scxml"
 [plugins.symbol_resolver.cpp]
 transport = "in-process"
 backend = "tree-sitter-cpp"
+
+# Rust resolver for the sce-build crate (.rs). lang_for_file maps .rs to
+# the `rust` key; the in-process tree-sitter-rust backend resolves
+# (file, line) to the enclosing symbol, exactly as the cpp backend does
+# for the C++ engine. Symbol-level binding drift on the Rust codegen is
+# enforced under severity_binding = reject above.
+[plugins.symbol_resolver.rust]
+transport = "in-process"
+backend = "tree-sitter-rust"

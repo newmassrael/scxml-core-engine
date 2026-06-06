@@ -1680,7 +1680,7 @@ pub fn build_rust_event_payload(
 
     // The payload channel carries every event that needs a typed variant:
     // those whose guard lowered natively (above) PLUS those a native
-    // `<sce:action>` reads a typed field from (W3C SCXML G.7 —
+    // `<sce:action>` reads a typed field from (§scxml-G-7 —
     // `extra_payload_events`, supplied by
     // [`crate::forge::native_action::render_rust`]). A native action can
     // activate the channel with no guard present, so the union — not

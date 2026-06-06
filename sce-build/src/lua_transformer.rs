@@ -771,7 +771,7 @@ fn transform_operators(input: &str) -> String {
         result = temp;
     }
 
-    // W3C SCXML B.2 (test 459): Parenthesize operands of bitwise OR/AND/XOR
+    // §scxml-B-2 (test 459): Parenthesize operands of bitwise OR/AND/XOR
     result = parenthesize_bitwise_operands(&result);
 
     result
@@ -800,7 +800,7 @@ fn transform_array_literals(input: &str) -> String {
                 let close_pos = find_matching_close(b, i, b'[', b']');
                 let contents = &input[i + 1..close_pos];
                 let contents = transform_array_literals(contents);
-                // W3C SCXML 4.6: Replace null/undefined with sentinels at top level
+                // §scxml-4.6: Replace null/undefined with sentinels at top level
                 let contents = replace_word_at_top_level(&contents, "null", "_NULL");
                 let contents = replace_word_at_top_level(&contents, "undefined", "_UNDEFINED");
                 result.push('{');
@@ -1760,7 +1760,7 @@ pub fn transform_expression(ecma_script: &str, context: ExpressionContext) -> St
     processed = transform_math_builtins(&processed);
     processed = transform_compound_assignment(&processed);
     processed = transform_increment_decrement(&processed);
-    // W3C SCXML B.2: ECMAScript function expressions in value-expression
+    // §scxml-B-2: ECMAScript function expressions in value-expression
     // context (e.g. `<data id="f" expr="function(x) {return x+1;}"/>`).
     // The script-pipeline already lowers `function name(args) { body }` and
     // `function(args) { body }` to Lua's `function ... end` form; running the

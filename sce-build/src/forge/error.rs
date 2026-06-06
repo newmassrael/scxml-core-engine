@@ -135,7 +135,7 @@ pub enum ForgeError {
     Generate(Box<GenerateError>),
 
     /// SCXML semantic-validation failures — distinct from forge
-    /// `ValidationError` because the rules come from W3C SCXML §3
+    /// `ValidationError` because the rules come from §scxml-3
     /// reference resolution, not forge-document structure rules.
     /// RFC §W5 D2 keeps `ScxmlSemanticError` as a parallel enum
     /// outside `forge::*` but routes it through `ForgeError` so the
@@ -432,21 +432,21 @@ pub enum ValidationError {
     #[error("cannot generate static code for '{name}': {reason}")]
     DynamicFeatures { name: String, reason: String },
 
-    /// W3C SCXML G.7 — a `<sce:action>` Custom Action Element appears
+    /// §scxml-G-7 — a `<sce:action>` Custom Action Element appears
     /// somewhere v1 does not support: anywhere other than a direct
     /// `<transition>` child (e.g. `<onentry>`, `<onexit>`, an initial
     /// transition, or nested inside `<if>` / `<foreach>`).
     #[error("<sce:action name=\"{name}\">: {detail}")]
     NativeActionPlacement { name: String, detail: String },
 
-    /// W3C SCXML G.7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
+    /// §scxml-G-7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
     /// a typed native value: it is not a bare `_event.data.<field>`
     /// reference, the triggering event imports no EventSchema, or the
     /// referenced payload field is enum-typed (not natively representable).
     #[error("<sce:action name=\"{name}\">: {detail}")]
     NativeActionArgument { name: String, detail: String },
 
-    /// W3C SCXML G.7 — a `<sce:action name>` appears on more than one
+    /// §scxml-G-7 — a `<sce:action name>` appears on more than one
     /// transition with incompatible argument signatures, so a single
     /// generated `Actions` trait method cannot serve every call site.
     #[error("<sce:action name=\"{name}\">: {detail}")]
@@ -1517,7 +1517,7 @@ pub enum ValidationError {
 
     /// watching-zenoh RFC §5.E B7-η' Q-OnSample-7: a `<sce:on-sample>`
     /// declares an `event=` whose name collides with a built-in W3C
-    /// SCXML event prefix (`error.*`, `done.*`). The W3C SCXML §5.10
+    /// SCXML event prefix (`error.*`, `done.*`). The §scxml-5.10
     /// internal event family carries fixed semantics — letting an
     /// author overload `done.state.foo` (raised when state foo
     /// reaches `<final>`) by an on-sample dispatch would silently
@@ -3591,7 +3591,7 @@ pub enum GenerateError {
 
     /// Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): the SCXML document
     /// is generated with `sce-codegen generate -l rust --no-std` but
-    /// contains a W3C SCXML C.2 `<send>` that targets
+    /// contains a §scxml-C-2 `<send>` that targets
     /// `BasicHTTPEventProcessor` (either by explicit `type=` or by
     /// `target` URL beginning with `http://` / `https://`). The
     /// runtime crate's `http-send` feature pulls in `tokio` +

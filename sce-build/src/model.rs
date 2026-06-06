@@ -37,14 +37,14 @@ use crate::forge::error::SourceLocation;
 use crate::forge::model::InlineKind;
 use crate::provenance::{RequirementId, SpecProvenance, UnresolvedMarker};
 
-/// W3C SCXML default namespace URI (W3C SCXML §3.5). Mirrors
+/// W3C SCXML default namespace URI (§scxml-3.5). Mirrors
 /// [`crate::forge::model::SCE_NAMESPACE`] for the sce: extension axis —
 /// used by the parser's element-dispatch helpers to filter children
 /// by namespace as well as local name, closing the foreign-NS local-name
 /// collision footgun previously documented in `SCE_FORGE.md` §3.1.
 pub const SCXML_NAMESPACE: &str = "http://www.w3.org/2005/07/scxml";
 
-/// W3C SCXML 3.3: Transition element
+/// §scxml-3.3: Transition element
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Transition {
@@ -94,16 +94,16 @@ pub struct Transition {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     #[cfg_attr(test, schemars(skip))]
     pub native_payload_guard: String,
-    /// W3C SCXML 3.11: History target if transition targets a history state
+    /// §scxml-3.11: History target if transition targets a history state
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_target: Option<String>,
-    /// W3C SCXML 3.11: Resolved leaf target for history default (Kotlin Phase 1)
+    /// §scxml-3.11: Resolved leaf target for history default (Kotlin backend)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_leaf_target: Option<String>,
     /// Prefix matching events for Kotlin templates
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub prefix_matching_events: Vec<String>,
-    /// W3C SCXML 3.13: True internal transition (target is descendant of source)
+    /// §scxml-3.13: True internal transition (target is descendant of source)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_true_internal: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -220,7 +220,7 @@ pub struct Action {
     pub is_cpp_function: bool,
     #[serde(default)]
     pub is_kt_function: bool,
-    /// W3C SCXML G.7 — Custom Action Element `<sce:action name="...">`.
+    /// §scxml-G-7 — Custom Action Element `<sce:action name="...">`.
     /// The symbolic host-operation name this action dispatches to. When
     /// non-empty, [`action_type`](Self::action_type) is `"native_action"`
     /// and [`params`](Self::params) carries the positional `<sce:arg
@@ -283,7 +283,7 @@ pub struct ElseIfBranch {
     pub actions: Vec<Action>,
 }
 
-/// W3C SCXML 6.2.4: Send parameter
+/// §scxml-6.2.4: Send parameter
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Param {
@@ -296,7 +296,7 @@ pub struct Param {
     pub static_value: String,
 }
 
-/// W3C SCXML 5.2: Datamodel variable
+/// §scxml-5.2: Datamodel variable
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Variable {
@@ -309,7 +309,7 @@ pub struct Variable {
     pub var_type: String,
 }
 
-/// W3C SCXML 3.11: History state information
+/// §scxml-3.11: History state information
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct HistoryInfo {
@@ -321,7 +321,7 @@ pub struct HistoryInfo {
     pub default_actions: Vec<Action>,
 }
 
-/// W3C SCXML 5.7: Done data for final states.
+/// §scxml-5.7: Done data for final states.
 ///
 /// `content` is a [`DoneDataContent`] sum so that the parser decision —
 /// `<content expr="...">` vs `<content>literal</content>` vs omitted — is
@@ -336,13 +336,13 @@ pub struct DoneData {
     pub content: DoneDataContent,
 }
 
-/// W3C SCXML 5.5: `<content>` body semantics.
+/// §scxml-5.5: `<content>` body semantics.
 ///
 /// - [`DoneDataContent::None`] — no `<content>` child (`{"kind":"none"}`).
 /// - [`DoneDataContent::Expression`] — `<content expr="X"/>`, MUST be
 ///   evaluated against the active datamodel (`{"kind":"expression","text":"X"}`).
 /// - [`DoneDataContent::Literal`] — `<content>inline text</content>`; per
-///   W3C SCXML 5.5 the children are used **as the content value**, not
+///   §scxml-5.5 the children are used **as the content value**, not
 ///   re-evaluated as an expression. Literal means no script engine required
 ///   at runtime (`{"kind":"literal","text":"..."}`).
 ///
@@ -359,9 +359,9 @@ pub enum DoneDataContent {
     Literal(String),
 }
 
-/// W3C SCXML 5.7: Done data parameter.
+/// §scxml-5.7: Done data parameter.
 ///
-/// `expr` and `location` are `Option<String>` because W3C SCXML 6.2.4 mandates
+/// `expr` and `location` are `Option<String>` because §scxml-6.2.4 mandates
 /// exactly one of them on each `<param>`. They are serialized as JSON `null`
 /// when absent (no `skip_serializing_if`) so that minijinja templates can
 /// distinguish "attribute omitted" (none) from "attribute present but empty"
@@ -390,7 +390,7 @@ pub struct ContextObject {
 
 /// An invoke declared on a state, keyed by kind.
 ///
-/// W3C SCXML §6.4 leaves `<invoke type="...">` open for implementation-defined
+/// §scxml-6.4 leaves `<invoke type="...">` open for implementation-defined
 /// values; SCE treats the three supported kinds as distinct lifecycles:
 ///
 /// - [`Invoke::Scxml`] — static child SCXML session (`src` or inline `<content>`).
@@ -424,7 +424,7 @@ pub enum Invoke {
 /// hierarchy and is flattened into each wrapping struct's serialisation.
 ///
 /// `invoke_id` is preserved verbatim — including the leading underscore on
-/// auto-generated ids — because W3C SCXML 6.4.1 surfaces it in event names
+/// auto-generated ids — because §scxml-6.4.1 surfaces it in event names
 /// (`done.invoke._invoke_0`) and `_event.invokeid`. Codegen sites that need
 /// an *identifier-safe* suffix for generated field/variable names must use
 /// [`InvokeBase::field_suffix`] instead, otherwise concatenations like
@@ -467,12 +467,12 @@ pub struct InvokeSessionCommon {
     pub child_name: String,
     pub autoforward: bool,
     pub child_needs_script_engine: bool,
-    /// W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke
+    /// §scxml-6.4: Use specific done.invoke.{id} event instead of generic done.invoke
     #[serde(default)]
     pub use_specific_event: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_datamodel_vars: Option<Vec<String>>,
-    /// W3C SCXML 6.4 (test226/240/241/243/244/245/276): the child SCXML
+    /// §scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML
     /// has at least one `<send target="#_parent" event="..."/>`. Codegen
     /// uses this to gate parent_sm / parent_dispatch wiring at child
     /// spawn time so parent-routed events reach the parent's external
@@ -482,7 +482,7 @@ pub struct InvokeSessionCommon {
     /// resolution.
     #[serde(default)]
     pub child_has_send_to_parent: bool,
-    /// W3C SCXML 6.2 (test207): the child SCXML carries a non-empty
+    /// §scxml-6.2 (test207): the child SCXML carries a non-empty
     /// `<send delay="...">` so its codegen emitted a scheduler queue +
     /// a `_tick` entry point. Parents that drive active children
     /// from `_drive_active_children` need to call the child's `_tick`
@@ -510,7 +510,7 @@ impl std::ops::DerefMut for InvokeSessionCommon {
 
 /// SCE Mesh §9.5: target selector for a `<invoke type="sce:mesh-rpc">`.
 ///
-/// W3C SCXML §6.4 requires exactly one of `src` / `srcexpr`; this sum type
+/// §scxml-6.4 requires exactly one of `src` / `srcexpr`; this sum type
 /// makes "both empty" and "both set" structurally impossible so parser
 /// consumers no longer carry that invariant as runtime discipline.
 ///
@@ -640,7 +640,7 @@ impl ScxmlRemotePeerBinding {
     }
 }
 
-/// W3C SCXML 6.4: Static invoke (`<invoke src="..."` or inline `<content>`).
+/// §scxml-6.4: Static invoke (`<invoke src="..."` or inline `<content>`).
 ///
 /// Holds only the fields the static lifecycle actually uses. Hybrid-only
 /// fields (`srcexpr`, `contentexpr`) do not appear here — the type system
@@ -714,7 +714,7 @@ pub struct ScxmlInvokeInfo {
     pub remote_mesh_transport: Option<String>,
 }
 
-/// W3C SCXML 6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).
+/// §scxml-6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).
 ///
 /// Scxml-only fields (`finalize_content`, `src`, `namelist`) do not appear
 /// here; hybrid invokes never run a `<finalize>` block and resolve their
@@ -889,7 +889,7 @@ pub struct OnSampleNode {
     pub link: String,
     /// `event="X"` — SCXML event name raised when a Sample arrives.
     /// State-level `<transition event="X">` blocks dispatch normally
-    /// per W3C SCXML §5.10, with `_event.data` carrying the borrowed
+    /// per §scxml-5.10, with `_event.data` carrying the borrowed
     /// `&Sample<'_>` reference.
     pub event: String,
     /// `callback="rust:crate::path::fn"` — optional extern reference
@@ -911,7 +911,7 @@ pub struct OnSampleNode {
     pub document_order: u32,
 }
 
-/// W3C SCXML 3.3: State element
+/// §scxml-3.3: State element
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct State {
@@ -1177,7 +1177,7 @@ pub struct SCXMLModel {
     /// orchestrator pass before any non-C11 codegen runs).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub c11_section_attribute_class: Option<String>,
-    /// W3C SCXML 6.4 / test229: `true` iff any `<invoke>` in the document
+    /// §scxml-6.4 / test229: `true` iff any `<invoke>` in the document
     /// carries `autoforward="true"`. Drives codegen of the
     /// `forward_to_autoforward_children` helper + its call site in the
     /// external-dequeue branch of `process_event_queues`. Set in
@@ -1307,7 +1307,7 @@ pub struct SCXMLModel {
     pub needs_event_type_helper: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub needs_event_scheduler: Option<bool>,
-    /// W3C SCXML B.2: any reachable `<data>` content / `<data src=...>`
+    /// §scxml-B-2: any reachable `<data>` content / `<data src=...>`
     /// loaded payload / `<send><content>` literal whose first non-WS
     /// character is `<` triggers the host-side XML DOM helper (C11
     /// backend only — cpp / Rust / Go / Kotlin handle the same surface
@@ -1584,7 +1584,7 @@ impl SCXMLModel {
             .collect();
     }
 
-    /// W3C SCXML 3.3/3.4: Resolve state ID to leaf by following initial attrs
+    /// §scxml-3.3 / §scxml-3.4: Resolve state ID to leaf by following initial attrs
     pub fn resolve_to_leaf(&self, state_id: &str) -> String {
         let mut current = state_id.to_string();
         for _ in 0..MAX_STATE_DEPTH {

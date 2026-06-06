@@ -704,7 +704,7 @@ impl SCXMLParser {
             ));
         }
 
-        // W3C SCXML 3.6: Get initial attribute
+        // §scxml-3.6: Get initial attribute
         let mut initial = root.attribute("initial").unwrap_or("").to_string();
         if initial.is_empty() {
             // Default to first child state in document order
@@ -881,7 +881,7 @@ impl SCXMLParser {
         // Resolve deep initial state
         self.resolve_deep_initial(&mut model);
 
-        // W3C SCXML 3.13: Apply parallel initial overrides
+        // §scxml-3.13: Apply parallel initial overrides
         self.apply_parallel_initial_overrides(&mut model);
 
         // Resolve history targets
@@ -1262,7 +1262,7 @@ impl SCXMLParser {
             let src = child.attribute("src").unwrap_or("").to_string();
             let mut content = child.text().unwrap_or("").to_string();
 
-            // W3C SCXML 5.8: Empty <script/> → document rejection
+            // §scxml-5.8: Empty <script/> → document rejection
             if src.is_empty() && content.trim().is_empty() {
                 model.document_rejected = true;
                 continue;
@@ -1818,7 +1818,7 @@ impl SCXMLParser {
         if !action.event.is_empty() {
             model.events.insert(action.event.clone());
         } else if !action.content.is_empty() && action.eventexpr.is_empty() {
-            // W3C SCXML C.2: content-only send (test 520) - empty event name
+            // §scxml-C-2: content-only send (test 520) - empty event name
             model.events.insert(String::new());
         }
 
@@ -1867,7 +1867,7 @@ impl SCXMLParser {
         Ok(())
     }
 
-    /// W3C SCXML G.7: parse a Custom Action Element
+    /// §scxml-G-7: parse a Custom Action Element
     /// `<sce:action name="op"><sce:arg expr="..."/>...</sce:action>` into a
     /// native host-trait dispatch action.
     ///
@@ -2055,7 +2055,7 @@ impl SCXMLParser {
                 action.location = child.attribute("location").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
                 if child.children().any(|c| c.is_element()) {
-                    // W3C SCXML 5.4: Serialize with c14n (canonical XML)
+                    // §scxml-5.4: Serialize with c14n (canonical XML)
                     let mut xml = String::new();
                     for c in child.children().filter(|c| c.is_element()) {
                         let part = serialize_node_c14n(&c);
@@ -2118,7 +2118,7 @@ impl SCXMLParser {
             "cancel" => {
                 action.sendid = child.attribute("sendid").unwrap_or("").to_string();
                 action.sendidexpr = child.attribute("sendidexpr").unwrap_or("").to_string();
-                // W3C SCXML §6.3: <cancel> MUST have either sendid or
+                // §scxml-6.3: <cancel> MUST have either sendid or
                 // sendidexpr. Mirrors the invoke-duplicate-id check
                 // (parse_invoke) — a parse-time ValidationError emit
                 // routes through the same Located + Diagnostic pipeline,
@@ -2152,7 +2152,7 @@ impl SCXMLParser {
             }
             "if" => self.parse_if_action(child, &mut action, model, source_name)?,
             "action" => {
-                // W3C SCXML G.7: Custom Action Element. Only the SCE
+                // §scxml-G-7: Custom Action Element. Only the SCE
                 // namespace claims `<action>`; a foreign `<action>` from
                 // another vocabulary is ignored exactly like any other
                 // unrecognised element (falls through to `Ok(None)`).
@@ -2167,7 +2167,7 @@ impl SCXMLParser {
         Ok(Some(action))
     }
 
-    /// W3C SCXML 6.4: Parse `<invoke>` into the typed [`Invoke`] sum.
+    /// §scxml-6.4: Parse `<invoke>` into the typed [`Invoke`] sum.
     ///
     /// Returns `None` if the element neither resolves to a static SCXML
     /// session (`src` / inline `<content><scxml>`) nor to a hybrid session
@@ -2191,7 +2191,7 @@ impl SCXMLParser {
         base_dir: Option<&Path>,
         source_name: &str,
     ) -> Result<Option<Invoke>, crate::forge::error::Located<crate::forge::error::ForgeError>> {
-        // W3C SCXML 6.4.1: Generate invoke ID if not provided. Auto-ids carry
+        // §scxml-6.4.1: Generate invoke ID if not provided. Auto-ids carry
         // a leading underscore by spec convention; templates building
         // identifiers (`child_<suffix>`) consume `field_suffix` instead so the
         // leading underscore does not double up.
@@ -2202,7 +2202,7 @@ impl SCXMLParser {
         }
         let field_suffix = invoke_id.trim_start_matches('_').to_string();
 
-        // W3C SCXML §3.14: `<invoke>` id must be document-unique. Downstream
+        // §scxml-3.14: `<invoke>` id must be document-unique. Downstream
         // identity axes — AOT `done.invoke.<id>` / `error.invoke.<id>` event
         // matching, `idlocation` datamodel assignment (§6.4.2), mesh
         // `active_invokes_` keying — all assume this; a silent duplicate
@@ -2231,7 +2231,7 @@ impl SCXMLParser {
         let idlocation = elem.attribute("idlocation").unwrap_or("").to_string();
         let autoforward = elem.attribute("autoforward").unwrap_or("false") == "true";
         if autoforward {
-            // W3C SCXML 6.4 / test229: stamp the SM-wide predicate so the
+            // §scxml-6.4 / test229: stamp the SM-wide predicate so the
             // c11 codegen emits `forward_to_autoforward_children` and its
             // process_event_queues call site. Per-invoke `autoforward` flag
             // (assigned below into `InvokeSessionCommon::autoforward`) drives
@@ -2316,7 +2316,7 @@ impl SCXMLParser {
             finalize_content = actions_to_javascript(&finalize_actions);
         }
 
-        // W3C SCXML 6.4: Classify invoke type
+        // §scxml-6.4: Classify invoke type
         let has_static_child = !src.is_empty() || has_inline_scxml;
         let scxml_type = invoke_type.is_empty()
             || invoke_type == "scxml"
@@ -2357,11 +2357,11 @@ impl SCXMLParser {
         }
 
         if is_static_invoke {
-            // W3C SCXML 6.4.1: `namelist` requires datamodel evaluation.
+            // §scxml-6.4.1: `namelist` requires datamodel evaluation.
             // [`NeedsScriptEngineCause::StaticInvokeNamelist`] —
             // derived post-parse by [`crate::script_engine_analyzer`].
 
-            // W3C SCXML 6.4: Inline `<content><scxml>` and external `src="..."`
+            // §scxml-6.4: Inline `<content><scxml>` and external `src="..."`
             // resolve to a concrete child reference eagerly, at parse time.
             //
             // Inline `<content>`: the parser pre-parses the inner SCXML into
@@ -2385,7 +2385,7 @@ impl SCXMLParser {
                     // `field_suffix` is the invoke_id with its leading
                     // underscore trimmed (line ~1438), so author ids map
                     // verbatim and the auto-generated `_invoke_N` ids
-                    // (W3C §6.4.1 §3.14 — SCE emits one when `id` is
+                    // (§scxml-6.4.1 §3.14 — SCE emits one when `id` is
                     // absent) produce `invoke_N` rather than the triple
                     // underscore block `__sce_synth_invoke___invoke_N`.
                     let synth_name = format!(
@@ -2501,7 +2501,7 @@ impl SCXMLParser {
         }
 
         // Neither static, hybrid, nor sce:mesh-rpc — skip silently.
-        // Unknown `type` URIs are documented in W3C §6.4.1 as producing
+        // Unknown `type` URIs are documented in §scxml-6.4.1 as producing
         // `error.execution` at runtime on foreign processors; the
         // parser declines to statically reject them so forward-compatible
         // documents still parse.
@@ -2682,7 +2682,7 @@ impl SCXMLParser {
     fn parse_donedata(&mut self, elem: &roxmltree::Node, datamodel_type: &str) -> DoneData {
         let mut dd = DoneData::default();
 
-        // W3C SCXML 5.7: Parse <param> elements.
+        // §scxml-5.7: Parse <param> elements.
         // [`NeedsScriptEngineCause::DonedataParam`] is derived post-parse
         // by [`crate::script_engine_analyzer`] from `DoneData.params`.
         for child in scxml_children(elem, "param") {
@@ -2693,7 +2693,7 @@ impl SCXMLParser {
             });
         }
 
-        // W3C SCXML 5.5 + 5.6 + Appendix B.2.2:
+        // §scxml-5.5 + 5.6 + Appendix B.2.2:
         //   - `<content expr="X"/>` → Expression (MUST be evaluated against
         //     the datamodel at runtime — script engine required).
         //   - `<content>text</content>` with ECMAScript datamodel → the
@@ -2764,7 +2764,7 @@ impl SCXMLParser {
         if model.initial.is_empty() {
             return;
         }
-        // W3C SCXML 3.13: Check for space-separated parallel initial states
+        // §scxml-3.13: Check for space-separated parallel initial states
         let initial_states: Vec<&str> = model.initial.split_whitespace().collect();
         if initial_states.len() > 1 {
             // Multiple initial states (parallel entry) — verify all exist
@@ -2786,12 +2786,12 @@ impl SCXMLParser {
                 break;
             }
         }
-        // W3C SCXML 3.6: Update model.initial to the resolved leaf state
+        // §scxml-3.6: Update model.initial to the resolved leaf state
         model.initial = current;
     }
 
     fn apply_parallel_initial_overrides(&self, model: &mut SCXMLModel) {
-        // W3C SCXML 3.6/3.13: Multi-target initial declarations enter every
+        // §scxml-3.6 / §scxml-3.13: Multi-target initial declarations enter every
         // listed descendant simultaneously. Walk up from each target
         // through all ancestors up to (but not crossing) the multi-target
         // origin state, overriding each compound ancestor's `initial` to
@@ -2893,7 +2893,7 @@ impl SCXMLParser {
     }
 
     fn resolve_history_targets(&self, model: &mut SCXMLModel) {
-        // W3C SCXML 3.11: Resolve history default targets to leaf states
+        // §scxml-3.11: Resolve history default targets to leaf states
         let mut history_leaf_targets: BTreeMap<String, String> = BTreeMap::new();
         for (history_id, history_info) in &model.history_states {
             let default_target = &history_info.default_target;
@@ -2920,7 +2920,7 @@ impl SCXMLParser {
                 if !trans.target.is_empty() {
                     if let Some(default_target) = history_defaults.get(&trans.target) {
                         trans.history_target = Some(trans.target.clone());
-                        // W3C SCXML 3.11: Resolved leaf target for Kotlin Phase 1
+                        // §scxml-3.11: Resolved leaf target for the Kotlin backend
                         trans.history_leaf_target =
                             history_leaf_targets.get(&trans.target).cloned();
                         trans.target = default_target.clone();
@@ -3004,7 +3004,7 @@ impl SCXMLParser {
         }
     }
 
-    /// W3C SCXML 6.4: Only add done.invoke.{id} events if transitions actually reference them.
+    /// §scxml-6.4: Only add done.invoke.{id} events if transitions actually reference them.
     /// Matches Python _set_invoke_event_flags() behavior.
     fn set_invoke_event_flags(&self, model: &mut SCXMLModel) {
         // Build set of done.invoke.* events actually used in transitions
@@ -3045,11 +3045,11 @@ impl SCXMLParser {
         }
     }
 
-    /// W3C SCXML 6.2: Collect events from child state machines that send to parent (#_parent).
+    /// §scxml-6.2: Collect events from child state machines that send to parent (#_parent).
     /// Auto-adds child-to-parent events to parent Event enum for compile-time type safety.
     /// Also stamps `InvokeSessionCommon::child_has_send_to_parent` per invoke so
     /// codegen can gate the parent_sm / parent_dispatch wiring at child spawn time
-    /// (W3C SCXML 6.4 — required for test226/240/241/243/244/245/276).
+    /// (§scxml-6.4 — required for test226/240/241/243/244/245/276).
     ///
     /// Inline `<content>` children are walked in-memory from
     /// [`ScxmlInvokeInfo::inline_child`]; external `src="…"` children are
@@ -3132,7 +3132,7 @@ impl SCXMLParser {
             }
         }
 
-        // W3C SCXML 6.4: stamp child_has_send_to_parent on every Scxml/Hybrid
+        // §scxml-6.4: stamp child_has_send_to_parent on every Scxml/Hybrid
         // invoke so codegen knows to wire parent_sm / parent_dispatch before
         // child spawn. Hybrid mirrors the same flag because the spawned child
         // is a regular SCXML session whose parent-routing surface is identical.
@@ -3151,7 +3151,7 @@ impl SCXMLParser {
     }
 
     fn parse_initial_children(&self, model: &mut SCXMLModel) {
-        // W3C SCXML 3.6: Parse initial attribute into list of children for ALL states
+        // §scxml-3.6: Parse initial attribute into list of children for ALL states
         for state in model.states.values_mut() {
             if !state.initial.is_empty() {
                 state.initial_children =
@@ -3645,7 +3645,7 @@ fn is_scxml_state_element(node: &roxmltree::Node) -> bool {
 
 /// True when `node`'s namespace is the W3C SCXML namespace.
 ///
-/// W3C SCXML §3.5 requires every SCXML document to declare the
+/// §scxml-3.5 requires every SCXML document to declare the
 /// namespace on the root, and `xsd_validator::validate_or_skip`
 /// (run on every input at `parse_impl` boundary) rejects documents
 /// that omit the declaration before this predicate is ever consulted.
@@ -3876,7 +3876,7 @@ fn validate_on_sample_uniqueness(
 }
 
 /// watching-zenoh RFC §5.E B7-η' Q-OnSample-7 event-name conflict
-/// validator. W3C SCXML §5.10 reserves the `error.*` and `done.*`
+/// validator. §scxml-5.10 reserves the `error.*` and `done.*`
 /// event-name families for built-in lifecycle events; an author
 /// dispatching a sample-arrival event into one of these families
 /// would silently crosstalk the W3C-prescribed semantics. The check
@@ -4220,7 +4220,7 @@ fn serialize_node_inner(node: &roxmltree::Node, parent_ns: Option<&str>, c14n: b
     result
 }
 
-/// W3C SCXML 5.9.2: Check if expression is pure In() predicate
+/// §scxml-5.9.2: Check if expression is pure In() predicate
 fn is_pure_in_predicate(cond: &str) -> bool {
     static RE_IN_CALL: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r#"In\(['"][^'"]+['"]\)"#).unwrap());
@@ -4288,7 +4288,7 @@ pub(crate) fn check_expression_needs(cond: &str) -> (bool, bool) {
             return (true, false);
         }
     }
-    // W3C SCXML 5.9: System-reserved identifiers starting with underscore
+    // §scxml-5.9: System-reserved identifiers starting with underscore
     static RE_UNDERSCORE: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r"\b_[a-zA-Z]\w*\b").unwrap());
     if RE_UNDERSCORE.is_match(cond) {
@@ -4409,7 +4409,7 @@ fn collect_parent_send_events(actions: &[Action], events: &mut std::collections:
     }
 }
 
-/// W3C SCXML 6.2 (test187/207): detect whether the child SCXML carries
+/// §scxml-6.2 (test187/207): detect whether the child SCXML carries
 /// any `<send delay="...">` / `<send delayexpr="...">`. The child's
 /// codegen emits a scheduler queue + `_tick` entry point only when
 /// this returns `true`; the parent's invoke driver mirrors the gate so
@@ -4469,7 +4469,7 @@ fn populate_child_metadata_from_model(child_model: &SCXMLModel, common: &mut Inv
     common.child_needs_script_engine = child_model.needs_script_engine;
     common.child_datamodel_vars =
         Some(child_model.variables.iter().map(|v| v.id.clone()).collect());
-    // W3C SCXML 6.2 (test187/207): mirror the child's own scheduler
+    // §scxml-6.2 (test187/207): mirror the child's own scheduler
     // requirement. The child's codegen emits `_tick` only when
     // its scheduler queue is non-empty; the parent's invoke driver
     // must know whether that entry point exists at template time.

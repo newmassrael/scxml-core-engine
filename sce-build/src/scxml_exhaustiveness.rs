@@ -26,7 +26,7 @@
 // an entry from — the AI-generated SCXML failure mode this phase
 // targets.
 //
-// Event matching follows W3C SCXML §5.10 / §3.13.2 semantics:
+// Event matching follows §scxml-5.10 / §scxml-3.12.1 semantics:
 //
 //   * A transition `event="*"` matches every event.
 //   * A transition `event="foo.*"` matches events starting with
@@ -123,7 +123,7 @@ pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeErr
         }
 
         // Walk each candidate event. Skip those the parent already
-        // absorbs via its own transitions (W3C SCXML §3.13 bubble
+        // absorbs via its own transitions (§scxml-3.13 bubble
         // semantics — a parent handler turns the gap into a
         // deliberate fallthrough).
         for event in &universe {
@@ -178,7 +178,7 @@ fn literal_event_token(tok: &str) -> Option<String> {
 }
 
 /// Does any of `state`'s transitions match `event` per W3C SCXML
-/// §3.13.2 semantics (or via the universal wildcards `*` / `.*`)?
+/// §scxml-3.12.1 semantics (or via the universal wildcards `*` / `.*`)?
 fn state_handles_event(state: &State, event: &str) -> bool {
     transitions_match_event(&state.transitions, event)
 }
@@ -190,7 +190,7 @@ fn transitions_match_event(transitions: &[Transition], event: &str) -> bool {
         .any(|t| transition_matches_event(t, event))
 }
 
-/// Single-transition match per W3C SCXML §3.12.1 token-prefix rules
+/// Single-transition match per §scxml-3.12.1 token-prefix rules
 /// plus the `*` / `.*` universal-wildcard convention this codebase
 /// already adopts (mirrors the `is_pure_in_predicate` / event-set
 /// collection code in `parser.rs`).
