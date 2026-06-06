@@ -585,14 +585,21 @@ whose only effects are `<sce:action>`s compiles under `#![no_std]`.
 
 v1 acceptance contract (enforced at the validation stage):
 
-- A `<sce:action>` is a **direct `<transition>` child**. Placement
-  in `<onentry>` / `<onexit>` / an initial transition, or nested
-  inside `<if>` / `<foreach>`, is rejected
+- A `<sce:action>` is a **direct child** of a `<transition>`, an
+  `<onentry>` / `<onexit>` block, or initial executable content (an
+  `<initial>` transition or a history state's default transition).
+  Nesting inside `<if>` / `<foreach>` is rejected — that call site is
+  conditional or iterated, which v1 does not lower
   (`validation/native-action-placement`).
-- Each `<sce:arg>` is a bare `_event.data.<field>` reference (the
-  `name` attribute, when present, names the trait parameter).
-  A literal or derived argument, or one whose triggering event
-  imports no EventSchema or whose schema is not all-primitive (an
+- Arguments require the triggering event's typed payload in scope,
+  which happens only on a `<transition>`. An `<onentry>` / `<onexit>` /
+  initial position has no triggering event, so only a **no-argument**
+  `<sce:action>` is admissible there; an arg-bearing one is rejected
+  (`validation/native-action-argument`).
+- On a transition, each `<sce:arg>` is a bare `_event.data.<field>`
+  reference (the `name` attribute, when present, names the trait
+  parameter). A literal or derived argument, or one whose triggering
+  event imports no EventSchema or whose schema is not all-primitive (an
   enum-typed field — the same eligibility rule as the typed-guard
   channel), is rejected (`validation/native-action-argument`).
 - An argument's `<field>` must exist on the triggering event's
