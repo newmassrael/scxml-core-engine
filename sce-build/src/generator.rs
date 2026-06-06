@@ -138,6 +138,29 @@ fn reject_mesh_rpc_in_unsupported_lang(
     )))
 }
 
+// W3C SCXML G.7 `<sce:action>`: native host-trait dispatch is currently
+// lowered only by the Rust backend. The other backends refuse the construct
+// here with an explicit `generate/unsupported-feature` diagnostic rather than
+// failing on a missing per-language action template (which would surface as an
+// opaque template-render error) or — worse — silently ignoring the effect.
+// The shared validation stage has already confirmed every native action is a
+// well-formed direct <transition> child, so this is purely a backend-coverage
+// refusal.
+fn reject_native_actions_in_unsupported_lang(
+    model: &SCXMLModel,
+    language: &'static str,
+) -> Result<(), GenerateError> {
+    if !crate::forge::native_action::document_has_native_actions(model) {
+        return Ok(());
+    }
+    Err(GenerateError::UnsupportedFeature(format!(
+        "<sce:action> (W3C SCXML G.7 native host dispatch) in '{}' has no {} \
+         codegen path — native host-action lowering is currently Rust-only. \
+         Generate this machine for `--lang rust`.",
+        model.name, language
+    )))
+}
+
 // NL→IR Item C1 Path A (EventSchema MCU native lowering): every backend
 // (Rust, C11, C++, Kotlin, Go, Python) now lowers a typed `_event.data`
 // transition guard to a script-engine-free native comparison, so the former
@@ -290,8 +313,35 @@ fn render_rust(
     // `native_payload_guard` via a single-language clone — co-located with
     // their owning transition so a per-state `transition_index` cannot
     // collide them across states.
-    let payload = crate::forge::generator::build_rust_event_payload(model, &machine_name);
     let mut model_lowered = model.clone();
+    // W3C SCXML G.7: lower `<sce:action>` Custom Action Elements to native
+    // host-trait dispatch (engine-free). Mutates each native action's
+    // rendered call site on `model_lowered` and returns the generated
+    // `Actions` trait plus the payload events those actions activate. When
+    // the document has no native actions every output below collapses to the
+    // empty string, so the emitted code is byte-identical to the pre-feature
+    // baseline (the generic `Policy<A>` never appears).
+    let native = crate::forge::native_action::render_rust(&mut model_lowered, &machine_name);
+    // `Engine<P: StatePolicy>` requires `P: 'static` (the runtime stores the
+    // policy and erases lifetimes through it), so the host `Actions` type
+    // parameter carries the same bound. A host impl is a plain owned type, so
+    // `'static` is the expected, non-restrictive shape.
+    let (policy_generics_decl, policy_generics_use) = if native.any {
+        (
+            format!("<A: {} + 'static>", native.trait_name),
+            "<A>".to_string(),
+        )
+    } else {
+        (String::new(), String::new())
+    };
+    let payload = crate::forge::generator::build_rust_event_payload(
+        model,
+        &machine_name,
+        &native.payload_events,
+        &policy_generics_decl,
+        &policy_generics_use,
+        no_std,
+    );
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 
     let tmpl = env
@@ -307,6 +357,10 @@ fn render_rust(
         event_payload_defs => &payload.defs,
         event_payload_type => &payload.type_name,
         event_payload_entries => &payload.entries,
+        has_native_actions => native.any,
+        native_actions_defs => &native.trait_def,
+        policy_generics_decl => &policy_generics_decl,
+        policy_generics_use => &policy_generics_use,
     };
     tmpl.render(ctx).map_err(render_error)
 }
@@ -344,6 +398,7 @@ fn render_cpp(
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
+    reject_native_actions_in_unsupported_lang(model, "C++")?;
     let inl_filename = format!("{input_stem}_sm.inl");
     // W3C SCXML 5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
@@ -460,6 +515,7 @@ fn render_c11(
     input_stem: &str,
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
+    reject_native_actions_in_unsupported_lang(model, "C11")?;
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
     let base_path = model.scxml_base_path.clone();
@@ -550,6 +606,7 @@ pub fn generate_kotlin(
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
+    reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_kotlin_filters(&mut env);
@@ -566,6 +623,7 @@ pub fn generate_kotlin_with_templates(
     package_prefix: Option<&str>,
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Kotlin")?;
+    reject_native_actions_in_unsupported_lang(model, "Kotlin")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_kotlin_filters(&mut env);
@@ -788,6 +846,7 @@ impl minijinja::value::Object for KotlinDefaultFn {
 /// Generate Go code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
+    reject_native_actions_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_go_filters(&mut env);
@@ -800,6 +859,7 @@ pub fn generate_go_with_templates(
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Go")?;
+    reject_native_actions_in_unsupported_lang(model, "Go")?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_go_filters(&mut env);
@@ -820,6 +880,7 @@ pub fn generate_go_with_templates(
 /// Generate Python code from an analyzed SCXMLModel (filesystem-based).
 pub fn generate_python(model: &SCXMLModel, template_dir: &Path) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
+    reject_native_actions_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
@@ -833,6 +894,7 @@ pub fn generate_python_with_templates(
     templates: &[(&str, &str)],
 ) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Python")?;
+    reject_native_actions_in_unsupported_lang(model, "Python")?;
     reject_python_unsupported_features(model)?;
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
@@ -1464,6 +1526,67 @@ mod tests {
                 assert!(msg.contains("C11"), "msg names the language: {msg}");
             }
             Err(other) => panic!("expected UnsupportedFeature, got {other:?}"),
+        }
+    }
+
+    // W3C SCXML G.7 `<sce:action>` lowers natively only on the Rust backend.
+    // Every other backend MUST refuse the construct with a clear
+    // `generate/unsupported-feature` diagnostic — silently dropping the effect
+    // (or crashing on a missing per-language action template) is exactly the
+    // failure these gates forbid. A no-argument action needs no schema, so the
+    // document parses without an `<sce:import>`.
+    const NATIVE_ACTION_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s">
+  <state id="s"><transition event="e" target="s"><sce:action name="do_effect"/></transition></state>
+</scxml>"##;
+
+    fn assert_rejects_native_action(err: GenerateError, lang: &str) {
+        match err {
+            GenerateError::UnsupportedFeature(msg) => {
+                assert!(msg.contains("sce:action"), "msg names the feature: {msg}");
+                assert!(msg.contains(lang), "msg names the language: {msg}");
+            }
+            other => panic!("expected UnsupportedFeature, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cpp_generate_rejects_native_action() {
+        let model = parse(NATIVE_ACTION_SCXML);
+        // `GeneratedOutput` is not `Debug`, so match rather than `unwrap_err`.
+        match generate_cpp_with_templates(&model, &[], "fixture") {
+            Ok(_) => panic!("expected UnsupportedFeature, got Ok"),
+            Err(e) => assert_rejects_native_action(e, "C++"),
+        }
+    }
+
+    #[test]
+    fn kotlin_generate_rejects_native_action() {
+        let model = parse(NATIVE_ACTION_SCXML);
+        let err = generate_kotlin_with_templates(&model, &[], None).unwrap_err();
+        assert_rejects_native_action(err, "Kotlin");
+    }
+
+    #[test]
+    fn go_generate_rejects_native_action() {
+        let model = parse(NATIVE_ACTION_SCXML);
+        let err = generate_go_with_templates(&model, &[]).unwrap_err();
+        assert_rejects_native_action(err, "Go");
+    }
+
+    #[test]
+    fn python_generate_rejects_native_action() {
+        let model = parse(NATIVE_ACTION_SCXML);
+        let err = generate_python_with_templates(&model, &[]).unwrap_err();
+        assert_rejects_native_action(err, "Python");
+    }
+
+    #[test]
+    fn c11_generate_rejects_native_action() {
+        let model = parse(NATIVE_ACTION_SCXML);
+        match generate_c11_with_templates(&model, &[], "fixture") {
+            Ok(_) => panic!("expected UnsupportedFeature, got Ok"),
+            Err(e) => assert_rejects_native_action(e, "C11"),
         }
     }
 

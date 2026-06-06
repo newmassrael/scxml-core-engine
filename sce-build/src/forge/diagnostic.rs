@@ -444,6 +444,12 @@ pub enum DiagnosticCode {
     ValidationWrongPipeline,
     #[serde(rename = "validation/dynamic-features")]
     ValidationDynamicFeatures,
+    #[serde(rename = "validation/native-action-placement")]
+    ValidationNativeActionPlacement,
+    #[serde(rename = "validation/native-action-argument")]
+    ValidationNativeActionArgument,
+    #[serde(rename = "validation/native-action-signature-conflict")]
+    ValidationNativeActionSignatureConflict,
     #[serde(rename = "validation/mesh-rpc-reserved-param")]
     ValidationMeshRpcReservedParam,
     #[serde(rename = "validation/mesh-rpc-missing-target")]
@@ -2509,6 +2515,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationRequireEither,
         ValidationWrongPipeline,
         ValidationDynamicFeatures,
+        ValidationNativeActionPlacement,
+        ValidationNativeActionArgument,
+        ValidationNativeActionSignatureConflict,
         ValidationMeshRpcReservedParam,
         ValidationMeshRpcMissingTarget,
         ValidationMeshRpcDuplicateTarget,
@@ -3375,6 +3384,9 @@ impl DiagnosticCode {
             | ValidationSingletonViolation
             | ValidationRequireEither
             | ValidationDynamicFeatures
+            | ValidationNativeActionPlacement
+            | ValidationNativeActionArgument
+            | ValidationNativeActionSignatureConflict
             | ValidationBytesMaxSizeViolation
             | ImportFileNotFound
             | ImportKindMismatch
@@ -3542,6 +3554,11 @@ impl DiagnosticCode {
             ValidationRequireEither => "validation/require-either",
             ValidationWrongPipeline => "validation/wrong-pipeline",
             ValidationDynamicFeatures => "validation/dynamic-features",
+            ValidationNativeActionPlacement => "validation/native-action-placement",
+            ValidationNativeActionArgument => "validation/native-action-argument",
+            ValidationNativeActionSignatureConflict => {
+                "validation/native-action-signature-conflict"
+            }
             ValidationMeshRpcReservedParam => "validation/mesh-rpc-reserved-param",
             ValidationMeshRpcMissingTarget => "validation/mesh-rpc-missing-target",
             ValidationMeshRpcDuplicateTarget => "validation/mesh-rpc-duplicate-target",
@@ -4670,6 +4687,33 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: Some(reason.clone()),
             fix: None,
             key_fragments: vec![name.clone(), reason.clone()],
+        },
+        ValidationError::NativeActionPlacement { name, detail } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationNativeActionPlacement,
+            stage: Stage::Validation,
+            // The repair is to MOVE the element to a `<transition>`, not to
+            // substitute a value, so no closed candidate set exists and `fix`
+            // stays `None`; `actual` carries the offending placement detail.
+            expected: None,
+            actual: Some(detail.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), detail.clone()],
+        },
+        ValidationError::NativeActionArgument { name, detail } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationNativeActionArgument,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(detail.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), detail.clone()],
+        },
+        ValidationError::NativeActionSignatureConflict { name, detail } => DiagnosticPayload {
+            code: DiagnosticCode::ValidationNativeActionSignatureConflict,
+            stage: Stage::Validation,
+            expected: None,
+            actual: Some(detail.clone()),
+            fix: None,
+            key_fragments: vec![name.clone(), detail.clone()],
         },
         ValidationError::MeshRpcReservedParam { param, detail } => DiagnosticPayload {
             code: DiagnosticCode::ValidationMeshRpcReservedParam,
@@ -8026,6 +8070,33 @@ mod tests {
                 }
                 .into(),
                 r#"{"v":1,"id":"fnv1a:aaaac1f1c1e4cf6e","code":"validation/dynamic-features","stage":"validation","message":"cannot generate static code for 'chart': initial state attribute names a state that is not declared","actual":"initial state attribute names a state that is not declared"}"#,
+            ),
+            (
+                "forge/native-action-placement",
+                ValidationError::NativeActionPlacement {
+                    name: "do_effect".into(),
+                    detail: "supported only as a direct <transition> child".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:1473c2ac552ffeb4","code":"validation/native-action-placement","stage":"validation","message":"<sce:action name=\"do_effect\">: supported only as a direct <transition> child","actual":"supported only as a direct <transition> child"}"#,
+            ),
+            (
+                "forge/native-action-argument",
+                ValidationError::NativeActionArgument {
+                    name: "append".into(),
+                    detail: "argument '42' must be a bare `_event.data.<field>` reference".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:670341f082aeea0c","code":"validation/native-action-argument","stage":"validation","message":"<sce:action name=\"append\">: argument '42' must be a bare `_event.data.<field>` reference","actual":"argument '42' must be a bare `_event.data.<field>` reference"}"#,
+            ),
+            (
+                "forge/native-action-signature-conflict",
+                ValidationError::NativeActionSignatureConflict {
+                    name: "append".into(),
+                    detail: "argument types (bytes) here disagree with (uint32) on another transition".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:2f5ea10b3dcdc557","code":"validation/native-action-signature-conflict","stage":"validation","message":"<sce:action name=\"append\">: argument types (bytes) here disagree with (uint32) on another transition","actual":"argument types (bytes) here disagree with (uint32) on another transition"}"#,
             ),
             (
                 "forge/mesh-rpc-reserved-param",
@@ -11775,6 +11846,9 @@ mod tests {
             | ValidationSingletonViolation
             | ValidationWrongPipeline
             | ValidationDynamicFeatures
+            | ValidationNativeActionPlacement
+            | ValidationNativeActionArgument
+            | ValidationNativeActionSignatureConflict
             | ValidationMeshRpcReservedParam
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget
@@ -12541,7 +12615,9 @@ mod tests {
                 | ValidationInvalidDirection | ValidationNumericParse
                 | ValidationEmptyValue | ValidationSingletonViolation
                 | ValidationRequireEither | ValidationWrongPipeline
-                | ValidationDynamicFeatures | ValidationMeshRpcReservedParam
+                | ValidationDynamicFeatures | ValidationNativeActionPlacement
+                | ValidationNativeActionArgument
+                | ValidationNativeActionSignatureConflict | ValidationMeshRpcReservedParam
                 | ValidationMeshRpcMissingTarget
                 | ValidationMeshRpcDuplicateTarget
                 | ValidationRemovedAttribute
@@ -12816,9 +12892,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            319,
+            322,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
-             expected 263 distinct variants to match the DiagnosticCode \
+             expected 322 distinct variants to match the DiagnosticCode \
              enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
              chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
              then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \

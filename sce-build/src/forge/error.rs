@@ -432,6 +432,26 @@ pub enum ValidationError {
     #[error("cannot generate static code for '{name}': {reason}")]
     DynamicFeatures { name: String, reason: String },
 
+    /// W3C SCXML G.7 — a `<sce:action>` Custom Action Element appears
+    /// somewhere v1 does not support: anywhere other than a direct
+    /// `<transition>` child (e.g. `<onentry>`, `<onexit>`, an initial
+    /// transition, or nested inside `<if>` / `<foreach>`).
+    #[error("<sce:action name=\"{name}\">: {detail}")]
+    NativeActionPlacement { name: String, detail: String },
+
+    /// W3C SCXML G.7 — a `<sce:action>` `<sce:arg>` cannot be lowered to
+    /// a typed native value: it is not a bare `_event.data.<field>`
+    /// reference, the triggering event imports no EventSchema, or the
+    /// referenced payload field is enum-typed (not natively representable).
+    #[error("<sce:action name=\"{name}\">: {detail}")]
+    NativeActionArgument { name: String, detail: String },
+
+    /// W3C SCXML G.7 — a `<sce:action name>` appears on more than one
+    /// transition with incompatible argument signatures, so a single
+    /// generated `Actions` trait method cannot serve every call site.
+    #[error("<sce:action name=\"{name}\">: {detail}")]
+    NativeActionSignatureConflict { name: String, detail: String },
+
     /// Reserved `_mesh_*` `<param>` rule violation on
     /// `<invoke type="sce:mesh-rpc">` (SCE Mesh §9.5). Covers the four
     /// cases the spec calls out as hard build-time errors: the required

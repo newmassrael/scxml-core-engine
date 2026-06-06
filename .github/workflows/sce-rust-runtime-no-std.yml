@@ -22,6 +22,8 @@ on:
       - 'tools/codegen/templates/rust/**'
       - 'sce-nostd-build-probe/**'
       - 'sce-build/tests/fixtures/no_std/**'
+      - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
+      - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'
       - 'Cargo.lock'
       - 'Cargo.toml'
       - '.cargo/config.toml'
@@ -33,6 +35,8 @@ on:
       - 'tools/codegen/templates/rust/**'
       - 'sce-nostd-build-probe/**'
       - 'sce-build/tests/fixtures/no_std/**'
+      - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
+      - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'
       - 'Cargo.lock'
       - 'Cargo.toml'
       - '.cargo/config.toml'
@@ -116,6 +120,27 @@ jobs:
           sce-build/tests/fixtures/no_std/parallel_history_probe.scxml
 
     - name: Compile the generated no_std machine (MCU target, no allocator)
+      run: |
+        cargo build \
+          --manifest-path sce-nostd-build-probe/Cargo.toml \
+          --target=thumbv7em-none-eabihf
+
+    # W3C SCXML 5.11 <sce:action>: prove native host-trait dispatch is
+    # allocator-free. A statechart whose effects are `<sce:action>`s (instead
+    # of an embedded script engine) must compile on a no-heap MCU — including
+    # its typed `bytes` payload, which lowers to the runtime `SceBytes` alias
+    # (`heapless::Vec<u8, N>` under no_std). Reuses the probe crate's
+    # runtime-no_std dependency + bare-metal target by overwriting its lib
+    # source with the generated native-action machine and compiling again.
+    - name: Generate the no_std native-action probe
+      run: |
+        target/release/sce-codegen --workspace-root . generate -l rust --no-std \
+          --output-dir /tmp/na-probe \
+          sce-build/tests/fixtures/event_schema/statechart_native_action.scxml
+        cp /tmp/na-probe/statechart_native_action_sm.rs \
+          sce-nostd-build-probe/src/parallel_history_probe_sm.rs
+
+    - name: Compile the generated no_std native-action machine (MCU target, no allocator)
       run: |
         cargo build \
           --manifest-path sce-nostd-build-probe/Cargo.toml \

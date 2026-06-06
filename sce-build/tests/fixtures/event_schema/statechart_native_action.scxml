@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.11 positive fixture: a fragment-reassembly statechart that
+  dispatches side effects to the host via `<sce:action>` instead of an
+  embedded script engine. `append_fragment_payload` reads two typed
+  `_event.data` fields (a bytes payload + a uint32 offset); `reset_slot`
+  takes no arguments. Both lower to direct calls on the generated
+  `<Machine>Actions` trait, so the machine needs no IScriptEngine and
+  compiles under `#![no_std]`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="statechart_native_action"
+       version="1.0"
+       initial="idle"
+       datamodel="ecmascript">
+  <sce:import src="schema_fragment.scxml" kind="event-schema" as="FragmentSchema"/>
+  <state id="idle">
+    <transition event="fragment.received" target="assembling">
+      <sce:action name="append_fragment_payload">
+        <sce:arg expr="_event.data.payload"/>
+        <sce:arg expr="_event.data.offset"/>
+      </sce:action>
+    </transition>
+  </state>
+  <state id="assembling">
+    <transition event="reset" target="idle">
+      <sce:action name="reset_slot"/>
+    </transition>
+  </state>
+</scxml>

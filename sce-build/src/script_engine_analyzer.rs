@@ -310,6 +310,17 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
                 collect_action_causes(state_id, nested, out);
             }
         }
+        "native_action" => {
+            // W3C SCXML G.7 — `<sce:action>` Custom Action Element. A
+            // native host-trait dispatch never needs a runtime engine:
+            // codegen lowers each `<sce:arg>` through the typed-expression
+            // pipeline and emits a direct call into the generated `Actions`
+            // trait. An argument that cannot be statically lowered is
+            // rejected at codegen time by the `expression/*` machinery — it
+            // is never an engine cause. Listed explicitly (rather than left
+            // to the `_` arm) so this guarantee is pinned by
+            // `native_action_is_not_a_script_engine_cause`.
+        }
         _ => {}
     }
 }
@@ -570,6 +581,35 @@ mod tests {
             scxml,
             |c| matches!(c, NeedsScriptEngineCause::InlineScriptAction { state_id } if state_id == "s"),
         );
+    }
+
+    #[test]
+    fn native_action_is_not_a_script_engine_cause() {
+        // W3C SCXML G.7: a `<sce:action>` Custom Action Element dispatches
+        // to a host trait method; it never needs a runtime engine even with
+        // typed-payload arguments. The whole document must analyze clean.
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s">
+            <state id="s">
+                <transition event="e" target="s">
+                    <sce:action name="do_effect">
+                        <sce:arg expr="_event.data.payload"/>
+                    </sce:action>
+                </transition>
+            </state>
+        </scxml>"#;
+        let model = parse(scxml);
+        // Guard against a false positive: a *dropped* action also yields no
+        // causes. Assert the action actually parsed onto the transition.
+        let trans = &model.states.get("s").unwrap().transitions[0];
+        assert_eq!(trans.actions.len(), 1, "the <sce:action> must parse");
+        assert_eq!(trans.actions[0].action_type, "native_action");
+        let causes = analyze(&model);
+        assert!(
+            causes.is_empty(),
+            "<sce:action> must not require a script engine, got {:?}",
+            causes,
+        );
+        assert!(!requires_script_engine(&model));
     }
 
     #[test]

@@ -1867,6 +1867,70 @@ impl SCXMLParser {
         Ok(())
     }
 
+    /// W3C SCXML G.7: parse a Custom Action Element
+    /// `<sce:action name="op"><sce:arg expr="..."/>...</sce:action>` into a
+    /// native host-trait dispatch action.
+    ///
+    /// The `name` attribute names a host operation that codegen lowers to a
+    /// direct call on a generated `Actions` trait method — no script engine.
+    /// Each ordered `<sce:arg expr="...">` child supplies one positional
+    /// argument expression; codegen lowers it through the typed-expression
+    /// pipeline (the path event-schema guards already use), deriving the
+    /// trait parameter types from the triggering event's payload schema. A
+    /// non-statically-lowerable argument is rejected at codegen time by the
+    /// same `expression/*` machinery — this construct is engine-free by
+    /// definition, so it never silently falls back to a runtime engine.
+    fn parse_native_action(
+        &mut self,
+        elem: &roxmltree::Node,
+        action: &mut Action,
+        source_name: &str,
+    ) -> Result<(), crate::forge::error::Located<crate::forge::error::ForgeError>> {
+        use crate::forge::error::{Located, ValidationError};
+        use crate::forge::model::SCE_NAMESPACE;
+
+        let require_attr = |present: bool, element: &str, attr: &str, node: &roxmltree::Node| {
+            if present {
+                return Ok(());
+            }
+            let pos = node.document().text_pos_at(node.range().start);
+            Err(Located::new(
+                ValidationError::MissingAttribute {
+                    element: element.into(),
+                    attr: attr.into(),
+                }
+                .into(),
+                source_name,
+                Some(pos.row),
+                Some(pos.col),
+            ))
+        };
+
+        let name = elem.attribute("name").unwrap_or("").trim().to_string();
+        require_attr(!name.is_empty(), "<sce:action>", "name", elem)?;
+
+        action.action_type = "native_action".to_string();
+        action.native_action_name = name;
+
+        for arg in elem.children().filter(|c| {
+            c.is_element()
+                && c.tag_name().name() == "arg"
+                && c.tag_name().namespace() == Some(SCE_NAMESPACE)
+        }) {
+            let expr = arg.attribute("expr").unwrap_or("").trim().to_string();
+            require_attr(!expr.is_empty(), "<sce:arg>", "expr", &arg)?;
+            action.params.push(Param {
+                name: arg.attribute("name").unwrap_or("").to_string(),
+                expr,
+                location: String::new(),
+                is_static_literal: false,
+                static_value: String::new(),
+            });
+        }
+
+        Ok(())
+    }
+
     fn parse_if_action(
         &mut self,
         elem: &roxmltree::Node,
@@ -2087,6 +2151,17 @@ impl SCXMLParser {
                 action.actions = self.parse_executable_content(child, model, source_name)?;
             }
             "if" => self.parse_if_action(child, &mut action, model, source_name)?,
+            "action" => {
+                // W3C SCXML G.7: Custom Action Element. Only the SCE
+                // namespace claims `<action>`; a foreign `<action>` from
+                // another vocabulary is ignored exactly like any other
+                // unrecognised element (falls through to `Ok(None)`).
+                use crate::forge::model::SCE_NAMESPACE;
+                if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
+                    return Ok(None);
+                }
+                self.parse_native_action(child, &mut action, source_name)?;
+            }
             _ => return Ok(None),
         }
         Ok(Some(action))
