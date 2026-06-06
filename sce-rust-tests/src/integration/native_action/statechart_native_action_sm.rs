@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 7efbf35c224276f5a26185d48ab9f347f432a6672d3051b59434b094d4b519c1
+// source-hash: 02e932f788f150ad2e8877d44da2db3d2143b0611251952c239ae4ff19163abb
 // template-hash: 09c66e0a06202a6ec53b4591ac58670a6615a699910ff161304360792e1e7915
-// generated-at: 1780731872
+// generated-at: 1780752486
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -70,8 +70,8 @@
 // the generator emits still surfaces.
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
-#![doc = "SCE-MAP: statechart_native_action.scxml:11"]
-// SCE-MAP: statechart_native_action.scxml:11
+#![doc = "SCE-MAP: statechart_native_action.scxml:21"]
+// SCE-MAP: statechart_native_action.scxml:21
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
@@ -142,6 +142,8 @@ impl<A: StatechartNativeActionActions + 'static> StatechartNativeActionInject
 /// each operation symbolic. No runtime script engine is involved.
 pub trait StatechartNativeActionActions {
     fn append_fragment_payload(&mut self, payload: &[u8], offset: u32);
+    fn on_assembling_exit(&mut self);
+    fn on_idle_entry(&mut self);
     fn reset_slot(&mut self);
 }
 
@@ -361,29 +363,51 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     // ======================================================================
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    #[doc = "SCE-MAP: statechart_native_action.scxml:11"]
-    // SCE-MAP: statechart_native_action.scxml:11
+    #[doc = "SCE-MAP: statechart_native_action.scxml:21"]
+    // SCE-MAP: statechart_native_action.scxml:21
     fn execute_entry_actions(
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
+        match state {
+            StatechartNativeActionState::Idle => {
+                // W3C SCXML 3.8: onentry block 1/1
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+                    // W3C SCXML G.7: <sce:action name="on_idle_entry">
+                    self.actions.on_idle_entry();
+                }
+            }
+            _ => {}
+        }
     }
 
     // W3C SCXML 3.8: Execute <onexit> actions for a state
-    #[doc = "SCE-MAP: statechart_native_action.scxml:11"]
-    // SCE-MAP: statechart_native_action.scxml:11
+    #[doc = "SCE-MAP: statechart_native_action.scxml:21"]
+    // SCE-MAP: statechart_native_action.scxml:21
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
         engine: &mut sce_rust_runtime::Engine<Self>,
         pre_transition_active: &[Self::State],
     ) {
+        match state {
+            StatechartNativeActionState::Assembling => {
+                // W3C SCXML 3.9: onexit block 1/1
+                // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
+                'action_block: {
+                    // W3C SCXML G.7: <sce:action name="on_assembling_exit">
+                    self.actions.on_assembling_exit();
+                }
+            }
+            _ => {}
+        }
     }
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    #[doc = "SCE-MAP: statechart_native_action.scxml:11"]
-    // SCE-MAP: statechart_native_action.scxml:11
+    #[doc = "SCE-MAP: statechart_native_action.scxml:21"]
+    // SCE-MAP: statechart_native_action.scxml:21
     fn process_transition(
         &mut self,
         current_state: &mut Self::State,
@@ -405,8 +429,8 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     }
 
     // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
-    #[doc = "SCE-MAP: statechart_native_action.scxml:11"]
-    // SCE-MAP: statechart_native_action.scxml:11
+    #[doc = "SCE-MAP: statechart_native_action.scxml:21"]
+    // SCE-MAP: statechart_native_action.scxml:21
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         if !self.has_transition_actions {
             return;

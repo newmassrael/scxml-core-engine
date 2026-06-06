@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
 # Regenerate sce-rust-tests/src/integration/native_action/ from the canonical
-# W3C SCXML 5.11 `<sce:action>` fixture at
+# W3C SCXML G.7 `<sce:action>` fixture at
 # sce-build/tests/fixtures/event_schema/statechart_native_action.scxml.
 #
 # This is the Rust compile+run gate for native host-trait action dispatch:
