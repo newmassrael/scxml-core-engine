@@ -87,3 +87,13 @@ jobs:
                 && mnemosyne-cli validate-content-drift )
             echo "::endgroup::"
           done
+
+      # validate-code-refs only gates §scxml- cites; a free-text
+      # "W3C SCXML <n>" section reference would bypass it entirely. This
+      # gate forbids that prose form in the enrolled comment dirs (read
+      # from the toml so it tracks coverage automatically), forcing every
+      # section cite through the §scxml- channel the validator inspects.
+      - name: Forbid free-text W3C SCXML section cites (force §scxml- form)
+        run: |
+          python3 tools/mnemosyne-adoption/migrate_citations.py --check \
+            --from-toml docs/spec/scxml/mnemosyne.toml
