@@ -125,7 +125,7 @@ jobs:
           --manifest-path sce-nostd-build-probe/Cargo.toml \
           --target=thumbv7em-none-eabihf
 
-    # W3C SCXML 5.11 <sce:action>: prove native host-trait dispatch is
+    # W3C SCXML G.7 <sce:action>: prove native host-trait dispatch is
     # allocator-free. A statechart whose effects are `<sce:action>`s (instead
     # of an embedded script engine) must compile on a no-heap MCU — including
     # its typed `bytes` payload, which lowers to the runtime `SceBytes` alias
