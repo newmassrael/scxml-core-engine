@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! W3C SCXML G.7 — `<sce:action>` Custom Action Element: native host-trait
+//! §scxml-G-7 — `<sce:action>` Custom Action Element: native host-trait
 //! dispatch.
 //!
 //! A `<sce:action name="op"><sce:arg expr="_event.data.field"/></sce:action>`

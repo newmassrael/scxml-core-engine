@@ -13,23 +13,23 @@
 //                                  pair so the author lands on the
 //                                  concrete element to repair.
 //
-// Algorithm (W3C SCXML §3.x entry semantics):
+// Algorithm (§scxml-3 entry semantics):
 //   1. Seed the BFS queue with the document `initial` target(s) — or
 //      the first top-level state in document order when the attribute
-//      is empty (W3C SCXML §3.2 default).
+//      is empty (§scxml-3.2 default).
 //   2. For each dequeued id:
 //        - If the id names a history pseudostate (key in
 //          `model.history_states`), redirect to its `default_target`
-//          per W3C SCXML §3.10. History pseudostates themselves are
+//          per §scxml-3.10. History pseudostates themselves are
 //          never in the reach set — they are pure redirection nodes.
 //        - Otherwise mark the state reached and follow:
 //            * compound state with non-empty `initial` → enqueue each
-//              whitespace-separated target (W3C §3.3 initial-cascade);
+//              whitespace-separated target (§scxml-3.3 initial-cascade);
 //            * `<parallel>` → enqueue every direct child whose id is
-//              not a history pseudostate (W3C §3.4 all-regions);
+//              not a history pseudostate (§scxml-3.4 all-regions);
 //            * `<final>` → no further entry;
 //            * every `<transition>`'s `target` (split on whitespace
-//              for the multi-target parallel-entry case W3C §3.13).
+//              for the multi-target parallel-entry case §scxml-3.13).
 //   3. After the closure stabilises, walk every state in
 //      `model.states` in document order and short-circuit on the
 //      first orphan. The per-transition variant outranks the bare
@@ -125,7 +125,7 @@ fn compute_reach_set(model: &SCXMLModel) -> HashSet<String> {
     let mut queue: VecDeque<String> = VecDeque::new();
 
     // Seed: explicit document `initial` attribute(s), or the
-    // document-order first top-level state if absent (W3C SCXML §3.2
+    // document-order first top-level state if absent (§scxml-3.2
     // default).
     if model.initial.is_empty() {
         if let Some((id, _)) = model
@@ -167,7 +167,7 @@ fn compute_reach_set(model: &SCXMLModel) -> HashSet<String> {
         if !reach.insert(id.clone()) {
             continue;
         }
-        // W3C SCXML §3.6 — entering a state implicitly enters every
+        // §scxml-3.6 — entering a state implicitly enters every
         // compound ancestor up to the document root. Walk the parent
         // chain so the validator sees those ancestors as reached
         // even when the BFS seed (`model.initial`) is the deep-
@@ -188,7 +188,7 @@ fn compute_reach_set(model: &SCXMLModel) -> HashSet<String> {
         if state.is_final {
             // Final states terminate the cascade.
         } else if state.is_parallel {
-            // W3C SCXML §3.4 — entering a `<parallel>` enters every
+            // §scxml-3.4 — entering a `<parallel>` enters every
             // non-history child region simultaneously.
             for (cid, child) in model.states.iter() {
                 if child.parent.as_deref() == Some(&state.id) {
@@ -208,7 +208,7 @@ fn compute_reach_set(model: &SCXMLModel) -> HashSet<String> {
 
         // Transition `target` edges contribute regardless of state
         // category (compound / parallel / atomic). Multi-target
-        // attributes (W3C SCXML §3.13) enqueue every part.
+        // attributes (§scxml-3.13) enqueue every part.
         for trans in &state.transitions {
             for target in trans.target.split_whitespace() {
                 queue.push_back(target.to_string());
@@ -329,7 +329,7 @@ mod tests {
     }
 
     /// `<parallel>` entry enters every non-history child region per
-    /// W3C SCXML §3.4 — both regions stay reachable even without an
+    /// §scxml-3.4 — both regions stay reachable even without an
     /// explicit `initial`.
     #[test]
     fn parallel_enters_every_child_region() {
@@ -346,7 +346,7 @@ mod tests {
     }
 
     /// History pseudostate's `default_target` makes the target
-    /// reachable per W3C SCXML §3.10, even when no transition
+    /// reachable per §scxml-3.10, even when no transition
     /// directly names the state.
     #[test]
     fn history_default_target_seeds_reachability() {

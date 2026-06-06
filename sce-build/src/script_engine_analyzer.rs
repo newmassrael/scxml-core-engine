@@ -36,10 +36,10 @@ use std::collections::BTreeMap;
 /// clause fires for a given fixture.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NeedsScriptEngineCause {
-    /// W3C SCXML 5.3 — `<data>` variable with a non-empty `expr`/`src`/`content`
+    /// §scxml-5.3 — `<data>` variable with a non-empty `expr`/`src`/`content`
     /// init requires evaluating the initializer at runtime.
     DatamodelVariableInit { var_id: String },
-    /// W3C SCXML 5.8 — top-level `<script>` element, either inline text or
+    /// §scxml-5.8 — top-level `<script>` element, either inline text or
     /// loaded from a `src=` file. The script body is executed at document load.
     GlobalScript,
     /// `<script src="...">` appeared in the source but the parser had no
@@ -47,62 +47,62 @@ pub enum NeedsScriptEngineCause {
     /// loaded. The document still declares executable script; the flag
     /// stays honest even though `global_scripts` ends up empty.
     UnresolvedExternalScript,
-    /// W3C SCXML 3.13 — `<transition cond="...">` evaluates a non-native
+    /// §scxml-3.13 — `<transition cond="...">` evaluates a non-native
     /// ECMAScript guard. Native `cpp:` / `kt:` conditions are emitted
     /// inline and do **not** trigger this cause.
     TransitionGuard { source_state: String },
-    /// W3C SCXML 6.2 — `<send namelist="...">` references datamodel
+    /// §scxml-6.2 — `<send namelist="...">` references datamodel
     /// identifiers that must be resolved at runtime.
     SendNamelist { state_id: String },
-    /// W3C SCXML 6.2.4 — `<send><param expr="..."/>` whose expression is
+    /// §scxml-6.2.4 — `<send><param expr="..."/>` whose expression is
     /// not a static string literal. Static literals are folded at build time.
     SendParamExpr {
         state_id: String,
         param_name: String,
     },
-    /// W3C SCXML 6.2 — `<send>` with `eventexpr` / `targetexpr` /
+    /// §scxml-6.2 — `<send>` with `eventexpr` / `targetexpr` /
     /// `delayexpr` / `typeexpr` / `contentexpr` / `idlocation` attributes:
     /// any of which forces runtime expression evaluation. `contentexpr`
     /// (W3C 5.10) and `idlocation` (W3C 6.2.4) entail datamodel reads/writes
     /// the script engine owns; without it the value has no carrier.
     SendDynamicAttr { state_id: String },
-    /// W3C SCXML 4.2 — `<if cond="...">` evaluates a non-native guard expression.
+    /// §scxml-4.2 — `<if cond="...">` evaluates a non-native guard expression.
     IfCondition { state_id: String },
-    /// W3C SCXML 4.2 — `<elseif cond="...">` evaluates a non-native guard expression.
+    /// §scxml-4.2 — `<elseif cond="...">` evaluates a non-native guard expression.
     ElseIfCondition { state_id: String },
-    /// W3C SCXML 5.4 — `<assign>` modifies the datamodel at runtime; the
+    /// §scxml-5.4 — `<assign>` modifies the datamodel at runtime; the
     /// assignment itself requires the engine regardless of `expr` complexity.
     AssignAction { state_id: String },
-    /// W3C SCXML 4.2 — `<log expr="...">` with a non-empty expression needs
+    /// §scxml-4.2 — `<log expr="...">` with a non-empty expression needs
     /// the engine to evaluate the expression before logging.
     LogExpr { state_id: String },
-    /// W3C SCXML 4.2 — inline `<script>` action (body text, no native
+    /// §scxml-4.2 — inline `<script>` action (body text, no native
     /// `<cpp>`/`<kt>` child). Native script blocks are emitted as code.
     InlineScriptAction { state_id: String },
-    /// W3C SCXML 6.2 — `<cancel sendidexpr="...">` needs the engine to
+    /// §scxml-6.2 — `<cancel sendidexpr="...">` needs the engine to
     /// evaluate the send id expression at runtime.
     CancelExpr { state_id: String },
-    /// W3C SCXML 4.2 — `<foreach>` iterates over a runtime-evaluated array.
+    /// §scxml-4.2 — `<foreach>` iterates over a runtime-evaluated array.
     ForeachAction { state_id: String },
-    /// W3C SCXML 6.4 — hybrid `<invoke>` with `srcexpr` or `contentexpr`;
+    /// §scxml-6.4 — hybrid `<invoke>` with `srcexpr` or `contentexpr`;
     /// the target is resolved at `<invoke>` entry by the script engine.
     HybridInvoke { invoke_id: String },
-    /// W3C SCXML 6.4.1 — static `<invoke namelist="...">` reads datamodel
+    /// §scxml-6.4.1 — static `<invoke namelist="...">` reads datamodel
     /// variables to form the child's initial state at entry.
     StaticInvokeNamelist { invoke_id: String },
     /// SCE Mesh §9.5 — `<invoke type="sce:mesh-rpc">` with `srcexpr`
     /// target; the generated entry block calls `evaluateExpression`.
     MeshRpcSrcExpr { invoke_id: String },
-    /// W3C SCXML 5.7 — `<donedata>` carries at least one `<param>` whose
+    /// §scxml-5.7 — `<donedata>` carries at least one `<param>` whose
     /// value must be evaluated when the final state is entered.
     DonedataParam { state_id: String },
-    /// W3C SCXML 5.7 — `<donedata>` has `<content expr="...">` whose
+    /// §scxml-5.7 — `<donedata>` has `<content expr="...">` whose
     /// expression must be evaluated before the `done.state` event is raised.
     /// `<content>literal</content>` does **not** trigger this cause: per
-    /// W3C §5.5 the children are used as the value directly (see
+    /// §scxml-5.5 the children are used as the value directly (see
     /// [`DoneDataContent::Literal`]).
     DonedataContent { state_id: String },
-    /// W3C SCXML 6.4 — a static `<invoke>` targets a child SCXML whose
+    /// §scxml-6.4 — a static `<invoke>` targets a child SCXML whose
     /// own analyzer output declared `needs_script_engine = true`; the
     /// parent must carry an engine so the child can run.
     ChildInvokeNeedsScriptEngine { invoke_id: String },
@@ -132,7 +132,7 @@ pub fn requires_script_engine(model: &SCXMLModel) -> bool {
 
 fn collect_datamodel_causes(variables: &[Variable], out: &mut Vec<NeedsScriptEngineCause>) {
     for var in variables {
-        // W3C SCXML 5.3: any initializer (expr/src/content) needs the
+        // §scxml-5.3: any initializer (expr/src/content) needs the
         // engine to evaluate at runtime. Tighter classification (int /
         // string / bool literal → static init) is orthogonal — it
         // happens later in [`crate::analyzer::classify_variables`] and
@@ -271,7 +271,7 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
             }
         }
         "assign" => {
-            // W3C SCXML 5.4: `<assign>` is always engine-bound; even pure
+            // §scxml-5.4: `<assign>` is always engine-bound; even pure
             // location='var' expr='literal' routes through the assignment
             // helper which talks to the datamodel store.
             out.push(NeedsScriptEngineCause::AssignAction {
@@ -311,7 +311,7 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
             }
         }
         "native_action" => {
-            // W3C SCXML G.7 — `<sce:action>` Custom Action Element. A
+            // §scxml-G-7 — `<sce:action>` Custom Action Element. A
             // native host-trait dispatch never needs a runtime engine:
             // codegen lowers each `<sce:arg>` through the typed-expression
             // pipeline and emits a direct call into the generated `Actions`

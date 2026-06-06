@@ -631,7 +631,7 @@ enum Commands {
         ///
         /// Codegen still runs after the emit — `--emit-ast` is an
         /// addition to the pipeline, not a replacement. Documents
-        /// rejected by W3C SCXML 5.8 (`document_rejected`) skip the
+        /// rejected by §scxml-5.8 (`document_rejected`) skip the
         /// emit and continue to the existing rejection-stub codegen
         /// path; the absence of `<path>` is the consumer signal.
         #[arg(long)]
@@ -701,7 +701,7 @@ enum Commands {
         /// statechart documents (`ast.document.kind = "statechart"`)
         /// alongside the 15 forge kinds, so the orchestrate emit path
         /// is uniform across both classifier outputs. Documents
-        /// rejected by W3C SCXML 5.8 (`document_rejected`) skip emit
+        /// rejected by §scxml-5.8 (`document_rejected`) skip emit
         /// silently — matching the single-doc `generate --emit-ast`
         /// contract.
         ///
@@ -1597,7 +1597,7 @@ fn cmd_generate(
         }
     }
 
-    // W3C SCXML 5.8: Document rejected at parse time (e.g., unloadable external script)
+    // §scxml-5.8: Document rejected at parse time (e.g., unloadable external script)
     // Generate a language-appropriate rejection stub so AOT test reports PASS.
     if model.document_rejected {
         let input_stem = Path::new(scxml_path)
@@ -2090,19 +2090,19 @@ fn cmd_generate(
 
         report.needs_script_engine = Some(model.needs_script_engine);
 
-        // W3C SCXML 6.4: Generate children metadata + hybrid SCXML stubs for all languages.
+        // §scxml-6.4: Generate children metadata + hybrid SCXML stubs for all languages.
         // C++ uses _children.txt for CMake post-processing; all languages need hybrid stubs.
         let children = collect_invoke_child_names(&model);
         if lang == Language::Cpp && !children.is_empty() {
             let children_file = out_path.join(format!("{input_stem}_children.txt"));
             write_or_exit(error_format, &children_file, children.join("\n") + "\n");
         }
-        // W3C SCXML 6.4: Copy static invoke child SCXML files to the output
+        // §scxml-6.4: Copy static invoke child SCXML files to the output
         // directory so CMake's post-processing script can find them next to the
         // parent. `process_static_invokes` extracts inline <scxml> content to
         // the *source* directory; the build system expects them in OUTPUT_DIR.
         copy_static_invoke_children(&model, Path::new(scxml_path), out_path);
-        // W3C SCXML 6.4 (test216/530): hybrid stub destination is backend-aware.
+        // §scxml-6.4 (test216/530): hybrid stub destination is backend-aware.
         // cpp's CMake harness drives child codegen from OUTPUT_DIR (its
         // `process_children_<N>.cmake` reads `<OUTPUT_DIR>/<child>.scxml`), so
         // hybrid stubs land alongside the parent's generated files. c11 discovers
@@ -2222,7 +2222,7 @@ fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
     children
 }
 
-/// W3C SCXML 6.4: Copy external `src="…"` static invoke children from
+/// §scxml-6.4: Copy external `src="…"` static invoke children from
 /// source to output directory.
 ///
 /// CMake post-processing for the W3C test corpus expects static child
@@ -2258,7 +2258,7 @@ fn copy_static_invoke_children(model: &SCXMLModel, scxml_path: &Path, output_dir
     }
 }
 
-/// W3C SCXML 6.4: Generate SCXML files for hybrid invoke children (srcexpr/contentexpr).
+/// §scxml-6.4: Generate SCXML files for hybrid invoke children (srcexpr/contentexpr).
 ///
 /// Hybrid invokes resolve their target expression (`srcexpr` / `contentexpr`)
 /// at runtime — the AOT backends that consume this stub (`emits_hybrid_child_stub
@@ -2715,7 +2715,7 @@ trait W3cBackend {
         true
     }
 
-    /// W3C SCXML 6.4: Whether this backend's parent template constructs a
+    /// §scxml-6.4: Whether this backend's parent template constructs a
     /// generated child class for hybrid (`srcexpr` / `contentexpr`)
     /// invokes. Rust / Go / C++ instantiate the stub by name
     /// (`Test{N}Hybrid{M}Policy` etc.), so the child SM must be emitted.
@@ -3686,7 +3686,7 @@ impl W3cBackend for KotlinBackend {
         let sm_class = format!("Test{}", to_pascal_case(test_id));
         let sm_package = format!("test{test_id}");
 
-        // W3C SCXML C.2: HTTP tests use W3CHttpTestBase only when SM actually uses performHttpSend()
+        // §scxml-C-2: HTTP tests use W3CHttpTestBase only when SM actually uses performHttpSend()
         let is_http = test_type == "HTTP" && uses_http;
         let base_class = if is_http {
             "W3CHttpTestBase"
@@ -3694,7 +3694,7 @@ impl W3cBackend for KotlinBackend {
             "W3CTestBase"
         };
 
-        // W3C SCXML 6.2: SCHEDULED tests need longer timeout
+        // §scxml-6.2: SCHEDULED tests need longer timeout
         let timeout_override = if test_type == "SCHEDULED" {
             "    override val timeoutMs: Long = 5000L\n"
         } else {
@@ -3950,7 +3950,7 @@ impl W3cBackend for PythonBackend {
         test_type: &str,
         metadata: &TestMetadata,
     ) -> String {
-        // W3C SCXML 6.2 — `<send delay="…">` fixtures arm scheduled
+        // §scxml-6.2 — `<send delay="…">` fixtures arm scheduled
         // events the engine drains only via `advance_time(ms)`. We
         // advance in 50 ms ticks (the tightest of the spec's
         // canonical delays — 5 s timeouts split into 100 slots of
@@ -3971,7 +3971,7 @@ impl W3cBackend for PythonBackend {
         // wrapper compares on that string, so we lowercase here.
         let pass_literal = pass_state.to_ascii_lowercase();
         let pass_literal = pass_literal.as_str();
-        // W3C SCXML C.2 — documents that use BasicHTTP transport take
+        // §scxml-C-2 — documents that use BasicHTTP transport take
         // the `setup_http` fixture from sce-python-tests/conftest.py,
         // which spawns the W3C echo server (port 8080) and registers
         // the HTTP dispatch callback on the engine. Non-HTTP fixtures

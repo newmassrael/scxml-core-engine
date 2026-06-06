@@ -2506,7 +2506,7 @@ fn collect_transition_events(model: &SCXMLModel) -> BTreeSet<String> {
     for state in model.states.values() {
         for transition in &state.transitions {
             if !transition.event.is_empty() {
-                // W3C SCXML 3.12.1: space-separated event descriptors
+                // §scxml-3.12.1: space-separated event descriptors
                 for descriptor in transition.event.split_whitespace() {
                     events.insert(descriptor.to_string());
                 }
@@ -2519,7 +2519,7 @@ fn collect_transition_events(model: &SCXMLModel) -> BTreeSet<String> {
 /// Check whether a sent event name matches any event descriptor in the
 /// receiver's transition set.
 ///
-/// W3C SCXML 3.12.1 matching rules:
+/// §scxml-3.12.1 matching rules:
 ///   - Exact match: "brake.activate" matches "brake.activate"
 ///   - Prefix match: "brake.activate" matches "brake" or "brake.*"
 ///   - Wildcard: receiver has "*" → matches everything

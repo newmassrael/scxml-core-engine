@@ -314,7 +314,7 @@ fn render_rust(
     // their owning transition so a per-state `transition_index` cannot
     // collide them across states.
     let mut model_lowered = model.clone();
-    // W3C SCXML G.7: lower `<sce:action>` Custom Action Elements to native
+    // §scxml-G-7: lower `<sce:action>` Custom Action Elements to native
     // host-trait dispatch (engine-free). Mutates each native action's
     // rendered call site on `model_lowered` and returns the generated
     // `Actions` trait plus the payload events those actions activate. When
@@ -400,7 +400,7 @@ fn render_cpp(
     reject_liveliness_without_handler(model)?;
     reject_native_actions_in_unsupported_lang(model, "C++")?;
     let inl_filename = format!("{input_stem}_sm.inl");
-    // W3C SCXML 5.3: base_path is the directory containing the SCXML file,
+    // §scxml-5.3: base_path is the directory containing the SCXML file,
     // used by DataModelInitHelper for resolving file: URIs in data src attributes.
     // Python codegen uses Path(output_dir).name; we use scxml_base_path which is
     // the parent directory of the SCXML file (set by analyzer::compute_scxml_base_path).
@@ -910,7 +910,7 @@ pub fn generate_python_with_templates(
 /// lifted `<history>`; γ-3 lifts the remaining executable content;
 /// γ-4 lifts `<invoke>`).
 fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
-    // W3C SCXML 6.4: `<invoke type="scxml">` (static src=/inline) and
+    // §scxml-6.4: `<invoke type="scxml">` (static src=/inline) and
     // `<invoke srcexpr/contentexpr>` (hybrid) both lower the same way
     // now — the hybrid stub written by `generate_hybrid_child_scxmls`
     // produces a child policy whose immediate `<final>` raises
@@ -930,7 +930,7 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
             }
         }
     }
-    // W3C SCXML 5.3 — Python AOT used to reject `<data id>` names that
+    // §scxml-5.3 — Python AOT used to reject `<data id>` names that
     // collide with Python keywords (`class`, `lambda`, …) because the β
     // datamodel stored values as bare Python identifiers parsed by
     // `eval` directly. Post-Lua-migration the datamodel lives inside
@@ -940,7 +940,7 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
     // ECMAScript→Lua transformer (`to_lua_expr` / `to_lua_guard` /
     // `to_lua_script`) so the SCXML author's identifier never reaches
     // a Python parser. No keyword reject is needed.
-    // W3C SCXML 3.13 — `<transition event="*">` matches every external
+    // §scxml-3.13 — `<transition event="*">` matches every external
     // event except the eventless NULL sentinel; the codegen lowers it to
     // `if event != Event.NULL` in `process_transition.py.jinja2`. Prefix
     // (`event="foo.*"`) and multi-event (`event="foo bar"`) descriptors

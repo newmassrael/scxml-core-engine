@@ -23,11 +23,11 @@ pub use crate::analyzer::{
     compute_parallel_descendants, compute_parent_map,
 };
 
-/// W3C SCXML 3.12.1: Delimiter pattern for Kotlin PascalCase conversion (underscore/hyphen).
+/// §scxml-3.12.1: Delimiter pattern for Kotlin PascalCase conversion (underscore/hyphen).
 static RE_KT_DELIMITERS: LazyLock<regex::Regex> =
     LazyLock::new(|| regex::Regex::new(r"[_\-]").unwrap());
 
-/// W3C SCXML 3.12.1: Build hierarchical event tree from flat dot-separated event names.
+/// §scxml-3.12.1: Build hierarchical event tree from flat dot-separated event names.
 ///
 /// Each node is a JSON object where keys are event name parts and `_leaf` is a boolean
 /// indicating whether this node represents a concrete event (not just a prefix).
@@ -94,7 +94,7 @@ pub fn collect_leaf_events(tree: &serde_json::Value, prefix: &str) -> Vec<String
     leaves
 }
 
-/// W3C SCXML 3.12.1: Collect events that are both leaf and branch (need `.Self` suffix).
+/// §scxml-3.12.1: Collect events that are both leaf and branch (need `.Self` suffix).
 ///
 /// Events like "foo" that also have children like "foo.zoo" require `.Self` suffix
 /// when used as concrete event references (raise, send), because the event class
@@ -211,7 +211,7 @@ pub fn to_event_ref(event_name: &str, branch_events: &HashSet<String>) -> String
     }
 }
 
-/// W3C SCXML 3.6: Compute deep initial entry order for space-separated initials.
+/// §scxml-3.6: Compute deep initial entry order for space-separated initials.
 ///
 /// When a compound state has `initial="target1 target2"` (deep descendant targets),
 /// the codegen must enter ancestors along the path without triggering their
@@ -261,7 +261,7 @@ pub fn compute_deep_initial_entries(
     deep_initial_entries
 }
 
-/// W3C SCXML 6.4: Compute invoke entries for each state with language-agnostic data.
+/// §scxml-6.4: Compute invoke entries for each state with language-agnostic data.
 ///
 /// Returns invoke info per state. Each entry contains child_name (raw SCXML name);
 /// language generators should post-process to add language-specific class/type names.
@@ -293,7 +293,7 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
                 // Serialize params via serde
                 let params_json = serde_json::to_value(&si.params).unwrap_or_default();
 
-                // W3C SCXML 6.4: child_class is PascalCase for Kotlin type-safe instantiation
+                // §scxml-6.4: child_class is PascalCase for Kotlin type-safe instantiation
                 let child_class = if !si.child_name.is_empty() {
                     crate::filters::to_pascal_case(si.child_name.clone())
                 } else {
@@ -320,7 +320,7 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
         }
     }
 
-    // W3C SCXML 6.4: Hybrid invoke support (srcexpr/contentexpr)
+    // §scxml-6.4: Hybrid invoke support (srcexpr/contentexpr)
     for (state_id, state) in &model.states {
         if state.has_hybrid_invoke() {
             let entries = invoke_entries.entry(state_id.clone()).or_default();
@@ -368,7 +368,7 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
     invoke_entries
 }
 
-/// W3C SCXML 3.13: Pre-compute ancestor transition maps for processEvent routing.
+/// §scxml-3.13: Pre-compute ancestor transition maps for processEvent routing.
 ///
 /// Eliminates inline ancestor scanning in process_event.kt.jinja2.
 /// Returns two maps: ancestors with event-based transitions, and ancestors with
@@ -407,7 +407,7 @@ pub fn compute_ancestors_with_transitions(
     (event_map, null_map)
 }
 
-/// W3C SCXML 3.13: Compute effective transitions (self + ancestors).
+/// §scxml-3.13: Compute effective transitions (self + ancestors).
 ///
 /// For each state, collects its own transitions followed by all ancestor transitions.
 /// Serialized as JSON for template rendering.
@@ -440,7 +440,7 @@ pub fn compute_effective_transitions(
     effective_transitions
 }
 
-/// W3C SCXML 3.7.1: Generate Kotlin expression for parallel state completion check.
+/// §scxml-3.7.1: Generate Kotlin expression for parallel state completion check.
 ///
 /// For a parallel state, checks that every child region has at least one active
 /// final state. Returns a Kotlin boolean expression like:

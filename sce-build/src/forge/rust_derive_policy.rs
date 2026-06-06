@@ -47,7 +47,7 @@ pub enum RustDeriveCategory {
     /// must be the transitive prefix of CodecStruct's derives.
     CodecVariantEnum,
     /// `event_schema.rs.jinja2` — `pub struct {{ payload_struct_name }}`.
-    /// W3C SCXML 5.10 event payload, equivalent wire-typed role.
+    /// §scxml-5.10 event payload, equivalent wire-typed role.
     EventSchemaPayload,
     /// `enum.rs.jinja2` — `pub enum {{ enum_name }}`. Repr-tagged
     /// C-like enum (no payload arms), so `Copy` + `Eq` are natural.

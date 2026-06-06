@@ -1,6 +1,6 @@
 //! SCXML semantic-validation errors (RFC §W5 producer side).
 //!
-//! W3C SCXML §3 reference-resolution and §5.8 top-level-script
+//! §scxml-3 reference-resolution and §5.8 top-level-script
 //! rejection failures detected after the document parses
 //! successfully but before the model can be code-generated.
 //!
@@ -22,7 +22,7 @@
 //! - [`ScxmlSemanticError::NoStates`] →
 //!   `validation/empty-collection` (REUSE)
 //! - [`ScxmlSemanticError::TopLevelScriptUnloaded`] →
-//!   `scxml/top-level-script-unloaded` (NEW — W3C SCXML §5.8 has
+//!   `scxml/top-level-script-unloaded` (NEW — §scxml-5.8 has
 //!   no forge analog)
 
 use thiserror::Error;
@@ -128,10 +128,10 @@ pub enum ScxmlSemanticError {
     /// document graph cannot be entered from any execution path that
     /// the parser-stage BFS can derive. The walk seeds at the
     /// document `initial` (or default-first-child when omitted),
-    /// follows compound-state initial cascade (W3C SCXML §3.3),
+    /// follows compound-state initial cascade (§scxml-3.3),
     /// enters every non-history child of a `<parallel>` (W3C SCXML
     /// §3.4), and follows every transition `target` edge plus every
-    /// history pseudostate `default_target` (W3C SCXML §3.10). A
+    /// history pseudostate `default_target` (§scxml-3.10). A
     /// state outside the closure is dead code — keeping it through
     /// codegen wastes generated-state surface and masks authoring
     /// mistakes that produce orphan subgraphs (a recurring AI-
@@ -263,7 +263,7 @@ pub enum ScxmlSemanticError {
     },
 
     /// A `<transition>` is shadowed by an earlier unconditional
-    /// sibling: per W3C SCXML §5.10 transition selection, the first
+    /// sibling: per §scxml-5.10 transition selection, the first
     /// matching transition in document order fires, and an
     /// unconditional transition matching the same event family
     /// (cond empty / cond literal `true` / cond literal `1`) makes
