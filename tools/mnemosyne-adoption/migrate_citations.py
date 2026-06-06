@@ -392,6 +392,33 @@ def load_ledger_ids(ledger_path):
     return set(store["sections"].keys())
 
 
+def paths_from_toml(toml_path):
+    """Extract the set_equality_validator `paths` array from a mnemosyne.toml.
+
+    Returns each enrolled path resolved against REPO_ROOT (the toml's
+    [workspace] root is the repo root). Reading the array here keeps the
+    --check form gate in lockstep with what validate-code-refs covers: a
+    dir enrolled in the toml is automatically form-gated, no second list to
+    drift. Hand-rolled (no tomllib on the py3.10 CI image); the array is a
+    flat list of quoted strings, with `#` comments stripped per line."""
+    with open(toml_path, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    # Anchor the table header to a line start (re.MULTILINE) so a `#`-
+    # commented mention of [plugins.set_equality_validator] earlier in the
+    # file is not mistaken for the real table.
+    sec = re.search(
+        r"^\[plugins\.set_equality_validator\](.*?)(?:^\[|\Z)",
+        text,
+        re.DOTALL | re.MULTILINE,
+    )
+    body = sec.group(1) if sec else text
+    arr = re.search(r"paths\s*=\s*\[(.*?)\]", body, re.DOTALL)
+    if not arr:
+        raise SystemExit(f"no set_equality_validator.paths in {toml_path}")
+    entries = re.sub(r"#[^\n]*", "", arr.group(1))
+    return [os.path.join(REPO_ROOT, p) for p in re.findall(r'"([^"]+)"', entries)]
+
+
 def iter_source_files(paths):
     for p in paths:
         if os.path.isfile(p):
@@ -408,7 +435,9 @@ def iter_source_files(paths):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("paths", nargs="+", help="files or directories to migrate")
+    ap.add_argument(
+        "paths", nargs="*", help="files or directories to migrate"
+    )
     ap.add_argument(
         "--namespace",
         default="scxml",
@@ -430,7 +459,27 @@ def main(argv=None):
     ap.add_argument("--prefix", default="W3C SCXML")
     ap.add_argument("--apply", action="store_true", help="write changes in place")
     ap.add_argument("--json", action="store_true", help="machine-readable report")
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="read-only gate: exit 1 if any enrolled comment carries a "
+        "free-text 'W3C SCXML <n>' section cite (it must be §scxml- form so "
+        "validate-code-refs can gate it). The spec version 1.0 is "
+        "allowlisted; string literals are out of scope (comment_only).",
+    )
+    ap.add_argument(
+        "--from-toml",
+        default=None,
+        help="check exactly the set_equality_validator paths enrolled in "
+        "this mnemosyne.toml (keeps the form gate in lockstep with the "
+        "validator's coverage instead of a hand-maintained dir list)",
+    )
     args = ap.parse_args(argv)
+
+    if args.from_toml:
+        args.paths = list(args.paths) + paths_from_toml(args.from_toml)
+    if not args.paths:
+        ap.error("no paths given (pass paths or --from-toml)")
 
     ledger_path = args.ledger or _NS_DEFAULT_LEDGER.get(args.namespace, DEFAULT_LEDGER)
     ledger_ids = load_ledger_ids(ledger_path)
@@ -456,6 +505,58 @@ def main(argv=None):
             if args.apply:
                 with open(path, "w", encoding="utf-8") as fh:
                     fh.write(new_text)
+
+    if args.check:
+        # The spec is "SCXML 1.0"; "W3C SCXML 1.0" is the version, not a
+        # section reference, so it legitimately stays prose.
+        version_allowlist = {"1.0"}
+        # migrations  = free-text cites that map to a real section (must be
+        #               §scxml- form).
+        # skipped     = free-text whose id is not in the ledger. Three sub-
+        #               cases, only the third is a violation:
+        #                 - the version string ("1.0", allowlisted);
+        #                 - a bare integer ("403") — a W3C IRP *test* number,
+        #                   not a spec section (sections are 1-7 + lettered
+        #                   appendices, all in the ledger), so it stays prose;
+        #                 - a section-SHAPED label not in the ledger ("5.11",
+        #                   "3.13.2", "G.99") — a hallucinated / wrong section
+        #                   cite that must be rewritten to §scxml- so that
+        #                   validate-code-refs surfaces it as section_missing.
+        #               (String-literal cites carry a different reason and are
+        #               out of scope — the validator is comment_only.)
+        violations = list(report["migrations"])
+        for d in report["skipped"]:
+            if d["reason"].startswith("quoted spec-string"):
+                continue
+            if d["label"] in version_allowlist:
+                continue
+            if "." not in d["label"]:
+                continue
+            violations.append(d)
+        if violations:
+            print(
+                "ERROR: free-text 'W3C SCXML <n>' section cite(s) in enrolled "
+                "comments. Citations must use the §scxml- form so "
+                "validate-code-refs can gate them against the ledger:",
+                file=sys.stderr,
+            )
+            for d in sorted(violations, key=lambda d: (d["file"], d["line"])):
+                print(
+                    f"  {d['file']}:{d['line']}  W3C SCXML {d['label']} "
+                    f"-> §{d['id']}",
+                    file=sys.stderr,
+                )
+            print(
+                "\nMigrate with: python3 "
+                "tools/mnemosyne-adoption/migrate_citations.py <path> --apply",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            "citation-form check: OK — no free-text 'W3C SCXML <n>' section "
+            "cites in enrolled comments."
+        )
+        return 0
 
     if args.json:
         json.dump(report, sys.stdout, indent=2, sort_keys=True)
