@@ -190,7 +190,7 @@ fn transitions_match_event(transitions: &[Transition], event: &str) -> bool {
         .any(|t| transition_matches_event(t, event))
 }
 
-/// Single-transition match per W3C SCXML §3.13.2 token-prefix rules
+/// Single-transition match per W3C SCXML §3.12.1 token-prefix rules
 /// plus the `*` / `.*` universal-wildcard convention this codebase
 /// already adopts (mirrors the `is_pure_in_predicate` / event-set
 /// collection code in `parser.rs`).
