@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  W3C SCXML 5.11 <sce:action> fixture: an EventSchema with a `bytes`
+  W3C SCXML G.7 <sce:action> fixture: an EventSchema with a `bytes`
   payload field and a `uint32` offset field, the typed channel a native
   host-dispatch action reads its arguments from. Generic vocabulary
   (`fragment.received` + `payload`/`offset`) — no protocol token.

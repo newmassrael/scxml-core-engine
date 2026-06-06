@@ -14,9 +14,12 @@
 //
 // `append_fragment_payload` reads two typed `_event.data` fields (a `bytes`
 // payload lowered to `&[u8]`, a `uint32` offset lowered to `u32`) bound from
-// the event's payload variant; `reset_slot` takes no arguments. The host
-// records every call through a shared `Rc<RefCell<…>>` so the test can assert
-// on them after driving the machine.
+// the event's payload variant; `reset_slot` takes no arguments. `on_idle_entry`
+// (a no-argument action in `idle`'s `<onentry>`) and `on_assembling_exit` (in
+// `assembling`'s `<onexit>`) appear in no transition — they prove the
+// engine-free entry/exit dispatch path AND that an eventless-only action still
+// gets a generated trait method. The host records every call through a shared
+// `Rc<RefCell<…>>` so the test can assert on them after driving the machine.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -30,6 +33,8 @@ use sce_rust_tests::integration::native_action::{
 struct Log {
     appended: Vec<(Vec<u8>, u32)>,
     resets: u32,
+    idle_entries: u32,
+    assembling_exits: u32,
 }
 
 /// Host implementation of the generated `<sce:action>` operations. Records
@@ -47,6 +52,12 @@ impl StatechartNativeActionActions for Recorder {
     fn reset_slot(&mut self) {
         self.0.borrow_mut().resets += 1;
     }
+    fn on_idle_entry(&mut self) {
+        self.0.borrow_mut().idle_entries += 1;
+    }
+    fn on_assembling_exit(&mut self) {
+        self.0.borrow_mut().assembling_exits += 1;
+    }
 }
 
 #[test]
@@ -58,6 +69,13 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
     assert_eq!(
         engine.get_current_state(),
         StatechartNativeActionState::Idle
+    );
+    // `<onentry>` of the initial state fires on entry — the engine-free
+    // entry-effect path, with no transition having to carry the action.
+    assert_eq!(
+        log.borrow().idle_entries,
+        1,
+        "on_idle_entry must fire on the initial entry to idle"
     );
 
     // Per-event typed inject (extension trait): deliver `fragment.received`
@@ -80,6 +98,8 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
     );
 
     // `reset` fires the no-argument `reset_slot()` action and returns to idle.
+    // Exiting `assembling` fires its `<onexit>` effect; re-entering `idle`
+    // fires `<onentry>` a second time.
     engine.raise_external_by_name("reset", "");
     engine.step();
 
@@ -88,4 +108,14 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
         StatechartNativeActionState::Idle
     );
     assert_eq!(log.borrow().resets, 1, "reset_slot must have fired once");
+    assert_eq!(
+        log.borrow().assembling_exits,
+        1,
+        "on_assembling_exit must fire when leaving assembling"
+    );
+    assert_eq!(
+        log.borrow().idle_entries,
+        2,
+        "on_idle_entry must fire again on re-entry to idle (entry effect, not per-transition)"
+    );
 }
