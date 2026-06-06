@@ -56,7 +56,7 @@ pub mod scxml_exhaustiveness;
 /// NL→IR Mapping Roadmap Item 3 Phase C: guard analysis. Recognises
 /// trivially-false `<transition cond>` expressions and shadowed
 /// transitions (unconditional siblings making later same-event
-/// siblings dead per W3C SCXML §5.10). Stays narrow: language-prefixed
+/// siblings dead per §scxml-5.10). Stays narrow: language-prefixed
 /// conds (`cpp:`, `kotlin:`, `rust:`) are opaque, token-prefix
 /// superset shadowing is not flagged.
 pub mod scxml_guard_analysis;
@@ -2246,7 +2246,7 @@ pub fn compile_scxml_with_imports(
             &per_doc_enums,
             basename,
         )?;
-        // W3C SCXML G.7 — `<sce:action>` Custom Action Element: validate
+        // §scxml-G-7 — `<sce:action>` Custom Action Element: validate
         // that every native host-dispatch action is a direct <transition>
         // child whose `<sce:arg>`s are typed `_event.data.<field>` references
         // resolving against the triggering event's EventSchema. Engine-free
@@ -5196,7 +5196,7 @@ fn validate_scxml_invoke_target_exclusivity(
                 Err(_) => continue,
             };
             // Sibling SCXML's own directory — the URI base for any
-            // relative `src=` it carries (W3C §6.4.1).
+            // relative `src=` it carries (§scxml-6.4.1).
             let sibling_dir = peer_scxml_path.parent().unwrap_or_else(|| Path::new("."));
             for tag in invoke_tag_re.find_iter(&content) {
                 let tag_text = tag.as_str();

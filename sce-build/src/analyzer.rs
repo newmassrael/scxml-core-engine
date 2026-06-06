@@ -57,7 +57,7 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
     model.scxml_base_path = compute_scxml_base_path(scxml_path);
 }
 
-/// W3C SCXML 5.3: Classify datamodel variables by type.
+/// §scxml-5.3: Classify datamodel variables by type.
 ///
 /// `needs_script_engine` is not set here — it is derived for the whole
 /// model by [`crate::script_engine_analyzer`] at the end of parse.
@@ -143,18 +143,18 @@ fn analyze_model_features(model: &mut SCXMLModel) {
                 analyze_action(action, model);
             }
         }
-        // W3C SCXML 3.3: Analyze initial transition actions
+        // §scxml-3.3: Analyze initial transition actions
         for action in &state.initial_transition_actions {
             analyze_action(action, model);
         }
-        // W3C SCXML 3.11: Analyze history default actions
+        // §scxml-3.11: Analyze history default actions
         for action in &state.initial_history_default_actions {
             analyze_action(action, model);
         }
     }
     model.states = states;
 
-    // W3C SCXML 5.2: Analyze document-level global scripts
+    // §scxml-5.2: Analyze document-level global scripts
     // Same pattern: take out to avoid borrow conflict with analyze_action(&mut model)
     let global_scripts = std::mem::take(&mut model.global_scripts);
     for action in &global_scripts {
@@ -202,7 +202,7 @@ fn analyze_model_features(model: &mut SCXMLModel) {
         }
     }
 
-    // W3C SCXML B.2 (test557): inline `<data>` content whose first
+    // §scxml-B-2 (test557): inline `<data>` content whose first
     // non-whitespace character is `<` triggers the host-side XML DOM
     // helper. Mirrors cpp `DataModelInitHelper::initializeVariable`
     // first-char check (sce/src/common/DataModelInitHelper.cpp:103).
@@ -327,7 +327,7 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
             if !action.delay.is_empty() || !action.delayexpr.is_empty() {
                 model.needs_event_scheduler = Some(true);
             }
-            // W3C SCXML C.1 (test553): namelist evaluation needs the
+            // §scxml-C-1 (test553): namelist evaluation needs the
             // declared-var set so undeclared names trigger error.execution
             // (cpp `NamelistHelper::evaluateNamelist` calls `hasVariable`
             // before reading; lua's silent-nil-for-undeclared semantic is
@@ -335,7 +335,7 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
             if !action.namelist.is_empty() {
                 model.needs_namelist_helper = Some(true);
             }
-            // W3C SCXML B.2 (test561): a `<send><content>` literal whose
+            // §scxml-B-2 (test561): a `<send><content>` literal whose
             // first non-whitespace character is `<` is delivered to the
             // receiver as an XML DOM object, mirroring cpp
             // `LuaEngine::setCurrentEvent` first-char check
@@ -345,7 +345,7 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
             if first_non_ws(&action.content) == Some('<') {
                 model.needs_dom_helper = Some(true);
             }
-            // W3C SCXML C.2: BasicHTTP send detection
+            // §scxml-C-2: BasicHTTP send detection
             if action.send_type == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
                 && (action.target.starts_with("http://")
                     || action.target.starts_with("https://")
@@ -420,9 +420,9 @@ fn add_system_events(model: &mut SCXMLModel) {
     }
     // SCE_MESH.md §9.5: mesh-rpc invokes raise done.invoke.<id> on reply
     // and error.invoke.<id> on timeout or non-Ok status. cancel.invoke is
-    // scxml-specific (W3C §6.4 child-session cancel) and not raised for
+    // scxml-specific (§scxml-6.4 child-session cancel) and not raised for
     // mesh-rpc — cancellation erases the correlation entry silently.
-    // error.execution (W3C §6.4.1) is raised when `performMeshInvoke`
+    // error.execution (§scxml-6.4.1) is raised when `performMeshInvoke`
     // returns false — i.e. the document was rendered without a
     // TransportRouter installing the mesh-invoke callback. Same error
     // event scxml invokes emit on invocation failure; listing it here
@@ -484,7 +484,7 @@ fn is_reserved_ingress_event(event: &str) -> bool {
         || event == "cancel.invoke"
 }
 
-/// W3C SCXML 3.12.1: Build prefix matching for event transitions.
+/// §scxml-3.12.1: Build prefix matching for event transitions.
 fn build_prefix_matching(model: &mut SCXMLModel) {
     let all_events: Vec<String> = model.events.iter().cloned().collect();
     model.needs_event_matching_helper = false;
@@ -550,7 +550,7 @@ fn build_prefix_matching(model: &mut SCXMLModel) {
     }
 }
 
-/// W3C SCXML 3.13: Resolve internal transition types.
+/// §scxml-3.13: Resolve internal transition types.
 pub(crate) fn resolve_internal_transitions(model: &mut SCXMLModel) {
     let states_snapshot: Vec<(String, State)> = model
         .states
@@ -629,7 +629,7 @@ fn compute_scxml_base_path(scxml_path: &str) -> String {
 /// (`ValidationError::DynamicFeatures` for all three reasons) into
 /// stage-correct typed surfaces:
 ///
-/// - **Top-level `<script>` rejected (W3C SCXML §5.8)** →
+/// - **Top-level `<script>` rejected (§scxml-5.8)** →
 ///   [`ScxmlSemanticError::TopLevelScriptUnloaded`]
 ///   (`scxml/top-level-script-unloaded`). Hard semantic violation;
 ///   the Interpreter would also reject. Mis-classified prior to W5
@@ -669,7 +669,7 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
     }
     if model.initial.is_empty() {
         // Genuine dynamic-feature: runtime default resolution per
-        // W3C SCXML §3.3 picks the first child; static generator
+        // §scxml-3.3 picks the first child; static generator
         // has no equivalent fallback. The Interpreter would NOT
         // reject this document — it's a codegen-pipeline limitation,
         // not a semantic violation.
@@ -710,7 +710,7 @@ pub fn can_generate_static(model: &SCXMLModel) -> Result<(), crate::forge::error
 
 use std::collections::BTreeMap;
 
-/// W3C SCXML 3.13: Compute ancestor chains for transition routing.
+/// §scxml-3.13: Compute ancestor chains for transition routing.
 ///
 /// Each state maps to an ordered list of ancestor state IDs (parent first).
 pub fn compute_ancestor_chains(model: &SCXMLModel) -> BTreeMap<String, Vec<String>> {
@@ -732,7 +732,7 @@ pub fn compute_ancestor_chains(model: &SCXMLModel) -> BTreeMap<String, Vec<Strin
     ancestor_chains
 }
 
-/// W3C SCXML 3.3: Build parent map for state hierarchy.
+/// §scxml-3.3: Build parent map for state hierarchy.
 pub fn compute_parent_map(model: &SCXMLModel) -> BTreeMap<String, String> {
     let mut parent_map = BTreeMap::new();
 
@@ -747,7 +747,7 @@ pub fn compute_parent_map(model: &SCXMLModel) -> BTreeMap<String, String> {
     parent_map
 }
 
-/// W3C SCXML 3.3/3.4: Build leaf map for compound/parallel state resolution.
+/// §scxml-3.3 / §scxml-3.4: Build leaf map for compound/parallel state resolution.
 pub fn compute_leaf_map(model: &SCXMLModel) -> BTreeMap<String, String> {
     let mut leaf_map = BTreeMap::new();
 
@@ -761,7 +761,7 @@ pub fn compute_leaf_map(model: &SCXMLModel) -> BTreeMap<String, String> {
     leaf_map
 }
 
-/// W3C SCXML 3.2/3.4: Compute initial entry root.
+/// §scxml-3.2 / §scxml-3.4: Compute initial entry root.
 pub fn compute_initial_entry_root(model: &SCXMLModel) -> String {
     let mut initial_entry_root = model.initial.clone();
     let mut current = model.initial.clone();
@@ -811,7 +811,7 @@ fn collect_descendants_fast(
     }
 }
 
-/// W3C SCXML 3.4: Compute descendants for each parallel state.
+/// §scxml-3.4: Compute descendants for each parallel state.
 pub fn compute_parallel_descendants(model: &SCXMLModel) -> BTreeMap<String, Vec<String>> {
     let children_map = build_children_map(model);
     let mut parallel_descendants = BTreeMap::new();
@@ -843,7 +843,7 @@ mod tests {
     /// injection targets against. Reserved W3C platform families
     /// (`error.*` / `done.invoke*` / `done.state*` / `cancel.invoke`),
     /// the wildcard sentinels, and the eventless token are excluded, and
-    /// the W3C SCXML 3.12.1 space-separated descriptor list is split per
+    /// the §scxml-3.12.1 space-separated descriptor list is split per
     /// token so a reserved token never masks an app token sharing its
     /// transition.
     #[test]
@@ -968,7 +968,7 @@ mod tests {
     }
 
     /// RFC §W5 D3 split, branch #1: top-level `<script>` rejected
-    /// per W3C SCXML §5.8 is a hard semantic violation, not a
+    /// per §scxml-5.8 is a hard semantic violation, not a
     /// codegen limitation. `model.document_rejected = true` is the
     /// signal `parse_global_scripts` sets when it encounters a
     /// failing script.

@@ -3461,7 +3461,7 @@ impl DiagnosticCode {
             | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
             // NL→IR Mapping Roadmap Item 3 Phase A — reachability is
-            // implied by W3C SCXML §3 entry semantics (the design-time
+            // implied by §scxml-3 entry semantics (the design-time
             // BFS over `initial`, parallel cascade, history default
             // targets, and transition `target` edges), but no spec
             // section names "unreachable state" as a rejection. Treat
@@ -3469,12 +3469,12 @@ impl DiagnosticCode {
             | ScxmlUnreachableState
             | ScxmlDeadTransition
             // NL→IR Mapping Roadmap Item 3 Phase B — event-set
-            // exhaustiveness. Heuristic over W3C SCXML §5.10 event
+            // exhaustiveness. Heuristic over §scxml-5.10 event
             // matching, but no spec section names "non-exhaustive
             // event handling" as a rejection. SCE-internal hygiene.
             | ScxmlNonExhaustiveEventHandling
             // NL→IR Mapping Roadmap Item 3 Phase C — guard analysis.
-            // W3C SCXML §5.10 transition selection implies that an
+            // §scxml-5.10 transition selection implies that an
             // always-false guard makes the transition unreachable
             // and a shadowed transition cannot fire, but the spec
             // does not name these as rejections. SCE-internal
@@ -7294,7 +7294,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
 /// Three of the four variants reuse existing `validation/*` wire codes
 /// per the W4 D4 fold precedent — concept identity over namespace
 /// duplication. Only `TopLevelScriptUnloaded` introduces a NEW wire
-/// code (`scxml/top-level-script-unloaded`) because W3C SCXML §5.8
+/// code (`scxml/top-level-script-unloaded`) because §scxml-5.8
 /// has no forge analog.
 ///
 /// Stage stays `Stage::Validation` for all four (RFC §W5 D2 reverse-
@@ -7376,7 +7376,7 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
             key_fragments: vec!["scxml".to_string(), "state".to_string()],
         },
         ScxmlSemanticError::TopLevelScriptUnloaded { index, src } => DiagnosticPayload {
-            // NEW — W3C SCXML §5.8 has no forge analog. The 1 NEW
+            // NEW — §scxml-5.8 has no forge analog. The 1 NEW
             // wire code RFC §W5 D2 introduces.
             code: DiagnosticCode::ScxmlTopLevelScriptUnloaded,
             stage: Stage::Validation,

@@ -25,7 +25,25 @@
     "scxml-3": {
       "title": "Core Constructs",
       "parent_doc": "scxml",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_reachability.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "kind": "references"
+        }
+      ]
     },
     "scxml-3.1": {
       "title": "Introduction",
@@ -224,6 +242,14 @@
           "file": "sce/include/core/HistoryHelper.h",
           "symbol": "SCE::Core::HistoryHelper",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_reachability.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -282,6 +308,18 @@
           "file": "sce/include/core/HistoryHelper.h",
           "symbol": "SCE::Core::HistoryHelper",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -335,6 +373,22 @@
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::processEvent",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/kotlin.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_exhaustiveness.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -816,6 +870,38 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "initialize",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/kotlin.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_exhaustiveness.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_reachability.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -830,6 +916,12 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        }
+      ],
       "normative_excerpt": {
         "text": "[This section is normative.] In a conformant SCXML document, the values of all attributes of type \"id\" MUST be unique within the session. When such an attribute is defined to be optional and the author omits it, then, for elements other than <send> and <invoke>, the SCXML processor MUST generate a unique id automatically at document load time. (Note that Such system generated IDs cannot normally be referenced elsewhere in the document because they are not known to the author. In particular, a state with a system generated ID cannot be the target of a transition.) The ids for <send> and <invoke> are subtly different. In a conformant SCXML document, they MUST be unique within the session, but in the case where the author does not provide them, the processor MUST generate a new unique ID not at load time but each time the element is executed. Furthermore the attribute 'idlocation' can be used to capture this automatically generated id. Finally note that the automatically generated id for <invoke> has a special format. See 6.4.1 Attribute Details for details. The SCXML processor MAY generate all other ids in any format, as long as they are unique.",
         "anchor_url": "https://www.w3.org/TR/scxml/#IDs",
@@ -872,6 +964,14 @@
           "file": "sce/src/parsing/ParsingCommon.cpp",
           "symbol": "ParsingCommon::isScxmlNamespace",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_reachability.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -1054,6 +1154,22 @@
           "file": "sce/src/states/ConcurrentRegion.cpp",
           "symbol": "ConcurrentRegion::setCurrentState",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_reachability.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -1235,6 +1351,18 @@
           "file": "sce/src/states/ExternalTransitionHandler.cpp",
           "symbol": "ExternalTransitionHandler::registerParallelState",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_reachability.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -1278,6 +1406,14 @@
           "file": "sce/src/parsing/SCXMLParser.cpp",
           "symbol": "SCE::SCXMLParser::validateModel",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -1326,6 +1462,18 @@
           "file": "sce/include/core/StateEntryHelper.h",
           "symbol": "enterDeepTargets",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/kotlin.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_reachability.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -1442,6 +1590,12 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.7",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/kotlin.rs",
+          "kind": "references"
+        }
+      ],
       "normative_excerpt": {
         "text": "Name Required Attribute Constraints Type Default Value Valid Values Description id false ID none A valid id as defined in [XML Schema] The identifier for this state. See 3.14 IDs for details.",
         "anchor_url": "https://www.w3.org/TR/scxml/#N10462",
@@ -1561,6 +1715,10 @@
           "file": "sce/include/static/StaticExecutionEngine.h",
           "symbol": "executeOnEntry",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -1751,6 +1909,12 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
+        }
+      ],
       "normative_excerpt": {
         "text": "[This section is normative.] The <raise> element raises an event in the current SCXML session. Note that the event will not be processed until the current block of executable content has completed and all events that are already in the internal event queue have been processed. For example, suppose the <raise> element occurs first in the <onentry> handler of state S followed by executable content elements ec1 and ec2. If event e1 is already in the internal event queue when S is entered, the event generated by <raise> will not be processed until ec1 and ec2 have finished execution and e1 has been processed.",
         "anchor_url": "https://www.w3.org/TR/scxml/#raise",
@@ -1938,6 +2102,10 @@
           "file": "sce/src/scripting/ScriptResultUtils.cpp",
           "symbol": "resultToScriptValueArray",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lua_transformer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2432,6 +2600,42 @@
           "file": "sce/src/runtime/EventRaiserImpl.h",
           "symbol": "originSessionId",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/rust_derive_policy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_exhaustiveness.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_guard_analysis.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2624,6 +2828,16 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        }
+      ],
       "normative_excerpt": {
         "text": "[This section is normative.] <datamodel> is a wrapper element which encapsulates any number of <data> elements, each of which defines a single data object. The exact nature of the data object depends on the data model language used.",
         "anchor_url": "https://www.w3.org/TR/scxml/#datamodel",
@@ -2688,6 +2902,10 @@
           "file": "sce/src/parsing/DataModelParser.cpp",
           "symbol": "SCE::DataModelParser::loadExternalContent",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2812,6 +3030,18 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::setupJSEnvironment",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -2897,6 +3127,14 @@
           "file": "sce/include/common/AssignmentExecutionHelper.h",
           "symbol": "executeAssignment",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3085,6 +3323,18 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::handleCompoundStateFinalChild",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3169,6 +3419,18 @@
           "file": "sce/include/common/DoneDataHelper.h",
           "symbol": "evaluateParams",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3267,6 +3529,30 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::setupJSEnvironment",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3335,6 +3621,10 @@
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::evaluateExpressionInternal",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3393,6 +3683,16 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/filters.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        }
+      ],
       "normative_excerpt": {
         "text": "Location expressions are used to specify a location in the data model, e.g. as part of the <assign>, <param>, <send> or <invoke> elements. The exact nature of a location depends on the data model. If a location expression cannot be evaluated to yield a valid location, the SCXML processor MUST place the error 'error.execution' in the internal event queue.",
         "anchor_url": "https://www.w3.org/TR/scxml/#LocationExpressions",
@@ -3716,6 +4016,26 @@
           "file": "sce/src/scripting/SessionRegistry.cpp",
           "symbol": "SessionRegistry::cleanupSession",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3798,6 +4118,18 @@
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeSendAction",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -3901,6 +4233,10 @@
           "file": "sce/include/wrappers/TimerManager.h",
           "symbol": "stopTimer",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -4306,6 +4642,34 @@
           "file": "sce/include/runtime/InvokeExecutor.h",
           "symbol": "getAllInvokedSessions",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/kotlin.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -4349,6 +4713,26 @@
         {
           "file": "sce/include/mesh/IChildSession.h",
           "symbol": "invokeIdString",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
           "kind": "references"
         }
       ],
@@ -4967,6 +5351,22 @@
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::pushScriptValue",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lua_transformer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5225,6 +5625,10 @@
           "file": "sce/src/scripting/ScriptResultUtils.cpp",
           "symbol": "resultToString",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5408,6 +5812,22 @@
           "file": "sce/src/runtime/ActionExecutorImpl.cpp",
           "symbol": "ActionExecutorImpl::executeSendAction",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5946,6 +6366,40 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-G",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/native_action.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
+        }
+      ],
       "normative_excerpt": {
         "text": "Custom Action Elements can be defined in other specifications/namespaces and are responsible for performing actions on behalf of custom components. Logically Custom Action Elements can be thought of as a collection of actions and handlers to perform specific tasks. An example of this is a CCXML <accept> element that is a Custom Action Element: <transition event=\"ccxml:connection.alerting\"> <ccxml:accept connectionid=\"_event.data.connectionid\"/> </transition> This could be written using a <send> element using the following syntax: <datamodel> <data name=\"connectionid\"/> </datamodel> <transition event=\"ccxml:connection.alerting\"> <assign location=\"connectionid\" expr=\"_event.data.connectionid\"/> <send type=\"ccxml\" event=\"ccxml:accept\" namelist=\"connectionid\"/> </transition> A more complicated example might be a CCXML <createcall> where you are both providing variables and getting values back that using only the <send> syntax would be more complex as it would need to be broken over several steps. For example: <onentry> <ccxml:createcall dest=\"'tel:+18315552020'\" connectionid=\"myConnectionID\"/> </onentry> Would need to be modeled in two steps using <send> as you would need to do something like the following: <datamodel> <data name=\"dest\" expr=\"'tel:+18315552020'\"/> <data name=\"connectionid\"/> </datamodel> <onentry> <send type=\"ccxml\" event=\"ccxml:createcall\" namelist=\"dest\"/> </onentry> <transition event=\"ccxml:createcall.success\"> <assign location=\"connectionid\" expr=\"_event.data.connectionid\"/> </transition> The exact mappings between Custom Action Elements and <send> actions are to be defined in the individual Custom Action Element specifications.",
         "anchor_url": "https://www.w3.org/TR/scxml/#custom_action",

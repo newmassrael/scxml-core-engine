@@ -24,7 +24,7 @@
 //
 //   * `scxml/shadowed-transition` — a state's transition list
 //     contains an unconditional transition followed by a same-event
-//     sibling. Per W3C SCXML §5.10 transition selection, the first
+//     sibling. Per §scxml-5.10 transition selection, the first
 //     matching transition in document order wins, so the second is
 //     dead. The validator requires literal equality of the `event`
 //     attribute between the two transitions — token-prefix superset
@@ -191,7 +191,7 @@ fn parse_decimal(s: &str) -> Option<f64> {
     trimmed.parse::<f64>().ok()
 }
 
-/// Is `cond` unconditional? Mirrors the W3C SCXML §5.10 selection
+/// Is `cond` unconditional? Mirrors the §scxml-5.10 selection
 /// model: a transition without a guard always matches when its
 /// event descriptor matches, and a transition with a literally-true
 /// guard is equivalent for shadowing purposes.
