@@ -438,5 +438,91 @@ class WireNamespace(unittest.TestCase):
         self.assertEqual(migs, [])
 
 
+class FormGateCheck(unittest.TestCase):
+    """--check forbids free-text 'W3C SCXML <n>' section cites (forcing the
+    §scxml- form so validate-code-refs can gate them) while leaving the
+    spec version and W3C test numbers as prose."""
+
+    def _ledger(self, d):
+        store = Path(d) / "store.json"
+        store.write_text(
+            json.dumps({"sections": {"scxml-5.10": {}, "scxml-6.2": {}}}),
+            encoding="utf-8",
+        )
+        return store
+
+    def _check(self, d, srcdir):
+        return subprocess.run(
+            [sys.executable, str(MIGRATE), "--check",
+             "--ledger", str(self._ledger(d)), str(srcdir)],
+            capture_output=True, text=True,
+        )
+
+    def test_version_and_test_number_pass(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            src.mkdir()
+            (src / "a.rs").write_text(
+                "// already migrated §scxml-5.10\n"
+                "// W3C SCXML 403 test-suite reference\n"
+                "// W3C SCXML 1.0 spec version\n",
+                encoding="utf-8",
+            )
+            r = self._check(d, src)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_free_text_section_and_hallucination_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            src.mkdir()
+            (src / "a.rs").write_text(
+                "// valid free-text W3C SCXML 5.10\n"
+                "// hallucinated W3C SCXML 99.99\n"
+                "// test W3C SCXML 403\n"
+                "// version W3C SCXML 1.0\n",
+                encoding="utf-8",
+            )
+            r = self._check(d, src)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("5.10", r.stderr)  # real section in free-text
+            self.assertIn("99.99", r.stderr)  # dotted hallucination
+            self.assertNotIn(" 403 ", r.stderr)  # bare-int test number stays
+            self.assertNotIn("§scxml-1.0", r.stderr)  # version allowlisted
+
+    def test_string_literal_not_flagged(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            src.mkdir()
+            (src / "a.rs").write_text(
+                'let s = "W3C SCXML 5.10";\n', encoding="utf-8"
+            )
+            r = self._check(d, src)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class PathsFromToml(unittest.TestCase):
+    def test_extracts_array_and_skips_commented_header(self):
+        with tempfile.TemporaryDirectory() as d:
+            toml = Path(d) / "mnemosyne.toml"
+            toml.write_text(
+                "# [plugins.set_equality_validator] named in a comment only\n"
+                "[workspace]\n"
+                "root = '.'\n\n"
+                "[plugins.set_equality_validator]\n"
+                "paths = [\n"
+                '    "sce/include/core",\n'
+                "    # a comment inside the array\n"
+                '    "sce-build/src",\n'
+                "]\n"
+                'severity_missing = "reject"\n',
+                encoding="utf-8",
+            )
+            got = [
+                os.path.relpath(p, mc.REPO_ROOT)
+                for p in mc.paths_from_toml(str(toml))
+            ]
+            self.assertEqual(got, ["sce/include/core", "sce-build/src"])
+
+
 if __name__ == "__main__":
     unittest.main()
