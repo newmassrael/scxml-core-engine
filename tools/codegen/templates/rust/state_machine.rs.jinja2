@@ -165,11 +165,21 @@ pub enum {{ machine_name }}Event {
 {{ event_payload_defs }}
 {{ event_payload_entries }}
 {% endif %}
+{% if has_native_actions %}
+// ── W3C SCXML G.7: <sce:action> host-dispatch trait ──
+{{ native_actions_defs }}
+{% endif %}
 // ======================================================================
 // Policy struct
 // ======================================================================
 
-pub struct {{ machine_name }}Policy {
+pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
+{% if has_native_actions %}
+    // W3C SCXML G.7: host implementation of the `<sce:action>` operations.
+    // The generated machine dispatches each native action through this field
+    // (`self.actions.<op>(…)`) instead of a runtime script engine.
+    actions: A,
+{% endif %}
     // W3C SCXML 3.13: Last transition metadata
     last_transition_is_internal: bool,
     last_transition_is_targetless: bool,
@@ -306,15 +316,21 @@ pub struct {{ machine_name }}Policy {
 {% endif %}
 }
 
-impl {{ machine_name }}Policy {
+impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }} {
 {% if model.needs_script_engine %}
-    pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
+    pub fn new({% if has_native_actions %}actions: A, {% endif %}script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
+{% if has_native_actions %}
+            actions,
+{% endif %}
             script_engine,
             last_transition_is_internal: false,
 {% else %}
-    pub fn new() -> Self {
+    pub fn new({% if has_native_actions %}actions: A{% endif %}) -> Self {
         Self {
+{% if has_native_actions %}
+            actions,
+{% endif %}
             last_transition_is_internal: false,
 {% endif %}
             last_transition_is_targetless: false,
@@ -410,7 +426,7 @@ impl {{ machine_name }}Policy {
 {% include 'invoke_methods.rs.jinja2' %}
 }
 
-{% if not model.needs_script_engine %}
+{% if not model.needs_script_engine and not has_native_actions %}
 impl Default for {{ machine_name }}Policy {
     fn default() -> Self {
         Self::new()
@@ -422,7 +438,7 @@ impl Default for {{ machine_name }}Policy {
 // StatePolicy trait implementation
 // ======================================================================
 
-impl StatePolicy for {{ machine_name }}Policy {
+impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy_generics_use }} {
     type State = {{ machine_name }}State;
     type Event = {{ machine_name }}Event;
     // EventSchema MCU native-lowering RFC §10.2: `()` = schemaless (dynamic
@@ -803,7 +819,7 @@ impl StatePolicy for {{ machine_name }}Policy {
 // Helper impl block (try_transition_in_state, conflict resolution, etc.)
 // ======================================================================
 
-impl {{ machine_name }}Policy {
+impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }} {
     // W3C SCXML 3.12: Helper method for hierarchical transition checking
 {% if model.has_parallel_states %}
     fn try_transition_in_state(
@@ -1134,7 +1150,7 @@ pub trait {{ machine_name }}LinkRx {
 {% endfor %}
 }
 
-impl {{ machine_name }}LinkRx for ::sce_rust_runtime::Engine<{{ machine_name }}Policy> {
+impl{{ policy_generics_decl }} {{ machine_name }}LinkRx for ::sce_rust_runtime::Engine<{{ machine_name }}Policy{{ policy_generics_use }}> {
 {% for link in model.on_sample_links %}
     fn deliver_link_{{ link | to_snake_case }}_sample<M>(
         &mut self,

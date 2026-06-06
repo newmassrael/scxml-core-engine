@@ -108,6 +108,10 @@
         "namelist": {
           "type": "string"
         },
+        "native_action_name": {
+          "description": "W3C SCXML G.7 — Custom Action Element `<sce:action name=\"...\">`. The symbolic host-operation name this action dispatches to. When non-empty, [`action_type`](Self::action_type) is `\"native_action\"` and [`params`](Self::params) carries the positional `<sce:arg expr=\"...\">` argument expressions. The codegen lowers each argument through the typed-expression pipeline (the same path guards use) and emits a direct call into a generated host-`Actions` trait method — no script engine. Empty for every standard W3C executable-content action.",
+          "type": "string"
+        },
         "params": {
           "items": {
             "$ref": "#/definitions/Param"

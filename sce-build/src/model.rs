@@ -220,6 +220,28 @@ pub struct Action {
     pub is_cpp_function: bool,
     #[serde(default)]
     pub is_kt_function: bool,
+    /// W3C SCXML G.7 — Custom Action Element `<sce:action name="...">`.
+    /// The symbolic host-operation name this action dispatches to. When
+    /// non-empty, [`action_type`](Self::action_type) is `"native_action"`
+    /// and [`params`](Self::params) carries the positional `<sce:arg
+    /// expr="...">` argument expressions. The codegen lowers each argument
+    /// through the typed-expression pipeline (the same path guards use) and
+    /// emits a direct call into a generated host-`Actions` trait method —
+    /// no script engine. Empty for every standard W3C executable-content
+    /// action.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub native_action_name: String,
+    /// Codegen-internal: the fully-rendered backend call site for this
+    /// `<sce:action>` (e.g. the Rust `self.actions.op(&ev.field);` wrapped
+    /// in its payload-variant binding). Computed by the per-backend native
+    /// lowering pass on the cloned codegen model and read by the
+    /// `actions/native_action` template. Never set on the parsed model, so
+    /// it is absent from the AST export and the serialized wire form.
+    /// Excluded from the AST JSON Schema (`schemars(skip)`): a backend
+    /// codegen scratch field, not part of the public AST contract.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, schemars(skip))]
+    pub native_action_rendered: String,
 
     // SCE_MESH.md §13 — mesh metadata is not carried on individual
     // <send> actions. Communication pattern is inferred from event name

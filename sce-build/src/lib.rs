@@ -2246,6 +2246,13 @@ pub fn compile_scxml_with_imports(
             &per_doc_enums,
             basename,
         )?;
+        // W3C SCXML G.7 — `<sce:action>` Custom Action Element: validate
+        // that every native host-dispatch action is a direct <transition>
+        // child whose `<sce:arg>`s are typed `_event.data.<field>` references
+        // resolving against the triggering event's EventSchema. Engine-free
+        // by definition, so a non-conforming construct is rejected here
+        // rather than degraded to a runtime script engine.
+        forge::native_action::validate(model, &per_doc_schemas, basename)?;
     }
 
     // ── C2 follow-up Atomic B outbox cross-resolution ──
