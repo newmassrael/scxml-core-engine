@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 640486d4cae29b9310e05aac2823e4c1400ede6df57b945cc78d2fd148036dbb
-// template-hash: 7b1a0066fa6a7fefceddfcf4d1e81b9d1fe50e95dd2b02645dfe86a65f3b96fe
-// generated-at: 1780606841
+// source-hash: 7efbf35c224276f5a26185d48ab9f347f432a6672d3051b59434b094d4b519c1
+// template-hash: 09c66e0a06202a6ec53b4591ac58670a6615a699910ff161304360792e1e7915
+// generated-at: 1780732020
 
 // GENERATED CODE — DO NOT EDIT
 // Source: sce-build/tests/fixtures/event_schema/statechart_bytes.scxml
