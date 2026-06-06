@@ -25,6 +25,7 @@ pub mod intrinsic_registry;
 pub mod limits;
 pub mod manifest;
 pub mod model;
+pub mod native_action;
 pub mod parser;
 pub mod pool_registry;
 pub mod provenance;

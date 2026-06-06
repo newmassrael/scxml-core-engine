@@ -1,0 +1,10 @@
+{# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
+{# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael #}
+
+{# W3C SCXML G.7: <sce:action> native host-trait dispatch. The call site
+   (including any `_event.data` payload-variant binding) is lowered ahead of
+   the template by `forge::native_action::render_rust` and stored on
+   `action.native_action_rendered`, so this template only emits it. No script
+   engine is involved. #}
+            // W3C SCXML G.7: <sce:action name="{{ action.native_action_name }}">
+            {{ action.native_action_rendered }}

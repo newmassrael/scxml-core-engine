@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W3C SCXML 5.11 <sce:action> fixture: an EventSchema with a `bytes`
+  payload field and a `uint32` offset field, the typed channel a native
+  host-dispatch action reads its arguments from. Generic vocabulary
+  (`fragment.received` + `payload`/`offset`) — no protocol token.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="fragment_schema"
+       sce:kind="event-schema"
+       sce:event-name="fragment.received">
+  <datamodel>
+    <data id="payload" sce:type="bytes" sce:direction="in" sce:max-size="64"/>
+    <data id="offset" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

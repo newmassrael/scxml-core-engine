@@ -557,6 +557,66 @@ cannot merge unresolved IR.
 The three families compose freely on a single node — `sce:req`,
 `sce:provenance`, and `sce:unresolved` are orthogonal axes.
 
+### §2.11 Native host actions — `<sce:action>` (W3C SCXML G.7)
+
+A `<sce:action>` is a W3C SCXML §G.7 Custom Action Element that
+names a host operation dispatched **without a runtime script
+engine**. It is the engine-free counterpart, for *effects*, of the
+typed `_event.data` guard lowering: the statechart keeps the
+operation symbolic (language-neutral SSOT), each argument flows
+through the imported EventSchema's typed-payload channel, and the
+host supplies the behaviour by implementing a generated trait.
+
+```xml
+<transition event="fragment.received" target="assembling">
+  <sce:action name="append_fragment_payload">
+    <sce:arg expr="_event.data.payload"/>
+    <sce:arg expr="_event.data.offset"/>
+  </sce:action>
+</transition>
+```
+
+The Rust backend emits a `<Machine>Actions` trait (one method per
+distinct `name`, parameter types derived from the schema field
+types — `bytes → &[u8]`, `uint32 → u32`, …) and a `Policy<A: …>`
+generic over the host implementation; the constructor takes the
+`actions` value and carries **no `IScriptEngine`**, so a statechart
+whose only effects are `<sce:action>`s compiles under `#![no_std]`.
+
+v1 acceptance contract (enforced at the validation stage):
+
+- A `<sce:action>` is a **direct `<transition>` child**. Placement
+  in `<onentry>` / `<onexit>` / an initial transition, or nested
+  inside `<if>` / `<foreach>`, is rejected
+  (`validation/native-action-placement`).
+- Each `<sce:arg>` is a bare `_event.data.<field>` reference (the
+  `name` attribute, when present, names the trait parameter).
+  A literal or derived argument, or one whose triggering event
+  imports no EventSchema or whose schema is not all-primitive (an
+  enum-typed field — the same eligibility rule as the typed-guard
+  channel), is rejected (`validation/native-action-argument`).
+- An argument's `<field>` must exist on the triggering event's
+  imported EventSchema (`validation/invalid-reference` via the
+  cross-kind field resolver).
+- A `name` that recurs on more than one transition must carry the
+  same argument types each time, so one generated trait method
+  serves every call site; a divergence is rejected
+  (`validation/native-action-signature-conflict`).
+- A no-argument `<sce:action>` (e.g. `reset_slot()`) needs no
+  schema and lowers to a bare trait call.
+
+An arg-bearing action reads its values from the event's typed
+payload, so the triggering event must be raised via its generated
+typed inject; an event raised by name carries no payload and a
+debug build `debug_assert!`s rather than silently skipping the
+effect (release builds compile the check away).
+
+Only the Rust backend lowers `<sce:action>` natively today; the
+other backends reject the construct
+(`generate/unsupported-feature`) rather than silently routing it
+through a script engine. The construct is engine-free by
+definition — it never degrades to a runtime fallback.
+
 ### Cross-kind typed binding (NL→IR Mapping Roadmap Item 2)
 
 When an importing kind references an imported kind's field via
@@ -988,7 +1048,7 @@ vocabulary intent of `sce:kind="enum"`.
 
 ---
 
-## Appendix — `DiagnosticCode` index (319 codes)
+## Appendix — `DiagnosticCode` index (322 codes)
 
 This appendix is the **drift-guarded coverage target** for the
 `acceptance_doc_covers_every_code` test. Every slash-path string in
@@ -1046,6 +1106,9 @@ Codes that the author can avoid by writing a better SCXML /
 | `validation/require-either` | Validation |
 | `validation/wrong-pipeline` | Validation |
 | `validation/dynamic-features` | Validation |
+| `validation/native-action-placement` | Validation |
+| `validation/native-action-argument` | Validation |
+| `validation/native-action-signature-conflict` | Validation |
 | `validation/mesh-rpc-reserved-param` | Validation |
 | `validation/mesh-rpc-missing-target` | Validation |
 | `validation/mesh-rpc-duplicate-target` | Validation |

@@ -745,7 +745,7 @@ pub(crate) fn rust_type(ty: &SceType) -> &'static str {
 }
 
 /// Rust parameter type (borrow for heap-allocated types).
-fn rust_param_type(ty: &SceType) -> String {
+pub(crate) fn rust_param_type(ty: &SceType) -> String {
     match ty {
         SceType::String => "&str".to_string(),
         SceType::Bytes => "&[u8]".to_string(),
@@ -1635,6 +1635,10 @@ pub struct RustEventPayload {
 pub fn build_rust_event_payload(
     model: &crate::model::SCXMLModel,
     machine_name: &str,
+    extra_payload_events: &std::collections::BTreeSet<String>,
+    policy_generics_decl: &str,
+    policy_generics_use: &str,
+    no_std: bool,
 ) -> RustEventPayload {
     let schemaless = || RustEventPayload {
         defs: String::new(),
@@ -1673,11 +1677,24 @@ pub fn build_rust_event_payload(
         });
         guarded_events.insert(g.event);
     }
-    if guard_writes.is_empty() {
+
+    // The payload channel carries every event that needs a typed variant:
+    // those whose guard lowered natively (above) PLUS those a native
+    // `<sce:action>` reads a typed field from (W3C SCXML G.7 —
+    // `extra_payload_events`, supplied by
+    // [`crate::forge::native_action::render_rust`]). A native action can
+    // activate the channel with no guard present, so the union — not
+    // `guarded_events` alone — gates schemalessness and variant emission.
+    let payload_events: std::collections::BTreeSet<String> = guarded_events
+        .iter()
+        .chain(extra_payload_events.iter())
+        .cloned()
+        .collect();
+    if payload_events.is_empty() {
         return schemaless();
     }
 
-    // Emit one payload struct + one enum variant per guarded event.
+    // Emit one payload struct + one enum variant per payload event.
     // Field types resolve through `LangCtx::resolved_type`; payload
     // eligibility above guarantees every field is primitive, so this
     // never hits the enum-alias arm (which would need an out-of-scope
@@ -1687,7 +1704,7 @@ pub fn build_rust_event_payload(
     let mut variant_lines = String::new();
     let mut entry_fns = String::new();
     let mut trait_methods = String::new();
-    for event in &guarded_events {
+    for event in &payload_events {
         let schema = &model.imported_event_schemas[event];
         let variant = filters::to_event_variant(event.clone());
         let struct_name = format!("{machine_name}{variant}Payload");
@@ -1715,7 +1732,29 @@ self.raise_external_typed({machine_name}Event::{variant}, {enum_name}::{variant}
         ));
         let mut field_lines = String::new();
         for f in &schema.fields {
-            let ty = l.resolved_type(&f.sce_type, &[]);
+            // A `bytes` field carries as the host owned byte-sequence under
+            // std (`Vec<u8>`) and as an allocator-free, capacity-bounded
+            // `heapless::Vec<u8, CAP>` under no_std — so a typed bytes payload
+            // (a guard operand or a `<sce:action>` argument) compiles on a
+            // no-heap MCU target. CAP is the field's declared `sce:max-size`
+            // (default `BYTES_DEFAULT_MAX`), honouring the author's bound
+            // exactly as the C11 backend does rather than a one-size cap.
+            // Both spellings deref to `[u8]`, so `&ev.<field>` coerces to the
+            // `&[u8]` an `Actions` trait method takes. Every other primitive
+            // resolves through `LangCtx::resolved_type`; payload eligibility
+            // guarantees no enum-alias arm is hit.
+            let ty = if matches!(f.sce_type, crate::forge::model::SceType::Bytes) {
+                if no_std {
+                    let cap = f
+                        .max_size
+                        .unwrap_or(crate::forge::limits::BYTES_DEFAULT_MAX);
+                    format!("::sce_rust_runtime::heapless::Vec<u8, {cap}>")
+                } else {
+                    "::std::vec::Vec<u8>".to_string()
+                }
+            } else {
+                l.resolved_type(&f.sce_type, &[])
+            };
             field_lines.push_str(&format!("    pub {}: {ty},\n", f.id));
         }
         structs.push_str(&format!(
@@ -1733,12 +1772,17 @@ EventSchema-imported events whose transition guards lowered natively.\n\
     // Extension trait + impl (orphan-rule-clean — `Engine` is foreign).
     // The consumer brings the per-event inject methods into scope with
     // `use …::{machine_name}Inject;`.
+    // When the document carries `<sce:action>`s the `Policy` is generic over
+    // the host `Actions` impl (`policy_generics_*` non-empty); the inject
+    // extension trait is then implemented for `Engine<Policy<A>>` under the
+    // same bound. Both strings are empty for a guard-only document, leaving
+    // the original `Engine<Policy>` shape byte-identical.
     let entries = format!(
         "/// NL\u{2192}IR Item C1 Path A: per-event typed `_event.data` inject seam.\n\
 /// Bring into scope with `use …::{machine_name}Inject;` to call the\n\
 /// `raise_<event>` methods on the engine.\n\
 pub trait {machine_name}Inject {{\n{trait_methods}}}\n\n\
-impl {machine_name}Inject for ::sce_rust_runtime::Engine<{machine_name}Policy> {{\n{entry_fns}}}\n"
+impl{policy_generics_decl} {machine_name}Inject for ::sce_rust_runtime::Engine<{machine_name}Policy{policy_generics_use}> {{\n{entry_fns}}}\n"
     );
     RustEventPayload {
         defs,
