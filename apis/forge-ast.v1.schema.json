@@ -109,7 +109,7 @@
           "type": "string"
         },
         "native_action_name": {
-          "description": "W3C SCXML G.7 — Custom Action Element `<sce:action name=\"...\">`. The symbolic host-operation name this action dispatches to. When non-empty, [`action_type`](Self::action_type) is `\"native_action\"` and [`params`](Self::params) carries the positional `<sce:arg expr=\"...\">` argument expressions. The codegen lowers each argument through the typed-expression pipeline (the same path guards use) and emits a direct call into a generated host-`Actions` trait method — no script engine. Empty for every standard W3C executable-content action.",
+          "description": "§scxml-G-7 — Custom Action Element `<sce:action name=\"...\">`. The symbolic host-operation name this action dispatches to. When non-empty, [`action_type`](Self::action_type) is `\"native_action\"` and [`params`](Self::params) carries the positional `<sce:arg expr=\"...\">` argument expressions. The codegen lowers each argument through the typed-expression pipeline (the same path guards use) and emits a direct call into a generated host-`Actions` trait method — no script engine. Empty for every standard W3C executable-content action.",
           "type": "string"
         },
         "params": {
@@ -1315,7 +1315,7 @@
       "type": "string"
     },
     "DoneData": {
-      "description": "W3C SCXML 5.7: Done data for final states.\n\n`content` is a [`DoneDataContent`] sum so that the parser decision — `<content expr=\"...\">` vs `<content>literal</content>` vs omitted — is encoded in the type and survives into templates as a `{kind, text}` object. Templates dispatch on `donedata.content.kind` rather than the legacy truthy-check on two parallel strings.",
+      "description": "§scxml-5.7: Done data for final states.\n\n`content` is a [`DoneDataContent`] sum so that the parser decision — `<content expr=\"...\">` vs `<content>literal</content>` vs omitted — is encoded in the type and survives into templates as a `{kind, text}` object. Templates dispatch on `donedata.content.kind` rather than the legacy truthy-check on two parallel strings.",
       "properties": {
         "content": {
           "$ref": "#/definitions/DoneDataContent"
@@ -1333,7 +1333,7 @@
       "type": "object"
     },
     "DoneDataContent": {
-      "description": "W3C SCXML 5.5: `<content>` body semantics.\n\n- [`DoneDataContent::None`] — no `<content>` child (`{\"kind\":\"none\"}`). - [`DoneDataContent::Expression`] — `<content expr=\"X\"/>`, MUST be evaluated against the active datamodel (`{\"kind\":\"expression\",\"text\":\"X\"}`). - [`DoneDataContent::Literal`] — `<content>inline text</content>`; per W3C SCXML 5.5 the children are used **as the content value**, not re-evaluated as an expression. Literal means no script engine required at runtime (`{\"kind\":\"literal\",\"text\":\"...\"}`).\n\nSerialized via adjacent tagging (`tag = \"kind\", content = \"text\"`) so minijinja consumers match on `donedata.content.kind` and read the payload from `.text` when present.",
+      "description": "§scxml-5.5: `<content>` body semantics.\n\n- [`DoneDataContent::None`] — no `<content>` child (`{\"kind\":\"none\"}`). - [`DoneDataContent::Expression`] — `<content expr=\"X\"/>`, MUST be evaluated against the active datamodel (`{\"kind\":\"expression\",\"text\":\"X\"}`). - [`DoneDataContent::Literal`] — `<content>inline text</content>`; per §scxml-5.5 the children are used **as the content value**, not re-evaluated as an expression. Literal means no script engine required at runtime (`{\"kind\":\"literal\",\"text\":\"...\"}`).\n\nSerialized via adjacent tagging (`tag = \"kind\", content = \"text\"`) so minijinja consumers match on `donedata.content.kind` and read the payload from `.text` when present.",
       "oneOf": [
         {
           "properties": {
@@ -1388,7 +1388,7 @@
       ]
     },
     "DoneDataParam": {
-      "description": "W3C SCXML 5.7: Done data parameter.\n\n`expr` and `location` are `Option<String>` because W3C SCXML 6.2.4 mandates exactly one of them on each `<param>`. They are serialized as JSON `null` when absent (no `skip_serializing_if`) so that minijinja templates can distinguish \"attribute omitted\" (none) from \"attribute present but empty\" (Some(\"\")) via the canonical `is none` test — undefined-vs-null ambiguity would otherwise mis-route the empty-location structural-error branch.",
+      "description": "§scxml-5.7: Done data parameter.\n\n`expr` and `location` are `Option<String>` because §scxml-6.2.4 mandates exactly one of them on each `<param>`. They are serialized as JSON `null` when absent (no `skip_serializing_if`) so that minijinja templates can distinguish \"attribute omitted\" (none) from \"attribute present but empty\" (Some(\"\")) via the canonical `is none` test — undefined-vs-null ambiguity would otherwise mis-route the empty-location structural-error branch.",
       "properties": {
         "expr": {
           "type": [
@@ -1832,7 +1832,7 @@
               "type": "array"
             },
             "has_autoforward_invoke": {
-              "description": "W3C SCXML 6.4 / test229: `true` iff any `<invoke>` in the document carries `autoforward=\"true\"`. Drives codegen of the `forward_to_autoforward_children` helper + its call site in the external-dequeue branch of `process_event_queues`. Set in [`crate::parser::SCXMLParser::parse_invoke`] alongside the per-invoke `autoforward` field so the helper is only emitted when at least one invoke needs it (rest of the corpus stays byte-identical).",
+              "description": "§scxml-6.4 / test229: `true` iff any `<invoke>` in the document carries `autoforward=\"true\"`. Drives codegen of the `forward_to_autoforward_children` helper + its call site in the external-dequeue branch of `process_event_queues`. Set in [`crate::parser::SCXMLParser::parse_invoke`] alongside the per-invoke `autoforward` field so the helper is only emitted when at least one invoke needs it (rest of the corpus stays byte-identical).",
               "type": "boolean"
             },
             "has_child_communication": {
@@ -1919,7 +1919,7 @@
               ]
             },
             "needs_dom_helper": {
-              "description": "W3C SCXML B.2: any reachable `<data>` content / `<data src=...>` loaded payload / `<send><content>` literal whose first non-WS character is `<` triggers the host-side XML DOM helper (C11 backend only — cpp / Rust / Go / Kotlin handle the same surface through their own pipelines). Gates `lua_dom_register_metatable` emission in scriptengine.jinja2 and the XML branches in the var.content / send.content / event-promotion sites.",
+              "description": "§scxml-B-2: any reachable `<data>` content / `<data src=...>` loaded payload / `<send><content>` literal whose first non-WS character is `<` triggers the host-side XML DOM helper (C11 backend only — cpp / Rust / Go / Kotlin handle the same surface through their own pipelines). Gates `lua_dom_register_metatable` emission in scriptengine.jinja2 and the XML branches in the var.content / send.content / event-promotion sites.",
               "type": [
                 "boolean",
                 "null"
@@ -3415,7 +3415,7 @@
       ]
     },
     "HistoryInfo": {
-      "description": "W3C SCXML 3.11: History state information",
+      "description": "§scxml-3.11: History state information",
       "properties": {
         "default_actions": {
           "items": {
@@ -3641,10 +3641,10 @@
       "type": "string"
     },
     "Invoke": {
-      "description": "An invoke declared on a state, keyed by kind.\n\nW3C SCXML §6.4 leaves `<invoke type=\"...\">` open for implementation-defined values; SCE treats the three supported kinds as distinct lifecycles:\n\n- [`Invoke::Scxml`] — static child SCXML session (`src` or inline `<content>`). - [`Invoke::Hybrid`] — SCXML session whose target is resolved at runtime (`srcexpr` / `contentexpr`). - [`Invoke::MeshRpc`] — single request / single reply RPC over Mesh (§9.5 `<invoke type=\"sce:mesh-rpc\">`), no child session.\n\nEach variant wraps a dedicated struct that holds only the fields its kind actually needs — `finalize_content`/`src`/`namelist` never appear on a hybrid invoke, `srcexpr`/`contentexpr` never appear on a static invoke. The type system enforces these invariants; nothing at the call site has to remember which fields apply to which variant.\n\nSerialised with an internal `kind` tag so minijinja templates can dispatch on `{% if invoke.kind == \"Scxml\" %}` without needing tuple-style access. The inner structs use `#[serde(flatten)]` for `common`, so templates keep reading `invoke.invoke_id` / `invoke.autoforward` at the top level.",
+      "description": "An invoke declared on a state, keyed by kind.\n\n§scxml-6.4 leaves `<invoke type=\"...\">` open for implementation-defined values; SCE treats the three supported kinds as distinct lifecycles:\n\n- [`Invoke::Scxml`] — static child SCXML session (`src` or inline `<content>`). - [`Invoke::Hybrid`] — SCXML session whose target is resolved at runtime (`srcexpr` / `contentexpr`). - [`Invoke::MeshRpc`] — single request / single reply RPC over Mesh (§9.5 `<invoke type=\"sce:mesh-rpc\">`), no child session.\n\nEach variant wraps a dedicated struct that holds only the fields its kind actually needs — `finalize_content`/`src`/`namelist` never appear on a hybrid invoke, `srcexpr`/`contentexpr` never appear on a static invoke. The type system enforces these invariants; nothing at the call site has to remember which fields apply to which variant.\n\nSerialised with an internal `kind` tag so minijinja templates can dispatch on `{% if invoke.kind == \"Scxml\" %}` without needing tuple-style access. The inner structs use `#[serde(flatten)]` for `common`, so templates keep reading `invoke.invoke_id` / `invoke.autoforward` at the top level.",
       "oneOf": [
         {
-          "description": "W3C SCXML 6.4: Static invoke (`<invoke src=\"...\"` or inline `<content>`).\n\nHolds only the fields the static lifecycle actually uses. Hybrid-only fields (`srcexpr`, `contentexpr`) do not appear here — the type system guarantees `Invoke::Scxml` never carries them. Common metadata lives on [`InvokeSessionCommon`] and is accessible via `Deref` so `scxml_info.invoke_id` still reads naturally.\n\nInline `<content><scxml>` is resolved during parse (see `SCXMLParser::parse_invoke`); the parser pre-parses the inline child into [`Self::inline_child`] and rewrites `src` to the canonical `#<synth_name>` Mesh peer reference (SCE_MESH.md §9.6.6 rules 1-2). No disk side-effect: synth-invoke children no longer materialise as sibling `.scxml` files in the parent's source directory; the §9.6.6 naming convention is enforced by codegen emit when applicable, not by a parser write. External `src=\"file.scxml\"` invokes keep `inline_child = None` and resolve through disk at codegen time.",
+          "description": "§scxml-6.4: Static invoke (`<invoke src=\"...\"` or inline `<content>`).\n\nHolds only the fields the static lifecycle actually uses. Hybrid-only fields (`srcexpr`, `contentexpr`) do not appear here — the type system guarantees `Invoke::Scxml` never carries them. Common metadata lives on [`InvokeSessionCommon`] and is accessible via `Deref` so `scxml_info.invoke_id` still reads naturally.\n\nInline `<content><scxml>` is resolved during parse (see `SCXMLParser::parse_invoke`); the parser pre-parses the inline child into [`Self::inline_child`] and rewrites `src` to the canonical `#<synth_name>` Mesh peer reference (SCE_MESH.md §9.6.6 rules 1-2). No disk side-effect: synth-invoke children no longer materialise as sibling `.scxml` files in the parent's source directory; the §9.6.6 naming convention is enforced by codegen emit when applicable, not by a parser write. External `src=\"file.scxml\"` invokes keep `inline_child = None` and resolve through disk at codegen time.",
           "properties": {
             "autoforward": {
               "type": "boolean"
@@ -3660,7 +3660,7 @@
             },
             "child_has_send_to_parent": {
               "default": false,
-              "description": "W3C SCXML 6.4 (test226/240/241/243/244/245/276): the child SCXML has at least one `<send target=\"#_parent\" event=\"...\"/>`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Mirrors the C++ reuse of `child_model.has_parent_communication` surfaced via the parsed child model — populated by `collect_child_to_parent_events` during invoke metadata resolution.",
+              "description": "§scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML has at least one `<send target=\"#_parent\" event=\"...\"/>`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Mirrors the C++ reuse of `child_model.has_parent_communication` surfaced via the parsed child model — populated by `collect_child_to_parent_events` during invoke metadata resolution.",
               "type": "boolean"
             },
             "child_name": {
@@ -3668,7 +3668,7 @@
             },
             "child_needs_event_scheduler": {
               "default": false,
-              "description": "W3C SCXML 6.2 (test207): the child SCXML carries a non-empty `<send delay=\"...\">` so its codegen emitted a scheduler queue + a `_tick` entry point. Parents that drive active children from `_drive_active_children` need to call the child's `_tick` (not just `_step`) so scheduled child events promote onto the child's internal queue and drive its macrostep on the same outer-step iteration. Top-level fixtures know about this derived from the child SCXML at parse time, mirroring how `child_needs_script_engine` is populated.",
+              "description": "§scxml-6.2 (test207): the child SCXML carries a non-empty `<send delay=\"...\">` so its codegen emitted a scheduler queue + a `_tick` entry point. Parents that drive active children from `_drive_active_children` need to call the child's `_tick` (not just `_step`) so scheduled child events promote onto the child's internal queue and drive its macrostep on the same outer-step iteration. Top-level fixtures know about this derived from the child SCXML at parse time, mirroring how `child_needs_script_engine` is populated.",
               "type": "boolean"
             },
             "child_needs_script_engine": {
@@ -3745,7 +3745,7 @@
             },
             "use_specific_event": {
               "default": false,
-              "description": "W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke",
+              "description": "§scxml-6.4: Use specific done.invoke.{id} event instead of generic done.invoke",
               "type": "boolean"
             }
           },
@@ -3766,7 +3766,7 @@
           "type": "object"
         },
         {
-          "description": "W3C SCXML 6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).\n\nScxml-only fields (`finalize_content`, `src`, `namelist`) do not appear here; hybrid invokes never run a `<finalize>` block and resolve their target at runtime, so the legacy flat struct's mixed fields are now variant-scoped.",
+          "description": "§scxml-6.4: Hybrid invoke (runtime `srcexpr`/`contentexpr`).\n\nScxml-only fields (`finalize_content`, `src`, `namelist`) do not appear here; hybrid invokes never run a `<finalize>` block and resolve their target at runtime, so the legacy flat struct's mixed fields are now variant-scoped.",
           "properties": {
             "autoforward": {
               "type": "boolean"
@@ -3782,7 +3782,7 @@
             },
             "child_has_send_to_parent": {
               "default": false,
-              "description": "W3C SCXML 6.4 (test226/240/241/243/244/245/276): the child SCXML has at least one `<send target=\"#_parent\" event=\"...\"/>`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Mirrors the C++ reuse of `child_model.has_parent_communication` surfaced via the parsed child model — populated by `collect_child_to_parent_events` during invoke metadata resolution.",
+              "description": "§scxml-6.4 (test226/240/241/243/244/245/276): the child SCXML has at least one `<send target=\"#_parent\" event=\"...\"/>`. Codegen uses this to gate parent_sm / parent_dispatch wiring at child spawn time so parent-routed events reach the parent's external queue. Mirrors the C++ reuse of `child_model.has_parent_communication` surfaced via the parsed child model — populated by `collect_child_to_parent_events` during invoke metadata resolution.",
               "type": "boolean"
             },
             "child_name": {
@@ -3790,7 +3790,7 @@
             },
             "child_needs_event_scheduler": {
               "default": false,
-              "description": "W3C SCXML 6.2 (test207): the child SCXML carries a non-empty `<send delay=\"...\">` so its codegen emitted a scheduler queue + a `_tick` entry point. Parents that drive active children from `_drive_active_children` need to call the child's `_tick` (not just `_step`) so scheduled child events promote onto the child's internal queue and drive its macrostep on the same outer-step iteration. Top-level fixtures know about this derived from the child SCXML at parse time, mirroring how `child_needs_script_engine` is populated.",
+              "description": "§scxml-6.2 (test207): the child SCXML carries a non-empty `<send delay=\"...\">` so its codegen emitted a scheduler queue + a `_tick` entry point. Parents that drive active children from `_drive_active_children` need to call the child's `_tick` (not just `_step`) so scheduled child events promote onto the child's internal queue and drive its macrostep on the same outer-step iteration. Top-level fixtures know about this derived from the child SCXML at parse time, mirroring how `child_needs_script_engine` is populated.",
               "type": "boolean"
             },
             "child_needs_script_engine": {
@@ -3852,7 +3852,7 @@
             },
             "use_specific_event": {
               "default": false,
-              "description": "W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke",
+              "description": "§scxml-6.4: Use specific done.invoke.{id} event instead of generic done.invoke",
               "type": "boolean"
             }
           },
@@ -4121,7 +4121,7 @@
           "type": "integer"
         },
         "event": {
-          "description": "`event=\"X\"` — SCXML event name raised when a Sample arrives. State-level `<transition event=\"X\">` blocks dispatch normally per W3C SCXML §5.10, with `_event.data` carrying the borrowed `&Sample<'_>` reference.",
+          "description": "`event=\"X\"` — SCXML event name raised when a Sample arrives. State-level `<transition event=\"X\">` blocks dispatch normally per §scxml-5.10, with `_event.data` carrying the borrowed `&Sample<'_>` reference.",
           "type": "string"
         },
         "link": {
@@ -4172,7 +4172,7 @@
       ]
     },
     "Param": {
-      "description": "W3C SCXML 6.2.4: Send parameter",
+      "description": "§scxml-6.2.4: Send parameter",
       "properties": {
         "expr": {
           "type": "string"
@@ -4406,7 +4406,7 @@
       "type": "object"
     },
     "ProcedureSendAction": {
-      "description": "A `<send>` action within `<onentry>` of a procedure state. Dispatches a service request through the procedure's service handler. W3C SCXML 6.2 + SCE extensions (sce:service, sce:subfunc, sce:addr, sce:payload).",
+      "description": "A `<send>` action within `<onentry>` of a procedure state. Dispatches a service request through the procedure's service handler. §scxml-6.2 + SCE extensions (sce:service, sce:subfunc, sce:addr, sce:payload).",
       "properties": {
         "addr": {
           "description": "Address expression — typically a variable name (sce:addr attribute). Optional.",
@@ -4727,7 +4727,7 @@
       "type": "object"
     },
     "State": {
-      "description": "W3C SCXML 3.3: State element",
+      "description": "§scxml-3.3: State element",
       "properties": {
         "datamodel": {
           "items": {
@@ -5080,7 +5080,7 @@
       ]
     },
     "Transition": {
-      "description": "W3C SCXML 3.3: Transition element",
+      "description": "§scxml-3.3: Transition element",
       "properties": {
         "actions": {
           "items": {
@@ -5104,14 +5104,14 @@
           "type": "string"
         },
         "history_leaf_target": {
-          "description": "W3C SCXML 3.11: Resolved leaf target for history default (Kotlin Phase 1)",
+          "description": "§scxml-3.11: Resolved leaf target for history default (Kotlin backend)",
           "type": [
             "string",
             "null"
           ]
         },
         "history_target": {
-          "description": "W3C SCXML 3.11: History target if transition targets a history state",
+          "description": "§scxml-3.11: History target if transition targets a history state",
           "type": [
             "string",
             "null"
@@ -5133,7 +5133,7 @@
           "type": "boolean"
         },
         "is_true_internal": {
-          "description": "W3C SCXML 3.13: True internal transition (target is descendant of source)",
+          "description": "§scxml-3.13: True internal transition (target is descendant of source)",
           "type": [
             "boolean",
             "null"
@@ -5287,7 +5287,7 @@
       "type": "object"
     },
     "Variable": {
-      "description": "W3C SCXML 5.2: Datamodel variable",
+      "description": "§scxml-5.2: Datamodel variable",
       "properties": {
         "content": {
           "type": "string"
