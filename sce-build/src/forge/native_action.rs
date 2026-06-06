@@ -14,15 +14,31 @@
 //! through the EventSchema typed-payload channel, and the host supplies the
 //! behaviour by implementing the generated trait.
 //!
-//! v1 contract (enforced by [`validate`]): a native action is a *direct
-//! `<transition>` child*, and every `<sce:arg>` is a bare
-//! `_event.data.<field>` reference resolving to a declared, payload-eligible
-//! field on the triggering event's imported EventSchema. Anything else —
-//! a native action in `<onentry>`/`<onexit>`/`<if>`/`<foreach>`, a
-//! literal/derived argument, an unknown field, or an enum-typed schema — is
-//! rejected at the validation stage rather than silently routed through a
-//! script engine. The construct is engine-free *by definition*, so it never
-//! degrades to a runtime fallback.
+//! v1 contract (enforced by [`validate`]):
+//!
+//! - **Placement.** A native action is a *direct child* of a `<transition>`,
+//!   an `<onentry>`/`<onexit>` block, or initial executable content (an
+//!   `<initial>` transition or a history state's default transition). The
+//!   §scxml-G-7 example itself places a Custom Action Element directly in
+//!   `<onentry>`. Nesting inside `<if>`/`<foreach>` is rejected — that call
+//!   site is conditional or iterated, which v1 does not lower (the same
+//!   limitation holds on a transition and in entry/exit alike).
+//! - **Arguments.** Reading a typed argument needs the *triggering event's*
+//!   payload in scope, which happens only on a `<transition>`. There, every
+//!   `<sce:arg>` is a bare `_event.data.<field>` reference resolving to a
+//!   declared, payload-eligible field on that event's imported EventSchema.
+//!   `<onentry>`/`<onexit>`/initial content runs with no triggering event, so
+//!   only a *no-argument* action is admissible there; it lowers to a bare
+//!   host-trait call.
+//! - **Consistency.** A `name` reused across call sites must carry the same
+//!   argument types every time, so a single generated trait method serves
+//!   them all.
+//!
+//! Anything outside this contract — a literal/derived argument, an unknown
+//! field, an enum-typed schema, an arg-bearing action off a transition, or a
+//! nested placement — is rejected at the validation stage rather than silently
+//! routed through a script engine. The construct is engine-free *by
+//! definition*, so it never degrades to a runtime fallback.
 
 use crate::filters;
 use crate::forge::error::{ForgeError, Located, ValidationError};
@@ -142,6 +158,25 @@ fn canonical_type(ty: &SceType) -> &'static str {
     }
 }
 
+/// The payload scope available to a `<sce:action>` at its host position.
+///
+/// A native action lowers to a host-trait call whose arguments, if any, are
+/// read from the *triggering event's* typed payload. That payload is in scope
+/// only on a `<transition>`; an `<onentry>`/`<onexit>` block or initial
+/// executable content runs with no triggering event, so only a no-argument
+/// action is admissible there.
+enum PayloadScope<'a> {
+    /// Direct `<transition>` child: the triggering event and its imported
+    /// EventSchema (if any) are in scope, so arguments are permitted.
+    Transition {
+        event: &'a str,
+        schema: Option<&'a EventSchemaModel>,
+    },
+    /// `<onentry>`/`<onexit>`/initial executable content: no triggering event,
+    /// hence no typed payload. Only a no-argument action is admissible.
+    Eventless,
+}
+
 /// Validate every `<sce:action>` in `scxml` against the v1 contract.
 ///
 /// `imported_schemas` is the per-statechart `event → EventSchemaModel` view
@@ -153,73 +188,128 @@ pub fn validate(
     imported_schemas: &BTreeMap<String, EventSchemaModel>,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
-    // Document-wide signature table: a `name` that recurs on more than one
-    // transition must carry the same argument types every time, so a single
-    // generated `Actions` trait method can serve every call site. Detecting
-    // a conflict here is fail-fast at SCE's own validation stage rather than
-    // deferring it to a type error in the downstream compiler.
+    // Document-wide signature table: a `name` that recurs — on any transition
+    // or in any entry/exit/initial block — must carry the same argument types
+    // every time, so a single generated `Actions` trait method serves every
+    // call site. Detecting a conflict here is fail-fast at SCE's own validation
+    // stage rather than deferring it to a type error in the downstream compiler.
     let mut signatures: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
     for state in scxml.states.values() {
-        // A native action is only meaningful as a direct <transition> child,
-        // where a triggering event (hence a typed payload) is in scope. Any
-        // other placement is rejected up front.
-        let off_transition = state
+        // Eventless positions: <onentry>/<onexit> blocks, an <initial>
+        // transition's executable content, and a history state's default
+        // transition content. No triggering event is in scope, so only a
+        // no-argument native action is admissible.
+        let eventless = state
             .on_entry_blocks
             .iter()
             .chain(state.on_exit_blocks.iter())
             .flatten()
             .chain(state.initial_transition_actions.iter())
             .chain(state.initial_history_default_actions.iter());
-        for action in off_transition {
-            if let Some(na) = first_native(action) {
-                return Err(placement_err(
-                    na,
-                    diag_label,
-                    "supported only as a direct <transition> child \
-                     (found in <onentry>/<onexit>/initial executable content)",
-                ));
-            }
+        for action in eventless {
+            check_placement(
+                action,
+                &PayloadScope::Eventless,
+                &mut signatures,
+                diag_label,
+            )?;
         }
 
         for transition in &state.transitions {
-            let schema = imported_schemas.get(&transition.event);
+            let scope = PayloadScope::Transition {
+                event: &transition.event,
+                schema: imported_schemas.get(&transition.event),
+            };
             for action in &transition.actions {
-                if is_native(action) {
-                    let sig = validate_args(action, schema, &transition.event, diag_label)?;
-                    match signatures.get(&action.native_action_name) {
-                        Some(prev) if *prev != sig => {
-                            return Err(located_on_action(
-                                action,
-                                diag_label,
-                                ValidationError::NativeActionSignatureConflict {
-                                    name: action.native_action_name.clone(),
-                                    detail: format!(
-                                        "argument types ({}) here disagree with ({}) on \
-                                         another transition",
-                                        sig.join(", "),
-                                        prev.join(", "),
-                                    ),
-                                },
-                            ));
-                        }
-                        Some(_) => {}
-                        None => {
-                            signatures.insert(action.native_action_name.clone(), sig);
-                        }
-                    }
-                } else if let Some(na) = first_native(action) {
-                    return Err(placement_err(
-                        na,
-                        diag_label,
-                        "supported only as a direct <transition> child \
-                         (found nested inside <if>/<foreach>)",
-                    ));
-                }
+                check_placement(action, &scope, &mut signatures, diag_label)?;
             }
         }
     }
     Ok(())
+}
+
+/// Validate one executable-content `action` against the payload scope of its
+/// host position, registering any direct `<sce:action>`'s signature in the
+/// document-wide table. A native action nested inside `<if>`/`<foreach>` is
+/// rejected: its call site is conditional or iterated, which v1 does not lower
+/// (the same limitation applies on a transition and in entry/exit alike).
+fn check_placement(
+    action: &Action,
+    scope: &PayloadScope,
+    signatures: &mut BTreeMap<String, Vec<String>>,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    if is_native(action) {
+        let sig = signature_of(action, scope, diag_label)?;
+        register_signature(action, sig, signatures, diag_label)
+    } else if let Some(na) = first_native(action) {
+        Err(placement_err(
+            na,
+            diag_label,
+            "supported only as a direct child of <transition>/<onentry>/<onexit>/\
+             initial executable content (found nested inside <if>/<foreach>)",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// Resolve a direct `<sce:action>`'s signature against its payload scope.
+/// On a transition the triggering event's payload is in scope, so arguments
+/// are validated against its EventSchema; in an eventless position only a
+/// no-argument action is admissible.
+fn signature_of(
+    action: &Action,
+    scope: &PayloadScope,
+    diag_label: &str,
+) -> Result<Vec<String>, Located<ForgeError>> {
+    match scope {
+        PayloadScope::Transition { event, schema } => {
+            validate_args(action, *schema, event, diag_label)
+        }
+        PayloadScope::Eventless if action.params.is_empty() => Ok(Vec::new()),
+        PayloadScope::Eventless => Err(argument_err(
+            action,
+            diag_label,
+            format!(
+                "native action '{}' in <onentry>/<onexit>/initial executable content must \
+                 take no arguments: no triggering event (hence no typed `_event.data` \
+                 payload) is in scope there. Only a direct <transition> child reads payload.",
+                action.native_action_name
+            ),
+        )),
+    }
+}
+
+/// Record `sig` for `action.native_action_name` in the document-wide table,
+/// rejecting a divergence from a prior occurrence — one generated trait method
+/// must serve every call site of a given name, regardless of position.
+fn register_signature(
+    action: &Action,
+    sig: Vec<String>,
+    signatures: &mut BTreeMap<String, Vec<String>>,
+    diag_label: &str,
+) -> Result<(), Located<ForgeError>> {
+    match signatures.get(&action.native_action_name) {
+        Some(prev) if *prev != sig => Err(located_on_action(
+            action,
+            diag_label,
+            ValidationError::NativeActionSignatureConflict {
+                name: action.native_action_name.clone(),
+                detail: format!(
+                    "argument types ({}) here disagree with ({}) at another call site",
+                    sig.join(", "),
+                    prev.join(", "),
+                ),
+            },
+        )),
+        Some(_) => Ok(()),
+        None => {
+            signatures.insert(action.native_action_name.clone(), sig);
+            Ok(())
+        }
+    }
 }
 
 /// Validate one native action's arguments and return its signature — the
@@ -313,93 +403,81 @@ pub struct RustNativeActions {
     pub any: bool,
 }
 
-/// Lower every `<sce:action>` on `model`'s transitions to its Rust call site,
-/// storing the rendered code on `Action::native_action_rendered`, and return
-/// the trait definition + payload-event union.
+/// Per-transition payload context for lowering an arg-bearing `<sce:action>`.
+struct PayloadBinding<'a> {
+    /// Triggering event name (added to the payload-event union when the action
+    /// reads a typed field).
+    event: &'a str,
+    /// `to_event_variant(event)` — the payload-enum variant carrying the typed
+    /// fields the action reads.
+    variant: &'a str,
+    /// The triggering event's imported EventSchema (guaranteed present for an
+    /// arg-bearing action by [`validate`]).
+    schema: Option<&'a EventSchemaModel>,
+}
+
+/// Lower every `<sce:action>` on `model` to its Rust call site, storing the
+/// rendered code on `Action::native_action_rendered`, and return the trait
+/// definition + payload-event union.
 ///
-/// Assumes [`validate`] already passed, so every argument is a known,
-/// payload-eligible `_event.data.<field>` reference (the `unwrap`s below are
-/// therefore total). `model` is the per-backend codegen clone, never the
-/// parsed model.
+/// Visits both `<transition>` actions and eventless executable content
+/// (`<onentry>`/`<onexit>`/initial). Assumes [`validate`] already passed, so an
+/// arg-bearing action is always a transition child with a resolved,
+/// payload-eligible `_event.data.<field>` schema (the `expect`s in
+/// [`lower_native_call`] are therefore total). `model` is the per-backend
+/// codegen clone, never the parsed model.
 pub fn render_rust(model: &mut SCXMLModel, machine_name: &str) -> RustNativeActions {
     let enum_name = format!("{machine_name}Payload");
     let trait_name = format!("{machine_name}Actions");
     let schemas = model.imported_event_schemas.clone();
 
     let mut payload_events: BTreeSet<String> = BTreeSet::new();
-    // Method signatures keyed by action name. First occurrence defines the
-    // signature; a same-named action with a divergent payload type would
-    // surface as a type error at the generated-trait call site (loud, in the
-    // compile gate) rather than silently — consistent per-name signatures are
-    // the documented v1 contract.
+    // Method signatures keyed by action name; the first occurrence defines the
+    // signature and `validate` has already proven every later occurrence agrees,
+    // so a single trait method serves every call site. A no-argument action (the
+    // only kind admissible in an eventless position) registers an empty
+    // signature, which still emits its `fn <name>(&mut self);` method.
     let mut sigs: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
     let mut any = false;
 
     for state in model.states.values_mut() {
+        // Eventless positions: every native action here is no-argument
+        // (enforced by `validate`), so it lowers to a bare host-trait call.
+        let eventless = state
+            .on_entry_blocks
+            .iter_mut()
+            .flatten()
+            .chain(state.on_exit_blocks.iter_mut().flatten())
+            .chain(state.initial_transition_actions.iter_mut())
+            .chain(state.initial_history_default_actions.iter_mut());
+        for action in eventless {
+            if !is_native(action) {
+                continue;
+            }
+            lower_native_call(action, None, &enum_name, &mut sigs, &mut payload_events);
+            any = true;
+        }
+
         for transition in &mut state.transitions {
             let event = transition.event.clone();
-            let schema = schemas.get(&event);
             let variant = filters::to_event_variant(event.clone());
+            let binding = PayloadBinding {
+                event: &event,
+                variant: &variant,
+                schema: schemas.get(&event),
+            };
             for action in &mut transition.actions {
                 if !is_native(action) {
                     continue;
                 }
+                lower_native_call(
+                    action,
+                    Some(&binding),
+                    &enum_name,
+                    &mut sigs,
+                    &mut payload_events,
+                );
                 any = true;
-                let name = action.native_action_name.clone();
-                let mut call_args: Vec<String> = Vec::new();
-                let mut params: Vec<(String, String)> = Vec::new();
-                let mut uses_payload = false;
-
-                for arg in &action.params {
-                    let field = arg_field(&arg.expr).expect("validated: bare _event.data field");
-                    let f = schema
-                        .expect("validated: arg-bearing native action has a schema")
-                        .fields
-                        .iter()
-                        .find(|f| f.id == field)
-                        .expect("validated: field exists on schema");
-                    let by_ref = matches!(f.sce_type, SceType::String | SceType::Bytes);
-                    let pname = if arg.name.is_empty() {
-                        field.to_string()
-                    } else {
-                        arg.name.clone()
-                    };
-                    call_args.push(if by_ref {
-                        format!("&ev.{field}")
-                    } else {
-                        format!("ev.{field}")
-                    });
-                    params.push((pname, rust_param_type(&f.sce_type)));
-                    uses_payload = true;
-                }
-
-                if uses_payload {
-                    payload_events.insert(event.clone());
-                }
-                sigs.entry(name.clone()).or_insert(params);
-
-                let call = format!("self.actions.{}({});", name, call_args.join(", "));
-                action.native_action_rendered = if uses_payload {
-                    // The typed arguments are read from the event's payload
-                    // variant. An event raised by name (not via the generated
-                    // typed inject) carries no payload variant and cannot
-                    // supply them — a contract violation, NOT a silent skip:
-                    // the `_` arm `debug_assert!`s so a debug/test build fails
-                    // loudly, while a release build compiles it away (no MCU
-                    // cost). This mirrors the typed-guard channel's documented
-                    // default-payload contract.
-                    let msg = format!(
-                        "native action '{name}' requires the typed payload of its \
-                         triggering event; raise the event via its generated typed inject"
-                    );
-                    format!(
-                        "match &self.pending_payload {{\n            \
-                         {enum_name}::{variant}(ev) => {{ {call} }}\n            \
-                         _ => debug_assert!(false, {msg:?}),\n        }}"
-                    )
-                } else {
-                    call
-                };
             }
         }
     }
@@ -416,6 +494,82 @@ pub fn render_rust(model: &mut SCXMLModel, machine_name: &str) -> RustNativeActi
         payload_events,
         any,
     }
+}
+
+/// Lower one `<sce:action>` to its Rust call site (stored on
+/// `action.native_action_rendered`) and fold its signature into `sigs`.
+///
+/// `binding` is `Some` only for a `<transition>` child, where the triggering
+/// event's typed payload is in scope; `None` for an eventless position
+/// (`<onentry>`/`<onexit>`/initial), where the action is necessarily
+/// no-argument. A no-argument action lowers to a bare `self.actions.<name>();`
+/// in either case; an arg-bearing one reads its values from the event's payload
+/// variant and is wrapped in a payload-match arm.
+fn lower_native_call(
+    action: &mut Action,
+    binding: Option<&PayloadBinding>,
+    enum_name: &str,
+    sigs: &mut BTreeMap<String, Vec<(String, String)>>,
+    payload_events: &mut BTreeSet<String>,
+) {
+    let name = action.native_action_name.clone();
+
+    if action.params.is_empty() {
+        sigs.entry(name.clone()).or_default();
+        action.native_action_rendered = format!("self.actions.{name}();");
+        return;
+    }
+
+    // Arg-bearing: `validate` guarantees a transition binding with a resolved,
+    // payload-eligible schema, so the lookups below are total.
+    let binding = binding.expect("validated: arg-bearing native action is a <transition> child");
+    let schema = binding
+        .schema
+        .expect("validated: arg-bearing native action has a schema");
+
+    let mut call_args: Vec<String> = Vec::new();
+    let mut params: Vec<(String, String)> = Vec::new();
+    for arg in &action.params {
+        let field = arg_field(&arg.expr).expect("validated: bare _event.data field");
+        let f = schema
+            .fields
+            .iter()
+            .find(|f| f.id == field)
+            .expect("validated: field exists on schema");
+        let by_ref = matches!(f.sce_type, SceType::String | SceType::Bytes);
+        let pname = if arg.name.is_empty() {
+            field.to_string()
+        } else {
+            arg.name.clone()
+        };
+        call_args.push(if by_ref {
+            format!("&ev.{field}")
+        } else {
+            format!("ev.{field}")
+        });
+        params.push((pname, rust_param_type(&f.sce_type)));
+    }
+
+    payload_events.insert(binding.event.to_string());
+    sigs.entry(name.clone()).or_insert(params);
+
+    // The typed arguments are read from the event's payload variant. An event
+    // raised by name (not via the generated typed inject) carries no payload
+    // variant and cannot supply them — a contract violation, NOT a silent skip:
+    // the `_` arm `debug_assert!`s so a debug/test build fails loudly, while a
+    // release build compiles it away (no MCU cost). This mirrors the typed-guard
+    // channel's documented default-payload contract.
+    let call = format!("self.actions.{}({});", name, call_args.join(", "));
+    let msg = format!(
+        "native action '{name}' requires the typed payload of its \
+         triggering event; raise the event via its generated typed inject"
+    );
+    let variant = binding.variant;
+    action.native_action_rendered = format!(
+        "match &self.pending_payload {{\n            \
+         {enum_name}::{variant}(ev) => {{ {call} }}\n            \
+         _ => debug_assert!(false, {msg:?}),\n        }}"
+    );
 }
 
 fn build_trait(trait_name: &str, sigs: &BTreeMap<String, Vec<(String, String)>>) -> String {
@@ -581,15 +735,121 @@ mod tests {
     }
 
     #[test]
-    fn action_in_onentry_rejected() {
+    fn noarg_action_in_onentry_accepted() {
+        // The §scxml-G-7 example itself places a Custom Action Element in
+        // <onentry>; a no-argument native action needs no payload, so it is
+        // valid there and lowers to a bare host-trait call.
         let model = parse(
             r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
                 <state id="idle"><onentry>
-                    <sce:action name="reset_slot"/>
+                    <sce:action name="on_idle_entry"/>
+                </onentry></state>
+            </scxml>"#,
+        );
+        assert!(validate(&model, &fragment_schema(), "t").is_ok());
+    }
+
+    #[test]
+    fn noarg_action_in_onexit_accepted() {
+        let model = parse(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
+                <state id="idle"><onexit>
+                    <sce:action name="on_idle_exit"/>
+                </onexit></state>
+            </scxml>"#,
+        );
+        assert!(validate(&model, &fragment_schema(), "t").is_ok());
+    }
+
+    #[test]
+    fn noarg_action_in_initial_transition_accepted() {
+        // Initial executable content also runs with no triggering event in
+        // scope, so a no-argument native action is admissible there too — the
+        // same rule, with no carve-out for entry/exit alone.
+        let model = parse(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="root">
+                <state id="root">
+                    <initial><transition target="child"><sce:action name="on_init"/></transition></initial>
+                    <state id="child"><transition event="e" target="child"/></state>
+                </state>
+            </scxml>"#,
+        );
+        assert!(validate(&model, &fragment_schema(), "t").is_ok());
+    }
+
+    #[test]
+    fn argbearing_action_in_onentry_rejected() {
+        // No triggering event is in scope in <onentry>, so an arg-bearing
+        // native action (one that would read `_event.data`) is rejected.
+        let model = parse(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
+                <state id="idle"><onentry>
+                    <sce:action name="op"><sce:arg expr="_event.data.payload"/></sce:action>
                 </onentry></state>
             </scxml>"#,
         );
         assert!(validate(&model, &fragment_schema(), "t").is_err());
+    }
+
+    #[test]
+    fn argbearing_action_in_onexit_rejected() {
+        let model = parse(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
+                <state id="idle"><onexit>
+                    <sce:action name="op"><sce:arg expr="_event.data.payload"/></sce:action>
+                </onexit></state>
+            </scxml>"#,
+        );
+        assert!(validate(&model, &fragment_schema(), "t").is_err());
+    }
+
+    #[test]
+    fn native_action_nested_in_if_rejected() {
+        // A native action inside <if>/<foreach> has a conditional/iterated call
+        // site, which v1 does not lower — rejected on a transition just as it
+        // is in entry/exit.
+        let model = parse(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
+                <state id="idle"><transition event="e" target="idle">
+                    <if cond="true"><sce:action name="op"/></if>
+                </transition></state>
+            </scxml>"#,
+        );
+        assert!(validate(&model, &fragment_schema(), "t").is_err());
+    }
+
+    #[test]
+    fn signature_conflict_across_positions_rejected() {
+        // The document-wide signature table spans positions: a no-argument `f`
+        // in <onentry> and an arg-bearing `f` on a transition cannot both be
+        // served by one trait method.
+        let model = parse(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
+                <state id="idle">
+                    <onentry><sce:action name="f"/></onentry>
+                    <transition event="fragment.received" target="idle">
+                        <sce:action name="f"><sce:arg expr="_event.data.offset"/></sce:action>
+                    </transition>
+                </state>
+            </scxml>"#,
+        );
+        assert!(validate(&model, &fragment_schema(), "t").is_err());
+    }
+
+    #[test]
+    fn noarg_name_reused_across_positions_accepted() {
+        // The same no-argument action name in <onentry>, <onexit>, and on a
+        // transition is consistent (all empty signatures) — one trait method.
+        let model = parse(
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="idle">
+                <state id="idle">
+                    <onentry><sce:action name="reset_slot"/></onentry>
+                    <onexit><sce:action name="reset_slot"/></onexit>
+                    <transition event="reset" target="idle"><sce:action name="reset_slot"/></transition>
+                </state>
+            </scxml>"#,
+        );
+        assert!(validate(&model, &fragment_schema(), "t").is_ok());
     }
 
     #[test]

@@ -143,9 +143,10 @@ fn reject_mesh_rpc_in_unsupported_lang(
 // here with an explicit `generate/unsupported-feature` diagnostic rather than
 // failing on a missing per-language action template (which would surface as an
 // opaque template-render error) or — worse — silently ignoring the effect.
-// The shared validation stage has already confirmed every native action is a
-// well-formed direct <transition> child, so this is purely a backend-coverage
-// refusal.
+// The shared validation stage has already confirmed every native action sits
+// in a supported position (a <transition> child, or a no-argument action in
+// <onentry>/<onexit>/initial content), so this is purely a backend-coverage
+// refusal. `document_has_native_actions` scans those positions too.
 fn reject_native_actions_in_unsupported_lang(
     model: &SCXMLModel,
     language: &'static str,

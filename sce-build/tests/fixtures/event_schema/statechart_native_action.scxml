@@ -1,12 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  W3C SCXML 5.11 positive fixture: a fragment-reassembly statechart that
+  W3C SCXML G.7 positive fixture: a fragment-reassembly statechart that
   dispatches side effects to the host via `<sce:action>` instead of an
-  embedded script engine. `append_fragment_payload` reads two typed
-  `_event.data` fields (a bytes payload + a uint32 offset); `reset_slot`
-  takes no arguments. Both lower to direct calls on the generated
-  `<Machine>Actions` trait, so the machine needs no IScriptEngine and
-  compiles under `#![no_std]`.
+  embedded script engine.
+
+  - `append_fragment_payload` (a `<transition>` child) reads two typed
+    `_event.data` fields (a bytes payload + a uint32 offset).
+  - `reset_slot` (a `<transition>` child) takes no arguments.
+  - `on_idle_entry` is a no-argument action in `idle`'s `<onentry>`; it fires
+    on the initial entry AND on every later return to `idle` — the textbook
+    statechart way to declare a state-entry effect once, rather than copying it
+    onto each incoming transition.
+  - `on_assembling_exit` is a no-argument action in `assembling`'s `<onexit>`.
+
+  Every action lowers to a direct call on the generated `<Machine>Actions`
+  trait, so the machine needs no IScriptEngine and compiles under `#![no_std]`.
+  `on_idle_entry` / `on_assembling_exit` appear in no transition, so they also
+  prove eventless-only actions still get a generated trait method.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -16,6 +26,9 @@
        datamodel="ecmascript">
   <sce:import src="schema_fragment.scxml" kind="event-schema" as="FragmentSchema"/>
   <state id="idle">
+    <onentry>
+      <sce:action name="on_idle_entry"/>
+    </onentry>
     <transition event="fragment.received" target="assembling">
       <sce:action name="append_fragment_payload">
         <sce:arg expr="_event.data.payload"/>
@@ -24,6 +37,9 @@
     </transition>
   </state>
   <state id="assembling">
+    <onexit>
+      <sce:action name="on_assembling_exit"/>
+    </onexit>
     <transition event="reset" target="idle">
       <sce:action name="reset_slot"/>
     </transition>
