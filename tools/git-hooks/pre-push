@@ -212,6 +212,19 @@ cargo build --manifest-path sce-portable-emit-probe/Cargo.toml \
 cargo build --manifest-path sce-portable-emit-probe/Cargo.toml \
     --target=thumbv7em-none-eabihf --features mcu \
     || fail_step "Stage 2b (portability probe — no_std runtime, thumb)"
+# Per-machine event-queue sizing (mirror sce-rust-runtime-no-std.yml): a
+# `<scxml sce:capacity="2">` machine must size its no_std queues to depth 2,
+# not the crate-global depth-64 default. The const size assertion catches a
+# silent revert of the per-machine `StatePolicy::EventQueue` to the bare
+# (depth-64) form — which a plain compile gate misses, since the bare form
+# still compiles. This is watching-zenoh's MCU SRAM blocker class.
+"$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
+    -l rust --no-std --output-dir sce-nostd-queue-size-probe/machine/src \
+    sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml >/dev/null 2>&1 \
+    || fail_step "Stage 2b (queue-size probe generation)"
+cargo build --manifest-path sce-nostd-queue-size-probe/Cargo.toml \
+    --target=thumbv7em-none-eabihf \
+    || fail_step "Stage 2b (queue-size gate — const size assertion)"
 
 # ── Stage 2c: cargo doc broken-link gate (mirror doc-check.yml) ────
 # sce-rust-runtime opts into the workspace `[lints]` broken-intra-doc-

@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# Generated-machine crate for the per-machine no_std event-queue-sizing gate
+# (RFC claudedocs/rfc-nostd-per-machine-event-queue-sizing.md).
+#
+# `[lib] path` points at a generated `--no-std` machine from
+# `sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml`, which
+# declares `<scxml sce:capacity="2">`. The parent `sce-nostd-queue-size-probe`
+# crate depends on this one and const-asserts the resulting `Engine`'s size, so
+# the assertion runs against the REAL generated artifact (always in sync with
+# the templates) rather than a hand-maintained policy.
+#
+# The generated `src/*_sm.rs` is git-ignored and produced fresh by the gate step.
+# Detached from the parent workspace so cargo feature unification cannot turn on
+# `sce-rust-runtime/no_std` for an unrelated std build in the same invocation.
+
+[package]
+name = "sce-nostd-queue-size-machine"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "Generated no_std machine (sce:capacity=2) consumed by the queue-size gate"
+license = "LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+
+[lib]
+name = "sce_nostd_queue_size_machine"
+path = "src/event_queue_capacity_probe_sm.rs"
+
+[dependencies]
+sce-rust-runtime = { path = "../../sce-rust-runtime", default-features = false, features = ["no_std"] }

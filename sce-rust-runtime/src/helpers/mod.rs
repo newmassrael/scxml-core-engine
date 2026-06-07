@@ -68,6 +68,13 @@ pub mod entry_exit;
 #[cfg(not(feature = "no_std"))]
 pub mod event_data;
 pub mod event_matching;
+// Watching-zenoh RFC §5.J.2: builds the script-engine `_event.*` object from the
+// W3C string metadata. The script engine (and that metadata) are absent under
+// no_std — reading `_event.sendid` / `_event.origin` / dynamic `_event.data` is
+// rejected (`codegen/no-std-script-not-supported`), so no no_std machine reaches
+// this helper. Gated so the no_std `EventMetadata` (which elides those strings)
+// has no caller referencing the dropped fields.
+#[cfg(not(feature = "no_std"))]
 pub mod event_metadata;
 pub mod event_processing;
 pub mod event_type;

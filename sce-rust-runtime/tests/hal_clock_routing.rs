@@ -104,6 +104,9 @@ impl StatePolicy for MockPolicy {
     type Event = Ev;
     type Payload = ();
     type Hal = MockHal;
+    type EventQueue = sce_rust_runtime::EventQueueManager<
+        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
+    >;
 
     fn initial_state() -> Self::State {
         St::S0

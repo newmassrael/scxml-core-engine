@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Flat event-queue-capacity probe for the per-machine no_std queue-sizing gate
+  (RFC claudedocs/rfc-nostd-per-machine-event-queue-sizing.md).
+
+  Declares `<scxml sce:capacity="2">`, so codegen resolves
+  EVENT_QUEUE_CAPACITY = 2 and emits `type EventQueue =
+  EventQueueManager<EventWithMetadata<..>, { EVENT_QUEUE_CAPACITY }>`. The
+  machine is flat (no parallel regions) with peak chained-`<raise>` occupancy
+  <= 2, so depth 2 is a sound bound.
+
+  Consumed by sce-nostd-queue-size-probe, whose const assertion fails the build
+  if `size_of::<Engine<Policy>>()` regresses to the depth-64 default — the exact
+  "capacity branch silently reverted to bare" regression that a plain compile
+  gate cannot catch (the bare form still compiles). No script, invoke, send, or
+  external data, so the document is no_std-eligible.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="event_queue_capacity_probe"
+       version="1.0"
+       initial="idle"
+       datamodel="ecmascript"
+       sce:capacity="2">
+  <state id="idle">
+    <onentry>
+      <raise event="go"/>
+    </onentry>
+    <transition event="go" target="active"/>
+  </state>
+  <state id="active">
+    <transition event="stop" target="done"/>
+  </state>
+  <final id="done"/>
+</scxml>

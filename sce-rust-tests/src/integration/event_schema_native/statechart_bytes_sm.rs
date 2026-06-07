@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e241fa666c961fb422709417b6a7ad55bf4f514221912d403c52d7358707c2e3
-// template-hash: 07a1057b89512b0ade7260ce662ea4e6ef3c2abde2d5bd32fb4fe82bd263d4bc
-// generated-at: 1780802716
+// template-hash: 3acf03cd1e197da0d6a3e7ecc2541747678939372fbe1d99b37c7415a38be32a
+// generated-at: 1780830705
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -199,6 +199,16 @@ impl StatePolicy for StatechartBytesPolicy {
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = StatechartBytesPayload;
     type Hal = sce_rust_runtime::StdHal;
+
+    // W3C SCXML Appendix D internalQueue / externalQueue. Under no_std the
+    // depth is the per-document `<scxml sce:capacity>` / deploy value (emitted
+    // as the const consumed below); absent a declared capacity the bare form
+    // inherits the runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of
+    // the default). Inert under std (`VecDeque`), so this one emission compiles
+    // on both runtime profiles.
+    type EventQueue = sce_rust_runtime::EventQueueManager<
+        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
+    >;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
