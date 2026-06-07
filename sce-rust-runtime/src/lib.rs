@@ -154,9 +154,10 @@ pub const MAX_SCHEDULED_EVENTS: usize = 32;
 /// Maximum number of simultaneously-enabled transitions selected in a single
 /// microstep under `--features=no_std`.
 ///
-/// Bounds the `heapless::Vec<TransitionInfo, _>` / `heapless::Vec<usize, _>`
-/// conflict-resolution buffers emitted by the parallel-state transition
-/// algorithm (`tools/codegen/templates/rust/{process_transition,conflict_resolution}.rs.jinja2`).
+/// The no_std bound baked into the [`SceTransitionBuf`] / [`SceIndexBuf`]
+/// aliases (`heapless::Vec<_, MAX_ENABLED_TRANSITIONS>`), which the
+/// parallel-state transition algorithm uses for its conflict-resolution
+/// buffers (`tools/codegen/templates/rust/{process_transition,conflict_resolution}.rs.jinja2`).
 /// W3C SCXML Appendix D.2 selects at most one enabled transition per active
 /// atomic state, and the active configuration is itself bounded by
 /// [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`] (16), so the enabled set
@@ -169,11 +170,11 @@ pub const MAX_ENABLED_TRANSITIONS: usize = 32;
 
 /// Capacity of the microstep transition-dedup set under `--features=no_std`.
 ///
-/// The std build dedups enabled transitions with `std::collections::HashSet`;
-/// the no_std build uses `heapless::FnvIndexSet<(State, usize), _>`, whose
-/// capacity must be a power of two. 64 is the next power of two above
-/// 2× [`MAX_ENABLED_TRANSITIONS`], so the set never rehashes-to-full for any
-/// microstep the buffers above can hold.
+/// The dedup set is the [`SceDedupSet`] alias (insert via [`dedup_insert`]):
+/// `std::collections::HashSet` under std, `heapless::FnvIndexSet<_,
+/// MAX_MICROSTEP_DEDUP_SLOTS>` under no_std, whose capacity must be a power of
+/// two. 64 is the next power of two above 2× [`MAX_ENABLED_TRANSITIONS`], so
+/// the set never rehashes-to-full for any microstep the buffers above can hold.
 pub const MAX_MICROSTEP_DEDUP_SLOTS: usize = 64;
 
 /// Maximum byte length of an event metadata string under `--features=no_std`.
