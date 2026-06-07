@@ -199,6 +199,19 @@ cargo clippy -p sce-rust-runtime --no-default-features --features=no_std \
 cargo build --manifest-path sce-nostd-build-probe/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || fail_step "Stage 2b (no_std probe compile)"
+# Single-emit portability (mirror sce-rust-runtime-no-std.yml): ONE --no-std
+# emission compiles against BOTH the std runtime (host, AP profile) and the
+# no_std runtime (thumb, MCU profile). Regression gate for the bytes-field
+# `E0433: cannot find heapless in sce_rust_runtime` against the std runtime.
+"$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
+    -l rust --no-std --output-dir sce-portable-emit-probe/src \
+    sce-build/tests/fixtures/no_std/portable_probe.scxml >/dev/null 2>&1 \
+    || fail_step "Stage 2b (portability probe generation)"
+cargo build --manifest-path sce-portable-emit-probe/Cargo.toml \
+    || fail_step "Stage 2b (portability probe — std runtime, host)"
+cargo build --manifest-path sce-portable-emit-probe/Cargo.toml \
+    --target=thumbv7em-none-eabihf --features mcu \
+    || fail_step "Stage 2b (portability probe — no_std runtime, thumb)"
 
 # ── Stage 3: embed/MANIFEST.json drift (mirror verify_embed_manifest) ─
 # embed/MANIFEST.json is the tracked snapshot of the embeddable public

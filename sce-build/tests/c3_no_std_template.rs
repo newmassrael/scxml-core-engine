@@ -41,11 +41,11 @@ const FSM_WITH_CAPACITY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </scxml>
 "#;
 
-// Parallel-state fixture: the microstep dedup HashSet emission lives
-// under `{% if model.has_parallel_states %}` in process_transition.rs
-// .jinja2 — atomic-only fixtures never reach the dedup block, so the
-// HashSet ↔ heapless::FnvIndexSet swap assertions need a fixture that
-// actually exercises the parallel-state transition path.
+// Parallel-state fixture: the microstep dedup set emission lives under
+// `{% if model.has_parallel_states %}` in process_transition.rs.jinja2 —
+// atomic-only fixtures never reach the dedup block, so the `SceDedupSet`
+// alias assertions need a fixture that actually exercises the
+// parallel-state transition path.
 const PARALLEL_FSM: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="p">
   <parallel id="p">
@@ -283,18 +283,21 @@ topology:
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// C3 Atomic B-γ2b — `--no-std` codegen mode emission contract
+// C3 Atomic B-γ2b + single-emit portability — `--no-std` emission contract
 // ═══════════════════════════════════════════════════════════════════
 //
-// The generator now takes a `no_std: bool` parameter (B-β's
-// `--no-std` CLI flag, wired through `cmd_generate`). When set, the
-// Rust template emits `#![no_std]` at the crate root, swaps the
-// microstep dedup `HashSet` for `heapless::FnvIndexSet`, and elides
-// the `parent_external_queue` field whose `Arc<Mutex<...>>` type is
+// The generator takes a `no_std: bool` parameter (B-β's `--no-std`
+// CLI flag, wired through `cmd_generate`). When set, the Rust template
+// emits `#![no_std]` at the crate root and elides the
+// `parent_external_queue` field whose `Arc<Mutex<...>>` type is
 // alloc-coupled (per Watching-zenoh RFC §5.J.2 lines 1989-1994 —
-// "no path from generated no_std code into alloc::*"). The runtime
-// port (helpers cfg-gates, engine.rs split, full `--features=no_std`
-// build) lands in subsequent atomics; B-γ2b proves the emitter side.
+// "no path from generated no_std code into alloc::*"). Owned
+// collection TYPES, however, are profile-neutral: both modes name the
+// runtime's profile-resolving aliases (SceBytes / SceString /
+// SceTransitionBuf / SceIndexBuf / SceDedupSet / StateChain), and the
+// runtime's own cfg selects std vs heapless. One emission therefore
+// compiles against both runtime profiles (sce-portable-emit-probe
+// gates this); these tests pin the emission side.
 
 #[test]
 fn rust_template_emits_no_std_attribute_under_no_std_flag() {
@@ -317,31 +320,81 @@ fn rust_template_omits_no_std_attribute_under_default_std() {
 }
 
 #[test]
-fn rust_template_emits_heapless_fnv_index_set_under_no_std() {
+fn rust_template_emits_dedup_set_alias_under_no_std() {
     let model = parse(PARALLEL_FSM, "parallel_nostd_dedup");
     let code = generate(&model, &template_dir(), true).expect("template render must succeed");
+    // The runtime owns the std-vs-heapless set choice: the emission names the
+    // profile-resolving `SceDedupSet` alias + `dedup_insert` helper, never a
+    // raw `heapless::FnvIndexSet` or `std::collections::HashSet` (those are the
+    // runtime's concern, cfg-selected behind the alias).
     assert!(
-        code.contains("heapless::FnvIndexSet"),
-        "--no-std flag must emit heapless::FnvIndexSet for the microstep dedup set"
+        code.contains("::sce_rust_runtime::SceDedupSet"),
+        "--no-std emit must name the SceDedupSet alias for the microstep dedup set"
+    );
+    assert!(
+        code.contains("::sce_rust_runtime::dedup_insert"),
+        "--no-std emit must use the dedup_insert helper"
+    );
+    assert!(
+        !code.contains("sce_rust_runtime::heapless"),
+        "emit must not reference the no_std-only heapless re-export (runtime owns it via SceDedupSet)"
     );
     assert!(
         !code.contains("std::collections::HashSet"),
-        "--no-std flag must not emit std::collections::HashSet"
+        "--no-std emit must not name std::collections::HashSet"
     );
 }
 
 #[test]
-fn rust_template_emits_std_hashset_under_default_std() {
+fn rust_template_emits_dedup_set_alias_under_default_std() {
     let model = parse(PARALLEL_FSM, "parallel_std_dedup");
     let code = generate(&model, &template_dir(), false).expect("template render must succeed");
+    // Profile-neutral: the std emission names the SAME `SceDedupSet` alias as
+    // the no_std emission (the runtime resolves it to `HashSet` under std), so
+    // one emission is portable across both runtime profiles.
     assert!(
-        code.contains("std::collections::HashSet"),
-        "default (std) codegen must emit std::collections::HashSet for the microstep dedup set"
+        code.contains("::sce_rust_runtime::SceDedupSet"),
+        "default (std) emit must name the SceDedupSet alias for the microstep dedup set"
     );
     assert!(
-        !code.contains("heapless::FnvIndexSet"),
-        "default (std) codegen must not pull in heapless::FnvIndexSet"
+        code.contains("::sce_rust_runtime::dedup_insert"),
+        "default (std) emit must use the dedup_insert helper"
     );
+    assert!(
+        !code.contains("std::collections::HashSet"),
+        "emit must not name std::collections::HashSet directly (runtime owns it via SceDedupSet)"
+    );
+    assert!(
+        !code.contains("sce_rust_runtime::heapless"),
+        "default (std) emit must not reference the no_std-only heapless re-export"
+    );
+}
+
+#[test]
+fn rust_template_emits_profile_neutral_collection_aliases() {
+    // Core of the single-emit portability contract: a parallel chart's
+    // transition buffers name profile-resolving runtime aliases
+    // (SceTransitionBuf / SceIndexBuf) identically under both codegen modes,
+    // and NEITHER emit references the no_std-only `sce_rust_runtime::heapless`
+    // re-export — whose presence in a no_std emit was the
+    // `E0433: cannot find heapless in sce_rust_runtime` bug against the std
+    // runtime. `sce-portable-emit-probe` is the compile-level twin gate.
+    let model = parse(PARALLEL_FSM, "parallel_neutral");
+    for no_std in [false, true] {
+        let code = generate(&model, &template_dir(), no_std).expect("render");
+        assert!(
+            code.contains("::sce_rust_runtime::SceTransitionBuf<TransitionInfo>"),
+            "emit (no_std={no_std}) must name SceTransitionBuf for the transition buffer"
+        );
+        assert!(
+            code.contains("::sce_rust_runtime::SceIndexBuf"),
+            "emit (no_std={no_std}) must name SceIndexBuf for the index buffer"
+        );
+        assert!(
+            !code.contains("sce_rust_runtime::heapless"),
+            "emit (no_std={no_std}) must not reference the no_std-only heapless re-export"
+        );
+    }
 }
 
 #[test]

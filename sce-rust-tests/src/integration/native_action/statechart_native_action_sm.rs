@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 02e932f788f150ad2e8877d44da2db3d2143b0611251952c239ae4ff19163abb
-// template-hash: 09c66e0a06202a6ec53b4591ac58670a6615a699910ff161304360792e1e7915
-// generated-at: 1780752486
+// source-hash: e241fa666c961fb422709417b6a7ad55bf4f514221912d403c52d7358707c2e3
+// template-hash: 07a1057b89512b0ade7260ce662ea4e6ef3c2abde2d5bd32fb4fe82bd263d4bc
+// generated-at: 1780804043
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -101,7 +101,7 @@ pub enum StatechartNativeActionEvent {
 // ── NL→IR Item C1 Path A: EventSchema typed `_event.data` payload ──
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StatechartNativeActionFragmentReceivedPayload {
-    pub payload: ::std::vec::Vec<u8>,
+    pub payload: ::sce_rust_runtime::SceBytes<64>,
     pub offset: u32,
 }
 

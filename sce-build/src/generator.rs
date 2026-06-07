@@ -341,7 +341,6 @@ fn render_rust(
         &native.payload_events,
         &policy_generics_decl,
         &policy_generics_use,
-        no_std,
     );
     crate::forge::generator::apply_native_guard_writes(&mut model_lowered, &payload.guard_writes);
 

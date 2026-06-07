@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# Watching-zenoh RFC §5.J.2: single-emit portability gate. Proves that ONE
+# `--no-std` generated machine compiles against BOTH runtime profiles:
+#
+#   - the std runtime (the AP profile — `cargo build`, host target), and
+#   - the no_std runtime (the MCU profile — `--features mcu`, thumb target).
+#
+# The runtime owns the std-vs-heapless collection choice through profile-
+# resolving aliases (`SceBytes` / `SceString` / `SceTransitionBuf` /
+# `SceIndexBuf` / `SceDedupSet` / `StateChain`), so the emission names only
+# those aliases and never a profile-gated type directly. Before that alias
+# layer existed, a `--no-std` emit's `bytes` field / transition buffers / dedup
+# set referenced `sce_rust_runtime::heapless::*` (a no_std-only re-export) and
+# failed `E0433: cannot find heapless in sce_rust_runtime` against the std
+# runtime. This crate's default (std-runtime) build is the regression gate for
+# that bug; the `mcu` build proves the same emission stays allocator-free.
+#
+# The `[lib] path` points at a generated `--no-std` machine combining a typed
+# bytes/string payload (SceBytes / SceString) with nested parallel regions
+# (SceTransitionBuf / SceIndexBuf / SceDedupSet / StateChain), so one crate
+# exercises every profile-resolving alias. The generated `src/*_sm.rs` is
+# git-ignored and produced fresh by the gate (CI + local — see README.md), so
+# it can never drift stale against the templates.
+#
+# Detached from the parent workspace (own empty `[workspace]` table) so cargo's
+# feature unification cannot turn on `sce-rust-runtime/no_std` for the std
+# `sce-rust-tests` build in the same invocation.
+
+[package]
+name = "sce-portable-emit-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "single-emit portability gate: one --no-std machine on both runtime profiles (watching-zenoh RFC §5.J.2)"
+license = "LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+
+[lib]
+name = "sce_portable_emit_probe"
+path = "src/portable_probe_sm.rs"
+
+[dependencies]
+# Default build: std runtime profile (no_std OFF). `default-features = false`
+# also drops `http-send` — the emission never uses BasicHTTP, and the AP gate
+# only needs the runtime in std mode.
+sce-rust-runtime = { path = "../sce-rust-runtime", default-features = false }
+
+[features]
+# Build the SAME emission against the no_std runtime (MCU profile). Used by the
+# thumbv7em-none-eabihf gate; absent for the host/std gate.
+mcu = ["sce-rust-runtime/no_std"]
+
+[workspace]
