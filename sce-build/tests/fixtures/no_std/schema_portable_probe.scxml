@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Portability-probe EventSchema: bytes + string + scalar payload fields on a
+  single event, so the "one no_std emit compiles on both runtime profiles"
+  gate (sce-portable-emit-probe) exercises every profile-resolving owned
+  payload-field alias (SceBytes / SceString) in one generated machine. A native
+  bytes guard on `raw` activates the typed payload channel, which emits all
+  three fields. Generic vocabulary (`signal.received` + `raw`/`label`/`count`)
+  with no protocol token and no domain-specific identifier.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="portable_probe_schema"
+       sce:kind="event-schema"
+       sce:event-name="signal.received">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in" sce:max-size="8"/>
+    <data id="label" sce:type="string" sce:direction="in"/>
+    <data id="count" sce:type="uint32" sce:direction="in"/>
+  </datamodel>
+</scxml>

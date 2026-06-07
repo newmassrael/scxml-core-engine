@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 09c66e0a06202a6ec53b4591ac58670a6615a699910ff161304360792e1e7915
-// generated-at: 1780732000
+// template-hash: 07a1057b89512b0ade7260ce662ea4e6ef3c2abde2d5bd32fb4fe82bd263d4bc
+// generated-at: 1780802714
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -90,13 +90,14 @@ struct TransitionInfo {
     is_targetless: bool,
 }
 
-// Watching-zenoh RFC §5.J.2: microstep conflict-resolution buffers. Under std
-// these are unbounded `Vec`; under no_std they are heapless, capacity-bounded
-// at `MAX_ENABLED_TRANSITIONS` (the runtime owns the no_std collection choice —
-// single source of truth, like `SceString` / `StateChain`). State-list buffers
-// reuse the depth-bounded `StateChain` alias directly.
-type TransitionList = ::std::vec::Vec<TransitionInfo>;
-type IndexList = ::std::vec::Vec<usize>;
+// W3C SCXML Appendix D.2: microstep conflict-resolution buffers. The runtime
+// owns the std-vs-heapless collection choice through the profile-resolving
+// `SceTransitionBuf` / `SceIndexBuf` aliases (single source of truth, like
+// `SceString` / `StateChain`), so this one emission compiles on both runtime
+// profiles: unbounded `Vec` under std, capacity-bounded `heapless::Vec` under
+// no_std. State-list buffers reuse the depth-bounded `StateChain` alias.
+type TransitionList = ::sce_rust_runtime::SceTransitionBuf<TransitionInfo>;
+type IndexList = ::sce_rust_runtime::SceIndexBuf;
 
 // ======================================================================
 // State enum (W3C SCXML 3.3)
@@ -658,8 +659,19 @@ impl StatePolicy for Test406Policy {
             // W3C SCXML 3.13: Deduplicate transitions collected from multiple descendants
             // of the same ancestor (e.g., both parallel regions bubble up to the same parent
             // transition; test 504). Preserves first-match document order.
-            let mut seen = std::collections::HashSet::new();
-            enabled_transitions.retain(|t| seen.insert((t.source, t.transition_index)));
+            // The runtime owns the std-vs-heapless set choice through the
+            // profile-resolving `SceDedupSet` alias + `dedup_insert` helper
+            // (single source of truth, like `SceString` / `StateChain`), so this
+            // one emission compiles on both runtime profiles: a `HashSet` under
+            // std, a capacity-bounded `heapless::FnvIndexSet` under no_std
+            // (`MAX_MICROSTEP_DEDUP_SLOTS`). `dedup_insert` fails loud on no_std
+            // overflow rather than silently dropping transitions — that would
+            // violate W3C SCXML Appendix D.2 semantics.
+            let mut seen: ::sce_rust_runtime::SceDedupSet<(Test406State, usize)> =
+                ::sce_rust_runtime::SceDedupSet::new();
+            enabled_transitions.retain(|t| {
+                ::sce_rust_runtime::dedup_insert(&mut seen, (t.source, t.transition_index))
+            });
 
             // W3C SCXML Appendix D.2: Remove conflicting transitions
             if !enabled_transitions.is_empty() {

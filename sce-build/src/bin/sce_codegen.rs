@@ -587,19 +587,19 @@ enum Commands {
         /// `codegen/no-std-http-not-supported`.
         ///
         /// Emission: `--no-std` produces allocator-free code —
-        /// `#![no_std]`, `core::time::Duration`, the runtime's
-        /// `SceString` / `StateChain` aliases (heapless under no_std)
-        /// for event-metadata and state-list fields, `NoOpHal` as the
+        /// `#![no_std]`, `core::time::Duration`, `NoOpHal` as the
         /// default `Hal`, and elision of the invoke/script-engine
-        /// machinery (`session_id` / `invoke_id` / parent queue). An
-        /// atomic / simple-hierarchy document compiles for
-        /// `thumbv7em-none-eabihf` with no global allocator.
-        ///
-        /// Known gap: machines with parallel states or conflict
-        /// resolution still emit `Vec<TransitionInfo>` /
-        /// `Vec<State>` transition buffers that require `alloc`; the
-        /// bounded-capacity port of those buffers is the remaining
-        /// no_std codegen milestone (see watching-zenoh RFC §5.J.2).
+        /// machinery (`session_id` / `invoke_id` / parent queue).
+        /// Every owned collection names a profile-resolving runtime
+        /// alias — `SceString` / `SceBytes` for payload fields,
+        /// `StateChain` / `SceTransitionBuf` / `SceIndexBuf` /
+        /// `SceDedupSet` for the microstep buffers — so the runtime
+        /// owns the std-vs-heapless choice and ONE emission compiles
+        /// against BOTH runtime profiles: the no_std runtime
+        /// (`thumbv7em-none-eabihf`, no global allocator) and the std
+        /// runtime (the AP profile). Parallel states and typed
+        /// bytes/string payloads are included; the
+        /// sce-portable-emit-probe crate gates both directions.
         #[arg(long)]
         no_std: bool,
         /// Override the directory used for the §6.2.6 `source-hash`

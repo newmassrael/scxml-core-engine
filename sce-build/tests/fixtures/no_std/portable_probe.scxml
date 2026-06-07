@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Portability-probe statechart for the "one no_std emit compiles on both
+  runtime profiles" gate. Combines, in one machine, every construct whose
+  generated type is a profile-resolving runtime alias:
+    - a typed `_event.data.raw` bytes guard, which activates the typed payload
+      channel and emits the bytes + string + scalar payload struct
+      (SceBytes / SceString / scalar), and
+    - nested parallel regions, which emit the microstep conflict-resolution
+      buffers and dedup set (SceTransitionBuf / SceIndexBuf / SceDedupSet) plus
+      the depth-bounded state chains (StateChain).
+  Generated once in no_std mode and compiled against BOTH the no_std runtime
+  (thumbv7em-none-eabihf) and the std runtime (host) by sce-portable-emit-probe,
+  proving a single emission is portable across both runtime profiles. No
+  script, invoke, BasicHTTP send, or external data src, so the document is
+  no_std-eligible (the bytes guard lowers natively, with no script engine).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="portable_probe"
+       version="1.0"
+       initial="active"
+       datamodel="ecmascript">
+  <sce:import src="schema_portable_probe.scxml" kind="event-schema" as="SignalSchema"/>
+  <state id="active">
+    <transition event="signal.received" cond="_event.data.raw === 'ack'" target="finished"/>
+    <parallel id="regions">
+      <state id="r1" initial="r1a">
+        <state id="r1a">
+          <transition event="advance" target="r1b"/>
+        </state>
+        <state id="r1b"/>
+      </state>
+      <state id="r2" initial="r2a">
+        <state id="r2a">
+          <transition event="advance" target="r2b"/>
+        </state>
+        <state id="r2b"/>
+      </state>
+    </parallel>
+  </state>
+  <state id="finished"/>
+</scxml>
