@@ -125,7 +125,7 @@ compile_error!(
 /// `done.invoke.*` fan-out); 64 gives a 4× safety margin without bloating
 /// stack footprint (64 × sizeof(EventWithMetadata) ≈ 64 × 32 bytes = 2 KiB).
 ///
-/// The std build's [`EventQueueManager`] keeps `std::collections::VecDeque<T>`
+/// The std build's [`EventQueueManager`](crate::helpers::event_queue::EventQueueManager) keeps `std::collections::VecDeque<T>`
 /// (unbounded) so this constant only affects the `--features=no_std` variant.
 pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 
@@ -365,7 +365,7 @@ pub fn dedup_insert<K: Eq + ::core::hash::Hash>(set: &mut SceDedupSet<K>, key: K
 ///
 /// Under std this is `[T]::to_vec`. Under no_std this is
 /// `heapless::Vec::from_slice` with the same fail-loud overflow contract as
-/// [`bounded_push`]. Used by the Appendix D.2 microstep executor to take an
+/// [`BoundedPush::push_bounded`]. Used by the Appendix D.2 microstep executor to take an
 /// owned, re-sortable copy of the enabled-transition slice.
 #[cfg(not(feature = "no_std"))]
 #[inline]

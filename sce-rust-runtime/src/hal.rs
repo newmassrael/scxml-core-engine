@@ -130,7 +130,7 @@ pub struct StdHal {
 /// Watching-zenoh RFC §5.J.2: [`StdHal`]'s `Hal` impl is host-clock-coupled
 /// (`std::time::Instant` + `std::sync::OnceLock`) and therefore gated to
 /// `!no_std`. The `StdHal` *struct* itself stays available (it's a
-/// zero-sized marker type) so the [`StatePolicy::Hal`] associated type can
+/// zero-sized marker type) so the [`StatePolicy::Hal`](crate::StatePolicy::Hal) associated type can
 /// still name it under no_std codegen output, but the trait impl is the
 /// `std`-only host backend. no_std consumers wire their own HAL impl
 /// (typically through embassy / cortex-m's critical-section + tick crates)

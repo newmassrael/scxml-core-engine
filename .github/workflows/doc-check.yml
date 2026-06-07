@@ -1,0 +1,53 @@
+name: Rust doc check
+
+# CI gate enforcing `cargo doc -p sce-rust-runtime --no-deps` with rustdoc
+# broken-intra-doc-links denied. The runtime crate opts into the workspace
+# `[lints]` policy (broken_intra_doc_links = "deny"), but that policy only bites
+# when something actually RUNS `cargo doc` — nothing did, so broken intra-doc
+# links rotted in undetected. This gate is that missing enforcement point: a
+# clean `cargo doc` keeps the public-API docs link-correct, the doc analog of
+# clippy-check.yml / fmt-check.yml.
+#
+# Scope: sce-rust-runtime only — the crate whose docs were repaired. Docs are
+# validated under DEFAULT features (the docs.rs / superset config that includes
+# every `!no_std` module + http-send + invoke + scripting). The no_std subset
+# config intentionally drops the `!no_std` modules, so cross-feature links there
+# are expected-absent and are not gated.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'sce-rust-runtime/**'
+      - '.github/workflows/doc-check.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'sce-rust-runtime/**'
+      - '.github/workflows/doc-check.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  doc-check:
+    name: cargo doc -p sce-rust-runtime
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache cargo registry + target
+      uses: Swatinem/rust-cache@v2
+
+    - name: cargo doc -p sce-rust-runtime --no-deps
+      run: cargo doc -p sce-rust-runtime --no-deps

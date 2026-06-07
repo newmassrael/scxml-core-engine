@@ -17,7 +17,7 @@
 //! and then branches on them with `if constexpr (HasDataModelInit<P, Engine>) { ... }`.
 //!
 //! Rust has no structural typing. Instead, optional capabilities are signaled via
-//! **associated `const bool` flags** on [`StatePolicy`](crate::StatePolicy):
+//! **associated `const bool` flags** on [`StatePolicy`]:
 //!
 //! - `StatePolicy::NEEDS_DATA_MODEL_INIT`
 //! - `StatePolicy::HAS_INVOKE_SUPPORT`
