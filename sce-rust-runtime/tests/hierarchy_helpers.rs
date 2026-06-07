@@ -56,6 +56,7 @@ impl StatePolicy for FakePolicy {
     type EventQueue = sce_rust_runtime::EventQueueManager<
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
+    type ScheduledSendId = sce_rust_runtime::SceString;
 
     fn initial_state() -> Self::State {
         FakeState::A1

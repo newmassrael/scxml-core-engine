@@ -119,6 +119,27 @@ pub trait StatePolicy: Sized + 'static {
     /// default associated types) and is emitted by every generated policy.
     type EventQueue: EventQueueLike<EventWithMetadata<Self::Event, Self::Payload>> + Default;
 
+    /// Storage for the delayed-send scheduler's per-entry cancel key
+    /// (`send_id`), backing W3C SCXML 6.3 `<cancel sendid>`.
+    ///
+    /// The scheduler keeps a `send_id` per pending entry purely so `<cancel>`
+    /// can find and drop the matching one; the id is read only by
+    /// [`Engine::cancel_event`](crate::Engine::cancel_event) and never reaches a
+    /// fired event's metadata (the timer drain passes an empty `send_id`). A
+    /// document with no `<cancel>` therefore never reads it, so generated code
+    /// emits the zero-size [`ElidedSendId`](crate::ElidedSendId) and the no_std
+    /// scheduler ring sheds its per-entry `heapless::String<256>`
+    /// (~264 B × [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS)); a
+    /// document that cancels emits [`SceString`](crate::SceString) (load-bearing
+    /// on both profiles). The choice is behaviour-preserving under std either
+    /// way, so the one emission compiles on both runtime profiles.
+    ///
+    /// Mirrors the per-machine [`EventQueue`](StatePolicy::EventQueue) sizing
+    /// lever; like it (and [`Hal`](StatePolicy::Hal) / [`Payload`](StatePolicy::Payload))
+    /// it has no default — stable Rust forbids default associated types, so
+    /// every generated policy emits it.
+    type ScheduledSendId: crate::ScheduledSendIdLike;
+
     // ──────────────────────────────────────────────
     // Feature flags (C++ `static constexpr bool HAS_...`)
     //

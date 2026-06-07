@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 3acf03cd1e197da0d6a3e7ecc2541747678939372fbe1d99b37c7415a38be32a
-// generated-at: 1780830703
+// template-hash: 66bc1c3694f90e60100c842d2a53cd8c05682260c1809ba387d157940d7d6e1d
+// generated-at: 1780836426
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -327,6 +327,17 @@ impl StatePolicy for Test560Policy {
     type EventQueue = sce_rust_runtime::EventQueueManager<
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
+
+    // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
+    // so `<cancel sendid>` can find and drop the matching entry; the timer-fire
+    // drain never reads it. A document with no `<cancel>` therefore emits the
+    // zero-size `ElidedSendId`, shedding the scheduler ring's per-entry
+    // `heapless::String<256>` (~256 B x MAX_SCHEDULED_EVENTS) under no_std --
+    // dead weight with no cancel reader. A cancelling document keeps the
+    // load-bearing `SceString`. Behaviour-preserving under std either way, so
+    // this one emission compiles on both runtime profiles. Mirrors the
+    // EventQueue per-machine sizing lever above.
+    type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

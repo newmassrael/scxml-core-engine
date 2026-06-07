@@ -58,6 +58,7 @@ use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::{hierarchy, state_policy_concepts as concepts};
+use crate::sched_send_id::ScheduledSendIdLike;
 // Watching-zenoh RFC §5.J.2: the HTTP module is alloc-coupled
 // (HashMap<String, Vec<String>> + reqwest) and whole-module-gated to `!no_std`
 // in `lib.rs`. The codegen-time validator rejects
@@ -115,19 +116,26 @@ pub type SchedTimePoint = u64;
 /// "no silent transition drop" discipline the W3C SCXML algorithm follows.
 ///
 /// Kept as a concrete (non-trait) type to match C++ `SCE::PullScheduler<Event> scheduler_;`.
+///
+/// The `S` parameter is the per-entry cancel-key storage
+/// ([`ScheduledSendIdLike`]); it defaults to [`SceString`] so direct
+/// constructions (runtime unit tests, the C++-parity API) keep the
+/// load-bearing string. Generated code threads in
+/// [`StatePolicy::ScheduledSendId`], which is
+/// [`ElidedSendId`](crate::ElidedSendId) for cancel-free machines.
 #[derive(Debug)]
-pub struct PullScheduler<E> {
+pub struct PullScheduler<E, S = SceString> {
     /// Pending entries: `(event, [event_data_json], send_id, ready_at)`.
     /// The `event_data_json` field is elided under no_std (see [`ScheduledEntry`]).
     #[cfg(not(feature = "no_std"))]
-    entries: Vec<ScheduledEntry<E>>,
+    entries: Vec<ScheduledEntry<E, S>>,
     #[cfg(feature = "no_std")]
-    entries: ::heapless::Vec<ScheduledEntry<E>, MAX_SCHEDULED_EVENTS>,
+    entries: ::heapless::Vec<ScheduledEntry<E, S>, MAX_SCHEDULED_EVENTS>,
     next_auto_send_id: u64,
 }
 
 #[derive(Debug)]
-struct ScheduledEntry<E> {
+struct ScheduledEntry<E, S> {
     event: E,
     /// Delayed-send `_event.data` JSON payload.
     ///
@@ -139,11 +147,15 @@ struct ScheduledEntry<E> {
     /// Mirrors the `EventMetadata.data` profile-level elision (B-γ2d-1).
     #[cfg(not(feature = "no_std"))]
     event_data: SceString,
-    send_id: SceString,
+    /// Cancel key for W3C SCXML 6.3 `<cancel sendid>`. Read only by
+    /// [`PullScheduler::cancel_event`]; the storage type `S` is
+    /// [`ElidedSendId`](crate::ElidedSendId) (zero-size) for documents with no
+    /// `<cancel>`, dropping this field's `heapless::String<256>` under no_std.
+    send_id: S,
     ready_at: SchedTimePoint,
 }
 
-impl<E: Clone> PullScheduler<E> {
+impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// Construct an empty scheduler.
     pub fn new() -> Self {
         Self {
@@ -187,7 +199,11 @@ impl<E: Clone> PullScheduler<E> {
             event,
             #[cfg(not(feature = "no_std"))]
             event_data: crate::sce_string_from_str(event_data),
-            send_id: effective_send_id.clone(),
+            // `S::store` borrows the id; the load-bearing `SceString` impl
+            // clones it, the zero-size `ElidedSendId` impl drops it. The id is
+            // still returned below by move (callers may use it to `<cancel>`),
+            // so cancel-free machines pay nothing for the discarded storage.
+            send_id: S::store(&effective_send_id),
             ready_at,
         };
         self.push_scheduled(entry);
@@ -201,7 +217,7 @@ impl<E: Clone> PullScheduler<E> {
     /// silent transition drop, so an over-capacity schedule attempt is treated
     /// as a fatal configuration error rather than swallowed.
     #[inline]
-    fn push_scheduled(&mut self, entry: ScheduledEntry<E>) {
+    fn push_scheduled(&mut self, entry: ScheduledEntry<E, S>) {
         #[cfg(not(feature = "no_std"))]
         {
             self.entries.push(entry);
@@ -217,7 +233,7 @@ impl<E: Clone> PullScheduler<E> {
     /// W3C SCXML 6.2.5: Cancel a scheduled event by send ID. Returns `true` if found.
     pub fn cancel_event(&mut self, send_id: &str) -> bool {
         let before = self.entries.len();
-        self.entries.retain(|e| e.send_id != send_id);
+        self.entries.retain(|e| !e.send_id.matches(send_id));
         self.entries.len() < before
     }
 
@@ -238,7 +254,7 @@ impl<E: Clone> PullScheduler<E> {
     /// usize) -> T` — same shape as `Vec::remove`, so this works on both
     /// profiles.
     #[inline]
-    fn pop_ready_entry(&mut self, now: SchedTimePoint) -> Option<ScheduledEntry<E>> {
+    fn pop_ready_entry(&mut self, now: SchedTimePoint) -> Option<ScheduledEntry<E, S>> {
         let idx = self.entries.iter().position(|e| e.ready_at <= now)?;
         Some(self.entries.remove(idx))
     }
@@ -290,7 +306,7 @@ fn format_auto_send_id(counter: u64) -> SceString {
     }
 }
 
-impl<E: Clone> Default for PullScheduler<E> {
+impl<E: Clone, S: ScheduledSendIdLike> Default for PullScheduler<E, S> {
     fn default() -> Self {
         Self::new()
     }
@@ -349,7 +365,12 @@ pub struct Engine<P: StatePolicy> {
     #[cfg(not(feature = "no_std"))]
     pub(crate) on_http_send: Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse>>>,
     /// W3C SCXML 6.2: Delayed event scheduler.
-    pub(crate) scheduler: PullScheduler<P::Event>,
+    ///
+    /// The per-entry cancel-key storage is supplied by the policy via
+    /// [`StatePolicy::ScheduledSendId`] — [`ElidedSendId`](crate::ElidedSendId)
+    /// for cancel-free machines (no_std ring shrinks by the per-entry
+    /// `send_id` string), [`SceString`] when the document uses `<cancel>`.
+    pub(crate) scheduler: PullScheduler<P::Event, P::ScheduledSendId>,
     /// W3C SCXML 5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///

@@ -1199,6 +1199,15 @@ pub struct SCXMLModel {
     pub has_child_communication: bool,
     pub needs_http_send: bool,
     pub needs_script_engine: bool,
+    /// Whether the document contains any `<cancel>` action (W3C SCXML 6.3).
+    ///
+    /// Drives the Rust `StatePolicy::ScheduledSendId` selection: a cancel-free
+    /// document emits the zero-size `ElidedSendId` (the no_std scheduler ring
+    /// sheds its per-entry `send_id` string), a cancelling one emits the
+    /// load-bearing `SceString`. Set in
+    /// [`crate::analyzer::analyze_action`] from the same `<cancel>` walk that
+    /// flags `needs_event_scheduler`.
+    pub uses_cancel: bool,
     pub uses_in_predicate: bool,
     pub has_transition_actions: bool,
     pub has_entry_actions: bool,
