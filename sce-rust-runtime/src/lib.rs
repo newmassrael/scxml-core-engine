@@ -479,6 +479,8 @@ pub mod http;
 #[cfg(not(feature = "no_std"))]
 pub mod invoke;
 pub mod policy;
+/// Per-machine scheduled-send-id storage policy (watching-zenoh RFC §5.J.2).
+pub mod sched_send_id;
 /// ECMAScript engine abstraction.
 ///
 /// Gated out of `no_std` builds because the trait impls land in
@@ -498,5 +500,6 @@ pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
 #[cfg(not(feature = "no_std"))]
 pub use http::{HttpSendRequest, HttpSendResponse};
 pub use policy::StatePolicy;
+pub use sched_send_id::{ElidedSendId, ScheduledSendIdLike};
 #[cfg(not(feature = "no_std"))]
 pub use scripting::{IScriptEngine, ScriptError, ScriptResult, ScriptValue, SetCurrentEventArgs};

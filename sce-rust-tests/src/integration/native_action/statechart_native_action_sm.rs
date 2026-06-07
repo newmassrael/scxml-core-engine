@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e241fa666c961fb422709417b6a7ad55bf4f514221912d403c52d7358707c2e3
-// template-hash: 935a1c18fe52224a73fbd790edbd63ff4beab8649cf6ad6f40f2f7f1a34d75bc
-// generated-at: 1780828495
+// template-hash: 66bc1c3694f90e60100c842d2a53cd8c05682260c1809ba387d157940d7d6e1d
+// generated-at: 1780836488
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -221,14 +221,25 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     type Hal = sce_rust_runtime::StdHal;
 
     // W3C SCXML Appendix D internalQueue / externalQueue. Under no_std the
-    // depth is the per-document `EVENT_QUEUE_CAPACITY` (from `<scxml
-    // sce:capacity>` / deploy); absent a declared capacity the bare form
+    // depth is the per-document `<scxml sce:capacity>` / deploy value (emitted
+    // as the const consumed below); absent a declared capacity the bare form
     // inherits the runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of
     // the default). Inert under std (`VecDeque`), so this one emission compiles
     // on both runtime profiles.
     type EventQueue = sce_rust_runtime::EventQueueManager<
         sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
     >;
+
+    // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
+    // so `<cancel sendid>` can find and drop the matching entry; the timer-fire
+    // drain never reads it. A document with no `<cancel>` therefore emits the
+    // zero-size `ElidedSendId`, shedding the scheduler ring's per-entry
+    // `heapless::String<256>` (~256 B x MAX_SCHEDULED_EVENTS) under no_std --
+    // dead weight with no cancel reader. A cancelling document keeps the
+    // load-bearing `SceString`. Behaviour-preserving under std either way, so
+    // this one emission compiles on both runtime profiles. Mirrors the
+    // EventQueue per-machine sizing lever above.
+    type ScheduledSendId = sce_rust_runtime::ElidedSendId;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
