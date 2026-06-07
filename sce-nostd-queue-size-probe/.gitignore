@@ -1,0 +1,7 @@
+# Generated no_std machine + sourcemap (produced fresh by the gate step; never committed).
+machine/src/*_sm.rs
+machine/src/sce_sourcemap.json
+target/
+Cargo.lock
+machine/Cargo.lock
+machine/target/

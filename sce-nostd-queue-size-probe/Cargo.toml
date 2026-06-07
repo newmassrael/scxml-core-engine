@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+#
+# Per-machine no_std event-queue-sizing gate
+# (RFC claudedocs/rfc-nostd-per-machine-event-queue-sizing.md).
+#
+# Proves the `<sce:capacity>`-declared event-queue depth actually shrinks the
+# generated `Engine`'s no_std footprint — and that a regression which silently
+# reverts the per-machine `type EventQueue` to the depth-64 default is caught in
+# SCE CI rather than downstream (watching-zenoh's MCU SRAM blocker). A plain
+# compile gate cannot catch that revert because the depth-64 bare form still
+# compiles; only a size assertion does.
+#
+# `src/lib.rs` const-asserts `size_of::<Engine<P>>()` for the generated
+# capacity=2 machine in the sibling `machine` crate. The assertion is evaluated
+# at compile time, so building this crate IS the gate. Detached workspace so
+# feature unification cannot leak `no_std` into an unrelated std build.
+
+[package]
+name = "sce-nostd-queue-size-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "no_std event-queue per-machine sizing gate for generated SCE state machines"
+license = "LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+sce-nostd-queue-size-machine = { path = "machine" }
+sce-rust-runtime = { path = "../sce-rust-runtime", default-features = false, features = ["no_std"] }
+
+[workspace]

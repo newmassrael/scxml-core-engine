@@ -37,6 +37,7 @@ use core::hash::Hash;
 
 use crate::event::EventWithMetadata;
 use crate::hal::Hal;
+use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::hierarchy::{self, StateChain};
 use crate::Engine;
 
@@ -96,6 +97,27 @@ pub trait StatePolicy: Sized + 'static {
     /// explicit per-policy emission keeps every generated state machine's
     /// HAL target self-declaring rather than implicit.
     type Hal: Hal;
+
+    /// Event-queue type backing this machine's W3C SCXML Appendix D
+    /// `internalQueue` / `externalQueue` (the [`Engine`] holds
+    /// one of each).
+    ///
+    /// Carries the machine's FIFO **depth** under `--features=no_std`: generated
+    /// code emits `EventQueueManager<EventWithMetadata<Self::Event,
+    /// Self::Payload>, N>` where `N` is the per-document capacity resolved from
+    /// `<scxml sce:capacity="N">` / deploy `default_event_queue_capacity`
+    /// (emitted as `EVENT_QUEUE_CAPACITY`), defaulting to
+    /// [`MAX_EVENT_QUEUE_DEPTH`](crate::MAX_EVENT_QUEUE_DEPTH) when the document
+    /// declares no capacity. Under the std build the depth is inert
+    /// (`VecDeque`, unbounded — the spec's unbounded `Queue`), so the same
+    /// emission compiles on both runtime profiles.
+    ///
+    /// This is the SSOT for the no_std queue size: the bound lives in the
+    /// machine (its authored capacity), not in a runtime-crate global. Mirrors
+    /// the per-machine [`Payload`](StatePolicy::Payload) / [`Hal`](StatePolicy::Hal)
+    /// associated types; like them it has no default (stable Rust forbids
+    /// default associated types) and is emitted by every generated policy.
+    type EventQueue: EventQueueLike<EventWithMetadata<Self::Event, Self::Payload>> + Default;
 
     // ──────────────────────────────────────────────
     // Feature flags (C++ `static constexpr bool HAS_...`)

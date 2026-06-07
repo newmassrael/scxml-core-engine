@@ -71,6 +71,9 @@ impl StatePolicy for Test144Policy {
     type Event = Test144Event;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
+    type EventQueue = sce_rust_runtime::EventQueueManager<
+        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
+    >;
 
     // C++ `static constexpr bool HAS_PARALLEL_STATES = false;`
     const HAS_PARALLEL_STATES: bool = false;

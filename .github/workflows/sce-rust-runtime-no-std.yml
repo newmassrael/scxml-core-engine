@@ -22,6 +22,7 @@ on:
       - 'tools/codegen/templates/rust/**'
       - 'sce-nostd-build-probe/**'
       - 'sce-portable-emit-probe/**'
+      - 'sce-nostd-queue-size-probe/**'
       - 'sce-build/tests/fixtures/no_std/**'
       - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
       - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'
@@ -36,6 +37,7 @@ on:
       - 'tools/codegen/templates/rust/**'
       - 'sce-nostd-build-probe/**'
       - 'sce-portable-emit-probe/**'
+      - 'sce-nostd-queue-size-probe/**'
       - 'sce-build/tests/fixtures/no_std/**'
       - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
       - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'
@@ -179,3 +181,22 @@ jobs:
           --manifest-path sce-portable-emit-probe/Cargo.toml \
           --target=thumbv7em-none-eabihf \
           --features mcu
+
+    # Per-machine event-queue sizing: prove a `<scxml sce:capacity="2">` machine
+    # sizes its no_std queues to depth 2, not the crate-global depth-64 default.
+    # A plain compile gate cannot catch a regression that reverts the per-machine
+    # `StatePolicy::EventQueue` to the bare (depth-64) form — the depth-64 form
+    # still compiles. This crate const-asserts `size_of::<Engine<P>>()`, so the
+    # reversion (watching-zenoh's MCU SRAM blocker) fails the build here.
+    # See sce-nostd-queue-size-probe/README.md.
+    - name: Generate the queue-size probe machine (sce:capacity=2)
+      run: |
+        target/release/sce-codegen --workspace-root . generate -l rust --no-std \
+          --output-dir sce-nostd-queue-size-probe/machine/src \
+          sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml
+
+    - name: Compile the queue-size gate (MCU target — const size assertion)
+      run: |
+        cargo build \
+          --manifest-path sce-nostd-queue-size-probe/Cargo.toml \
+          --target=thumbv7em-none-eabihf
