@@ -462,6 +462,21 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     type EventQueue = sce_rust_runtime::EventQueueManager<sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>>;
 {% endif %}
 
+    // W3C SCXML 6.3: the delayed-send scheduler keeps a per-entry `send_id` only
+    // so `<cancel sendid>` can find and drop the matching entry; the timer-fire
+    // drain never reads it. A document with no `<cancel>` therefore emits the
+    // zero-size `ElidedSendId`, shedding the scheduler ring's per-entry
+    // `heapless::String<256>` (~256 B x MAX_SCHEDULED_EVENTS) under no_std --
+    // dead weight with no cancel reader. A cancelling document keeps the
+    // load-bearing `SceString`. Behaviour-preserving under std either way, so
+    // this one emission compiles on both runtime profiles. Mirrors the
+    // EventQueue per-machine sizing lever above.
+{% if model.uses_cancel %}
+    type ScheduledSendId = sce_rust_runtime::SceString;
+{% else %}
+    type ScheduledSendId = sce_rust_runtime::ElidedSendId;
+{% endif %}
+
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = {{ 'true' if model.has_parallel_states else 'false' }};
     const NEEDS_SCRIPT_ENGINE: bool = {{ 'true' if model.needs_script_engine else 'false' }};

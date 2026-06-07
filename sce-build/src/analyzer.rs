@@ -361,6 +361,10 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
         }
         "cancel" => {
             model.needs_event_scheduler = Some(true);
+            // W3C SCXML 6.3: a `<cancel>` makes the scheduler's per-entry
+            // `send_id` load-bearing, so the Rust backend must keep `SceString`
+            // for `StatePolicy::ScheduledSendId` rather than eliding it.
+            model.uses_cancel = true;
         }
         "assign" => {
             model.needs_assign_helper = Some(true);
@@ -1026,5 +1030,76 @@ mod tests {
         .into();
         let forge_diags = forge_err.to_diagnostics();
         assert_eq!(forge_diags[0].code.as_str(), scxml_diags[0].code.as_str());
+    }
+
+    /// W3C SCXML 6.3: a `<cancel>` nested inside executable content (`<if>`,
+    /// and by the same recursion `<foreach>`) must still flag `uses_cancel`,
+    /// so the Rust backend keeps the load-bearing `SceString` for
+    /// `StatePolicy::ScheduledSendId` instead of eliding it to `ElidedSendId`.
+    /// Were the analyzer walk to stop at top-level actions, a nested cancel
+    /// would select `ElidedSendId` — whose `matches` always returns false —
+    /// turning the cancel into a silent no-op (the delayed event would fire
+    /// after it should have been cancelled). Guards the recursive descent in
+    /// [`analyze_action`].
+    #[test]
+    fn nested_cancel_in_if_flags_uses_cancel() {
+        let mut model = empty_model();
+        let cancel = Action {
+            action_type: "cancel".into(),
+            sendid: "t1".into(),
+            ..Default::default()
+        };
+        let if_action = Action {
+            action_type: "if".into(),
+            cond: "true".into(),
+            then_actions: vec![cancel],
+            ..Default::default()
+        };
+        let state = State {
+            on_entry_blocks: vec![vec![if_action]],
+            ..Default::default()
+        };
+        model.states.insert("s1".into(), state);
+
+        analyze_model_features(&mut model);
+
+        assert!(
+            model.uses_cancel,
+            "a <cancel> nested in <if> must set uses_cancel; otherwise \
+             StatePolicy::ScheduledSendId wrongly elides to ElidedSendId and \
+             the cancel silently no-ops"
+        );
+    }
+
+    /// Inverse axis: a machine that uses the delayed-send scheduler but never
+    /// `<cancel>`s keeps `uses_cancel` false, so the Rust backend elides the
+    /// per-entry `send_id` (`ScheduledSendId = ElidedSendId`). Pins that
+    /// "needs the scheduler" and "needs the cancel key" are distinct signals —
+    /// only the latter blocks the no_std footprint elision.
+    #[test]
+    fn delayed_send_without_cancel_leaves_uses_cancel_false() {
+        let mut model = empty_model();
+        let send = Action {
+            action_type: "send".into(),
+            delay: "1s".into(),
+            ..Default::default()
+        };
+        let state = State {
+            on_entry_blocks: vec![vec![send]],
+            ..Default::default()
+        };
+        model.states.insert("s1".into(), state);
+
+        analyze_model_features(&mut model);
+
+        assert_eq!(
+            model.needs_event_scheduler,
+            Some(true),
+            "a delayed <send> must still flag the scheduler"
+        );
+        assert!(
+            !model.uses_cancel,
+            "no <cancel> means uses_cancel stays false so send_id elides"
+        );
     }
 }

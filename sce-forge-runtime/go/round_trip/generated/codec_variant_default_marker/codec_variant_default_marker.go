@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 5a09e42c25802542323ee6ba619e99fa06cbb069803a587e654a24ce7bdffdbe
-// template-hash: 3acf03cd1e197da0d6a3e7ecc2541747678939372fbe1d99b37c7415a38be32a
-// generated-at: 1780830705
+// template-hash: 66bc1c3694f90e60100c842d2a53cd8c05682260c1809ba387d157940d7d6e1d
+// generated-at: 1780836428
 // SCE-MAP: codec_variant_default_marker.scxml:30
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
