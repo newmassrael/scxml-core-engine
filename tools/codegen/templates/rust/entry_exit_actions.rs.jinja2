@@ -223,7 +223,7 @@
                 // W3C SCXML 5.5: Carry evaluated donedata in done.state event
                 if done_data_ok {
                     let mut done_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' ~ state.parent) | to_event_variant }});
-                    done_meta.metadata.data = done_event_data;
+                    done_meta.set_event_data(&done_event_data);
                     engine.raise(done_meta);
                 }
 {% else %}

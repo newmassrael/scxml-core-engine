@@ -56,7 +56,7 @@ use std::time::Instant;
 
 use crate::event::{EventMetadata, EventType, EventWithMetadata};
 use crate::hal::Hal;
-use crate::helpers::event_queue::EventQueueManager;
+use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::{hierarchy, state_policy_concepts as concepts};
 // Watching-zenoh RFC §5.J.2: the HTTP module is alloc-coupled
 // (HashMap<String, Vec<String>> + reqwest) and whole-module-gated to `!no_std`
@@ -281,10 +281,14 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) policy: P,
     /// Currently active state (or deepest active state for parallel machines).
     pub(crate) current_state: P::State,
-    /// W3C SCXML C.1: Internal event queue (high priority, `<raise>` + targetless sends).
-    pub(crate) internal_queue: EventQueueManager<EventWithMetadata<P::Event, P::Payload>>,
-    /// W3C SCXML C.1: External event queue (low priority, external sends).
-    pub(crate) external_queue: EventQueueManager<EventWithMetadata<P::Event, P::Payload>>,
+    /// W3C SCXML Appendix D: Internal event queue (high priority, `<raise>` + targetless sends).
+    ///
+    /// The concrete (per-machine, no_std-sized) queue type is supplied by the
+    /// policy via [`StatePolicy::EventQueue`]; the engine drives it through the
+    /// [`EventQueueLike`] abstraction (mirrors C++ `EventQueueAdapter`).
+    pub(crate) internal_queue: P::EventQueue,
+    /// W3C SCXML Appendix D: External event queue (low priority, external sends).
+    pub(crate) external_queue: P::EventQueue,
     /// Whether the engine is currently running (set false by `stop()` and final state).
     pub(crate) is_running: bool,
     /// W3C SCXML 6.4: Completion callback invoked when reaching a final state.
@@ -333,8 +337,8 @@ impl<P: StatePolicy> Engine<P> {
         Self {
             current_state: P::initial_state(),
             policy,
-            internal_queue: EventQueueManager::new(),
-            external_queue: EventQueueManager::new(),
+            internal_queue: P::EventQueue::default(),
+            external_queue: P::EventQueue::default(),
             is_running: false,
             #[cfg(not(feature = "no_std"))]
             completion_callback: None,
@@ -740,15 +744,30 @@ impl<P: StatePolicy> Engine<P> {
         let meta = EventWithMetadata {
             event,
             payload: P::Payload::default(),
-            metadata: EventMetadata {
-                data: crate::sce_string_from_str(event_data),
-                event_type: EventType::External,
-                origin: crate::sce_string_from_str(origin),
-                origin_type: crate::sce_string_from_str(
-                    crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
-                ),
-                ..Default::default()
+            // no_std elides the `_event.origin` / `origintype` string metadata
+            // (no script reader); the `origin` argument has no MCU consumer.
+            metadata: {
+                #[cfg(not(feature = "no_std"))]
+                {
+                    EventMetadata {
+                        data: crate::sce_string_from_str(event_data),
+                        event_type: EventType::External,
+                        origin: crate::sce_string_from_str(origin),
+                        origin_type: crate::sce_string_from_str(
+                            crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
+                        ),
+                        ..Default::default()
+                    }
+                }
+                #[cfg(feature = "no_std")]
+                {
+                    let _ = (event_data, origin);
+                    EventMetadata {
+                        event_type: EventType::External,
+                    }
+                }
             },
+            #[cfg(not(feature = "no_std"))]
             target: SceString::new(),
         };
         self.external_queue.raise(meta);
@@ -776,13 +795,25 @@ impl<P: StatePolicy> Engine<P> {
         let meta = EventWithMetadata {
             event,
             payload,
-            metadata: EventMetadata {
-                event_type: EventType::External,
-                origin_type: crate::sce_string_from_str(
-                    crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
-                ),
-                ..Default::default()
+            metadata: {
+                #[cfg(not(feature = "no_std"))]
+                {
+                    EventMetadata {
+                        event_type: EventType::External,
+                        origin_type: crate::sce_string_from_str(
+                            crate::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE,
+                        ),
+                        ..Default::default()
+                    }
+                }
+                #[cfg(feature = "no_std")]
+                {
+                    EventMetadata {
+                        event_type: EventType::External,
+                    }
+                }
             },
+            #[cfg(not(feature = "no_std"))]
             target: SceString::new(),
         };
         self.external_queue.raise(meta);
@@ -859,6 +890,7 @@ impl<P: StatePolicy> Engine<P> {
             event,
             payload: P::Payload::default(),
             metadata,
+            #[cfg(not(feature = "no_std"))]
             target: SceString::new(),
         };
         self.external_queue.raise(meta);

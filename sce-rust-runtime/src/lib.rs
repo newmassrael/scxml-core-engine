@@ -105,28 +105,35 @@ compile_error!(
 // requirement, the codegen can grow a parallel `EVENT_STRING_CAPACITY`
 // const and this alias becomes generic over the const.
 
-/// Maximum FIFO depth of the no_std event queue (internal + external).
+/// Default no_std FIFO depth for a machine that declares no event-queue
+/// capacity (internal + external queues).
 ///
-/// Bounds the `heapless::Deque<T, _>` capacity of
-/// [`EventQueueManager`](crate::helpers::event_queue::EventQueueManager) under
-/// `--features=no_std`. Distinct from [`MAX_SCHEDULED_EVENTS`] — the queue
-/// holds events *waiting to be processed*, while the scheduler holds events
-/// *waiting on a delay timer*. Distinct from
-/// [`MAX_SCHEDULED_EVENTS`] (delay table) and from the
-/// per-document `<sce:capacity>` author-tunable that B-γ1 emits as the
-/// generated `EVENT_QUEUE_CAPACITY` const — wiring the per-document value into
-/// the runtime crate requires either stabilised `generic_const_exprs` or a
-/// const-traits architecture and is deferred until consumer signal demands it.
+/// This is the **default** for the const generic `N` on
+/// [`EventQueueManager`] — *not*
+/// a crate-wide cap. A machine's queue depth is per-machine: codegen resolves
+/// `<scxml sce:capacity="N">` / deploy `default_event_queue_capacity` into the
+/// generated `EVENT_QUEUE_CAPACITY` and emits it as the policy's
+/// [`StatePolicy::EventQueue`] type argument, so
+/// the bound's single source of truth is the machine. Only when a document
+/// declares no capacity does the bare `EventQueueManager<T>` fall back to this
+/// value. (The earlier deferral that cited a `generic_const_exprs` requirement
+/// is resolved: the per-machine size rides as a literal in the generated
+/// associated type, which needs no unstable feature.)
 ///
-/// v1 value 64 covers typical statechart microstep depth: W3C SCXML §C.1
-/// mandates the internal queue is drained between external events, so the
-/// peak depth is the maximum chained `<raise>` count in a single macrostep.
-/// The W3C 202 test corpus tops out at ~16 chained raises (test 224's
-/// `done.invoke.*` fan-out); 64 gives a 4× safety margin without bloating
-/// stack footprint (64 × sizeof(EventWithMetadata) ≈ 64 × 32 bytes = 2 KiB).
+/// Distinct from [`MAX_SCHEDULED_EVENTS`] — the queue holds events *waiting to
+/// be processed*, while the scheduler holds events *waiting on a delay timer*.
 ///
-/// The std build's [`EventQueueManager`](crate::helpers::event_queue::EventQueueManager) keeps `std::collections::VecDeque<T>`
-/// (unbounded) so this constant only affects the `--features=no_std` variant.
+/// Value 64 covers typical statechart microstep depth: W3C SCXML Appendix D
+/// drains the internal queue between external events, so the peak depth is the
+/// maximum chained `<raise>` count in a single macrostep. The W3C 202 test
+/// corpus tops out at ~16 chained raises (test 224's `done.invoke.*` fan-out);
+/// 64 gives a ~4× margin. (Note: each `EventWithMetadata` is ~1.6 KiB — the
+/// W3C `_event` metadata strings dominate — so 64-deep queues are *not* cheap
+/// on an MCU; this is exactly why capacity-declaring machines size down via
+/// `<sce:capacity>`.)
+///
+/// The std build's [`EventQueueManager`] keeps `std::collections::VecDeque<T>`
+/// (unbounded, the spec's `Queue`) so this constant only affects the `--features=no_std` variant.
 pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 
 /// Maximum number of simultaneously-pending delayed events in the no_std
@@ -469,6 +476,7 @@ pub mod scripting;
 pub use engine::Engine;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
 pub use hal::{Hal, NoOpHal, StdHal};
+pub use helpers::event_queue::{EventQueueLike, EventQueueManager};
 #[cfg(not(feature = "no_std"))]
 pub use http::{HttpSendRequest, HttpSendResponse};
 pub use policy::StatePolicy;

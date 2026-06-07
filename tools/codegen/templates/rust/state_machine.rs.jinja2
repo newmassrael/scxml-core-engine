@@ -93,13 +93,9 @@ use sce_rust_runtime::BoundedPush;
 // B-γ1): per-document event-queue capacity declared via
 // `<scxml sce:capacity="N">` or sourced from deploy.yaml
 // `machines.<m>.scheduler.default_event_queue_capacity`. Consumed
-// by Atomic B-γ2's `heapless::spsc::Queue<E, EVENT_QUEUE_CAPACITY>`
-// when the runtime port + `#![no_std]` template emission land
-// together; today the const is informational (B-γ1 wires the
-// capacity into generated code so the value is visible at compile
-// time to downstream consumers that scan for it, and so the
-// codegen consumer is present in the same atomic that adds the
-// parser/deploy producers).
+// below by `type EventQueue` as the no_std `heapless::Deque` depth
+// for this machine's W3C Appendix D internal/external queues
+// (the policy-carried SSOT for the per-machine queue size).
 pub const EVENT_QUEUE_CAPACITY: usize = {{ model.event_queue_capacity }};
 {% endif %}
 
@@ -206,8 +202,9 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
     // under no_std — so the emitted field is allocator-free on MCU targets.
     pending_event_name: ::sce_rust_runtime::SceString,
 {% endif %}
-{% if model.needs_event_data %}
-    // W3C SCXML 5.10: Event data for _event.data binding
+{% if model.needs_event_data and model.needs_script_engine %}
+    // W3C SCXML 5.10: Event data for the script `_event.data` baseline (the
+    // typed path reads the Payload sum, not this field — so needs_script_engine).
     pending_event_data: ::sce_rust_runtime::SceString,
 {% endif %}
 {% if event_payload_type != '()' %}
@@ -344,7 +341,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% if model.needs_event_name %}
             pending_event_name: ::sce_rust_runtime::SceString::new(),
 {% endif %}
-{% if model.needs_event_data %}
+{% if model.needs_event_data and model.needs_script_engine %}
             pending_event_data: ::sce_rust_runtime::SceString::new(),
 {% endif %}
 {% if event_payload_type != '()' %}
@@ -451,6 +448,18 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     type Hal = sce_rust_runtime::NoOpHal;
 {% else %}
     type Hal = sce_rust_runtime::StdHal;
+{% endif %}
+
+    // W3C SCXML Appendix D internalQueue / externalQueue. Under no_std the
+    // depth is the per-document `<scxml sce:capacity>` / deploy value (emitted
+    // as the const consumed below); absent a declared capacity the bare form
+    // inherits the runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of
+    // the default). Inert under std (`VecDeque`), so this one emission compiles
+    // on both runtime profiles.
+{% if model.event_queue_capacity %}
+    type EventQueue = sce_rust_runtime::EventQueueManager<sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>, { EVENT_QUEUE_CAPACITY }>;
+{% else %}
+    type EventQueue = sce_rust_runtime::EventQueueManager<sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>>;
 {% endif %}
 
     // W3C SCXML feature flags
@@ -715,7 +724,14 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
         self.pending_payload = payload.clone();
     }
 {% endif %}
-{% if model.needs_event_data or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype %}
+{# The pending_event_* fields are the script `_event.*` baseline (read only by
+   the needs_script_engine-gated binding in process_transition). `data` is the
+   one whose `needs_event_data` flag is *also* set by the native typed path
+   (which reads the `Payload` sum, not this metadata) — qualify it with
+   needs_script_engine so no_std (and std pure-static) machines, where
+   `metadata.data` is `#[cfg(not(no_std))]`-elided / unread, don't emit the
+   override. The other flags already imply needs_script_engine. #}
+{% if (model.needs_event_data and model.needs_script_engine) or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype %}
     // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
     // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
     fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {

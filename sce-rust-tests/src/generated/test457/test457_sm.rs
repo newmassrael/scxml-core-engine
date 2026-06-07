@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 07a1057b89512b0ade7260ce662ea4e6ef3c2abde2d5bd32fb4fe82bd263d4bc
-// generated-at: 1780802714
+// template-hash: 3acf03cd1e197da0d6a3e7ecc2541747678939372fbe1d99b37c7415a38be32a
+// generated-at: 1780830703
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -120,7 +120,8 @@ pub struct Test457Policy {
     // alias — `String` under std (unchanged ABI), `heapless::String<MAX_EVENT_STRING_LEN>`
     // under no_std — so the emitted field is allocator-free on MCU targets.
     pending_event_name: ::sce_rust_runtime::SceString,
-    // W3C SCXML 5.10: Event data for _event.data binding
+    // W3C SCXML 5.10: Event data for the script `_event.data` baseline (the
+    // typed path reads the Payload sum, not this field — so needs_script_engine).
     pending_event_data: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10.1: Event type for _event.type binding
     pending_event_type: ::sce_rust_runtime::SceString,
@@ -392,6 +393,16 @@ impl StatePolicy for Test457Policy {
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
+
+    // W3C SCXML Appendix D internalQueue / externalQueue. Under no_std the
+    // depth is the per-document `<scxml sce:capacity>` / deploy value (emitted
+    // as the const consumed below); absent a declared capacity the bare form
+    // inherits the runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of
+    // the default). Inert under std (`VecDeque`), so this one emission compiles
+    // on both runtime profiles.
+    type EventQueue = sce_rust_runtime::EventQueueManager<
+        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
+    >;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;

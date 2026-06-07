@@ -162,7 +162,7 @@
 {% if 'error.execution' in model.events %}
                     {
                         let mut err_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }});
-                        err_meta.metadata.send_id = send_id.clone();
+                        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
                         engine.raise(err_meta);
                     }
 {% endif %}
@@ -195,7 +195,7 @@
 {% if 'error.execution' in model.events %}
     {
         let mut err_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }});
-        err_meta.metadata.send_id = send_id.clone();
+        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
         engine.raise(err_meta);
     }
 {% endif %}
@@ -208,7 +208,7 @@
     {
         // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
         let mut err_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }});
-        err_meta.metadata.send_id = send_id.clone();
+        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
         engine.raise(err_meta);
     }
 {% endif %}
@@ -220,7 +220,7 @@
 {% if 'error.communication' in model.events %}
     {
         let mut err_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }});
-        err_meta.metadata.send_id = send_id.clone();
+        {% if model.needs_script_engine %}err_meta.metadata.send_id = send_id.clone();{% endif %}
         engine.raise(err_meta);
     }
 {% endif %}
@@ -232,7 +232,7 @@
 {% if action.event %}
     {
         let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
-        meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
+        meta.set_event_data(event_data);
         engine.raise(meta);
     }
 {% elif action.eventexpr %}
@@ -245,7 +245,7 @@
             Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
                 if let Some(evt) = Self::get_event_from_name(&event_name) {
                     let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-                    meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
+                    meta.set_event_data(event_data);
                     engine.raise(meta);
                 }
             }
@@ -375,7 +375,7 @@
 {% if action.event %}
         {
             let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
-            meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
+            meta.set_event_data(event_data);
             engine.raise(meta);
         }
 {% elif action.eventexpr %}
@@ -388,7 +388,7 @@
                 Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
                     if let Some(evt) = Self::get_event_from_name(&event_name) {
                         let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
-                        meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
+                        meta.set_event_data(event_data);
                         engine.raise(meta);
                     }
                 }
@@ -401,7 +401,7 @@
         {
             let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
             meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
-            meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
+            meta.set_event_data(event_data);
             engine.raise_external_with_meta(meta);
         }
 {% elif action.eventexpr %}
@@ -462,7 +462,7 @@
         let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
         // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
         meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
-        meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
+        meta.set_event_data(event_data);
         engine.raise_external_with_meta(meta);
     }
 {% endif %}
@@ -473,7 +473,7 @@
         let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
         // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
         meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), ::sce_rust_runtime::SceString::new());
-        meta.metadata.data = ::sce_rust_runtime::sce_string_from_str(event_data);
+        meta.set_event_data(event_data);
         engine.raise_external_with_meta(meta);
     }
 {% elif action.eventexpr %}

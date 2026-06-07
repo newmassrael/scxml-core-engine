@@ -53,6 +53,9 @@ impl StatePolicy for FakePolicy {
     type Event = FakeEvent;
     type Payload = ();
     type Hal = sce_rust_runtime::StdHal;
+    type EventQueue = sce_rust_runtime::EventQueueManager<
+        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
+    >;
 
     fn initial_state() -> Self::State {
         FakeState::A1

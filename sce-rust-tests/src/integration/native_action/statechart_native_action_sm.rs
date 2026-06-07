@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: e241fa666c961fb422709417b6a7ad55bf4f514221912d403c52d7358707c2e3
-// template-hash: 07a1057b89512b0ade7260ce662ea4e6ef3c2abde2d5bd32fb4fe82bd263d4bc
-// generated-at: 1780804043
+// template-hash: 935a1c18fe52224a73fbd790edbd63ff4beab8649cf6ad6f40f2f7f1a34d75bc
+// generated-at: 1780828495
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -219,6 +219,16 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = StatechartNativeActionPayload;
     type Hal = sce_rust_runtime::StdHal;
+
+    // W3C SCXML Appendix D internalQueue / externalQueue. Under no_std the
+    // depth is the per-document `EVENT_QUEUE_CAPACITY` (from `<scxml
+    // sce:capacity>` / deploy); absent a declared capacity the bare form
+    // inherits the runtime default `MAX_EVENT_QUEUE_DEPTH` (the single source of
+    // the default). Inert under std (`VecDeque`), so this one emission compiles
+    // on both runtime profiles.
+    type EventQueue = sce_rust_runtime::EventQueueManager<
+        sce_rust_runtime::EventWithMetadata<Self::Event, Self::Payload>,
+    >;
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
