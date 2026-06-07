@@ -22,7 +22,7 @@ use crate::SceString;
 /// `clippy::result_large_err`. (The prior `SceString` payload was a 256-byte
 /// `heapless::String` under no_std, which inflated every `Result` returned from
 /// these validators.) The human-readable reason a caller raises on
-/// `error.execution` / `error.communication` is available via [`Display`];
+/// `error.execution` / `error.communication` is available via [`Display`](core::fmt::Display);
 /// callers that want to embed the offending target value already hold it, so it
 /// is not duplicated into the error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

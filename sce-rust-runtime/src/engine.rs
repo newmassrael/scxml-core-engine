@@ -109,7 +109,7 @@ pub type SchedTimePoint = u64;
 ///
 /// Watching-zenoh RFC §5.J.2 (lines 1989-1994): under `--features=no_std`
 /// the backing store is a stack-allocated `heapless::Vec` capped at
-/// [`MAX_SCHEDULED_EVENTS`] (= 32 in v1; see the `lib.rs` doc-comment for the
+/// [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS) (= 32 in v1; see the `lib.rs` doc-comment for the
 /// reasoning and the deferred per-document tunable). Capacity overflow under
 /// no_std is treated as a fatal configuration error (panic) per the same
 /// "no silent transition drop" discipline the W3C SCXML algorithm follows.
@@ -154,7 +154,7 @@ impl<E: Clone> PullScheduler<E> {
     /// `schedule_event` wrapper does this via `sched_now_plus(delay)`.
     ///
     /// Watching-zenoh RFC §5.J.2: under `--features=no_std` an attempted
-    /// push past [`MAX_SCHEDULED_EVENTS`] panics rather than silently dropping
+    /// push past [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS) panics rather than silently dropping
     /// the event (W3C SCXML no-silent-drop discipline).
     pub fn schedule_event_at(
         &mut self,
@@ -649,10 +649,10 @@ impl<P: StatePolicy> Engine<P> {
     ///
     /// Non-parallel machines: returns the hierarchy `[leaf, parent, grandparent, ..., root]`.
     /// Parallel machines: returns the union of all active regions via
-    /// [`StatePolicy::get_active_states`](crate::StatePolicy::get_active_states).
+    /// [`StatePolicy::get_active_states`].
     ///
     /// Watching-zenoh RFC §5.J.2: returns the bounded
-    /// [`hierarchy::StateChain`](crate::helpers::hierarchy::StateChain) which
+    /// [`StateChain`](crate::helpers::hierarchy::StateChain) which
     /// aliases `Vec<P::State>` under std (ABI-preserving) and
     /// `heapless::Vec<P::State, MAX_HIERARCHY_DEPTH>` under no_std. The parallel
     /// branch (`policy.get_active_states()` returning a heap `Vec`) is gated to
@@ -871,7 +871,7 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Schedule an event for delayed delivery. Returns the send ID.
     ///
-    /// Resolves the current clock via [`sched_now_plus`](Self::sched_now_plus)
+    /// Resolves the current clock via `sched_now_plus`
     /// — `<P::Hal>::now_ticks_ms() + delay_ms` under both profiles — and
     /// forwards to the clock-source-agnostic
     /// [`PullScheduler::schedule_event_at`].
@@ -935,10 +935,10 @@ impl<P: StatePolicy> Engine<P> {
     /// The callback is the sole dispatch mechanism. If it returns
     /// `Some(HttpSendResponse)`, the engine injects the response event into the
     /// external queue. The engine has no knowledge of HTTP transport — callers
-    /// supply the implementation via [`set_http_send_callback`].
+    /// supply the implementation via [`set_http_send_callback`](Self::set_http_send_callback).
     ///
     /// Watching-zenoh RFC §5.J.2: gated to `!no_std` — see
-    /// [`set_http_send_callback`] for the upstream rejection rationale.
+    /// [`set_http_send_callback`](Self::set_http_send_callback) for the upstream rejection rationale.
     #[cfg(not(feature = "no_std"))]
     pub fn perform_http_send(
         &mut self,

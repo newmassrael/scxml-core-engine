@@ -14,7 +14,7 @@
 //! first, then processes one external event, then re-drains the internal queue.
 //!
 //! Watching-zenoh RFC §5.J.2 (lines 1989-1994): under `--features=no_std` the
-//! backing store is a stack-allocated [`heapless::Deque`] capped at
+//! backing store is a stack-allocated `heapless::Deque` capped at
 //! [`crate::MAX_EVENT_QUEUE_DEPTH`] (= 64 in v1; see lib.rs for the
 //! reasoning + per-document tunable deferral). Overflow under no_std panics
 //! with an explicit message rather than silently dropping the event

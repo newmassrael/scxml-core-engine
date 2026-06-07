@@ -10,9 +10,9 @@
 //! W3C SCXML 6.4 requires that invoke elements in states entered-but-not-exited
 //! during a macrostep are executed at the **end** of that macrostep:
 //!
-//! 1. **Entry** → [`defer_invoke`]: add to pending list
-//! 2. **Exit**  → [`cancel_invokes_for_state`]: remove from pending list
-//! 3. **Macrostep end** → [`execute_pending_invokes`]: execute all remaining
+//! 1. **Entry** → `defer_invoke`: add to pending list
+//! 2. **Exit**  → `cancel_invokes_for_state`: remove from pending list
+//! 3. **Macrostep end** → `execute_pending_invokes`: execute all remaining
 //!
 //! This prevents invoking in states that are immediately exited (test 422).
 

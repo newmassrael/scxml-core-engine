@@ -33,7 +33,7 @@ const MAX_DEPTH: usize = 100;
 ///
 /// # Panics
 ///
-/// Panics if a cycle is detected or if hierarchy depth exceeds [`MAX_DEPTH`].
+/// Panics if a cycle is detected or if hierarchy depth exceeds `MAX_DEPTH`.
 pub fn calculate_ancestor_path<P: StatePolicy>(
     target: P::State,
     parent: P::State,

@@ -224,7 +224,7 @@ pub trait StatePolicy: Sized + 'static {
     /// overrides keep emitting `Vec<...>` which is the same type via the alias)
     /// and to `heapless::Vec<Self::State, MAX_HIERARCHY_DEPTH=16>` under no_std.
     /// The default no-op returns an empty chain via
-    /// [`hierarchy::new_chain`](crate::helpers::hierarchy::new_chain). Reuses the
+    /// [`new_chain`](crate::helpers::hierarchy::new_chain). Reuses the
     /// existing `MAX_HIERARCHY_DEPTH` invariant — no new capacity constant
     /// (D-1 lockin preserved beyond `MAX_SCHEDULED_EVENTS` / `MAX_EVENT_QUEUE_DEPTH`).
     fn get_initial_children(_state: Self::State) -> StateChain<Self::State> {

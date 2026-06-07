@@ -6,7 +6,7 @@
 //! Ports the C++ `HttpSendRequest` struct from
 //! `sce/include/static/StaticExecutionEngine.h:47`. Transport-agnostic — the
 //! engine delegates actual HTTP dispatch to a user-supplied callback via
-//! [`Engine::set_on_http_send`](crate::Engine::set_on_http_send). The test harness
+//! [`Engine::set_http_send_callback`](crate::Engine::set_http_send_callback). The test harness
 //! injects a blocking HTTP client; production users inject their own dispatcher.
 //!
 //! This separation matches the C++ design: `StaticExecutionEngine` never links
