@@ -154,6 +154,24 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 /// over/under-fit signal — per `feedback_planned_not_yagni` discipline
 /// (capacities ride consumer signal, not speculation).
 ///
+/// ## Per-entry footprint (no_std)
+///
+/// Each `ScheduledEntry` is dominated by its `heapless::String<256>` fields
+/// (~264 B each), so at this capacity the ring is the largest single
+/// contributor to the no_std `Engine`. The delayed-send `event_data` JSON
+/// string is **elided** under no_std — the no_std build has no script engine
+/// and the scheduler drain discards the data string anyway (see the
+/// `ScheduledEntry` doc-comment in `engine.rs`), removing ~264 B per entry with
+/// no behavioral change. The per-entry `send_id` string is **retained**: it is
+/// load-bearing for `<cancel>` (`PullScheduler::cancel_event` matches by send
+/// id). Eliding it for cancel-free machines would require a per-policy
+/// `StatePolicy::ScheduledSendId` associated type (a zero-size store vs
+/// `SceString`, mirroring the `EventQueue` associated type) gated on a
+/// `<cancel>`-presence capability — deferred until an MCU consumer surfaces a
+/// cancel-free delayed-send machine, per the same
+/// `feedback_planned_not_yagni` discipline (footprint infra rides consumer
+/// signal, not speculation).
+///
 /// The std build's `PullScheduler` keeps `Vec<ScheduledEntry<E>>` (unbounded)
 /// so this constant only affects the `--features=no_std` variant.
 pub const MAX_SCHEDULED_EVENTS: usize = 32;
