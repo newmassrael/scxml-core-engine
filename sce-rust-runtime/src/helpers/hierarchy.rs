@@ -25,7 +25,7 @@
 //! ## no_std variant (Watching-zenoh RFC §5.J.2)
 //!
 //! Under `--features=no_std`, the chain return type [`StateChain`] is a stack-allocated
-//! [`heapless::Vec`] capped at [`MAX_HIERARCHY_DEPTH`] (= 16). The same depth-guard panic
+//! `heapless::Vec` capped at [`MAX_HIERARCHY_DEPTH`] (= 16). The same depth-guard panic
 //! used under std bounds capacity, so the no_std push paths are infallible by construction
 //! — they `.expect()` only as a generator-bug tripwire. No new capacity constant is
 //! introduced; the std `Vec<P::State>` and no_std `heapless::Vec<P::State, 16>` share the
@@ -43,7 +43,7 @@ pub const MAX_HIERARCHY_DEPTH: usize = 16;
 /// Compile-time bounded state chain returned by the hierarchy chain-builders.
 ///
 /// - **std build**: [`Vec<S>`] — unbounded heap allocation, capacity hint only.
-/// - **no_std build**: [`heapless::Vec<S, MAX_HIERARCHY_DEPTH>`] — stack-allocated,
+/// - **no_std build**: `heapless::Vec<S, MAX_HIERARCHY_DEPTH>` — stack-allocated,
 ///   compile-time-capped at 16 elements. The capacity is bounded by the existing
 ///   [`MAX_HIERARCHY_DEPTH`] depth-guard panic in each chain-builder, so push under
 ///   no_std is infallible-by-construction; a heapless push failure indicates a

@@ -213,6 +213,17 @@ cargo build --manifest-path sce-portable-emit-probe/Cargo.toml \
     --target=thumbv7em-none-eabihf --features mcu \
     || fail_step "Stage 2b (portability probe — no_std runtime, thumb)"
 
+# ── Stage 2c: cargo doc broken-link gate (mirror doc-check.yml) ────
+# sce-rust-runtime opts into the workspace `[lints]` broken-intra-doc-
+# links=deny policy, but nothing ran `cargo doc`, so broken intra-doc
+# links rotted in undetected. This is the missing enforcement point.
+# Default features (the docs.rs superset config); the no_std subset drops
+# the `!no_std` modules so its cross-feature links are expected-absent and
+# are not gated.
+log_step "Stage 2c/7 — cargo doc -p sce-rust-runtime (broken-link gate)"
+RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
+    || fail_step "Stage 2c (cargo doc broken intra-doc links)"
+
 # ── Stage 3: embed/MANIFEST.json drift (mirror verify_embed_manifest) ─
 # embed/MANIFEST.json is the tracked snapshot of the embeddable public
 # API surface. A header edit under sce/include/ that forgets
