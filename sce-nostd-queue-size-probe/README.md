@@ -1,9 +1,12 @@
 # sce-nostd-queue-size-probe
 
-Watching-zenoh MCU footprint report — a compile-time `size_of` gate proving that
-a generated state machine's **per-machine** `<scxml sce:capacity="N">` actually
-sizes its no_std event queues, instead of the runtime falling back to the
-crate-global depth-64 default.
+Watching-zenoh MCU footprint report — a compile-time `size_of` gate over a
+generated state machine's no_std `Engine`. It now guards three per-machine
+footprint levers: the per-machine `<scxml sce:capacity="N">` queue sizing (so
+the runtime does not fall back to the crate-global depth-64 default), the
+`_event.*` metadata-string elision, and the scheduler-ring `event_data`
+elision. Each is a *silent* regression — the reverted form still compiles — so
+only a size assertion catches it.
 
 RFC: `claudedocs/rfc-nostd-per-machine-event-queue-sizing.md`.
 
@@ -24,14 +27,25 @@ reversion.
   `sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml`, which
   declares `<scxml sce:capacity="2">`. The generated `machine/src/*_sm.rs` is
   git-ignored and produced fresh on each run, so it never drifts stale.
-- `src/lib.rs` const-asserts `size_of::<Engine<EventQueueCapacityProbePolicy>>()
-  <= 64 KiB`. The assertion is evaluated at compile time, so **building the crate
-  is the gate**. Using the real generated machine (rather than a hand-written
-  policy) keeps the gate in lock-step with the templates with zero maintenance.
+- `src/lib.rs` const-asserts (evaluated at compile time, so **building the crate
+  is the gate**) the three per-machine no_std footprint levers, each at its own
+  type so the bound is robust against unrelated machine state:
+  1. **Queue lever** — `size_of::<StatePolicy::EventQueue>()`: catches a
+     `<sce:capacity>` reversion to the depth-64 default.
+  2. **Metadata lever** — `size_of::<EventMetadata>()`: catches a `_event.*`
+     `SceString` re-added to the queued metadata (1 B under no_std).
+  3. **Scheduler lever** — `size_of::<PullScheduler<E>>()`: catches the
+     per-entry delayed-send `event_data` string re-added to `ScheduledEntry`
+     under no_std.
+- Plus a loose whole-`Engine` sanity bound (32 KiB) for gross regressions that
+  miss all three precise bounds.
 
-Measured at the RFC landing: `size_of::<Engine<P>>()` is ~23.7 KiB at depth 2
-versus ~222 KiB if reverted to depth 64. The 64 KiB bound sits comfortably
-between them.
+Using the real generated machine (rather than a hand-written policy) keeps the
+gate in lock-step with the templates with zero maintenance.
+
+Measured on `thumbv7em-none-eabihf`: `size_of::<Engine<P>>()` is ~9.0 KiB
+(down from ~17.5 KiB before the scheduler lever and ~23.7 KiB before the
+metadata lever); a depth-64 queue reversion would balloon it past ~222 KiB.
 
 ## Run locally
 
@@ -50,6 +64,8 @@ cargo build --manifest-path sce-nostd-queue-size-probe/Cargo.toml \
   --target thumbv7em-none-eabihf
 ```
 
-A clean exit means the per-machine queue depth is wired through. A failed
-`const` assertion (`E0080: evaluation panicked: ... exceeds the per-machine
-no_std queue-size bound`) means the capacity regressed to the depth-64 default.
+A clean exit means all three levers are wired through. A failed `const`
+assertion (`E0080: evaluation panicked: ... exceeds its bound`) names the
+regressed lever: a queue-depth reversion to the depth-64 default, a `_event.*`
+metadata string re-added, or the scheduler `event_data` string re-added under
+no_std.

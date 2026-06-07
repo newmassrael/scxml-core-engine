@@ -117,7 +117,8 @@ pub type SchedTimePoint = u64;
 /// Kept as a concrete (non-trait) type to match C++ `SCE::PullScheduler<Event> scheduler_;`.
 #[derive(Debug)]
 pub struct PullScheduler<E> {
-    /// Pending entries: (event, event_data_json, send_id, ready_at).
+    /// Pending entries: `(event, [event_data_json], send_id, ready_at)`.
+    /// The `event_data_json` field is elided under no_std (see [`ScheduledEntry`]).
     #[cfg(not(feature = "no_std"))]
     entries: Vec<ScheduledEntry<E>>,
     #[cfg(feature = "no_std")]
@@ -128,6 +129,15 @@ pub struct PullScheduler<E> {
 #[derive(Debug)]
 struct ScheduledEntry<E> {
     event: E,
+    /// Delayed-send `_event.data` JSON payload.
+    ///
+    /// Watching-zenoh RFC §5.J.2: elided under `--features=no_std`. The no_std
+    /// build has no script engine, and the scheduler drain
+    /// ([`Engine::tick`] → [`Engine::raise_external`]) discards the data string
+    /// under no_std (`let _ = (event_data, origin)`), so storing it per entry is
+    /// pure dead weight (~264 B `heapless::String<256>` × `MAX_SCHEDULED_EVENTS`).
+    /// Mirrors the `EventMetadata.data` profile-level elision (B-γ2d-1).
+    #[cfg(not(feature = "no_std"))]
     event_data: SceString,
     send_id: SceString,
     ready_at: SchedTimePoint,
@@ -169,8 +179,13 @@ impl<E: Clone> PullScheduler<E> {
         } else {
             crate::sce_string_from_str(send_id)
         };
+        // no_std elides the per-entry data string (see `ScheduledEntry`); the
+        // parameter is then unused (mirrors `raise_external`'s `let _ = ...`).
+        #[cfg(feature = "no_std")]
+        let _ = event_data;
         let entry = ScheduledEntry {
             event,
+            #[cfg(not(feature = "no_std"))]
             event_data: crate::sce_string_from_str(event_data),
             send_id: effective_send_id.clone(),
             ready_at,
@@ -214,17 +229,42 @@ impl<E: Clone> PullScheduler<E> {
         self.entries.iter().any(|e| e.ready_at <= now)
     }
 
+    /// Find-and-remove the next ready entry — the single source of the
+    /// scan/remove logic both `pop_ready_event_at` profiles project from.
+    ///
+    /// `#[inline]` so each profile's projection compiles to the same code as a
+    /// hand-inlined scan (no extra `ScheduledEntry` move on the timer-fire
+    /// path). `heapless::Vec::remove` is `pub fn remove(&mut self, index:
+    /// usize) -> T` — same shape as `Vec::remove`, so this works on both
+    /// profiles.
+    #[inline]
+    fn pop_ready_entry(&mut self, now: SchedTimePoint) -> Option<ScheduledEntry<E>> {
+        let idx = self.entries.iter().position(|e| e.ready_at <= now)?;
+        Some(self.entries.remove(idx))
+    }
+
     /// Pop the next ready event and its data. Returns `None` if nothing is ready.
     ///
     /// Caller supplies the current time. Matches C++
     /// `PullScheduler::popReadyEvent(E&, string&) -> bool` (but returns
     /// an `Option` tuple instead of bool+out-params, which is the idiomatic Rust shape).
+    #[cfg(not(feature = "no_std"))]
     pub fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<(E, SceString)> {
-        let idx = self.entries.iter().position(|e| e.ready_at <= now)?;
-        // heapless::Vec::remove is `pub fn remove(&mut self, index: usize) -> T`
-        // — same shape as Vec::remove, so this works under both profiles.
-        let entry = self.entries.remove(idx);
-        Some((entry.event, entry.event_data))
+        self.pop_ready_entry(now)
+            .map(|entry| (entry.event, entry.event_data))
+    }
+
+    /// no_std variant of [`pop_ready_event_at`](Self::pop_ready_event_at).
+    ///
+    /// The delayed-send data string is elided under no_std (see
+    /// [`ScheduledEntry`]), so the popped event carries no data. The no_std
+    /// drain in [`Engine::tick`] passes `""` to
+    /// [`raise_external`](Engine::raise_external), which discards it anyway —
+    /// returning `Option<E>` instead of `Option<(E, SceString)>` avoids moving
+    /// a 264 B empty `heapless::String` out on every timer fire.
+    #[cfg(feature = "no_std")]
+    pub fn pop_ready_event_at(&mut self, now: SchedTimePoint) -> Option<E> {
+        self.pop_ready_entry(now).map(|entry| entry.event)
     }
 }
 
@@ -606,10 +646,18 @@ impl<P: StatePolicy> Engine<P> {
         // `PullScheduler` clock-source-agnostic (textbook DI split).
         loop {
             let now = self.sched_now();
-            let Some((event, data)) = self.scheduler.pop_ready_event_at(now) else {
+            let Some(popped) = self.scheduler.pop_ready_event_at(now) else {
                 break;
             };
-            self.raise_external(event, &data, "");
+            #[cfg(not(feature = "no_std"))]
+            {
+                let (event, data) = popped;
+                self.raise_external(event, &data, "");
+            }
+            // no_std: the data string is elided in the scheduler, and
+            // `raise_external` discards it under no_std anyway.
+            #[cfg(feature = "no_std")]
+            self.raise_external(popped, "", "");
         }
 
         // W3C SCXML 6.4: Tick child state machines
