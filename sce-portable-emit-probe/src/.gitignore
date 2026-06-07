@@ -1,0 +1,4 @@
+# Generated fresh by the portability gate (CI + local). Never committed, so it
+# can never drift stale against the templates. See ../README.md.
+*_sm.rs
+sce_sourcemap.json

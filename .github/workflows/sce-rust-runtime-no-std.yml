@@ -21,6 +21,7 @@ on:
       - 'sce-rust-runtime/**'
       - 'tools/codegen/templates/rust/**'
       - 'sce-nostd-build-probe/**'
+      - 'sce-portable-emit-probe/**'
       - 'sce-build/tests/fixtures/no_std/**'
       - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
       - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'
@@ -34,6 +35,7 @@ on:
       - 'sce-rust-runtime/**'
       - 'tools/codegen/templates/rust/**'
       - 'sce-nostd-build-probe/**'
+      - 'sce-portable-emit-probe/**'
       - 'sce-build/tests/fixtures/no_std/**'
       - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
       - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'
@@ -145,3 +147,35 @@ jobs:
         cargo build \
           --manifest-path sce-nostd-build-probe/Cargo.toml \
           --target=thumbv7em-none-eabihf
+
+    # Watching-zenoh RFC §5.J.2 single-emit portability: prove ONE `--no-std`
+    # emission compiles against BOTH runtime profiles. The emission names only
+    # the runtime's profile-resolving collection aliases (SceBytes / SceString /
+    # SceTransitionBuf / SceIndexBuf / SceDedupSet / StateChain), so the std
+    # runtime resolves them to Vec / String / HashSet and the no_std runtime to
+    # their heapless equivalents. Before the alias layer, the `--no-std` emit's
+    # bytes field, transition buffers, and dedup set referenced the no_std-only
+    # `sce_rust_runtime::heapless::*` re-export and failed `E0433: cannot find
+    # heapless in sce_rust_runtime` against the std runtime. The fixture combines
+    # a typed bytes/string payload with nested parallel regions so one machine
+    # exercises every alias. See sce-portable-emit-probe/README.md.
+    - name: Generate the portability probe machine
+      run: |
+        target/release/sce-codegen --workspace-root . generate -l rust --no-std \
+          --output-dir sce-portable-emit-probe/src \
+          sce-build/tests/fixtures/no_std/portable_probe.scxml
+
+    # AP profile — the no_std emission compiled against the STD runtime (host).
+    # This is the regression gate for the bytes-field E0433.
+    - name: Compile the portability probe against the std runtime (host)
+      run: |
+        cargo build --manifest-path sce-portable-emit-probe/Cargo.toml
+
+    # MCU profile — the SAME emission compiled against the no_std runtime (thumb,
+    # no allocator). Proves the typed bytes/string payload stays allocator-free.
+    - name: Compile the portability probe against the no_std runtime (MCU target)
+      run: |
+        cargo build \
+          --manifest-path sce-portable-emit-probe/Cargo.toml \
+          --target=thumbv7em-none-eabihf \
+          --features mcu

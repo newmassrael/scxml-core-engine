@@ -1638,7 +1638,6 @@ pub fn build_rust_event_payload(
     extra_payload_events: &std::collections::BTreeSet<String>,
     policy_generics_decl: &str,
     policy_generics_use: &str,
-    no_std: bool,
 ) -> RustEventPayload {
     let schemaless = || RustEventPayload {
         defs: String::new(),
@@ -1732,28 +1731,29 @@ self.raise_external_typed({machine_name}Event::{variant}, {enum_name}::{variant}
         ));
         let mut field_lines = String::new();
         for f in &schema.fields {
-            // A `bytes` field carries as the host owned byte-sequence under
-            // std (`Vec<u8>`) and as an allocator-free, capacity-bounded
-            // `heapless::Vec<u8, CAP>` under no_std — so a typed bytes payload
-            // (a guard operand or a `<sce:action>` argument) compiles on a
-            // no-heap MCU target. CAP is the field's declared `sce:max-size`
-            // (default `BYTES_DEFAULT_MAX`), honouring the author's bound
-            // exactly as the C11 backend does rather than a one-size cap.
-            // Both spellings deref to `[u8]`, so `&ev.<field>` coerces to the
-            // `&[u8]` an `Actions` trait method takes. Every other primitive
-            // resolves through `LangCtx::resolved_type`; payload eligibility
-            // guarantees no enum-alias arm is hit.
-            let ty = if matches!(f.sce_type, crate::forge::model::SceType::Bytes) {
-                if no_std {
+            // Owned payload field types resolve through the runtime's
+            // profile-resolving aliases so this one emission compiles on both
+            // runtime profiles (the runtime owns the std-vs-heapless choice —
+            // single source of truth, like `StateChain`):
+            //   - `bytes`  -> `SceBytes<CAP>` (`Vec<u8>` under std, allocator-free
+            //     capacity-bounded `heapless::Vec<u8, CAP>` under no_std). CAP is
+            //     the field's `sce:max-size` (default `BYTES_DEFAULT_MAX`).
+            //   - `string` -> `SceString` (`String` under std, `heapless::String`
+            //     under no_std) — never a bare `String`, which a no-alloc no_std
+            //     target cannot resolve.
+            // Both deref to `[u8]` / `str`, so `&ev.<field>` coerces to the
+            // `&[u8]` / `&str` an `Actions` trait method takes. Every other
+            // primitive resolves through `LangCtx::resolved_type`; payload
+            // eligibility guarantees no enum-alias arm is hit.
+            let ty = match &f.sce_type {
+                crate::forge::model::SceType::Bytes => {
                     let cap = f
                         .max_size
                         .unwrap_or(crate::forge::limits::BYTES_DEFAULT_MAX);
-                    format!("::sce_rust_runtime::heapless::Vec<u8, {cap}>")
-                } else {
-                    "::std::vec::Vec<u8>".to_string()
+                    format!("::sce_rust_runtime::SceBytes<{cap}>")
                 }
-            } else {
-                l.resolved_type(&f.sce_type, &[])
+                crate::forge::model::SceType::String => "::sce_rust_runtime::SceString".to_string(),
+                _ => l.resolved_type(&f.sce_type, &[]),
             };
             field_lines.push_str(&format!("    pub {}: {ty},\n", f.id));
         }

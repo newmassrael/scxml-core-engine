@@ -207,6 +207,32 @@ pub type SceString = ::std::string::String;
 #[cfg(feature = "no_std")]
 pub type SceString = ::heapless::String<MAX_EVENT_STRING_LEN>;
 
+/// Owned byte-sequence type for typed `_event.data` payload fields whose
+/// `sce:type="bytes"` carries a per-field `sce:max-size` bound.
+///
+/// The const parameter `N` is the field's declared `sce:max-size` (defaulted to
+/// the codegen `BYTES_DEFAULT_MAX` when the author omits it). Unlike the
+/// global collection caps ([`StateChain`](crate::helpers::hierarchy::StateChain)
+/// bakes [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`], the transition
+/// buffers bake [`MAX_ENABLED_TRANSITIONS`]), a bytes bound is per-field, so it
+/// is carried as a generic const rather than baked into the alias.
+///
+/// - std build: [`std::vec::Vec<u8>`] (unbounded, heap-allocated). `N` is
+///   advisory — the AP profile grows freely, exactly as [`SceString`] is
+///   unbounded under std.
+/// - no_std build: `heapless::Vec<u8, N>` (stack-allocated, capacity exactly
+///   the author's bound). Overflow fails loud at the push site.
+///
+/// Both spellings deref to `[u8]`, so `&payload.<field>` coerces to the `&[u8]`
+/// a generated `Actions` trait method takes regardless of profile.
+#[cfg(not(feature = "no_std"))]
+pub type SceBytes<const N: usize> = ::std::vec::Vec<u8>;
+/// no_std variant of [`SceBytes`]: stack-allocated `heapless::Vec<u8, N>` capped
+/// at the field's `sce:max-size`. See the std-variant doc-comment above for the
+/// full contract.
+#[cfg(feature = "no_std")]
+pub type SceBytes<const N: usize> = ::heapless::Vec<u8, N>;
+
 /// Convert a borrowed `&str` into an owned [`SceString`].
 ///
 /// Under std this is `s.to_string()`. Under no_std this is
@@ -227,15 +253,45 @@ pub fn sce_string_from_str(s: &str) -> SceString {
     }
 }
 
-/// Re-export of the `heapless` crate for generated no_std state machines.
+/// Conflict-resolution transition buffer for the W3C Appendix D.2 microstep,
+/// resolving to the natural collection of each runtime profile.
 ///
-/// Generated code emits `sce_rust_runtime::heapless::FnvIndexSet<…>` for the
-/// microstep transition-dedup set so a no_std consumer crate does not have to
-/// declare `heapless` as a direct dependency — the runtime owns the no_std
-/// collection choices (single source of truth, mirroring [`SceString`] /
-/// [`crate::helpers::hierarchy::StateChain`]).
+/// - std build: [`std::vec::Vec<T>`] (unbounded, heap-allocated).
+/// - no_std build: `heapless::Vec<T, MAX_ENABLED_TRANSITIONS>` (stack-allocated).
+///
+/// The capacity is global (every microstep is bounded by the same enabled-set
+/// limit), so it is baked into the alias rather than carried as a generic const
+/// — mirroring [`StateChain`](crate::helpers::hierarchy::StateChain), which
+/// bakes [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`]. Push through
+/// [`BoundedPush::push_bounded`]; clone a slice through [`bounded_clone_slice`].
+#[cfg(not(feature = "no_std"))]
+pub type SceTransitionBuf<T> = ::std::vec::Vec<T>;
+/// no_std variant of [`SceTransitionBuf`]. See the std-variant doc-comment.
 #[cfg(feature = "no_std")]
-pub use ::heapless;
+pub type SceTransitionBuf<T> = ::heapless::Vec<T, MAX_ENABLED_TRANSITIONS>;
+
+/// Index buffer (transition positions) for the Appendix D.2 conflict pass, the
+/// `usize` twin of [`SceTransitionBuf`]. Same per-profile resolution and cap.
+#[cfg(not(feature = "no_std"))]
+pub type SceIndexBuf = ::std::vec::Vec<usize>;
+/// no_std variant of [`SceIndexBuf`]. See the std-variant doc-comment.
+#[cfg(feature = "no_std")]
+pub type SceIndexBuf = ::heapless::Vec<usize, MAX_ENABLED_TRANSITIONS>;
+
+/// Dedup set for transitions bubbling up to a shared ancestor (W3C SCXML 3.13;
+/// test 504), resolving to the natural set type of each runtime profile.
+///
+/// - std build: [`std::collections::HashSet<K>`] (unbounded).
+/// - no_std build: `heapless::FnvIndexSet<K, MAX_MICROSTEP_DEDUP_SLOTS>`
+///   (stack-allocated; capacity is a power of two per heapless's requirement).
+///
+/// Insert through [`dedup_insert`], which absorbs the `bool` vs `Result` API
+/// divergence between the two set types and fails loud on no_std overflow.
+#[cfg(not(feature = "no_std"))]
+pub type SceDedupSet<K> = ::std::collections::HashSet<K>;
+/// no_std variant of [`SceDedupSet`]. See the std-variant doc-comment.
+#[cfg(feature = "no_std")]
+pub type SceDedupSet<K> = ::heapless::FnvIndexSet<K, MAX_MICROSTEP_DEDUP_SLOTS>;
 
 /// Push into a microstep buffer uniformly under std and no_std.
 ///
@@ -272,6 +328,36 @@ impl<T, const N: usize> BoundedPush<T> for ::heapless::Vec<T, N> {
             );
         }
     }
+}
+
+/// Insert `key` into a [`SceDedupSet`] uniformly under std and no_std, returning
+/// `true` if the key was newly inserted (the W3C SCXML 3.13 first-match-wins
+/// dedup predicate for `retain`).
+///
+/// Absorbs the API divergence between the two set types: `HashSet::insert`
+/// returns `bool`, while `heapless::FnvIndexSet::insert` returns
+/// `Result<bool, K>` (handing back the key when the set is full). Under no_std
+/// an overflow fails loud — the capacity ([`MAX_MICROSTEP_DEDUP_SLOTS`]) is
+/// sized above the Appendix D.2 enabled-set bound, so a full set indicates a
+/// capacity to raise, not a recoverable condition (silently dropping would
+/// violate microstep semantics). Mirrors [`BoundedPush::push_bounded`].
+#[cfg(not(feature = "no_std"))]
+#[inline]
+pub fn dedup_insert<K: Eq + ::core::hash::Hash>(set: &mut SceDedupSet<K>, key: K) -> bool {
+    set.insert(key)
+}
+
+/// no_std variant of [`dedup_insert`]. See the std-variant doc-comment.
+#[cfg(feature = "no_std")]
+#[inline]
+pub fn dedup_insert<K: Eq + ::core::hash::Hash>(set: &mut SceDedupSet<K>, key: K) -> bool {
+    set.insert(key).unwrap_or_else(|_| {
+        panic!(
+            "SCE no_std microstep dedup-set overflow (capacity {}); raise \
+             MAX_MICROSTEP_DEDUP_SLOTS",
+            MAX_MICROSTEP_DEDUP_SLOTS
+        )
+    })
 }
 
 /// Clone a slice into an owned microstep buffer uniformly under std and no_std.

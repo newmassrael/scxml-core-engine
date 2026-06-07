@@ -156,25 +156,18 @@
             // W3C SCXML 3.13: Deduplicate transitions collected from multiple descendants
             // of the same ancestor (e.g., both parallel regions bubble up to the same parent
             // transition; test 504). Preserves first-match document order.
-{% if no_std %}
-            // Watching-zenoh RFC §5.J.2: heapless::FnvIndexSet replaces the std
-            // HashSet under --no-std, re-exported through the runtime so the
-            // generated crate needs no direct `heapless` dependency. Capacity
-            // (`MAX_MICROSTEP_DEDUP_SLOTS`, a power of two ≥ 2× the enabled-set
-            // bound) — exceed it and panic loudly rather than silently dropping
-            // transitions (which would violate W3C SCXML Appendix D.2 semantics).
-            let mut seen: ::sce_rust_runtime::heapless::FnvIndexSet<({{ machine_name }}State, usize), { ::sce_rust_runtime::MAX_MICROSTEP_DEDUP_SLOTS }> =
-                ::sce_rust_runtime::heapless::FnvIndexSet::new();
-            enabled_transitions.retain(|t| {
-                seen.insert((t.source, t.transition_index))
-                    .expect("microstep enabled-transitions exceeded MAX_MICROSTEP_DEDUP_SLOTS no_std cap")
-            });
-{% else %}
-            let mut seen = std::collections::HashSet::new();
-            enabled_transitions.retain(|t| {
-                seen.insert((t.source, t.transition_index))
-            });
-{% endif %}
+            // The runtime owns the std-vs-heapless set choice through the
+            // profile-resolving `SceDedupSet` alias + `dedup_insert` helper
+            // (single source of truth, like `SceString` / `StateChain`), so this
+            // one emission compiles on both runtime profiles: a `HashSet` under
+            // std, a capacity-bounded `heapless::FnvIndexSet` under no_std
+            // (`MAX_MICROSTEP_DEDUP_SLOTS`). `dedup_insert` fails loud on no_std
+            // overflow rather than silently dropping transitions — that would
+            // violate W3C SCXML Appendix D.2 semantics.
+            let mut seen: ::sce_rust_runtime::SceDedupSet<({{ machine_name }}State, usize)> =
+                ::sce_rust_runtime::SceDedupSet::new();
+            enabled_transitions
+                .retain(|t| ::sce_rust_runtime::dedup_insert(&mut seen, (t.source, t.transition_index)));
 
             // W3C SCXML Appendix D.2: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
