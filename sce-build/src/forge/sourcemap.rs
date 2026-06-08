@@ -42,6 +42,20 @@ use std::collections::BTreeMap;
 /// NOT bump this constant.
 pub const SOURCEMAP_VERSION: u32 = 1;
 
+/// Schema lifecycle marker — *not* a wire field. Mirrors the precedent
+/// set by the diagnostic schema (`SCHEMA_STATUS`) and the forge-AST
+/// schema (`FORGE_AST_SCHEMA_STATUS`): the schema-about-the-schema
+/// lives in the schema file header
+/// (`schemas/sce-sourcemap.v1.schema.json`, `x-sce-schema-status`),
+/// never in the emitted `sce_sourcemap.json` payload — so the 404
+/// committed sidecars stay byte-stable and the status signal is read
+/// from the checked-in schema, not by linking this crate. Flipping
+/// `pre-release` → `stable` requires updating this constant AND the
+/// schema file header in one commit; the `schema_file_declares_status`
+/// test below guards the two-way sync. See `SCE_WIRE_CONTRACTS.md` for
+/// the shared stability + deprecation policy across SCE wire surfaces.
+pub const SOURCEMAP_SCHEMA_STATUS: &str = "pre-release";
+
 /// Top-level sourcemap document. Serialised verbatim into
 /// `out/{language}/sce_sourcemap.json`.
 ///
@@ -425,6 +439,56 @@ mod tests {
         // Same hash → no error.
         let ok = check_source_hash_matches(&map, "0000", "out/rust/sce_sourcemap.json");
         assert!(ok.is_ok());
+    }
+
+    /// Drift guard between [`SOURCEMAP_SCHEMA_STATUS`] (the Rust source
+    /// of truth) and the `x-sce-schema-status` field in
+    /// `schemas/sce-sourcemap.v1.schema.json` (the downstream-visible
+    /// declaration). Both must agree and stay in the closed value set;
+    /// otherwise a consumer reading the schema file would see a
+    /// stability claim that diverges from the crate. Mirrors the
+    /// diagnostic schema's `schema_file_declares_status` test. See
+    /// `SCE_WIRE_CONTRACTS.md` for the transition criterion.
+    #[test]
+    fn schema_file_declares_status() {
+        let schema_bytes = include_str!("../../../schemas/sce-sourcemap.v1.schema.json");
+        let parsed: serde_json::Value =
+            serde_json::from_str(schema_bytes).expect("schema file must be valid JSON");
+        let declared = parsed
+            .get("x-sce-schema-status")
+            .and_then(|v| v.as_str())
+            .expect(
+                "schema must declare x-sce-schema-status at top level — \
+                 see SCE_WIRE_CONTRACTS.md",
+            );
+        assert!(
+            matches!(declared, "pre-release" | "stable"),
+            "x-sce-schema-status must be 'pre-release' or 'stable'; got {declared:?}",
+        );
+        assert_eq!(
+            declared, SOURCEMAP_SCHEMA_STATUS,
+            "schema file's x-sce-schema-status drifted from \
+             SOURCEMAP_SCHEMA_STATUS const — update one to match the \
+             other in the same commit (see SCE_WIRE_CONTRACTS.md)",
+        );
+    }
+
+    /// The schema file's declared `version` const must equal the
+    /// producer-side [`SOURCEMAP_VERSION`]. A drift here means an
+    /// external validator would reject payloads the producer emits.
+    #[test]
+    fn schema_file_declares_matching_version() {
+        let schema_bytes = include_str!("../../../schemas/sce-sourcemap.v1.schema.json");
+        let parsed: serde_json::Value =
+            serde_json::from_str(schema_bytes).expect("schema file must be valid JSON");
+        let declared = parsed
+            .pointer("/properties/version/const")
+            .and_then(|v| v.as_u64())
+            .expect("schema must pin properties.version.const");
+        assert_eq!(
+            declared as u32, SOURCEMAP_VERSION,
+            "schema file's version const drifted from SOURCEMAP_VERSION",
+        );
     }
 
     #[test]

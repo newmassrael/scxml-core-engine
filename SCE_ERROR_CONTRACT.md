@@ -391,6 +391,10 @@ consumers can read the signal without linking the crate. The
 to the const must update the schema file (or vice versa) in the same
 commit.
 
+This surface is one row in the cross-surface stability registry
+`SCE_WIRE_CONTRACTS.md`, which states the shared `pre-release` policy
+and flip-to-`stable` procedure for every agent-facing wire surface.
+
 ## 9. Reference implementation
 
 - Trait: `sce_build::forge::diagnostic::ToDiagnostics`
