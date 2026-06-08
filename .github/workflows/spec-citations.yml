@@ -51,7 +51,7 @@ env:
   # section's heading-delimited body so the scxml ledger excerpts come from the
   # pinned EPUB. The scxml store is v8; mesh/wire stay v6 (the v8 CLI reads
   # them, validate is read-only). See claudedocs/rfc-epub-ssot-adoption-poc.md.
-  MNEMOSYNE_REV: 819ba87d9fe09349fa42654ab6bfad2c1f226dec
+  MNEMOSYNE_REV: 48117d24545c220bba4fa74c0295b1b14491eeae
 
 jobs:
   citations:
