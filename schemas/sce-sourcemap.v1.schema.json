@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/blob/main/schemas/sce-sourcemap.v1.schema.json",
+  "x-sce-schema-status": "pre-release",
+  "title": "SCE Sourcemap (wire schema v1)",
+  "description": "Per-machine traceability sidecar written next to each emitted backend artifact as out/{language}/sce_sourcemap.json. Maps a mangled generated symbol back to its originating SCXML coordinates (file, state path, synthesised XPath, line range, IR-node kind). Authoritative producer is sce-build/src/forge/sourcemap.rs (struct Sourcemap); the runtime reverse-lookup tool sce-codegen addr2sce keys off this file. Byte-identical across all 6 backends for the same SCXML (symbols are BTreeMap-sorted). Consumers MUST ignore unknown fields: any purely additive change (a new optional field under symbols.*) is compatible with v1 and does NOT bump version. The stability status of this surface lives in this header alone, not in the payload — see docs/SCE_WIRE_CONTRACTS.md for the shared deprecation policy across SCE wire surfaces.",
+  "type": "object",
+  "required": ["version", "source_hash", "template_hash", "symbols"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Sourcemap schema version. Always 1 for this revision. Additive field growth under symbols.* does NOT bump this.",
+      "type": "integer",
+      "const": 1
+    },
+    "source_hash": {
+      "description": "Hex-encoded sha256 of the generated source, byte-equal to the artifact's §6.2.6 drift header source hash.",
+      "type": "string",
+      "pattern": "^[0-9a-f]+$"
+    },
+    "template_hash": {
+      "description": "Hex-encoded sha256 of the codegen template set, byte-equal to the artifact's §6.2.6 drift header template hash.",
+      "type": "string",
+      "pattern": "^[0-9a-f]+$"
+    },
+    "symbols": {
+      "description": "Symbol table keyed by mangled symbol name (<machine>__<state_path>__<artifact>). BTreeMap-sorted for deterministic, cross-backend byte-identical output.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/sourceSymbol" }
+    }
+  },
+  "definitions": {
+    "sourceSymbol": {
+      "type": "object",
+      "required": ["scxml_file", "scxml_state_path", "scxml_xpath", "line_range", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "scxml_file": {
+          "description": "Author-facing path to the SCXML file the symbol traces back to.",
+          "type": "string"
+        },
+        "scxml_state_path": {
+          "description": "Canonical state-hierarchy path (e.g. s1/s1p1). Empty for the per-machine symbol and for forge-kind body symbols.",
+          "type": "string"
+        },
+        "scxml_xpath": {
+          "description": "Best-effort XPath approximation synthesised from the state path (e.g. //state[@id='s1']/transition[1]). Always non-empty; not guaranteed to round-trip against arbitrary source formatting.",
+          "type": "string"
+        },
+        "line_range": {
+          "description": "[start, end] 1-based line range. end equals start when the source node spans a single line.",
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "kind": {
+          "description": "IR node kind.",
+          "type": "string",
+          "enum": ["state", "transition", "on_entry", "on_exit", "forge_body", "machine", "unknown"]
+        },
+        "event": {
+          "description": "Event name for transition / raise / send symbols. Absent for state / on_entry / on_exit / machine / forge_body.",
+          "type": "string"
+        },
+        "wcet_us": {
+          "description": "Worst-case execution-time hint in microseconds. Optional; absent unless a profiler consumer injects it.",
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}
