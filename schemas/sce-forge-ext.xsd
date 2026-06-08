@@ -24,6 +24,13 @@
            elementFormDefault="qualified"
            attributeFormDefault="unqualified">
 
+  <!-- Agent-facing wire surface. The stability status below is
+       machine-readable; see SCE_WIRE_CONTRACTS.md for the shared
+       stability + deprecation policy across SCE wire surfaces. -->
+  <xs:annotation>
+    <xs:documentation>x-sce-schema-status: pre-release</xs:documentation>
+  </xs:annotation>
+
   <!-- ═══════════════════════════════════════════════════════════════
        Simple Types
        ═══════════════════════════════════════════════════════════════ -->
