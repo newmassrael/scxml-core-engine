@@ -446,4 +446,75 @@ mod tests {
             failures.join("\n---\n")
         );
     }
+
+    /// Drift guard: every value the agent-facing XSD
+    /// (`schemas/sce-forge-ext.xsd`) enumerates for a closed-set grammar
+    /// type must be a token the engine's `from_attr` parser accepts. The
+    /// XSD is the structural gate SCE itself runs (see [`validate`]); if
+    /// it enumerated a token the parser rejects, an author (or the
+    /// authoring loop) who satisfied the XSD would still hit a
+    /// downstream codegen rejection — the XSD would be lying about the
+    /// accepted subset. This pins XSD ⊆ engine-accepted for the four
+    /// closed-set enums (`kindType`, `sceType`, `directionType`,
+    /// `endianType`). The reverse direction — a token the engine accepts
+    /// but the XSD omits — self-surfaces immediately as an XSD rejection
+    /// of an otherwise-valid document, so it needs no separate guard.
+    /// See `SCE_ACCEPTED_SUBSET.md` §2.1 / §2.2.
+    #[test]
+    fn xsd_enums_are_subset_of_engine_accepted_tokens() {
+        use crate::forge::model::{Direction, Endian, ForgeKind, SceType};
+        const EXT_XSD: &str = include_str!("../../../schemas/sce-forge-ext.xsd");
+
+        // Extract the `value="..."` of every <xs:enumeration> under a
+        // named <xs:simpleType>. A tight string scan rather than a full
+        // XML parse: the file is checked-in and the sweep test above
+        // already validates its well-formedness, so a scan keeps this
+        // guard dependency-free.
+        fn enum_values(xsd: &str, type_name: &str) -> Vec<String> {
+            let open = format!("<xs:simpleType name=\"{type_name}\">");
+            let start = xsd
+                .find(&open)
+                .unwrap_or_else(|| panic!("XSD missing simpleType {type_name}"));
+            let body = &xsd[start..];
+            let end = body
+                .find("</xs:simpleType>")
+                .expect("unterminated simpleType");
+            let mut out = Vec::new();
+            for frag in body[..end].split("<xs:enumeration value=\"").skip(1) {
+                if let Some(q) = frag.find('"') {
+                    out.push(frag[..q].to_string());
+                }
+            }
+            assert!(!out.is_empty(), "simpleType {type_name} enumerates nothing");
+            out
+        }
+
+        for v in enum_values(EXT_XSD, "kindType") {
+            assert!(
+                ForgeKind::from_attr(&v).is_some(),
+                "XSD kindType enumerates '{v}' but ForgeKind::from_attr rejects \
+                 it (XSD ↔ model.rs drift — see SCE_ACCEPTED_SUBSET.md §2.1)"
+            );
+        }
+        for v in enum_values(EXT_XSD, "sceType") {
+            assert!(
+                SceType::from_attr(&v).is_some(),
+                "XSD sceType enumerates '{v}' but SceType::from_attr rejects it \
+                 (see SCE_ACCEPTED_SUBSET.md §2.2)"
+            );
+        }
+        for v in enum_values(EXT_XSD, "directionType") {
+            assert!(
+                Direction::from_attr(&v).is_some(),
+                "XSD directionType enumerates '{v}' but Direction::from_attr \
+                 rejects it"
+            );
+        }
+        for v in enum_values(EXT_XSD, "endianType") {
+            assert!(
+                Endian::from_attr(&v).is_some(),
+                "XSD endianType enumerates '{v}' but Endian::from_attr rejects it"
+            );
+        }
+    }
 }

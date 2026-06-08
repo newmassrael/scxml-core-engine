@@ -86,14 +86,17 @@ as schema violations (`xml/schema-validation`).
 
 The `sce:kind` attribute on the root `<scxml>` element selects the
 forge kind the document compiles to. The closed value set is the
-eleven variants of `ForgeKind` (source of truth:
-`sce-build/src/forge/model.rs`; see `forge_kinds_catalog.md` for the
-stateful/stateless/inline-eligible matrix):
+eighteen variants of `ForgeKind`, written in the `sce:kind` attribute
+as the kebab-case tokens below (source of truth:
+`sce-build/src/forge/model.rs` `ForgeKind::from_attr`; see
+`forge_kinds_catalog.md` for the stateful/stateless/inline-eligible
+matrix):
 
 ```
-Statechart   Procedure   Transform   Lookup      Condition
-Codec        Validator   Filter      Interpolation
-Timer        Observer
+statechart   procedure   transform   lookup       condition
+codec        validator   filter      interpolation
+timer        observer    algorithm   link         worker
+buffer-pool  bounded-collection      enum         event-schema
 ```
 
 Omitting `sce:kind` defaults to `Statechart`. Values outside this set
@@ -110,10 +113,14 @@ kinds. Required attributes:
 
 - `id` — unique within the enclosing kind (duplicates are rejected as
   `validation/duplicate-id`).
-- `sce:type` — closed value set of integer and fixed-width types
-  (e.g. `u8`, `u16`, `u32`, `u64`, `i8`, `i16`, `i32`, `i64`, `f32`,
-  `f64`, `bool`, `string`). Values outside the recognised set are
-  rejected as `validation/invalid-attribute`.
+- `sce:type` — closed value set of fixed-width scalar tokens
+  (source of truth: `SceType::from_attr` in
+  `sce-build/src/forge/model.rs`): `uint8`, `uint16`, `uint32`,
+  `uint64`, `int8`, `int16`, `int32`, `int64`, `float32`, `float64`,
+  `bool`, `string`, `bytes`. An enum-typed field uses the
+  `enum:<alias>` form referencing an imported `sce:kind="enum"`
+  document (§2 EventSchema / NL→IR Item C1). Values outside this set
+  are rejected as `validation/invalid-attribute`.
 
 Field cardinality and direction constraints are enforced per-kind —
 e.g. `Transform` requires at least one input and one output field
