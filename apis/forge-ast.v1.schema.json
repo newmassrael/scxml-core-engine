@@ -2127,7 +2127,7 @@
               "uniqueItems": true
             },
             "uses_cancel": {
-              "description": "Whether the document contains any `<cancel>` action (W3C SCXML 6.3).\n\nDrives the Rust `StatePolicy::ScheduledSendId` selection: a cancel-free document emits the zero-size `ElidedSendId` (the no_std scheduler ring sheds its per-entry `send_id` string), a cancelling one emits the load-bearing `SceString`. Set in [`crate::analyzer::analyze_action`] from the same `<cancel>` walk that flags `needs_event_scheduler`.",
+              "description": "Whether the document contains any `<cancel>` action (§scxml-6.3).\n\nDrives the Rust `StatePolicy::ScheduledSendId` selection: a cancel-free document emits the zero-size `ElidedSendId` (the no_std scheduler ring sheds its per-entry `send_id` string), a cancelling one emits the load-bearing `SceString`. Set in [`crate::analyzer::analyze_action`] from the same `<cancel>` walk that flags `needs_event_scheduler`.",
               "type": "boolean"
             },
             "uses_in_predicate": {
