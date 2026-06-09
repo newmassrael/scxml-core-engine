@@ -45,9 +45,11 @@ concurrency:
 
 env:
   # Pin to a Mnemosyne commit, never a branch; --locked builds against its
-  # committed Cargo.lock for a reproducible binary. 9df730a (R422): R421/R422
-  # introduce the 3-state coverage_expectation (normative|out_of_scope_here|
-  # informational) and retire the legacy `informative` value; R416-R420 add the
+  # committed Cargo.lock for a reproducible binary. c2dbdf1 (R423) adds the
+  # MisclassifiedCoverage invariant (an exempt section carrying an implements/
+  # verifies binding is rejected under severity_classification); R421/R422
+  # introduced the 3-state coverage_expectation (normative|out_of_scope_here|
+  # informational) and retired the legacy `informative` value; R416-R420 add the
   # opt-in confirmation subsystem (severity_confirmation unset = off here).
   # Earlier on this line: R400 retired the markdown-doc render path (store is the
   # sole SSOT, no GENERATED.md round-trip), R402-R405 added the offline
@@ -55,7 +57,7 @@ env:
   # R407 projects each section body from the pinned EPUB, R413 added the verify
   # axis. The scxml store is schema v11; mesh/wire stay v8 (the v11 CLI reads
   # them, validate is read-only). See claudedocs/rfc-epub-ssot-adoption-poc.md.
-  MNEMOSYNE_REV: 9df730a4bc9af0b3b32ff9891af84c7872f13cab
+  MNEMOSYNE_REV: c2dbdf1440bfd32cb1285e702b092e154f38565f
 
 jobs:
   citations:
