@@ -25,6 +25,7 @@ on:
     branches: [ main, develop ]
     paths:
       - 'sce/**'
+      - 'sce-build/**'
       - 'docs/spec/scxml/**'
       - 'docs/sce-ledger/**'
       - '.github/workflows/spec-citations.yml'
@@ -32,6 +33,7 @@ on:
     branches: [ main ]
     paths:
       - 'sce/**'
+      - 'sce-build/**'
       - 'docs/spec/scxml/**'
       - 'docs/sce-ledger/**'
       - '.github/workflows/spec-citations.yml'
@@ -43,15 +45,17 @@ concurrency:
 
 env:
   # Pin to a Mnemosyne commit, never a branch; --locked builds against its
-  # committed Cargo.lock for a reproducible binary. 819ba87 (R407) is the
-  # EPUB-as-content-SSOT line: R400 retired the markdown-doc render path (store
-  # is the sole SSOT, no GENERATED.md round-trip), R402-R405 add the offline
-  # content-drift gate (NormativeExcerpt.text_sha256 + committed-EPUB file pin,
-  # store schema v8), and R407 medium-forge --text-scope heading projects each
-  # section's heading-delimited body so the scxml ledger excerpts come from the
-  # pinned EPUB. The scxml store is v8; mesh/wire stay v6 (the v8 CLI reads
+  # committed Cargo.lock for a reproducible binary. 9df730a (R422): R421/R422
+  # introduce the 3-state coverage_expectation (normative|out_of_scope_here|
+  # informational) and retire the legacy `informative` value; R416-R420 add the
+  # opt-in confirmation subsystem (severity_confirmation unset = off here).
+  # Earlier on this line: R400 retired the markdown-doc render path (store is the
+  # sole SSOT, no GENERATED.md round-trip), R402-R405 added the offline
+  # content-drift gate (NormativeExcerpt.text_sha256 + committed-EPUB file pin),
+  # R407 projects each section body from the pinned EPUB, R413 added the verify
+  # axis. The scxml store is schema v11; mesh/wire stay v8 (the v11 CLI reads
   # them, validate is read-only). See claudedocs/rfc-epub-ssot-adoption-poc.md.
-  MNEMOSYNE_REV: 48117d24545c220bba4fa74c0295b1b14491eeae
+  MNEMOSYNE_REV: 9df730a4bc9af0b3b32ff9891af84c7872f13cab
 
 jobs:
   citations:
