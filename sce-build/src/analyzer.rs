@@ -361,7 +361,7 @@ fn analyze_action(action: &Action, model: &mut SCXMLModel) {
         }
         "cancel" => {
             model.needs_event_scheduler = Some(true);
-            // W3C SCXML 6.3: a `<cancel>` makes the scheduler's per-entry
+            // §scxml-6.3: a `<cancel>` makes the scheduler's per-entry
             // `send_id` load-bearing, so the Rust backend must keep `SceString`
             // for `StatePolicy::ScheduledSendId` rather than eliding it.
             model.uses_cancel = true;
@@ -1032,7 +1032,7 @@ mod tests {
         assert_eq!(forge_diags[0].code.as_str(), scxml_diags[0].code.as_str());
     }
 
-    /// W3C SCXML 6.3: a `<cancel>` nested inside executable content (`<if>`,
+    /// §scxml-6.3: a `<cancel>` nested inside executable content (`<if>`,
     /// and by the same recursion `<foreach>`) must still flag `uses_cancel`,
     /// so the Rust backend keeps the load-bearing `SceString` for
     /// `StatePolicy::ScheduledSendId` instead of eliding it to `ElidedSendId`.

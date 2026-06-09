@@ -121,15 +121,18 @@ severity_missing = "reject"
 # Section.implementations (file, symbol), so binding-class drift now fails.
 severity_binding = "reject"
 # Coverage stays advisory — the W3C SCXML spec mirror has prose/semantics/
-# appendix sections (145 of 196 here) that legitimately carry no code cite;
-# the R385 split enforces binding without a per-section non-code carve-out.
+# appendix sections (157 of 197 here: 48 coverage-exempt + 109 normative-gap)
+# that legitimately carry no implements cite; the R385 split enforces binding
+# without a per-section non-code carve-out.
 severity_coverage = "warn"
 # Verify axis (R413): a Normative + Dedicated section with zero `verifies`
 # bindings is a VerificationMissing gap that fails CI. Sections are
-# classified via verification_expectation (by_construction exempts the 21
-# Appendix-D procedures) and coverage_expectation (informative exempts the
-# 49 non-normative sections); the 127 Dedicated sections each bind a
-# tests/w3c/aot_tests/Test<NNN>.h artifact, so the backlog drained to 0.
+# classified via verification_expectation (by_construction exempts the 22
+# structural-invariant sections: 21 Appendix-D procedures + §scxml-3.11 legal
+# state configuration) and coverage_expectation (R422 3-state; out_of_scope_here
+# and informational exempt the 48 non-implemented sections); the 127 Dedicated
+# sections each bind a tests/w3c/aot_tests/Test<NNN>.h artifact, so the backlog
+# drained to 0.
 severity_verification = "reject"
 comment_only = true
 
