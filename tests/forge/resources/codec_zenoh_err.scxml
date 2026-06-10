@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh ERR envelope (RFC §5.B Wire RFC
-     Phase B Y3 atomic 2b — sub-codec, response body variant arm).
+<!-- SCE Forge conformance: Zenoh ERR envelope (RFC §5.B —
+     sub-codec, response body variant arm).
 
      Mirrors zenoh-pico `_z_err_encode` / `_z_err_decode`
      (src/protocol/codec/message.c:545-595) at envelope-level wire

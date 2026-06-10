@@ -3,8 +3,9 @@
   CRC16-CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflect, no xor-out).
 
   Bit-by-bit byte-loop form per RFC §5.A Appendix A — uses only the
-  algorithm body primitives that land in Phase A3 (no <sce:const>
-  table; the §5.F build-time const-fold gate lands in A4). Verifies
+  core algorithm body primitives (no <sce:const> table; the table
+  form is the §5.F build-time const-fold fixture
+  `algorithm_crc16_table`). Verifies
   the cross-language byte-equivalence acceptance gate (RFC §A6).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

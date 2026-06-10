@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B B1-α: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -45,7 +45,7 @@ impl<'a> CodecZenohDeclSubscriber<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>, n: u8) -> Result<Self, CodecError> {
-        // RFC Axis-1 inversion: defensive suppress per declared
+        // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
         // declaration; consumption is a per-codec design choice.
@@ -77,7 +77,7 @@ impl<'a> CodecZenohDeclSubscriber<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S, n: u8) -> Result<(), CodecError> {
-        // RFC Axis-1 inversion: see `decode` — same suppress per
+        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
         // declared `<sce:flag-input>`.
         let _ = n;
         // RFC §5.B B4: per-field bit-size dispatch routes Fixed /

@@ -13,7 +13,7 @@ import (
 )
 
 // CodecVariantPeekBasicVariant is a discriminated-union body for the codec's
-// tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
+// tag-field suffix (RFC §5.B variant primitive). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecVariantPeekBasicVariant struct {

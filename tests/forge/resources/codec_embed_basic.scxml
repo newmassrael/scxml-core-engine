@@ -5,8 +5,8 @@
      prefix followed by an embedded `codec_zenoh_locator` (VLE u64
      length + UTF-8 string).
 
-     Y0c lifts a Wire RFC Phase B prerequisite gap surfaced during Y1
-     entry: the codec DSL had no way to compose a single imported
+     The embed primitive closes a composition
+     gap: the codec DSL had no way to compose a single imported
      codec as an inline field. Repeat / TLV-chain / variant arm all
      use codecs as container element types; embed is the missing
      "single occurrence, always present" composition primitive that

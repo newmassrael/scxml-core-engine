@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh extension chain envelope — TLV chain
      of variant-bodied entries (RFC §5.B B5-ε surface G; chain
-     termination strategy refined in Wire RFC Phase B Y3).
+     termination strategy since refined to wire fidelity).
 
      Mirrors zenoh-pico `_z_msg_ext_decode_iter` (src/protocol/codec/
      ext.c lines 226-238): an iterative chain of `_z_msg_ext_t`

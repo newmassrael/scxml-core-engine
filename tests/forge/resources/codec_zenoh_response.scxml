@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh response envelope (RFC §5.B Wire RFC
-     Phase B Y3 atomic 2b-ii peek-byte — first realistic peek-byte
+<!-- SCE Forge conformance: Zenoh response envelope (RFC §5.B —
+     first realistic peek-byte
      primitive consumer).
 
      Mirrors zenoh-pico `_z_response_encode` / `_z_response_decode`

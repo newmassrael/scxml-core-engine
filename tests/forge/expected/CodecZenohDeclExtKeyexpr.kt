@@ -21,7 +21,7 @@ data class CodecZenohDeclExtKeyexpr(
     var total_length: ULong = 0uL,
     var inner: CodecZenohDeclExtKeyexprInner = CodecZenohDeclExtKeyexprInner()
 ) {
-    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // RFC §5.B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
@@ -71,7 +71,7 @@ data class CodecZenohDeclExtKeyexpr(
         }
     }
 
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable

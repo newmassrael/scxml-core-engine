@@ -138,8 +138,8 @@ public:
     // ── Transition actions (<assign> in transitions) ─────────────
     //
     // Returns std::nullopt for normal flow; std::optional<Event> with a
-    // value when an assign-time check (RFC `claudedocs/rfc-forge-bytes-bounded.md`
-    // §3 B4 bytes cap violation) raises an internal event. The shared
+    // value when an assign-time bytes-cap check fails and raises an
+    // internal event. The shared
     // run_procedure() loop re-processes the source state with that event
     // so a fixture's `<transition event="error.execution">` can pick it up.
 

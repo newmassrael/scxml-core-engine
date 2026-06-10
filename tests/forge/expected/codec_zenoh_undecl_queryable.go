@@ -23,7 +23,7 @@ type CodecZenohUndeclQueryable struct {
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohUndeclQueryable(cursor *codec.SceCursor, Z byte) (*CodecZenohUndeclQueryable, error) {
-	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+	// RFC §5.B present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
 	// VLE gating uses `*T` like fixed. Per-field `is_repeat` routes
@@ -51,7 +51,7 @@ func DecodeCodecZenohUndeclQueryable(cursor *codec.SceCursor, Z byte) (*CodecZen
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohUndeclQueryable) Encode(w codec.SceSink, Z byte) error {
-	// RFC §5.B B1-δ + B2-β present-if encode.
+	// RFC §5.B present-if encode.
 	{
 		_vle := uint64(s.Id)
 		for _vle >= 0x80 {

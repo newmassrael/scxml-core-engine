@@ -147,8 +147,7 @@ impl ProcedurePolicy for ProcedureLinear {
 
     fn execute_transition_actions(&mut self, source: State, tr_index: usize) -> Option<Event> {
         // Returns None for normal flow; Some(Event) when an assign-time
-        // check (RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 bytes
-        // cap violation) raises an internal event that the shared
+        // bytes-cap check raises an internal event that the shared
         // run_procedure() loop re-pumps through process_transition.
         let _ = (source, tr_index);  // pacify unused-warning for empty bodies
         None

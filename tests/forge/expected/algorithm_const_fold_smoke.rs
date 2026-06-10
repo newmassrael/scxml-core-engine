@@ -1,5 +1,5 @@
-#![doc = "SCE-MAP: algorithm_const_fold_smoke:25"]
-// SCE-MAP: algorithm_const_fold_smoke:25
+#![doc = "SCE-MAP: algorithm_const_fold_smoke:24"]
+// SCE-MAP: algorithm_const_fold_smoke:24
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="algorithm")
 // Runtime: none

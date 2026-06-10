@@ -8,7 +8,7 @@
    dispatched payload bytes (since C closures don't exist), a handler
    that returns the case-specific handler_response_data, and helper
    stubs (XOR-bytes today). Oracle is pre-baked into static const
-   arrays per RFC §5.J.2 F7 — no runtime JSON parser. #}
+   arrays — no runtime JSON parser. #}
 
 static struct {
     sce_forge_bytes_t captured[16];
@@ -116,7 +116,7 @@ static void test_{{ f.name }}(void) {
 {# Procedure kind — D-1 (L1) only. Pure guard-only diamonds; the oracle
    exposes `args` + `expected.{completed, final_state}` per case, no
    payload bytes / no donedata until D-2 lands. The pre-baked oracle
-   keeps the harness allocation-free per RFC §5.J.2 F7. #}
+   keeps the harness allocation-free (no runtime JSON parser). #}
 static void test_{{ f.name }}(void) {
     static const struct {
 {% for arg_ty in f.args %}

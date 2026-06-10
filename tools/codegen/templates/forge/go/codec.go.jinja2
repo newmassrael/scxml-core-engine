@@ -26,7 +26,7 @@ import (
 {% if variant.default_arm %}
 // {{ struct_name }}{{ variant.default_arm.variant_name }} bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
-// observed tag back onto the wire (RFC §5.B variant primitive B1-β).
+// observed tag back onto the wire (RFC §5.B variant primitive).
 type {{ struct_name }}{{ variant.default_arm.variant_name }} struct {
 	Tag {{ variant.tag_native_type }}
 	Body {{ variant.default_arm.body_type }}
@@ -34,7 +34,7 @@ type {{ struct_name }}{{ variant.default_arm.variant_name }} struct {
 
 {% endif %}
 // {{ struct_name }}Variant is a discriminated-union body for the codec's
-// tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
+// tag-field suffix (RFC §5.B variant primitive). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type {{ struct_name }}Variant struct {
@@ -96,7 +96,7 @@ func New{{ struct_name }}() *{{ struct_name }} {
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) (*{{ struct_name }}, error) {
 {% if has_no_fields %}
-	// RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+	// RFC §5.B empty body — zero-byte payload, no cursor work.
 	_ = cursor
 	return &{{ struct_name }}{}, nil
 {% elif has_variant %}
@@ -122,7 +122,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 {% endif %}
 {% else %}
 {% if fields %}
-	// Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+	// Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
 	raw, err := cursor.PeekSlice({{ min_bytes }})
 	if err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 		Body: body,
 	}, nil
 {% elif has_present_if_fields %}
-	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+	// RFC §5.B present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
 	// VLE gating uses `*T` like fixed. Per-field `is_repeat` routes
@@ -309,7 +309,7 @@ func (s *{{ struct_name }}) {{ field.quantity_accessor.setter_name }}(value {{ f
 {% endfor %}
 {% endif %}
 {% if has_flags %}
-// RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+// RFC §5.B flags primitive: per-bit-range accessors over
 // the carrier field. Single-bit (width=1) reads as bool; multi-bit
 // (width>=2) reads as the smallest unsigned int type that fits. Setters
 // mask + shift on the way in so out-of-range callers can't corrupt
@@ -353,14 +353,14 @@ func (s *{{ struct_name }}) {{ fl.name_set }}(v bool) {
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *{{ struct_name }}) Encode(w codec.SceSink{{ params_after_first_arg }}) error {
 {% if has_parent_tag_derivation %}
-	// RFC §5.B B5-ν Phase B — derive carrier bits from each embedded
+	// RFC §5.B parent-tag carriers — derive carrier bits from each embedded
 	// parent-tag variant's active arm before the carrier byte is
 	// emitted. Each `_derived<Carrier>` local is OR'd into the
 	// carrier's encode site.
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if has_no_fields %}
-	// RFC §5.B B5-α empty body — zero-byte payload.
+	// RFC §5.B empty body — zero-byte payload.
 	_ = w
 	return nil
 {% elif has_variant %}
@@ -402,7 +402,7 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink{{ params_after_first_arg }}) 
 	}
 	return nil
 {% elif has_present_if_fields %}
-	// RFC §5.B B1-δ + B2-β present-if encode.
+	// RFC §5.B present-if encode.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}

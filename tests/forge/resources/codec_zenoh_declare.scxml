@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh DECLARE envelope (RFC §5.B Wire RFC
-     Phase B Y3 atomic 2b-iv — single-embed consumer of the 9-arm
+<!-- SCE Forge conformance: Zenoh DECLARE envelope (RFC §5.B —
+     single-embed consumer of the 9-arm
      codec_zenoh_declaration dispatcher).
 
      Mirrors zenoh-pico `_z_declare_encode` / `_z_declare_decode`

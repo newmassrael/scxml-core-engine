@@ -20,7 +20,7 @@ data class CodecRepeatBasic(
     var num_frags: UByte = 0.toUByte(),
     var frags: MutableList<CodecRepeatElem> = mutableListOf()
 ) {
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable

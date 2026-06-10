@@ -21,7 +21,7 @@ import com.sce.forge.runtime.SceSink
 {% endfor %}
 
 {% if has_variant %}
-// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// RFC §5.B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
@@ -38,7 +38,7 @@ sealed class {{ struct_name }}Variant {
 
 {% endif %}
 {% if has_no_fields %}
-// RFC §5.B B5-α empty body — Kotlin's `data class` requires at least
+// RFC §5.B empty body — Kotlin's `data class` requires at least
 // one primary-ctor parameter, so empty-body codecs (e.g. Zenoh
 // KeepAlive) emit as a plain class with a no-arg constructor.
 class {{ struct_name }} {
@@ -96,7 +96,7 @@ data class {{ struct_name }}(
 {% endfor %}
 {% endif %}
 {% if has_flags %}
-    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // RFC §5.B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
@@ -134,7 +134,7 @@ data class {{ struct_name }}(
 {% endif %}
 {% endfor %}
 {% endif %}
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
@@ -144,14 +144,14 @@ data class {{ struct_name }}(
 {% endif %}
     fun encode(w: SceSink{{ params_after_first_arg }}): CodecError? {
 {% if has_parent_tag_derivation %}
-        // RFC §5.B B5-ν Phase B — derive carrier bits from each embedded
+        // RFC §5.B parent-tag carriers — derive carrier bits from each embedded
         // parent-tag variant's active arm before the carrier byte is
         // emitted. Each `_derived<Carrier>` val is OR'd into the
         // carrier's encode site.
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if has_no_fields %}
-        // RFC §5.B B5-α empty body — zero-byte payload.
+        // RFC §5.B empty body — zero-byte payload.
         return null
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
@@ -192,7 +192,7 @@ data class {{ struct_name }}(
         }
         return null
 {% elif has_present_if_fields %}
-        // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
+        // RFC §5.B present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a
@@ -281,7 +281,7 @@ data class {{ struct_name }}(
 {% endif %}
         fun decode(cursor: SceCursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}): {{ struct_name }}? {
 {% if has_no_fields %}
-            // RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+            // RFC §5.B empty body — zero-byte payload, no cursor work.
             return {{ struct_name }}()
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
@@ -307,7 +307,7 @@ data class {{ struct_name }}(
 {% endif %}
 {% else %}
 {% if fields %}
-            // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+            // Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
             val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
 {% for field in fields %}
             val {{ field.id }} = {{ field.decode_expr }}
@@ -343,10 +343,10 @@ data class {{ struct_name }}(
                 body = body
             )
 {% elif has_present_if_fields %}
-            // RFC §5.B B1-δ + B2-β present-if primitive: streaming
+            // RFC §5.B present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
-            // B2-β extends gating to Tail / LengthRef / Vle bit-sizes
+            // Gating extends to Tail / LengthRef / Vle bit-sizes
             // via dispatch inside `present_if_decode_stmt`. Per-field
             // `is_repeat` routes Repeat fields to the dedicated
             // helper. Branch fires before has_vle_fields so a codec

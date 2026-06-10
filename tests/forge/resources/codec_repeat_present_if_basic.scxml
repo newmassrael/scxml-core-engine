@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: repeat-with-present-if primitive (RFC §5.B
-     B5-μ, Wire RFC Phase B X1). Mirrors B5-κ Surface L's two-fixture
+     repeat-with-present-if). Mirrors the established two-fixture
      trunk pattern — this codec is the LOCAL-scope primitive demo
      (B1-δ-style `<carrier>.<flag>` predicate); codec_zenoh_hello is
      the realistic PARENT-scope consumer (`parent.<flag>`).

@@ -18,7 +18,7 @@ static inline int test_vector_algorithm_crc16() {
         const uint16_t expected = (uint16_t)0x29b1u;
         if (actual != expected) {
             std::fprintf(stderr,
-                "FAIL: algorithm_crc16 test_vector @SCXML L46: actual=0x%llx expected=0x%llx\n",
+                "FAIL: algorithm_crc16 test_vector @SCXML L47: actual=0x%llx expected=0x%llx\n",
                 static_cast<unsigned long long>(actual), static_cast<unsigned long long>(expected));
             ++failures;
         }

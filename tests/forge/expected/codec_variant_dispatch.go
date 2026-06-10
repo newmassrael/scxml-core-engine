@@ -14,14 +14,14 @@ import (
 
 // CodecVariantDispatchDefault bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
-// observed tag back onto the wire (RFC §5.B variant primitive B1-β).
+// observed tag back onto the wire (RFC §5.B variant primitive).
 type CodecVariantDispatchDefault struct {
 	Tag uint8
 	Body codec_variant_session_close.CodecVariantSessionClose
 }
 
 // CodecVariantDispatchVariant is a discriminated-union body for the codec's
-// tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
+// tag-field suffix (RFC §5.B variant primitive). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecVariantDispatchVariant struct {
@@ -57,7 +57,7 @@ func NewCodecVariantDispatch() *CodecVariantDispatch {
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecVariantDispatch(cursor *codec.SceCursor) (*CodecVariantDispatch, error) {
-	// Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+	// Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
 	raw, err := cursor.PeekSlice(1)
 	if err != nil {
 		return nil, err

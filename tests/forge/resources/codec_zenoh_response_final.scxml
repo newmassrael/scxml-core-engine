@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh RESPONSE_FINAL envelope (RFC §5.B
-     Wire RFC Phase B Y3 atomic 2b-iv — minimal-shape consumer).
+     RFC §5.B — minimal-shape consumer).
 
      Mirrors zenoh-pico `_z_response_final_encode` /
      `_z_response_final_decode` (src/protocol/codec/network.c:368-386)

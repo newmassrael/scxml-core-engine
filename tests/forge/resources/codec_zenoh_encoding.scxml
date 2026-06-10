@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh encoding sub-codec (RFC §5.B Wire
-     RFC Phase B Y3 atomic 2b-iii-α — full upstream wire fidelity for
+     RFC §5.B — full upstream wire fidelity for
      `_z_encoding_encode` / `_z_encoding_decode`, codec.c:356-381).
 
      Mirrors zenoh-pico verbatim:

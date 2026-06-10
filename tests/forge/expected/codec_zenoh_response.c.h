@@ -20,7 +20,7 @@
 #define CODEC_ZENOH_RESPONSE_MIN_BYTES 1
 #define CODEC_ZENOH_RESPONSE_MAX_BYTES 977
 
-/* RFC §5.B variant primitive (B1-β): tagged-union body for the codec's
+/* RFC §5.B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
  * preserves the runtime tag value when the default arm fires; the inner
  * union holds one body slot per arm (per-arm fields keep the template
@@ -46,7 +46,7 @@ typedef struct {
     uint64_t request_id;
     uint32_t key_id;
     uint64_t suffix_len;
-    /* RFC §5.B B5-ζ Surface H sce:type="string" payload (sce:max-size="256").
+    /* RFC §5.B sce:type="string" payload (sce:max-size="256").
      * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
      * but the host-language type signals UTF-8 text storage; the C
      * string is NOT NUL-terminated — payloads of exactly `max_size`
@@ -168,7 +168,7 @@ static inline sce_forge_codec_status_t codec_zenoh_response_decode(sce_forge_cur
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_RESPONSE_MAX_BYTES bytes and use
@@ -245,7 +245,7 @@ static inline sce_forge_codec_status_t codec_zenoh_response_encode_to_buf(const 
     return _st;
 }
 
-/* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+/* RFC §5.B flags primitive: per-bit-range accessors over
  * the carrier field. Single-bit (width=1) reads as bool; multi-bit
  * (width>=2) reads as the smallest unsigned C11 integer type that fits
  * (uint8_t / uint16_t / uint32_t / uint64_t). Setters mask + shift on

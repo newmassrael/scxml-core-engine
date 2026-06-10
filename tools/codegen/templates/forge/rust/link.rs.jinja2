@@ -13,8 +13,7 @@
 // implementation) and routes RX bytes through the §5.B framer
 // codec's decode + injects the configured SCXML event, while TX
 // pulls bytes from the framer's encode and submits them through
-// the driver's `tx`. B6-α emits the rust-target slice; B6-β closes
-// the c11 mirror.
+// the driver's `tx`. The c11 emit mirrors this rust-target slice.
 //
 // Generated from `name="{{ name }}"` with link-class `{{ class }}`,
 // framer ref `{{ framer }}`, backpressure policy `{{ backpressure }}`.
@@ -29,10 +28,10 @@ use sce_link_runtime::{Link, LinkError, RxFrame, TxFrame};
 /// Generated wrapper around an `impl Link` driver. The `framer_ref`
 /// is the `<sce:framer ref="{{ framer }}"/>` codec name — consumers
 /// thread it through to the framer's decode/encode entry points.
-/// B6-α treats the framer as opaque (no codegen-time codec import
-/// resolution) so the wrapper compiles standalone against
-/// `sce-link-runtime`'s `StubLink`. B6-γ adds the cross-file
-/// framer-codec resolution alongside the negative-coverage fixtures.
+/// The wrapper treats the framer as opaque (no codegen-time codec
+/// import resolution here) so it compiles standalone against
+/// `sce-link-runtime`'s `StubLink`; cross-file framer-codec
+/// resolution happens at generator level.
 pub struct {{ pascal_name }}<L: Link> {
     driver: L,
 }
@@ -48,7 +47,7 @@ impl<L: Link> {{ pascal_name }}<L> {
     /// Pull the next RX frame from the driver. Returns `None` when
     /// no bytes are pending; the SCXML interpreter polls in the
     /// idle slot and dispatches the configured event when bytes
-    /// arrive (event dispatch lands with B6-γ's events-side codegen).
+    /// arrive.
     pub fn rx(&mut self) -> Option<RxFrame<'_>> {
         self.driver.rx()
     }
@@ -83,20 +82,20 @@ impl<L: Link> {{ pascal_name }}<L> {
     pub const BACKPRESSURE: &'static str = "{{ backpressure }}";
 {% if has_rx_pool %}
     /// `<sce:rx-pool ref="{{ rx_pool }}"/>` — RX buffer-pool name
-    /// (RFC §5.E B7-α schema-only). Consumers resolve this against
-    /// the imported buffer-pool map. Cross-resolution validator
-    /// (`link/pool-slot-smaller-than-framer-max`) defers to a later
-    /// atomic that wires pool ↔ framer.
+    /// (RFC §5.E schema-only). Consumers resolve this against
+    /// the imported buffer-pool map; the
+    /// `link/pool-slot-smaller-than-framer-max` validator
+    /// cross-checks the pool slot size against the framer max.
     pub const RX_POOL: &'static str = "{{ rx_pool }}";
 {% endif %}
 {% if has_tx_pool %}
     /// `<sce:tx-pool ref="{{ tx_pool }}"/>` — TX buffer-pool name
-    /// (RFC §5.E B7-α schema-only). Same shape as `RX_POOL`.
+    /// (RFC §5.E schema-only). Same shape as `RX_POOL`.
     pub const TX_POOL: &'static str = "{{ tx_pool }}";
 {% endif %}
 {% if has_stage_pool %}
     /// `<sce:stage-pool ref="{{ stage_pool }}"/>` — stage-copy
-    /// destination pool (RFC §5.E B7-η' Atomic A1). Names the
+    /// destination pool (RFC §5.E). Names the
     /// `<scxml sce:kind="buffer-pool">` artifact whose slots back
     /// `Sample::take()`'s owned-copy destination. SCXML on-sample
     /// validators look this constant up at SCXML compile time via
@@ -125,7 +124,7 @@ impl<L: Link> {{ pascal_name }}<L> {
 // §5.C lines 816-820 (those are meaningful only on the
 // `session_arming` half).
 //
-// Axis-5 reverse-linkage marker: the validator reads this declaration
+// Reverse-linkage marker: the validator reads this declaration
 // instead of grepping for the literal `pub struct ...EstablishedSession`
 // signature (which a template refactor could whitespace-shift). Removing
 // or renaming the kind in this marker fires the

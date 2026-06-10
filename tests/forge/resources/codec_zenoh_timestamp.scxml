@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh timestamp body (RFC §5.B Wire RFC
-     Phase B Y3 atomic 2b-iii — sub-codec, foundational embed for the
+<!-- SCE Forge conformance: Zenoh timestamp body (RFC §5.B —
+     sub-codec, foundational embed for the
      T-gated timestamp slot inside codec_zenoh_msg_put / msg_del).
 
      Mirrors zenoh-pico `_z_timestamp_encode` / `_z_timestamp_decode`

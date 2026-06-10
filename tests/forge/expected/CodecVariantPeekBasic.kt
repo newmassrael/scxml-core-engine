@@ -13,7 +13,7 @@ import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_peek_arm_a.*
 import com.sce.generated.codec_peek_arm_b.*
 
-// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// RFC §5.B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
@@ -36,7 +36,7 @@ data class CodecVariantPeekBasic(
     // codec's `<sce:flag value=>`-baked default fields above.
     var body: CodecVariantPeekBasicVariant = CodecVariantPeekBasicVariant.CodecPeekArmA(com.sce.generated.codec_peek_arm_a.CodecPeekArmA())
 ) {
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable

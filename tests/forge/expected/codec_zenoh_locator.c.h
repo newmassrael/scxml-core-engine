@@ -19,7 +19,7 @@
 
 typedef struct {
     uint64_t locator_len;
-    /* RFC §5.B B5-ζ Surface H sce:type="string" payload (sce:max-size="128").
+    /* RFC §5.B sce:type="string" payload (sce:max-size="128").
      * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
      * but the host-language type signals UTF-8 text storage; the C
      * string is NOT NUL-terminated — payloads of exactly `max_size`
@@ -59,7 +59,7 @@ static inline sce_forge_codec_status_t codec_zenoh_locator_decode(sce_forge_curs
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_LOCATOR_MAX_BYTES bytes and use

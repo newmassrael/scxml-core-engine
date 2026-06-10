@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh INTEREST body (RFC §5.B Wire RFC
-     Phase B Y3 atomic 2b-iv — sub-codec, interest envelope embeddee).
+<!-- SCE Forge conformance: Zenoh INTEREST body (RFC §5.B —
+     sub-codec, interest envelope embeddee).
 
      Mirrors zenoh-pico `_z_interest_encode` / `_z_interest_decode`
      (src/protocol/codec/interest.c:41-91) at the not-is_final body

@@ -32,8 +32,8 @@ struct CodecNestedParent {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecNestedParent> decode(::SCE::Forge::SceCursor& cursor) {
-        // RFC §5.B B1-δ + B2-β present-if: per-field cursor advance.
-        // Gated fields hold std::optional<T>; B2-β extends gating to
+        // RFC §5.B present-if: per-field cursor advance.
+        // Gated fields hold std::optional<T>; gating extends to
         // Tail / LengthRef / Vle bit-sizes via dispatch inside
         // `present_if_decode_stmt`. Per-field `is_repeat` routes
         // Repeat fields to the dedicated helper. Branch fires before
@@ -78,7 +78,7 @@ struct CodecNestedParent {
         };
     }
 
-    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors.
+    // RFC §5.B flags primitive: per-bit-range accessors.
     // Single-bit (width=1) reads as bool; multi-bit (width>=2) reads as
     // the smallest unsigned integer type that fits the range. Setters
     // mask + shift on the way in so out-of-range callers can't corrupt
@@ -106,7 +106,7 @@ struct CodecNestedParent {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
+        // RFC §5.B present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // empty. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a

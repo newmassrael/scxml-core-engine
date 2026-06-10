@@ -1063,8 +1063,7 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
 {% elif (not in_foreach) and action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) and not action.eventexpr and not action.delay and not action.delayexpr %}
             /* W3C SCXML C.2: BasicHTTP send to HTTP target (literal `target`
                or runtime `targetexpr`). Synchronous POST against the
-               standalone server (Pattern B-i, see RFC
-               `claudedocs/rfc-c11-option-m-http.md` §3.2) followed by
+               standalone server, followed by
                event-name dispatch and optional `_event.data` promotion
                onto the `_pending_donedata` Lua slot. Mirrors cpp
                `actions/send.jinja2:347-428` `engine.performHttpSend()`,
@@ -1466,8 +1465,7 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
            `validation/require-either`) hard-rejects the empty-shape
            `<cancel/>` (no sendid, no sendidexpr) per W3C 6.3, so the
            codegen never sees that shape. Mirrors cpp/rust/go/kotlin
-           `cancel.jinja2` post-`20676dcc` per
-           `claudedocs/rfc-c11-error-guards-lift.md` v2 Layer 4. */
+           `cancel.jinja2`. */
 {% if action.sendid %}
         scheduled_cancel(sm, "{{ action.sendid | escape_c }}");
 {% elif action.sendidexpr %}
@@ -3891,7 +3889,7 @@ SCE_SM_FN bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm) 
 }
 {% if model.on_sample_links %}
 
-/* ── watching-zenoh RFC §5.E B7-η' codegen wire-up ────────────────── */
+/* ── watching-zenoh RFC §5.E sample-callback codegen wire-up ────────────────── */
 {# Per-link Sample delivery surface, C11 mirror of the Rust
    `<MachineName>LinkRx::deliver_link_<X>_sample` method on
    `Engine<...Policy>`. Each function:

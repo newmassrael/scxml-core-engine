@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh wireexpr (RFC §5.B Y0a — Wire RFC
-     Phase B Y0a foundation). Body codec (parent-scope) consumed by
+<!-- SCE Forge conformance: Zenoh wireexpr (RFC §5.B string primitive)
+     . Body codec (parent-scope) consumed by
      all 8 declare sub-types (decl_keyexpr / decl_subscriber /
      decl_queryable / decl_token + their undecl_* counterparts via
      ext_keyexpr) AND by 6 network MID codecs (request / response /
      response_final / declare / interest / oam) AND by interest
-     payloads. 15+ consumers across Wire RFC Phase B Batches 2/3/4.
+     payloads. 15+ consumers across the zenoh-pico parity batches.
 
      Mirrors zenoh-pico `_z_wireexpr_encode` /
      `_z_wireexpr_decode` (src/protocol/codec/message.c lines 115-145)

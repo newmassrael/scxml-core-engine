@@ -21,7 +21,7 @@
 #define CODEC_ZENOH_OAM_MIN_BYTES 1
 #define CODEC_ZENOH_OAM_MAX_BYTES 46
 
-/* RFC §5.B variant primitive (B1-β): tagged-union body for the codec's
+/* RFC §5.B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
  * preserves the runtime tag value when the default arm fires; the inner
  * union holds one body slot per arm (per-arm fields keep the template
@@ -135,7 +135,7 @@ static inline sce_forge_codec_status_t codec_zenoh_oam_decode(sce_forge_cursor_t
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_OAM_MAX_BYTES bytes and use
@@ -194,7 +194,7 @@ static inline sce_forge_codec_status_t codec_zenoh_oam_encode_to_buf(const codec
     return _st;
 }
 
-/* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+/* RFC §5.B flags primitive: per-bit-range accessors over
  * the carrier field. Single-bit (width=1) reads as bool; multi-bit
  * (width>=2) reads as the smallest unsigned C11 integer type that fits
  * (uint8_t / uint16_t / uint32_t / uint64_t). Setters mask + shift on

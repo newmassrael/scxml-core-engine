@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh undecl_token body (RFC §5.B Y0b —
-     Wire RFC Phase B Y0b consumer). Wire-identical to
+     RFC §5.B consumer). Wire-identical to
      codec_zenoh_undecl_subscriber / undecl_queryable; mirrors
      `_z_undecl_token_encode` →
      `_z_undecl_encode(_Z_UNDECL_TOKEN_MID=7, ...)` (declarations.c:

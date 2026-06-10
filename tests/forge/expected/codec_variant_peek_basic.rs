@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B B1-α: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -20,7 +20,7 @@ use sce_forge_runtime::codec::VecSink;
 use super::codec_peek_arm_a::CodecPeekArmA;
 use super::codec_peek_arm_b::CodecPeekArmB;
 
-// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// RFC §5.B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.

@@ -1,4 +1,4 @@
-/* SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B B5-θ) */
+/* SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B) */
 /* Companion to codec_length_ref_uint16_le.h — do not edit; regenerate from the source SCXML. */
 
 #ifndef SCE_FORGE_CODEC_LENGTH_REF_UINT16_LE_TEST_H

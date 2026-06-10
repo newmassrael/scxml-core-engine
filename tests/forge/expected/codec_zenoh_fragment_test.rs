@@ -1,4 +1,4 @@
-// SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B B5-θ)
+// SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B)
 // Companion to codec_zenoh_fragment.rs — do not edit; regenerate from the source SCXML.
 
 #[test]

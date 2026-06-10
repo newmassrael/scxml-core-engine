@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: tlv-chain-with-present-if primitive demo
-     (RFC §5.B Wire RFC Phase B Y3 atomic 2a — minimal demo for the
+     (RFC §5.B — minimal demo for the
      `<sce:tlv-chain sce:present-if="P">` lift).
 
      Mirrors codec_repeat_present_if_basic's role for B5-μ: the
