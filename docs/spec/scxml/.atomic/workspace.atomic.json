@@ -1075,6 +1075,11 @@
         {
           "file": "sce-build/src/parser.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/common/UniqueIdGenerator.cpp",
+          "symbol": "UniqueIdGenerator::generateBaseId",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7550,7 +7555,7 @@
         },
         {
           "file": "sce-build/src/forge/native_action.rs",
-          "kind": "references"
+          "kind": "implements"
         },
         {
           "file": "sce-build/src/generator.rs",
