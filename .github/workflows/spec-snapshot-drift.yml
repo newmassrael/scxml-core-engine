@@ -28,11 +28,15 @@ on:
     branches: [ main, develop ]
     paths:
       - 'tools/mnemosyne-adoption/**'
+      - 'resources/**/metadata.txt'
+      - 'docs/spec/scxml/.atomic/verifies-catalog.json'
       - '.github/workflows/spec-snapshot-drift.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'tools/mnemosyne-adoption/**'
+      - 'resources/**/metadata.txt'
+      - 'docs/spec/scxml/.atomic/verifies-catalog.json'
       - '.github/workflows/spec-snapshot-drift.yml'
   schedule:
     # Weekly upstream re-check (Mondays 04:17 UTC; off the hour to spread load).
@@ -54,6 +58,8 @@ jobs:
           python-version: '3.x'
       - name: Snapshot integrity (offline)
         run: python3 tools/mnemosyne-adoption/check_spec_drift.py --mode integrity
+      - name: Verifies-catalog up to date (generated artifact drift guard)
+        run: python3 tools/mnemosyne-adoption/gen_verifies_catalog.py --check
       - name: Tooling regression tests
         run: python3 -m unittest discover -s tools/mnemosyne-adoption/tests
 
