@@ -10,7 +10,7 @@
 //      their pinned source.
 //   2. `generate --help` does not parrot the stale
 //      "C11 is RFC §5.J.1 foundation only — emitter lands in M2+"
-//      sentence. B6-α/β/γ landed the c11 emitter; the stale text
+//      sentence. The c11 emitter is fully landed; the stale text
 //      mis-led one consumer into a `hand-author header path` workaround
 //      (vendor pin R30 → R53), so a regression here would re-open the
 //      same mis-judgment for the next contributor.
@@ -131,7 +131,7 @@ fn generate_help_does_not_carry_m2_plus_stale_text() {
     assert!(
         !stdout.contains("emitter lands in M2"),
         "generate --help must not parrot the 'emitter lands in M2+' \
-         line — c11 has been a first-class emit target since B6-α/β/γ; \
+         line — c11 is a first-class emit target; \
          got help text:\n{stdout}",
     );
     assert!(

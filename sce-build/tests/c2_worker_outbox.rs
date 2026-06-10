@@ -1,7 +1,7 @@
-//! C2 outbox follow-up Atomic B integration tests — watching-zenoh
-//! RFC §5.D, Q-Outbox-1..9 LOCKED 2026-05-12.
+//! Worker outbox cross-resolution integration tests — watching-zenoh
+//! RFC §5.D.
 //!
-//! Atomic B's distinguishing value: SCXML-side `<sce:outbox ref="X">`
+//! Distinguishing value: SCXML-side `<sce:outbox ref="X">`
 //! cross-resolution against the build's `SceCrossDocRegistry`,
 //! emitting one of three spec-extension diagnostics per repair axis:
 //!
@@ -10,16 +10,16 @@
 //!   {statechart, worker})
 //! - `worker/outbox-target-suffix-invalid` (suffix !=  `inbox`)
 //!
-//! Atomic B builds on Atomic A's `compile_scxml_with_imports`
+//! These tests build on the `compile_scxml_with_imports`
 //! orchestrator. Single-file compile paths (`compile_forge_with_imports`)
 //! cannot enforce outbox cross-resolution because the cross-doc
 //! registry is built only by the orchestrator.
 //!
-//! Test matrix per RFC §4 (12 scenarios):
+//! Test matrix (12 scenarios):
 //!  1. happy_outbox_to_statechart_basic
 //!  2. happy_outbox_to_statechart_alongside_link
-//!  3. happy_outbox_to_worker_basic                  (Q-Outbox-3 (b))
-//!  4. happy_outbox_to_worker_self_reference         (Q-Outbox-3 (b))
+//!  3. happy_outbox_to_worker_basic
+//!  4. happy_outbox_to_worker_self_reference
 //!  5. unknown_outbox_owner_fires
 //!  6. unknown_outbox_owner_with_busy_registry
 //!  7. wrong_kind_outbox_to_link_fires

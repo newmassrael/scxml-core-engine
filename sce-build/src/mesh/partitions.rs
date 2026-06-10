@@ -498,7 +498,7 @@ pub fn load_partition_machine_models(
 ) -> Result<BTreeMap<String, SCXMLModel>, MeshError> {
     // Resolve each listed machine's SCXML path via the deploy.yaml
     // machine table. Partition machines that are not declared in
-    // `topology:` would already have been rejected by Phase A rule 9
+    // `topology:` would already have been rejected by partition rule 9
     // (PartitionMachineNotListed) if referenced by any `contains:`
     // entry, but a bare `machines:` entry that names an unknown
     // machine has no earlier gate — fall back to the rule-2 path

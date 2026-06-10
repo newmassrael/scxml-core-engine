@@ -27,11 +27,10 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
 
 /// Target language for code generation.
 ///
-/// `C11` is reserved for the embedded MCU backend per RFC §5.J.1
-/// (watching-zenoh consumer, Phase A5). Enum membership lets every
-/// existing dispatch site flag the unimplemented case explicitly
-/// rather than silently routing C11 through a more permissive arm.
-/// Per-kind `C11` emitters land in M2+ (lookup vertical slice first).
+/// `C11` is the embedded MCU backend per watching-zenoh RFC §5.J.1.
+/// Enum membership lets every dispatch site handle the C11 case
+/// explicitly rather than silently routing C11 through a more
+/// permissive arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     Rust,
@@ -253,12 +252,12 @@ fn reject_liveliness_without_handler(model: &SCXMLModel) -> Result<(), GenerateE
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
 ///
-/// `no_std` toggles the watching-zenoh RFC §5.J.2 (C3 Atomic B-γ2b)
-/// codegen mode: emits `#![no_std]` at the crate root and switches
+/// `no_std` toggles the watching-zenoh RFC §5.J.2 codegen mode:
+/// emits `#![no_std]` at the crate root and switches
 /// `parent_external_queue` + microstep `HashSet` to heapless variants.
 /// Default `false` keeps std-coupled output for the existing 200+ AOT
-/// W3C fixtures byte-identical. The B-β (`818de8eb`) CLI flag
-/// `--no-std` threads through `cmd_generate` to this parameter.
+/// W3C fixtures byte-identical. The `--no-std` CLI flag threads
+/// through `cmd_generate` to this parameter.
 pub fn generate(
     model: &SCXMLModel,
     template_dir: &Path,
@@ -868,10 +867,11 @@ pub fn generate_go_with_templates(
 
 // ── Python generator ────────────────────────────────────────────
 //
-// Python AOT (Atomic β): atomic + compound states, basic + eventless
-// transitions, onentry/onexit, transition guards/actions, `<data>` early-
-// binding datamodel with `<assign>` updates, and `<raise>` for internal
-// events. Parallel / history / invoke land in Atomic γ. Generated `*_sm.py`
+// Python AOT backend: atomic + compound + parallel + history states,
+// basic + eventless transitions, onentry/onexit, transition guards and
+// actions, `<data>` early-binding datamodel with `<assign>` updates,
+// `<raise>` for internal events, `<send>`/`<cancel>`, and
+// `<invoke type="scxml">`. Generated `*_sm.py`
 // modules depend on `sce-python-runtime` (pure-Python W3C SCXML engine) —
 // analogous to how the Go backend depends on `sce-go-runtime` and Kotlin on
 // its runtime package. The pybind11 channel under `sce-python/` is a
@@ -902,13 +902,13 @@ pub fn generate_python_with_templates(
     render_python(&mut env, model)
 }
 
-/// Atomic γ-2 surface — explicitly reject features the Python codegen
-/// does not yet implement. Failing loudly here keeps generated `*_sm.py`
-/// honest: every accepted document produces a working module instead of
-/// a silently degraded one. γ progressively widens the surface and
-/// removes the corresponding rejects (γ-1 lifted `<parallel>`; γ-2
-/// lifted `<history>`; γ-3 lifts the remaining executable content;
-/// γ-4 lifts `<invoke>`).
+/// Explicitly reject features the Python codegen does not implement.
+/// Failing loudly here keeps generated `*_sm.py` honest: every accepted
+/// document produces a working module instead of a silently degraded
+/// one. `<parallel>`, `<history>`, the executable-content set, and
+/// `<invoke type="scxml">` are all accepted; the rejects below cover
+/// mesh-rpc invokes, action elements outside the supported set, and
+/// `<send>` forms with no supported transport or event identifier.
 fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), GenerateError> {
     // §scxml-6.4: `<invoke type="scxml">` (static src=/inline) and
     // `<invoke srcexpr/contentexpr>` (hybrid) both lower the same way
@@ -931,9 +931,9 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
         }
     }
     // §scxml-5.3 — Python AOT used to reject `<data id>` names that
-    // collide with Python keywords (`class`, `lambda`, …) because the β
-    // datamodel stored values as bare Python identifiers parsed by
-    // `eval` directly. Post-Lua-migration the datamodel lives inside
+    // collide with Python keywords (`class`, `lambda`, …) because the
+    // pre-Lua datamodel stored values as bare Python identifiers parsed
+    // by `eval` directly. Post-Lua-migration the datamodel lives inside
     // the `IScriptEngine` session and is accessed exclusively via
     // string-keyed `declare_variable` / `set_variable` / `<assign
     // location>` calls; user expressions go through the
@@ -946,14 +946,12 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
     // (`event="foo.*"`) and multi-event (`event="foo bar"`) descriptors
     // lower through the `_event_name_matches` helper in the same
     // template (W3C 3.13 token-prefix match); no reject is needed.
-    // γ-4 send extensions lift the eventexpr / delayexpr / payload /
-    // idlocation rejects: dynamic expressions evaluate against the
-    // datamodel at action time, payload marshalling runs through
-    // `_eval_send_payload`, and `idlocation` is written back by
-    // `_resolve_send_id`. External-target (`target="..."`) and
-    // `targetexpr` / non-default `send_type` remain reject-walled —
-    // those routes need the cross-session router or HTTP transport
-    // (BasicHTTPEventProcessor) that γ-4a/γ-4b lift.
+    // Dynamic `<send>` expressions are accepted: eventexpr / delayexpr
+    // evaluate against the datamodel at action time, payload
+    // marshalling runs through `_eval_send_payload`, and `idlocation`
+    // is written back by `_resolve_send_id`. Only `<send target>`
+    // values outside the supported transport set (`#_…`, the `!`
+    // sentinel, `http(s)://…`) are reject-walled below.
     fn check_actions(actions: &[crate::model::Action], context: &str) -> Result<(), GenerateError> {
         const SUPPORTED_ACTIONS: &[&str] = &[
             "script", "assign", "raise", "log", "if", "foreach", "send", "cancel",
@@ -966,15 +964,14 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 )));
             }
             if action.action_type == "send" {
-                // γ-3b kept only the simple in-machine send form; γ-4
-                // send extensions accept dynamic exprs + payload +
-                // idlocation; γ-4a additionally accepts `target="#_parent"`
-                // (child-to-parent) and `target="#_<invoke_id>"` (parent-
-                // to-child via `Invoke.forward_event`); γ-4b's first
-                // lift accepts `target="!…"` (the SCXML test-suite's
-                // deliberate-invalid sentinel — W3C 6.2: dispatch
-                // failure raises `error.execution`); γ-4b second lift
-                // accepts absolute http:// / https:// targets +
+                // Accepted `<send>` target forms: the simple in-machine
+                // form (empty target) with dynamic exprs + payload +
+                // idlocation; `target="#_parent"` (child-to-parent) and
+                // `target="#_<invoke_id>"` (parent-to-child via
+                // `Invoke.forward_event`); `target="!…"` (the SCXML
+                // test-suite's deliberate-invalid sentinel — W3C 6.2:
+                // dispatch failure raises `error.execution`); and
+                // absolute http:// / https:// targets +
                 // `targetexpr` (runtime URL resolution) +
                 // `send_type="BasicHTTPEventProcessor"` (W3C C.2). All
                 // three lower through `engine.perform_http_send`.
@@ -996,7 +993,7 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
                 // dispatch table covering `#_internal` / `#_parent` /
                 // `#_<invoke>` / `!sentinel` / `http(s)://...` (W3C C.1).
                 // Empty / undefined resolutions raise `error.communication`.
-                // γ-4 send extensions accept `<send eventexpr>`,
+                // The codegen accepts `<send eventexpr>`,
                 // `<send delayexpr>`, `<send idlocation>`, and
                 // `<param>` / `<content>` / namelist payload
                 // marshalling — those rejects are intentionally absent.
@@ -1054,7 +1051,7 @@ fn reject_python_unsupported_features(model: &SCXMLModel) -> Result<(), Generate
 fn render_python(env: &mut Environment, model: &SCXMLModel) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 
-    // NL→IR Item C1 Path A (EventSchema MCU native lowering) — the Python typed
+    // EventSchema native lowering — the Python typed
     // `_event.data` payload channel: module-level payload dataclasses, the
     // `_pending_<event>_payload` __init__ fields + `set_current_event` lift that
     // carries the dequeued event's typed payload, the per-event `raise_<event>`
@@ -1151,7 +1148,7 @@ fn load_template_strings(
 
 /// Recursively load all .jinja2 templates from a directory.
 ///
-/// Watching-zenoh RFC §5.O Atomic 0b — also loads the workspace-
+/// Watching-zenoh RFC §5.O (generated-source traceability) — also loads the workspace-
 /// shared `_macros/` directory (one level up from the per-backend
 /// template root) so cross-backend shared macros like
 /// `_macros/sce_map_marker.jinja2` are visible to every language

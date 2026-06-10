@@ -1,19 +1,18 @@
-//! C3 Atomic B-γ1 integration tests — `<sce:capacity>` SCXML
-//! attribute + `default_event_queue_capacity` deploy.yaml fallback +
+//! Integration tests — `<sce:capacity>` SCXML attribute +
+//! `default_event_queue_capacity` deploy.yaml fallback +
 //! Rust codegen template `pub const EVENT_QUEUE_CAPACITY`
 //! emission + `.cargo/config.toml` thumbv7em target registration.
 //!
-//! Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a)). The
-//! per-document capacity flows: parser reads `<scxml sce:capacity>`
+//! Watching-zenoh RFC §5.J.2 + §5.L. The per-document capacity
+//! flows: parser reads `<scxml sce:capacity>`
 //! → SCXMLModel.event_queue_capacity → (optional fallback from
 //! deploy.yaml) → Rust template emits `pub const EVENT_QUEUE_CAPACITY`
-//! when present. The runtime port (B-γ2) consumes the const for
+//! when present. The no_std runtime port consumes the const for
 //! `heapless::spsc::Queue<E, EVENT_QUEUE_CAPACITY>`.
 //!
-//! The template-level `#![no_std]` + `use core::time::Duration`
-//! switch is intentionally NOT in B-γ1 (would emit silently-broken
-//! code given that sub-templates still use std paths). That switch
-//! co-lands with B-γ2's runtime port + sub-template swaps.
+//! The template-level `#![no_std]` switch is gated on the
+//! `--no-std` flag (emission contract pinned in the section below);
+//! the capacity plumbing covered here is profile-independent.
 
 use std::path::Path;
 
@@ -157,14 +156,14 @@ fn rust_template_omits_event_queue_capacity_const_when_absent() {
     );
 }
 
-/// C3 Atomic B-γ2a: trivial sub-template `std::*` → `core::*` swaps
-/// position the generated code one step closer to no_std-compatible.
+/// Sub-template `std::*` → `core::*` swaps keep the generated code
+/// no_std-compatible.
 /// Under std builds the swap is behavior-preserving — `core::time::*`
 /// and `core::sync::atomic::*` are the same types `std::time::*` /
 /// `std::sync::atomic::*` re-export. The drift guard locks in the
 /// `core::*` spelling so a future template edit that reverts back to
 /// `std::*` paths surfaces the regression here rather than waiting
-/// for B-γ3's `#![no_std]` emission to fire compile errors against
+/// for a `--no-std` build to fire compile errors against
 /// the generated code.
 #[test]
 fn rust_template_emits_core_time_duration_not_std() {
@@ -283,10 +282,10 @@ topology:
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// C3 Atomic B-γ2b + single-emit portability — `--no-std` emission contract
+// Single-emit portability — `--no-std` emission contract
 // ═══════════════════════════════════════════════════════════════════
 //
-// The generator takes a `no_std: bool` parameter (B-β's `--no-std`
+// The generator takes a `no_std: bool` parameter (the `--no-std`
 // CLI flag, wired through `cmd_generate`). When set, the Rust template
 // emits `#![no_std]` at the crate root and elides the
 // `parent_external_queue` field whose `Arc<Mutex<...>>` type is
@@ -460,8 +459,8 @@ fn cargo_config_declares_thumbv7em_target() {
     // Workspace `.cargo/config.toml` registers the canonical Cortex-
     // M4F target so consumers can build with
     // `cargo --target=thumbv7em-none-eabihf` from any directory.
-    // Atomic B-γ2's runtime port makes the build actually succeed;
-    // B-γ1's check is presence of the section + linker config.
+    // The no_std runtime port makes the build actually succeed;
+    // this test pins presence of the section + linker config.
     let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("workspace root");

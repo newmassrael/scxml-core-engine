@@ -1,8 +1,7 @@
 //! RFC c7-wildcard W-project — bounded-string element-field → borrowed
 //! `bytes`-view call-site projection, parity across all 6 backends.
 //!
-//! Per `claudedocs/rfc-c7-wildcard-keyexpr-expressibility.md` Q-W-5 (a) +
-//! Q-W-8 W-project lock: an algorithm iterating a bounded-collection
+//! Locked projection semantics: an algorithm iterating a bounded-collection
 //! whose element-type carries a bounded-string field (`keyexpr_entry`'s
 //! `pattern`) projects that field to each backend's borrowed byte-view
 //! idiom when it flows into a `bytes` parameter — here W-index's

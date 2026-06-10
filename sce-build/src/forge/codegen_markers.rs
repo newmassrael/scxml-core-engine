@@ -1,4 +1,4 @@
-//! Structured codegen-emit markers for axis-5 reverse-linkage.
+//! Structured codegen-emit markers for reverse-linkage.
 //!
 //! Templates declare structural invariants they emit via inline
 //! comments shaped `SCE-EMIT: kind=<kind>`. Validators read these
@@ -12,8 +12,8 @@
 //! `check_reassembly_peer_id_zid_invariant_rust`,
 //! `check_reassembly_peer_id_zid_invariant_c11`,
 //! `check_inter_pool_padding_invariant`) reached into the rendered
-//! template output by literal-substring scan — pure ownership-inversion
-//! (axis 5): the Rust producer of template context was asserting the
+//! template output by literal-substring scan — pure ownership-inversion:
+//! the Rust producer of template context was asserting the
 //! Jinja template's exact emission shape, and a template change with
 //! incidentally-preserved substring would pass the check while breaking
 //! the structural invariant.

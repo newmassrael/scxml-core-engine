@@ -1,4 +1,4 @@
-//! C10-α — listener-link sibling-pair + 2 codes (258 → 260).
+//! Listener-link sibling-pair + its 2 diagnostic codes.
 //!
 //! Per watching-zenoh RFC §5.C lines 802-833 + 849-856 + §5.M lines
 //! 2771-2828 + 2982-2994: a `<sce:link>` whose deploy-resolved
@@ -8,8 +8,8 @@
 //! physical socket (Listener + Sibling EstablishedSession).
 //!
 //! This suite exercises the orchestrator-resolved sibling-pair flag
-//! along five axes (D-1 in-atomic consumer discipline for both new
-//! codes):
+//! along five axes (both new codes demonstrate an in-suite firing
+//! path):
 //!   1. [`accepting_substate_present`] dot-glob walker
 //!   2. [`resolve_listener_links`] deploy × SCXML join
 //!   3. [`validate_reassembly_cross_doc`] session_arming branch
@@ -122,31 +122,30 @@ fn session_arming_link_yaml() -> String {
     "          udp_listener:\n            bind: \"0.0.0.0:7447\"\n            driver: lwip_udp\n            mtu_bytes: 1500\n            domain_attrs:\n              trust_class: session_arming\n            session_arming_quota: 8\n            accept_rate_per_sec: 4\n            accept_rate_burst: 8\n".to_string()
 }
 
-/// Axis-3 Phase C migration shape — the deploy half adds explicit
+/// Explicit-role declaration shape — the deploy half adds explicit
 /// `role: listener` alongside the existing `trust_class: session_arming`
 /// trust tier. Pairs with an SCXML that declares
 /// `<sce:session-role kind="accept-side"/>` (mirrored on the test side
 /// by `declared_session_roles.insert(AcceptSide)` on the SCXMLModel).
-/// Phase D will delete the legacy `session_arming_link_yaml` helper +
-/// its three callers once the walker is repurposed.
+/// The role-less `session_arming_link_yaml` helper above remains for
+/// fixtures that model unmigrated deploys.
 fn session_arming_listener_link_yaml_axis3() -> String {
     "          udp_listener:\n            bind: \"0.0.0.0:7447\"\n            driver: lwip_udp\n            mtu_bytes: 1500\n            role: listener\n            domain_attrs:\n              trust_class: session_arming\n            session_arming_quota: 8\n            accept_rate_per_sec: 4\n            accept_rate_burst: 8\n".to_string()
 }
 
 #[test]
 fn resolve_listener_links_pairs_explicit_role_with_accept_side_declaration() {
-    // Axis-3 Phase C migration of the C10-α canonical positive
-    // listener-pair test. Pre-migration this exercised the legacy
-    // walker (session_arming + Accepting.* substate); post-migration
-    // it exercises the new explicit-role path (deploy role: listener
-    // + SCXML <sce:session-role kind="accept-side"/>).
+    // Canonical positive listener-pair test on the explicit-role
+    // path (deploy `role: listener` + SCXML
+    // `<sce:session-role kind="accept-side"/>`). The legacy
+    // substate-driven walker join (session_arming + Accepting.*
+    // substate) is deleted from `resolve_listener_links`.
     //
     // The fixture deliberately retains the `Accepting.AwaitingInitSyn`
-    // substate to mirror real-world session-FSM SCXML — both join
-    // paths fire and BTreeSet dedupes per Phase B union semantics.
-    // Phase D will delete the legacy walker; the `Accepting.*` states
-    // remain as the canonical session-FSM implementation, but only
-    // the explicit-role declaration triggers listener-pair synthesis.
+    // substate to mirror real-world session-FSM SCXML — the
+    // `Accepting.*` states remain the canonical session-FSM
+    // implementation, but only the explicit-role declaration
+    // triggers listener-pair synthesis.
     let yaml = deploy_with_listener_source(
         "session_fsm.scxml",
         &session_arming_listener_link_yaml_axis3(),
@@ -290,8 +289,9 @@ fn link_instance_role_wire_form_distinguishes_listener_and_sibling() {
 
 #[test]
 fn listener_sibling_self_check_fires_on_force_dropped_suffix() {
-    // [[feedback-silently-broken-hooks]] discipline: both new codes
-    // must demonstrate an in-atomic firing path. The self-check
+    // Firing-path discipline (a diagnostic hook without a
+    // demonstrated firing path is silently broken): both new codes
+    // must demonstrate an in-suite firing path. The self-check
     // `link/listener-link-not-paired-with-established-sibling` is a
     // pure template-regression guard whose normal-flow trigger is
     // unreachable (the per-language link template emits the Sibling

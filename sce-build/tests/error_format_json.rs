@@ -220,7 +220,7 @@ fn json_mode_covers_cli_boundary_errors() {
 /// `<scxml initial="X">` where `X` is not declared. Pre-W5 this
 /// reject was mis-classified as `validation/dynamic-features`
 /// (the analyzer treated all three precondition failures as
-/// "dynamic features"). RFC §W5 D3 splits the precondition channel:
+/// "dynamic features"). §wire-W5 D3 splits the precondition channel:
 /// "initial names undeclared state" is a hard semantic violation
 /// (the Interpreter would also reject), and now correctly emits
 /// `validation/invalid-reference` via

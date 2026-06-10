@@ -117,7 +117,7 @@
               "$ref": "#/definitions/ScalarOutput"
             },
             "symbol": {
-              "description": "W1 symbol-name SSOT: the per-language accessor symbol render_interpolation defines, derived at harness-rendering time from `forge_interpolation_symbol` (the conformance call site reads it via `f.symbol`). Like Lookup's `function`, it is never present in fixtures.json — the manifest carries only structural data.",
+              "description": "Symbol-name SSOT: the per-language accessor symbol render_interpolation defines, derived at harness-rendering time from `forge_interpolation_symbol` (the conformance call site reads it via `f.symbol`). Like Lookup's `function`, it is never present in fixtures.json — the manifest carries only structural data.",
               "type": [
                 "string",
                 "null"
@@ -343,7 +343,7 @@
               }
             },
             "has_state": {
-              "description": "Derived at harness-rendering time from SCXML — true iff at least one `<data sce:max-delta=...>` is present (rate-of-change rule is the only state-bearing validator construct). Empty in fixtures.json (manifest-side override is rejected); the value is computed by `read_validator_has_state` at render time so the SCXML remains the single source of truth.\n\nAll backends except C11 generate uniform `validator.validate(...)` regardless of state, so the flag is unused for them. C11 needs it because RFC §5.J.2 V2c uses a free function for stateless validators (no instance to call a method on) and a state struct + pointer pass for stateful ones; the harness fragment branches on this flag to emit the matching call shape.",
+              "description": "Derived at harness-rendering time from SCXML — true iff at least one `<data sce:max-delta=...>` is present (rate-of-change rule is the only state-bearing validator construct). Empty in fixtures.json (manifest-side override is rejected); the value is computed by `read_validator_has_state` at render time so the SCXML remains the single source of truth.\n\nAll backends except C11 generate uniform `validator.validate(...)` regardless of state, so the flag is unused for them. C11 needs it because its C11 emitter uses a free function for stateless validators (no instance to call a method on) and a state struct + pointer pass for stateful ones; the harness fragment branches on this flag to emit the matching call shape.",
               "type": "boolean"
             },
             "kind": {
@@ -375,7 +375,7 @@
               }
             },
             "has_test_vectors": {
-              "description": "RFC §5.B B5-θ: derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the codec root. Trunk emits the per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only; Cpp/Kotlin/Go/Python harnesses skip the codec sidecar until B5-θ closures land (mirrors algorithm `has_test_vectors` precedent). Empty in fixtures.json (manifest-side override is rejected); computed by `read_codec_has_test_vectors` so the SCXML stays the single source of truth.",
+              "description": "RFC §5.B test-vector flag: derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the codec root. The per-backend codec sidecar (`<fixture>_test.{rs,h}`) is emitted on Rust + C11 only; Cpp/Kotlin/Go/Python have no codec sidecar template, so the flag is forced false for them (mirrors the algorithm `has_test_vectors` precedent). Empty in fixtures.json (manifest-side override is rejected); computed by `read_codec_has_test_vectors` so the SCXML stays the single source of truth.",
               "type": "boolean"
             },
             "kind": {

@@ -47,10 +47,11 @@ fn link_fixture() -> &'static str {
 
 /// Wrap the link fixture into a tempdir; return the path. Worker
 /// fixture's `<sce:import kind="link">` references it by relative
-/// `src`. Outbox cross-resolution defers to a follow-up atomic per
-/// Gate B preflight (`parse_imports` rejects `kind="statechart"`
-/// imports), so we don't need a statechart fixture today — outbox
-/// refs are parser-validated only (presence + format).
+/// `src`. Outbox cross-resolution runs only in the orchestrator
+/// path (`compile_scxml_with_imports`, covered in
+/// `c2_worker_outbox.rs`); in this single-file harness outbox refs
+/// are parser-validated only (presence + format), so no statechart
+/// fixture is needed.
 fn build_workspace() -> tempfile::TempDir {
     let dir = tempdir().expect("tempdir");
     fs::write(dir.path().join("udp_scout.scxml"), link_fixture()).expect("write link");
@@ -342,10 +343,10 @@ fn negative_link_rx_ref_not_imported_fires_diagnostic() {
     }
 }
 
-// Outbox cross-resolution (`worker/outbox-ref-unknown`) defers to a
-// follow-up atomic on the SCXML-side build tier. C2-β accepts any
-// non-empty outbox `ref` at parse time without cross-resolution; the
-// happy paths above exercise the parse-time pass-through.
+// Outbox cross-resolution (`worker/outbox-ref-unknown`) runs in the
+// orchestrator build tier (`c2_worker_outbox.rs`). Parse time accepts
+// any non-empty outbox `ref` without cross-resolution; the happy
+// paths above exercise the parse-time pass-through.
 
 // ─── Ordering negative: inbox-ordering-unspecified ───────────────────
 

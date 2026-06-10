@@ -1,9 +1,9 @@
-//! NL→IR Mapping Roadmap Item 3 Phase B — event-set exhaustiveness.
+//! Event-set exhaustiveness validation.
 //!
 //! Drives the wire-layer entry [`sce_build::compile_scxml_lang_typed`]
-//! end-to-end so the new validator exercises the full compile path
+//! end-to-end so the validator exercises the full compile path
 //! (XInclude expansion, parser, analyzer, `guard_static_generatable`,
-//! `scxml_reachability::validate`, then the Phase B walker). The
+//! `scxml_reachability::validate`, then the exhaustiveness walker). The
 //! validator's module-internal unit tests in
 //! `sce-build/src/scxml_exhaustiveness.rs` cover the matching
 //! semantics directly with hand-built `SCXMLModel` values; this file

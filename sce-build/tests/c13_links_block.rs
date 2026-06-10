@@ -1,4 +1,4 @@
-//! C13-α-1 — deploy.yaml §5.K `machines.<n>.links.<name>` block
+//! Deploy.yaml §5.K `machines.<n>.links.<name>` block
 //! schema + parse-time validators + cross-doc link-name resolution.
 //!
 //! Per watching-zenoh RFC §5.K lines 2232-2540: per-machine `links:`
@@ -7,22 +7,21 @@
 //! Five intra-link parse-time validators (driver-unknown, mtu-below-
 //! driver-floor, expected-p99-exceeds-mtu, burst-pps-missing-on-isr-
 //! dispatch, mtu-missing-on-fragmenting-link) + two cross-doc
-//! validators (link-not-declared-in-deploy + link-not-declared-in-forge)
-//! per Q-C13-5 (a) lock.
+//! validators (link-not-declared-in-deploy + link-not-declared-in-forge).
 //!
 //! Two spec codes (`deploy/link-burst-absorption-insufficient` line
 //! 2489-2495 + `deploy/link-rx-dispatch-worker-tick-on-high-burst`
-//! line 2496-2500) defer to C13-α-2 — both require RX pool slot_count
-//! cross-doc resolution against forge `<sce:link>` + `ForgePoolRegistry`,
-//! infrastructure that lands in the follow-up atomic. Six C9-β
+//! line 2496-2500) require RX pool slot_count cross-doc resolution
+//! against forge `<sce:link>` + `ForgePoolRegistry`; they are covered
+//! by `c13_alpha2_reassembly_cross_doc.rs`, together with the six
 //! reassembly cross-doc codes (mem/reassembly-slot-size-below-declared-
-//! mtu + 5 reassembly/*) also defer to C13-α-2 per Q-C9-2 (a) lock.
+//! mtu + 5 reassembly/*).
 //!
 //! PlatformConfig WCET extensions (`clock_freq_mhz`,
 //! `memcpy_cycles_per_byte`, `vle_decode_cycles_per_byte`,
-//! `tlv_chain_per_entry_overhead_us`) per Q-C13-6 (a) — parse-only in
-//! C13-α-1; §5.B aggregate WCET + C9-β stage-copy-wcet consumers fire
-//! when the corresponding consumer-side atomic lands.
+//! `tlv_chain_per_entry_overhead_us`) are parse-only in this file;
+//! the §5.B aggregate WCET + reassembly stage-copy-wcet consumers
+//! are exercised by their own cross-doc validator tests.
 
 use sce_build::mesh::deploy::{parse_deploy_str, validate_links_cross_doc, RxDispatch, TrustClass};
 use sce_build::mesh::error::DeployError;

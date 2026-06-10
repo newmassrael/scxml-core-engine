@@ -79,12 +79,12 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // hardware constraint like DMA section/cache for BufferPool, no
         // cross-core atomics constraint like Worker). Generic class.
         | ForgeKind::BoundedCollection
-        // NL→IR Item C1 Path A: Enum lowers to a backend-native typed
+        // Enum lowers to a backend-native typed
         // enum on every language (`enum class : <int>` / `#[repr(<int>)]
         // enum` / `IntEnum` / etc.) — no MCU-specific constraint.
         // Generic class.
         | ForgeKind::Enum
-        // NL→IR Item C1 Path A: EventSchema lowers to a backend-native
+        // EventSchema lowers to a backend-native
         // payload struct on every language (`struct <S>Payload` /
         // `pub struct <S>Payload` / `data class <S>Payload` / etc.) —
         // typed-Enum fields resolve through the Enum kind's emitted
@@ -93,20 +93,19 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         | ForgeKind::EventSchema => KindClass::Generic,
         // RFC §5.C / §5.J.4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
-        // `codegen/mcu-class-kind-on-non-mcu-language` (existing A6
-        // diagnostic). The (rust, *) and (c11, bare_metal) substrate
-        // is in `sce-link-runtime` (rust trait + per-OS downstream
-        // impls) and the c11 lower (deferred to B6-β).
+        // `codegen/mcu-class-kind-on-non-mcu-language`. The (rust, *)
+        // and (c11, bare_metal) substrate is in `sce-link-runtime`
+        // (rust trait + per-OS downstream impls) and the c11 lower.
         ForgeKind::Link => KindClass::McuClass,
         // RFC §5.E / §5.J.4: BufferPool is the second MCU-class kind.
         // Same matrix as Link: `(rust, *)` + `(c11, bare_metal)` only;
-        // cpp/kotlin/go/python rejected via A6 diagnostic. B7-α ships
-        // rust; B7-β closes c11 parity.
+        // cpp/kotlin/go/python rejected via the same diagnostic; rust
+        // and c11 templates both ship.
         ForgeKind::BufferPool => KindClass::McuClass,
         // RFC §5.D / §5.J.4: Worker is the third MCU-class kind.
         // Same matrix as Link + BufferPool: `(rust, *)` + `(c11, bare_metal)`
-        // only; cpp/kotlin/go/python rejected via A6 diagnostic. C2-α
-        // schema-only; C2-β dual-emits rust + c11 codegen.
+        // only; cpp/kotlin/go/python rejected via the same diagnostic;
+        // Worker dual-emits rust + c11 codegen.
         ForgeKind::Worker => KindClass::McuClass,
     }
 }
@@ -141,9 +140,9 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::C11 => true,
         },
         // RFC §5.A Algorithm: closed across all six backends.
-        // A3 lands Rust + Cpp; A5 closes C11 (RFC §7 line 3382);
-        // post-A6 follow-up trio adds Go + Kotlin + Python in three
-        // independent commits.
+        // Item A3 landed Rust + Cpp; item A5 closed C11 (RFC §7
+        // line 3382); a follow-up trio added Go + Kotlin + Python
+        // in three independent commits.
         ForgeKind::Algorithm => match lang {
             Language::Rust
             | Language::Cpp
@@ -152,7 +151,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Kotlin
             | Language::Python => true,
         },
-        // RFC §5.C Link: B6-α shipped rust; B6-β closes c11 parity.
+        // RFC §5.C Link: rust and c11 templates ship.
         // cpp/kotlin/go/python are MCU-class-rejected by `kind_class`
         // ahead of this lookup, so their `template_ships` value never
         // enters the diagnostic flow — `false` here documents "no
@@ -161,8 +160,8 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §5.E BufferPool: B7-α shipped rust; B7-β closes c11
-        // parity (`__attribute__((section, aligned))` storage table +
+        // RFC §5.E BufferPool: rust and c11 templates ship (c11:
+        // `__attribute__((section, aligned))` storage table +
         // sidecar linker fragment + section attribute round-trip).
         // cpp/kotlin/go/python are MCU-class-rejected by `kind_class`
         // ahead of this lookup — `false` documents "no shipped
@@ -171,52 +170,52 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §5.D Worker: C2-β ships dual-emit codegen on Rust +
-        // C11 per Q-C2-1 (a) lock. Rust template uses a self-contained
-        // SPSC ring buffer (spec line 904 author intent was
-        // `heapless::spsc` but C2-β stays no-external-crate to match
-        // the C11 ring-buffer side; ordering choice from
+        // RFC §5.D Worker: dual-emit codegen on Rust + C11.
+        // Rust template uses a self-contained SPSC ring buffer
+        // (spec line 904 author intent was `heapless::spsc` but the
+        // emit stays no-external-crate to match the C11 ring-buffer
+        // side; ordering choice from
         // `<sce:inbox ordering="...">` drives `Ordering::Acquire/Release`
         // vs `Ordering::Relaxed` selection). C11 template emits the
         // opaque `sce_inbox_producer_t` / `sce_inbox_consumer_t` family
-        // backed by `sce_atomic_*_u32` intrinsics from C4 atomic A's
+        // backed by `sce_atomic_*_u32` intrinsics from the §5.I
         // baseline registry. cpp/kotlin/go/python remain MCU-class-
         // rejected by `kind_class` ahead of this lookup.
         ForgeKind::Worker => match lang {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §5.L BoundedCollection: C6-γ closes the 6-backend codegen
-        // matrix per spec line 2571-2581. γ2 ships `Rust` (heapless::Vec
+        // RFC §5.L BoundedCollection: the 6-backend codegen matrix is
+        // closed per spec lines 2571-2581. `Rust` ships (heapless::Vec
         // <T, N> std / no_std + 16/16 packed Handle u32 + insert/remove/
-        // get/find_by_index/iter/len/capacity per spec lines 2609-2622).
-        // γ3 closes `Cpp` (std::array + std::bitset + uint32_t generation
+        // get/find_by_index/iter/len/capacity per spec lines 2609-2622),
+        // `Cpp` (std::array + std::bitset + uint32_t generation
         // + forward-iterator begin/end per spec line 2576-2577) + `Kotlin`
         // (Array<T?>(N) + BooleanArray + IntArray generation + Iterable<T>
-        // per spec line 2578). γ4 closes `Go` ([N]T + [N]bool + [N]uint32
+        // per spec line 2578), `Go` ([N]T + [N]bool + [N]uint32
         // + ForEach callback per spec line 2579) + `Python` (list[Optional
         // [T]] + bytearray mask + bytearray gen + __iter__ + Optional[H]
         // overflow per spec lines 2580-2581) + `C11` (struct slots[N] +
         // generation[N] + bitmap[(N+31)/32] + count with snake_case
         // _insert/_remove/_get/_find_by_index/_foreach API per spec
-        // lines 2573-2575). All 6 backends emit; the γ chain entirely
-        // closes the §5.L matrix.
+        // lines 2573-2575). All 6 backends emit; the §5.L matrix is
+        // entirely closed.
         ForgeKind::BoundedCollection => true,
-        // NL→IR Item C1 Path A Atomic 2: Enum ships on all 6 backends
+        // Enum ships on all 6 backends
         // via `tools/codegen/templates/forge/<lang>/enum.<ext>.jinja2`
         // — `generator.rs::render_enum` lowers `EnumModel` to a typed
-        // backend-native enum per design RFC §3 DL-6'. Matches the
+        // backend-native enum. Matches the
         // §5.J.4 Generic-class contract; matrix dispatch lets every
         // `(Enum, lang)` pair through to the per-language render arm.
         ForgeKind::Enum => true,
-        // NL→IR Item C1 Path A Atomic 4: EventSchema ships on all 6
+        // EventSchema ships on all 6
         // backends via `tools/codegen/templates/forge/<lang>/event_schema.<ext>.jinja2`
         // — `generator.rs::render_event_schema` lowers
         // `EventSchemaModel` to a per-backend payload struct
         // (`struct <Schema>Payload` / `data class <Schema>Payload` /
         // `@dataclass` / `typedef struct ... <Schema>Payload_t`).
-        // Matches the §5.J.4 Generic-class contract per design RFC
-        // §3 DL-6'; matrix dispatch lets every `(EventSchema, lang)`
+        // Matches the §5.J.4 Generic-class contract; matrix dispatch
+        // lets every `(EventSchema, lang)`
         // pair through to the per-language render arm.
         ForgeKind::EventSchema => true,
     }

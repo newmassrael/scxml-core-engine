@@ -216,9 +216,9 @@ fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) 
     write_if_changed(path, &final_content)
 }
 
-/// Watching-zenoh RFC §5.O Atomic 1 — emit the per-machine sourcemap
+/// Watching-zenoh RFC §5.O — emit the per-machine sourcemap
 /// JSON alongside the generated SM source. The output is
-/// byte-identical across the 6 backends (Q-§5.O-8) because:
+/// byte-identical across the 6 backends because:
 ///
 ///   - the symbol table is built from the SCXML model alone (no
 ///     backend-specific data),
@@ -574,7 +574,7 @@ enum Commands {
         /// tables, lower for tighter CI budgets.
         #[arg(long)]
         const_fold_budget: Option<u64>,
-        /// Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): target the
+        /// Watching-zenoh RFC §5.J.2: target the
         /// `sce-rust-runtime` no_std variant.
         ///
         /// Only meaningful with `-l rust`; ignored for other
@@ -651,7 +651,7 @@ enum Commands {
         /// language targets.
         #[arg(long)]
         kotlin_package_prefix: Option<String>,
-        /// NL→IR Mapping Roadmap Item 5: reject the build when the
+        /// Reject the build when the
         /// document carries any `<sce:unresolved>` placeholder
         /// (attribute or element form). Default builds let the
         /// marker survive in the model + the `sce-codegen
@@ -663,10 +663,10 @@ enum Commands {
     },
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
-    /// (watching-zenoh RFC §5.D C2 outbox follow-up Atomic A).
+    /// (watching-zenoh RFC §5.D).
     /// Use this when the build has multiple SCXML/forge docs that
     /// reference each other across files (`<sce:on-sample link>`,
-    /// future `<sce:outbox ref>`); single-file `Generate` does not
+    /// `<sce:outbox ref>`); single-file `Generate` does not
     /// build the cross-doc registry and silently skips cross-ref
     /// validation. Both lists may be empty (no-op).
     Orchestrate {
@@ -686,13 +686,13 @@ enum Commands {
         /// Optional path to deploy.yaml. When provided, the orchestrator
         /// runs watching-zenoh RFC §5.K + §5.M cross-doc validators that
         /// otherwise silent-skip:
-        ///   - `validate_links_cross_doc` (C13-α-1, §5.K Q-C13-5 a)
-        ///   - `validate_links_burst_invariants` (C13-α-2, §5.K 2489-2500)
-        ///   - `validate_reassembly_cross_doc` (C13-α-2 + C9-β, §5.M 2946-2995)
+        ///   - `validate_links_cross_doc` (§5.K)
+        ///   - `validate_links_burst_invariants` (§5.K [lines 2489-2500])
+        ///   - `validate_reassembly_cross_doc` (§5.M [lines 2946-2995])
         ///
         /// Omit to keep the multi-doc orchestrator deploy-unaware
-        /// (matching every pre-existing call site's Q-η5 (a) silent-
-        /// skip semantics).
+        /// (matching every pre-existing call site's silent-skip
+        /// semantics).
         #[arg(long)]
         deploy: Option<String>,
         /// Directory to write per-doc AST envelopes into. One
@@ -761,8 +761,6 @@ enum Commands {
     /// CMake build time through `sce_generate_static_integration_test`
     /// (see `cmake/SCEStaticIntegrationFixture.cmake`) without an
     /// sce-codegen-driven regen pipeline.
-    ///
-    /// RFC `claudedocs/rfc-donedata-5-backend-layout.md` Q-6.
     GenerateIntegration {
         /// Target language (rust, kotlin, go, python).
         #[arg(short, long)]
@@ -790,7 +788,7 @@ enum Commands {
         dir: String,
     },
     /// Emit `sce:req` requirement-coverage NDJSON for a single SCXML
-    /// file (NL→IR Mapping Roadmap Item 1). One JSON record per IR
+    /// file. One JSON record per IR
     /// node carrying a non-empty `sce:req` attribute; empty output
     /// when the document has no `sce:req` annotations.
     Requirements {
@@ -798,7 +796,7 @@ enum Commands {
         scxml: String,
     },
     /// Emit `<sce:unresolved>` placeholder NDJSON for a single SCXML
-    /// file (NL→IR Mapping Roadmap Item 5). One JSON record per
+    /// file. One JSON record per
     /// marker (attribute form and element form both detected);
     /// empty output when the document has no unresolved markers.
     Unresolved {
@@ -821,13 +819,12 @@ enum Commands {
     /// Expand preprocessors (XInclude + `sce:template`) on an SCXML
     /// file and print the post-expansion text to stdout.
     ///
-    /// Introduced for the Phase B SSOT byte-equivalence parity
-    /// harness (`tests/w3c_phase_b_parity/`): the C++ test driver
+    /// Introduced for the SSOT byte-equivalence parity
+    /// harness (`tests/w3c_template_parity/`): the C++ test driver
     /// compares this subcommand's stdout against the pugixml
     /// runtime's `processXInclude` + `processSceTemplate` output.
     /// Both producers canonicalise through the same pugixml
-    /// serialiser before diff, per
-    /// `claudedocs/rfc-sce-template-phase-b.md` §1 Q1.
+    /// serialiser before diff.
     ///
     /// Calls [`sce_build::parser::expand_preprocessors`] — the same
     /// function [`sce_build::parser::SCXMLParser::parse_file`]
@@ -905,7 +902,7 @@ enum Commands {
         cargo_lock: Option<String>,
     },
 
-    /// Watching-zenoh RFC §5.O Atomic 1 — resolve a mangled symbol or
+    /// Watching-zenoh RFC §5.O — resolve a mangled symbol or
     /// PC offset back to its originating SCXML coordinates.
     ///
     /// `--symbol <NAME>`  Look up a mangled `<machine>__<state_path>__
@@ -1099,11 +1096,11 @@ fn main() {
 
 // ── Subcommand: orchestrate ─────────────────────────────────────
 //
-// watching-zenoh RFC §5.D C2 outbox follow-up Atomic A entry point —
-// the production-side consumer that closes the pre-Atomic-A silent
+// watching-zenoh RFC §5.D entry point —
+// the production-side consumer that closes the silent
 // hole on `validate_on_sample_link_references`. Authors that hold
 // multi-doc builds (cross-file `<sce:on-sample link>` references, or
-// the future `<sce:outbox ref>` axis landing in Atomic B) switch to
+// the `<sce:outbox ref>` axis) switch to
 // this subcommand to gain cross-doc registry construction + cross-ref
 // validation that the single-file `Generate` cannot provide.
 
@@ -1143,7 +1140,7 @@ fn cmd_orchestrate(
     // Default options match `Generate`'s sentinel defaults. Future
     // CLI flags can grow the surface (format-style, const_fold_budget)
     // when consumer demand arrives; the minimal shape today keeps the
-    // Atomic A wire footprint bounded.
+    // subcommand's wire footprint bounded.
     let options = sce_build::ForgeCompileOptions::default();
 
     let template_dir = sce_build::find_template_dir_for(lang);
@@ -1257,8 +1254,8 @@ fn emit_orchestrate_asts(
 
     // Statechart AST emit — parallel to the forge loop below. Each
     // `--scxml` input is parsed + analyzed (the SCXML pipeline's
-    // post-analyzer step, Q-S-6 (b)) and serialised as the
-    // `statechart` arm of the v1 envelope. Q-S-5 (b) skip-on-rejected:
+    // post-analyzer step) and serialised as the
+    // `statechart` arm of the v1 envelope. Skip-on-rejected:
     // documents the analyzer flags via W3C 5.8 (`document_rejected`)
     // skip emit and fall through silently — the absence of
     // `<stem>.ast.json` is the consumer signal, matching the
@@ -1531,7 +1528,7 @@ fn cmd_generate(
         Err(e) => error_format.emit_and_exit(&e, ""),
     };
 
-    // NL→IR Mapping Roadmap Item 5: `--strict-unresolved` lifts the
+    // `--strict-unresolved` lifts the
     // model's `<sce:unresolved>` markers from silent metadata to a
     // build-failing rejection. Runs before any codegen so CI gates
     // see the `validation/unresolved-placeholder` diagnostic on the
@@ -1576,7 +1573,7 @@ fn cmd_generate(
     // from_deploy) so the envelope captures the parser+analyzer IR
     // — the statechart parallel of `ParsedForge` for forge kinds.
     //
-    // Q-S-5 (b) skip-on-rejected: document_rejected is the W3C 5.8
+    // Skip-on-rejected: document_rejected is the W3C 5.8
     // structured rejection (unloadable external script). Skip the
     // emit and fall through to the rejection-stub codegen path
     // below; the absence of the envelope file is the consumer
@@ -1702,10 +1699,10 @@ fn cmd_generate(
                 );
             }
             Language::C11 => {
-                // RFC §5.J.1: C11 statechart stub. M1 emits a header-only
+                // C11 rejected-document sentinel: emit a header-only
                 // sentinel matching the C++ shape so any downstream
-                // consumer that includes the .h compiles to a no-op while
-                // the M3+ statechart emitter is pending. The body file
+                // consumer that includes the .h compiles to a no-op.
+                // The body file
                 // carries an `extern const int` definition so the
                 // translation unit is non-empty (ISO C forbids empty
                 // translation units, surfaces under
@@ -1756,7 +1753,7 @@ fn cmd_generate(
     }
 
     if let Err(err) = analyzer::can_generate_static(&model) {
-        // RFC §W5 D3: `can_generate_static` returns the
+        // §wire-W5 D3: `can_generate_static` returns the
         // correctly-classified ForgeError directly — `ScxmlSemanticError`
         // for hard semantic violations (top-level script rejected,
         // initial-state names undeclared) and `ValidationDynamicFeatures`
@@ -1765,7 +1762,7 @@ fn cmd_generate(
         error_format.emit_and_exit(&located, "");
     }
 
-    // Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): Rust no_std variant
+    // Watching-zenoh RFC §5.J.2: Rust no_std variant
     // rejection. Only fires when `--no-std` is paired with `-l rust`
     // (the flag is a no-op for other language targets, mirroring how
     // `--go-module-prefix` is rust/kotlin-inert). Two axes:
@@ -1773,7 +1770,7 @@ fn cmd_generate(
     //   2. BasicHTTP send — tokio/reqwest are std-coupled.
     // The model already carries `needs_script_engine` /
     // `has_unresolved_external_script` / `needs_http_send` flags from
-    // the parser + analyzer passes; B-β just reads them.
+    // the parser + analyzer passes; this gate just reads them.
     if no_std && lang == Language::Rust {
         if let Err(err) = sce_build::validate_no_std_compatibility(&model, Path::new(scxml_path)) {
             let located = sce_build::forge::error::Located::new(err, scxml_path, None, None);
@@ -1884,7 +1881,7 @@ fn cmd_generate(
         ) {
             error_format.emit_and_exit(&e, "Partition context injection error: ");
         }
-        // C3 Atomic B-γ1: apply the deploy.yaml
+        // Apply the deploy.yaml
         // `default_event_queue_capacity` fallback for models that did
         // not declare `<scxml sce:capacity="N">` on the root. The
         // populator is a no-op when the model carries an explicit
@@ -1923,21 +1920,17 @@ fn cmd_generate(
         // parser purified (no disk side-effect), codegen emit is the
         // single materialization point for synth children.
         //
-        // C3 Atomic B-γ1 lands `<sce:capacity>` parsing +
-        // deploy.yaml `default_event_queue_capacity` populator +
-        // `pub const EVENT_QUEUE_CAPACITY` template emission. The
-        // `--no-std` CLI flag stays a B-β-level validation gate
-        // (script/HTTP rejection — consumed earlier in
-        // `validate_no_std_compatibility`); the template-level
-        // `#![no_std]` + `use core::time::Duration` switch lands in
-        // B-γ2 alongside the runtime port + sub-template `std::*`
-        // → `core::*` swaps (send.rs.jinja2 / process_transition
-        // .rs.jinja2 / invoke_methods.rs.jinja2). Wiring those in
-        // B-γ1 would emit code that compiles cleanly under std but
-        // fails on the first sub-template `std::time::Duration` /
-        // `std::collections::HashSet` / `std::sync::atomic` site
-        // under `--features=no_std` — `feedback_silently_broken_
-        // hooks.md` anti-pattern unless co-landed with B-γ2.
+        // `<sce:capacity>` parsing, the deploy.yaml
+        // `default_event_queue_capacity` populator, and the
+        // `pub const EVENT_QUEUE_CAPACITY` template emission feed the
+        // heapless event-queue bound. The `--no-std` CLI flag both
+        // validates compatibility (script/HTTP rejection — consumed
+        // earlier in `validate_no_std_compatibility`) and switches
+        // the templates to the no_std emission: `#![no_std]`,
+        // `core::time::Duration`, and the profile-resolving runtime
+        // collection aliases across the sub-templates
+        // (send.rs.jinja2 / process_transition.rs.jinja2 /
+        // invoke_methods.rs.jinja2).
         let emit_for_model = |m: &SCXMLModel,
                               stem: &str,
                               m_as_child: bool,
@@ -2029,11 +2022,11 @@ fn cmd_generate(
             output_paths.push(file_path);
         }
 
-        // Watching-zenoh RFC §5.O Atomic 1 — sourcemap JSON sidecar
+        // Watching-zenoh RFC §5.O — sourcemap JSON sidecar
         // alongside the per-language SM output. The single-SCXML codegen
         // path writes one sourcemap per emit; cross-backend byte-identity
         // is preserved because the symbol table + hashes are language-
-        // agnostic (Q-§5.O-8).
+        // agnostic.
         emit_sourcemap_for_machine(&model, out_path, &drift_ctx);
 
         // SCE_MESH.md §9.6.6: emit synth-invoke children alongside the
@@ -2189,7 +2182,7 @@ fn cmd_generate(
         );
     }
 
-    // §5.O Atomic 1 follow-up — ownership-boundary walker. Every
+    // §5.O ownership-boundary walker. Every
     // SCE-emitted file (one carrying a §6.2.6 drift header) must
     // contain at least one `SCE-MAP:` marker per ARCHITECTURE.md
     // "Traceability Ownership Boundary". External meta-generator
@@ -2442,7 +2435,7 @@ fn cmd_generate_w3c(
         Language::Cpp => Box::new(CppBackend::new(&project_root)),
         Language::Python => Box::new(PythonBackend::new(&project_root)),
         Language::C11 => cli_exit(CliError::UnsupportedLanguage {
-            lang: "C11 W3C (RFC §5.J.1, Phase A5 — M3+ statechart emitter)".into(),
+            lang: "C11 W3C statechart emitter (RFC §5.J.1)".into(),
         }),
     };
 
@@ -2978,9 +2971,9 @@ fn generate_w3c_unified(
                         // Post-write hook (e.g. Rust writes initial mod.rs)
                         backend.post_write_parent(test_id, &test_mod_dir, input_stem, &drift_ctx);
 
-                        // Watching-zenoh RFC §5.O Atomic 1 — sourcemap
+                        // Watching-zenoh RFC §5.O — sourcemap
                         // JSON sidecar. Byte-identical across backends
-                        // for the same SCXML input (Q-§5.O-8).
+                        // for the same SCXML input.
                         emit_sourcemap_for_machine(&model, &test_mod_dir, &drift_ctx);
 
                         // W3C SCXML 6.4: Generate hybrid SCXML stubs + child state machines
@@ -3188,7 +3181,7 @@ fn generate_w3c_unified(
         });
     }
 
-    // §5.O Atomic 1 follow-up — ownership-boundary walker. Mirrors
+    // §5.O ownership-boundary walker. Mirrors
     // the cmd_generate hook: every drift-headered file under either
     // the SM output base or the per-test harness directory must
     // carry an `SCE-MAP:` marker. Non-drift-headered files (external
@@ -4131,7 +4124,7 @@ fn cmd_manifest(dir: &str) {
 
 // ── Subcommand: requirements ──────────────────────────────────
 //
-// NL→IR Mapping Roadmap Item 1: emit per-IR-node `sce:req`
+// Emit per-IR-node `sce:req`
 // NDJSON. Routes through the same parser SCE uses for codegen so
 // the report sees exactly the same node walk the build does —
 // drift between "what compiles" and "what the report claims is
@@ -4156,7 +4149,7 @@ fn cmd_requirements(scxml: &str, error_format: ErrorFormat) {
 
 // ── Subcommand: unresolved ─────────────────────────────────────
 //
-// NL→IR Mapping Roadmap Item 5: emit per-marker `<sce:unresolved>`
+// Emit per-marker `<sce:unresolved>`
 // NDJSON. Same architecture as the `requirements` subcommand — parse
 // through the production parser, walk the model, emit one record per
 // detected marker.
@@ -4182,8 +4175,7 @@ fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
 
 /// Batch integration-fixture regeneration for the three committed-tree
 /// backends (Rust / Kotlin / Go). Parallel to `generate-w3c` but
-/// scoped to `integration_resources/<stem>/<stem>.scxml` fixtures
-/// (RFC `claudedocs/rfc-donedata-5-backend-layout.md` Q-6).
+/// scoped to `integration_resources/<stem>/<stem>.scxml` fixtures.
 ///
 /// Each `<stem>` is dispatched to the matching backend's regen script
 /// (`scripts/regen_<stem>{,_kotlin,_go}.sh`); those scripts already
@@ -4191,7 +4183,7 @@ fn cmd_unresolved(scxml: &str, error_format: ErrorFormat) {
 /// post-processing (Rust `mod.rs` synthesis, Kotlin `// Source:`
 /// rewrite, Kotlin `--kotlin-package-prefix com.sce.integration`).
 /// Routing through a single CLI entry point keeps
-/// `scripts/regen_all_committed_trees.sh` (Q-7) backend-agnostic.
+/// `scripts/regen_all_committed_trees.sh` backend-agnostic.
 ///
 /// Build-time backends (cpp / c11 / pybind11 Python) are intentionally
 /// not supported here — they emit at CMake / CI time without a
@@ -4356,7 +4348,7 @@ fn cmd_expand(scxml_path: &str) {
     )
     .unwrap_or_else(|err| current_error_format().emit_and_exit(&err, "Preprocessor error: "));
     // Write raw bytes to stdout without trailing newline so the
-    // Phase B parity harness can byte-compare against the C++
+    // template parity harness can byte-compare against the C++
     // pugixml canonicalisation without newline handling quirks.
     use std::io::Write;
     std::io::stdout()
@@ -4647,7 +4639,7 @@ fn cmd_list_fixtures(
             }
         };
         // Pre-resolve `--language` so the per-kind sidecar gate
-        // (B5-θ codec trunk = Rust + C11 only) can be applied
+        // (codec sidecar = Rust + C11 only) can be applied
         // alongside the SCXML scan in one pass. When `--language`
         // is unset the per-kind gate stays open for every backend
         // (matches the manifest-as-source-of-truth contract; the
@@ -4663,14 +4655,14 @@ fn cmd_list_fixtures(
                 sce_build::conformance::FixtureSpec::Codec {
                     has_test_vectors, ..
                 } => {
-                    // RFC §5.B B5-θ codec test-vector trunk: Rust +
-                    // C11 sidecar only. Force the flag false on the
+                    // RFC §5.B codec test-vector sidecar: Rust +
+                    // C11 only. Force the flag false on the
                     // 4 gated backends so the cmake `--has-test-
                     // vectors` listing matches what `render_codec_
                     // test_vector_sidecar` actually emits — otherwise
                     // those backends would declare a sidecar OUTPUT
-                    // file that never gets generated. Per-language
-                    // closures will lift this gate alongside their
+                    // file that never gets generated. A backend
+                    // joins this gate only together with its own
                     // sidecar template + golden.
                     let supports = match lang_for_enrich {
                         Some(sce_build::generator::Language::Rust)
@@ -4694,7 +4686,7 @@ fn cmd_list_fixtures(
             }
         }
     }
-    // RFC §5.J.2: when `--language c11` is passed, mirror the per-kind
+    // When `--language c11` is passed, mirror the per-kind
     // filter `generate-conformance` applies before harness rendering so
     // the c11 cmake harness sees identically-shaped fixture sets from
     // both subcommands. Unrecognised languages and the unset default
@@ -4855,7 +4847,7 @@ impl TestInfo {
 
 // ── Subcommand: addr2sce ───────────────────────────────────────
 //
-// Watching-zenoh RFC §5.O Atomic 1. Reverse-lookup from a mangled
+// Watching-zenoh RFC §5.O. Reverse-lookup from a mangled
 // symbol or PC address back to SCXML coordinates (file + state path +
 // line range).
 //
@@ -4868,7 +4860,7 @@ impl TestInfo {
 //   `--hardfault`     — bulk PC resolution from stdin. Same deferral
 //                        as `--pc`.
 //
-// Atomic 1 ships the `--symbol` path live (the sourcemap-only path
+// The `--symbol` path is live (the sourcemap-only path
 // the foundation actually consumes — integration tests exercise it,
 // the sourcemap-source-hash-mismatch diagnostic fires when the
 // sidecar JSON drifts). `--pc` / `--hardfault` print a clear "deferred"

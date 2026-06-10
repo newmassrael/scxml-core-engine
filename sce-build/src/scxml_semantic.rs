@@ -1,4 +1,4 @@
-//! SCXML semantic-validation errors (RFC §W5 producer side).
+//! SCXML semantic-validation errors (§wire-W5 producer side).
 //!
 //! §scxml-3 reference-resolution and §5.8 top-level-script
 //! rejection failures detected after the document parses
@@ -9,11 +9,11 @@
 //! to forge-document structure rules (codec/transform/procedure
 //! kinds, sce:context handling, etc.) per its file-level doc; SCXML
 //! semantic rules come from a different specification (W3C SCXML)
-//! with different repair surfaces. RFC §W5 D4 documents the
+//! with different repair surfaces. §wire-W5 D4 documents the
 //! decision to keep these enums parallel rather than generalize
 //! `ValidationError` to admit non-forge document kinds.
 //!
-//! Wire-code mapping (RFC §W5 D2 — W4 D4 fold precedent):
+//! Wire-code mapping (§wire-W5 D2 — §wire-W4 D4 fold precedent):
 //! - [`ScxmlSemanticError::InitialStateUnknown`] →
 //!   `validation/invalid-reference` (REUSE — concept identity
 //!   with forge `ValidationError::InvalidReference`)
@@ -59,7 +59,7 @@ impl std::fmt::Display for InitialStateScope {
 /// Each variant maps to a stable wire `DiagnosticCode` via
 /// [`crate::forge::diagnostic::scxml_semantic_fields`]. The mapping
 /// is intentional — three of the four variants reuse forge
-/// `validation/*` codes per the W4 D4 fold precedent (concept
+/// `validation/*` codes per the §wire-W4 D4 fold precedent (concept
 /// identity over namespace duplication).
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ScxmlSemanticError {
@@ -67,7 +67,7 @@ pub enum ScxmlSemanticError {
     /// Covers both root-level (`<scxml initial="X">`) and compound
     /// state (`<state id="P" initial="X">`) cases — `scope`
     /// distinguishes. Mirrors C++
-    /// `SCE::parsing::SemanticInitialStateUnknown` (RFC §W5 D1).
+    /// `SCE::parsing::SemanticInitialStateUnknown` (§wire-W5 D1).
     #[error("Initial state '{state_id}' not found ({scope})")]
     InitialStateUnknown {
         state_id: String,
@@ -104,14 +104,13 @@ pub enum ScxmlSemanticError {
     ///
     /// Payload fields are optional because the producer site
     /// (`SCXMLParser::parse_global_scripts` setting
-    /// `model.document_rejected = true`) doesn't currently capture
-    /// the index/src of the failing script. Future expansion
-    /// (W6+) may plumb the detail through. C++ side captures both
+    /// `model.document_rejected = true`) does not capture
+    /// the index/src of the failing script. C++ side captures both
     /// via `SemanticTopLevelScriptUnloaded(index, src)`. Wire-code
     /// dispatch is sufficient for test-as-consumer drift pinning;
-    /// payload-detail asymmetry is acceptable per RFC §W5 anti-pattern
-    /// #5 ("NEW wire code count > NEW Rust producer count" — both
-    /// sides emit the same wire code).
+    /// payload-detail asymmetry is acceptable per the §wire-W5
+    /// anti-pattern note ("NEW wire code count > NEW Rust producer
+    /// count" — both sides emit the same wire code).
     ///
     /// Mirrors C++ `SemanticTopLevelScriptUnloaded`.
     #[error("Top-level <script> rejected per W3C SCXML 5.8")]
@@ -143,8 +142,6 @@ pub enum ScxmlSemanticError {
     /// one transition is present, the per-transition variant fires
     /// first because it points the author at a concrete element to
     /// repair (delete the transition / re-attach the source state).
-    ///
-    /// NL→IR Mapping Roadmap Item 3 Phase A.
     #[error("State '{state_id}' is unreachable from the document initial configuration")]
     UnreachableState {
         /// The unreachable state's id.
@@ -163,8 +160,6 @@ pub enum ScxmlSemanticError {
     /// `target` together name the specific orphan edge so author
     /// repair lands at one element instead of inferring it from the
     /// state-level diagnostic.
-    ///
-    /// NL→IR Mapping Roadmap Item 3 Phase A.
     #[error(
         "Transition in unreachable state '{state}' targets '{target}' — \
          source state is never entered"
@@ -203,8 +198,6 @@ pub enum ScxmlSemanticError {
     /// Author escape hatch when the intent gap is genuine:
     /// `sce:exhaustive="false"` on the compound parent silences this
     /// diagnostic for that parent only.
-    ///
-    /// NL→IR Mapping Roadmap Item 3 Phase B.
     #[error(
         "Compound state '{parent}' has children handling event \
          '{event}' inconsistently — handlers: {handlers:?}, \
@@ -247,8 +240,6 @@ pub enum ScxmlSemanticError {
     /// the host language's expression evaluator, which the parser
     /// cannot statically inspect. See `docs/SCE_ACCEPTED_SUBSET.md`
     /// for the full opacity contract.
-    ///
-    /// NL→IR Mapping Roadmap Item 3 Phase C.
     #[error(
         "Transition in state '{state}' carries guard '{cond}' that \
          is statically false — the transition can never fire. \
@@ -278,8 +269,6 @@ pub enum ScxmlSemanticError {
     /// the relative priority depends on ancestor-priority rules
     /// that the parser-stage walker cannot disambiguate without
     /// running the full runtime selection algorithm.
-    ///
-    /// NL→IR Mapping Roadmap Item 3 Phase C.
     #[error(
         "Transition #{shadowed_index} in state '{state}' (event \
          '{event}') is shadowed by an earlier unconditional \
@@ -321,8 +310,8 @@ mod tests {
         diags[0].code.as_str()
     }
 
-    /// Each variant must map to its declared wire code. RFC §W5 D2
-    /// mapping is load-bearing for the W4 D4 fold precedent — fold
+    /// Each variant must map to its declared wire code. The §wire-W5 D2
+    /// mapping is load-bearing for the §wire-W4 D4 fold precedent — fold
     /// claims must be testable at the variant level, not just at
     /// the catalog level.
     #[test]
@@ -340,7 +329,7 @@ mod tests {
     fn initial_state_unknown_compound_scope_emits_same_code() {
         // The compound-state vs document-root distinction lives in
         // payload, not in the wire code — both surfaces map to the
-        // same `validation/invalid-reference` per RFC §W5 D2 (one
+        // same `validation/invalid-reference` per §wire-W5 D2 (one
         // C++ leaf `SemanticInitialStateUnknown` covers both).
         let err: ForgeError = ScxmlSemanticError::InitialStateUnknown {
             state_id: "deep".into(),
@@ -372,9 +361,9 @@ mod tests {
 
     #[test]
     fn top_level_script_unloaded_emits_scxml_top_level_script_unloaded() {
-        // The 1 NEW wire code RFC §W5 D2 introduces. Analyzer-path
-        // emits with both fields None; parser-path (future
-        // expansion) emits with index/src populated.
+        // The 1 NEW wire code §wire-W5 D2 introduces. The Rust
+        // analyzer path emits with both fields None; the C++ parser
+        // side carries index/src detail.
         let err: ForgeError = ScxmlSemanticError::TopLevelScriptUnloaded {
             index: None,
             src: None,
@@ -385,11 +374,12 @@ mod tests {
 
     #[test]
     fn top_level_script_unloaded_with_detail_keeps_same_code() {
-        // Payload variation MUST NOT change wire code — α-strict
-        // invariant. C++ side emits with detail; Rust analyzer path
-        // emits without; the drift test (`cpp_scxml_semantic_*`)
-        // pins both sides agree on the code, not on the payload
-        // shape. RFC §W5 anti-pattern #5.
+        // Payload variation MUST NOT change wire code — the wire
+        // code is keyed by error concept, not payload shape. C++
+        // side emits with detail; Rust analyzer path emits without;
+        // the drift test (`cpp_scxml_semantic_*`) pins both sides
+        // agree on the code, not on the payload shape (§wire-W5
+        // anti-pattern note).
         let err: ForgeError = ScxmlSemanticError::TopLevelScriptUnloaded {
             index: Some(2),
             src: Some("scripts/init.js".into()),
@@ -511,18 +501,18 @@ mod tests {
         assert_eq!(single_code(&forge_err), "validation/empty-collection");
     }
 
-    // ── RFC §W5 Stage C: SemanticError cross-side drift tests ──────
+    // ── §wire-W5 SemanticError cross-side drift tests ──────────────
     //
-    // Sister tests to W4's `cpp_parse_subtypes_match_rust_diagnostic_codes`
+    // Sister tests to §wire-W4's `cpp_parse_subtypes_match_rust_diagnostic_codes`
     // and `cpp_parse_subtype_code_returns_rust_wire_string` in
-    // `sce-build/src/parser.rs`. RFC §W5 D2 inventory: 4 C++ leaves,
+    // `sce-build/src/parser.rs`. §wire-W5 D2 inventory: 4 C++ leaves,
     // 3 fold onto existing `validation/*` wire codes (REUSE), 1
     // introduces `scxml/top-level-script-unloaded` (NEW). Cross-side
     // drift is caught when a commit edits one side without updating
     // the other.
 
     /// Pin the 4 C++ `Semantic<Variant>` leaves declared in
-    /// `sce/include/parsing/SemanticError.h` against the W5 leaf
+    /// `sce/include/parsing/SemanticError.h` against the §wire-W5 leaf
     /// inventory. Adding a new leaf on the C++ side without a
     /// corresponding Rust `ScxmlSemanticError` variant (or vice
     /// versa) reds this test.
@@ -530,7 +520,7 @@ mod tests {
     fn cpp_scxml_semantic_subtypes_match_rust_diagnostic_codes() {
         use std::collections::BTreeSet;
 
-        // RFC §W5 D2 inventory: 1 NEW + 3 REUSED = 4 leaves total.
+        // §wire-W5 D2 inventory: 1 NEW + 3 REUSED = 4 leaves total.
         let rust_to_cpp: &[(&str, &str)] = &[
             (
                 "validation/invalid-reference",
@@ -549,7 +539,7 @@ mod tests {
         assert_eq!(
             rust_to_cpp.len(),
             4,
-            "Expected 4 W5 leaves (RFC §W5 D2 inventory: 1 NEW + 3 REUSED)"
+            "Expected 4 W5 leaves (§wire-W5 D2 inventory: 1 NEW + 3 REUSED)"
         );
 
         let expected_cpp: BTreeSet<&str> = rust_to_cpp.iter().map(|(_, cpp)| *cpp).collect();
@@ -579,13 +569,12 @@ mod tests {
         assert_eq!(
             found_refs, expected_cpp,
             "SemanticError subtype drift: C++ header = {:?}, expected \
-             (RFC §W5 D2 inventory) = {:?}. Change both sides in the \
-             same commit — see RFC §W5 \
-             (claudedocs/rfc-sce-diagnostic-wire-unification.md).",
+             (§wire-W5 D2 inventory) = {:?}. Change both sides in the \
+             same commit (§wire-W5).",
             found_refs, expected_cpp
         );
 
-        // Cross-check: the NEW W5 wire code is spelled as the
+        // Cross-check: the NEW §wire-W5 wire code is spelled as the
         // `serde(rename = "...")` literal in
         // `sce-build/src/forge/diagnostic.rs`. Catches a future
         // rename of the wire string on the Rust side without a C++
@@ -598,7 +587,7 @@ mod tests {
              with C++ `SemanticTopLevelScriptUnloaded`) is not declared \
              as a `serde(rename)` literal in \
              sce-build/src/forge/diagnostic.rs. Keep the wire name, the \
-             Rust variant, and the C++ subtype in sync — see RFC §W5."
+             Rust variant, and the C++ subtype in sync — see §wire-W5."
         );
     }
 
@@ -661,7 +650,7 @@ mod tests {
                 "Class `{}` body does not contain `{}` — the C++ \
                  subtype's `code()` override must return the expected \
                  wire string. Update both sides in the same commit \
-                 (RFC §W5 D2).",
+                 (§wire-W5 D2).",
                 cpp_class,
                 needle
             );

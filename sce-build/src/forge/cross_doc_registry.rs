@@ -11,24 +11,23 @@
 // Background. SCE separates each document kind into its own author-
 // facing schema (forge link / buffer-pool / worker; SCXML statechart),
 // but consumers need to validate cross-document references at build
-// time. Before this module's predecessor (`ForgeLinkRegistry` shipped
-// under B7-η' Atomic B), no cross-schema reference index existed —
+// time. Before this module's predecessor (`ForgeLinkRegistry`,
+// shipped with the §5.E sample-callback work), no cross-schema
+// reference index existed —
 // SCXML validators could only consult one parsed doc at a time.
 //
-// Spec anchors. watching-zenoh RFC §5.E B7-η' Atomic B introduced the
-// `<sce:on-sample link="X">` cross-reference (link-kind axis). RFC
-// §5.D C2 follow-up extends the same registry to cover statechart +
-// worker recipient kinds for `<sce:outbox ref>` resolution per
-// Q-Outbox-2 (a) lock (2026-05-12) — single registry, cross-kind
+// Spec anchors. Watching-zenoh RFC §5.E sample-callback work
+// introduced the `<sce:on-sample link="X">` cross-reference
+// (link-kind axis). The RFC §5.D worker outbox surface extends the
+// same registry to cover statechart + worker recipient kinds for
+// `<sce:outbox ref>` resolution — single registry, cross-kind
 // queries from one structure.
 //
-// Production wiring. C2 outbox follow-up Atomic A introduces the
-// `compile_scxml_with_imports` orchestrator that walks every input
-// doc, populates this registry, then invokes cross-ref validators.
-// Atomic A also wires the previously-silent `validate_on_sample_link_references`
-// into production. Before Atomic A, both this registry and the
-// on-sample validator existed but had zero production callers — the
-// `feedback_silently_broken_hooks.md` instance closed by Atomic A.
+// Production wiring. The `compile_scxml_with_imports` orchestrator
+// walks every input doc, populates this registry, then invokes the
+// cross-ref validators — including `validate_on_sample_link_references`,
+// which earlier existed without a production caller (a
+// silently-broken-hook instance, now closed).
 
 use std::collections::HashMap;
 
@@ -42,7 +41,7 @@ use super::model::ForgeDocument;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScxmlDocKind {
     /// `<scxml sce:kind="link">` — byte-stream link endpoint
-    /// (§5.C B6-α/β/γ landed). Today the only kind a SCXML
+    /// (§5.C). Today the only kind a SCXML
     /// `<sce:on-sample link="X">` reference may resolve to.
     Link,
     /// `<scxml>` — W3C SCXML statechart (no `sce:kind` attribute, or
@@ -53,7 +52,7 @@ pub enum ScxmlDocKind {
     /// `<scxml sce:kind="worker">` — C2 worker doc. Outbox refs may
     /// resolve to this kind too per RFC §5.D line 911 ("any non-inbox
     /// access" by negation admits inbox access regardless of owner
-    /// kind). C2 follow-up Q-Outbox-3 (b) lock.
+    /// kind).
     Worker,
 }
 
@@ -86,7 +85,7 @@ impl ScxmlDocKind {
 ///
 /// `stage_pools` is a sparse parallel map keyed by link names —
 /// populated only for links that declare `<sce:stage-pool ref="X"/>`
-/// (RFC §5.E B7-η' Atomic A1). The keys are a strict subset of the
+/// (RFC §5.E sample-callback surface). The keys are a strict subset of the
 /// link entries in `docs`. Consumers query it via
 /// [`Self::lookup_stage_pool`] to wire the SCXML on-sample
 /// validator's `pool/sample-take-without-stage-pool` diagnostic.

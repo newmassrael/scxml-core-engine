@@ -1,7 +1,7 @@
-//! NL→IR Mapping Roadmap Item 3 Phase C — guard analysis.
+//! Guard analysis validation.
 //!
 //! Drives the wire-layer entry [`sce_build::compile_scxml_lang_typed`]
-//! end-to-end so the Phase C validators exercise the full compile
+//! end-to-end so the guard-analysis validators exercise the full compile
 //! path. The validator's module-internal unit tests in
 //! `sce-build/src/scxml_guard_analysis.rs` cover the classifier
 //! semantics directly with hand-built `SCXMLModel` values; this
@@ -136,9 +136,9 @@ fn shadowed_by_unconditional_rejected() {
 
 #[test]
 fn opaque_identifier_guard_accepted() {
-    // Author-supplied identifier guards stay opaque to the Phase C
-    // validator — the runtime data model resolves them, the parser
-    // cannot reason about their truth value.
+    // Author-supplied identifier guards stay opaque to the
+    // guard-analysis validator — the runtime data model resolves
+    // them, the parser cannot reason about their truth value.
     let dir = tempdir().expect("tempdir");
     write_fixture(
         dir.path(),

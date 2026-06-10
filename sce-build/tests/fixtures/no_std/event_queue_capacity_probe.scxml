@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Flat event-queue-capacity probe for the per-machine no_std queue-sizing gate
-  (RFC claudedocs/rfc-nostd-per-machine-event-queue-sizing.md).
+  Flat event-queue-capacity probe for the per-machine no_std queue-sizing gate.
 
   Declares `<scxml sce:capacity="2">`, so codegen resolves
   EVENT_QUEUE_CAPACITY = 2 and emits `type EventQueue =

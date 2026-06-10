@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-declarations.md`)
-// Phase B orchestrator wire-up. Three contracts:
+// Listener-role orchestrator wire-up — joins the deploy-side
+// `role: listener` declaration with the SCXML-side
+// `<sce:session-role kind="accept-side"/>` declaration. Three contracts:
 //
 //   1. Explicit-role join: deploy `role: listener` + SCXML
 //      `<sce:session-role kind="accept-side"/>` resolves into
@@ -16,9 +17,10 @@
 //        - `link/role-listener-with-non-session-arming-trust-class`
 //
 //   3. Legacy fixtures (no explicit role + no SCXML session-role
-//      declaration) silent-pass and continue resolving through the
-//      C10-α walker — Phase B preserves Phase A's green-test
-//      invariant for unmigrated fixtures.
+//      declaration) silent-pass the validator and no longer resolve
+//      into `listener_links` — the legacy `Accepting.*` substate
+//      walker join is deleted, so explicit declarations on both
+//      sides are required for resolution.
 
 use std::path::PathBuf;
 
@@ -187,11 +189,11 @@ fn explicit_role_pair_resolves_into_listener_links() {
 }
 
 // ── Direction 2: pre-explicit-declaration fixtures silent-skip
-//    after Phase D walker deletion ────────────────────────────────
+//    (the legacy substate-driven walker join is deleted) ──────────
 
 #[test]
 fn pre_axis3_fixture_without_explicit_role_silent_skips() {
-    // Phase D deletion of the substate-driven walker means a deploy
+    // With the substate-driven walker join deleted, a deploy
     // that declares `session_arming` trust class but does not declare
     // `role: listener`, paired with an SCXML that carries `Accepting.*`
     // states but no `<sce:session-role>` declaration, no longer
@@ -208,7 +210,7 @@ fn pre_axis3_fixture_without_explicit_role_silent_skips() {
     let models = vec![(PathBuf::from("session_fsm.scxml"), scxml)];
 
     validate_cross_doc_listener_roles(&cfg, &models).expect(
-        "pre-axis3 fixture (no explicit role on either side) silent-passes the cross-doc check",
+        "legacy fixture (no explicit role on either side) silent-passes the cross-doc check",
     );
 
     let listener_links = resolve_listener_links(&cfg, &models);
@@ -284,7 +286,7 @@ fn role_listener_with_untrusted_trust_class_fires() {
     let models = vec![(PathBuf::from("session_fsm.scxml"), scxml)];
 
     let err = validate_cross_doc_listener_roles(&cfg, &models)
-        .expect_err("Q-A4 matrix violation must reject");
+        .expect_err("role/trust-class matrix violation must reject");
     match *err {
         ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
             machine,
@@ -379,7 +381,7 @@ fn missing_scxml_model_silent_passes_validator() {
     // not in this compile call) extends to the validator.
     let models: Vec<(PathBuf, SCXMLModel)> = vec![];
 
-    // The Q-A4 matrix check still runs (it's deploy-internal). For
+    // The role/trust-class matrix check still runs (it's deploy-internal). For
     // this happy-trust-tier fixture, no error fires.
     validate_cross_doc_listener_roles(&cfg, &models)
         .expect("missing SCXML model silent-passes the cross-doc partial-claim checks");
@@ -396,12 +398,10 @@ fn missing_scxml_model_silent_passes_validator() {
 
 #[test]
 fn both_join_paths_dedupe_into_single_listener_entry() {
-    // When BOTH the explicit-role pair AND the legacy substate path
-    // would resolve the same link, the BTreeSet deduplicates. This
-    // is the Phase B transition window — fixtures that have already
-    // adopted the explicit shape but still carry `Accepting.*` states
-    // (Phase C migration in progress) should produce one entry, not
-    // two.
+    // Fixtures that have adopted the explicit-role shape but still
+    // carry legacy `Accepting.*` states must produce exactly one
+    // listener entry, not two — the BTreeSet deduplicates and only
+    // the explicit-role join resolves.
     let yaml = deploy_with_listener_source(
         "session_fsm.scxml",
         &listener_link_with_role_and_session_arming(),

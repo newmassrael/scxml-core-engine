@@ -443,13 +443,13 @@ mod tests {
     /// Drift test pinning the C++ `Origin` variant shape against
     /// the Rust `Origin` enum declared above. Follows the
     /// `cpp_template_subtypes_match_rust_diagnostic_codes` precedent
-    /// in `sce-build/src/template.rs::tests` (Phase B M4): read the
+    /// in `sce-build/src/template.rs::tests`: read the
     /// authoritative C++ header via `include_str!` at test compile
     /// time, regex-scan the struct declarations, assert set
     /// equality of struct names and field-name-and-type-family
     /// allowlists.
     ///
-    /// What this test pins (Phase C RFC §1 Q4):
+    /// What this test pins:
     ///
     ///   * Both `FileOrigin` and `CallSiteOrigin` struct declarations
     ///     exist in the C++ header.
@@ -467,7 +467,7 @@ mod tests {
     /// allowed), method signatures, `std::variant` discriminant
     /// order (the Rust `#[non_exhaustive]` enum's discriminants
     /// evolve independently), implementation shape of `lookup` or
-    /// `append_mapped_substring`. Those are covered by the P1
+    /// `append_mapped_substring`. Those are covered by the
     /// C++ unit tests in `tests/parsing/PositionMap_test.cpp`
     /// (implementation-level correctness) rather than drift.
     ///
@@ -510,9 +510,8 @@ mod tests {
              FileOrigin {{ <path-family> path; <int-family> \
              source_offset; }};` matching the Rust `Origin::File` \
              variant. If the field order or type family changed, \
-             update this drift test in the same commit — see RFC \
-             §1 Q4 (claudedocs/rfc-sce-template-phase-c.md) for the \
-             invariant. Path family allowlist: {path}. Integer \
+             update this drift test in the same commit. \
+             Path family allowlist: {path}. Integer \
              family allowlist: {int}.",
             path = path_family,
             int = int_family,
@@ -525,9 +524,7 @@ mod tests {
              <int-family> col; }};` matching the Rust \
              `Origin::CallSite` variant. If the field order or type \
              family changed, update this drift test in the same \
-             commit — see RFC §1 Q4 \
-             (claudedocs/rfc-sce-template-phase-c.md) for the \
-             invariant. Path family allowlist: {path}. Integer \
+             commit. Path family allowlist: {path}. Integer \
              family allowlist: {int}.",
             path = path_family,
             int = int_family,

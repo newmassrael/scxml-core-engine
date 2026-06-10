@@ -1,24 +1,23 @@
-//! C6-γ4 — Bounded-collection Go + Python + C11 template emit
+//! Bounded-collection Go + Python + C11 template emit
 //! integration tests.
 //!
-//! Per watching-zenoh RFC §5.L lines 2540-2655, the γ4 atomic ships
-//! the 4th, 5th, and 6th backends (Go + Python + C11) for `<scxml
+//! Per watching-zenoh RFC §5.L lines 2540-2655, this suite covers
+//! the Go, Python, and C11 backends for `<scxml
 //! sce:kind="bounded-collection">`, entirely closing the §5.L
 //! 6-backend codegen matrix. All three backends reuse the
 //! [`BoundedCollectionResolution`] resolution bundle threaded by
-//! the orchestrator that γ2 introduced, swapping the abstract
+//! the orchestrator, swapping the abstract
 //! `index_by_field_sce_type` for their per-language type string at
 //! render time via the lifted `go_type` / `python_type` / `c_type`
 //! helpers.
 //!
-//! Test strategy mirrors γ2/γ3: emit-shape grep against spec-locked
+//! Test strategy mirrors the Rust / Cpp+Kotlin suites: emit-shape
+//! grep against spec-locked
 //! invariants is cheaper than standing up `go vet` / `python -c` /
 //! `gcc` and catches the template-layer regressions that matter for
 //! codegen correctness.
 //!
-//! Design Q's locked 2026-05-13 (Q-γ4-{Go-iter, Go-Handle-method-set,
-//! Python-Handle-shape, Python-overflow-emit, C11-iter-shape}) =
-//! (a) textbook recommendations:
+//! Locked per-backend shapes (textbook recommendations):
 //!   - Go: `ForEach(fn func(T))` callback + receiver methods on
 //!     `uint32` newtype Handle.
 //!   - Python: frozen `@dataclass(slots=True)` Handle + `Optional
@@ -149,7 +148,7 @@ fn c11_happy_compile_const_no_index_by() {
     assert!(code.contains("#define LOCAL_SUB_TABLE_CAPACITY ((uint32_t)8)"));
     assert!(code.contains("_Static_assert(8 <= UINT16_MAX,"));
 
-    // POD Handle struct + 16/16 split (Q-γ4-C11 ABI parity).
+    // POD Handle struct + 16/16 split (C11 ABI parity).
     assert!(code.contains("typedef struct {\n    uint32_t raw;\n} local_sub_table_handle_t;"));
     assert!(code.contains("#define LOCAL_SUB_TABLE_SLOT_BITS 16u"));
     assert!(code.contains("#define LOCAL_SUB_TABLE_GEN_BITS 16u"));

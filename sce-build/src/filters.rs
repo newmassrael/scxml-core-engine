@@ -456,10 +456,10 @@ fn filter_slice_from(s: String, n: usize) -> String {
     s.chars().skip(n).collect()
 }
 
-/// watching-zenoh RFC §5.E B7-η' Atomic A2 + W1.4 — strip the
+/// watching-zenoh RFC §5.E sample-callback lowering — strip the
 /// language prefix from `<sce:on-sample callback="...">` to produce
 /// the bare path the codegen emits at the call site. Today only
-/// `rust:` (Q-Callback-2 v1) is valid; the validator
+/// `rust:` is valid; the validator
 /// (`validate_on_sample_callback_paths`) rejects every other
 /// shape before this filter ever runs, so the prefix is always
 /// `rust:` here. Future language axes (`c:`, `kotlin:`, …) extend
@@ -667,7 +667,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
-    // watching-zenoh RFC §5.E B7-η' W2: per-link function names
+    // watching-zenoh RFC §5.E per-link delivery codegen: per-link function names
     // (`<machine>_deliver_link_<X>_sample`) snake-case the link
     // name to keep the C identifier stable when the SCXML link
     // attribute uses kebab-case or mixedCase.
@@ -845,18 +845,17 @@ fn to_state_class_name(name: String) -> String {
 
 /// Register all Python-specific filters on the minijinja environment.
 ///
-/// Python AOT (Atomic α): state/event variants are `IntEnum` members named
+/// Python AOT: state/event variants are `IntEnum` members named
 /// in UPPER_SNAKE_CASE (`State.IDLE`, `Event.TEMP_HIGH`). Identifiers from
 /// SCXML are normalised via `to_python_const`; script bodies are emitted
 /// as repr-quoted Python string literals via `py_string_literal` so the
 /// template never has to worry about embedded quotes / newlines / unicode.
 /// A `PYTHON_KEYWORDS` / `escape_python_keyword` pair is intentionally
-/// absent from Atomic α — every emitted identifier is UPPER_SNAKE_CASE
-/// (IntEnum member) so keyword collisions cannot occur at this layer.
-/// Atomic β will introduce datamodel variable names where keyword escape
-/// becomes load-bearing; the pair lands then alongside its first consumer
-/// to keep the cross-backend "filter + consumer atomic" rule
-/// ([[feedback-built-but-unconsumed]]).
+/// absent — every emitted identifier is UPPER_SNAKE_CASE (IntEnum
+/// member) so keyword collisions cannot occur at this layer, and
+/// datamodel variables live inside the `IScriptEngine` session behind
+/// string-keyed accessors, so SCXML author identifiers never reach a
+/// Python parser either.
 pub fn register_python_filters(env: &mut minijinja::Environment) {
     register_invoke_filters(env);
     env.add_filter("to_pascal_case", to_pascal_case);

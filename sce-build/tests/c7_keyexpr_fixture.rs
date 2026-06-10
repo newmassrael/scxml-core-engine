@@ -1,10 +1,8 @@
 //! C7 keyexpr-fixture — reference exemplar parity test across all 6
 //! backends.
 //!
-//! Per watching-zenoh RFC §5.A line 311 + §5.L line 2642-2647 + RFC
-//! stub `claudedocs/rfc-c7-keyexpr-matching-algorithm.md` §3 Q-C7-8
-//! (a) + Q-C7-9 (a) + Q-C7-11 (c) locks 2026-05-13: the C7 chain's
-//! sub-atomic 3 of 3. Ships two fixtures in `tests/forge/resources/`:
+//! Per watching-zenoh RFC §5.A line 311 + §5.L lines 2642-2647.
+//! Ships two fixtures in `tests/forge/resources/`:
 //!
 //! - `algorithm_keyexpr_intersect_exact.scxml` — inner algorithm,
 //!   `(entry_id: u32, target_id: u32) -> bool` exact equality.
@@ -18,10 +16,10 @@
 //! index-loop (already validated in `c7_keyexpr_match.rs` against
 //! the minimal exemplar) AND the cross-algorithm dispatch substituted
 //! by `validate_and_enrich_imports::build_qualified_call`. Runtime
-//! parity (compile + run + diff outputs) defers per RFC §A6 to a
-//! future atomic when the cross-language test-vector harness lands.
-//!
-//! In-atomic consumer = the per-backend emit assertions below.
+//! parity (compile + run + diff outputs) is not exercised here —
+//! these fixtures are not enrolled in the conformance run harness;
+//! the per-backend emit assertions below are the coverage until a
+//! consumer needs runtime parity.
 
 use std::fs;
 use std::path::{Path, PathBuf};

@@ -67,7 +67,7 @@ pub struct Transition {
     /// [`native_payload_guard`](Self::native_payload_guard) for why that
     /// distinction matters.
     pub transition_index: usize,
-    /// NL→IR Item C1 Path A: the native typed `_event.data` guard expression
+    /// EventSchema native lowering: the native typed `_event.data` guard expression
     /// for this transition, lowered at generate time from `cond` against the
     /// imported EventSchema (see `forge::generator::build_*_event_payload`).
     /// Empty when the guard stays on the script-engine / In() path or no
@@ -108,7 +108,7 @@ pub struct Transition {
     pub is_true_internal: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub internal_source: Option<String>,
-    /// Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source
+    /// Watching-zenoh RFC §5.O source traceability: post-preprocessor source
     /// position of the `<transition>` element, populated by
     /// [`crate::parser::SCXMLParser::parse_transition`] from
     /// `roxmltree::Document::text_pos_at`. Templates emit
@@ -248,14 +248,14 @@ pub struct Action {
     // conventions (mesh::pattern), RPC reply pairing is inferred from
     // topology structure (mesh::topology::detect_rpc_pairs), and QoS is
     // a transport binding concern (deploy.yaml).
-    /// Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source
+    /// Watching-zenoh RFC §5.O source traceability: post-preprocessor source
     /// position of the executable-content element this action
     /// represents (`<raise>` / `<send>` / `<assign>` / `<log>` /
     /// `<script>` / `<if>` / `<foreach>` / `<cancel>`). Populated by
     /// [`crate::parser::SCXMLParser::parse_executable_content_single`].
-    /// Used by §5.O Atomic 1 per-action attribution (Atomic 0 only
-    /// emits function-level markers, so this field is read by the
-    /// pre-emit `validate_emission_provenance` walker today).
+    /// Carries per-action attribution detail beyond the function-level
+    /// SCE-MAP markers the templates emit; today this field is read by
+    /// the pre-emit `validate_emission_provenance` walker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
     /// `sce:req` requirement IDs attached to this executable-content
@@ -759,27 +759,17 @@ impl std::ops::DerefMut for HybridInvokeInfo {
     }
 }
 
-/// watching-zenoh RFC §5.E B7-η' — `<sce:on-sample>` SCXML extension.
-/// Wraps the spec line 1269 subscriber callback contract ("the
-/// subscriber callback receives `&Sample<'_>`; the slot returns to the
-/// pool when the callback returns") into a state-level declaration
-/// that the η' codegen template lowers to a per-state callback
-/// registration on the link's RX path.
-///
-/// Q-OnSample-1 (Y) parser-AST extension; Q-OnSample-2 (a) valid only
-/// inside `<state>` and `<parallel>`; Q-OnSample-3 v1 attributes are
-/// Watching-zenoh RFC §5.2 Round F-α — top-level `<sce:driver
-/// href="..."/>` declaration on the SCXML root. References an
-/// externally-authored driver header that the C11 backend `#include`s
-/// into the emitted `*_sm.c`. Author-time reference only; SCE does not
-/// parse the driver header itself (Q-Round-F-D2 lock — cross-TU
-/// signature verification is delegated to the C compiler).
+/// Top-level `<sce:driver href="..."/>` declaration on the SCXML
+/// root. References an externally-authored driver header that the C11
+/// backend `#include`s into the emitted `*_sm.c`. Author-time
+/// reference only; SCE does not parse the driver header itself —
+/// cross-TU signature verification is delegated to the C compiler.
 ///
 /// Resolution happens at compile-model time: each `href` is joined
 /// against `deploy.yaml`'s `platform.driver_root` (or the SCXML file's
 /// parent directory as fallback), and an unresolved path surfaces
 /// `mcu/driver-header-not-found`. Only the C11 backend consumes this
-/// field for codegen emission (Q-Round-F-D5 / D6 locks).
+/// field for codegen emission.
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct DriverRef {
@@ -807,8 +797,8 @@ pub struct DriverRef {
     pub source_location: Option<SourceLocation>,
 }
 
-/// Axis-3 inversion — closed-set vocabulary for the cross-document
-/// session-FSM role that a SCXML document declares via the top-level
+/// Closed-set vocabulary for the cross-document session-FSM role
+/// that a SCXML document declares via the top-level
 /// `<sce:session-role kind="..."/>` extension.
 ///
 /// v1 ships a single variant ([`AcceptSide`]) covering the
@@ -825,12 +815,12 @@ pub struct DriverRef {
 /// machine's source SCXML iff that SCXML declares
 /// `<sce:session-role kind="accept-side"/>`. Partial-claim cases
 /// (either side declares the role but not the other) fire typed
-/// cross-doc diagnostics — see RFC Axis-3 Q-A7.
+/// cross-doc diagnostics.
 ///
 /// `kind` values use the canonical session-FSM vocabulary
 /// (`accept-side`), NOT the wire-side deploy vocabulary
 /// (`listener`). The asymmetric pairing is hardcoded in the
-/// orchestrator per RFC Axis-3 Q-A6 (a) — each domain uses its native
+/// orchestrator — each domain uses its native
 /// term; the orchestrator knows the pairing table.
 ///
 /// [`AcceptSide`]: SessionRoleKind::AcceptSide
@@ -875,17 +865,24 @@ impl SessionRoleKind {
     }
 }
 
-/// `link` (forge link kind artifact name) + `event` (SCXML event name
-/// dispatched on Sample arrival), both required. B7-η' Atomic A2 adds
-/// optional `callback` attribute (Q-Callback-1 Option α + Q-Callback-2
-/// `rust:` prefix-typed reference into the user's symbol space).
+/// `<sce:on-sample>` SCXML extension (watching-zenoh RFC §5.E). Wraps
+/// the RFC's subscriber callback contract ("the subscriber callback
+/// receives `&Sample<'_>`; the slot returns to the pool when the
+/// callback returns") into a state-level declaration that the codegen
+/// template lowers to a per-state callback registration on the link's
+/// RX path. Valid only inside `<state>` and `<parallel>`. `link`
+/// (forge link kind artifact name) + `event` (SCXML event name
+/// dispatched on Sample arrival) are both required; `callback` is an
+/// optional `rust:` prefix-typed reference into the user's symbol
+/// space.
 #[derive(Debug, Clone, Serialize, Default)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct OnSampleNode {
     /// `link="X"` — forge link kind artifact name. Cross-reference
-    /// resolution against the build's [`crate::forge::pool_registry`]-style
-    /// `SceCrossDocRegistry` is the Atomic B follow-on; structural
-    /// validators in this atomic do not consult the registry.
+    /// resolution happens post-parse: the build pipeline looks each
+    /// `link=` value up in the
+    /// [`crate::forge::cross_doc_registry::SceCrossDocRegistry`]
+    /// (see `validate_on_sample_links` in `parser.rs`).
     pub link: String,
     /// `event="X"` — SCXML event name raised when a Sample arrives.
     /// State-level `<transition event="X">` blocks dispatch normally
@@ -893,16 +890,15 @@ pub struct OnSampleNode {
     /// `&Sample<'_>` reference.
     pub event: String,
     /// `callback="rust:crate::path::fn"` — optional extern reference
-    /// into the user's symbol space (Q-Callback-1 Option α). When
+    /// into the user's symbol space. When
     /// present, codegen emits `path(&sample)` at the dispatch site,
     /// forcing borrow-mode at the call boundary; rustc enforces the
     /// user's signature shape against the borrow contract. The
     /// language prefix today is `rust:` only; future axes (`c:`,
-    /// `kotlin:`, …) reuse the same attribute via Q-Callback-2's
-    /// language-typed parsing. Absence (`None`) means codegen
-    /// synthesizes a default dispatch shim — backwards-compat with
-    /// the landed Atomic A/B `<sce:on-sample link/event>` shape
-    /// (Q-Callback-5).
+    /// `kotlin:`, …) reuse the same attribute via the same
+    /// language-prefixed parsing. Absence (`None`) means codegen
+    /// synthesizes a default dispatch shim — the bare
+    /// `<sce:on-sample link/event>` shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub callback: Option<String>,
     /// 0-based document order within this state's `<sce:on-sample>`
@@ -931,8 +927,8 @@ pub struct State {
     /// Templates dispatch on `invoke.kind`; Rust consumers pattern-match.
     pub invokes: Vec<Invoke>,
     /// `<sce:on-sample>` declarations on this state, in document order.
-    /// Empty for states without sample subscriptions. Q-OnSample-5 (a)
-    /// allows multiple blocks (one per link) per state with a
+    /// Empty for states without sample subscriptions. Multiple blocks
+    /// (one per link) are allowed per state, with a
     /// uniqueness validator on the `link` attribute.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub on_sample_blocks: Vec<OnSampleNode>,
@@ -943,7 +939,7 @@ pub struct State {
     pub initial_history_id: String,
     pub initial_history_default_target: String,
     pub initial_history_default_actions: Vec<Action>,
-    /// Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source
+    /// Watching-zenoh RFC §5.O source traceability: post-preprocessor source
     /// position of the `<state>` / `<final>` / `<parallel>` element.
     /// Populated by [`crate::parser::SCXMLParser::parse_states`].
     /// Drives the per-state SCE-MAP marker that codegen templates
@@ -962,8 +958,8 @@ pub struct State {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unresolved: Vec<UnresolvedMarker>,
     /// `sce:exhaustive="false"` author opt-out for the
-    /// NonExhaustiveEventHandling validator (NL→IR Mapping Roadmap
-    /// Item 3 Phase B). Default `false` — validator is active. Set to
+    /// NonExhaustiveEventHandling validator.
+    /// Default `false` — validator is active. Set to
     /// `true` when the author has deliberately written partial event
     /// coverage across sibling children and wants the build to accept
     /// the document as-is.
@@ -988,14 +984,13 @@ pub struct SCXMLModel {
     /// Empty if the SCXML element has no name attribute.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub scxml_name: String,
-    /// NL→IR Mapping Roadmap Item C1 Path A (DL-7' prerequisite) —
     /// `<sce:import>` declarations on the statechart's `<scxml>` root.
     /// Each entry names a cross-doc dependency by `kind`, `src`, and
     /// `alias` so per-doc validators can compute per-statechart import
     /// visibility (rather than the legacy single global registry that
     /// merged every kind document in the build into one shared map).
     /// Today's primary consumer: per-machine EventSchema visibility
-    /// for mesh DL-7' cross-machine validation and receive/send-side
+    /// for mesh cross-machine validation and receive/send-side
     /// schema selection on the per-statechart check passes. Empty for
     /// statecharts that declare no `<sce:import>` children — the
     /// schemaless-fallback path stays a no-op walk.
@@ -1005,7 +1000,7 @@ pub struct SCXMLModel {
     /// re-parsing the SCXML.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub forge_imports: Vec<crate::forge::model::ForgeImport>,
-    /// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+    /// EventSchema MCU native lowering —
     /// the statechart's `<sce:import kind="event-schema">` declarations
     /// resolved to their `EventSchemaModel`, keyed by SCXML event name
     /// (e.g. `"job.completed"`). Populated by [`crate::parser`] during
@@ -1030,20 +1025,19 @@ pub struct SCXMLModel {
     pub binding: String,
     pub datamodel_type: String,
 
-    /// Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3 Atomic
-    /// B-γ1): per-document event-queue capacity declared via
+    /// Watching-zenoh RFC §5.J.2 + §5.L: per-document event-queue
+    /// capacity declared via
     /// `<scxml sce:capacity="N">` on the root element. Drives the
-    /// `heapless::spsc::Queue<E, N>` capacity literal that Atomic
-    /// B-γ2's runtime port consumes when emitting the no_std event
-    /// queue. Unit: events (not bytes).
+    /// generated `EVENT_QUEUE_CAPACITY` bound that the heapless
+    /// event-queue uses in `--no-std` emission. Unit: events (not
+    /// bytes).
     ///
-    /// Resolution rule (Q-RustNoStd-7 (a)): per-instance attribute
+    /// Resolution rule: per-instance attribute
     /// wins; fallback to deploy.yaml
     /// `machines.<m>.scheduler.default_event_queue_capacity` when
-    /// the attribute is absent. Both being absent is permitted today
-    /// (`--no-std` codegen still works against std runtime); the
-    /// capacity becomes load-bearing when B-γ2's heapless adoption
-    /// lands.
+    /// the attribute is absent. Both being absent is permitted
+    /// (the emitted machine falls back to the runtime's default
+    /// queue bound).
     ///
     /// Schema invariant enforced by the parser: present-but-malformed
     /// (non-numeric, zero, or u32-overflow) surfaces
@@ -1109,23 +1103,23 @@ pub struct SCXMLModel {
     pub has_history_states: bool,
     pub has_event_metadata: bool,
     pub has_parent_communication: bool,
-    /// watching-zenoh RFC §5.E B7-η' codegen wire-up — sorted set of
-    /// every `link` name referenced by any state's
+    /// watching-zenoh RFC §5.E sample-callback codegen wire-up —
+    /// sorted set of every `link` name referenced by any state's
     /// `<sce:on-sample link="X" .../>` block. Derived in
     /// [`crate::analyzer::analyze_model_features`] as the union over
     /// `state.on_sample_blocks`. Empty when the machine has no sample
     /// subscriptions (the common case); non-empty drives the Rust
     /// state_machine template's `deliver_link_X_sample` method
-    /// emission per Q-Wire-9 (host-driven delivery, generic over `M:
+    /// emission (host-driven delivery, generic over `M:
     /// SampleMeta` so the codegen does not need to know the link's
     /// concrete metadata type at template-render time).
     #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
     pub on_sample_links: BTreeSet<String>,
-    /// Watching-zenoh RFC §5.2 Round F-α — every top-level `<sce:driver
+    /// Every top-level `<sce:driver
     /// href="..."/>` reference on the document root, in document order.
     /// Each entry is an externally-authored driver header that the C11
     /// backend `#include`s into the emitted `*_sm.c` so cross-TU symbol
-    /// resolution is handled by the C compiler (Q-Round-F-D2 lock).
+    /// resolution is handled by the C compiler.
     ///
     /// Empty when the machine declares no driver dependencies (the
     /// common case for non-MCU / hosted backends). Non-empty: each
@@ -1138,8 +1132,7 @@ pub struct SCXMLModel {
     /// outside C).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub driver_refs: Vec<DriverRef>,
-    /// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-declarations.md`)
-    /// — set of session-FSM roles this SCXML document explicitly
+    /// Set of session-FSM roles this SCXML document explicitly
     /// declares via top-level `<sce:session-role kind="..."/>`
     /// elements. Each variant appears at most once (parse-time
     /// uniqueness is enforced by
@@ -1147,17 +1140,15 @@ pub struct SCXMLModel {
     ///
     /// Empty when the document declares no roles (the common case
     /// for non-session-FSM SCXML). Non-empty: drives the orchestrator's
-    /// cross-doc listener-pair join — see
-    /// [`crate::resolve_listener_links`] for Phase B's consumer wire-up.
-    /// During Phase A (foundation) the orchestrator does NOT yet read
-    /// this field; the existing `accepting_substate_present` walker
-    /// is unchanged. Phase B switches the join over to this set.
+    /// cross-doc listener-pair join — [`crate::resolve_listener_links`]
+    /// reads this set to pair `role: listener` deploy links with
+    /// machines declaring the matching session role.
     ///
     /// `BTreeSet` keeps iteration order deterministic so any diagnostic
     /// quoting the declared-roles list produces a stable string.
     #[serde(skip_serializing_if = "BTreeSet::is_empty", default)]
     pub declared_session_roles: BTreeSet<SessionRoleKind>,
-    /// Watching-zenoh RFC §5.2 Round F-α-2 — section attribute payload
+    /// Section attribute payload
     /// for the C11 backend's `SCE_SM_FN` macro emission. Set by
     /// [`crate::compile_scxml_lang_typed_with_section`] when
     /// `deploy.yaml`'s `platform.c11_section_attribute.class` is
@@ -1469,7 +1460,7 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub machine_liveliness_opt_in: bool,
 
-    /// Watching-zenoh RFC §5.O Atomic 0: post-preprocessor source
+    /// Watching-zenoh RFC §5.O source traceability: post-preprocessor source
     /// position of the `<scxml>` root element. Populated by
     /// [`crate::parser::SCXMLParser::parse_impl`]. Drives the
     /// per-backend SCE-MAP marker above the generated state machine's

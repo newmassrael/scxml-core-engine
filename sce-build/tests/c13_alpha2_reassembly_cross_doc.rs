@@ -1,4 +1,4 @@
-//! C13-α-2 — cross-doc validators for §5.M reassembly + §5.K burst
+//! Cross-doc validators for §5.M reassembly + §5.K burst
 //! invariants.
 //!
 //! Per watching-zenoh RFC §5.M lines 2946-2995 + §5.K lines 2489-2500:

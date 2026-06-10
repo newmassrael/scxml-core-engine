@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// NL→IR Mapping Roadmap Item 3 Phase A — Statechart graph reachability.
+// Statechart graph reachability.
 //
 // Computes the design-time reach set of an SCXML model after parse +
 // `analyzer::analyze` finalize the state graph, and rejects documents

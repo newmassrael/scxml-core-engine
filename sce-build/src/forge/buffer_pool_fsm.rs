@@ -97,9 +97,11 @@ pub const STATES: [SlotState; 7] = [
 ];
 
 /// Cache-maintenance annotation on a transition edge. Spec §5.E
-/// lines 1182-1228. The IR carries this for the future B7-δ atomic
-/// (cache maintenance pinning, gated on §5.I); B7-γ stores but does
-/// not emit cache calls.
+/// lines 1182-1228. The IR carries this annotation; per-edge
+/// emission has no consumer — the shipped cache-maintenance emit
+/// (item C5) gates on the pool-level `cache-policy: maintain` flag
+/// instead, so per-edge gating is not implemented until a consumer
+/// needs it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheOp {
     /// No cache maintenance on this edge.
@@ -127,8 +129,8 @@ pub struct Transition {
     /// Human-readable trigger label from the spec body — mirrors the
     /// right-hand side of the spec's transition table verbatim.
     pub trigger: &'static str,
-    /// Cache-maintenance annotation (spec lines 1182-1228, deferred
-    /// to B7-δ for emission).
+    /// Cache-maintenance annotation (spec lines 1182-1228; carried
+    /// in the IR, not yet consumed by emission — see [`CacheOp`]).
     pub cache_op: CacheOp,
     /// Whether author code can directly invoke this edge through
     /// the public author-visible API (spec lines 1232-1237). False

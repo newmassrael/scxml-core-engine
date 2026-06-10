@@ -46,29 +46,29 @@ pub mod provenance;
 /// downstream req-coverage tooling.
 pub mod requirements_report;
 pub mod script_engine_analyzer;
-/// NL→IR Mapping Roadmap Item 3 Phase B: event-set exhaustiveness
+/// NL→IR Mapping Roadmap Item 3: event-set exhaustiveness
 /// validator. Flags compound `<state>` parents whose sibling children
 /// disagree on event coverage with no parent fallthrough — the
 /// AI-generated SCXML intent-gap pattern. Narrow heuristic (requires
 /// a shared event vocabulary across siblings) keeps W3C IRP at zero
 /// false positives.
 pub mod scxml_exhaustiveness;
-/// NL→IR Mapping Roadmap Item 3 Phase C: guard analysis. Recognises
+/// NL→IR Mapping Roadmap Item 3: guard analysis. Recognises
 /// trivially-false `<transition cond>` expressions and shadowed
 /// transitions (unconditional siblings making later same-event
 /// siblings dead per §scxml-5.10). Stays narrow: language-prefixed
 /// conds (`cpp:`, `kotlin:`, `rust:`) are opaque, token-prefix
 /// superset shadowing is not flagged.
 pub mod scxml_guard_analysis;
-/// NL→IR Mapping Roadmap Item 3 Phase A: Statechart graph reachability
+/// NL→IR Mapping Roadmap Item 3: Statechart graph reachability
 /// validator. BFS from the document `initial` configuration computes
 /// the design-time reach set and rejects orphan states / dead
 /// transitions before codegen.
 pub mod scxml_reachability;
 pub mod scxml_semantic;
 /// `sce:template` / `sce:use` / `sce:param` preprocessing —
-/// parameterised composition adjacent to XInclude. AOT-only per
-/// RFC §6.5 Phase A; runs immediately after XInclude expansion
+/// parameterised composition adjacent to XInclude. AOT-only;
+/// runs immediately after XInclude expansion
 /// so templates see a post-XInclude document. See [`template`]
 /// for the expansion semantics and error model.
 pub mod template;
@@ -178,7 +178,7 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     let mut model = parser.parse_file(scxml_path)?;
     analyzer::analyze(&mut model, scxml_path);
     guard_static_generatable(&model, scxml_path)?;
-    // NL→IR Mapping Roadmap Item 3 Phase A — Statechart graph
+    // NL→IR Mapping Roadmap Item 3 — Statechart graph
     // reachability. Runs after the analyzer finalises the state graph
     // (parallel-region computation, initial-cascade resolution) and
     // after `guard_static_generatable` so the more-fundamental
@@ -189,14 +189,14 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     // entry contract is sound; running it earlier would shadow the
     // root-cause diagnostic with a downstream consequence.
     scxml_reachability::validate(&model, scxml_path)?;
-    // NL→IR Mapping Roadmap Item 3 Phase B — event-set
-    // exhaustiveness. Runs after Phase A so an unreachable state is
+    // NL→IR Mapping Roadmap Item 3 — event-set
+    // exhaustiveness. Runs after the reachability walk so an unreachable state is
     // reported via the structural code first; the exhaustiveness
     // walker presumes the graph topology is sound and surfaces only
     // the design-time intent-gap pattern.
     scxml_exhaustiveness::validate(&model, scxml_path)?;
-    // NL→IR Mapping Roadmap Item 3 Phase C — guard analysis. Runs
-    // after Phase B so structural intent-gap diagnostics fire ahead
+    // NL→IR Mapping Roadmap Item 3 — guard analysis. Runs after
+    // the exhaustiveness walk so structural intent-gap diagnostics fire ahead
     // of the per-transition guard heuristic.
     scxml_guard_analysis::validate(&model, scxml_path)?;
     // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
@@ -227,16 +227,17 @@ fn compile_model_from_string(
     let mut model = parser.parse_string(scxml_content, scxml_name)?;
     analyzer::analyze(&mut model, "");
     guard_static_generatable(&model, scxml_name)?;
-    // NL→IR Mapping Roadmap Item 3 Phase A — see `compile_model` for
-    // the placement rationale (after the basic static-generation guard
+    // NL→IR Mapping Roadmap Item 3 reachability — see `compile_model`
+    // for the placement rationale (after the basic static-generation guard
     // so root-cause `ScxmlSemanticError` diagnostics fire ahead of the
     // orphan walk).
     scxml_reachability::validate(&model, scxml_name)?;
-    // NL→IR Mapping Roadmap Item 3 Phase B — see `compile_model`
-    // for the placement rationale (after Phase A so the structural
+    // NL→IR Mapping Roadmap Item 3 event-set exhaustiveness — see
+    // `compile_model` for the placement rationale (after the
+    // reachability walk so the structural
     // root-cause fires ahead of the heuristic).
     scxml_exhaustiveness::validate(&model, scxml_name)?;
-    // NL→IR Mapping Roadmap Item 3 Phase C — guard analysis.
+    // NL→IR Mapping Roadmap Item 3 — guard analysis.
     scxml_guard_analysis::validate(&model, scxml_name)?;
     // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
     // guard. WASM / parse_string callers share the same invariant
@@ -250,7 +251,7 @@ fn compile_model_from_string(
 pub type CompileError = forge::error::Located<forge::error::ForgeError>;
 
 /// Promote the `analyzer::can_generate_static` precondition into a
-/// `Located<ForgeError>` for the wire layer. RFC §W5 D3 refit:
+/// `Located<ForgeError>` for the wire layer. §wire-W5 D3 refit:
 /// `can_generate_static` itself now returns the correctly-classified
 /// `ForgeError` (split between `ValidationDynamicFeatures` for genuine
 /// codegen limitations and `ScxmlSemanticError::*` for hard semantic
@@ -2310,7 +2311,7 @@ pub fn compile_scxml_with_imports(
     // burst_pps + tick_period_us + arrivals_per_tick / drain_per_second);
     // forge-side reassembly validators emit `ValidationError`
     // directly per the existing `#[from]` flow.
-    // ── Axis-3 Phase B cross-doc role validation ──
+    // ── Axis-3 cross-doc role validation ──
     //
     // Runs BEFORE listener-link resolution so partial-claim failures
     // surface as typed `link/...` or `scxml/...` diagnostics rather
@@ -2320,8 +2321,9 @@ pub fn compile_scxml_with_imports(
     //   - scxml/accept-side-role-without-listener-link
     //   - link/role-listener-with-non-session-arming-trust-class
     // Legacy fixtures (no explicit role / session-role declarations)
-    // silent-pass per Q-A9 staged migration discipline; Phase C
-    // migration extends explicit declarations to every listener.
+    // silent-pass per Q-A9 staged migration discipline; the
+    // promotion to required-on-every-listener waits until every
+    // fixture declares the explicit role pair.
     if let Some(deploy_cfg) = deploy {
         validate_cross_doc_listener_roles(deploy_cfg, &scxml_models).map_err(|e| {
             Located::new(
@@ -2333,18 +2335,18 @@ pub fn compile_scxml_with_imports(
         })?;
     }
 
-    // ── C10-α listener-pair resolution + Axis-3 Phase B explicit-
-    //    role join ──
+    // ── C10-α listener-pair resolution + Axis-3 explicit-role
+    //    join ──
     //
     // Computed unconditionally so deploy-aware downstream consumers
     // (the C13 cross-doc validators + the per-doc compile_forge_with_imports
     // codegen pass) see a single source of truth. Defaults to an
     // empty set on `deploy: None` paths — silent-skip per Q-η5 (a):
     // no deploy ⇒ no machine.source × session_arming axis to scan;
-    // listener-pair synthesis cannot fire. Phase B keeps both join
-    // paths active simultaneously (legacy substate walker + new
-    // explicit-role join); Phase D will delete the walker after
-    // Phase C migrates every fixture to the explicit-role shape.
+    // listener-pair synthesis cannot fire. The join is the
+    // explicit-role pair only — the legacy substate-driven walker
+    // was deleted from this path; `accepting_substate_present`
+    // survives solely as the parser migration-helper's data source.
     let listener_links: std::collections::BTreeSet<String> = match deploy {
         Some(deploy_cfg) => resolve_listener_links(deploy_cfg, &scxml_models),
         None => std::collections::BTreeSet::new(),
@@ -3745,8 +3747,7 @@ pub fn accepting_substate_present(model: &SCXMLModel) -> bool {
         .any(|id| id == "Accepting" || id.starts_with("Accepting."))
 }
 
-/// Axis-3 inversion Phase D
-/// (claudedocs/rfc-axis3-listener-role-declarations.md) — resolve the
+/// Axis-3 inversion — resolve the
 /// listener-pair set from the explicit cross-document role
 /// declarations on both sides:
 ///
@@ -3755,7 +3756,7 @@ pub fn accepting_substate_present(model: &SCXMLModel) -> bool {
 ///    [`crate::model::SessionRoleKind::AcceptSide`].
 ///
 /// Both halves must be declared for the link to join `listener_links`.
-/// The pre-Phase-D substate-driven join (legacy `accepting_substate_
+/// The historic substate-driven join (legacy `accepting_substate_
 /// present` walker × `trust_class: session_arming`) was deleted —
 /// the predicate function remains alive as the data source for the
 /// parser-time migration-helper diagnostic
@@ -3817,8 +3818,7 @@ pub fn resolve_listener_links(
     listener_links
 }
 
-/// Axis-3 inversion Phase B
-/// (claudedocs/rfc-axis3-listener-role-declarations.md Q-A4 + Q-A7)
+/// Axis-3 inversion (Q-A4 + Q-A7)
 /// — cross-document validation of explicit listener-role declarations.
 /// Runs BEFORE [`resolve_listener_links`] so a partial-claim failure
 /// is surfaced as a typed `link/...` or `scxml/...` diagnostic rather
@@ -3844,10 +3844,10 @@ pub fn resolve_listener_links(
 /// - `role = None` (legacy fixtures pre-migration; partial-claim
 ///   discipline applies only when explicit declarations are present)
 ///
-/// Per RFC Q-A9 the Phase B atomic does NOT require `role: listener`
-/// on every `session_arming` link — that promotion happens after
-/// Phase C migrates every fixture. Phase B requires consistency only
-/// among the explicit declarations actually present.
+/// Per RFC Q-A9 this validator does NOT require `role: listener`
+/// on every `session_arming` link — that promotion waits until
+/// every fixture migrates to the explicit-role shape. It requires
+/// consistency only among the explicit declarations actually present.
 pub fn validate_cross_doc_listener_roles(
     deploy_cfg: &mesh::deploy::DeployConfig,
     scxml_models: &[(std::path::PathBuf, SCXMLModel)],
@@ -4492,27 +4492,27 @@ fn discover_primary_function(
         ),
         forge::model::ForgeDocument::Transform(m) => {
             let output_id = m.outputs.first()?.id.clone();
-            // W1 symbol-name SSOT: the cross-doc callsite resolves to the first
+            // Symbol-name SSOT: the cross-doc callsite resolves to the first
             // output's bare call-base (C11 returns `compute_<snake(output)>`);
             // build_qualified_call re-prepends `<namespace>_` on C11, landing
             // on the emitted `<m.name>_compute_<output>`.
             Some(forge::generator::forge_transform_symbol(&output_id, *language))
         }
         forge::model::ForgeDocument::Condition(m) => {
-            // W1 symbol-name SSOT: the cross-doc callsite is the bare call-base
+            // Symbol-name SSOT: the cross-doc callsite is the bare call-base
             // (C11 returns `check`); build_qualified_call re-prepends the
             // `<namespace>_` module prefix on C11, emitting `<m.name>_check`.
             Some(forge::generator::forge_condition_symbol(&m.name, *language))
         }
         forge::model::ForgeDocument::Lookup(m) => {
-            // W1 symbol-name SSOT: the cross-doc callsite is the bare call-base
+            // Symbol-name SSOT: the cross-doc callsite is the bare call-base
             // (C11 returns the verb-less `<snake(output_id)>`);
             // build_qualified_call re-prepends `<namespace>_` on C11, landing
             // on the emitted `<m.name>_<output_id>`.
             Some(forge::generator::forge_lookup_symbol(&m.output.id, *language))
         }
         forge::model::ForgeDocument::Interpolation(m) => {
-            // W1 symbol-name SSOT: the def≠call kind. render_interpolation
+            // Symbol-name SSOT: the def≠call kind. render_interpolation
             // defines the accessor (forge_interpolation_symbol) as a member
             // of a `<Pascal>` wrapper (struct/object/impl) on Cpp/Kotlin/Rust,
             // a free `Lookup` on Go, a module-level `lookup` on Python, and a
@@ -4568,7 +4568,7 @@ fn discover_primary_function(
         // cross-file consumer of `<sce:call target="algo_name"/>`
         // resolves through this name.
         forge::model::ForgeDocument::Algorithm(m) => {
-            // W1 symbol-name SSOT: the cross-doc callsite resolves to the
+            // Symbol-name SSOT: the cross-doc callsite resolves to the
             // exact symbol `render_algorithm` defines, so both sites read
             // `forge_algorithm_symbol`. The algorithm kind's definition
             // equals its discovery name (no wrapper qualification, unlike
@@ -6065,7 +6065,7 @@ pub enum Pipeline {
 /// See [`Pipeline`] for the full routing table and the rationale behind
 /// each case. This predicate is the single source of truth for routing
 /// — the CLI dispatches on it, and any future embedding API must too.
-/// Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): reject SCXML constructs
+/// Watching-zenoh RFC §5.J.2 (item C3): reject SCXML constructs
 /// that are incompatible with the `sce-rust-runtime` no_std variant.
 ///
 /// Caller invokes this only when `sce-codegen generate -l rust --no-std`
@@ -6291,7 +6291,7 @@ mod tests {
     fn typed_entry_exposes_structured_validation_error() {
         use forge::error::ForgeError;
         use scxml_semantic::{InitialStateScope, ScxmlSemanticError};
-        // `initial="nope"` names a non-existent state — RFC §W5 D3
+        // `initial="nope"` names a non-existent state — §wire-W5 D3
         // refit: this is a hard semantic violation, NOT a "dynamic
         // feature". Pre-W5 surface routed through
         // `ValidationError::DynamicFeatures`; W5 splits to
@@ -6337,7 +6337,7 @@ mod tests {
     /// Forge cpp procedure codegen emits the bytes-typed cap-check
     /// guard around an `<assign location="X" expr="_event.data"/>` when
     /// `X` is a `<data sce:type="bytes" sce:max-size="N"/>` slot. This
-    /// pins the RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4
+    /// pins the bounded-bytes cap contract's
     /// cpp half: heap-backed runtime raises `error.execution` through
     /// the shared `run_procedure` loop instead of throwing or letting
     /// the assign silently overflow. Companion tests in
@@ -6410,9 +6410,8 @@ mod tests {
     /// temp+check shape, returns `Some(Event::ErrorExecution)` on
     /// overflow, and the procedure runtime's `execute_transition_actions`
     /// signature returns `Option<Event>`. Companion to
-    /// `forge_cpp_procedure_emits_bytes_cap_check`; together they pin the
-    /// 1:1 lift required by RFC `claudedocs/rfc-forge-bytes-bounded.md`
-    /// §8 split between commits 3a and 3b.
+    /// `forge_cpp_procedure_emits_bytes_cap_check`; together they pin
+    /// the 1:1 cpp↔Rust lift of the bounded-bytes cap-check contract.
     #[test]
     fn forge_rust_procedure_emits_bytes_cap_check() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -7095,7 +7094,7 @@ topology:
     /// Forge C11 procedure L2 codegen completes the 6-backend
     /// contract (cpp/Rust/Kotlin/Go/Python + C11) for the bytes
     /// cap-check raise path. C uses a stack-bounded
-    /// sce_forge_bytes_t struct (no heap, RFC §5.J.2 F1) and a
+    /// sce_forge_bytes_t struct (no heap) and a
     /// (raised, event) tuple analogue from
     /// sce/forge/procedure.h. RFC §8 commit 4a — codegen path
     /// only; conformance harness wiring lands in commit 4b.

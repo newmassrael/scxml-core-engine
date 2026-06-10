@@ -8,8 +8,6 @@
 //! `sce-forge-runtime/c/include/sce/forge/limits.h`; the lockstep test
 //! in this module reads the C header at compile time and asserts both
 //! constants resolve to the same value.
-//!
-//! See `claudedocs/rfc-forge-bytes-bounded.md` §3 B2 for the rationale.
 
 /// Default capacity for `bytes`-typed Forge slots when the SCXML author
 /// has not declared a per-slot `sce:max-size` annotation. Aligned with
