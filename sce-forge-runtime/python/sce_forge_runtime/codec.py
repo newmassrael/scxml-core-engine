@@ -7,9 +7,9 @@ Mirrors ``sce-forge-runtime/rust/src/codec.rs``. RFC §5.B L494-519 pins a
 per-language cursor + ``NeedMoreBytes`` contract on decode so a truncated
 input never aborts.
 
-Phase B1-prep ships peek_slice / advance / remaining. Streaming readers
-(read_u8, read_vle_*, read_tag) land in B1-α/β with their first
-consumer.
+The cursor ships peek_slice / advance / remaining plus the read_vle_*
+readers. Other streaming readers (e.g. a dedicated read_u8 / read_tag)
+are not provided until a consumer needs them.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from __future__ import annotations
 class CodecError(Exception):
     """Base class for typed codec decode errors.
 
-    The B1-β variant primitive intentionally does NOT need a typed
+    The variant primitive intentionally does NOT need a typed
     ``UnknownVariantTag`` — RFC §5.B requires ``<sce:default>`` when
     arms don't exhaust the tag domain (build-time
     ``codec/variant-arm-unreachable`` otherwise), so the default arm
@@ -41,7 +41,7 @@ class VleWidthOverflow(CodecError):
 
 class InvalidUtf8(CodecError):
     """Raised when a ``sce:type="string"`` field's length-prefixed
-    payload is not well-formed UTF-8. RFC §5.B B5-ζ Surface H. Forge-
+    payload is not well-formed UTF-8 (RFC §5.B). Forge-
     fail-fast contract — zenoh-pico itself aliases the bytes without
     validating, but SCE-side codecs reject malformed text early so
     downstream procedures never see a malformed ``str``. The Cpp +
@@ -53,7 +53,7 @@ class InvalidUtf8(CodecError):
 class TlvChainOverflow(CodecError):
     """Raised when a ``<sce:tlv-chain on-overflow="reject">`` field has
     residual cursor bytes after ``max_depth`` entries have been
-    consumed (RFC §5.B B3-α). Truncate policy silently drops the
+    consumed (RFC §5.B). Truncate policy silently drops the
     residual bytes and never raises this exception; the on-overflow
     attribute is parser-mandatory so the codec emit always picks one
     of the two policies. The Cpp + Kotlin runtimes collapse this to
@@ -62,7 +62,7 @@ class TlvChainOverflow(CodecError):
 
 
 class BufferOverflow(CodecError):
-    """RFC §5.B B1-α encode-side counterpart to :class:`NeedMoreBytes`:
+    """RFC §5.B encode-side counterpart to :class:`NeedMoreBytes`:
     raised when an encode write would exceed the destination sink's
     remaining capacity. Only the bounded :class:`MemoryviewSink`
     (caller-owned ``memoryview`` + ``cap``) can raise this; the
@@ -150,7 +150,7 @@ from typing import Union as _Union
 
 
 class SceSink(_abc.ABC):
-    """RFC §5.B B1-α encode-side sink. Generated ``encode`` bodies
+    """RFC §5.B encode-side sink. Generated ``encode`` bodies
     append bytes through this surface.
 
     Concrete sinks own the destination storage (``bytearray`` or

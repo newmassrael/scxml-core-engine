@@ -22,7 +22,7 @@
 //! ```
 //!
 //! Each individual W3C test lives as `tests/test_XXX.rs` integration test,
-//! which the generator produces in Phase 2+. Rust's `#[test]` model compiles
+//! which the generator produces. Rust's `#[test]` model compiles
 //! each file as a separate binary, preserving per-test rebuild granularity.
 
 pub mod generated;

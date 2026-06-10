@@ -10,14 +10,14 @@
 #   cmake --build build_conformance_c
 #   ctest --test-dir build_conformance_c --output-on-failure
 #
-# Invokes sce-codegen at configure time on each Phase-A fixture SCXML
+# Invokes sce-codegen at configure time on each fixture SCXML
 # and writes the generated C headers into ${CMAKE_CURRENT_BINARY_DIR}/
 # generated/, which is added to the test target's include path. The
-# test binary then links against sce_forge_runtime_c (header-only,
-# INTERFACE library — empty for Phase A) and runs against pre-baked
-# oracle arrays emitted directly by the harness template (RFC §5.J.2
-# F7: C has no zero-deps JSON parser surviving the R3 lock-in, so the
-# oracle is materialised at codegen time, not parsed at runtime).
+# test binary then links against sce_forge_runtime_c (header-only
+# INTERFACE library) and runs against pre-baked
+# oracle arrays emitted directly by the harness template (C has no
+# zero-deps JSON parser within the backend's zero-dependency rule, so
+# the oracle is materialised at codegen time, not parsed at runtime).
 
 cmake_minimum_required(VERSION 3.16)
 project(sce_forge_numerical_conformance_c C)
@@ -74,13 +74,13 @@ if(NOT EXISTS "${REFERENCE_JSON}")
     message(FATAL_ERROR "reference JSON not found at ${REFERENCE_JSON}")
 endif()
 
-# RFC §5.J.2 §3: pull the C11 fixture catalog from sce-codegen itself.
+# Pull the C11 fixture catalog from sce-codegen itself.
 # The Rust binary owns the manifest schema and the per-language `kind`
 # gate (`c11_supported_kind`), so cmake never has to touch JSON or
-# duplicate the phase-staging list — `--language c11` filters out any
-# kind whose `kinds/<kind>.c.jinja2` fragment has not landed yet,
+# duplicate the kind list — `--language c11` filters to kinds
+# whose `kinds/<kind>.c.jinja2` fragment exists,
 # matching the filter `generate-conformance --language c11` applies at
-# harness render time. After Phase E-4 every forge kind has its
+# harness render time. Every forge kind has its
 # fragment, so today the filter is a no-op identity over the manifest;
 # it stays in the toolchain so a future kind addition forces an
 # explicit decision in `c11_supported_kind` instead of silently being
@@ -190,8 +190,8 @@ target_include_directories(numerical_conformance_test_c PRIVATE
     "${GENERATED_DIR}"
 )
 
-# RFC §5.J.2 §4 acceptance gate: -Werror with -Wall/-Wextra/-Wpedantic
-# is the bar — Phase A's emitted code must survive without warnings.
+# Acceptance gate: -Werror with -Wall/-Wextra/-Wpedantic
+# is the bar — emitted code must survive without warnings.
 target_compile_options(numerical_conformance_test_c PRIVATE
     -Wall -Wextra -Wpedantic -Werror
 )

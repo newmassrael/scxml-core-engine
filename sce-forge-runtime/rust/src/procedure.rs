@@ -109,8 +109,8 @@ pub trait ProcedurePolicy {
     ///
     /// Returns `None` for normal flow (transition completes and the loop
     /// advances to the target state). A `Some(Event)` return signals that
-    /// an assign-time check (e.g. RFC `claudedocs/rfc-forge-bytes-bounded.md`
-    /// §3 B4 bytes cap violation) raised an internal event; the loop
+    /// an assign-time check (e.g. a
+    /// bytes cap violation) raised an internal event; the loop
     /// re-processes the *source* state with that event so the fixture's
     /// `<transition event="error.execution">` (or any other internal-event
     /// handler) can pick it up. If the source has no matching transition,

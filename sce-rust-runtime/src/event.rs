@@ -67,8 +67,7 @@ impl EventType {
 /// too. So they are `#[cfg(not(feature = "no_std"))]`, dropping ~1.3 KiB of dead
 /// inline `heapless::String<256>` per queued event on MCU targets. (Typed event
 /// data rides the `Payload` channel — `_event.data.<field>` reads the payload
-/// sum, never this JSON `data` string.) See
-/// claudedocs/rfc-nostd-event-metadata-elision.md.
+/// sum, never this JSON `data` string.)
 #[derive(Debug, Clone, Default)]
 pub struct EventMetadata {
     /// `_event.data` — event payload as a JSON string (empty when no payload).

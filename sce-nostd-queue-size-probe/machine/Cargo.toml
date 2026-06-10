@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Generated-machine crate for the per-machine no_std event-queue-sizing gate
-# (RFC claudedocs/rfc-nostd-per-machine-event-queue-sizing.md).
+# Generated-machine crate for the per-machine no_std event-queue-sizing gate.
 #
 # `[lib] path` points at a generated `--no-std` machine from
 # `sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml`, which

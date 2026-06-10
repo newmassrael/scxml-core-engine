@@ -5,8 +5,8 @@
 // BasicHTTPEventProcessor conformance corpus (test201/509/510/513/518/
 // 520/522/531/532/534/567).
 //
-// Pattern B-i (`claudedocs/rfc-c11-option-m-http.md` §3.2): the
-// fixture binary issues a synchronous HTTP POST against the existing
+// Client-only design: the fixture binary issues a synchronous HTTP
+// POST against the existing
 // `tests/w3c/standalone_http_server.js` Node.js server (already used by
 // the Go and Rust harnesses + cpp WASM lane). The server JSON-echoes
 // each inbound request as
@@ -16,17 +16,16 @@
 // into the SM via `<sm>_raise_external`. No in-process server is
 // required, so this header carries client-side primitives only.
 //
-// R3 lock-in (`c11_design_decisions.md`): host-side helper, isolated
-// to the `sce_c_test_http_support` STATIC archive consumed only by
-// fixture binaries. sce-c-runtime stays untouched (zero-deps profile
-// preserved bit-exact).
+// Host-side helper, isolated to the `sce_c_test_http_support` STATIC
+// archive consumed only by fixture binaries. sce-c-runtime stays
+// untouched (zero-deps profile preserved bit-exact).
 //
 // Surface mirrors what `setup_http_test()` does in
 // `sce-rust-tests/src/harness.rs:130-189` and
 // `sce-go-tests/harness/harness.go::SetupHTTPTest`, reimplemented in
 // pure C with POSIX socket + recursive-descent JSON extractor. No
 // libcurl / cpp-httplib dep (cpp-httplib is C++ only; libcurl is too
-// heavy for the host-helper R3 budget).
+// heavy for a test-fixture-only helper).
 
 #ifndef SCE_C_TESTS_SUPPORT_HTTP_CLIENT_H
 #define SCE_C_TESTS_SUPPORT_HTTP_CLIENT_H
@@ -59,7 +58,7 @@ typedef struct {
 /**
  * Parse an `http://` URL into host/port/path components. `https://`
  * is rejected — the W3C C.2 corpus never targets TLS, and embedding a
- * TLS stack would defeat the host-helper R3 budget.
+ * TLS stack would defeat the helper's minimal-footprint design.
  *
  * @return true on success; false on scheme/syntax error or buffer
  *         overflow (host > 127 bytes, path > 255 bytes).

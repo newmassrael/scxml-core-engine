@@ -7,20 +7,21 @@
 // the per-language cursor + null-on-truncation contract on decode so a
 // truncated input never aborts.
 //
-// B1-prep ships peekSlice / advance / remaining. Streaming readers
-// (readU8, readVle*, readTag) land in B1-α/β with their first consumer.
+// The cursor ships peekSlice / advance / remaining plus the readVle*
+// readers. Other streaming readers (e.g. a dedicated readU8 / readTag)
+// are not provided until a consumer needs them.
 
 package com.sce.forge.runtime
 
-/// Typed decode error. The B1-β variant primitive intentionally does
+/// Typed decode error. The variant primitive intentionally does
 /// NOT need a typed UnknownVariantTag — RFC §5.B requires
 /// `<sce:default>` when arms don't exhaust the tag domain (build-time
 /// codec/variant-arm-unreachable otherwise), so the default arm
 /// catches every unmatched tag at runtime.
 ///
-/// The B3-α TLV chain primitive emits on Kotlin after the B5-ε
-/// closures (it was originally MCU-only as a conservative scope choice;
-/// Zenoh extension envelopes need server-class peers too). On reject-
+/// The TLV chain primitive emits on Kotlin like every other backend
+/// (Zenoh extension envelopes need server-class peers, not only the
+/// MCU). On reject-
 /// policy overflow Kotlin collapses the failure to the truncation
 /// sentinel `null` returned from `decode()` — same convention as
 /// VleWidthOverflow (see also the matching Cpp runtime). The typed
@@ -31,7 +32,7 @@ sealed class CodecError {
     /// A `vle_u<N>` field's continuation chain implies a value wider
     /// than the declared type. RFC §5.B `codec/vle-width-overflow`.
     object VleWidthOverflow : CodecError()
-    /// RFC §5.B B1-α encode-side counterpart to NeedMoreBytes: the
+    /// RFC §5.B encode-side counterpart to NeedMoreBytes: the
     /// destination sink reported insufficient remaining capacity for
     /// the next write. Only the bounded [ByteArraySink] can raise
     /// this; the growable [MutableListSink] is effectively infallible.
