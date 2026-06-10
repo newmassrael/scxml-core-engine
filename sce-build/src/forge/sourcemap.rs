@@ -227,7 +227,7 @@ fn synth_xpath(state_path: &str, artifact: &str) -> String {
 /// Render the sourcemap to a JSON string. Pretty-printed for human
 /// inspection; `serde_json::to_string` (compact) would still work but
 /// debugging an addr2sce miss is faster against the indented form.
-/// Per the §5.O byte-identity requirement the indent must be deterministic across platforms —
+/// Per the §synth-5-O byte-identity requirement the indent must be deterministic across platforms —
 /// `serde_json::to_string_pretty` uses 2-space indent which is
 /// platform-independent.
 pub fn to_json(map: &Sourcemap) -> Result<String, serde_json::Error> {
@@ -412,7 +412,7 @@ mod tests {
         let json1 = to_json(&map).expect("serialise");
         let json2 = to_json(&map).expect("serialise");
         // Determinism: two emissions of the same sourcemap must be
-        // byte-equal. This is the foundation for the §5.O cross-
+        // byte-equal. This is the foundation for the §synth-5-O cross-
         // backend identity (which the integration test pins).
         assert_eq!(json1, json2);
         // Schema sanity: contains the keys spec lines 3219-3243 name.

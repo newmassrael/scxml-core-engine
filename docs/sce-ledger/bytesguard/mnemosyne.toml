@@ -1,0 +1,90 @@
+# EventSchema bytes-guard design-ledger workspace (Mnemosyne adoption,
+# `bytesguard` namespace).
+#
+# Like docs/sce-ledger/mesh and docs/sce-ledger/wire, this workspace mirrors
+# an SCE-internal design document tracked in this repo: the EventSchema
+# bytes-guard RFC (docs/sce-ledger/bytesguard/rfc-eventschema-bytes-guard.md),
+# the cross-backend program that made `bytes`-typed `_event.data` transition
+# guards lower natively on all six backends. There is no external upstream
+# (no [workspace.spec_source]); the SSOT is the tracked RFC itself, and the
+# sections are regenerated from it by
+# tools/mnemosyne-adoption/bytesguard_rfc_to_manifest.py via `import-sections`.
+#
+# The ledger exists so code comments citing the program's decisions
+# ("rfc-eventschema-bytes-guard.md §3 B3", "RFC §3 B2/B5") resolve to a real
+# section in the §bytesguard-<n> form. Item ids inside sections (B1..B7, the
+# §5 commit rows) stay prose after the section token ("§bytesguard-3 B5") —
+# the gate keys on the section id, the item is the human-readable pointer.
+#
+# Rooted at the SCE repo root so cited/implemented code paths are canonical
+# (R386 anchor resolve); Section.implementations forbids `..` traversal, so
+# Path B binding needs the workspace root to be an ancestor of the documented
+# code. Ledger artifacts stay here via the repo-relative paths below.
+[workspace]
+root = "../../.."
+
+# Store is the sole SSOT (Mnemosyne R400 retired the markdown-doc render path);
+# the tracked RFC above is the regen input and human-readable mirror.
+[atomic]
+sidecar_path = "docs/sce-ledger/bytesguard/.atomic/workspace.atomic.json"
+
+[schema]
+changelog_titles = ["Revision History"]
+entry_id_prefix = "Rev "
+anchor_convention = "section_number"
+medium_name = "design_ledger"
+
+# SCE's `(R<n>)` commit-subject labels are adoption-round counters, not
+# Mnemosyne changelog rounds, so the commit↔ledger drift gate (Mnemosyne
+# R293/R301) is advisory here rather than a hard reject (opt-out added in
+# Mnemosyne R377/R378), matching the other workspaces.
+[commit_ledger]
+severity = "warn"
+
+# Code-citation defense (validate-code-refs). Paths are workspace-root
+# relative; this workspace lives three levels down (docs/sce-ledger/
+# bytesguard). The cites were migrated to the §bytesguard-<n> form by
+# tools/mnemosyne-adoption/migrate_citations.py --namespace bytesguard.
+#
+#   section_namespace = "bytesguard"  only §bytesguard-<n> tokens are checked;
+#                                     every foreign token in the same files is
+#                                     skipped by the token itself.
+#   severity_missing = "reject"       hallucination gate: a §bytesguard-<n>
+#                                     with no ledger section fails the run.
+#   severity_binding = "warn"         Path B (Section.implementations binding)
+#                                     is a later curation round; advisory so
+#                                     unbacked cites pass (scxml R3 rollout
+#                                     pattern, same staging as synth).
+#
+# Enrolled paths mirror the synth workspace: the bytes-guard program touched
+# the same authored surfaces (codegen sources, tests, fixtures, runtime
+# libraries, regen scripts).
+[plugins.set_equality_validator]
+paths = [
+    "tools/codegen/templates",
+    "sce-build/src",
+    "sce-build/tests",
+    "sce-rust-runtime/src",
+    "sce-forge-runtime",
+    "sce-c-runtime/include",
+    "tests/forge/resources",
+    "scripts",
+    "schemas",
+]
+severity_missing = "reject"
+severity_binding = "warn"
+# Coverage stays advisory — a design-RFC mirror has background/risk prose
+# sections that legitimately carry no implements cite.
+severity_coverage = "warn"
+comment_only = true
+section_namespace = "bytesguard"
+
+# Path B symbol-binding resolvers (Mnemosyne R382), for the later curation
+# round.
+[plugins.symbol_resolver.cpp]
+transport = "in-process"
+backend = "tree-sitter-cpp"
+
+[plugins.symbol_resolver.rust]
+transport = "in-process"
+backend = "tree-sitter-rust"

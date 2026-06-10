@@ -147,7 +147,7 @@ fn normalise_scxml_file_paths(mut val: serde_json::Value) -> serde_json::Value {
     val
 }
 
-/// D18(iii) — sourcemap.source_hash byte-equal to the §6.2.6 header
+/// D18(iii) — sourcemap.source_hash byte-equal to the §synth-6.2.6 header
 /// `source-hash` value embedded in the generated SM file.
 #[test]
 fn sourcemap_source_hash_matches_drift_header() {
@@ -155,7 +155,7 @@ fn sourcemap_source_hash_matches_drift_header() {
     let val: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     let map_hash = val["source_hash"].as_str().unwrap().to_string();
 
-    // Parse the §6.2.6 header from the emitted *_sm.rs.
+    // Parse the §synth-6.2.6 header from the emitted *_sm.rs.
     let sm_path = tmp.join("atomic1_sm.rs");
     let sm_body = std::fs::read_to_string(&sm_path).expect("read sm");
     let header_hash = sm_body

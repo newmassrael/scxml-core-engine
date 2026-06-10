@@ -21,7 +21,7 @@ use crate::forge::model::{ProcedureModel, ProcedureState, SceType};
 /// / `sce:returns-max-size` annotation in the procedure is consistent
 /// with the destination slot it ultimately fills.
 ///
-/// Rule (RFC §3 B1): for every `<assign location="X" expr="_event.data"/>`
+/// Rule (RFC §bytesguard-3 B1): for every `<assign location="X" expr="_event.data"/>`
 /// inside a transition leaving a state whose `<onentry>` contains a
 /// `<send>` with `sce:response-max-size=M`, and where `X` is a bytes-typed
 /// slot with `sce:max-size=N`, the constraint `M ≤ N` must hold. The

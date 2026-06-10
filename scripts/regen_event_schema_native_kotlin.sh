@@ -49,7 +49,7 @@ if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build
 fi
 
-# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §6) lowers to a
+# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §bytesguard-6) lowers to a
 # Kotlin `pending….raw.contentEquals("ack".toByteArray())` guard — ByteArray
 # `==` is reference equality, so contentEquals is the whole point. Its
 # machine name differs, so the generated SM lives in its own package dir.

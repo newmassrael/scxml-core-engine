@@ -270,13 +270,13 @@ const fn irq(name: &'static str, sig: &'static str, purpose: &'static str) -> Sy
     }
 }
 
-// ── Spec-verbatim baseline (§5.I lines 1717-1750) ──────────────
+// ── Spec-verbatim baseline (§synth-5-I lines 1717-1750) ──────────────
 
 use MemoryOrdering::*;
 use Width::*;
 
 /// Baseline whitelist — 101 symbols. Source of truth: watching-zenoh
-/// RFC §5.I lines 1717-1750. Per-width × per-ordering combinations
+/// RFC §synth-5-I lines 1717-1750. Per-width × per-ordering combinations
 /// expanded inline so each row matches its spec line one-to-one.
 ///
 /// Drift guards (test module below) verify entry count, name-suffix
@@ -947,7 +947,7 @@ pub fn lookup_symbol(name: &str) -> Option<&'static Symbol> {
 }
 
 /// Names of the three FSM-driven cache-maintenance intrinsics per
-/// spec §5.I lines 1736-1740. C5 uses this list to (a) reject
+/// spec §synth-5-I lines 1736-1740. C5 uses this list to (a) reject
 /// author authoring of the cache trio in `<sce:extern>` declarations
 /// per spec lines 1222-1227 author-must-not, and (b) auto-inject the
 /// 3 entries into `ParsedForge.externs` when a buffer-
@@ -959,7 +959,7 @@ pub const CACHE_MAINTENANCE_TRIO: &[&str] = &[
     "sce_dcache_clean_invalidate_by_addr",
 ];
 
-/// `true` when `name` is one of the §5.I FSM-driven cache-maintenance
+/// `true` when `name` is one of the §synth-5-I FSM-driven cache-maintenance
 /// trio. Drives the `pool/cache-maintenance-misplaced` parse-time
 /// rejection (spec line 1548).
 pub fn is_cache_maintenance_trio(name: &str) -> bool {

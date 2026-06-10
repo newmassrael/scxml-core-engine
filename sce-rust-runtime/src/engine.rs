@@ -1022,7 +1022,7 @@ impl<P: StatePolicy> Engine<P> {
     /// into the external queue — enabling real HTTP round-trips against the
     /// shared W3C test server (`standalone_http_server.js`).
     ///
-    /// Watching-zenoh RFC §5.J.2: gated to `!no_std` (HTTP itself is whole-module
+    /// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` (HTTP itself is whole-module
     /// gated; the codegen-time validator rejects `BasicHTTPEventProcessor`
     /// `<send>` under `--no-std` via `codegen/no-std-http-not-supported`).
     #[cfg(not(feature = "no_std"))]

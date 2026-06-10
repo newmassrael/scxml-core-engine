@@ -49,7 +49,7 @@ const STATECHART_FIXTURE: &str = r#"<?xml version="1.0"?>
 "#;
 
 /// Forge codec fixture: single byte field, exercises the per-kind body
-/// emission path. RFC §5.B B5 plain codec — no variant / no TLV chain /
+/// emission path. RFC §synth-5-B B5 plain codec — no variant / no TLV chain /
 /// no parent-flags / no test vectors. Every backend (rust / cpp / c11 /
 /// kotlin / go / python) accepts this shape.
 const CODEC_FIXTURE: &str = r#"<?xml version="1.0"?>
@@ -139,7 +139,7 @@ fn rand_suffix() -> String {
 }
 
 /// Count SCE-MAP marker occurrences in `path` referencing the fixture
-/// basename. Spec §5.O distinguishes two forms:
+/// basename. Spec §synth-5-O distinguishes two forms:
 ///   - module-level (0b): comment-form `// SCE-MAP: <file>:<line>` /
 ///     `# SCE-MAP: …` / Rust's `#![doc]` + `// SCE-MAP: …`.
 ///   - function-level (0c): the per-backend directive form:

@@ -71,7 +71,7 @@ fn find_sidecar<'a>(
 
 #[test]
 fn rust_emits_extern_c_block_for_baseline_symbols() {
-    // C5 (spec §5.E line 1548): the cache-maintenance trio
+    // C5 (spec §synth-5-E line 1548): the cache-maintenance trio
     // (`sce_dcache_*_by_addr`) is rejected at parse time when authored
     // via `<sce:extern>` because cache calls are FSM-driven from the
     // buffer-pool kind. To exercise the Rust emit shape for a multi-

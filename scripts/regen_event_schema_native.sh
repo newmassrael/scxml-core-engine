@@ -40,7 +40,7 @@ if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build
 fi
 
-# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §6) rides the same
+# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §bytesguard-6) rides the same
 # committed-tree gate so the bytes-equality guard is REALLY compiled + run,
 # not only form-asserted in the sce-build smoke layer.
 BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"

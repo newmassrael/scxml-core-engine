@@ -527,7 +527,7 @@ fn json_mode_condition_missing_expr_reports_leaf_line() {
 /// in scope at that raise-site (forge/parser.rs:530-535).
 ///
 /// **Why transform, not codec**: this fixture used to ride parse_codec's
-/// `fields.is_empty()` check, but RFC §5.B deliberately accepts
+/// `fields.is_empty()` check, but RFC §synth-5-B deliberately accepts
 /// zero-field codecs (Zenoh KeepAlive empty-body messages keyed by the
 /// surrounding header byte) — parse_codec no longer raises
 /// EmptyCollection on a fields-empty body. parse_transform still
@@ -672,7 +672,7 @@ fn json_mode_observer_missing_enter_reports_monitor_data_line() {
 /// Timer doc missing `<sce:period>` must report at the document
 /// root (`<scxml>`) line — the validator anchors at the parent
 /// node because the missing child has no source location of its
-/// own. Pins parse_timer (watching-zenoh RFC §5.D shape).
+/// own. Pins parse_timer (watching-zenoh RFC §synth-5-D shape).
 fn write_timer_missing_period_fixture() -> (ScratchDir, PathBuf) {
     let dir = ScratchDir::new("leaf-precision");
     let path = dir.path().join("timer_missing_period.scxml");

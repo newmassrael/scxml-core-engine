@@ -8,6 +8,7 @@ name: Spec Citations (Mnemosyne adoption)
 #   docs/sce-ledger/wire §wire-W<n>  Wire RFC design ledger
 #   docs/spec/synth     §synth-<id>  protocol-synthesis RFC mirror (revision-
 #                                    pinned snapshot of the watching-zenoh RFC)
+#   docs/sce-ledger/bytesguard §bytesguard-<n>  EventSchema bytes-guard RFC
 #
 # `validate-code-refs` fails (severity_missing = "reject") on any §<ns>-<id>
 # citation with no matching ledger section — the hallucination gate. The
@@ -19,8 +20,8 @@ name: Spec Citations (Mnemosyne adoption)
 # mnemosyne-cli is an external Rust binary (separate repo, intentionally not
 # vendored), so it is installed at a pinned revision via `cargo install --git
 # --rev --locked` and cached by that rev — the consumer CI pattern from
-# Mnemosyne's SCHEMA_GUIDE. Bump MNEMOSYNE_REV deliberately, re-validating the
-# four workspaces locally against the new rev before committing the change.
+# Mnemosyne's SCHEMA_GUIDE. Bump MNEMOSYNE_REV deliberately, re-validating
+# every workspace locally against the new rev before committing the change.
 
 on:
   push:
@@ -104,7 +105,7 @@ jobs:
       - name: Validate citations + excerpt content drift (per workspace)
         run: |
           set -euo pipefail
-          for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth; do
+          for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth docs/sce-ledger/bytesguard; do
             echo "::group::${ws}"
             ( cd "${ws}" \
                 && mnemosyne-cli validate-workspace \
@@ -133,3 +134,8 @@ jobs:
         run: |
           python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace synth \
             --from-toml docs/spec/synth/mnemosyne.toml
+
+      - name: Forbid claimable free-text bytes-guard RFC cites
+        run: |
+          python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace bytesguard \
+            --from-toml docs/sce-ledger/bytesguard/mnemosyne.toml

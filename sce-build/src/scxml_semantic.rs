@@ -92,14 +92,14 @@ pub enum ScxmlSemanticError {
     },
 
     /// SCXML document has no top-level `<state>`, `<parallel>`, or
-    /// `<final>`. W3C SCXML §3.2 requires at least one root state.
+    /// `<final>`. §scxml-3.2 requires at least one root state.
     /// Mirrors C++ `SemanticNoStates`.
     #[error("No state nodes found in SCXML document")]
     NoStates,
 
     /// Top-level `<script>` element either (a) has empty content
     /// AND empty `src`, or (b) has `src` but the file failed to
-    /// load. W3C SCXML §5.8 mandates document rejection in either
+    /// load. §scxml-5.8 mandates document rejection in either
     /// case.
     ///
     /// Payload fields are optional because the producer site

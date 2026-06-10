@@ -134,7 +134,7 @@ topology:
 
 #[test]
 fn cache_maintain_with_speculative_prefetch_emits_both_edges_rust() {
-    // Spec §5.E lines 1186-1198: cache-clean before TX hand-off (always
+    // Spec §synth-5-E lines 1186-1198: cache-clean before TX hand-off (always
     // when maintain) AND pre-arm cache-invalidate before RX arm
     // (gated on has_speculative_prefetch=true).
     let out = compile_pool_with_deploy(
@@ -473,7 +473,7 @@ topology:
 fn pool_cache_maintenance_misplaced_for_each_trio_symbol() {
     // Spec line 1548 + lines 1222-1227: author authoring of the cache
     // trio via `<sce:extern>` is forbidden. Fires at parse time
-    // before the §5.I baseline whitelist validator.
+    // before the §synth-5-I baseline whitelist validator.
     use sce_build::forge::parser::parse_forge_with_imports;
 
     for sym in [

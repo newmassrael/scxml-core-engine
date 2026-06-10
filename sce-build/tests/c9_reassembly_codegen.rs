@@ -125,7 +125,7 @@ fn compile_for(language: Language, scxml: &str, label_id: &'static str) -> Strin
 
 #[test]
 fn rust_reassembly_variant_emits_zid_peer_id_typedef() {
-    // RFC §5.M lines 2708-2714: peer-id keys on ZID, never wire source.
+    // RFC §synth-5-M lines 2708-2714: peer-id keys on ZID, never wire source.
     let scxml = reassembly_scxml("rx_reassembly_pool", 4, 4096, 16, 500, 2);
     let body = compile_for(Language::Rust, &scxml, "rx_reassembly_pool");
     assert!(
@@ -136,7 +136,7 @@ fn rust_reassembly_variant_emits_zid_peer_id_typedef() {
 
 #[test]
 fn rust_reassembly_variant_emits_bitmap_word_const() {
-    // RFC §5.M line 2696 + 2688: bitmap width = ceil(max-fragments / 32).
+    // RFC §synth-5-M line 2696 + 2688: bitmap width = ceil(max-fragments / 32).
     // For max_fragments_per_message=16 → 1 word. For 64 → 2 words.
     let scxml16 = reassembly_scxml("rx_reassembly_pool", 4, 4096, 16, 500, 2);
     let body16 = compile_for(Language::Rust, &scxml16, "rx_reassembly_pool");
@@ -155,7 +155,7 @@ fn rust_reassembly_variant_emits_bitmap_word_const() {
 
 #[test]
 fn rust_reassembly_variant_emits_reassembly_slot_struct() {
-    // RFC §5.M lines 2680-2698: per-slot state = bitmap + deadline + peer_id.
+    // RFC §synth-5-M lines 2680-2698: per-slot state = bitmap + deadline + peer_id.
     let scxml = reassembly_scxml("rx_reassembly_pool", 4, 4096, 16, 500, 2);
     let body = compile_for(Language::Rust, &scxml, "rx_reassembly_pool");
     assert!(
@@ -178,7 +178,7 @@ fn rust_reassembly_variant_emits_reassembly_slot_struct() {
 
 #[test]
 fn rust_reassembly_variant_emits_config_constants() {
-    // RFC §5.M lines 2688-2690: MAX_FRAGMENTS_PER_MESSAGE +
+    // RFC §synth-5-M lines 2688-2690: MAX_FRAGMENTS_PER_MESSAGE +
     // REASSEMBLY_TIMEOUT_MS + PER_PEER_QUOTA round-trip from the
     // schema into the generated code so the SCXML algorithm body
     // can reach them without re-parsing deploy.yaml.

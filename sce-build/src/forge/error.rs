@@ -2606,7 +2606,7 @@ pub enum ValidationError {
         node_id: String,
     },
 
-    /// Watching-zenoh RFC §5.O — symbol-mangling collision.
+    /// Watching-zenoh RFC §synth-5-O — symbol-mangling collision.
     /// Fires when the cross-IR symbol-table walker (`forge::
     /// symbol_mangling::build_symbol_table`) finds two distinct IR
     /// nodes whose `(machine, state_path, artifact)` triple mangles
@@ -2636,7 +2636,7 @@ pub enum ValidationError {
         second_line: u32,
     },
 
-    /// Watching-zenoh RFC §5.O — mangled symbol exceeds the
+    /// Watching-zenoh RFC §synth-5-O — mangled symbol exceeds the
     /// C99 §5.2.4.1 external-identifier length limit (31 chars).
     /// Default rendering is warn; `platform.strict_c99_identifiers:
     /// true` in deploy.yaml escalates to hard-error. `mangled` is the
@@ -2656,8 +2656,8 @@ pub enum ValidationError {
         over_by: u32,
     },
 
-    /// Watching-zenoh RFC §5.O — sourcemap `source_hash`
-    /// drift against the §6.2.6 header `source-hash`. Codegen-
+    /// Watching-zenoh RFC §synth-5-O — sourcemap `source_hash`
+    /// drift against the §synth-6.2.6 header `source-hash`. Codegen-
     /// invariant: every emitted `sce_sourcemap.json`'s
     /// `source_hash` field MUST be byte-equal to the
     /// `source-hash` value in the per-file §synth-6.2.6 drift header.

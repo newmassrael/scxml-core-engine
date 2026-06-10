@@ -137,7 +137,7 @@ fn walker_fires_when_marker_stripped_from_emitted_file() {
 #[test]
 fn walker_silently_skips_files_without_drift_header() {
     // Simulate an external meta-generator (protoc, bindgen) writing
-    // a `.rs` file into the same out_dir without the §6.2.6 drift
+    // a `.rs` file into the same out_dir without the §synth-6.2.6 drift
     // header. The walker must skip it silently — that file is
     // out-of-scope per the ownership boundary contract.
     let tmp = tempfile::TempDir::new().unwrap();
@@ -188,7 +188,7 @@ fn walker_diagnostic_code_is_meta_generated_source_line_marker_missing() {
 
     // Construct the diagnostic directly and route through
     // to_diagnostics — verifies the wire code name matches the
-    // spec-anchored slash-path and the spec anchor is §5.O.
+    // spec-anchored slash-path and the spec anchor is §synth-5-O.
     let err: ForgeError = ValidationError::TraceabilityMetaGeneratedSourceLineMarkerMissing {
         file: "out/test144/test144_sm.rs".into(),
     }

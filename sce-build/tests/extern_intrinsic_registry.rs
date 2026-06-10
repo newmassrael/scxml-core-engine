@@ -68,7 +68,7 @@ fn happy_path_atomic_load_acquire_u32_roundtrips() {
 
 #[test]
 fn happy_path_multiple_externs_preserve_order() {
-    // C5 (spec §5.E line 1548): the cache-maintenance trio is
+    // C5 (spec §synth-5-E line 1548): the cache-maintenance trio is
     // FSM-driven and rejected at parse time when authored via
     // `<sce:extern>`. Substitute `sce_atomic_fence_seq_cst` (a
     // non-cache fence symbol) so the order-preservation contract
