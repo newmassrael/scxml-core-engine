@@ -2,7 +2,7 @@
 <!-- SCE Forge conformance: Zenoh extension TLV entry — variant body
      keyed by the entry header's `enc` bit-range (RFC §5.B B5-ε,
      surface G from the watching-zenoh authoring path; layout
-     refined to wire-fidelity in Wire RFC Phase B Y3).
+     since refined to wire fidelity).
 
      Mirrors zenoh-pico `_z_msg_ext_decode` + `_z_msg_ext_unknown_body_decode`
      (src/protocol/codec/ext.c lines 84-128 + 130-142) and the

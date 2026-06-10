@@ -66,7 +66,7 @@ struct CodecZenohSourceInfo {
         };
     }
 
-    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors.
+    // RFC §5.B flags primitive: per-bit-range accessors.
     // Single-bit (width=1) reads as bool; multi-bit (width>=2) reads as
     // the smallest unsigned integer type that fits the range. Setters
     // mask + shift on the way in so out-of-range callers can't corrupt

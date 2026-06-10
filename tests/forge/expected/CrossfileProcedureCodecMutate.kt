@@ -100,8 +100,7 @@ class CrossfileProcedureCodecMutate : ProcedureStateMachine<State, Event>() {
     }
 
     // Returns null for normal flow; a non-null Event signals that an
-    // assign-time check (RFC `claudedocs/rfc-forge-bytes-bounded.md`
-    // §3 B4 bytes cap violation) raised an internal event that the
+    // assign-time bytes-cap check raised an internal event that the
     // shared runToCompletion loop re-pumps through processTransition.
     override fun executeTransitionActions(source: State, trIndex: Int): Event? {
         if (source == State.Init) {

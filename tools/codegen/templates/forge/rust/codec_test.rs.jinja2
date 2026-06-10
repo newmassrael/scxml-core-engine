@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# RFC §5.B B5-θ codec test-vector sidecar. Each row pins one wire
+{# RFC §5.B codec test-vector sidecar. Each row pins one wire
    `hex` byte sequence to a flat `<sce:decoded>` field tree; the
    emitted `#[test]` builds the codec struct, asserts encode → bytes
    parity, then decodes the same bytes back and asserts every field
@@ -10,7 +10,7 @@
    shapes reject upstream in `render_codec_test_vector_sidecar` so
    authors get a precise gate error rather than a broken sidecar. #}
 
-// SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B B5-θ)
+// SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B)
 // Companion to {{ name }}.rs — do not edit; regenerate from the source SCXML.
 
 {% for tv in test_vectors %}

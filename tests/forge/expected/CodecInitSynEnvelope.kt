@@ -12,7 +12,7 @@ import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_init_syn_body.*
 
-// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// RFC §5.B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
@@ -36,7 +36,7 @@ data class CodecInitSynEnvelope(
     // codec's `<sce:flag value=>`-baked default fields above.
     var body: CodecInitSynEnvelopeVariant = CodecInitSynEnvelopeVariant.CodecInitSynBody(com.sce.generated.codec_init_syn_body.CodecInitSynBody())
 ) {
-    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // RFC §5.B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
@@ -64,7 +64,7 @@ data class CodecInitSynEnvelope(
         }
     }
 
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
@@ -99,7 +99,7 @@ data class CodecInitSynEnvelope(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecInitSynEnvelope? {
-            // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+            // Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
             val raw = cursor.peekSlice(1) ?: return null
             val header = raw[0].toUByte()
             if (!cursor.advance(1)) return null

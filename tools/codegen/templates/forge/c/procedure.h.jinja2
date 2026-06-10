@@ -293,7 +293,7 @@ static inline sce_forge_procedure_run_result_t {{ execute_func }}(
 }
 
 {% else %}
-/* L1 procedure: pure guard-only diamond. RFC §5.J.2 Phase D-1. */
+/* L1 procedure: pure guard-only diamond (no externs, no helpers). */
 
 typedef enum {
 {% for s in state_enum %}

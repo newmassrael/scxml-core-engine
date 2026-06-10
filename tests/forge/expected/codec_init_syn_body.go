@@ -23,7 +23,7 @@ type CodecInitSynBody struct {
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecInitSynBody(cursor *codec.SceCursor, S byte) (*CodecInitSynBody, error) {
-	// RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+	// RFC §5.B present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
 	// VLE gating uses `*T` like fixed. Per-field `is_repeat` routes
@@ -77,7 +77,7 @@ func DecodeCodecInitSynBody(cursor *codec.SceCursor, S byte) (*CodecInitSynBody,
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecInitSynBody) Encode(w codec.SceSink, S byte) error {
-	// RFC §5.B B1-δ + B2-β present-if encode.
+	// RFC §5.B present-if encode.
 	if err := w.WriteBytes([]byte{ s.Version }); err != nil {
 		return err
 	}

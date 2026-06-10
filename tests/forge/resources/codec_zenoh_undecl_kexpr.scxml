@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh undeclare-keyexpr body (RFC §5.B
-     Wire RFC Phase B Y1). The trivial undecl — header byte + VLE id
+<!-- SCE Forge conformance: Zenoh undeclare-keyexpr body (RFC §5.B)
+     . The trivial undecl — header byte + VLE id
      only, no wireexpr.
 
      Mirrors zenoh-pico `_z_undecl_kexpr_encode` (src/protocol/codec/

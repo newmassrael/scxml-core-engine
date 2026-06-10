@@ -91,7 +91,7 @@
 {% endif %}
 {% endfor %}
 {% else %}
-        // RFC §5.B B5-α empty body — decode must succeed but there are
+        // RFC §5.B empty body — decode must succeed but there are
         // no fields to assert against. The decoded instance round-trips
         // back to the empty byte sequence (verified above via encode).
         {{ f.name | to_pascal_case }}::decode(&mut cursor)

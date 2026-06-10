@@ -54,7 +54,7 @@ class CodecTlvChainBasic:
         )
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        """RFC §5.B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.

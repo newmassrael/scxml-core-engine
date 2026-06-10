@@ -43,13 +43,13 @@ pub const SLOT_COUNT: usize = {{ slot_count }};
 pub const SLOT_SIZE: usize = {{ slot_size }};
 
 /// SRAM region name (`<sce:section>`). Round-tripped here so that
-/// downstream linker integration (B7-β c11 parity, B7-α (rust, mcu)
-/// extension) can read it without re-parsing the SCXML.
+/// downstream linker integration can read it without re-parsing
+/// the SCXML.
 pub const SECTION: &'static str = "{{ section }}";
 
-/// DMA alignment in bytes (`<sce:alignment>`). Power-of-2 check
-/// defers to B7-β linker fragment emission where the constraint is
-/// observable through `ALIGN(<n>)` directives.
+/// DMA alignment in bytes (`<sce:alignment>`). Power-of-2
+/// violations surface in the emitted linker fragment, where the
+/// constraint is observable through `ALIGN(<n>)` directives.
 pub const ALIGNMENT: u32 = {{ alignment }};
 
 /// DMA channel binding (`<sce:dma-channel>`). Empty when the pool is
@@ -151,7 +151,7 @@ pub const PER_PEER_QUOTA: u32 = {{ per_peer_quota }};
 /// session` codegen self-check (RFC §5.M lines 2976-2981) enforces
 /// that this declaration emits the `[u8; 16]` byte-array shape on
 /// every reassembly-variant pool — wire-source typedefs would silently
-/// inherit UDP source-IP spoofing exposure. Axis-5 reverse-linkage:
+/// inherit UDP source-IP spoofing exposure. Reverse-linkage:
 /// the validator reads the marker below instead of scanning for the
 /// literal `pub type PeerId = [u8; 16]` declaration.
 // SCE-EMIT: kind=reassembly.peer-id-zid
@@ -401,7 +401,7 @@ impl Slot<CpuMut> {
 // directly invokes: `cpu-ref → free` (pool_return). The
 // `cpu-ref → cpu-mut` in-place mutate edge (spec line 1153) requires
 // cache-clean pinning on the next hand-off (line 1154) and is
-// therefore gated on B7-δ.
+// intentionally not emitted until a consumer needs in-place mutation.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 impl Slot<CpuRef> {

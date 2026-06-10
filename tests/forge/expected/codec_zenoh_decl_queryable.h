@@ -31,13 +31,13 @@ struct CodecZenohDeclQueryable {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecZenohDeclQueryable> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t n, std::uint8_t z) {
-        // RFC Axis-1 inversion: defensive (void) suppress per declared
+        // Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly under -Wunused.
         (void)n;
         (void)z;
-        // RFC §5.B B1-δ + B2-β present-if: per-field cursor advance.
-        // Gated fields hold std::optional<T>; B2-β extends gating to
+        // RFC §5.B present-if: per-field cursor advance.
+        // Gated fields hold std::optional<T>; gating extends to
         // Tail / LengthRef / Vle bit-sizes via dispatch inside
         // `present_if_decode_stmt`. Per-field `is_repeat` routes
         // Repeat fields to the dedicated helper. Branch fires before
@@ -84,7 +84,7 @@ struct CodecZenohDeclQueryable {
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w, std::uint8_t n, std::uint8_t z) const noexcept {
         (void)n;
         (void)z;
-        // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
+        // RFC §5.B present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // empty. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a

@@ -212,7 +212,7 @@ static void {{ model.name }}_execute_pending_invokes({{ model.name }}_t *sm) {
             /* W3C SCXML 6.4: drive the child's deferred macrostep loop
                now that param/namelist have been applied and parent
                routing is live. The bound (16) is a safety net — the
-               W3C corpus' Phase-3 children reach `<final>` in one
+               W3C corpus' invoked children reach `<final>` in one
                macrostep (single eventless transition + send-to-parent
                + enter subFinal). The first iteration that observes
                `is_in_final_state` exits before calling `_step` again

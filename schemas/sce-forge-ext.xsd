@@ -38,7 +38,7 @@
   <!-- SCE Forge Section 3.2: Document-level and inline kind values -->
   <xs:simpleType name="kindType">
     <xs:restriction base="xs:string">
-      <!-- Phase 1 -->
+      <!-- Core kinds -->
       <xs:enumeration value="statechart"/>
       <xs:enumeration value="transform"/>
       <xs:enumeration value="lookup"/>
@@ -47,20 +47,20 @@
       <!-- peek-byte mode dispatch (RFC §5.B Y3 atomic 2b-ii) -->
       <xs:enumeration value="procedure"/>
       <xs:enumeration value="validator"/>
-      <!-- Phase 3 -->
+      <!-- Signal-processing kinds -->
       <xs:enumeration value="filter"/>
       <xs:enumeration value="interpolation"/>
       <xs:enumeration value="timer"/>
       <xs:enumeration value="observer"/>
-      <!-- watching-zenoh RFC §5.A (Phase A3) -->
+      <!-- watching-zenoh RFC §5.A (item A3) -->
       <xs:enumeration value="algorithm"/>
-      <!-- watching-zenoh RFC §5.C (Phase B6, MCU-class) -->
+      <!-- watching-zenoh RFC §5.C (item B6, MCU-class) -->
       <xs:enumeration value="link"/>
-      <!-- watching-zenoh RFC §5.E (Phase B7, MCU-class) -->
+      <!-- watching-zenoh RFC §5.E (item B7, MCU-class) -->
       <xs:enumeration value="buffer-pool"/>
-      <!-- watching-zenoh RFC §5.D (Phase C2, MCU-class) -->
+      <!-- watching-zenoh RFC §5.D (item C2, MCU-class) -->
       <xs:enumeration value="worker"/>
-      <!-- watching-zenoh RFC §5.L (Phase C6, Generic-class) -->
+      <!-- watching-zenoh RFC §5.L (item C6, Generic-class) -->
       <xs:enumeration value="bounded-collection"/>
       <!-- NL→IR Item C1 Path A — Closed set of named variants with
            1:1 wire-key values. Distinct from `lookup` by the
@@ -454,8 +454,8 @@
        parameter on the generated `decode`/`encode` signatures; the
        parent supplies values at import-site via `<sce:flag-bind>`.
        Owns the entire codec-to-codec flag-shaped dependency surface
-       (the legacy `<sce:requires-parent-flags>` block was deleted
-       in Axis-1 Phase D). -->
+       (the legacy `<sce:requires-parent-flags>` block is deleted —
+       flag-inputs own this surface). -->
   <xs:element name="flag-inputs">
     <xs:complexType>
       <xs:sequence>
@@ -744,7 +744,7 @@
       <xs:attribute name="count" type="xs:string"/>
       <xs:attribute name="until-eof" type="xs:boolean"/>
       <xs:attribute name="max-count" type="xs:nonNegativeInteger"/>
-      <!-- RFC §5.B B5-μ (Wire RFC Phase B X1): present-if on the
+      <!-- RFC §5.B: present-if on the
            entire repeat block. When set, the count field MUST also
            carry the IDENTICAL `sce:present-if` predicate (co-gating
            contract enforced by `validate_codec_repeat_present_if_co_
@@ -984,7 +984,7 @@
 
   <!-- ═══════════════════════════════════════════════════════════════
        Composition extensions — sce:template / sce:use / sce:param
-       (RFC §6.5 Phase A, AOT-only)
+       (RFC §6.5, AOT-only)
 
        In normal build flow the sce-build template expander (Rust)
        eliminates every <sce:use> before the XSD validator runs, so
@@ -1053,7 +1053,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       Algorithm kind body (watching-zenoh RFC §5.A, Phase A3)
+       Algorithm kind body (watching-zenoh RFC §5.A item A3)
 
        Pure synchronous functions with bounded loops and mutable
        locals. Body statements are <sce:var>/<sce:assign>/<sce:if>/
@@ -1218,7 +1218,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.C (Phase B6, MCU-class): byte-stream link
+    watching-zenoh RFC §5.C (item B6, MCU-class): byte-stream link
     endpoint declared via `<scxml sce:kind="link">`. B6-α surface is
     the minimum vertical slice that exercises the rust codegen path:
     `<sce:link-class>` enum body + `<sce:framer ref="..."/>` (required) +
@@ -1331,7 +1331,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.E (Phase B7-α, MCU-class): SRAM-placed,
+    watching-zenoh RFC §5.E (item B7, MCU-class): SRAM-placed,
     DMA-aligned slot table declared via `<scxml sce:kind="buffer-pool">`.
     B7-α surface is the minimum schema vertical slice. The 7-state
     lifecycle FSM (B7-γ) + cache maintenance pinning (B7-δ) defer to
@@ -1434,7 +1434,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.D (Phase C2, MCU-class): Worker kind declared
+    watching-zenoh RFC §5.D (item C2, MCU-class): Worker kind declared
     via `<scxml sce:kind="worker">`. C2-α schema vertical slice covers
     the four worker body elements:
       - <sce:link-rx ref="..."/>  required driving link kind reference

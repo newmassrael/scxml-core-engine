@@ -21,7 +21,7 @@ from typing import Optional
 
 @dataclass
 class CodecZenohNetworkEnvelopeVariant:
-    """RFC §5.B variant primitive (B1-β): discriminated-union body for
+    """RFC §5.B variant primitive: discriminated-union body for
     the codec's tag-field suffix. ``kind`` selects the active arm; the
     matching ``Optional`` field carries the decoded body. ``default_tag``
     preserves the runtime tag value when the default arm fires so encode
@@ -124,7 +124,7 @@ class CodecZenohNetworkEnvelope:
         )
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        """RFC §5.B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.

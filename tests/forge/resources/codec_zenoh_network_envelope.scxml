@@ -2,7 +2,7 @@
 <!-- SCE Forge conformance: Zenoh network message envelope (RFC §5.B
      B5 strict closure — peer to codec_transport_envelope at the
      network layer). Closes the final SCE-side message-level gap
-     against zenoh-pico parity per claudedocs/b5-closure-coverage-matrix.md.
+     against zenoh-pico parity.
 
      Mirrors zenoh-pico `_z_network_message_decode` (src/protocol/codec/
      network.c:630-668) verbatim. The decoder reads the leading 1-byte

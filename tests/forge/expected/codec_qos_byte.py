@@ -37,7 +37,7 @@ class CodecQosByte:
             return None
         return value
 
-    # RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    # RFC §5.B flags primitive: per-bit-range accessors over
     # the carrier field. Single-bit (width=1) reads as bool; multi-bit
     # (width>=2) reads as ``int`` (Python ints are unbounded, so a single
     # ``int`` covers every result-type width). Setters mask + shift on
@@ -88,7 +88,7 @@ class CodecQosByte:
             self.qos = self.qos & (0xFF ^ 0x80)
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        """RFC §5.B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.

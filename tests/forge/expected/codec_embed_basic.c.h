@@ -19,7 +19,7 @@
 
 typedef struct {
     uint8_t tag;
-    /* RFC §5.B Y0c embed: nested codec_zenoh_locator_t struct (no length prefix on the wire) */
+    /* RFC §5.B embed: nested codec_zenoh_locator_t struct (no length prefix on the wire) */
     codec_zenoh_locator_t locator;
 } codec_embed_basic_t;
 
@@ -49,7 +49,7 @@ static inline sce_forge_codec_status_t codec_embed_basic_decode(sce_forge_cursor
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_EMBED_BASIC_MAX_BYTES bytes and use

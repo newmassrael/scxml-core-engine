@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B B1-α: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -29,7 +29,7 @@ use super::codec_zenoh_msg_put::CodecZenohMsgPut;
 use super::codec_zenoh_msg_del::CodecZenohMsgDel;
 use super::codec_zenoh_query::CodecZenohQuery;
 
-// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// RFC §5.B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
@@ -155,7 +155,7 @@ impl<'a> CodecZenohRequest<'a> {
         })
     }
 
-    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // RFC §5.B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as bool; multi-bit
     // (width>=2) reads as the smallest unsigned integer that fits the
     // range. Setters mask + shift on the way in so out-of-range
@@ -314,7 +314,7 @@ pub struct CodecZenohRequestOwned {
 #[cfg(feature = "alloc")]
 #[allow(dead_code)]
 impl CodecZenohRequestOwned {
-    // RFC §5.B B1-γ + B5-α read-accessor parity with the borrowed view: pure
+    // RFC §5.B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so alloc consumers read `{Codec}Owned` with the same API as
     // the borrowed view and never re-derive the SCE wire bit layout (SSOT).

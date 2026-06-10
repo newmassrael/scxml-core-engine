@@ -29,7 +29,7 @@ struct CodecZenohDeclSubscriber {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecZenohDeclSubscriber> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t n) {
-        // RFC Axis-1 inversion: defensive (void) suppress per declared
+        // Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly under -Wunused.
         (void)n;

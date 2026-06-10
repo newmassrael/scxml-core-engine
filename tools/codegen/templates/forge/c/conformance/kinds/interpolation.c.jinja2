@@ -2,7 +2,7 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# Interpolation kind — pure <snake>_lookup(args) -> double, tolerance-compared.
-   Oracle is pre-baked into the harness source (RFC §5.J.2 F7). #}
+   Oracle is pre-baked into the harness source. #}
 static void test_{{ f.name }}(void) {
     static const struct {
 {% for arg_ty in f.args %}

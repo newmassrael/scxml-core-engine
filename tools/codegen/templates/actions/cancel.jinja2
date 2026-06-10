@@ -5,7 +5,7 @@
    <cancel> MUST carry either sendid or sendidexpr (W3C §6.3); both-empty
    is rejected at parse time by the SCXML parser (parser.rs cancel branch,
    wire `validation/require-either`). No else arm — parser guarantees one
-   branch matches. See `claudedocs/rfc-c11-error-guards-lift.md` v2 Layer 4. #}
+   branch matches. #}
 // W3C SCXML 6.3: Cancel delayed send event
 {% if action.sendidexpr %}
 {

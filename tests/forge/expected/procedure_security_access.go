@@ -178,9 +178,8 @@ func (p *policy) ProcessTransition(s int, ev int) (int, int, bool, bool) {
 }
 
 // Returns (raised, ok). When ok is true the loop re-processes the
-// source state with the raised event (RFC
-// `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 bytes cap violation
-// raises eventErrorExecution); ok=false signals normal flow.
+// source state with the raised event (a bytes-cap violation raises
+// eventErrorExecution); ok=false signals normal flow.
 func (p *policy) ExecuteTransitionActions(source int, trIndex int) (int, bool) {
 	_ = source
 	_ = trIndex

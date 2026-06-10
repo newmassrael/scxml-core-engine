@@ -3,7 +3,7 @@
 
 {# Codec kind — round-trip { decoded, encoded } cases. C11 uses the
    header's `<f.name>_t` struct + writer-based encode() per RFC §5.B
-   B1-α + cursor-based status decode() per RFC §5.B L494-519.
+   Cursor-based status decode() per RFC §5.B L494-519.
 
    Bytes / String fields surface as a buffer + len pair on both the
    case struct and the codec struct (V1β); they assign via `memcpy`

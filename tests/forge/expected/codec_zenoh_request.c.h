@@ -22,7 +22,7 @@
 #define CODEC_ZENOH_REQUEST_MIN_BYTES 1
 #define CODEC_ZENOH_REQUEST_MAX_BYTES 1218
 
-/* RFC §5.B variant primitive (B1-β): tagged-union body for the codec's
+/* RFC §5.B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
  * preserves the runtime tag value when the default arm fires; the inner
  * union holds one body slot per arm (per-arm fields keep the template
@@ -48,7 +48,7 @@ typedef struct {
 typedef struct {
     uint8_t header;
     uint64_t rid;
-    /* RFC §5.B Y0c embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
+    /* RFC §5.B embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
     codec_zenoh_wireexpr_t keyexpr;
     /* RFC §5.B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 4, on-overflow=reject) */
     codec_zenoh_ext_entry_t extensions[4];
@@ -147,7 +147,7 @@ static inline sce_forge_codec_status_t codec_zenoh_request_decode(sce_forge_curs
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_REQUEST_MAX_BYTES bytes and use
@@ -207,7 +207,7 @@ static inline sce_forge_codec_status_t codec_zenoh_request_encode_to_buf(const c
     return _st;
 }
 
-/* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+/* RFC §5.B flags primitive: per-bit-range accessors over
  * the carrier field. Single-bit (width=1) reads as bool; multi-bit
  * (width>=2) reads as the smallest unsigned C11 integer type that fits
  * (uint8_t / uint16_t / uint32_t / uint64_t). Setters mask + shift on

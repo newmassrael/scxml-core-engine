@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B B1-α: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -49,7 +49,7 @@ impl<'a> CodecLengthRefUint16Le<'a> {
         // cursor remaining. Codecs WITH a tail field still consume
         // to end (tail's definition forces it). The prior
         // "consume entire cursor" behaviour deferred to "the first
-        // multi-frame consumer" — TLV chain (B3-α) is that consumer,
+        // multi-frame consumer" — the TLV chain is that consumer,
         // so length-ref entry codecs now decode-iterably from a
         // shared cursor without each entry eating the next entry's
         // bytes.

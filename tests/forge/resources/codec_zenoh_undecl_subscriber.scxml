@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh undecl_subscriber body (RFC §5.B Y0b
-     — Wire RFC Phase B Y0b consumer). First reachable consumer of
+     — RFC §5.B consumer). First reachable consumer of
      Y0b's `<sce:embed sce:present-if="parent.Z">` lift.
 
      Mirrors zenoh-pico `_z_undecl_subscriber_encode` →

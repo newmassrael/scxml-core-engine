@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: codec multi-bit-flag variant dispatch (RFC §5.B B5-β,
      surface B from the watching-zenoh authoring path) + RFC §5.B B5-ι Batch 1
-     full Zenoh transport envelope (Wire RFC Phase B X2c). Closes the final
-     missing piece of Batch 1 by composing all 7 body codecs landed across
-     B5-prep / B5-α / B5-ι atomic-3 / B5-ι Batch 1 unified bodies into a
+     full Zenoh transport envelope (RFC §5.B). Composes all 7
+     transport body codecs into a
      single dispatcher fixture.
 
      Mirrors the upstream Zenoh transport-message envelope (zenoh-pico

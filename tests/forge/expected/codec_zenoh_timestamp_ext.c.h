@@ -19,7 +19,7 @@
 
 typedef struct {
     uint64_t ext_size;
-    /* RFC §5.B Y0c embed: nested codec_zenoh_timestamp_t struct (no length prefix on the wire) */
+    /* RFC §5.B embed: nested codec_zenoh_timestamp_t struct (no length prefix on the wire) */
     codec_zenoh_timestamp_t ts;
 } codec_zenoh_timestamp_ext_t;
 
@@ -54,7 +54,7 @@ static inline sce_forge_codec_status_t codec_zenoh_timestamp_ext_decode(sce_forg
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_TIMESTAMP_EXT_MAX_BYTES bytes and use

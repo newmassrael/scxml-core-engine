@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: present-if + length-ref STRING (RFC §5.B
-     Y0a — Wire RFC Phase B Y0a primitive demo). Mirrors B5-μ X1's
+<!-- SCE Forge conformance: present-if + length-ref STRING (RFC §5.B —
+     primitive demo). Mirrors B5-μ X1's
      two-fixture trunk pattern (primitive + realistic consumer); the
      realistic parent-scope consumer is `codec_zenoh_wireexpr`.
 

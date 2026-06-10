@@ -11,7 +11,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
-/* L1 procedure: pure guard-only diamond. RFC §5.J.2 Phase D-1. */
+/* L1 procedure: pure guard-only diamond (no externs, no helpers). */
 
 typedef enum {
     PROCEDURE_STARTUP_CHECK_STATE_CHECK_VOLTAGE = 0,

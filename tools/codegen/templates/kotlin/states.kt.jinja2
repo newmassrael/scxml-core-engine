@@ -6,11 +6,9 @@
 
     W3C SCXML 3.2: State representation as Kotlin sealed interface hierarchy.
 
-    Phase 1: All states (including children of compound states) are flattened
+    All states (including children of compound states) are flattened
     into a single sealed interface as data objects. Compound state hierarchy
     is handled by the transition logic, not the type system.
-
-    Future: Nested sealed interfaces for compound states, data class for parallel regions.
 #}
 // --- States (W3C SCXML 3.2) ---
 

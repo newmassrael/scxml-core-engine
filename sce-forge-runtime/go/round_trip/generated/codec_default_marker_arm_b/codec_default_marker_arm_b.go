@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5a09e42c25802542323ee6ba619e99fa06cbb069803a587e654a24ce7bdffdbe
-// template-hash: 66bc1c3694f90e60100c842d2a53cd8c05682260c1809ba387d157940d7d6e1d
-// generated-at: 1780836428
+// source-hash: 9ffa89e83988cec88d8cbd0e24ec1c25726aced2de1a82197e932bbb2d905974
+// template-hash: 2c4f76809986b4347703e89a8e901379e8391f815371b53c5a7eecbe187e1cf5
+// generated-at: 1781084365
 // SCE-MAP: codec_default_marker_arm_b.scxml:14
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -55,7 +55,7 @@ func DecodeCodecDefaultMarkerArmB(cursor *codec.SceCursor) (*CodecDefaultMarkerA
 	return value, nil
 }
 
-// RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+// RFC §5.B flags primitive: per-bit-range accessors over
 // the carrier field. Single-bit (width=1) reads as bool; multi-bit
 // (width>=2) reads as the smallest unsigned int type that fits. Setters
 // mask + shift on the way in so out-of-range callers can't corrupt

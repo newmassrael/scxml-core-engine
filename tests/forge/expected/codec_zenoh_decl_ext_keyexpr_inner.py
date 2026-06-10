@@ -25,7 +25,7 @@ class CodecZenohDeclExtKeyexprInner:
         (RFC §5.B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+        # RFC §5.B present-if primitive: streaming decode
         # advances the cursor per field. Per-field statements live
         # inside one outer `try:` block so the first peek/advance
         # failure unwinds to a single `except NeedMoreBytes`. Per-
@@ -53,7 +53,7 @@ class CodecZenohDeclExtKeyexprInner:
             suffix=suffix,
         )
 
-    # RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    # RFC §5.B flags primitive: per-bit-range accessors over
     # the carrier field. Single-bit (width=1) reads as bool; multi-bit
     # (width>=2) reads as ``int`` (Python ints are unbounded, so a single
     # ``int`` covers every result-type width). Setters mask + shift on
@@ -79,12 +79,12 @@ class CodecZenohDeclExtKeyexprInner:
             self.inner_header = self.inner_header & (0xFF ^ 0x02)
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        """RFC §5.B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B B1-δ + B2-β present-if encode.
+        # RFC §5.B present-if encode.
         w.write_u8(self.inner_header & 0xFF)
         _vle = int(self.id)
         while _vle >= 0x80:

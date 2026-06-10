@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B B1-α: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -45,16 +45,16 @@ impl<'a> CodecZenohUndeclToken<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>, z: u8) -> Result<Self, CodecError> {
-        // RFC Axis-1 inversion: defensive suppress per declared
+        // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly. The validator enforces
         // declaration; consumption is a per-codec design choice.
         let _ = z;
-        // RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+        // RFC §5.B present-if primitive: streaming decode
         // advances the cursor per field. Gated fields wrap their
         // read inside an `if predicate { Some(...) } else { None }`
         // block computed at codegen time from the carrier field's
-        // flag bit. B2-β extends gated fields to Tail / LengthRef /
+        // flag bit. Gating extends to Tail / LengthRef /
         // Vle bit-sizes via dispatch inside `present_if_decode_stmt`.
         // Per-field `is_repeat` / `is_tlv_chain` route Repeat / TLV
         // chain fields to their dedicated helpers since present-if
@@ -84,10 +84,10 @@ impl<'a> CodecZenohUndeclToken<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S, z: u8) -> Result<(), CodecError> {
-        // RFC Axis-1 inversion: see `decode` — same suppress per
+        // Declared-but-unconsumed flag inputs: see `decode` — same suppress per
         // declared `<sce:flag-input>`.
         let _ = z;
-        // RFC §5.B B1-δ + B2-β present-if encode: every field appends
+        // RFC §5.B present-if encode: every field appends
         // its bytes via a per-field block; gated fields skip the
         // append when the optional is None. Per-field `is_repeat` /
         // `is_tlv_chain` route Repeat / TLV chain fields to their

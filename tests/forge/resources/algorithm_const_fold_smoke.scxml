@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Smoke fixture for RFC §5.F build-time const-fold Phase A4-α.
+  Smoke fixture for the RFC §5.F build-time const-fold parser surface.
 
   Pins the parser surface for `<sce:const sce:compute-at="build">` with
   an `<sce:fold>` body, including:
@@ -12,11 +12,10 @@
       statement vocabulary.
     - Terminal `<sce:yield expr="..."/>` driving each emitted element.
 
-  The IR + parser + XSD surface lands in α; the host interpreter that
-  evaluates the fold body and lowers it to a static array literal lands
-  in Phase A4-β. Until β ships, codegen on this fixture deliberately
-  fires `GenerateError::UnsupportedFeature` (verified by the
-  `forge_const_fold_smoke_unsupported_until_phase_b` conformance test).
+  The host interpreter (`forge::const_fold::evaluate_fold`) evaluates
+  the fold body and lowers it to a static array literal; codegen on
+  this fixture emits across all six backends (byte-golden
+  `algorithm_const_fold_smoke.*` under tests/forge/expected/).
 
   No CRC table here — that requires the `<sce:if>` family + bit-shift
   operators inside the fold body. The CRC16-table-form acceptance gate
