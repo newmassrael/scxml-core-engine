@@ -693,7 +693,6 @@ jobs:
       run: ./target/release/sce-codegen generate-w3c -l python
 
     - name: Generate Python Integration Tests
-      # RFC `claudedocs/rfc-donedata-5-backend-layout.md` Phase D —
       # Python AOT integration fixtures share the W3C IRP regen
       # pattern (gitignored output, CI-regenerated before pytest).
       run: ./target/release/sce-codegen generate-integration -l python
