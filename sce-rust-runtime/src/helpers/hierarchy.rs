@@ -343,16 +343,14 @@ pub fn build_entry_chain<P: StatePolicy>(leaf_state: P::State) -> StateChain<P::
     // Reverse to root → leaf order
     chain.reverse();
 
-    // W3C SCXML 3.3: If the leaf is a compound state, extend the chain with its
-    // initial child transitively. This is required when `initial_state()` itself
-    // returns a compound state — the engine must enter its initial child too.
-    //
-    // Phase 1 note: `StatePolicy` does not yet expose `get_initial_child`.
-    // The generator (Phase 2) will emit `initial_state()` pointing at the already-
-    // resolved deepest leaf, so this loop is a no-op for Phase 1. Kept here as a
-    // placeholder matching the C++ structure for Phase 2 port clarity.
-    //
-    // TODO(phase-2): add `get_initial_child(state)` to StatePolicy and extend here.
+    // W3C SCXML 3.3: the chain deliberately stops at `leaf_state` without
+    // descending into a compound target's initial children. Document-initial
+    // descent is resolved at codegen time (sce-build's `resolve_deep_initial`
+    // rewrites `model.initial` to the deepest leaf before `initial_state()` is
+    // emitted), and runtime descent for compound transition targets is owned
+    // by `Engine::resolve_current_state_to_leaf` via
+    // `StatePolicy::get_initial_or_history_child`, which also enters the
+    // descended children. Descending here too would double-enter them.
 
     chain
 }

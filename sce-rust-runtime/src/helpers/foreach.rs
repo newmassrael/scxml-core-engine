@@ -6,10 +6,11 @@
 //! 1:1 port of `sce/include/core/ForeachHelper.h` (static subset). Provides
 //! variable name validation and the static foreach iteration pattern.
 //!
-//! The full script-engine-based foreach (array evaluation, variable setting via
-//! `IScriptEngine`) is deferred to the script engine integration phase. This
-//! module provides the W3C-compliant validation and iteration structure that
-//! generated code can use with pre-evaluated arrays.
+//! The script-engine foreach variant (array evaluation, variable setting) is
+//! emitted directly by generated code via the `crate::scripting` engine traits
+//! (`tools/codegen/templates/rust/actions/foreach.rs.jinja2`). This module
+//! provides the W3C-compliant validation and iteration structure that
+//! generated code uses with pre-evaluated arrays.
 
 /// W3C SCXML B.2: Validate that a variable name is a legal ECMAScript identifier.
 ///

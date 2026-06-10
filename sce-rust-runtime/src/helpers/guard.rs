@@ -4,10 +4,10 @@
 //! W3C SCXML 5.9: Guard condition evaluation (static guard variant).
 //!
 //! 1:1 port of `sce/include/common/GuardHelper.h`. The C++ version evaluates
-//! guard expressions via `IScriptEngine`. This Rust port provides:
-//!
-//! 1. The `In()` predicate-based guard (no script engine needed)
-//! 2. A placeholder for script-engine-based guards (deferred to script phase)
+//! guard expressions via `IScriptEngine`. This Rust port provides the
+//! script-free subset: `In()` predicate evaluation (W3C SCXML 5.9.2) and
+//! [`GuardResult`] combination. Script-engine `cond` evaluation lives in
+//! generated code via the `crate::scripting` engine traits.
 //!
 //! W3C SCXML 5.9: "If a conditional expression cannot be evaluated as a boolean
 //! value or if its evaluation causes an error, the SCXML processor MUST treat

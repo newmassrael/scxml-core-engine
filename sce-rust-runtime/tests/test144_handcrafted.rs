@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Phase 1 Acceptance Gate #2: hand-translation of W3C SCXML test144.
+// Hand-translation of W3C SCXML test144, pinning the codegen-facing trait shape.
 //
 // Source of truth: build/tests/w3c_static_generated/test144_sm.h + test144_sm.inl
 // (C++ output of `sce-codegen generate resources/144/test144.txml -o . -l cpp`).
 //
-// This test exists to prove that `StatePolicy` + `Engine<P>` can represent
-// real generated state machine output before Phase 2 begins porting the
-// Jinja2 templates. If this file doesn't compile or fails, the trait shape
-// must be revised.
+// This test proves that `StatePolicy` + `Engine<P>` can represent real
+// generated state machine output one-to-one. If this file doesn't compile or
+// fails, the trait shape has regressed for generated code and must be revised.
 //
 // Test144 topology (pure static, no script engine, no hierarchy):
 //     S0 (initial)
@@ -218,10 +217,11 @@ impl StatePolicy for Test144Policy {
                 *current_state = Test144State::Pass;
                 true
             }
-            // Phase 1 note: wildcard '*' transitions to Fail are omitted because
-            // the happy path (Foo → Bar → Pass) doesn't exercise them, and
-            // EventMatchingHelper is Phase 2 scope. The full C++ output generates
-            // `matchesEventDescriptor(name, "*")` arms here.
+            // Wildcard '*' transitions to Fail are omitted: the happy path
+            // (Foo → Bar → Pass) never exercises them, and W3C SCXML 5.9.3
+            // descriptor matching has its own coverage (`helpers::event_matching`).
+            // The full generated output emits `matchesEventDescriptor(name, "*")`
+            // arms here.
             _ => false,
         }
     }
@@ -266,8 +266,8 @@ fn test144_initialize_drains_internal_queue_and_reaches_pass() {
 fn test144_trait_shape_compiles_against_runtime() {
     // This test's existence proves: a generated-style StatePolicy impl compiles
     // against Engine<P> without Arc<RefCell<_>>, unsafe in generated code, or
-    // any other workaround. If this file ever fails to build, Phase 2 codegen
-    // will face the same compile errors — revise the trait before proceeding.
+    // any other workaround. If this file ever fails to build, generated
+    // machines face the same compile errors — revise the trait first.
     let policy = Test144Policy::new();
     let engine = Engine::<Test144Policy>::new(policy);
     drop(engine); // ensure no borrow-checker issue around move

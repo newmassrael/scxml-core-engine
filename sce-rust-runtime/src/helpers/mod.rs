@@ -8,36 +8,33 @@
 //! `P: StatePolicy`, matching the C++ pattern of template specialization
 //! (e.g., `HierarchicalStateHelper<StatePolicy>::findLCA(a, b)`).
 //!
-//! ## Phase 1 scope
+//! ## Module index
 //!
-//! - [`hierarchy`]: LCA, entry/exit chain construction (`HierarchicalStateHelper`)
-//! - [`event_queue`]: FIFO internal/external queues (`EventQueueManager`)
-//! - [`logger`]: thin `log` crate re-exports (`SCE_LOG_*` macros)
-//! - [`scxml_constants`]: W3C URIs and string literals
-//! - [`state_policy_concepts`]: Rust trait bounds replacing C++20 concepts
-//!
-//! ## Phase 2 scope
-//!
-//! - `conflict_resolution` (std-only): W3C Appendix D.2 transition conflict resolution
-//! - `state_entry` (std-only): Deep initial state entry path calculation
-//! - `parallel_state` (std-only): Parallel state processing (merged 6 C++ headers)
-//! - `history` (std-only): History state recording and restoration
-//! - [`event_matching`]: W3C 5.9.3 event descriptor matching
-//! - [`entry_exit`]: Entry/exit action block execution with error isolation
-//! - [`event_processing`]: W3C macrostep algorithm
-//! - `event_data` (std-only): Event data JSON construction
-//! - [`event_type`]: Event type classification
-//! - [`in_predicate`]: In(stateId) predicate
-//! - `event_metadata` (std-only): `_event.*` field construction
-//! - [`string_utils`]: Platform event detection
-//! - [`unique_id_generator`]: Session/send/invoke/event ID generation
-//! - [`done_data`]: Donedata processing
-//! - [`send`]: Send action helpers (static-target subset)
 //! - [`assign`]: Assignment location validation (static-value variant)
+//! - `conflict_resolution` (std-only): W3C Appendix D.2 transition conflict resolution
+//! - [`datamodel_init`]: Datamodel initialization helpers
+//! - [`done_data`]: Donedata processing
+//! - [`entry_exit`]: Entry/exit action block execution with error isolation
+//! - `event_data` (std-only): Event data JSON construction
+//! - [`event_matching`]: W3C 5.9.3 event descriptor matching
+//! - `event_metadata` (std-only): `_event.*` field construction
+//! - [`event_processing`]: W3C macrostep algorithm
+//! - [`event_queue`]: FIFO internal/external queues (`EventQueueManager`)
+//! - [`event_type`]: Event type classification
 //! - [`foreach`]: Foreach iteration (static variant)
 //! - [`guard`]: Guard condition evaluation (In() predicate-based)
-//! - [`datamodel_init`]: Datamodel initialization helpers
+//! - [`hierarchy`]: LCA, entry/exit chain construction (`HierarchicalStateHelper`)
+//! - `history` (std-only): History state recording and restoration
+//! - [`in_predicate`]: In(stateId) predicate
 //! - `invoke_processing` (std-only): W3C SCXML 6.4 invoke processing algorithms
+//! - [`logger`]: thin `log` crate re-exports (`SCE_LOG_*` macros)
+//! - `parallel_state` (std-only): Parallel state processing (merged 6 C++ headers)
+//! - [`scxml_constants`]: W3C URIs and string literals
+//! - [`send`]: Send action helpers (static-target subset)
+//! - `state_entry` (std-only): Deep initial state entry path calculation
+//! - [`state_policy_concepts`]: Rust trait bounds replacing C++20 concepts
+//! - [`string_utils`]: Platform event detection
+//! - [`unique_id_generator`]: Session/send/invoke/event ID generation
 //! - `url_encoding` (std-only): RFC 3986 URL encoding/decoding
 //!
 //! Modules marked "std-only" are unavailable under `--features no_std` (see
@@ -50,14 +47,6 @@
 // marker set in lockstep with the actual `cfg(not(feature = "no_std"))`
 // gating instead.
 
-// Phase 1 modules
-pub mod event_queue;
-pub mod hierarchy;
-pub mod logger;
-pub mod scxml_constants;
-pub mod state_policy_concepts;
-
-// Phase 2 modules
 pub mod assign;
 // Watching-zenoh RFC §5.J.2: W3C Appendix D.2 conflict resolution helpers use
 // `Vec<P::State>` / `Vec<TransitionDescriptor<P::State>>` accumulation patterns
@@ -88,30 +77,35 @@ pub mod event_matching;
 #[cfg(not(feature = "no_std"))]
 pub mod event_metadata;
 pub mod event_processing;
+pub mod event_queue;
 pub mod event_type;
 pub mod foreach;
 pub mod guard;
+pub mod hierarchy;
 // Watching-zenoh RFC §5.J.2: history-state helpers use `Vec<P::State>` +
 // `HashSet<P::State>` accumulators. Zero template consumer — the Rust AOT
 // generator emits history-state handling inline on the generated `Self` impl.
 #[cfg(not(feature = "no_std"))]
 pub mod history;
 pub mod in_predicate;
-// Watching-zenoh RFC §5.J.2: parallel-region helpers use `Vec` / `HashSet` /
-// `HashMap<S, S>` accumulators across 30+ public fns. Zero template consumer —
-// the Rust AOT generator emits region traversal inline.
-#[cfg(not(feature = "no_std"))]
-pub mod parallel_state;
-pub mod send;
-// Watching-zenoh RFC §5.J.2: deep-state-entry helpers use `Vec<Vec<P::State>>`
-// + `HashSet<S>` accumulators. Zero template consumer.
-#[cfg(not(feature = "no_std"))]
-pub mod state_entry;
-pub mod string_utils;
-pub mod unique_id_generator;
 // Watching-zenoh RFC §5.J.2: invoke processing is alloc-coupled (Arc/Mutex/Vec/
 // HashMap) and never reached under `--no-std` since the codegen-time validator
 // rejects `<invoke>` via `codegen/no-std-invoke-not-supported`.
 #[cfg(not(feature = "no_std"))]
 pub mod invoke_processing;
+pub mod logger;
+// Watching-zenoh RFC §5.J.2: parallel-region helpers use `Vec` / `HashSet` /
+// `HashMap<S, S>` accumulators across 30+ public fns. Zero template consumer —
+// the Rust AOT generator emits region traversal inline.
+#[cfg(not(feature = "no_std"))]
+pub mod parallel_state;
+pub mod scxml_constants;
+pub mod send;
+// Watching-zenoh RFC §5.J.2: deep-state-entry helpers use `Vec<Vec<P::State>>`
+// + `HashSet<S>` accumulators. Zero template consumer.
+#[cfg(not(feature = "no_std"))]
+pub mod state_entry;
+pub mod state_policy_concepts;
+pub mod string_utils;
+pub mod unique_id_generator;
 pub mod url_encoding;

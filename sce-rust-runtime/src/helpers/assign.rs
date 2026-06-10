@@ -8,8 +8,9 @@
 //! - `sce/include/common/AssignmentExecutionHelper.h` (system variable detection)
 //!
 //! Only the static-value assignment path is ported here (no script engine
-//! evaluation). Script-engine-based assignment (`executeAssignment`) requires
-//! `IScriptEngine` and is deferred to the script engine integration phase.
+//! evaluation). Script-engine assignment (C++ `executeAssignment`) is emitted
+//! directly by generated code via the `crate::scripting` engine traits
+//! (`tools/codegen/templates/rust/actions/assign.rs.jinja2`).
 
 /// W3C SCXML B.2: System variables that are read-only.
 const SYSTEM_VARIABLES: &[&str] = &["_sessionid", "_event", "_name", "_ioprocessors"];
