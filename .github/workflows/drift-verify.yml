@@ -8,7 +8,7 @@ name: Drift Verify (B9 §6.2.6)
 # Trigger surface: anything that contributes to the source-hash /
 # template-hash inputs (sce-build sources, templates, tracked generated
 # trees, lockfile) or the workflow itself. Sub-2-minute runtime
-# expected — only the b9_drift_detection + s5_o_atomic_1_sourcemap
+# expected — only the b9_drift_detection + sourcemap_addr2sce
 # integration suites run, not the full workspace test sweep
 # (covered by w3c-tests.yml).
 #
@@ -18,7 +18,7 @@ name: Drift Verify (B9 §6.2.6)
 #   - verify_passes_on_real_committed_forge_default_round_trip_go_tree
 #     (52e6d6f5)
 #
-# Per Q-§6.2.6-3 the template-hash is computed over the whole template
+# The template-hash is computed over the whole template
 # tree plus Cargo.lock, so an edit to any backend's templates can
 # invalidate every other backend's stored hash even if its emit is
 # byte-identical (the chain pattern c2dfe502/1a5efb07/dc228ab4/64f93cf4
@@ -120,4 +120,4 @@ jobs:
     # subcommand round-trip. Catches drift in the sourcemap surface
     # alongside the header hashes (same SCE traceability boundary).
     - name: Verify §5.O sourcemap integration suite
-      run: cargo test -p sce-build --features cli --test s5_o_atomic_1_sourcemap
+      run: cargo test -p sce-build --features cli --test sourcemap_addr2sce

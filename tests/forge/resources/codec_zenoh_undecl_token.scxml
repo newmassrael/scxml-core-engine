@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh undecl_token body (RFC §5.B Y0b —
+<!-- SCE Forge conformance: Zenoh undecl_token body (RFC §5.B —
      RFC §5.B consumer). Wire-identical to
      codec_zenoh_undecl_subscriber / undecl_queryable; mirrors
      `_z_undecl_token_encode` →
@@ -11,7 +11,7 @@
      Wire shape (1+ bytes — outer envelope writes the per-MID header
      byte; this body only carries the payload):
        VLE u32 id
-       parent.Z : ext_keyexpr  (Y0b length-bound TLV envelope —
+       parent.Z : ext_keyexpr  (length-bound TLV envelope —
                                 codec_zenoh_decl_ext_keyexpr) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

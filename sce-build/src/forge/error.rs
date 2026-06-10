@@ -526,7 +526,7 @@ pub enum ValidationError {
     )]
     AlgorithmReturnMissing,
 
-    /// RFC §5.A + §5.L line 2642-2647 (C7-lowering): `<sce:foreach
+    /// RFC §5.A + §5.L line 2642-2647 (item C7 lowering): `<sce:foreach
     /// in="X">` where X resolves to neither (a) an algorithm signature
     /// param of type `bytes` nor (b) an `<sce:import
     /// kind="bounded-collection" as="X">` alias. Codegen-time check,
@@ -539,7 +539,7 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// RFC §5.A line 311 + §5.L line 2642-2647 (C7-lowering): `<sce:call
+    /// RFC §5.A line 311 + §5.L line 2642-2647 (item C7 lowering): `<sce:call
     /// target="alias.method">` where `alias` does not match any
     /// `<sce:import as="...">` declared in the enclosing algorithm doc.
     /// `candidates` is the sorted list of declared import aliases.
@@ -550,7 +550,7 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// RFC §5.A line 311 + §5.L line 2611-2618 (C7-lowering): dotted
+    /// RFC §5.A line 311 + §5.L line 2611-2618 (item C7 lowering): dotted
     /// call's alias resolves but `method` is not in the kind's
     /// public-method set. For bounded-collection imports the closed
     /// callable set is `{find_by_index, get, get_by_slot, len,
@@ -575,7 +575,7 @@ pub enum ValidationError {
     #[error("algorithm: <sce:call target=\"{target}\">: mutating bounded-collection method '{method}' is forbidden from algorithm body (algorithms are pure per RFC §5.A)")]
     AlgorithmBcMutationForbidden { target: String, method: String },
 
-    /// RFC §5.A v1 + §5.L line 2642-2647 (C7-lowering): `<sce:foreach
+    /// RFC §5.A v1 + §5.L line 2642-2647 (item C7 lowering): `<sce:foreach
     /// in="<bc-alias>">` body declares a `<sce:var name="..."
     /// type="uint8">` — the legacy bytes-iteration pattern where the
     /// loop item is a `u8`. BC iteration carries the element-type, not
@@ -583,7 +583,7 @@ pub enum ValidationError {
     #[error("algorithm: <sce:foreach in=\"{src}\"> over bounded-collection: body's <sce:var name=\"{var_name}\" type=\"uint8\"> uses the bytes-iteration pattern but '{src}' is a bounded-collection (item carries element-type)")]
     AlgorithmForeachSourceBcWithBytesItemType { src: String, var_name: String },
 
-    /// RFC §5.A line 311 (C7-lowering): dotted `<sce:call
+    /// RFC §5.A line 311 (item C7 lowering): dotted `<sce:call
     /// target="alias.method">` argument count does not match the
     /// imported callable's signature arity. For algorithm imports the
     /// expected arity comes from the imported `<sce:signature>`'s
@@ -697,7 +697,7 @@ pub enum ValidationError {
 
     /// A variant arm
     /// body resolves to a codec whose `<sce:variant>` is itself in
-    /// caller-tag β shape (no `tag=` attribute). β-shape leaves require
+    /// caller-tag shape (no `tag=` attribute). Caller-tag leaves require
     /// the caller to supply the dispatch tag as a positional decode
     /// argument; in a variant-arm context there is no natural source
     /// for that tag (the parent dispatcher uses its OWN tag field to
@@ -719,13 +719,13 @@ pub enum ValidationError {
     ///
     /// Repair: either give the arm body its own `tag=` attribute on
     /// `<sce:variant>` so it reads the tag from its own wire bytes,
-    /// or redesign so the dispatcher consumes the β-shape leaf through
+    /// or redesign so the dispatcher consumes the caller-tag leaf through
     /// `<sce:embed>` with `<sce:variant-dispatch>` (the embed-site
     /// path which threads the tag from a parent flag — already
     /// supported).
     #[error(
         "codec '{parent_codec}': variant arm {} (alias '{embedded_alias}') resolves to codec \
-         '{embedded_codec}' whose <sce:variant> is in caller-tag β shape (no tag= attribute) \
+         '{embedded_codec}' whose <sce:variant> is in caller-tag shape (no tag= attribute) \
          — there is no natural source for the inner tag in a variant-arm context. Either add \
          tag=\"<field>\" to '{embedded_codec}' so it reads its tag from its own wire bytes, \
          or expose '{embedded_codec}' via <sce:embed> + <sce:variant-dispatch> on a parent \
@@ -1010,7 +1010,7 @@ pub enum ValidationError {
         embedded_index: usize,
     },
 
-    /// RFC §5.B present-if primitive (B1-δ): the predicate on a
+    /// RFC §5.B present-if primitive (item B1): the predicate on a
     /// `sce:present-if` attribute references a field that is **not**
     /// declared earlier in the same codec — either declared later
     /// (a forward reference, which would require a runtime peek the
@@ -1052,7 +1052,7 @@ pub enum ValidationError {
     /// onto a supported kind or expressing the round-trip in the
     /// kind-specific harness oracle.
     #[error(
-        "<sce:test-vector> is only supported on sce:kind=\"algorithm\" (B2) and sce:kind=\"codec\" (B5-θ), but '{name}' declares sce:kind=\"{kind:?}\" — move the test vector to an algorithm/codec file or use the kind-specific harness oracle"
+        "<sce:test-vector> is only supported on sce:kind=\"algorithm\" and sce:kind=\"codec\", but '{name}' declares sce:kind=\"{kind:?}\" — move the test vector to an algorithm/codec file or use the kind-specific harness oracle"
     )]
     TestVectorUnsupportedKind {
         /// Forge document name (root `name=` attribute).
@@ -1641,8 +1641,8 @@ pub enum ValidationError {
     /// "callback-signature-non-borrow" wording.
     #[error(
         "state '{state_id}': <sce:on-sample link=\"{link}\" callback=\"{callback}\"> {reason}. \
-         The `callback` value must match `rust:crate::module::fn` (Q-Callback-3 Rust path \
-         subset). The borrow-mode contract is enforced at the dispatch site; rustc rejects \
+         The `callback` value must match the `rust:crate::module::fn` path \
+         subset. The borrow-mode contract is enforced at the dispatch site; rustc rejects \
          owned-mode signatures at user-crate compile time. See watching-zenoh RFC §5.E."
     )]
     PoolSampleCallbackSignatureNonBorrow {
@@ -1750,7 +1750,7 @@ pub enum ValidationError {
     /// entry to a non-baseline name; SCE cannot synthesize a
     /// candidate. `fix: None` per the wire contract.
     #[error(
-        "target plugin {plugin_path} redefines core whitelist symbol `{name}`. Plugin entries extend the §5.I baseline registry but cannot override it (Q-Call-6 additive-composition lock). Rename the plugin entry to a name not already in the §5.I baseline; for a platform-specific impl, declare the entry under a vendor-prefixed name (e.g. `sce_hw_<symbol>`) and route through the registry entry's `crate` field."
+        "target plugin {plugin_path} redefines core whitelist symbol `{name}`. Plugin entries extend the §5.I baseline registry but cannot override it (additive composition — extend, never override). Rename the plugin entry to a name not already in the §5.I baseline; for a platform-specific impl, declare the entry under a vendor-prefixed name (e.g. `sce_hw_<symbol>`) and route through the registry entry's `crate` field."
     )]
     ExternTargetPluginSymbolConflict {
         /// Symbol name declared by both the plugin and the baseline.
@@ -2189,7 +2189,7 @@ pub enum ValidationError {
     #[error(
         "link '{link_name}' on machine '{machine}': `expected_p99_bytes: {expected_p99_bytes}` exceeds RX pool '{pool_name}' `<sce:slot-size>{slot_size}</sce:slot-size>` by more than the 25% default stage-copy threshold (rate = {rate_percent}%). \
          watching-zenoh RFC §5.M line 2950-2952 — `(expected_p99_bytes - rx_pool.slot_size) / expected_p99_bytes > 0.25` triggers the warning. \
-         Repair: raise `<sce:slot-size>` on pool '{pool_name}', lower `expected_p99_bytes` (with justification), or add `<sce:accept-stage-copy-rate>` on the link source (C13-γ scope)."
+         Repair: raise `<sce:slot-size>` on pool '{pool_name}', lower `expected_p99_bytes` (with justification), or add `<sce:accept-stage-copy-rate>` on the link source."
     )]
     ReassemblyExpectedFragmentationRateHigh {
         pool_name: String,
@@ -2241,7 +2241,7 @@ pub enum ValidationError {
     /// cooperative slot. Formula verbatim: `expected_p99_bytes ×
     /// memcpy_cycles_per_byte / clock_freq_mhz > worker_slot_budget_us`.
     /// Silent-skip when any of the four platform/scheduler inputs
-    /// absent (per Q-η5 (a) precedent).
+    /// absent (deploy-aware silent-skip precedent).
     #[error(
         "link '{link_name}' on machine '{machine}': stage-copy WCET ({stage_copy_wcet_us} µs) exceeds `scheduler.worker_slot_budget_us: {worker_slot_budget_us}`. \
          watching-zenoh RFC §5.M line 2995-2999 — `expected_p99_bytes ({expected_p99_bytes}) × memcpy_cycles_per_byte ({memcpy_cycles_per_byte}) / clock_freq_mhz ({clock_freq_mhz}) > worker_slot_budget_us`. \
@@ -2294,8 +2294,8 @@ pub enum ValidationError {
     /// lines 799-833). Hard error. Template regression guard,
     /// unreachable in well-formed codegen; it exists to ensure the
     /// listener emission template cannot silently regress to single-
-    /// instance shape (which would re-introduce the OQ-W22
-    /// contradiction).
+    /// instance shape (which would re-introduce the unstable
+    /// per-peer dispatch identity contradiction).
     ///
     /// Wired as a post-render substring check inside
     /// [`super::generator::render_link_rust`] +
@@ -2548,7 +2548,7 @@ pub enum ValidationError {
     /// (spec line 2570-2585), so an unresolved key blocks emit.
     ///
     /// Fires only on the [`crate::compile_forge_with_deploy`] path
-    /// (deploy + target_machine both Some) per the Q-η5 (a) silent-
+    /// (deploy + target_machine both Some) per the deploy-aware silent-
     /// skip precedent: single-file compile paths cannot resolve
     /// deploy-key capacities because they don't know which machine
     /// will host the BC doc. Silent-skips also when the key's
@@ -2599,7 +2599,7 @@ pub enum ValidationError {
     /// is locatable from the wire payload alone.
     #[error(
         "{node_kind} '{node_id}': source_location not populated — \
-         §5.O Atomic 0 pre-emit guard (parser site missed)"
+         sourcemap pre-emit guard (parser site missed)"
     )]
     TraceabilityScxmlLineRangeMissing {
         node_kind: &'static str,
@@ -2678,7 +2678,7 @@ pub enum ValidationError {
     },
 
     /// Watching-zenoh RFC §5.O — Rust SCE-MAP marker
-    /// preservation guard (OQ-W16 (b)). Fires from `sce-codegen
+    /// preservation guard. Fires from `sce-codegen
     /// addr2sce` when a rustdoc JSON dump for the generated crate
     /// contains no `#[doc = "SCE-MAP: ..."]` attribute on a function
     /// whose sourcemap entry says one should exist. The empirical
@@ -2691,7 +2691,7 @@ pub enum ValidationError {
         "SCE-MAP `#[doc]` marker stripped from '{function}' in \
          {crate_name} ({profile}); falling back to `// SCE-MAP:` \
          line comments. Repair: re-emit with the dual-marker form \
-         (default since §5.O Atomic 0c) or upstream the rustdoc fix"
+         (the default dual-marker form) or upstream the rustdoc fix"
     )]
     TraceabilitySceMapAttributeStripped {
         crate_name: String,
@@ -2827,7 +2827,7 @@ pub enum ValidationError {
         machine: String,
         /// `<sce:link name="X">` body name. Same shape as the
         /// `reassembly/binding-on-unpaired-listener` `key_fragments`
-        /// quoting (C10-α precedent) so external consumers can join
+        /// quoting (item C10 listener-pair precedent) so external consumers can join
         /// diagnostic streams on `(machine, link_name)`.
         link_name: String,
     },
@@ -2869,8 +2869,8 @@ pub enum ValidationError {
     /// declares `role: listener` but `trust_class != session_arming`.
     /// The combination is structurally invalid because the only trust
     /// tier where pre-handshake listener semantics apply is
-    /// `session_arming` (`docs/SCE_ACCEPTED_SUBSET.md` §C13-β +
-    /// `mesh/deploy.rs::TrustClass` doc). The new explicit `role`
+    /// `session_arming` (see the `mesh/deploy.rs::TrustClass`
+    /// doc). The new explicit `role`
     /// field decouples the listener-role declaration from the trust
     /// tier by design — so an explicit
     /// `role: listener` + `trust_class: untrusted` combination must
@@ -3215,7 +3215,7 @@ pub enum ValidationError {
     /// Wire code: `validation/enum-unsupported-underlying-type`.
     #[error(
         "enum '{name}': sce:underlying-type='{declared}' is not supported \
-         (Path A α: uint8 | uint16 | uint32 | uint64)"
+         (supported: uint8 | uint16 | uint32 | uint64)"
     )]
     EnumUnsupportedUnderlyingType {
         /// Document name (the kind's `name` attribute).
@@ -3680,7 +3680,7 @@ pub enum GenerateError {
     /// declared element / scalar type. `expected` is the declared slot
     /// type; `actual` is a short tag describing the produced value's
     /// domain (e.g. `"bool"`, `"float"`) — substring `"bool→Uint16"` /
-    /// `"float→Int32"` patterns the prior β slug emitted, preserved for
+    /// `"float→Int32"` patterns the prior slug shape emitted, preserved for
     /// consumers dispatching on the message text.
     #[error(
         "algorithm '{algorithm}': <sce:const name=\"{const_name}\">: \

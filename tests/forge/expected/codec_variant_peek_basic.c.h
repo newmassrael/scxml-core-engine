@@ -41,7 +41,7 @@ typedef struct {
     codec_variant_peek_basic_variant_t body;
 } codec_variant_peek_basic_t;
 
-/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+/* RFC variant-default-uniformity (C11): designated-initializer
  * macro carrying the codec's wire-MID-baked defaults. C has no Default
  * trait — round-trip safety (`codec_variant_peek_basic_t x = CODEC_VARIANT_PEEK_BASIC_DEFAULT_INIT;
  * codec_variant_peek_basic_t_encode(&x)` decodes back to the same arm)
@@ -63,7 +63,7 @@ typedef struct {
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_variant_peek_basic_decode(sce_forge_cursor_t *cursor, codec_variant_peek_basic_t *out) {
-    /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+    /* RFC §5.B peek-byte / streaming-prefix:
      * streaming prefix decode (variable-length fields supported via
      * per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
      * mode additionally peeks the cursor's next byte for variant tag
@@ -103,7 +103,7 @@ static inline sce_forge_codec_status_t codec_variant_peek_basic_decode(sce_forge
  * `codec_variant_peek_basic_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_variant_peek_basic_encode(const codec_variant_peek_basic_t *self, sce_forge_writer_t *w) {
-    /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+    /* RFC §5.B peek-byte / streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode
      * prepends its own header byte (which the decoder peeked); no
      * separate tag byte here. Streaming-prefix mode (own-field):

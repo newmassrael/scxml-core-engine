@@ -329,8 +329,8 @@ fn overflow_oldest_wins_evicts() {
 
 #[test]
 fn handle_packed_layout() {
-    // Q-γ2-Handle-bits (a) lock: SLOT_BITS=16, GEN_BITS=16. Q-γ2-
-    // Handle-shape (a) lock: tuple newtype over u32. Both must
+    // Locked layout: SLOT_BITS=16, GEN_BITS=16; the Handle is a
+    // tuple newtype over u32. Both must
     // appear verbatim in the emit.
     let codec = codec_doc("subscription_entry");
     let bc = bc_doc("local_sub_table", "subscription_entry", 8, "");

@@ -49,8 +49,8 @@
      this body's own flags as N/M (the upstream encoder's bit-reuse
      trick — see _Z_INTEREST_FLAG_COPY_MASK comment in interest.c).
 
-     Composition: B1-γ flags (8-bit local carrier) + B1-δ present-if-
-     on-embed + Y0c <sce:embed> (codec_zenoh_wireexpr) + B5-γ parent-
+     Composition: flags flags (8-bit local carrier) + present-if present-if-
+     on-embed + <sce:embed> (codec_zenoh_wireexpr) + parent-
      flag threading via local `header` carrier matching wireexpr's
      `requires-parent-flags carrier="header"`. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

@@ -23,7 +23,7 @@
 //     }
 //   }
 //
-// Per Q-§5.O-8 lock the file is BYTE-IDENTICAL across all 6 backends —
+// The file is BYTE-IDENTICAL across all 6 backends —
 // the symbol table is BTreeMap-sorted so iteration order is
 // deterministic, and `source_hash` delegates to
 // `forge::drift::compute_source_hash` so the value is provably equal
@@ -69,7 +69,7 @@ pub struct Sourcemap {
     pub source_hash: String,
     pub template_hash: String,
     /// BTreeMap → deterministic JSON key order across runs +
-    /// platforms. Per Q-§5.O-8 byte-identity requirement: any
+    /// platforms. Per the §5.O byte-identity requirement: any
     /// HashMap-style insertion order would surface as a backend-
     /// dependent diff.
     pub symbols: BTreeMap<String, SourceSymbol>,
@@ -227,7 +227,7 @@ fn synth_xpath(state_path: &str, artifact: &str) -> String {
 /// Render the sourcemap to a JSON string. Pretty-printed for human
 /// inspection; `serde_json::to_string` (compact) would still work but
 /// debugging an addr2sce miss is faster against the indented form.
-/// Per Q-§5.O-8 the indent must be deterministic across platforms —
+/// Per the §5.O byte-identity requirement the indent must be deterministic across platforms —
 /// `serde_json::to_string_pretty` uses 2-space indent which is
 /// platform-independent.
 pub fn to_json(map: &Sourcemap) -> Result<String, serde_json::Error> {
@@ -412,7 +412,7 @@ mod tests {
         let json1 = to_json(&map).expect("serialise");
         let json2 = to_json(&map).expect("serialise");
         // Determinism: two emissions of the same sourcemap must be
-        // byte-equal. This is the foundation for Q-§5.O-8 cross-
+        // byte-equal. This is the foundation for the §5.O cross-
         // backend identity (which the integration test pins).
         assert_eq!(json1, json2);
         // Schema sanity: contains the keys spec lines 3219-3243 name.

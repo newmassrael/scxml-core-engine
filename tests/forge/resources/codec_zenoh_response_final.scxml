@@ -33,8 +33,8 @@
      present-if-Z gate matches upstream's decode-only chain handling
      verbatim.
 
-     Composition: B1-γ flags (header) + B1-α VLE u64 + Y3 atomic 2a
-     present-if-on-tlv-chain (header.Z gate) + Y3 atomic 1 entry-flag
+     Composition: flags flags (header) + VLE VLE u64 + atomic 2a
+     present-if-on-tlv-chain (header.Z gate) + atomic 1 entry-flag
      termination (chain-as-last-field branch — atomic 1 covers the
      overflow-check elision when entry_flag_acc is Some, so trailing-
      chain consumers compose safely). No new primitives. -->

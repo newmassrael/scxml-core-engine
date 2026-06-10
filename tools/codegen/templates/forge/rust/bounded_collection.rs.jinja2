@@ -28,7 +28,7 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-{# Cross-doc element-type import (spec lines 2566-2567). C6-β's
+{# Cross-doc element-type import (spec lines 2566-2567). The
    `collection/element-type-not-a-kind` validator guarantees this
    name resolves to a codec/procedure kind before reaching here. #}
 use super::{{ element_snake }}::{{ element_stored }};
@@ -43,7 +43,7 @@ pub const CAPACITY: usize = {{ capacity }};
 const BITMAP_WORDS: usize = (CAPACITY + 31) / 32;
 
 /// Slot-index bit width inside the packed `{{ pascal }}Handle` u32.
-/// Q-γ2-Handle-bits (a) lock 2026-05-13: 16/16 symmetric split —
+/// Locked 2026-05-13: 16/16 symmetric split —
 /// 65536 slots × 65536 generations, ABI-parity with C11 `uint32_t`.
 const SLOT_BITS: u32 = 16;
 /// Generation-counter bit width inside the packed `{{ pascal }}Handle` u32.
@@ -271,8 +271,8 @@ impl {{ pascal }} {
     /// after-remove guard is for the Handle-based `get`; slot-based
     /// access is for iteration paths where the caller walks slot
     /// indices directly). Backs the C7 `<sce:foreach in="<bc-alias>">`
-    /// index-loop lowering across all 6 backends (Q-C7-2 (c) lock
-    /// 2026-05-13).
+    /// index-loop lowering across all 6 backends.
+    /// Locked 2026-05-13.
     pub fn get_by_slot(&self, slot: u32) -> Option<&{{ element_stored }}> {
         let slot = slot as usize;
         if slot >= CAPACITY {

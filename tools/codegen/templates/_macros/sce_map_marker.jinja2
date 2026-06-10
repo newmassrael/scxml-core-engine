@@ -6,8 +6,8 @@
    Spec lines 3094-3160 fix the marker syntax per backend:
      - C  / Cpp:   `#line {line} "{file}"` (preprocessor directive)
      - Rust:       BOTH `#[doc = "SCE-MAP: …"]` AND `// SCE-MAP: …`
-                   per spec lines 3135-3136 "MUST emit BOTH" — Atomic 1
-                   adds the empirical preservation test that rustdoc
+                   per spec lines 3135-3136 "MUST emit BOTH" — an
+                   empirical preservation test asserts that rustdoc
                    keeps the `#[doc]` form on every emitted function.
      - Kotlin:     `// SCE-MAP: {file}:{line}`
      - Go:         `//line {file}:{line}` (recognised by `go vet` +
@@ -15,8 +15,8 @@
      - Python:     `# SCE-MAP: {file}:{line}`
 
    `loc` is the IR-attached `Option<SourceLocation>` populated by the
-   parser at every emission-eligible node (watching-zenoh RFC §5.O
-   Atomic 0a, see `sce-build/src/forge/provenance.rs`). The macro
+   parser at every emission-eligible node (watching-zenoh RFC §5.O;
+   see `sce-build/src/forge/provenance.rs`). The macro
    silently elides when `loc` is None — the codegen pre-emit walker
    (`validate_emission_provenance`) already gates on the populate, so
    a None reaching this point is a parser-site regression caught by
@@ -27,20 +27,20 @@
    form `#![doc = "..."]` so a top-of-module marker doesn't collide with
    a `pub` item's own rustdoc. Other backends ignore the flag.
 
-   Atomic 0b lands the macro + ONE invocation per backend at the top
-   of the generated state machine source so the infrastructure proves
-   end-to-end. Atomic 0c extends to per-state on_entry/on_exit + per-
-   transition handlers + forge per-kind body functions; the macro is
-   single-source-of-truth so a syntax tweak there edits one place.
+   The macro is invoked once per backend at the top of the generated
+   state machine source (proving the infrastructure end-to-end) and
+   again at per-state on_entry/on_exit + per-transition handlers +
+   forge per-kind body functions; the macro is single-source-of-truth
+   so a syntax tweak there edits one place.
 
-   Atomic 1 (watching-zenoh RFC §5.O) extends the macro signature
-   with optional `symbol_id` + `line_end` parameters. When provided
+   The macro signature carries optional `symbol_id` + `line_end`
+   parameters (watching-zenoh RFC §5.O). When provided
    the marker line gains a `(symbol=<mangled>)` suffix and the line
    number widens into a `<start>-<end>` range so consumers can map
    PC offsets within a function back to the originating SCXML
-   segment without re-walking the IR. Defaults preserve byte-identity
-   with the Atomic 0 emission so existing call sites are no-op
-   migrated.
+   segment without re-walking the IR. The defaults render the
+   original single-line, suffix-free marker, so call sites that omit
+   them are unaffected.
 
    The per-symbol attribution is also emitted as JSON sidecar
    (`out/{language}/sce_sourcemap.json`); the in-source markers are
@@ -63,9 +63,9 @@
     numbers for the *rest of the translation unit*. At file scope
     (especially in a `.h` header included by many TUs) this would
     propagate into every consumer's diagnostics. The comment form
-    is safe at module scope; Atomic 0c switches to `#line` for
-    per-function emission where the redirect is locally scoped to
-    the function body. -#}
+    is safe at module scope; per-function emission switches to
+    `#line`, where the redirect is locally scoped to the function
+    body. -#}
 {%- if module_level %}
 // SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}
 {%- else %}
@@ -85,8 +85,8 @@
 {#- Go's `//line` directive remaps subsequent line numbers in panic
     stack traces + `go vet` output. Like C/Cpp `#line`, file-scope
     placement would shift every subsequent file position. Use the
-    comment form at module level; switch to `//line` for per-
-    function emission in Atomic 0c. -#}
+    comment form at module level; per-function emission switches
+    to `//line`. -#}
 {%- if module_level %}
 // SCE-MAP: {{ loc.file }}:{{ range_part }}{{ sym_suffix }}
 {%- else %}

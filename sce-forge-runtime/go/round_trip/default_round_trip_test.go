@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// RFC variant-default-uniformity Atomic γ-3 go half — runtime
+// RFC variant-default-uniformity go half — runtime
 // round-trip property test. Mirrors
 // sce-forge-runtime/rust/tests/forge_default_round_trip.rs for the Go
 // backend: imports the generated codec packages and asserts that a
@@ -24,8 +24,7 @@ import (
 
 func TestDefaultRoundTripLandsInDeclaredDefaultArm(t *testing.T) {
 	// Go has no Default trait — round-trip safety requires using
-	// `NewCodecVariantDefaultMarker()` (RFC variant-default-uniformity
-	// Atomic β-go), not the bare zero-value `&CodecVariantDefaultMarker{}`
+	// `NewCodecVariantDefaultMarker()` (RFC variant-default-uniformity), not the bare zero-value `&CodecVariantDefaultMarker{}`
 	// (which would leave every Variant arm pointer nil and produce an
 	// empty encode).
 	original := codec_variant_default_marker.NewCodecVariantDefaultMarker()

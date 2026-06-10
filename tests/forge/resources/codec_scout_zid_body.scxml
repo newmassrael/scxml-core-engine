@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Scout/Hello/Init zid length packing
-     (RFC §5.B B5-δ Surface F).
+     (RFC §5.B length-ref).
 
      Mirrors the upstream zenoh-pico Init/Scout/Hello message's `zid`
      field, where the wire stores `zid_len_m1 = actual_len - 1` to pack
@@ -8,7 +8,7 @@
      as `zid_len_m1 + 1` (src/protocol/codec/transport.c line 251:
      `uint8_t zidlen = ((cbyte & 0xF0) >> 4) + (uint8_t)1;`).
 
-     This fixture exercises Surface F (length arithmetic) in isolation.
+     This fixture exercises (length arithmetic) in isolation.
      Author writes `sce:length-arith="+1"` on the length-ref payload;
      the codec helper computes `_n = (sibling_value).wrapping_add(1)`
      for decode and (in C11 only) `_bi < (size_t)((int64_t)self->len + 1)`
@@ -22,7 +22,7 @@
      references a flag bit-range" surface; the v1 grammar accepts only
      a bare field id. The dotted-path form (`length-field="cbyte.zid_len_m1"`)
      defers to a later sub-phase when authoring full Scout/Hello
-     envelopes — recording the deferral keeps Surface F's scope clean.
+     envelopes — recording the deferral keeps's scope clean.
 
      Wire shape (1 byte length sibling + N+1 bytes payload):
        byte 0   : zid_len_m1 (uint8, value = actual_len - 1)

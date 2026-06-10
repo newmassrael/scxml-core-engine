@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: outer variant whose arm body is itself a
-     variant (RFC §5.B B5-η Surface I, "recursive variant body").
-     This is the canonical Surface I demonstrator: codec_zenoh_push is
+     variant (RFC §5.B "recursive variant body").
+     This is the canonical demonstrator: codec_zenoh_push is
      a variant codec, and one of its arm bodies — codec_zenoh_push_body
      — is itself a variant codec. The per-language emit must therefore
      produce a sum-type whose arm payload is another sum-type
@@ -21,12 +21,12 @@
      union over the 5-bit MID with PUSH (0x1d), REQUEST (0x1c),
      RESPONSE (0x1b), RESPONSE_FINAL (0x1a), DECLARE (0x1e), INTEREST
      (0x19), OAM (0x1f). Authoring all seven would multiply the
-     surface unrelated to Surface I; the fixture covers only the PUSH
+     surface unrelated to; the fixture covers only the PUSH
      arm — that one is the recursion case (PUSH body is itself a
      variant on z-mid). The `<sce:default>` arm reuses
      codec_zenoh_push_body so unknown network MIDs preserve runtime
      dispatch through the same recursive shape (matches
-     codec_transport_envelope's default-arm pattern from B5-β).
+     codec_transport_envelope's default-arm pattern from multi-bit dispatch).
 
      Wire shape (1 + push_body's 1 + arm body bytes):
        byte 0: header  bits 0..4 = mid   (5-bit network MID)

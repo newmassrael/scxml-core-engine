@@ -33,16 +33,16 @@
      Co-gating contract: `suffix_len` and `suffix` BOTH carry
      `sce:present-if="parent.N"` so the streaming decoder reads
      neither when N=0 and both when N=1. Mirrors codec_zenoh_init_body
-     cookie_len + cookie + parent.A pattern (B5-ι Batch 1).
+     cookie_len + cookie + parent.A pattern (cross-codec composition).
 
-     Composition: B1-α VLE (id, suffix_len) + B5-γ Parent-scope
-     present-if (parent.N, no negation) + B2-β present-if + length-ref
-     (suffix_len gates suffix's length source) + B5-ζ Surface H string
-     + Y0a lifted parser ban (`sce:type="string"` + `sce:present-if`).
+     Composition: VLE VLE (id, suffix_len) + parent-flags Parent-scope
+     present-if (parent.N, no negation) + gated present-if + length-ref
+     (suffix_len gates suffix's length source) + string string
+     + lifted parser ban (`sce:type="string"` + `sce:present-if`).
      No new primitive surface beyond the lift.
 
      Wrap shape per language (mirrors codec_zenoh_init_body
-     cookie_len + cookie + B5-ζ codec_zenoh_locator string):
+     cookie_len + cookie + string codec_zenoh_locator string):
        Rust:   `u64` id + `Option<u64>` suffix_len + `Option<String>` suffix
        Cpp:    `uint64_t` + `std::optional<uint64_t>` + `std::optional<std::string>`
        Kotlin: `ULong` + `ULong?` + `String?`

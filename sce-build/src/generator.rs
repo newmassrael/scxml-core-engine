@@ -161,7 +161,7 @@ fn reject_native_actions_in_unsupported_lang(
     )))
 }
 
-// NL→IR Item C1 Path A (EventSchema MCU native lowering): every backend
+// EventSchema MCU native lowering: every backend
 // (Rust, C11, C++, Kotlin, Go, Python) now lowers a typed `_event.data`
 // transition guard to a script-engine-free native comparison, so the former
 // `reject_typed_native_guard_unsupported` fail-fast gate is retired — no
@@ -305,7 +305,7 @@ fn render_rust(
         (String::new(), String::new())
     };
 
-    // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+    // EventSchema MCU native lowering (step 2) —
     // the typed `_event.data` payload sum, its `type Payload` spelling, and
     // the per-transition native `matches!(…)` guards. The per-machine defs /
     // type / inject seams ride in the render context (no IR home); the
@@ -419,7 +419,7 @@ fn render_cpp(
         String::new()
     };
 
-    // NL→IR Item C1 Path A (EventSchema native lowering) — the C++ typed
+    // EventSchema native lowering — the C++ typed
     // `_event.data` payload channel: a tag enum + per-event payload structs,
     // the policy fields / `populateTypedPayload` hook that lift the dequeued
     // event's std::any-carried payload, the per-event `raise<Event>` inject
@@ -537,7 +537,7 @@ fn render_c11(
         String::new()
     };
 
-    // NL→IR Item C1 Path A (EventSchema MCU native lowering, RFC §10.4
+    // EventSchema MCU native lowering (RFC §10.4
     // step 5) — the C11 typed `_event.data` payload channel: a tagged
     // union `<name>_payload_t`, the per-transition native guard
     // (`sm->pending_payload.tag == … && (…)`), and the `type_name` used by
@@ -665,7 +665,7 @@ fn render_kotlin(
 ) -> Result<String, GenerateError> {
     use crate::{analyzer, kotlin};
 
-    // NL→IR Item C1 Path A (EventSchema MCU native lowering) — the Kotlin typed
+    // EventSchema MCU native lowering — the Kotlin typed
     // `_event.data` payload channel: top-level payload data classes, the
     // nullable `pending<Event>Payload` fields + `populateTypedPayload` override
     // that lift the dequeued event's typed carrier, the per-event `raise<Event>`
@@ -1099,7 +1099,7 @@ fn render_go(env: &mut Environment, model: &SCXMLModel) -> Result<String, Genera
         (String::new(), String::new())
     };
 
-    // NL→IR Item C1 Path A (EventSchema MCU native lowering) — the Go typed
+    // EventSchema MCU native lowering — the Go typed
     // `_event.data` payload channel: a tag enum + per-event payload structs,
     // the policy fields / populate type-switch that lift the dequeued event's
     // typed payload, the per-event `Raise<Event>` inject seams, and the

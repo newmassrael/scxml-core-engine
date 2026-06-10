@@ -8,7 +8,7 @@
 // has three jobs:
 //
 //   1. Encode the three-tuple into a single C-identifier-safe string.
-//      OQ-W16 (a) lock — `__` is the segment delimiter; literal `__`
+//      `__` is the segment delimiter; literal `__`
 //      inside any segment is escaped via `_u_` (chosen because the
 //      escape sequence itself is never produced by either the
 //      delimiter or any conformant SCXML id, so encode/decode round-
@@ -43,7 +43,7 @@ use std::collections::BTreeMap;
 /// `platform.strict_c99_identifiers: false` (the default warn path).
 pub const C99_EXTERNAL_IDENTIFIER_LIMIT: usize = 31;
 
-/// Segment delimiter per OQ-W16 (a) lock. Literal `__` in any segment is
+/// Segment delimiter. Literal `__` in any segment is
 /// escaped as `_u_` so the decoder can locate delimiter boundaries
 /// unambiguously.
 const DELIM: &str = "__";
@@ -54,7 +54,7 @@ const DELIM: &str = "__";
 /// encode/decode pair is bijective on its input domain.
 const ESCAPE: &str = "_u_";
 
-/// Mangle a single segment per the OQ-W16 (a) escape rule. Public so
+/// Mangle a single segment per the `_u_` escape rule. Public so
 /// the per-state walker can pre-mangle each path component before
 /// joining with `DELIM`.
 fn escape_segment(s: &str) -> String {

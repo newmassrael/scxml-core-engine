@@ -27,7 +27,7 @@ use sce_build::DocumentLabel;
 
 /// Bounded-collection doc with deploy-key capacity, single-writer
 /// concurrency, no index-by. Element-type names a non-existent kind
-/// — fine for this test set because C6-β's cross-doc resolution runs
+/// — fine for this test set because the cross-doc resolution runs
 /// only through `compile_scxml_with_imports`, not the single-file
 /// `compile_forge_with_deploy` path the γ1 validator inhabits.
 fn bc_deploy_key_doc(name: &str, key: &str) -> String {
@@ -119,10 +119,10 @@ fn assert_validator_passed(scxml: &str, deploy_yaml: &str, target_machine: Optio
                     // downstream consequence, not a validator failure.
                 }
                 other => {
-                    panic!("C6-γ1 validator must silent-pass; got unrelated error: {other:?}")
+                    panic!("validator must silent-pass; got unrelated error: {other:?}")
                 }
             },
-            other => panic!("C6-γ1 validator must silent-pass; got unrelated error: {other:?}"),
+            other => panic!("validator must silent-pass; got unrelated error: {other:?}"),
         },
     }
 }

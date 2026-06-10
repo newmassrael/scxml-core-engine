@@ -27,7 +27,7 @@
                               time + length-prefixed zid bytes max=16)
        Z-gated:
          chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
-                  termination on entry header.Z — Y3 atomic 1 grammar;
+                  termination on entry header.Z — atomic 1 grammar;
                   chain is the codec's last field but the entry-flag
                   termination remains for symmetry with msg_put and
                   for wire-equivalence with upstream's
@@ -35,10 +35,10 @@
                   which terminates on each entry's outer-header Z bit
                   regardless of trailing fields).
 
-     Composition: B1-γ flags (header) + B1-δ present-if-on-embed
-     (T gate) + Y3 atomic 2a present-if-on-tlv-chain (header.Z gate)
-     + Y3 atomic 1 entry-flag termination + B5-ε surface G (chain
-     element = codec_zenoh_ext_entry variant) + Y0c <sce:embed>
+     Composition: flags flags (header) + present-if present-if-on-embed
+     (T gate) + atomic 2a present-if-on-tlv-chain (header.Z gate)
+     + atomic 1 entry-flag termination + variant-entry chain surface G (chain
+     element = codec_zenoh_ext_entry variant) + <sce:embed>
      (codec_zenoh_timestamp inner codec). No new primitives.
 
      Body variant arm contract: invoked by codec_zenoh_request when

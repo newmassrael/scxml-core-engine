@@ -24,7 +24,7 @@
                               codec_ext_encoding_info).
        Z-gated:
          chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
-                  termination on entry header.Z — Y3 atomic 1 grammar;
+                  termination on entry header.Z — atomic 1 grammar;
                   chain is followed by the payload pair so the
                   exhaust-or-depth termination would not detect the
                   payload boundary. max-depth=4 covers err's actual
@@ -34,13 +34,13 @@
          bytes  : payload_len (VLE u64) + payload (UTF-8/bytes,
                                                     max 256)
 
-     Composition: B1-γ flags (header) + B1-δ present-if-on-fields
-     (E_E gate) + Y3 atomic 2a present-if-on-tlv-chain (header.Z gate)
-     + Y3 atomic 1 entry-flag termination (chain followed by payload
+     Composition: flags (header) + present-if-on-fields
+     (E_E gate) + atomic 2a present-if-on-tlv-chain (header.Z gate)
+     + atomic 1 entry-flag termination (chain followed by payload
      pair — second realistic consumer of entry-flag termination after
-     codec_zenoh_reply) + Y0c <sce:embed> (codec_zenoh_encoding
-     inner codec) + B5-ε surface G (chain element =
-     codec_zenoh_ext_entry variant) + B1-α length-ref (payload_len /
+     codec_zenoh_reply) + <sce:embed> (codec_zenoh_encoding
+     inner codec) + variant-entry chain (chain element =
+     codec_zenoh_ext_entry variant) + VLE length-ref (payload_len /
      payload pair, mirrors codec_zenoh_query's parameters_len /
      parameters).
 

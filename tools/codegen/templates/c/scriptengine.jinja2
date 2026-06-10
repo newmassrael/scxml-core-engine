@@ -31,7 +31,7 @@
 
    Every macro takes the Lua state pointer as `sm->L`; the calling
    template owns the surrounding block scope and any per-block error
-   handling. T3 lock-in (jinja2 inline) per c11_design_decisions.md —
+   handling. Decision: jinja2-inline only —
    no helper class, no shared .c file. #}
 
 {% macro lua_init_engine() %}
@@ -60,7 +60,7 @@
            before any cond is evaluated. Mirrors the C++ `LuaEngine.cpp`
            lua_pushcfunction registration; we use a Lua-script definition
            via luaL_dostring instead so the C11 backend stays free of
-           lua_CFunction trampolines (T3 lock-in: jinja2-inline only). */
+           lua_CFunction trampolines (jinja2-inline only). */
         (void)luaL_dostring(sm->L,
             "function _scxml_truthy(v)\n"
             "  if v == nil or v == false then return false end\n"
@@ -75,7 +75,7 @@
            Empty tables return false here; the foreach prologue separately
            treats any table as a (possibly empty) array per cpp
            `ForeachHelper.h:173-191` empty-table fallback. C11 lowers the
-           cfunction to a Lua-script via dostring (T3 lock-in: no
+           cfunction to a Lua-script via dostring (no
            lua_CFunction trampolines). */
         (void)luaL_dostring(sm->L,
             "function _isArray(v)\n"
@@ -90,7 +90,7 @@
            prologue's `_sce_foreach_arr` keeps referencing the original
            array (shallow-copy iteration semantic per W3C 4.6). Mirrors
            cpp `LuaEngine.cpp:519-539` lua_pushcfunction; C11 lowers via
-           Lua-script per T3 lock-in. */
+           Lua-script (jinja2-inline, no lua_CFunction trampolines). */
         (void)luaL_dostring(sm->L,
             "function _concat(...)\n"
             "  local result = {}\n"
@@ -116,7 +116,7 @@
            Mirrors cpp `LuaEngine.cpp:485-517` lua_pushcfunction (string
            branch via `strstr`, array branch via raw-iter equality);
            C11 lowers to `string.find(.., plain=true)` for strings and a
-           1-based ipairs walk for arrays per T3 lock-in (no lua_CFunction
+           1-based ipairs walk for arrays (no lua_CFunction
            trampolines). */
         (void)luaL_dostring(sm->L,
             "function _indexOf(obj, value)\n"
@@ -188,7 +188,7 @@
            via `_event.data = (<literal>)`. Cpp ships JSON on
            `EventWithMetadata::data` because its event type is
            engine-agnostic across LuaEngine / JSEngine / mock; C11 is
-           AOT-only with Lua 5.4 (P1 lock-in), so a Lua-source literal
+           AOT-only with Lua 5.4 as its sole script engine, so a Lua-source literal
            is the round-trip-free equivalent and produces a typed value
            on the parent side rather than forcing a re-parse.
 
@@ -1076,7 +1076,7 @@
    (invoke_methods.jinja2:189-195) — cpp ships JSON because
    `EventWithMetadata` crosses engine-agnostic boundaries; C11's Lua-
    source carry is the round-trip-free equivalent under the AOT-only +
-   Lua 5.4 P1 lock-in.
+   Lua 5.4-only engine contract.
 
    Caller must gate on `invoke_info.child_needs_script_engine` so the
    child has a valid `L` to query — children without a script engine

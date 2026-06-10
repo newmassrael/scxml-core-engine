@@ -37,30 +37,30 @@ pub mod parser;
 pub mod position_map;
 /// Spec-provenance + requirement-traceability + unresolved-placeholder
 /// types — shared by [`model`], [`forge::model`], and
-/// [`forge::diagnostic`]. See `nl_to_ir_mapping_roadmap.md` for the
-/// shared-type rationale (Items 1, 5, 6 fragment into incompatible
-/// representations if each grows its own).
+/// [`forge::diagnostic`]. Shared-type rationale: the requirement
+/// report, unresolved-placeholder report, and provenance emit would
+/// fragment into incompatible representations if each grew its own.
 pub mod provenance;
-/// NL→IR Mapping Roadmap Item 1: emit per-node `sce:req` NDJSON.
+/// Per-node `sce:req` requirement-annotation NDJSON emit.
 /// Drives the `sce-codegen requirements` CLI subcommand for
 /// downstream req-coverage tooling.
 pub mod requirements_report;
 pub mod script_engine_analyzer;
-/// NL→IR Mapping Roadmap Item 3: event-set exhaustiveness
+/// Event-set exhaustiveness
 /// validator. Flags compound `<state>` parents whose sibling children
 /// disagree on event coverage with no parent fallthrough — the
 /// AI-generated SCXML intent-gap pattern. Narrow heuristic (requires
 /// a shared event vocabulary across siblings) keeps W3C IRP at zero
 /// false positives.
 pub mod scxml_exhaustiveness;
-/// NL→IR Mapping Roadmap Item 3: guard analysis. Recognises
+/// Guard analysis. Recognises
 /// trivially-false `<transition cond>` expressions and shadowed
 /// transitions (unconditional siblings making later same-event
 /// siblings dead per §scxml-5.10). Stays narrow: language-prefixed
 /// conds (`cpp:`, `kotlin:`, `rust:`) are opaque, token-prefix
 /// superset shadowing is not flagged.
 pub mod scxml_guard_analysis;
-/// NL→IR Mapping Roadmap Item 3: Statechart graph reachability
+/// Statechart graph reachability
 /// validator. BFS from the document `initial` configuration computes
 /// the design-time reach set and rejects orphan states / dead
 /// transitions before codegen.
@@ -72,7 +72,7 @@ pub mod scxml_semantic;
 /// so templates see a post-XInclude document. See [`template`]
 /// for the expansion semantics and error model.
 pub mod template;
-/// NL→IR Mapping Roadmap Item 5: `<sce:unresolved>` placeholder
+/// `<sce:unresolved>` placeholder
 /// detection — strict-mode build gate + NDJSON report. Drives
 /// `--strict-unresolved` on `generate` and `sce-codegen unresolved`.
 pub mod unresolved_check;
@@ -178,7 +178,7 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     let mut model = parser.parse_file(scxml_path)?;
     analyzer::analyze(&mut model, scxml_path);
     guard_static_generatable(&model, scxml_path)?;
-    // NL→IR Mapping Roadmap Item 3 — Statechart graph
+    // Statechart graph
     // reachability. Runs after the analyzer finalises the state graph
     // (parallel-region computation, initial-cascade resolution) and
     // after `guard_static_generatable` so the more-fundamental
@@ -189,17 +189,17 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     // entry contract is sound; running it earlier would shadow the
     // root-cause diagnostic with a downstream consequence.
     scxml_reachability::validate(&model, scxml_path)?;
-    // NL→IR Mapping Roadmap Item 3 — event-set
+    // Event-set
     // exhaustiveness. Runs after the reachability walk so an unreachable state is
     // reported via the structural code first; the exhaustiveness
     // walker presumes the graph topology is sound and surfaces only
     // the design-time intent-gap pattern.
     scxml_exhaustiveness::validate(&model, scxml_path)?;
-    // NL→IR Mapping Roadmap Item 3 — guard analysis. Runs after
+    // Guard analysis. Runs after
     // the exhaustiveness walk so structural intent-gap diagnostics fire ahead
     // of the per-transition guard heuristic.
     scxml_guard_analysis::validate(&model, scxml_path)?;
-    // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
+    // Watching-zenoh RFC §5.O — IR provenance pre-emit
     // guard. Runs *after* the analyzer (so synthesised IR additions
     // are visible) and *before* `resolve_source_path` populates the
     // template-visible source path (so a `None` cannot leak through
@@ -227,19 +227,19 @@ fn compile_model_from_string(
     let mut model = parser.parse_string(scxml_content, scxml_name)?;
     analyzer::analyze(&mut model, "");
     guard_static_generatable(&model, scxml_name)?;
-    // NL→IR Mapping Roadmap Item 3 reachability — see `compile_model`
+    // Statechart graph reachability — see `compile_model`
     // for the placement rationale (after the basic static-generation guard
     // so root-cause `ScxmlSemanticError` diagnostics fire ahead of the
     // orphan walk).
     scxml_reachability::validate(&model, scxml_name)?;
-    // NL→IR Mapping Roadmap Item 3 event-set exhaustiveness — see
+    // Event-set exhaustiveness — see
     // `compile_model` for the placement rationale (after the
     // reachability walk so the structural
     // root-cause fires ahead of the heuristic).
     scxml_exhaustiveness::validate(&model, scxml_name)?;
-    // NL→IR Mapping Roadmap Item 3 — guard analysis.
+    // Guard analysis.
     scxml_guard_analysis::validate(&model, scxml_name)?;
-    // Watching-zenoh RFC §5.O Atomic 0a — IR provenance pre-emit
+    // Watching-zenoh RFC §5.O — IR provenance pre-emit
     // guard. WASM / parse_string callers share the same invariant
     // as the file-based entry point above; both routes converge on
     // `compile_model*` so the gate has a single placement.
@@ -303,9 +303,9 @@ pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str) {
     }
 }
 
-/// Watching-zenoh RFC §5.2 Round F-α — resolve every `<sce:driver
+/// Watching-zenoh RFC §5.2 — resolve every `<sce:driver
 /// href="..."/>` reference on the SCXML root against the SCXML file's
-/// parent directory (the Q-Round-F-D5 default root). Each successful
+/// parent directory (the default driver root). Each successful
 /// resolution populates `DriverRef::resolved_path`; the first miss
 /// surfaces `mcu/driver-header-not-found` with the `Located`
 /// row/column from the parser-stamped source_location so authors land
@@ -313,8 +313,8 @@ pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str) {
 ///
 /// Absolute `href` values are passed through `Path::is_absolute` and
 /// not joined with the parent. The resolver intentionally does NOT
-/// parse the driver header — Q-Round-F-D2 delegates cross-TU symbol
-/// resolution to the C compiler. The only contract this helper
+/// parse the driver header — cross-TU symbol
+/// resolution is delegated to the C compiler. The only contract this helper
 /// enforces is filesystem existence, mirroring `XInclude` resolver
 /// behaviour for SCXML composition.
 ///
@@ -329,9 +329,9 @@ fn resolve_driver_refs(model: &mut SCXMLModel, scxml_path: &str) -> Result<(), C
     resolve_driver_refs_with_root(model, scxml_path, &parent_default)
 }
 
-/// Watching-zenoh RFC §5.2 Round F-α — resolve every `<sce:driver>`
+/// Watching-zenoh RFC §5.2 — resolve every `<sce:driver>`
 /// against `root` (the override path supplied by `deploy.yaml`'s
-/// `platform.driver_root` per Q-Round-F-D5). The compile-model gate
+/// `platform.driver_root`). The compile-model gate
 /// uses the SCXML file's parent directory; deploy-aware callers pass
 /// the resolved root explicitly so the override beats the default
 /// without re-walking from scratch. Absolute `href` values are
@@ -575,15 +575,15 @@ pub fn compile_scxml_lang_typed(
     compile_scxml_lang_typed_with_driver_root(scxml_path, template_dir, language, None)
 }
 
-/// Watching-zenoh RFC §5.2 Round F-α — deploy-aware variant of
+/// Watching-zenoh RFC §5.2 — deploy-aware variant of
 /// [`compile_scxml_lang_typed`] that honours `deploy.yaml`'s
-/// `platform.driver_root` override (Q-Round-F-D5). `driver_root: None`
+/// `platform.driver_root` override. `driver_root: None`
 /// means "fall back to the SCXML file's parent directory" so this is
 /// a strict superset of the deploy-unaware entry — every existing
 /// caller route remains byte-stable when no override is in play.
 ///
 /// The orchestrator ([`compile_scxml_with_imports`]) selects both the
-/// driver_root override and the F-α-2 C11 section attribute class per
+/// driver_root override and the C11 section attribute class per
 /// machine and routes through [`compile_scxml_lang_typed_with_section`];
 /// this entry is the no-section convenience wrapper that single-file
 /// (deploy-unaware) callers keep using.
@@ -596,19 +596,19 @@ pub fn compile_scxml_lang_typed_with_driver_root(
     compile_scxml_lang_typed_with_section(scxml_path, template_dir, language, driver_root, None)
 }
 
-/// Watching-zenoh RFC §5.2 Round F-α-2 — deploy-aware variant that
+/// Watching-zenoh RFC §5.2 — deploy-aware variant that
 /// additionally honours `deploy.yaml`'s `platform.c11_section_attribute.class`
 /// for the C11 backend. When `section_class` is `Some("<name>")`, the
 /// emitted `*_sm.c` defines `SCE_SM_FN` as
 /// `__attribute__((section("<name>")))` and every statechart function
 /// definition receives the prefix. When `None`, `SCE_SM_FN` expands to
-/// empty so the emitted source stays byte-stable against the F-α
-/// baseline (modulo the textual prefix token itself, which is part of
+/// empty so the emitted source stays byte-stable against the
+/// no-section baseline (modulo the textual prefix token itself, which is part of
 /// the round-trip lock).
 ///
 /// `section_class` is ignored on non-C11 backends; the orchestrator
 /// already fires `mcu/section-attribute-on-non-mcu-target` for that
-/// case (Q-Round-F-D3) before this entry runs.
+/// case before this entry runs.
 pub fn compile_scxml_lang_typed_with_section(
     scxml_path: &str,
     template_dir: &Path,
@@ -745,7 +745,7 @@ pub fn compile_forge_from_string(
         )
     })?;
 
-    // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
+    // Watching-zenoh RFC §5.O — forge IR provenance pre-emit
     // guard. Mirrors the SCXML-side `validate_emission_provenance`
     // placement (compile_model* in this same file). The walker fires
     // `traceability/scxml-line-range-missing` when a per-kind body
@@ -767,12 +767,12 @@ pub fn compile_forge_from_string(
 }
 
 /// Forge codegen entry that consumes deploy.yaml machine context for
-/// validate-time OS-axis checks — RFC §5.C B6-η.
+/// validate-time OS-axis checks — RFC §5.C.
 ///
 /// Layered on top of [`compile_forge_from_string`]: parses, then runs
 /// per-kind deploy-aware validators, then generates. Today the only
 /// validator wired here is the §5.C link-class × `platform.os` matrix
-/// ([`forge::model::LinkClass::admits_os`]); future forge kinds opt
+/// ([`forge::model::LinkClass::admits_os`]); further forge kinds opt
 /// into deploy-aware validation by adding their own arms here without
 /// affecting this entry's signature.
 ///
@@ -797,13 +797,13 @@ pub fn compile_forge_with_deploy(
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
 
-    // watching-zenoh RFC §5.I Atomic B — load target plugin from
-    // deploy.yaml `extern_symbols.target_plugin: <path>` (Q-Call-2 (a)
-    // path-pointed YAML). Q-Call-6 (a) lock: plugin entries extend
+    // watching-zenoh RFC §5.I — load target plugin from
+    // deploy.yaml `extern_symbols.target_plugin: <path>` (a
+    // path-pointed YAML). Plugin entries extend
     // the §5.I baseline registry; baseline-shadowing surfaces as
     // `extern/target-plugin-symbol-conflict` (spec line 1852 verbatim).
     // Absent deploy or absent extern_symbols ⇒ baseline-only registry,
-    // matching atomic A semantics.
+    // matching the plugin-free baseline semantics.
     let plugin_symbols = match deploy {
         Some(cfg) => load_target_plugin_for_compile(cfg, label.diagnostic_label)?,
         None => Vec::new(),
@@ -844,10 +844,10 @@ pub fn compile_forge_with_deploy(
     let extern_decls = parsed.externs.clone();
     let mut doc = parsed.document;
 
-    // RFC variant-default-overlay Atomic A — apply deploy.yaml
+    // Variant-default overlay — apply deploy.yaml
     // `variant_defaults:` onto the parsed IR before downstream
     // validators see it. The overlay flips `<sce:arm>` `is_default`
-    // flags so the existing γ-3 `CodecVariantNoDefaultArm` validator
+    // flags so the existing `CodecVariantNoDefaultArm` validator
     // and the codegen-time arm-selection logic see a single
     // effective source of truth ("overlay if present, SCXML
     // `default=\"true\"` otherwise"). When deploy is `None`, the
@@ -862,14 +862,14 @@ pub fn compile_forge_with_deploy(
         )?;
     }
 
-    // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
+    // Watching-zenoh RFC §5.O — forge IR provenance pre-emit
     // guard. Runs before deploy-aware validators so the wire payload
     // anchors at the same `location.file` an η rejection would.
     forge::provenance::validate_forge_emission_provenance(&doc, label.diagnostic_label)?;
 
     // η deploy-aware validation. Resolved target_os is the
     // intersection of deploy + target_machine + machine.platform —
-    // any missing piece skips silently per Q-η5 (a). When all three
+    // any missing piece skips silently. When all three
     // are present, the per-kind validator fires on Link documents.
     //
     // `DeployConfig` nests machines under devices (`topology.<device>.
@@ -904,21 +904,19 @@ pub fn compile_forge_with_deploy(
                     }
                 }
             }
-            // RFC §5.E B7-α buffer-pool placement validation —
-            // η-second-consumer pattern. Validates `<sce:section>` body
+            // RFC §5.E buffer-pool placement validation.
+            // Validates `<sce:section>` body
             // resolves against `machine.memory.sram_regions`. Skips
-            // silently when the machine has no `memory` block (Q-η5 (a)
-            // precedent). The candidates axis is the resolved machine's
+            // silently when the machine has no `memory` block.
+            // The candidates axis is the resolved machine's
             // declared region names (sorted) — drives `Fix::ReplaceOneOf`
             // so authors can pick a legal section or extend deploy.yaml.
             //
-            // RFC §5.E B7-β layered size check — once the section has
+            // RFC §5.E layered size check — once the section has
             // resolved, verify the storage footprint (`slot_count ×
             // slot_size`) fits the resolved region's `size`. Section
             // resolution is the prerequisite: it makes no sense to
             // emit a size diagnostic against an unresolved section.
-            // η-third-consumer pattern (B7-β second extension after
-            // B7-α's placement check).
             if let forge::model::ForgeDocument::BufferPool(pool) = &doc {
                 if let Some(memory) = machine.memory.as_ref() {
                     if let Some(region) = memory.sram_regions.get(&pool.section) {
@@ -964,7 +962,7 @@ pub fn compile_forge_with_deploy(
                 //
                 // Four deploy-aware diagnostics keyed off `platform.has_dcache`
                 // / `platform.dcache_line_size` / `platform.has_speculative_prefetch`
-                // and the pool's `cache_policy`. Q-η5 (a) silent-skip when
+                // and the pool's `cache_policy`. Absent-input silent-skip when
                 // the platform block is missing fields (the deploy.yaml-side
                 // codes `deploy/has-dcache-missing` + `deploy/dcache-line-size-missing`
                 // sit in §5.K / C13 scope — not C5's reach). One exception:
@@ -1001,7 +999,7 @@ pub fn compile_forge_with_deploy(
                         // (2) alignment vs dcache_line_size (spec line 1544)
                         //     and (3) slot_size vs dcache_line_size (spec
                         //     line 1545) — both fire only when the deploy
-                        //     declares `dcache_line_size`. Per Q-η5 (a),
+                        //     declares `dcache_line_size`. A
                         //     missing field skips silently (it's a §5.K
                         //     completeness rule).
                         if let Some(line_size) = platform.dcache_line_size {
@@ -1066,12 +1064,12 @@ pub fn compile_forge_with_deploy(
         }
     }
 
-    // C2-γ: forge-side anchor for spec §5.D line 912
+    // Forge-side anchor for spec §5.D line 912
     // (`worker/scheduler-unsupported`). When a Worker doc compiles
     // against a resolved target machine, the machine MUST list it in
     // `machines.<m>.workers` so the cooperative scheduler can budget
     // a tick slot. Silent-skip when the deploy or target_machine is
-    // absent (Q-η5 (a) precedent — deploy-unaware paths cannot enforce
+    // absent (absent-input silent-skip — deploy-unaware paths cannot enforce
     // slot accounting); the deploy-side sum check
     // (`deploy/scheduler-incompatible-with-worker-count`) catches the
     // counterpart violation at deploy.yaml parse time.
@@ -1102,7 +1100,7 @@ pub fn compile_forge_with_deploy(
     // against a resolved cooperative-scheduler machine, the timer's
     // `<sce:period>` MUST be >= `scheduler.tick_period_us` so the
     // dispatcher can hit every deadline. Silent-skip when:
-    // - deploy or target_machine is absent (Q-η5 (a)),
+    // - deploy or target_machine is absent,
     // - the machine has no scheduler block,
     // - `scheduler.kind` is not cooperative (preemptive runtimes
     //   own their own dispatch granularity),
@@ -1137,7 +1135,7 @@ pub fn compile_forge_with_deploy(
             }
         }
 
-        // ── C6-γ1 Bounded-collection deploy-time capacity resolution ──
+        // ── Bounded-collection deploy-time capacity resolution ──
         //
         // RFC §5.L lines 2583-2585: `<sce:capacity source="deploy"
         // key="machines.<m>.limits.<k>"/>` resolves at codegen time to
@@ -1146,7 +1144,7 @@ pub fn compile_forge_with_deploy(
         // `collection/capacity-unresolved` when the key references the
         // target machine but the limit is not declared.
         //
-        // Silent-skip paths per Q-η5 (a):
+        // Silent-skip paths:
         //   - `<sce:capacity const="N"/>` carries no deploy reference;
         //     no validation needed.
         //   - Key does not match the `machines.<m>.limits.<k>` shape
@@ -1212,13 +1210,13 @@ pub fn compile_forge_with_deploy(
         })
     })();
 
-    // C2-γ: build the worker_placement options threading from the
+    // Build the worker_placement options threading from the
     // resolved machine's `workers:` block. Fires only on the deploy-
     // aware path with at least one worker declared. Mirrors the
     // cache_platform populator pattern (C5) — `compile_forge_with_imports`
     // never reaches here and worker_placement stays `None`, matching
-    // the C2-β codegen-invariant validator's silent-skip on missing
-    // placement (Q-η5 (a) precedent).
+    // the codegen-invariant validator's silent-skip on missing
+    // placement.
     let worker_placement = (|| -> Option<Vec<WorkerPlacement>> {
         let cfg = deploy?;
         let machine_name = target_machine?;
@@ -1246,16 +1244,16 @@ pub fn compile_forge_with_deploy(
         placements.sort_by(|a, b| a.worker_name.cmp(&b.worker_name));
         Some(placements)
     })();
-    // C6-γ2: bounded-collection capacity resolution. Single-doc path
+    // Bounded-collection capacity resolution. Single-doc path
     // so the map carries at most one entry. CompileConst BCs copy the
     // literal through for uniform render handling (the render layer
     // never needs to read `m.capacity` when this map is populated).
-    // DeployKey BCs reuse the γ1 lookup performed above — the validator
+    // DeployKey BCs reuse the limits lookup performed above — the validator
     // returned Ok ⇒ the value MUST be present in `machine.limits`. The
     // `index_by_field_sce_type` axis stays `None` because this path
     // lacks the orchestrator's element-type candidate map; BCs going
     // through `compile_forge_with_deploy` with `<sce:index-by>`
-    // declared raise `InvalidConfig` at the render layer per Q-γ2
+    // declared raise `InvalidConfig` at the render layer per the
     // upstream-honesty discipline.
     let bounded_collection_resolutions: Option<
         std::collections::HashMap<String, BoundedCollectionResolution>,
@@ -1296,7 +1294,7 @@ pub fn compile_forge_with_deploy(
         ..Default::default()
     };
 
-    // C2-γ: connect the worker_placement populator to its C2-β
+    // Connect the worker_placement populator to its
     // codegen-invariant consumer. `compile_forge_with_imports` runs
     // this validator on the imports path; `compile_forge_with_deploy`
     // needs to run it equivalently so the deploy.yaml-populated
@@ -1310,7 +1308,7 @@ pub fn compile_forge_with_deploy(
         label.diagnostic_label,
     )?;
 
-    // C2-γ: same rationale for cross-resolution. The `<sce:link-rx>`
+    // Same rationale for cross-resolution. The `<sce:link-rx>`
     // ref must resolve to a declared kind=link import; under
     // `compile_forge_with_deploy` the validator was previously
     // missing — re-wiring closes the gap.
@@ -1318,14 +1316,14 @@ pub fn compile_forge_with_deploy(
 
     let template_base = find_template_base();
 
-    // RFC §5.I Atomic C / Q-Call-7 — `<sce:extern>` rejected on
+    // RFC §5.I — `<sce:extern>` rejected on
     // non-MCU backends. Mirrors the gate in
     // [`compile_forge_with_imports`]; the deploy-aware path catches
     // the rejection one stage later (after potential plugin loading)
     // because plugin entries also count as `<sce:extern>` declarations
     // through `parsed.externs`. Reuses the existing
-    // `codegen/mcu-class-kind-on-non-mcu-language` family per Q-Call-7
-    // prose, with `kind = "<sce:extern>"` to disambiguate from kind-
+    // `codegen/mcu-class-kind-on-non-mcu-language` family, with
+    // `kind = "<sce:extern>"` to disambiguate from kind-
     // axis rejection on the same code.
     if !extern_decls.is_empty()
         && matches!(
@@ -1421,19 +1419,19 @@ pub fn compile_forge_with_deploy(
 
 /// Resolve the deploy.yaml `extern_symbols.target_plugin` field into
 /// a [`forge::target_plugin::PluginSymbol`] vector for the
-/// plugin-aware parser (Atomic B consumer wiring).
+/// plugin-aware parser.
 ///
-/// Failure mapping (Atomic B scope = 1 new spec-verbatim code):
+/// Failure mapping (one spec-verbatim code):
 ///
 /// - `BaselineConflict` → [`forge::error::ValidationError::ExternTargetPluginSymbolConflict`]
-///   (spec line 1852 verbatim, the new Atomic B code).
+///   (spec line 1852 verbatim).
 /// - `ReadFile` / `Yaml` / `UnknownAbi` → [`forge::error::ForgeError::Io`]
 ///   (existing `io/filesystem` code). The plugin file lives outside
 ///   the SCXML pipeline; treating its load failures as I/O on the
-///   pipeline's input set keeps atomic B's wire-code surface bounded
-///   to the spec-verbatim conflict axis. A future Atomic C may
-///   promote these to a dedicated `extern/target-plugin-load`
-///   family if UX feedback warrants the split.
+///   pipeline's input set keeps the wire-code surface bounded
+///   to the spec-verbatim conflict axis. Promotion to a dedicated
+///   `extern/target-plugin-load` family is consumer-gated on UX
+///   feedback warranting the split.
 fn load_target_plugin_for_compile(
     cfg: &mesh::deploy::DeployConfig,
     diag_label: &str,
@@ -1477,7 +1475,7 @@ fn load_target_plugin_for_compile(
                 source: std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!(
-                        "plugin symbol `{name}` declares unknown ABI `{abi}`; only `c` and `rust` are accepted (Q-Call-3 closed set)"
+                        "plugin symbol `{name}` declares unknown ABI `{abi}`; only `c` and `rust` are accepted (closed set)"
                     ),
                 ),
             },
@@ -1498,7 +1496,7 @@ fn load_target_plugin_for_compile(
     }
 }
 
-/// RFC c7-wildcard W-project: one element-type's field schema, in
+/// Item C7 keyexpr support: one element-type's field schema, in
 /// declaration order. Each entry is `(field_id, SceType, length_field)`,
 /// where `length_field` is the codec's explicit `sce:length-field` — the
 /// C11 borrowed-byte-view length sibling SSOT — or `None` for a tail/fixed
@@ -1536,25 +1534,25 @@ pub struct ForgeCompileOptions {
     /// validators ensure the field is always `Some` when at least one
     /// `cache-policy: maintain` pool exists.
     pub cache_platform: Option<CachePlatformInfo>,
-    /// RFC §5.D + §5.I C2-β worker inbox cross-core placement map.
+    /// RFC §5.D + §5.I worker inbox cross-core placement map.
     /// Populated by [`compile_forge_with_deploy`] from the resolved
-    /// deploy.yaml `machines.<m>.workers.<w>.placement` block (lands
-    /// in C2-γ alongside `MachineSchedulerConfig`); left `None` by
+    /// deploy.yaml `machines.<m>.workers.<w>.placement` block;
+    /// left `None` by
     /// deploy-unaware callers. The codegen-invariant validator
     /// [`validate_worker_inbox_ordering_placement`] silent-skips on
-    /// `None` per the Q-η5 (a) precedent — `compile_forge_with_imports`
+    /// `None` — `compile_forge_with_imports`
     /// does not have the cross-core information needed to fire
     /// `worker/inbox-ordering-relaxed-across-cores`. When `Some`, the
     /// validator scans the slice for any entry whose producer/consumer
     /// cores differ and whose worker doc declared `ordering="relaxed"`.
     pub worker_placement: Option<Vec<WorkerPlacement>>,
-    /// RFC §5.L C6-γ bounded-collection codegen-time resolutions, keyed
+    /// RFC §5.L bounded-collection codegen-time resolutions, keyed
     /// by `BoundedCollectionModel.name`. Populated by the two upstream
     /// pipelines that have the information the BC template needs:
     ///
     /// * [`compile_forge_with_deploy`] populates the entry's `capacity`
     ///   from the resolved `<sce:capacity source="deploy" key=...>`
-    ///   value (γ1's `machines.<m>.limits.<k>` lookup). Single-doc path
+    ///   value (the `machines.<m>.limits.<k>` lookup). Single-doc path
     ///   so the map has one entry.
     /// * [`compile_scxml_with_imports`] populates `index_by_field_sce_type`
     ///   from the resolved element-type ForgeDocument (codec / procedure)
@@ -1571,14 +1569,14 @@ pub struct ForgeCompileOptions {
     pub bounded_collection_resolutions:
         Option<std::collections::HashMap<String, BoundedCollectionResolution>>,
     /// watching-zenoh RFC §5.C lines 802-833 + §5.M lines 2771-2828
-    /// (C10-α) — sorted set of `<sce:link>` doc names whose
+    /// (item C10) — sorted set of `<sce:link>` doc names whose
     /// orchestrator-resolved (deploy `domain_attrs.trust_class:
     /// session_arming` × machine source SCXML `Accepting.*`
     /// substate-present) pair makes the link a listener. Drives
     /// per-language `render_link_*` sibling emission: when this set
     /// contains the rendered link's name, the template emits BOTH a
     /// Listener half (existing shape) AND a Sibling half (durable
-    /// `EstablishedSession` type-name suffix per Q-C10-3 a). The
+    /// `EstablishedSession` type-name suffix). The
     /// post-render substring self-check
     /// `link/listener-link-not-paired-with-established-sibling` greps
     /// for the durable suffix and fires on template regression.
@@ -1591,7 +1589,7 @@ pub struct ForgeCompileOptions {
     /// sibling synthesized, no self-check — matching pre-C10 behavior
     /// verbatim.
     pub listener_links: Option<std::collections::BTreeSet<String>>,
-    /// RFC c7-wildcard W-project: element-type `(field_id, SceType)`
+    /// Item C7 keyexpr-matching support: element-type `(field_id, SceType)`
     /// schemas keyed by the element-type's **snake-cased name** (the same
     /// form [`ImportContext::bc_element_snake`] carries —
     /// `to_snake_case(BoundedCollectionModel.element_type)`). Populated by
@@ -1600,26 +1598,26 @@ pub struct ForgeCompileOptions {
     /// can type each `entry.<field>` access — `entry.pattern` → `Str`,
     /// `entry.callback_id` → `uint32`. That inference is what the
     /// bounded-string-field → borrowed-`bytes`-view call-site projection
-    /// (Q-W-5 (a) lock) keys on. Keyed by element name (not BC name)
+    /// keys on. Keyed by element name (not BC name)
     /// because `render_algorithm` recovers the element snake from the BC
     /// import's `bc_element_snake`, whereas the BC's own model name is not
     /// reliably reconstructible from the file-stem-derived import context.
     /// `None` on deploy-unaware single-file paths (`sce_codegen` CLI,
     /// `compile_forge_with_imports`); the projection then does not fire and
-    /// the arg falls through verbatim, exactly as in pre-W-project C7.
+    /// the arg falls through verbatim, exactly as before the projection
+    /// existed.
     pub element_type_field_schemas: Option<std::collections::HashMap<String, ElementFieldSchema>>,
 }
 
-/// RFC §5.D + §5.I C2-β cross-core worker placement entry. Populated
+/// RFC §5.D + §5.I cross-core worker placement entry. Populated
 /// from deploy.yaml's `machines.<m>.workers.<w>.placement.{producer_core,
 /// consumer_core}` block at [`compile_forge_with_deploy`] time and
 /// threaded to the inbox-ordering validator via
-/// [`ForgeCompileOptions::worker_placement`]. C2-β ships the
-/// validator + the wire-format `worker/inbox-ordering-relaxed-across-cores`
-/// code; the deploy.yaml schema field + the parser that populates it
-/// land in C2-γ alongside `MachineSchedulerConfig`. Until C2-γ ships,
-/// the slice is always `None` in production paths — the test suite
-/// constructs populated options to exercise the validator end-to-end.
+/// [`ForgeCompileOptions::worker_placement`]. The validator backs the
+/// wire-format `worker/inbox-ordering-relaxed-across-cores` code; the
+/// deploy.yaml schema field is parsed in [`mesh::deploy`] and
+/// populated on the deploy-aware path, while deploy-unaware callers
+/// leave the slice `None` (the validator then silent-skips).
 #[derive(Clone, Debug)]
 pub struct WorkerPlacement {
     /// Worker doc name (forge `<scxml sce:kind="worker" name="...">`).
@@ -1649,7 +1647,7 @@ pub struct CachePlatformInfo {
     pub has_speculative_prefetch: bool,
 }
 
-/// RFC §5.L C6-γ2 codegen-time resolution bundle for a single
+/// RFC §5.L codegen-time resolution bundle for a single
 /// bounded-collection document. Both fields are populated upstream
 /// — the BC render layer simply reads what it needs and raises
 /// `InvalidConfig` when a declared schema feature has no resolution.
@@ -1683,8 +1681,8 @@ pub struct BoundedCollectionResolution {
     /// `None` when `<sce:index-by>` is not declared. `Some` populated
     /// by the orchestrator from the resolved element-type doc.
     /// Each backend's render fn converts via its own type-string
-    /// helper — γ2 emits `rust_type(...)`, γ3 emits `cpp_type(...)` /
-    /// `kotlin_type(...)`, γ4 emits `c_type(...)` / Go / Python.
+    /// helper (`rust_type(...)`, `cpp_type(...)`, `kotlin_type(...)`,
+    /// `c_type(...)`, and the Go / Python equivalents).
     pub index_by_field_sce_type: Option<forge::model::SceType>,
 }
 
@@ -1745,7 +1743,7 @@ pub fn compile_forge_from_parsed(
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::Located;
 
-    // Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
+    // Watching-zenoh RFC §5.O — forge IR provenance pre-emit
     // guard. Runs before import resolution + cross-doc validators so a
     // missing-provenance regression in any parser site surfaces with
     // its own diagnostic instead of cascading into a downstream
@@ -1768,18 +1766,18 @@ pub fn compile_forge_from_parsed(
         label.diagnostic_label,
     )?;
 
-    // NL→IR Mapping Roadmap Item 2 — cross-kind typed binding
+    // Cross-kind typed binding
     // verification. Runs after import enrichment populates the
     // per-import slice (the validator reads its own member surface off
     // the import file contents rather than depending on enrichment
     // data, but the order matters because the cycle detector inside
     // `cross_kind_check::check` is what guarantees the surface
     // re-walk terminates). Today wired only on the Forge→Forge path —
-    // see `nl_to_ir_mapping_roadmap.md` Item 2 + the module-level
-    // scope comment for why Statechart→Forge stays out of v1.
+    // see the module-level scope comment for why Statechart→Forge is
+    // consumer-gated.
     forge::cross_kind_check::check(parsed, base_dir, label.diagnostic_label)?;
 
-    // NL→IR Mapping Roadmap Item 4 — physical-quantity unit-mismatch
+    // Physical-quantity unit-mismatch
     // arithmetic verification. Walks expression sites whose typed
     // operands could collide on `sce:quantity=…` annotations and
     // surfaces `validation/cross-kind-type-mismatch` (typed via
@@ -1789,7 +1787,7 @@ pub fn compile_forge_from_parsed(
     // walker can trust that imported alias references resolve.
     forge::quantity_check::check(parsed, label.diagnostic_label)?;
 
-    // RFC §5.C B6-α' link-side cross-resolution. Runs after enrichment
+    // RFC §5.C link-side cross-resolution. Runs after enrichment
     // populates `ImportContext::codec_max_bytes` (framer side) and
     // `ImportContext::buffer_pool_slot_size` (pool side); both axes
     // need to be present on the same `import_ctx` slice for the
@@ -1799,16 +1797,16 @@ pub fn compile_forge_from_parsed(
     // emit (or a silently-stage-copying TX path).
     validate_link_pool_framer_resolution(&parsed.document, &import_ctx, label.diagnostic_label)?;
 
-    // RFC §5.D C2-β worker cross-resolution. Per-doc resolution of
+    // RFC §5.D worker cross-resolution. Per-doc resolution of
     // `<sce:link-rx ref>` against kind=link imports and `<sce:outbox
     // ref>` against kind=statechart imports. Silent-skip on non-
-    // Worker docs. Q-C2-3 (a)'s `ForgeWorkerRegistry` lock overturned
-    // 2026-05-11 after Gate B preflight surfaced built-but-unconsumed
-    // risk — direct parsed.imports check is the η-precedent textbook
+    // Worker docs. An earlier `ForgeWorkerRegistry` design was dropped
+    // 2026-05-11 after preflight surfaced built-but-unconsumed
+    // risk — the direct parsed.imports check is the textbook
     // path.
     validate_worker_cross_refs(&parsed.document, &parsed.imports, label.diagnostic_label)?;
 
-    // RFC §5.I C2-β codegen-invariant for cross-core SPSC ordering.
+    // RFC §5.I codegen-invariant for cross-core SPSC ordering.
     // Silent-skip when `options.worker_placement` is `None` (deploy-
     // unaware path); fires when the worker's declared `ordering=
     // "relaxed"` coexists with a placement entry pinning producer +
@@ -1819,14 +1817,14 @@ pub fn compile_forge_from_parsed(
         label.diagnostic_label,
     )?;
 
-    // RFC §5.I Atomic C / Q-Call-7 — `<sce:extern>` rejected on non-MCU
+    // RFC §5.I — `<sce:extern>` rejected on non-MCU
     // backends (Kotlin/Go/Python). The wire-format diagnostic reuses
     // the existing `codegen/mcu-class-kind-on-non-mcu-language` family
-    // per Q-Call-7 prose ("rejected via codegen/mcu-class-kind-on-non-
+    // per spec prose ("rejected via codegen/mcu-class-kind-on-non-
     // mcu-language family"); the `kind` field carries the literal
     // string `<sce:extern>` to disambiguate from an MCU-class-kind
     // rejection on the same code (kind-axis rejection puts a kind name
-    // there). Atomics A/B build the `parsed.externs` slice;
+    // there). Upstream parsing builds the `parsed.externs` slice;
     // this gate is the consumer that closes the built-but-unconsumed
     // path on non-MCU backends.
     if !parsed.externs.is_empty()
@@ -1892,8 +1890,8 @@ pub fn compile_forge_from_parsed(
     Ok(output)
 }
 
-/// Multi-doc compile entry point — watching-zenoh RFC §5.D C2 outbox
-/// follow-up Atomic A (Q-Outbox-1 (a) lock 2026-05-12).
+/// Multi-doc compile entry point — watching-zenoh RFC §5.D worker
+/// outbox cross-resolution orchestrator (decisions locked 2026-05-12).
 ///
 /// Walks every input doc (SCXML statechart + forge artifact files),
 /// parses each, builds the build-wide [`forge::cross_doc_registry::
@@ -1910,7 +1908,7 @@ pub fn compile_forge_from_parsed(
 /// reachable only from tests — `<sce:on-sample link="undeclared">`
 /// references silently passed every single-file build path (a
 /// [`feedback_silently_broken_hooks`](../../.claude/projects/-home-coin-scxml-core-engine/memory/feedback_silently_broken_hooks.md)
-/// instance closed by Atomic A's wire-up).
+/// instance closed by this orchestrator's wire-up).
 ///
 /// Output shape: `Vec<(filename_basename, GeneratedOutput)>`. The
 /// basename includes the source file extension so callers know which
@@ -1934,22 +1932,21 @@ pub fn compile_scxml_with_imports(
     use forge::pool_registry::ForgePoolRegistry;
 
     // Pass 1: parse forge docs, populate cross-doc + pool registries.
-    // Worker docs are also captured for the C2 follow-up Atomic B outbox
+    // Worker docs are also captured for the worker-outbox
     // cross-resolution pass (`validate_worker_outbox_references`), which
     // cannot run until pass 2 finishes registering SCXML statechart
-    // names (workers may route their outbox to statechart inboxes per
-    // Q-Outbox-3 (b)).
+    // names (workers may route their outbox to statechart inboxes).
     //
     // Bounded-collection docs + codec/procedure docs + aggregated
-    // externs are captured for the C6-β cross-doc
+    // externs are captured for the bounded-collection cross-doc
     // resolution pass (`validate_bounded_collection_cross_refs`). The
     // `SceCrossDocRegistry` reserves SCXML-cross-reference semantics
     // for Link / Statechart / Worker kinds (those that SCXML
     // documents may reference via `<sce:on-sample>` /
     // `<sce:outbox>`), while codec + procedure participate only in
     // forge→forge cross-references as bounded-collection element
-    // types — so the C6-β surface lives on a dedicated map per Gate B
-    // user direction 2026-05-13.
+    // types — so that surface lives on a dedicated map (decision
+    // 2026-05-13).
     let mut cross_doc = SceCrossDocRegistry::new();
     let mut pool_reg = ForgePoolRegistry::new();
     let mut workers_for_outbox: Vec<(String, forge::model::WorkerModel)> = Vec::new();
@@ -1960,18 +1957,18 @@ pub fn compile_scxml_with_imports(
         forge::model::ForgeDocument,
     > = std::collections::HashMap::new();
     let mut all_externs: Vec<forge::model::ExternDeclaration> = Vec::new();
-    // C13-α-1 + C13-α-2 cross-doc validators (`validate_links_cross_doc`,
+    // Deploy-aware cross-doc link validators (`validate_links_cross_doc`,
     // `validate_links_burst_invariants`, `validate_reassembly_cross_doc`)
     // need the parsed forge LinkModel + BufferPoolModel by name. Capture
     // them during pass-1 alongside the worker/BC vectors so the deploy-
     // aware orchestrator pass can build &HashMap views without re-parsing.
     // Mirrors the `workers_for_outbox` + `bounded_collections_for_xref`
     // pattern; consumed by `validate_*_cross_doc` only when `deploy` is
-    // `Some` — `None` (deploy-unaware path) silent-skips per Q-η5 (a)
-    // precedent (no deploy ⇒ no cross-doc deploy-vs-forge to check).
+    // `Some` — `None` (deploy-unaware path) silent-skips
+    // (no deploy ⇒ no cross-doc deploy-vs-forge to check).
     let mut link_models_for_xref: Vec<(String, forge::model::LinkModel)> = Vec::new();
     let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> = Vec::new();
-    // NL→IR Item C1 Path A (Atomic 3) — EventSchemas keyed by file
+    // EventSchema typed-event support — EventSchemas keyed by file
     // stem (doc name). Populated in pass-1 alongside the other forge-
     // doc captures; consumed in pass-2 by
     // `event_schema_check::resolve_imported_event_schemas` which
@@ -1979,7 +1976,7 @@ pub fn compile_scxml_with_imports(
     // registry based on each statechart's own
     // `<sce:import kind="event-schema">` declarations.
     //
-    // Per-statechart import visibility (DL-7' prerequisite) replaces
+    // Per-statechart import visibility replaces
     // any legacy "one schema per event globally" rule: two machines
     // on a mesh may legitimately declare different schemas for the
     // same event name (e.g., during a rolling deploy with version
@@ -1996,7 +1993,7 @@ pub fn compile_scxml_with_imports(
         String,
         forge::model::EventSchemaModel,
     > = std::collections::BTreeMap::new();
-    // NL→IR Item C1 Path A (Atomic 5) — Enum kind documents keyed by
+    // Enum kind support — Enum kind documents keyed by
     // file stem (doc name), consumed by
     // `event_schema_check::resolve_imported_enums` to thread each
     // statechart's `<sce:import kind="enum">` set into the
@@ -2072,7 +2069,7 @@ pub fn compile_scxml_with_imports(
             )
         })?;
         // Aggregate every parsed doc's externs into the
-        // build-wide slice consumed by the C6-β multi-writer atomic-
+        // build-wide slice consumed by the multi-writer atomic-
         // import check. The spec contract is "atomic imports must
         // exist somewhere in the build", so the union across all
         // forge docs is the relevant surface; per-doc isolation would
@@ -2081,7 +2078,7 @@ pub fn compile_scxml_with_imports(
         all_externs.extend(parsed.externs.iter().cloned());
 
         // Capture per-kind for downstream cross-doc validators. The
-        // C2 follow-up Atomic B outbox path needs workers; the C6-β
+        // worker-outbox path needs workers; the bounded-collection
         // path needs bounded-collections (subject docs) + codec /
         // procedure (element-type candidates). Other forge docs (link
         // / algorithm / buffer-pool / timer / transform / condition /
@@ -2096,7 +2093,7 @@ pub fn compile_scxml_with_imports(
                 bounded_collections_for_xref.push((basename.to_string(), bc));
             }
             forge::model::ForgeDocument::Link(link) => {
-                // C13-α-1 + C13-α-2 cross-doc validators read this
+                // The cross-doc link validators read this
                 // back by link name to follow `<sce:rx-pool ref>` to
                 // the bound BufferPoolModel. The diag-label
                 // (basename) rides along so error sites name the
@@ -2104,7 +2101,7 @@ pub fn compile_scxml_with_imports(
                 link_models_for_xref.push((basename.to_string(), link));
             }
             forge::model::ForgeDocument::BufferPool(pool) => {
-                // C13-α-2 reassembly + burst validators look up pool
+                // The reassembly + burst validators look up pool
                 // slot_count / slot_size / variant via this capture.
                 // `pool_reg` only stores the kind discriminator; full
                 // BufferPoolModel field access requires the parallel
@@ -2122,7 +2119,7 @@ pub fn compile_scxml_with_imports(
                 element_type_candidates.insert(key, doc);
             }
             forge::model::ForgeDocument::EventSchema(schema) => {
-                // NL→IR Item C1 Path A (Atomic 3, DL-7') — capture
+                // Capture
                 // EventSchemas by their doc name (file stem) so the
                 // per-statechart resolver can follow each
                 // `<sce:import src="X.scxml">` to the exact schema
@@ -2138,7 +2135,7 @@ pub fn compile_scxml_with_imports(
                 event_schemas_by_doc_name.insert(schema.name.clone(), schema);
             }
             forge::model::ForgeDocument::Enum(em) => {
-                // NL→IR Item C1 Path A (Atomic 5, DL-5') — capture
+                // Capture
                 // Enum docs by their doc name (file stem) so the
                 // per-statechart resolver can follow each
                 // `<sce:import kind="enum">` to the EnumModel and
@@ -2199,14 +2196,14 @@ pub fn compile_scxml_with_imports(
         parser::validate_on_sample_link_references(model, &cross_doc, &pool_reg, basename)?;
     }
 
-    // ── NL→IR Item C1 Path A (Atomic 3) EventSchema receive- + send-side typecheck ──
+    // ── EventSchema receive- + send-side typecheck ──
     //
-    // Receive-side (DL-5'): walks every parsed statechart's
+    // Receive-side: walks every parsed statechart's
     // transition `cond` expressions for `_event.data.<field>`
     // member-access patterns and verifies the field against the
     // schema declared for that transition's event.
     //
-    // Send-side (DL-4'): walks every `<send event="X">` /
+    // Send-side: walks every `<send event="X">` /
     // `<raise event="X">` (inside transition `actions`, `<onentry>`,
     // `<onexit>`, initial-transition + history-default sequences,
     // and nested `<if>` / `<foreach>` bodies) and verifies each
@@ -2229,14 +2226,14 @@ pub fn compile_scxml_with_imports(
             model,
             &event_schemas_by_doc_name,
         );
-        // NL→IR Item C1 Path A (Atomic 5, DL-5') — per-statechart enum
+        // Per-statechart enum
         // imports drive the literal-width narrowing layer inside the
         // receive- + send-side validators. A statechart whose schema
         // declares an enum-typed field MUST also declare its own
         // `<sce:import kind="enum" as="<alias>">` for the narrowing to
         // resolve the alias against an `EnumModel`; otherwise the
         // alias is opaque from the statechart's view and the
-        // narrowing silent-skips (Atomic 3's conservative-accept
+        // narrowing silent-skips (the conservative-accept
         // default preserves the category-only behavior).
         let per_doc_enums =
             forge::event_schema_check::resolve_imported_enums(model, &enums_by_doc_name);
@@ -2256,7 +2253,7 @@ pub fn compile_scxml_with_imports(
         forge::native_action::validate(model, &per_doc_schemas, basename)?;
     }
 
-    // ── C2 follow-up Atomic B outbox cross-resolution ──
+    // ── Worker outbox cross-resolution ──
     //
     // Runs after pass-2 statechart registration so worker→statechart
     // outbox refs resolve symmetrically with worker→worker refs.
@@ -2265,14 +2262,14 @@ pub fn compile_scxml_with_imports(
     // that wrote the offending `<sce:outbox>`.
     validate_worker_outbox_references(&workers_for_outbox, &cross_doc)?;
 
-    // ── C6 Atomic β bounded-collection cross-doc resolution ──
+    // ── Bounded-collection cross-doc resolution ──
     //
     // Runs after pass-1 captures all parsed forge docs (so
     // `element_type_candidates` + `all_externs` are
     // populated) and after worker outbox so cross-doc validators run
     // in spec-section order (§5.D outbox before §5.L bounded-
     // collection). Independent of SCXML statechart registration — the
-    // C6-β surface is forge→forge entirely (codec/procedure element
+    // surface is forge→forge entirely (codec/procedure element
     // types + atomic-purpose `<sce:extern>` declarations), so it
     // does not depend on pass-2's statechart-name population. Failing
     // here short-circuits codegen pass-3, matching the worker outbox
@@ -2283,12 +2280,11 @@ pub fn compile_scxml_with_imports(
         &all_externs,
     )?;
 
-    // ── C13-α-1 + C13-α-2 deploy-aware cross-doc validators ──
+    // ── Deploy-aware cross-doc link validators ──
     //
-    // Closes the deferred-orchestrator-wiring debt named in
-    // `c13_alpha_1_landed.md` + `c13_alpha_2_landed.md`. When `deploy`
+    // When `deploy`
     // is `Some`, three validators fire in spec-section walk order:
-    //   1. `validate_links_cross_doc` (§5.K Q-C13-5 a) — every forge
+    //   1. `validate_links_cross_doc` (§5.K) — every forge
     //      `<sce:link name=X>` must have a `deploy.machines.<n>.links.X`
     //      counterpart, and vice versa.
     //   2. `validate_links_burst_invariants` (§5.K lines 2489-2500) —
@@ -2298,7 +2294,7 @@ pub fn compile_scxml_with_imports(
     //      slot_size vs mtu, reassembly fragment count, trust class,
     //      stage-copy WCET.
     //
-    // All three silent-skip on `None` deploy per Q-η5 (a) precedent
+    // All three silent-skip on `None` deploy
     // (no deploy ⇒ no deploy-vs-forge axis to check). When deploy
     // is `Some`, the validators consume `&HashMap` views over the
     // pass-1 capture vectors — single source of truth for the
@@ -2311,17 +2307,17 @@ pub fn compile_scxml_with_imports(
     // burst_pps + tick_period_us + arrivals_per_tick / drain_per_second);
     // forge-side reassembly validators emit `ValidationError`
     // directly per the existing `#[from]` flow.
-    // ── Axis-3 cross-doc role validation ──
+    // ── Listener-role cross-doc validation ──
     //
     // Runs BEFORE listener-link resolution so partial-claim failures
     // surface as typed `link/...` or `scxml/...` diagnostics rather
     // than silently dropping into the listener-set union. Three typed
-    // codes from RFC Q-A7 fire here:
+    // codes fire here:
     //   - link/deploy-role-listener-without-scxml-accept-side-role
     //   - scxml/accept-side-role-without-listener-link
     //   - link/role-listener-with-non-session-arming-trust-class
     // Legacy fixtures (no explicit role / session-role declarations)
-    // silent-pass per Q-A9 staged migration discipline; the
+    // silent-pass per the staged-migration discipline; the
     // promotion to required-on-every-listener waits until every
     // fixture declares the explicit role pair.
     if let Some(deploy_cfg) = deploy {
@@ -2335,13 +2331,12 @@ pub fn compile_scxml_with_imports(
         })?;
     }
 
-    // ── C10-α listener-pair resolution + Axis-3 explicit-role
-    //    join ──
+    // ── Listener-pair resolution (explicit-role join) ──
     //
     // Computed unconditionally so deploy-aware downstream consumers
     // (the C13 cross-doc validators + the per-doc compile_forge_with_imports
     // codegen pass) see a single source of truth. Defaults to an
-    // empty set on `deploy: None` paths — silent-skip per Q-η5 (a):
+    // empty set on `deploy: None` paths — silent-skip:
     // no deploy ⇒ no machine.source × session_arming axis to scan;
     // listener-pair synthesis cannot fire. The join is the
     // explicit-role pair only — the legacy substate-driven walker
@@ -2416,8 +2411,7 @@ pub fn compile_scxml_with_imports(
             .map_err(mesh::error::MeshError::from)
             .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
-        // ── NL→IR Item C1 Path A (Atomic 3, DL-7') cross-machine
-        //    EventSchema validation ─────────────────────────────────
+        // ── Cross-machine EventSchema validation ─────────────────
         //
         // Per-machine schema visibility (derived from each statechart's
         // `<sce:import kind="event-schema">` declarations) is compared
@@ -2435,12 +2429,12 @@ pub fn compile_scxml_with_imports(
         .map_err(mesh::error::MeshError::from)
         .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
-        // ── C10-β link/inbound-event-queue-unsized ──
+        // ── link/inbound-event-queue-unsized (§5.N) ──
         //
         // Watching-zenoh RFC §5.N line 3062 verbatim — for every link
         // carrying `<sce:inbound>` events, the build must observe an
-        // event-queue capacity binding from one of two sources per
-        // Q-C10-β-4 (a): SCXML per-instance `sce:capacity="N"` on the
+        // event-queue capacity binding from one of two sources:
+        // SCXML per-instance `sce:capacity="N"` on the
         // machine's source SCXML doc (preferred), or deploy
         // `scheduler.default_event_queue_capacity` (fallback). The
         // validator walks the deploy/forge link union pair to enumerate
@@ -2457,7 +2451,7 @@ pub fn compile_scxml_with_imports(
         //   4. `deploy.machines.<m>.scheduler.default_event_queue_capacity`
         //      → per-machine fallback.
         //
-        // Silent-skip per Q-C10-β-9 (a) when the link has no inbound
+        // Silent-skip when the link has no inbound
         // events declared OR when no SCXML imports the link (no FSM
         // downstream to size).
         for device in deploy_cfg.topology.values() {
@@ -2513,7 +2507,7 @@ pub fn compile_scxml_with_imports(
         }
     }
 
-    // C6-γ2: bounded-collection codegen resolutions for the orchestrator
+    // Bounded-collection codegen resolutions for the orchestrator
     // path. CompileConst BCs copy the literal capacity through; DeployKey
     // BCs are skipped here (no deploy access on this entry point — those
     // route through [`compile_forge_with_deploy`]). For BCs with
@@ -2548,10 +2542,10 @@ pub fn compile_scxml_with_imports(
                 ))
             })
             .collect();
-    // RFC c7-wildcard W-project: element-type field schemas keyed by the
+    // Item C7 keyexpr support: element-type field schemas keyed by the
     // element-type snake name, resolved from the same candidate map. An
     // algorithm iterating a BC types each `entry.<field>` from this so the
-    // bounded-string-field → bytes-view projection (Q-W-5) can fire and so
+    // bounded-string-field → bytes-view projection can fire and so
     // a mistyped argument (`entry.callback_id` into a `bytes` param) is
     // caught rather than silently miscompiled. Independent of the
     // `<sce:index-by>` / capacity resolution above (that map is keyed by
@@ -2568,14 +2562,13 @@ pub fn compile_scxml_with_imports(
                 ))
             })
             .collect();
-    // C10-α: thread the orchestrator-resolved listener-link set into
+    // Thread the orchestrator-resolved listener-link set into
     // the per-doc ForgeCompileOptions so each `render_link_*` template
     // can synthesize the Sibling half + the post-render self-check
     // fires on the right links. The deploy-aware path always carries
     // an explicit-empty `Some(empty)` so downstream consumers can
     // distinguish "no listeners declared" from "deploy-unaware
-    // compile" (the latter must not synthesize siblings — silent-skip
-    // per Q-η5 (a)).
+    // compile" (the latter must not synthesize siblings — silent-skip).
     let listener_links_override: Option<std::collections::BTreeSet<String>> =
         deploy.map(|_| listener_links.clone());
     let needs_override = !bc_resolutions.is_empty()
@@ -2637,22 +2630,22 @@ pub fn compile_scxml_with_imports(
         outputs.push((basename.to_string(), out));
     }
 
-    // Watching-zenoh RFC §5.2 Round F-α / F-α-2 — codegen-entry checks
+    // Watching-zenoh RFC §5.2 — codegen-entry checks
     // that depend on `deploy.yaml`. (i) Non-MCU backend reject of
-    // `platform.c11_section_attribute` (Q-Round-F-D3) fires before any
+    // `platform.c11_section_attribute` fires before any
     // SCXML codegen because the section attribute itself has no axis
     // outside C11; the early exit keeps templates from emitting
     // half-applied directives. (ii) `platform.driver_root` override
-    // (Q-Round-F-D5) is resolved per-machine and threaded into
+    // is resolved per-machine and threaded into
     // [`compile_scxml_lang_typed_with_section`] so each statechart
     // resolves `<sce:driver>` against the deploy-specified root.
-    // (iii) F-α-2 `c11_section_attribute.class` is captured here and
+    // (iii) `c11_section_attribute.class` is captured here and
     // routed through the same entry so the C11 backend's `SCE_SM_FN`
     // macro expands to `__attribute__((section("<class>")))` and every
     // statechart function definition carries the prefix. The first
     // machine carrying either override wins per-orchestrator-run; the
     // single-machine common case (one `deploy.yaml`, one `c11_*` backend
-    // target) is the only shape Q-Round-F-D5 commits.
+    // target) is the only committed shape.
     let mut deploy_driver_root: Option<std::path::PathBuf> = None;
     let mut deploy_section_class: Option<String> = None;
     if let Some(deploy_cfg) = deploy {
@@ -2692,18 +2685,17 @@ pub fn compile_scxml_with_imports(
         outputs.push((basename.to_string(), out));
     }
 
-    // ── C10-β per-machine concurrency artifacts ──
+    // ── Per-machine concurrency artifacts (§5.N) ──
     //
-    // Watching-zenoh RFC §5.N lines 3041-3055 (Q-C10-β-5/-6 a). Iterate
+    // Watching-zenoh RFC §5.N lines 3041-3055. Iterate
     // `deploy.machines` and emit per-machine AP `LinkBus` + MCU
     // round-robin scheduler artifacts alongside the per-doc outputs
-    // above. The emit fires only on Rust + C11 per Q-C10-β-7 (a) and
-    // silent-skips on the deploy-unaware path (single-file CLI) per
-    // Q-C10-β-9 (a).
+    // above. The emit fires only on Rust + C11 and
+    // silent-skips on the deploy-unaware path (single-file CLI).
     //
     // Uses [`find_template_base`] rather than the per-language
     // `template_dir` parameter — the latter is the SCXML-side root
-    // (`<base>/<lang>` for some backends), while the C10-β per-machine
+    // (`<base>/<lang>` for some backends), while the per-machine
     // emitters resolve `forge/rust` and `forge/c` directly under the
     // shared template root (matching the existing
     // `compile_forge_with_imports` helper-discovery pattern at lib.rs:1338).
@@ -2733,7 +2725,7 @@ pub fn compile_scxml_with_imports(
                 )
                 .map_err(|e| Located::new(e, "deploy.yaml", None, None))?;
                 if !files.is_empty() {
-                    // Per-machine C10-β scheduler artifacts are
+                    // Per-machine scheduler artifacts are
                     // synthesised from `deploy.yaml`, not the SCXML
                     // preprocessor pipeline — they have no
                     // filesystem-anchored fragment deps to forward.
@@ -2769,8 +2761,8 @@ fn language_wire_name(lang: generator::Language) -> &'static str {
     }
 }
 
-/// Recursively resolve a codec's full encode-buffer max bytes — RFC §5.B
-/// B5-ε. Mirrors the parent generator's `m.max_frame_bytes() + body_max`
+/// Recursively resolve a codec's full encode-buffer max bytes — RFC §5.B.
+/// Mirrors the parent generator's `m.max_frame_bytes() + body_max`
 /// formula (see `forge::generator` `render_codec` max-bytes computation),
 /// but applies it transitively so a parent codec that imports a
 /// variant-bearing leaf gets a correctly-sized encode buffer.
@@ -2780,7 +2772,7 @@ fn language_wire_name(lang: generator::Language) -> &'static str {
 /// — the model-level value omits variant arm body / repeat body /
 /// tlv-chain body sizing because at parse time the imported codecs
 /// aren't enriched yet. For non-variant leaves that's correct (no
-/// arm body to add); for a variant-bearing import (B5-ε's first
+/// arm body to add); for a variant-bearing import (the first
 /// reachable consumer: `codec_zenoh_ext_envelope` carrying a TLV
 /// chain of variant-bodied `codec_zenoh_ext_entry` entries) the
 /// parent's chain MAX_BYTES would silently truncate ZBuf-encoded
@@ -3173,7 +3165,7 @@ fn validate_and_enrich_imports(
                 ctx.namespace = id.namespace;
                 ctx.member_type = id.member_type;
             }
-            // RFC §5.B variant primitive (B1-β) + B5-ε surface G:
+            // RFC §5.B variant primitive + recursive max-bytes enrichment:
             // codec imports carry their *full recursive* max_frame_bytes
             // forward so the parent codec's variant emit / TLV chain
             // emit / repeat emit can size its encoded buffer to fit the
@@ -3225,14 +3217,14 @@ fn validate_and_enrich_imports(
                         &mut fallible_visited,
                     )
                 };
-                // RFC Axis-1 inversion: capture the imported leaf
+                // Flag inversion: capture the imported leaf
                 // codec's declared `<sce:flag-inputs>` so the parent-
                 // local cross-doc validator can confirm every input is
                 // bound exactly once via the parent's authored
                 // `<sce:flag-bind>` directives. Empty when the leaf
                 // declares no flag-inputs.
                 ctx.codec_flag_inputs = cm.flag_inputs.clone();
-                // RFC §5.B Y3 atomic 2b-ii peek-byte: capture the
+                // RFC §5.B peek-byte: capture the
                 // imported body codec's FIRST `<sce:flags>`-bearing
                 // field at byte_offset=0 so the parent variant's
                 // peek-byte cross-codec validator can confirm the
@@ -3245,9 +3237,9 @@ fn validate_and_enrich_imports(
                     .iter()
                     .find(|f| !f.flags.is_empty() && f.byte_offset == 0)
                     .map(|f| (f.id.clone(), f.flags.clone()));
-                // RFC variant-default-uniformity Atomic γ-3b-go: the
+                // Variant-default uniformity (Go): the
                 // imported codec emits a `NewT()` constructor iff its
-                // own β-go gate fires — either any field declares a
+                // own constructor gate fires — either any field declares a
                 // `<sce:flag value=>` wire-MID, or it carries a
                 // `<sce:variant>` whose marked-default arm steers a
                 // non-zero Variant body pointer. Mirrors the
@@ -3263,12 +3255,12 @@ fn validate_and_enrich_imports(
                     .as_ref()
                     .is_some_and(|v| v.arms.iter().any(|a| a.is_default));
                 ctx.codec_emits_default_ctor = inner_has_flag_default || inner_has_default_arm;
-                // RFC B5-ν inversion enrichment: for ANY variant
+                // Parent-tag dispatch inversion enrichment: for ANY variant
                 // codec import (regardless of legacy tag_scope), surface
-                // the arm count and default-arm presence so the new
-                // parent-local validator can enforce Q-D-3a (no
-                // dispatch + no default arm = decode ambiguity) and
-                // Q-D-5a (flag width fits arm count).
+                // the arm count and default-arm presence so the
+                // parent-local validator can reject decode ambiguity
+                // (no dispatch + no default arm) and confirm the flag
+                // width fits the arm count.
                 if let Some(v) = cm.variant.as_ref() {
                     ctx.codec_variant_arms_for_inversion = Some(
                         v.arms
@@ -3277,24 +3269,25 @@ fn validate_and_enrich_imports(
                             .collect(),
                     );
                     ctx.codec_variant_has_default_arm = Some(v.arms.iter().any(|a| a.is_default));
-                    // RFC B5-ν inversion β shape: tag-less `<sce:variant>`
+                    // Caller-tag dispatch shape: tag-less `<sce:variant>`
                     // signals the imported codec uses caller-tag dispatch.
                     // Parents importing this codec MUST supply a `tag: u8`
                     // arg at the leaf's decode call site.
                     ctx.codec_variant_is_caller_tag = v.tag_field.is_none();
-                    // RFC B5-ν dispatcher-self-gen Gap 6 (extended to β):
+                    // Dispatcher self-generation note:
                     // Rust requires explicit `use` for each item from a
                     // module; the dispatcher emits both the `<Stem>` struct
                     // AND the `<Stem>Variant` enum, and the parent's
-                    // `b5_nu_derivation_block` match references the Variant
+                    // `parent_tag_derivation_block` match references the Variant
                     // enum. Brace-list emit fires when this parent declares
                     // OR-inversion dispatch on the import — either via the
                     // new `<sce:variant-dispatch>` (`embed_dispatch.is_some()`)
                     // or the legacy `tag="parent.X"` form (carried through
-                    // `codec_b5_nu_parent_tag_flag`). Other variant imports
+                    // `codec_parent_tag_flag`). Other variant imports
                     // (own-field Local dispatch) do not need the Variant
                     // enum at the parent — keep the bare-struct import to
-                    // preserve byte-stable goldens for non-B5-ν consumers.
+                    // preserve byte-stable goldens for consumers without
+                    // parent-tag dispatch.
                     let _ = v; // variant existence already gated this branch
                     let needs_variant_import = imp.embed_dispatch.is_some();
                     if matches!(*language, generator::Language::Rust) && needs_variant_import {
@@ -3310,7 +3303,7 @@ fn validate_and_enrich_imports(
                     }
                 }
             }
-            // RFC §5.C B6-α' cross-resolution: the link kind's
+            // RFC §5.C cross-resolution: the link kind's
             // `<sce:rx-pool>` / `<sce:tx-pool>` cross-validator
             // (`validate_link_pool_framer_resolution`) needs the
             // imported pool's slot capacity at resolve time. Captured
@@ -3332,7 +3325,7 @@ fn validate_and_enrich_imports(
             if let forge::model::ForgeDocument::BoundedCollection(bcm) = &doc {
                 ctx.bc_element_snake = Some(filters::to_snake_case(bcm.element_type.clone()));
             }
-            // NL→IR Item C1 Path A Atomic 2: capture the per-language
+            // Enum import enrichment: capture the per-language
             // qualified type name of imported `sce:kind="enum"`
             // documents so downstream renderers can resolve
             // `SceType::Enum(EnumRef { alias })` via
@@ -3397,7 +3390,7 @@ fn validate_and_enrich_imports(
     Ok(())
 }
 
-/// RFC §5.C B6-α' cross-resolution: validate that every `<sce:rx-pool>`
+/// RFC §5.C cross-resolution: validate that every `<sce:rx-pool>`
 /// / `<sce:tx-pool>` reference on a link kind binds to a buffer-pool
 /// whose `<sce:slot-size>` is >= the framer codec's recursive
 /// worst-case encoded byte count.
@@ -3488,17 +3481,17 @@ fn validate_link_pool_framer_resolution(
     Ok(())
 }
 
-/// RFC §5.D C2-β worker cross-resolution. Mirrors
+/// RFC §5.D worker cross-resolution. Mirrors
 /// `validate_link_pool_framer_resolution` shape — operates on a single
 /// parsed worker doc and resolves its `<sce:link-rx ref>` +
 /// `<sce:outbox ref>` against `parsed.imports`.
 ///
-/// Q-C2-3 (a) lock 2026-05-10 originally specified a separate
-/// `ForgeWorkerRegistry`; Gate B preflight (2026-05-11) surfaced that
+/// An earlier design (2026-05-10) specified a separate
+/// `ForgeWorkerRegistry`; preflight (2026-05-11) surfaced that
 /// the registry would carry zero production population today (worker
-/// docs cannot import other workers per C2-α layer 1, and the spec
+/// docs cannot import other workers per the §5.D layering, and the spec
 /// example's outbox ref targets a state machine, not another worker).
-/// The textbook narrowing follows the η-precedent of resolving cross-
+/// The textbook narrowing resolves cross-
 /// refs directly against `parsed.imports` filtered by kind:
 ///   - `link-rx ref` → must match a `kind="link"` import alias.
 ///   - `outbox ref` (when present) → first-dot prefix must match a
@@ -3523,7 +3516,7 @@ fn validate_worker_cross_refs(
     // ── link-rx ref → kind=link import alias ──
     //
     // Sort the kind=link candidate set so `Fix::ReplaceOneOf` payload
-    // bytes stay deterministic (η-precedent: every `Fix` candidate
+    // bytes stay deterministic (precedent: every `Fix` candidate
     // list is sorted to keep the wire id reproducible).
     let mut link_aliases: Vec<String> = imports
         .iter()
@@ -3563,20 +3556,19 @@ fn validate_worker_cross_refs(
     Ok(())
 }
 
-/// watching-zenoh RFC §5.D C2 follow-up Atomic B (Q-Outbox-1..9
-/// LOCKED 2026-05-12). SCXML-side `<sce:outbox ref="<owner>.<suffix>">`
+/// watching-zenoh RFC §5.D worker-outbox cross-resolution
+/// (decisions locked 2026-05-12). SCXML-side `<sce:outbox ref="<owner>.<suffix>">`
 /// cross-resolution against the build's
 /// [`forge::cross_doc_registry::SceCrossDocRegistry`]. Three failure
-/// axes map onto three spec-extension diagnostics per Q-Outbox-8 (c)
-/// lock:
+/// axes map onto three spec-extension diagnostics:
 ///
-/// * `worker/outbox-target-suffix-invalid` — suffix !=  `inbox` (Q-Outbox-6
-///   (a) strict-suffix lock). Includes the missing-dot case where the
+/// * `worker/outbox-target-suffix-invalid` — suffix !=  `inbox`
+///   (strict-suffix rule). Includes the missing-dot case where the
 ///   ref lacks a `.` entirely; suffix surfaces as the empty string.
 /// * `worker/outbox-ref-unknown` — owner segment not registered in any
 ///   parsed forge / SCXML doc.
 /// * `worker/outbox-target-wrong-kind` — owner registered but kind is
-///   neither statechart nor worker (Q-Outbox-3 (b) recipient kinds).
+///   neither statechart nor worker (the accepted recipient kinds).
 ///
 /// Suffix check fires first because it is syntactic (no registry
 /// dependency); if it passes, owner resolution runs against the
@@ -3611,19 +3603,18 @@ fn validate_worker_outbox_references(
             continue;
         };
 
-        // Decompose `<owner>.<suffix>` per Q-Outbox-6 (a) shape lock.
+        // Decompose `<owner>.<suffix>` per the strict-suffix shape.
         // `split_once` on `.` yields the first dot's left/right pair,
         // matching spec line 895's `session_fsm.inbox` form. A
         // missing dot routes to suffix-invalid with empty suffix —
-        // the strict-suffix lock rejects bare `<owner>` per Q-Outbox-6
-        // recommendation rationale (option (c) "bare owner" rejected
-        // as a deprecated-on-arrival form).
+        // the strict-suffix rule rejects bare `<owner>` ("bare owner"
+        // was rejected as a deprecated-on-arrival form).
         let (owner, suffix) = match outbox_value.split_once('.') {
             Some(pair) => pair,
             None => (outbox_value.as_str(), ""),
         };
 
-        // ── Suffix-invalid axis (Q-Outbox-6 (a) strict-suffix) ──
+        // ── Suffix-invalid axis (strict-suffix) ──
         if suffix != "inbox" {
             return Err(Located::new(
                 ValidationError::WorkerOutboxTargetSuffixInvalid {
@@ -3639,7 +3630,7 @@ fn validate_worker_outbox_references(
             ));
         }
 
-        // ── Owner resolution axis (Q-Outbox-3 (b) recipient kinds) ──
+        // ── Owner resolution axis (recipient kinds) ──
         //
         // Closed candidate union: every registered statechart +
         // worker, each suffixed with `.inbox` so candidates are
@@ -3695,15 +3686,15 @@ fn validate_worker_outbox_references(
     Ok(())
 }
 
-/// watching-zenoh RFC §5.L C6 Atomic γ1 — parse a
+/// watching-zenoh RFC §5.L — parse a
 /// `<sce:capacity source="deploy" key>` body into its
 /// `(machine_segment, limit_name)` components, matching the
 /// `machines.<machine>.limits.<limit>` shape from spec line 2570 +
 /// 2583-2585. Returns `None` when the key has fewer than four
 /// dot-separated segments OR doesn't start with `machines.` / contain
-/// `.limits.`, signalling the validator to silent-skip per the
-/// Q-η5 (a) precedent (malformed keys are tolerated at this layer
-/// because α's parser accepts opaque strings; γ1 only resolves the
+/// `.limits.`, signalling the validator to silent-skip
+/// (malformed keys are tolerated at this layer
+/// because the parser accepts opaque strings; this helper only resolves the
 /// shape the spec defines).
 ///
 /// The `limit_name` may itself contain dots (e.g. `local.subs.v2`);
@@ -3724,17 +3715,17 @@ fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
     Some((machine_segment, limit_name))
 }
 
-/// watching-zenoh RFC §5.L C6 Atomic γ2/γ3 — look up `field` on the
+/// watching-zenoh RFC §5.L — look up `field` on the
 /// resolved element-type [`forge::model::ForgeDocument`] and return
 /// the abstract [`forge::model::SceType`] of that field. Each
 /// backend's render fn converts the abstract type to its language-
 /// specific string at codegen time via the existing `rust_type` /
-/// watching-zenoh RFC §5.C line 806 (C10-α) — `Accepting.*` substate
+/// watching-zenoh RFC §5.C line 806 — `Accepting.*` substate
 /// presence walk over an `SCXMLModel`. The session-FSM canonical state
 /// shape (`docs/session-fsm.md` §2.6, §2.7) names the accept-side
 /// states `Accepting`, `Accepting.AwaitingInitSyn`,
 /// `Accepting.SentInitAck`, etc.; the spec's dot-glob `Accepting.*`
-/// is matched here by an ID prefix walk (Sub-Q-C10-α-3 (a) lock).
+/// is matched here by an ID prefix walk.
 ///
 /// Match rule: a state-id matches when it is exactly `Accepting` OR
 /// it begins with `Accepting.` (with the trailing dot). The trailing-
@@ -3747,7 +3738,7 @@ pub fn accepting_substate_present(model: &SCXMLModel) -> bool {
         .any(|id| id == "Accepting" || id.starts_with("Accepting."))
 }
 
-/// Axis-3 inversion — resolve the
+/// Listener-role resolution — resolve the
 /// listener-pair set from the explicit cross-document role
 /// declarations on both sides:
 ///
@@ -3760,9 +3751,9 @@ pub fn accepting_substate_present(model: &SCXMLModel) -> bool {
 /// present` walker × `trust_class: session_arming`) was deleted —
 /// the predicate function remains alive as the data source for the
 /// parser-time migration-helper diagnostic
-/// `scxml/accept-side-states-without-role-declaration` per Q-A8 (c).
+/// `scxml/accept-side-states-without-role-declaration`.
 ///
-/// The Q-A4 (d) matrix validator (in
+/// The role/trust-class matrix validator (in
 /// [`validate_cross_doc_listener_roles`]) independently enforces
 /// that any link with `role: listener` also carries
 /// `trust_class: session_arming`, so the resolution path here does
@@ -3799,7 +3790,7 @@ pub fn resolve_listener_links(
                 // (deploy declares a machine whose SCXML is not part
                 // of this compile call; the existing reassembly /
                 // burst validators silent-skip on the same join
-                // absence per Q-η5 (a)).
+                // absence).
                 continue;
             };
             let scxml_declares_accept_side = model
@@ -3818,15 +3809,14 @@ pub fn resolve_listener_links(
     listener_links
 }
 
-/// Axis-3 inversion (Q-A4 + Q-A7)
-/// — cross-document validation of explicit listener-role declarations.
+/// Cross-document validation of explicit listener-role declarations.
 /// Runs BEFORE [`resolve_listener_links`] so a partial-claim failure
 /// is surfaced as a typed `link/...` or `scxml/...` diagnostic rather
 /// than silently dropping into the listener-set union.
 ///
 /// Three checks (each NeutralOrDeterministic non_overlap class):
 ///
-/// 1. **Q-A4 (d) matrix**: deploy declares `role: listener` but
+/// 1. **Role/trust-class matrix**: deploy declares `role: listener` but
 ///    `trust_class != session_arming` ⇒
 ///    `link/role-listener-with-non-session-arming-trust-class`.
 /// 2. **Deploy→SCXML partial-claim**: deploy declares `role: listener`
@@ -3838,13 +3828,13 @@ pub fn resolve_listener_links(
 ///    machine has `role: listener` ⇒
 ///    `scxml/accept-side-role-without-listener-link`.
 ///
-/// Silent-pass cases (matching Q-A4 row table):
+/// Silent-pass cases (matching the role/trust-class row table):
 /// - `(role, trust_class) = (Some(Listener), SessionArming)`
 /// - `role = Some(Initiator)` (forward-compat, v1 has no consumer)
 /// - `role = None` (legacy fixtures pre-migration; partial-claim
 ///   discipline applies only when explicit declarations are present)
 ///
-/// Per RFC Q-A9 this validator does NOT require `role: listener`
+/// Per the staged-migration discipline this validator does NOT require `role: listener`
 /// on every `session_arming` link — that promotion waits until
 /// every fixture migrates to the explicit-role shape. It requires
 /// consistency only among the explicit declarations actually present.
@@ -3858,7 +3848,7 @@ pub fn validate_cross_doc_listener_roles(
 
     for device in deploy_cfg.topology.values() {
         for (machine_name, machine) in device.machines.iter() {
-            // Q-A4 (d) matrix — runs independently of the SCXML
+            // Role/trust-class matrix — runs independently of the SCXML
             // model lookup since it's a deploy-internal check.
             for (link_name, link) in machine.links.iter() {
                 if !matches!(link.role, Some(LinkRole::Listener)) {
@@ -3900,8 +3890,7 @@ pub fn validate_cross_doc_listener_roles(
             // model to be in this compile call. Silent-skip when the
             // model is absent (mirrors `resolve_listener_links`
             // discipline; the existing cross-doc reassembly + burst
-            // validators silent-skip on the same join absence per
-            // Q-η5 (a)).
+            // validators silent-skip on the same join absence).
             let machine_source = machine.source.as_str();
             let model = scxml_models.iter().find(|(path, _)| {
                 path.file_name()
@@ -3960,7 +3949,7 @@ pub fn validate_cross_doc_listener_roles(
 /// element-type before this helper runs from the orchestrator
 /// populator, so a `None` return here would imply the model layout
 /// changed since validation — unreachable on a healthy build.
-/// RFC c7-wildcard W-project: the element-type's full
+/// Item C7 keyexpr support: the element-type's full
 /// `(field_id, SceType, length_field)` schema, in declaration order.
 /// Mirrors [`extract_bounded_collection_index_field_sce_type`] but returns
 /// every field rather than one named axis, so an algorithm iterating the
@@ -3968,7 +3957,7 @@ pub fn validate_cross_doc_listener_roles(
 ///
 /// The third tuple slot is the codec field's **explicit** `length_field`
 /// (the `sce:length-field` source), carried so the C11 borrowed-bytes-view
-/// projection (Q-W-5) references the *actual* length sibling rather than
+/// projection references the *actual* length sibling rather than
 /// guessing `<field>_len`. `None` for a procedure field, or for a codec
 /// field with no length reference (a tail / fixed `bytes` field, whose C11
 /// length sibling the codec emit auto-names `<field>_len` — there the
@@ -4040,7 +4029,7 @@ fn extract_bounded_collection_index_field_sce_type(
 /// * `collection/multi-writer-without-atomics` — `<sce:concurrency>`
 ///   declared as `multi-writer` while the build's aggregated
 ///   `externs` slice contains no entry whose registry-
-///   resolved purpose starts with `\"atomic-\"`. The C4 atomic A
+///   resolved purpose starts with `\"atomic-\"`. The §5.I
 ///   baseline registry tags `atomic-load` / `atomic-store` /
 ///   `atomic-cas-*` / `atomic-fetch-*` uniformly via the
 ///   [`forge::intrinsic_registry::Symbol::purpose`] field, so a single
@@ -4084,14 +4073,14 @@ fn validate_bounded_collection_cross_refs(
     element_type_names.sort();
 
     // Pre-compute the build-wide atomic-import surface answer once —
-    // every BC checks against the same global slice. The C4 atomic A
+    // every BC checks against the same global slice. The §5.I
     // baseline registry tags load/store/cas-weak/cas-strong/fetch
     // uniformly via `purpose: "atomic-<op>"`, so a single prefix scan
     // covers the entire family. Symbols absent from the baseline
     // registry (would-be plugin extensions) are silently skipped — a
     // plugin author who wires an atomic-family symbol still benefits
     // from declaring the appropriate purpose tag at registry merge
-    // time per C4 atomic B's plugin loader contract.
+    // time per the §5.I plugin loader contract.
     let build_has_atomic_import = externs.iter().any(|decl| {
         forge::intrinsic_registry::lookup_symbol(&decl.name)
             .is_some_and(|sym| sym.purpose.starts_with("atomic-"))
@@ -4180,10 +4169,10 @@ fn validate_bounded_collection_cross_refs(
     Ok(())
 }
 
-/// RFC §5.I lines 1755-1756 C2-β — codegen-invariant guard for SPSC
+/// RFC §5.I lines 1755-1756 — codegen-invariant guard for SPSC
 /// inbox ordering vs cross-core placement. Silent-skip when
-/// `ForgeCompileOptions.worker_placement` is `None` (Q-η5 (a)
-/// precedent: deploy-unaware path doesn't know cross-core
+/// `ForgeCompileOptions.worker_placement` is `None`
+/// (deploy-unaware path doesn't know cross-core
 /// information). When present, walks the placement slice for an entry
 /// matching the worker's name; fires
 /// `worker/inbox-ordering-relaxed-across-cores` when the worker's
@@ -4210,7 +4199,7 @@ fn validate_worker_inbox_ordering_placement(
     let entries = match placement {
         Some(p) => p,
         // Deploy-unaware path — cannot determine cross-core layout,
-        // so silent-skip per Q-η5 (a) precedent. C2-γ wires the
+        // so silent-skip. The deploy-aware path wires the
         // production populator from deploy.yaml.
         None => return Ok(()),
     };
@@ -4278,9 +4267,9 @@ fn discover_stateless_signature(
         // the declared `<sce:signature>` (params in positional order, an
         // optional return). Capturing it here lets `infer_types` resolve the
         // param/return types of a cross-algorithm dispatch (`eq(a, b)`), which
-        // the c7-wildcard W-project byte-view projection consumes: a `bytes`
+        // the byte-view projection consumes: a `bytes`
         // parameter receiving a bounded-string element field is projected to a
-        // borrowed view at the call site (Q-W-5 (a) lock). Before this arm the
+        // borrowed view at the call site. Before this arm the
         // catch-all left `param_types`/`ret_type` empty, so cross-algorithm
         // calls inferred `Unknown` (harmless for C7's verbatim-arg dispatch,
         // insufficient for the type-driven projection).
@@ -4352,31 +4341,31 @@ fn discover_stateful_member_fields(
         ForgeDocument::Timer(_) => {}
         // RFC §5.C: Link is stateful (owns an `impl Link` driver) but
         // exposes no SCXML-expression-visible typed fields — the rx /
-        // tx surface is method-only, and B6-α has no consumer that
+        // tx surface is method-only, and no consumer
         // calls them from authored expressions. Empty Vec keeps the
-        // exhaustive match honest; a later atomic that exposes
-        // method-typed members will add the method discovery to
+        // exhaustive match honest; exposing method-typed members is
+        // consumer-gated and would add the method discovery to
         // `discover_stateful_member_methods`, not field discovery.
         ForgeDocument::Link(_) => {}
         // RFC §5.E: BufferPool is stateful (owns slot table + freelist)
-        // but exposes no SCXML-expression-visible typed fields in B7-α
+        // but exposes no SCXML-expression-visible typed fields
         // — acquire/release/slot/slot_mut/free_count are method-only.
         // Member discovery defers to the first authored consumer that
         // calls them via `<sce:call alias="..."/>` (analogous to Link's
         // method-only stance).
         ForgeDocument::BufferPool(_) => {}
         // RFC §5.D: Worker owns SPSC inbox state but exposes no
-        // SCXML-expression-visible typed fields in C2-α — inbox
+        // SCXML-expression-visible typed fields — inbox
         // producer/consumer pair, optional outbox, link-rx binding
         // are all instance state but only addressable through methods
-        // emitted at C2-β codegen time. Member discovery defers to
+        // emitted at codegen time. Member discovery defers to
         // the first authored `<sce:call alias="..."/>` consumer.
         ForgeDocument::Worker(_) => {}
         // RFC §5.L: BoundedCollection owns the slot table, occupancy
         // mask, generation counters as instance state but exposes no
-        // SCXML-expression-visible typed fields in C6-α — the
+        // SCXML-expression-visible typed fields — the
         // insert/remove/get/iter/len/capacity API is method-only per
-        // spec lines 2609-2619 and lands in C6-γ codegen. Member
+        // spec lines 2609-2619 (bounded-collection codegen). Member
         // discovery defers to the first authored `<sce:call>` consumer.
         ForgeDocument::BoundedCollection(_) => {}
         // Stateless kinds handled via stateless_signature path.
@@ -4387,12 +4376,12 @@ fn discover_stateful_member_fields(
         | ForgeDocument::Lookup(_)
         | ForgeDocument::Interpolation(_)
         | ForgeDocument::Algorithm(_)
-        // NL→IR Item C1 Path A: Enum declares typed variants — no
+        // Enum declares typed variants — no
         // SCXML-expression-visible member fields. Authors reference
         // variants as `<EnumName>.<variant>` (resolved through the
         // cross-kind binding pass), not as alias.field.
         | ForgeDocument::Enum(_)
-        // NL→IR Item C1 Path A: EventSchema is parse-time metadata.
+        // EventSchema is parse-time metadata.
         // The payload contract lives in `_event.data.<field>`
         // resolution (handled by `event_schema_check.rs`, keyed by
         // SCXML event name) not as `alias.field` access on the
@@ -4444,7 +4433,7 @@ fn discover_stateful_member_methods(
         // - Timer:     fire() → ()
         // - Link (RFC §5.C): rx() → Option<RxFrame>, tx(TxFrame) → Result<(), LinkError>
         // - Worker (RFC §5.D): inbox.try_push(T) → bool, inbox.try_pop() → Option<T>
-        //   (C2-β codegen emits the producer/consumer split; method names
+        //   (the worker codegen emits the producer/consumer split; method names
         //   firm up alongside the template's `Producer<T,N>`/`Consumer<T,N>`
         //   API surface).
         ForgeDocument::Validator(_)
@@ -4455,9 +4444,10 @@ fn discover_stateful_member_methods(
         | ForgeDocument::BufferPool(_)
         | ForgeDocument::Worker(_)
         // RFC §5.L BoundedCollection: methods insert/remove/get/
-        // find_by_index/iter/len/capacity per spec lines 2609-2619 land
-        // in C6-γ codegen. Until the first `<sce:call alias.insert(...)>`
-        // consumer surfaces, member method discovery returns empty.
+        // find_by_index/iter/len/capacity per spec lines 2609-2619 are
+        // emitted by the bounded-collection codegen. Until the first
+        // `<sce:call alias.insert(...)>` consumer surfaces, member
+        // method discovery returns empty.
         | ForgeDocument::BoundedCollection(_) => Vec::new(),
         // Stateless kinds: caller filters via `is_stateful` before reaching
         // here. Listed so the match stays exhaustive — adding a new
@@ -4468,11 +4458,11 @@ fn discover_stateful_member_methods(
         | ForgeDocument::Lookup(_)
         | ForgeDocument::Interpolation(_)
         | ForgeDocument::Algorithm(_)
-        // NL→IR Item C1 Path A: Enum exposes no instance methods —
+        // Enum exposes no instance methods —
         // typed enum declaration emits a type, not a callable. Same
         // empty stance as stateless kinds.
         | ForgeDocument::Enum(_)
-        // NL→IR Item C1 Path A: EventSchema exposes no instance
+        // EventSchema exposes no instance
         // methods — the schema is type-only metadata, addressed via
         // SCXML event names, not method calls on an alias.
         | ForgeDocument::EventSchema(_) => Vec::new(),
@@ -4550,14 +4540,14 @@ fn discover_primary_function(
         // etc. (spec lines 2609-2619). No callsite-visible primary
         // free function name.
         | forge::model::ForgeDocument::BoundedCollection(_)
-        // NL→IR Item C1 Path A: Enum emits a type declaration, not
+        // Enum emits a type declaration, not
         // a callable. Authors reference variants as `<EnumName>.<v>`,
         // resolved through the cross-kind binding pass; no primary
         // function name belongs at this site.
         | forge::model::ForgeDocument::Enum(_)
-        // NL→IR Item C1 Path A: EventSchema is parse-time metadata
+        // EventSchema is parse-time metadata
         // with no primary function callsite — the schema document
-        // does not emit a callable surface (Atomic 4 emits a payload
+        // does not emit a callable surface (the codegen emits a payload
         // struct, not a free function, and the SCXML event handler
         // is dispatched implicitly by event-name match, not by alias
         // function call).
@@ -5592,8 +5582,7 @@ pub fn inject_server_model_mutations(
     ))
 }
 
-/// Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3 Atomic
-/// B-γ1): apply the deploy.yaml
+/// Watching-zenoh RFC §5.J.2 + §5.L (item C3): apply the deploy.yaml
 /// `machines.<m>.scheduler.default_event_queue_capacity` fallback
 /// to a model whose per-instance `<scxml sce:capacity="N">` is
 /// absent.
@@ -5603,10 +5592,9 @@ pub fn inject_server_model_mutations(
 ///     already set by parser ⇒ this function is a no-op),
 ///   - fallback to deploy.yaml `default_event_queue_capacity` when
 ///     attribute is absent,
-///   - both absent ⇒ remains `None` (B-γ2's no_std codegen path
-///     will surface the missing-capacity diagnostic when the
-///     heapless adoption lands; B-γ1 tolerates None because the
-///     std codegen path does not consume the value yet).
+///   - both absent ⇒ remains `None` (the heapless no_std codegen
+///     path surfaces a missing-capacity diagnostic when it needs
+///     the literal; the std codegen path tolerates `None`).
 ///
 /// Machine-name resolution mirrors
 /// [`inject_server_model_mutations`]: try `model.name` first, then
@@ -6080,7 +6068,7 @@ pub enum Pipeline {
 /// - `model.needs_http_send` (any `<send type="BasicHTTPEventProcessor">`
 ///   with an http(s) target/targetexpr)
 ///
-/// Single-diagnostic-per-call matches the C2-outbox precedent (one
+/// Single-diagnostic-per-call matches the worker-outbox precedent (one
 /// rejection per pass; the next surfaces after the author repairs the
 /// first). Axis order is **most-specific first** so the author repair
 /// path names the offending construct directly:
@@ -6099,13 +6087,11 @@ pub enum Pipeline {
 /// human-readable summary so downstream agents can dispatch on
 /// `key_fragments` while authors get a readable message.
 ///
-/// Returns `Ok(())` when no axis fires — note that today this does
-/// **not** mean the generated Rust code will compile under `no_std`;
-/// the runtime crate's `engine.rs` + remaining `helpers/` modules still
-/// use std types. B-γ2c (this commit) closes the helper cfg-gates for
-/// the three Q-Port-1/2/3 sites alongside the author-visible
-/// `<data src>` and `<invoke>` rejections; the full compile-target gate
-/// remains the responsibility of a later atomic.
+/// Returns `Ok(())` when no axis fires. The author-visible
+/// `<data src>` and `<invoke>` rejections here complement the runtime
+/// crate's no_std cfg-gates; the generated `no_std` emission is
+/// compile-verified end-to-end by the `sce-nostd-build-probe` thumb
+/// target gate.
 pub fn validate_no_std_compatibility(
     model: &model::SCXMLModel,
     scxml_path: &std::path::Path,
@@ -6118,7 +6104,7 @@ pub fn validate_no_std_compatibility(
         .unwrap_or("unknown")
         .to_string();
 
-    // C3 Atomic B-γ2c (watching-zenoh RFC §5.J.2 lines 1989-1994): the
+    // Watching-zenoh RFC §5.J.2 lines 1989-1994: the
     // no_std variant has zero alloc dependency. Filesystem-coupled
     // helpers in `sce-rust-runtime/src/helpers/datamodel_init.rs` are
     // gated to `!no_std`; reject `<data src="...">` up-front so the
@@ -6159,7 +6145,7 @@ pub fn validate_no_std_compatibility(
         .into());
     }
 
-    // C3 Atomic B-γ2c: invoke processing in
+    // Watching-zenoh RFC §5.J.2: invoke processing in
     // `sce-rust-runtime/src/helpers/invoke_processing.rs` is
     // whole-module gated to `!no_std` because `Arc<Mutex<Vec<…>>>` +
     // `HashMap` are alloc-coupled. `model.invokes` is the aggregated
@@ -6470,7 +6456,7 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C B6-α: link kind happy path. A
+    /// Watching-zenoh RFC §5.C: link kind happy path. A
     /// well-formed `<sce:kind="link">` document with udp class +
     /// framer ref + minimal events → Rust generator emits a
     /// `<Pascal><L: Link>` wrapper struct that routes RX/TX through
@@ -6544,7 +6530,7 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C B6-α: link kind reject — missing
+    /// Watching-zenoh RFC §5.C: link kind reject — missing
     /// `<sce:framer ref>` raises the dedicated `link/framer-missing`
     /// diagnostic at parse time, not at codegen. Pairs with the
     /// happy-path test above to verify the framer requirement is
@@ -6585,7 +6571,7 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C B6-γ: `<sce:link-class>` body text
+    /// Watching-zenoh RFC §5.C: `<sce:link-class>` body text
     /// outside the closed enum (RFC §5.C lines 765-771 — `udp` /
     /// `tcp` / `serial` / `websocket` / `raw_eth`) is caught by the
     /// XSD `linkClassType` enumeration in the default pipeline,
@@ -6636,10 +6622,10 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C B6-γ: `<sce:backpressure>` element is
-    /// required on every link kind. B6-α tolerated the missing
-    /// element by parser-side defaulting to `drop`; γ promotes the
-    /// absence to a hard error (`link/backpressure-undeclared`) so
+    /// Watching-zenoh RFC §5.C: `<sce:backpressure>` element is
+    /// required on every link kind. Earlier behaviour tolerated the missing
+    /// element by parser-side defaulting to `drop`; now the
+    /// absence is a hard error (`link/backpressure-undeclared`) so
     /// authors must declare `drop` / `block` / `signal-event`
     /// intentionally. The repair is structural element-add, so the
     /// fix surface is None and the message prose enumerates the
@@ -6684,7 +6670,7 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C B6-η: `<sce:link-class>` must be admitted by
+    /// Watching-zenoh RFC §5.C: `<sce:link-class>` must be admitted by
     /// the deploy-resolved `platform.os`. The strict-literal matrix at
     /// [`forge::model::LinkClass::admits_os`] mirrors RFC §5.C lines 765-771
     /// — `serial` admits `bare_metal` only. Compiling an `udp_scout`-style
@@ -6693,7 +6679,7 @@ mod tests {
     /// `link/class-unsupported-on-target`. The new entry
     /// [`compile_forge_with_deploy`] is the only path that fires this
     /// diagnostic; the deploy-unaware [`compile_forge_from_string`] path
-    /// stays silent (Q-η5 (a)) so the 6 existing link tests are unaffected.
+    /// stays silent (absent-input silent-skip) so the 6 existing link tests are unaffected.
     #[test]
     fn link_serial_on_linux_target_rejects_via_link_class_unsupported_on_target() {
         use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
@@ -6761,7 +6747,7 @@ topology:
             d.message,
         );
 
-        // Q-η5 (a) skip-when-no-deploy: the same SCXML compiled via the
+        // Skip-when-no-deploy: the same SCXML compiled via the
         // deploy-unaware entry passes parse + validate (it only fails
         // later at codegen-on-non-MCU which is a different diagnostic).
         // Verifying the η check is layered on top of the existing
@@ -6825,7 +6811,7 @@ topology:
         }
     }
 
-    /// Watching-zenoh RFC §5.C B6-β: link kind c11 happy path. Same
+    /// Watching-zenoh RFC §5.C: link kind c11 happy path. Same
     /// fixture as the rust happy test → C11 generator emits a header
     /// composing a `sce_forge_link_t` driver via the canonical Linux-
     /// kernel separate-vtable shape (`const sce_forge_link_ops_t *ops` +
@@ -6833,7 +6819,7 @@ topology:
     /// (contract include + wrapper struct + init/rx/tx static-inline
     /// helpers + LINK_CLASS / LINK_FRAMER_REF / LINK_BACKPRESSURE
     /// macros + ops-pointer dispatch) so codegen drift fails the
-    /// build. Per Q-β1=(b) the dispatch goes through
+    /// build. The dispatch goes through
     /// `self->driver.ops->rx(self->driver.self, out)` — pattern (a)
     /// inline-vtable would route through `self->driver.rx(...)` with
     /// no `ops` indirection, so this assertion is what locks the
@@ -6899,17 +6885,17 @@ topology:
             "tx helper must return sce_forge_link_status_t; full source:\n{body}",
         );
 
-        // Separate-vtable dispatch (Q-β1=(b)): the indirection goes
+        // Separate-vtable dispatch: the indirection goes
         // through `ops` rather than per-instance function pointers.
         // This assertion is the load-bearing pin for the textbook
         // Linux-kernel pattern decision.
         assert!(
             body.contains("self->driver.ops->rx(self->driver.self, out)"),
-            "rx dispatch must route through `ops` (Q-β1=(b) separate vtable); full source:\n{body}",
+            "rx dispatch must route through `ops` (separate vtable); full source:\n{body}",
         );
         assert!(
             body.contains("self->driver.ops->tx(self->driver.self, frame)"),
-            "tx dispatch must route through `ops` (Q-β1=(b) separate vtable); full source:\n{body}",
+            "tx dispatch must route through `ops` (separate vtable); full source:\n{body}",
         );
 
         // Author-declared static metadata round-trips into #defines
@@ -8586,9 +8572,9 @@ topology:
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    // ── §5.E B7-α buffer-pool kind ─────────────────────────────
+    // ── §5.E buffer-pool kind ─────────────────────────────────
 
-    /// Watching-zenoh RFC §5.E B7-γ: buffer-pool kind happy path.
+    /// Watching-zenoh RFC §5.E: buffer-pool kind happy path.
     /// A well-formed `<sce:kind="buffer-pool">` document → Rust
     /// generator emits a `<Pascal>` struct owning a `[[u8; SLOT_SIZE];
     /// SLOT_COUNT]` storage table + per-slot `slot_states` array +
@@ -8697,7 +8683,7 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E B7-γ: the emitted Rust buffer-pool
+    /// Watching-zenoh RFC §5.E: the emitted Rust buffer-pool
     /// module must compile end-to-end as a real Rust source file —
     /// byte assertions alone do not prove the phantom-typed `Slot<S>`
     /// API is well-formed (per `feedback_byte_goldens_not_compile.md`).
@@ -8761,8 +8747,8 @@ topology:
     /// Watching-zenoh RFC §5.E / §5.J.4: buffer-pool is the second
     /// `KindClass::McuClass` kind (after Link). Authoring against
     /// cpp/kotlin/go/python raises `codegen/mcu-class-kind-on-non-mcu-language`
-    /// via the existing A6 gate. C11 succeeds since B7-β landed the
-    /// c11 template (`__attribute__((section, aligned))` storage table +
+    /// via the existing MCU-class kind gate. C11 succeeds — the
+    /// c11 template ships (`__attribute__((section, aligned))` storage table +
     /// sidecar linker fragment); the c11 happy-path emission is
     /// pinned by `buffer_pool_c11_happy_path_emits_storage_struct_and_linker_fragment`.
     #[test]
@@ -8805,8 +8791,8 @@ topology:
             );
         }
         // C11 takes the `KindClass::McuClass` arm and `template_ships`
-        // returns true now that B7-β landed the c11 buffer-pool
-        // template + linker fragment sidecar — emission succeeds. The
+        // returns true — the c11 buffer-pool
+        // template + linker fragment sidecar exist, so emission succeeds. The
         // load-bearing tokens are asserted in the c11 happy-path test
         // (`buffer_pool_c11_happy_path_emits_storage_struct_and_linker_fragment`);
         // here we only pin that the dispatch reaches `EmitOutcome::Emit`
@@ -8816,22 +8802,18 @@ topology:
             diagnostic_label: "rx_pool_sram1.scxml",
         };
         let out = compile_forge_from_string(scxml, label, generator::Language::C11)
-            .expect("buffer-pool on c11 must succeed since B7-β landed");
-        assert_eq!(
-            out.files.len(),
-            2,
-            "c11 emits header + linker fragment per B7-β contract",
-        );
+            .expect("buffer-pool must emit on c11");
+        assert_eq!(out.files.len(), 2, "c11 emits header + linker fragment",);
     }
 
-    /// Watching-zenoh RFC §5.E B7-α: η-second-consumer pattern.
+    /// Watching-zenoh RFC §5.E: section-placement validation.
     /// `<sce:section>` body must resolve against the deploy-resolved
     /// machine's `memory.sram_regions` map. Compiling a buffer-pool
     /// with `<sce:section>nonexistent</sce:section>` against a machine
     /// declaring `sram1` + `dtcm` raises `mem/pool-section-conflict`
     /// with `Fix::ReplaceOneOf` candidates listing the declared regions.
     /// The new entry [`compile_forge_with_deploy`] is the only path that
-    /// fires this diagnostic (Q-η5 (a) precedent — silent skip when
+    /// fires this diagnostic (absent-input precedent — silent skip when
     /// deploy is unavailable).
     #[test]
     fn buffer_pool_section_not_in_deploy_memory_rejects_via_mem_pool_section_conflict() {
@@ -8908,18 +8890,19 @@ topology:
             d.message,
         );
 
-        // Q-η5 (a) skip-when-no-deploy: same SCXML compiled via the
+        // Skip-when-no-deploy: same SCXML compiled via the
         // deploy-unaware entry passes parse + validate (rust generates
-        // the slot table without section validation). Verifying η is
-        // layered on top of the existing pipeline rather than added
-        // to it.
+        // the slot table without section validation). This verifies the
+        // deploy-aware check is layered on top of the existing pipeline
+        // rather than added to it.
         let no_deploy_out =
             compile_forge_with_deploy(scxml, label, generator::Language::Rust, None, None)
-                .expect("no-deploy path must skip section validation per Q-η5 (a)");
+                .expect("no-deploy path must skip section validation (deploy-unaware silent skip)");
         assert_eq!(no_deploy_out.files.len(), 1);
     }
 
-    /// Watching-zenoh RFC §5.E B7-α: positive case for η-second-consumer.
+    /// Watching-zenoh RFC §5.E: positive case for section-placement
+    /// validation.
     /// A pool with `<sce:section>sram1</sce:section>` against a machine
     /// declaring `sram1` in `memory.sram_regions` passes validation and
     /// produces the same Rust output as the deploy-unaware entry. Pins
@@ -8974,17 +8957,17 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E B7-α negative coverage. The XSD at
+    /// Watching-zenoh RFC §5.E negative coverage. The XSD at
     /// `schemas/sce-forge-ext.xsd` constrains `<sce:cache-policy>` to
     /// the closed enumeration AND `<sce:slot-count>` / `<sce:slot-size>`
     /// / `<sce:alignment>` to `xs:positiveInteger` — so bogus body text
     /// and zero-valued integers are XSD-pre-empted in the default
-    /// pipeline (γ precedent: `LinkLinkClassUnknown` is XSD-pre-empted
+    /// pipeline (precedent: `LinkLinkClassUnknown` is XSD-pre-empted
     /// likewise; the parser-side check is the schema-skipped fallback
     /// pinned by the wire-format golden, not by a live default-pipeline
     /// test). Required-element absence (`<sce:section>` etc.) is enforced
     /// only by the parser because the XSD does not constrain
-    /// foreign-namespace `<scxml>` body composition for B7-α.
+    /// foreign-namespace `<scxml>` body composition for buffer-pool kinds.
     #[test]
     fn buffer_pool_parser_negative_coverage() {
         use crate::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
@@ -9061,10 +9044,10 @@ topology:
         );
     }
 
-    // ── §5.E B7-β buffer-pool kind c11 parity + linker fragment ─
+    // ── §5.E buffer-pool kind c11 parity + linker fragment ─────
 
-    /// Watching-zenoh RFC §5.E B7-β: c11 parity for the rust slot
-    /// table landed in B7-α. Compiling a well-formed buffer-pool to
+    /// Watching-zenoh RFC §5.E: c11 parity for the rust slot
+    /// table. Compiling a well-formed buffer-pool to
     /// `Language::C11` emits a header that places the storage table
     /// in `__attribute__((section(".sram1_<name>"), aligned(32)))` and
     /// pairs it with a sidecar linker fragment carrying the matching
@@ -9166,7 +9149,7 @@ topology:
         // the move to a single source of truth.
         assert!(
             header.contains("#include <sce/sample.h>"),
-            "B7-ε integration: pool header must `#include <sce/sample.h>` so \
+            "Sample-runtime integration: pool header must `#include <sce/sample.h>` so \
              the runtime header's seven-state FSM + tag-checked handle + \
              Layer 1 typestate family reach consumer builds; full header:\n{header}",
         );
@@ -9215,7 +9198,7 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E B7-γ: the emitted C11 buffer-pool
+    /// Watching-zenoh RFC §5.E: the emitted C11 buffer-pool
     /// header must compile end-to-end as a real C source — byte
     /// assertions alone do not prove the tag-checked handle API is
     /// well-formed (per `feedback_byte_goldens_not_compile.md`).
@@ -9267,7 +9250,7 @@ topology:
         // The header is `static`-only; #include it from a tiny
         // translation unit so the compile drives every static
         // function. `__used__` would suppress unused warnings on a
-        // hypothetical extension, but for B7-γ we just call each
+        // hypothetical extension, but here we just call each
         // entry point so the storage / state arrays count as used.
         let driver_path = tmp.join("driver.c");
         std::fs::write(
@@ -9311,7 +9294,7 @@ int main(void) {
         .expect("write driver.c");
 
         let exec_path = tmp.join("driver");
-        // B7-ε integration: the generated pool header pulls in
+        // sample.h integration: the generated pool header pulls in
         // `<sce/sample.h>` from `sce-c-runtime/include/`, so the host
         // gcc compile must see that include path alongside the temp
         // dir holding the generated header.
@@ -9365,9 +9348,9 @@ int main(void) {
         );
     }
 
-    /// Watching-zenoh RFC §5.E B7-β: η-third-consumer extension on
+    /// Watching-zenoh RFC §5.E: region-size check on
     /// [`compile_forge_with_deploy`]. After section validation passes
-    /// (B7-α prerequisite gate), the storage footprint must fit the
+    /// (the prerequisite gate), the storage footprint must fit the
     /// resolved region's `size`. A pool declaring `slot_count=32` ×
     /// `slot_size=4096` (= 128 KiB) against a region of 64 KiB raises
     /// `mem/pool-too-large` with the bytes_required / region_size
@@ -9441,7 +9424,7 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E B7-β positive path: a pool whose
+    /// Watching-zenoh RFC §5.E positive path: a pool whose
     /// storage footprint fits the resolved region size passes
     /// validation under [`compile_forge_with_deploy`] and produces
     /// the same (.h, .ld) pair as the deploy-unaware c11 entry.
@@ -9490,7 +9473,8 @@ topology:
         assert_eq!(out.files.len(), 2, "c11 emits header + linker fragment");
     }
 
-    /// Watching-zenoh RFC §5.E B7-β codegen-invariant force-fixture.
+    /// Watching-zenoh RFC §5.E codegen-invariant force-fixture (linker
+    /// padding sentinel).
     /// The `mem/inter-pool-padding-not-emitted` self-check inspects
     /// the rendered linker fragment for the `. = ALIGN(N);` sentinel
     /// (§5.E lines 1059-1064). In normal use the template always
@@ -9542,7 +9526,8 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E B7-ε codegen-invariant force-fixture.
+    /// Watching-zenoh RFC §5.E codegen-invariant force-fixture
+    /// (sample.h include guard).
     /// The `pool/sample-typestate-attributes-disabled` self-check
     /// guards the `#include <sce/sample.h>` directive in
     /// `tools/codegen/templates/forge/c/buffer_pool.h.jinja2`. The
@@ -9610,7 +9595,7 @@ topology:
         // descend through the version range that supports the
         // consumable family (Clang 3.4+, but only Clang 9+ ships both
         // the warn_unused_result combination + thread-safety analysis
-        // we depend on per Q-ε1).
+        // we depend on).
         let candidates: &[&str] = &[
             "clang", "clang-19", "clang-18", "clang-17", "clang-16", "clang-15", "clang-14",
             "clang-13", "clang-12", "clang-11", "clang-10", "clang-9",
@@ -9628,7 +9613,7 @@ topology:
         None
     }
 
-    /// Watching-zenoh RFC §5.E B7-ε Q-ε7: Clang `-Wconsumed`
+    /// Watching-zenoh RFC §5.E: Clang `-Wconsumed`
     /// `-Wthread-safety` rejects three Layer 1 typestate misuse
     /// patterns against the runtime header
     /// `sce-c-runtime/include/sce/sample.h`:
@@ -9772,7 +9757,7 @@ int main(void) {
         }
     }
 
-    /// Watching-zenoh RFC §5.E B7-ε Q-ε7: the silently-inert axis.
+    /// Watching-zenoh RFC §5.E: the silently-inert axis.
     /// On non-Clang toolchains the Layer 1 attribute family (per
     /// `<sce/sample.h>`) expands to empty per spec lines 1444-1453;
     /// the emitted pool header + transitively pulled-in sample.h must
@@ -9881,7 +9866,7 @@ int main(void) { (void)0; return 0; }
             crate_dir.join("../tools/codegen/templates/forge/c/buffer_pool.h.jinja2");
         let body = std::fs::read_to_string(&template_path).unwrap_or_else(|e| {
             panic!(
-                "template {} must exist for B7-ε integration: {e}",
+                "template {} must exist for the sample-runtime integration: {e}",
                 template_path.display(),
             )
         });
@@ -9895,16 +9880,16 @@ int main(void) { (void)0; return 0; }
         );
     }
 
-    // ── §5.C / §5.E B6-side schema co-landing ──────────────────
+    // ── §5.C / §5.E link-side pool-ref schema ──────────────────
 
-    /// Watching-zenoh RFC §5.C body + §5.E B7-α schema-only: a link
+    /// Watching-zenoh RFC §5.C body + §5.E schema-only: a link
     /// document with `<sce:rx-pool ref="..."/>` / `<sce:tx-pool ref="..."/>`
     /// children parses successfully and emits the pool refs as
     /// `pub const RX_POOL` / `pub const TX_POOL` on the wrapper struct.
-    /// This is the B6-side schema-only co-landing — no cross-resolution
-    /// validator yet (`link/pool-slot-smaller-than-framer-max` defers
-    /// to a later atomic that wires pool ↔ framer through
-    /// `compile_forge_with_imports`).
+    /// This test pins the link-side schema-only surface; the
+    /// cross-resolution validator (`link/pool-slot-smaller-than-framer-max`,
+    /// `validate_link_pool_framer_resolution`) is wired through
+    /// `compile_forge_with_imports` and is not exercised here.
     #[test]
     fn link_with_rx_pool_tx_pool_emits_constants() {
         let scxml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -9958,7 +9943,7 @@ int main(void) { (void)0; return 0; }
         );
     }
 
-    /// watching-zenoh RFC §5.E B7-η' Atomic A1: link-side
+    /// watching-zenoh RFC §5.E stage-pool gate: link-side
     /// `<sce:stage-pool ref="X"/>` lowers to a `STAGE_POOL` const on
     /// the Rust side and a `_LINK_STAGE_POOL` macro on the C11 side,
     /// mirroring the `<sce:rx-pool>` / `<sce:tx-pool>` precedent. The
@@ -10029,7 +10014,7 @@ int main(void) { (void)0; return 0; }
         );
     }
 
-    /// RFC §5.C B6-α' cross-resolution fixtures. Three sibling files in
+    /// RFC §5.C cross-resolution fixtures. Three sibling files in
     /// a tempdir — link.scxml + scout_frame_codec.scxml + a buffer-pool —
     /// drive `compile_forge_with_imports` through enrichment so the
     /// link's `<sce:rx-pool>` / `<sce:tx-pool>` ref can be cross-checked
@@ -10200,15 +10185,14 @@ int main(void) { (void)0; return 0; }
         }
     }
 
-    /// Smoke check that the new B7-ε prereq runtime header
+    /// Smoke check that the prereq runtime header
     /// `sce-c-runtime/include/sce/sample.h` is well-formed C11. Drives
     /// gcc under `-std=c11 -Wall -Wextra -Werror` against a tiny
     /// translation unit that `#include`s the header and exercises the
     /// `_Static_assert` invariants + macro expansions. The clang-axis
     /// Layer 1 typestate verification (`-Wconsumed -Wthread-safety`
-    /// rejecting use-after-take + double-take + callback-leak) is the
-    /// B7-ε atomic's responsibility — gated on §5.E codegen integration
-    /// landing the `sce_sample_t` consumer surface. This smoke test is
+    /// rejecting use-after-take + double-take + callback-leak) is
+    /// covered by the dedicated Clang typestate tests above. This smoke test is
     /// the runtime-header-side prereq's silent-broken-hook guard:
     /// without it, a typo in the macro family or the `_Static_assert`
     /// list would land unobserved until ε's clang test catches it
@@ -10279,7 +10263,7 @@ int main(void) {
             .arg("-Wextra")
             .arg("-Werror")
             // `__has_attribute(consumable)` is false on host gcc; the
-            // header's Q-ε4 `#warning` (Clang-detected + attributes
+            // header's `#warning` (Clang-detected + attributes
             // unavailable) only fires under Clang, so gcc compiles
             // cleanly. The empty-macro path is the silently-inert
             // Layer 1 surface the spec calls out at lines 1444-1453.

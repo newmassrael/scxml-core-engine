@@ -5,7 +5,7 @@
      Mirrors zenoh-pico `_z_declaration_encode` / `_z_declaration_decode`
      (src/protocol/codec/declarations.c:137-180) — pure dispatcher on
      the per-MID 5-bit identifier in the first byte. Each arm references
-     an existing Y1 declaration body codec (decl/undecl × keyexpr /
+     an existing declaration body codec (decl/undecl × keyexpr /
      subscriber / queryable / token + decl_final). The outer header
      carrier (1B mid 5-bit + N/M/Z flag bits at bits 5/6/7) is shared
      across all 9 arms — each arm's sub-codec consumes only the
@@ -22,7 +22,7 @@
                               threading.
        arm body : variant arm bytes (each arm's own VLE id +
                   optional wireexpr embed + optional ext chain — per
-                  the existing Y1 sub-codec wire shapes, unchanged).
+                  the existing sub-codec wire shapes, unchanged).
 
      Arm coverage (mirrors `_Z_DECL_*_MID` / `_Z_UNDECL_*_MID`):
        0x00 → codec_zenoh_decl_kexpr      (Y1, parent.N)
@@ -37,8 +37,8 @@
        <sce:default> → codec_zenoh_decl_final     (catch-all preserves
                                              runtime mid for round-trip)
 
-     Composition: B1-γ flags (header) + B5-β multi-bit-flag variant
-     dispatch + B5-γ Parent-scope parent-flag threading (each arm's
+     Composition: flags flags (header) + multi-bit dispatch multi-bit-flag variant
+     dispatch + parent-flags Parent-scope parent-flag threading (each arm's
      `<sce:requires-parent-flags carrier="header">` matches this
      dispatcher's local `<sce:flags id="header">` — same upstream
      bit-reuse pattern as codec_zenoh_interest_body where the local

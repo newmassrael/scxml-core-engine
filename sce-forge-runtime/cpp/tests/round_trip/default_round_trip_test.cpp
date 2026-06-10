@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// RFC variant-default-uniformity Atomic γ-3 cpp half — runtime round-trip
+// RFC variant-default-uniformity cpp half — runtime round-trip
 // property test. Mirrors sce-forge-runtime/rust/tests/forge_default_round_trip.rs
 // for the C++ backend: compiles the generated codecs into the test binary
 // and runs `T{}.encode_to_vec().decode()` to prove the watching-zenoh R87 defect

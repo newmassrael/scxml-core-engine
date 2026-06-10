@@ -1617,7 +1617,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     add_test(NAME mesh_communication_error_verification COMMAND mesh_communication_error_test)
 
     # ── ReasonCode catalog drift guard (SCE_MESH.md §16.7) ──────────
-    # Axis-5 inversion fix — binds the C++ `SCE::Mesh::ReasonCode`
+    # Reason-code catalog binding — binds the C++ `SCE::Mesh::ReasonCode`
     # enum + `kReasonCodeTable` to the canonical §16.7 row catalog
     # in SCE_MESH.md. Bidirectional coverage assertion catches:
     #   * variant added to enum without §16.7 row update;

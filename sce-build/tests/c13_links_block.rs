@@ -89,11 +89,11 @@ fn minimal_links_block_parses_with_defaults() {
     assert_eq!(link.burst_pps, None);
     assert_eq!(link.rx_dispatch, None);
     assert!(link.domain_attrs.is_none());
-    // Q-C13-3 (a) conditional default: WorkerTick when burst_pps absent.
+    // Conditional default: WorkerTick when burst_pps absent.
     assert_eq!(link.resolved_rx_dispatch(), RxDispatch::WorkerTick);
 }
 
-/// Q-C13-3 (a) conditional default: `IsrToPool` when `burst_pps`
+/// Conditional default: `IsrToPool` when `burst_pps`
 /// declared (and `rx_dispatch` not explicitly set).
 #[test]
 fn rx_dispatch_default_isr_when_burst_pps_declared() {
@@ -112,7 +112,7 @@ fn rx_dispatch_default_isr_when_burst_pps_declared() {
     assert_eq!(link.resolved_rx_dispatch(), RxDispatch::IsrToPool);
 }
 
-/// Full schema: every C13-α-1 link field present + WCET-extension
+/// Full schema: every links-block link field present + WCET-extension
 /// platform fields populated.
 #[test]
 fn full_links_schema_parses() {
@@ -258,8 +258,9 @@ fn link_burst_pps_missing_on_isr_dispatch_fires() {
 /// Negative: `trust_class: established_session` (Fragment-carrying) +
 /// `mtu_bytes` absent. Under-approximation per
 /// `MeshDeployLinkMtuMissingOnFragmentingLink` doc-comment — uses
-/// trust-class as proxy for "Fragment-FSM-bound link" until C13-α-2's
-/// precise reassembly-pool cross-doc step lands.
+/// trust-class as proxy for "Fragment-FSM-bound link"; the precise
+/// reassembly-pool cross-doc step (`validate_reassembly_cross_doc`)
+/// refines this downstream.
 #[test]
 fn link_mtu_missing_on_fragmenting_link_fires() {
     let yaml = deploy_prelude_with_links(
@@ -278,11 +279,11 @@ fn link_mtu_missing_on_fragmenting_link_fires() {
     assert_eq!(link_name, "udp_data");
 }
 
-/// Q-C13-2 (a) lock evolution: C13-β landed the anti-flood fields, so
+/// Lock evolution: the anti-flood fields landed, so
 /// the prior "deferred field rejects" pin no longer holds. The test
 /// is repointed to assert that the deny_unknown_fields gate still
 /// rejects an actually-unknown field name (`bogus_future_field`) so
-/// the schema-stability contract stays exercised. C13-β's own
+/// the schema-stability contract stays exercised. The anti-flood
 /// integration tests (`c13_beta_antiflood.rs`) cover positive +
 /// negative semantics for the new fields.
 #[test]
@@ -303,7 +304,7 @@ fn unknown_link_field_rejects_under_deny_unknown_fields() {
     );
 }
 
-/// Cross-doc Q-C13-5 (a): forge `<sce:link name="X">` exists but no
+/// Cross-doc one-sided declaration: forge `<sce:link name="X">` exists but no
 /// deploy `machines.<n>.links.X` entry. Validator
 /// [`validate_links_cross_doc`] is exposed for orchestrator wiring.
 #[test]
@@ -331,7 +332,7 @@ fn link_not_declared_in_deploy_fires() {
     assert_eq!(candidates, vec!["udp_scout".to_string()]);
 }
 
-/// Cross-doc Q-C13-5 (a): deploy declares `udp_data` but no forge link
+/// Cross-doc one-sided declaration: deploy declares `udp_data` but no forge link
 /// doc by that name exists.
 #[test]
 fn link_not_declared_in_forge_fires() {
@@ -381,8 +382,8 @@ fn link_cross_doc_happy_when_names_match() {
 }
 
 /// PlatformConfig WCET extensions: all 4 new fields parse + carry
-/// through unchanged. Per Q-C13-6 (a) lock — consumers (§5.B aggregate
-/// WCET + C9-β stage-copy-WCET) attach in separate atomics.
+/// through unchanged. Consumers (§5.B aggregate WCET + the
+/// reassembly stage-copy WCET check) attach downstream.
 #[test]
 fn platform_wcet_extensions_parse() {
     let yaml = r#"

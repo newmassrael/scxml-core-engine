@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: present-if + length-ref STRING (RFC §5.B —
-     primitive demo). Mirrors B5-μ X1's
+     primitive demo). Mirrors codec_repeat_present_if_basic's
      two-fixture trunk pattern (primitive + realistic consumer); the
      realistic parent-scope consumer is `codec_zenoh_wireexpr`.
 
-     Closes the deferral noted in B5-ζ Surface H — the parser ban on
+     Closes the deferral noted in string — the parser ban on
      `sce:type="string" + sce:present-if` was deferred "until a
-     consumer surfaces" (parser.rs:1583-1597 pre-Y0a). zenoh-pico
+     consumer surfaces" (parser.rs:1583-1597 pre-). zenoh-pico
      `_z_wireexpr_encode` (codec/message.c:115-125) is that consumer:
      the wireexpr's UTF-8 suffix is gated on the caller's per-MID
-     header N bit. Y0a lifts the ban with this primitive demo + the
+     header N bit. lifts the ban with this primitive demo + the
      realistic body codec.
 
      Wire shape (1 or 2+N bytes):
@@ -18,16 +18,16 @@
        bytes 2..: text      (UTF-8 string, length=text_len, max 32,
                              present iff carrier.has_text)
 
-     Co-gating contract (author trust, mirrors B2-β bytes precedent):
+     Co-gating contract (author trust, mirrors present-if-gating bytes precedent):
      when `text` carries `sce:present-if="carrier.has_text"`, the
      length source `text_len` MUST also carry the IDENTICAL
      predicate. The streaming decoder unwraps `text_len` only inside
      the gated branch, so a non-gated `text_len` paired with a gated
      `text` would emit code that reads the optional as if it were
-     unwrapped (same hazard as B2-β bytes — author keeps both gates
+     unwrapped (same hazard as gated bytes — author keeps both gates
      identical).
 
-     Wrap shape per language (mirrors B5-ζ string + B2-β present-if):
+     Wrap shape per language (mirrors string string + present-if-gating present-if):
        Rust:   `Option<u8>` text_len + `Option<String>` text
        Cpp:    `std::optional<uint8_t>` + `std::optional<std::string>`
        Kotlin: `UByte?` + `String?`

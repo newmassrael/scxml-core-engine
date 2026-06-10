@@ -21,7 +21,7 @@ typedef struct {
     uint8_t payload;
 } codec_peek_arm_a_t;
 
-/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+/* RFC variant-default-uniformity (C11): designated-initializer
  * macro carrying the codec's wire-MID-baked defaults. C has no Default
  * trait — round-trip safety (`codec_peek_arm_a_t x = CODEC_PEEK_ARM_A_DEFAULT_INIT;
  * codec_peek_arm_a_t_encode(&x)` decodes back to the same arm)

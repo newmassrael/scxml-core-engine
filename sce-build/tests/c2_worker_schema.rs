@@ -1,7 +1,7 @@
-//! C2-α — Worker kind schema + parse-time shared-state author guard.
+//! Worker kind schema + parse-time shared-state author guard.
 //!
-//! Per RFC §5.D lines 858-913 + spec line 911 layered enforcement (Q-C2-7
-//! (a) lock 2026-05-10): the schema vertical slice covers
+//! Per RFC §5.D lines 858-913 + spec line 911 layered enforcement
+//! (locked 2026-05-10): the schema vertical slice covers
 //! `<sce:link-rx>` / `<sce:inbox>` / `<sce:outbox>` / `<sce:body>`, and
 //! the parse-time author guard fires `worker/shared-mutable-state` on:
 //!   1. `<sce:import kind="worker">` siblings (cross-worker imports
@@ -11,7 +11,8 @@
 //!      _iolocation, <outbox-target>]`).
 //!
 //! Cross-resolution (link-rx ref + outbox ref), inbox ordering codes,
-//! and deploy-aware scheduler-config validators defer to C2-β/γ.
+//! and deploy-aware scheduler-config validators live in
+//! `c2_worker_beta.rs` / `c2_worker_gamma.rs`.
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};
 use sce_build::forge::error::{ForgeError, Located, ValidationError, WorkerSharedStateReason};
@@ -412,7 +413,7 @@ fn worker_shared_state_layers_share_diagnostic_code() {
 }
 
 /// Spec anchor: `worker/shared-mutable-state` resolves to
-/// "watching-zenoh RFC §5.D" per the C2-α spec-anchor mapping.
+/// "watching-zenoh RFC §5.D" per the worker spec-anchor mapping.
 #[test]
 fn worker_shared_state_spec_anchor_matches_rfc_section() {
     let anchor = DiagnosticCode::WorkerSharedMutableState.spec_anchor();

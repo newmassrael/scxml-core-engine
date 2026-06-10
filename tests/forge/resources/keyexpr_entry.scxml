@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   RFC c7-wildcard W-project — element-type codec for the bounded-string
-  element-field projection (Q-W-5 (a) lock). Sibling of the C7
+  element-field projection (locked decision). Sibling of the C7
   `subscription_entry.scxml`, but the matchable field is a bounded
   UTF-8 keyexpr string rather than an interned uint32 id — the runtime-
   variable representation the wildcard matcher requires (RFC §1 G2).

@@ -213,7 +213,7 @@ fn happy_outbox_to_statechart_alongside_link() {
 
 #[test]
 fn happy_outbox_to_worker_basic() {
-    // Q-Outbox-3 (b) — worker→worker outbox is legal. `rx_loop`
+    // Worker→worker outbox is legal. `rx_loop`
     // routes to `tx_loop.inbox`; both workers in the same build.
     let dir = tempdir().expect("tempdir");
     let link = write_doc(dir.path(), "scout_link.scxml", &link_doc("scout_link"));
@@ -240,7 +240,7 @@ fn happy_outbox_to_worker_basic() {
 
 #[test]
 fn happy_outbox_to_worker_self_reference() {
-    // Q-Outbox-3 (b) admits worker→self outbox (degenerate but legal:
+    // Worker→self outbox is admitted (degenerate but legal:
     // the validator surfaces resolution failures, not stylistic
     // guidance). `rx_loop.inbox` resolves to the same worker that
     // owns the outbox.
@@ -465,7 +465,7 @@ fn wrong_kind_outbox_to_link_with_valid_alts() {
 
 #[test]
 fn invalid_suffix_typo_inbx_fires() {
-    // Q-Outbox-6 (a) strict-suffix lock — suffix `inbx` !=  `inbox`.
+    // Strict-suffix rule — suffix `inbx` !=  `inbox`.
     // Diagnostic `worker/outbox-target-suffix-invalid` carries a
     // deterministic `Fix::ReplaceWith` for `{owner}.inbox`.
     let dir = tempdir().expect("tempdir");
@@ -513,7 +513,7 @@ fn invalid_suffix_typo_inbx_fires() {
 
 #[test]
 fn invalid_suffix_bare_owner_no_dot_fires() {
-    // Q-Outbox-6 (a) strict-suffix lock — bare `<owner>` without
+    // Strict-suffix rule — bare `<owner>` without
     // `.inbox` suffix violates the strict shape. Routes to
     // suffix-invalid with an empty suffix string.
     let dir = tempdir().expect("tempdir");

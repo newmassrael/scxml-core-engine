@@ -785,7 +785,7 @@ impl SCXMLParser {
         //   * send-side EventSchema typecheck
         //     (`forge::event_schema_check::check_send_side`) — same
         //     filter, applied at `<send>` / `<raise>` payload sites.
-        //   * mesh DL-7' cross-machine validator
+        //   * mesh cross-machine validator
         //     (`mesh::deploy::validate_event_schemas_cross_machine`)
         //     — compares per-machine import visibility so cross-
         //     machine sends whose sender and receiver declare
@@ -3293,14 +3293,14 @@ impl SCXMLParser {
         Ok(())
     }
 
-    /// Axis-3 inversion — collect every top-level
+    /// Listener-role declaration parsing — collect every top-level
     /// `<sce:session-role kind="..."/>` element on the SCXML root.
     /// Each declaration nominates one
     /// [`crate::model::SessionRoleKind`] variant; the orchestrator
     /// (`crate::resolve_listener_links`) joins these against
     /// deploy.yaml `LinkConfig.role` declarations.
     ///
-    /// Parse-time guarantees (Q-A2 (b) + Q-A5 (a) locks):
+    /// Parse-time guarantees:
     /// - `kind` attribute is required (missing fires
     ///   `validation/missing-attribute` via [`ValidationError::
     ///   MissingAttribute`]).
@@ -3316,7 +3316,7 @@ impl SCXMLParser {
     ///   exercised but the multi-kind case has no codegen consumer).
     ///
     /// Strays under non-root elements are ignored by design (same
-    /// rationale as `parse_sce_drivers` Q-Round-F-D6); the SCXML root
+    /// rationale as `parse_sce_drivers`); the SCXML root
     /// content model is `xs:any namespace="##any" lax`.
     fn parse_sce_session_roles(
         &self,
@@ -3677,7 +3677,7 @@ fn scxml_child<'a>(
         .find(|c| c.is_element() && c.tag_name().name() == tag && is_scxml_ns(c))
 }
 
-/// watching-zenoh RFC §5.E B7-η' helper: collect all `<sce:on-sample>`
+/// watching-zenoh RFC §5.E helper: collect all `<sce:on-sample>`
 /// children of a `<state>` or `<parallel>` element into the supplied
 /// vector, in document order. The namespace check (`SCE_NAMESPACE`)
 /// distinguishes `<sce:on-sample>` from a hypothetical W3C-namespace
@@ -3704,12 +3704,12 @@ fn collect_on_sample_blocks(parent: &roxmltree::Node, out: &mut Vec<crate::model
         }
         let link = child.attribute("link").unwrap_or("").to_string();
         let event = child.attribute("event").unwrap_or("").to_string();
-        // Q-Callback-1 (Option α) + Q-Callback-5: the `callback`
-        // attribute is optional. When absent, codegen synthesizes a
-        // default dispatch shim (backwards-compat with Atomic A/B's
-        // landed shape). When present, [`validate_on_sample_callback_paths`]
-        // enforces the language-prefixed Rust path subset
-        // (Q-Callback-3) before any downstream consumer sees it.
+        // The `callback` attribute is optional. When absent, codegen
+        // synthesizes a default dispatch shim (backwards-compat with
+        // the link/event-only `<sce:on-sample>` shape). When present,
+        // [`validate_on_sample_callback_paths`] enforces the
+        // language-prefixed Rust path subset before any downstream
+        // consumer sees it.
         let callback = child.attribute("callback").map(|s| s.to_string());
         let document_order = out.len() as u32;
         out.push(crate::model::OnSampleNode {
@@ -3721,11 +3721,11 @@ fn collect_on_sample_blocks(parent: &roxmltree::Node, out: &mut Vec<crate::model
     }
 }
 
-/// Axis-3 inversion migration-helper (RFC Q-A8 (c) flip) —
+/// Listener-role migration-helper —
 /// fires `scxml/accept-side-states-without-role-declaration` when an
 /// SCXML carries any state-id matching the canonical session-FSM
 /// accept-side prefix (`Accepting` or `Accepting.*` per the trailing-
-/// dot guard the C10-α walker used) but has no top-level
+/// dot guard of `accepting_substate_present`) but has no top-level
 /// `<sce:session-role kind="accept-side"/>` declaration. Repurposes
 /// the predicate behaviour that was previously consumed by
 /// `resolve_listener_links`'s substate-walker join; the prefix-match
@@ -3767,7 +3767,7 @@ fn validate_axis3_accept_side_state_naming(
     ))
 }
 
-/// watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a) placement validator.
+/// watching-zenoh RFC §5.E `<sce:on-sample>` placement validator.
 /// Walks the entire document looking for `<sce:on-sample>` elements
 /// whose immediate parent is **not** `<state>` or `<parallel>`. Such
 /// strays are silently ignored by [`collect_on_sample_blocks`] (it
@@ -3832,7 +3832,7 @@ fn validate_on_sample_placement(
     Ok(())
 }
 
-/// watching-zenoh RFC §5.E B7-η' Q-OnSample-5 (a) uniqueness validator.
+/// watching-zenoh RFC §5.E `<sce:on-sample>` uniqueness validator.
 /// Each `<sce:on-sample link="X">` block must appear at most once per
 /// state — duplicate registrations on the same link compete for the
 /// same RX callback slot at runtime, producing undefined dispatch
@@ -3870,7 +3870,7 @@ fn validate_on_sample_uniqueness(
     Ok(())
 }
 
-/// watching-zenoh RFC §5.E B7-η' Q-OnSample-7 event-name conflict
+/// watching-zenoh RFC §5.E `<sce:on-sample>` event-name conflict
 /// validator. §scxml-5.10 reserves the `error.*` and `done.*`
 /// event-name families for built-in lifecycle events; an author
 /// dispatching a sample-arrival event into one of these families
@@ -3913,10 +3913,10 @@ fn validate_on_sample_event_names(
     Ok(())
 }
 
-/// watching-zenoh RFC §5.E B7-η' Atomic A2 callback path validator
+/// watching-zenoh RFC §5.E callback path validator
 /// (`pool/sample-callback-signature-non-borrow`, spec lines 1516-1519).
-/// When `<sce:on-sample callback="...">` is present (Q-Callback-1
-/// Option α extern reference), enforce the language-prefixed Rust
+/// When `<sce:on-sample callback="...">` is present (an extern
+/// reference), enforce the language-prefixed Rust
 /// path subset before any downstream consumer ever sees the value:
 ///
 /// ```text
@@ -3924,12 +3924,11 @@ fn validate_on_sample_event_names(
 /// segment  ::= NCName-equivalent ("crate" | "self" | "super" | identifier)
 /// ```
 ///
-/// SCE-side detection at A2 entry is path syntax (Q-Callback-3); the
+/// SCE-side detection here is path syntax; the
 /// signature-shape check (borrow vs owned) flows through rustc at
-/// user-crate compile time per Q-Callback-6. Both shapes raise the
+/// user-crate compile time. Both shapes raise the
 /// same spec-verbatim diagnostic code; today only the path-syntax arm
-/// is reachable. Future signature-inspection atomic (β-extension on
-/// top of α) extends the same diagnostic with richer messages.
+/// is reachable — SCE-side signature inspection is consumer-gated.
 ///
 /// `feedback_silently_broken_hooks.md` compliance: every variant of
 /// the syntax check is reachable from authoring inputs (an unknown
@@ -3970,15 +3969,15 @@ fn validate_on_sample_callback_paths(
 }
 
 /// Classify an `<sce:on-sample callback="...">` value against the
-/// Q-Callback-3 path subset. Returns `None` for accepted inputs;
+/// accepted Rust path subset. Returns `None` for accepted inputs;
 /// returns `Some(reason)` keyed by the failure mode so the diagnostic
 /// message can name the specific authoring mistake.
 ///
 /// Checks (first failure wins, in order):
 /// 1. Empty value → `EmptyPath`.
 /// 2. Missing language prefix or unknown prefix → `UnknownLanguagePrefix`.
-///    Today only `rust:` is accepted (Q-Callback-2: future axes are
-///    forward-compat schema slots). The `prefix` field carries the
+///    Today only `rust:` is accepted (other language prefixes are
+///    consumer-gated schema slots). The `prefix` field carries the
 ///    parsed prefix (or `""` when the colon is absent).
 /// 3. Path body empty after prefix (`rust:`) → `EmptyPath`.
 /// 4. Path body has a leading `::`, trailing `::`, or empty segment
@@ -4023,11 +4022,11 @@ fn classify_on_sample_callback_path(raw: &str) -> Option<crate::forge::error::Ca
     None
 }
 
-/// True iff `seg` is a valid Rust path segment per the Q-Callback-3
+/// True iff `seg` is a valid Rust path segment per the accepted
 /// subset: either one of the path keywords (`crate` / `self` /
 /// `super`) or an NCName-equivalent identifier (ASCII letter or `_`,
 /// then letters / digits / `_`). The Rust language admits `r#`-raw
-/// identifiers and Unicode identifiers; A2 keeps the subset narrow
+/// identifiers and Unicode identifiers; the validator keeps the subset narrow
 /// because `<sce:on-sample callback>` author input rarely needs them
 /// and the wider grammar amplifies the validator's surface for no
 /// observed authoring benefit.
@@ -4045,7 +4044,7 @@ fn is_rust_path_segment(seg: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// watching-zenoh RFC §5.E B7-η' Atomic B Q-OnSample-3 cross-ref
+/// watching-zenoh RFC §5.E `<sce:on-sample>` cross-ref
 /// validator. Walks every state's `on_sample_blocks` and looks each
 /// `link=` reference up in the supplied [`SceCrossDocRegistry`]
 /// (built once per build by walking every parsed `.forge` file).
@@ -4091,10 +4090,10 @@ pub fn validate_on_sample_link_references(
             match link_registry.lookup(&block.link) {
                 Some(ScxmlDocKind::Link) => {} // canonical case
                 Some(other_kind) => {
-                    // RFC §5.E B7-η' Atomic B `scxml/on-sample-link-
+                    // RFC §5.E `scxml/on-sample-link-
                     // wrong-kind`. The name resolves but the resolved
                     // doc is not a link (today: statechart or worker
-                    // per the C2-outbox follow-up registry extension).
+                    // per the worker-outbox registry extension).
                     // The original on-sample diagnostic was wired
                     // forward-compat for exactly this growth point —
                     // see error.rs `OnSampleLinkWrongKind` doc-comment.
@@ -4128,7 +4127,7 @@ pub fn validate_on_sample_link_references(
                 }
             }
 
-            // RFC §5.E B7-η' Atomic A1: `pool/sample-take-without-
+            // RFC §5.E stage-pool gate: `pool/sample-take-without-
             // stage-pool`. Every state that subscribes to a link
             // (`<sce:on-sample link="X">`) MUST be backed by a link
             // whose `<sce:stage-pool>` declares where `Sample::take()`
@@ -6886,11 +6885,11 @@ mod tests {
         );
     }
 
-    // ── watching-zenoh RFC §5.E B7-η' Atomic A — `<sce:on-sample>` ──
+    // ── watching-zenoh RFC §5.E — `<sce:on-sample>` structural tests ──
     //
     // These cover the SCXML extension's parser-AST + 3 structural
     // validator surfaces. Cross-ref behaviour (link-not-declared,
-    // link-wrong-kind) is gated on Atomic B's `SceCrossDocRegistry` and
+    // link-wrong-kind) is gated on the `SceCrossDocRegistry` and
     // is not exercised here.
 
     fn on_sample_test_doc(states_body: &str) -> String {
@@ -6909,7 +6908,7 @@ mod tests {
 
     #[test]
     fn on_sample_basic_parses() {
-        // Q-OnSample-1 (Y): the AST node is collected from a valid
+        // The AST node is collected from a valid
         // <state> parent, with link/event recorded verbatim.
         let xml = on_sample_test_doc(
             r##"  <state id="running">
@@ -6930,7 +6929,7 @@ mod tests {
 
     #[test]
     fn on_sample_multi_link_per_state_parses() {
-        // Q-OnSample-5 (a): multiple distinct links allowed in one
+        // Multiple distinct links allowed in one
         // state. Document-order indices are 0-based.
         let xml = on_sample_test_doc(
             r##"  <state id="running">
@@ -6953,7 +6952,7 @@ mod tests {
 
     #[test]
     fn on_sample_invalid_parent_at_root_rejected() {
-        // Q-OnSample-2 (a): placement rule rejects on-sample blocks
+        // The placement rule rejects on-sample blocks
         // outside <state>/<parallel>. Root-level placement is the
         // canonical author-mistake — the diagnostic surfaces the
         // crossing parent name verbatim.
@@ -6987,7 +6986,7 @@ mod tests {
     fn on_sample_invalid_parent_inside_onentry_rejected() {
         // <onentry> inside <state> looks plausible but is not one of
         // the two valid parents — the placement rule is parent-tag
-        // exact (Q-OnSample-2 (a)), not ancestor-loose.
+        // exact, not ancestor-loose.
         let xml = on_sample_test_doc(
             r##"  <state id="running">
     <onentry>
@@ -7012,7 +7011,7 @@ mod tests {
 
     #[test]
     fn on_sample_duplicate_link_rejected() {
-        // Q-OnSample-5 (a) uniqueness: same link declared twice in
+        // Uniqueness: same link declared twice in
         // one state is rejected even though multi-link fan-in is
         // allowed.
         let xml = on_sample_test_doc(
@@ -7038,7 +7037,7 @@ mod tests {
 
     #[test]
     fn on_sample_event_name_conflict_with_error_prefix_rejected() {
-        // Q-OnSample-7: event names colliding with the W3C SCXML
+        // Event names colliding with the W3C SCXML
         // §5.10 internal-event prefix family (error.*, done.*) are
         // rejected. `error.io` is the canonical regression case.
         let xml = on_sample_test_doc(
@@ -7081,12 +7080,12 @@ mod tests {
         );
     }
 
-    // ── watching-zenoh RFC §5.E B7-η' Atomic B — cross-ref ──────────
+    // ── watching-zenoh RFC §5.E — `<sce:on-sample>` cross-ref ───────
     //
     // Cross-ref validator integrates with the build's
     // SceCrossDocRegistry (populated by walking every parsed `.forge`
     // file). Tests below construct a synthetic SCXMLModel via
-    // `parse_string` (so all of Atomic A's structural validators
+    // `parse_string` (so all of the structural validators
     // fire) and then invoke `validate_on_sample_link_references`
     // with various registry shapes.
 
@@ -7130,7 +7129,7 @@ mod tests {
     #[test]
     fn cross_ref_link_resolves_when_registered() {
         // Happy path: the registry knows the link by name AND records
-        // a `<sce:stage-pool>` for it (RFC §5.E B7-η' Atomic A1) →
+        // a `<sce:stage-pool>` for it (RFC §5.E stage-pool gate) →
         // both checks pass, no diagnostic.
         use crate::forge::cross_doc_registry::SceCrossDocRegistry;
         use crate::forge::pool_registry::ForgePoolRegistry;
@@ -7220,9 +7219,9 @@ mod tests {
             .expect("states without on-sample blocks need no registry entries");
     }
 
-    // ── watching-zenoh RFC §5.E B7-η' Atomic A1 — stage-pool gate ──
+    // ── watching-zenoh RFC §5.E — stage-pool gate ──
     //
-    // A1 adds a third validator gate after the kind-resolution gates:
+    // The stage-pool gate is a third validator gate after the kind-resolution gates:
     // a registered link without `<sce:stage-pool>` cannot back an
     // `<sce:on-sample>` subscriber that ever reaches `Sample::take()`.
     // Tests below pin both arms (resolves on stage_pool present,
@@ -7291,11 +7290,11 @@ mod tests {
             .expect("link with stage_pool resolves regardless of pool registry contents");
     }
 
-    // ── watching-zenoh RFC §5.E B7-η' Atomic A2 — `callback="rust:..."` ──
+    // ── watching-zenoh RFC §5.E — `callback="rust:..."` ──
     //
-    // A2 adds optional `<sce:on-sample callback="rust:crate::path::fn">`
-    // attribute (Q-Callback-1 Option α) + `validate_on_sample_callback_paths`
-    // structural validator that enforces the Q-Callback-3 Rust path subset.
+    // The optional `<sce:on-sample callback="rust:crate::path::fn">`
+    // attribute pairs with the `validate_on_sample_callback_paths`
+    // structural validator that enforces the accepted Rust path subset.
     // Tests below pin: AST round-trip, happy path, four reachable failure
     // arms (empty, unknown prefix, malformed `::`, malformed segment).
 
@@ -7321,8 +7320,8 @@ mod tests {
 
     #[test]
     fn callback_attr_absent_round_trips_as_none() {
-        // Q-Callback-5: absence of `callback=` is a backwards-compat
-        // shape with the landed Atomic A/B `<sce:on-sample link/event>`
+        // Absence of `callback=` is a backwards-compat
+        // shape with the link/event-only `<sce:on-sample link/event>`
         // — the AST field carries `None` and downstream codegen
         // synthesizes a default dispatch shim.
         let model = parse_running_with_callback(None);
@@ -7333,7 +7332,7 @@ mod tests {
 
     #[test]
     fn callback_attr_present_round_trips_to_ast_field() {
-        // Q-Callback-1 Option α: well-formed `rust:crate::module::fn`
+        // Well-formed `rust:crate::module::fn`
         // path lands on the AST field verbatim and clears the
         // structural validator.
         let model = parse_running_with_callback(Some("rust:my_app::on_scout_sample"));
@@ -7346,7 +7345,7 @@ mod tests {
 
     #[test]
     fn callback_unknown_language_prefix_rejects() {
-        // Q-Callback-2: today only `rust:` is accepted. `cpp:` raises
+        // Today only `rust:` is accepted. `cpp:` raises
         // `pool/sample-callback-signature-non-borrow` with the
         // UnknownLanguagePrefix arm.
         let xml = on_sample_test_doc(
@@ -7454,7 +7453,7 @@ mod tests {
     #[test]
     fn callback_path_keyword_segments_accepted() {
         // `crate::`, `self::`, `super::` are valid Rust path keywords
-        // per Q-Callback-3 — the validator must accept them as legal
+        // — the validator must accept them as legal
         // segment shapes (not rejected as non-identifiers).
         for callback in &[
             "rust:crate::on_scout",
@@ -7475,7 +7474,7 @@ mod tests {
         }
     }
 
-    // ── NL→IR Mapping Roadmap Item 1: sce:req attribute ──────
+    // ── `sce:req` requirement-annotation attribute ──────
 
     #[test]
     fn sce_req_collected_on_state_transition_and_invoke() {

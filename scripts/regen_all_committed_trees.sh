@@ -17,7 +17,7 @@
 #
 # Use when a `tools/codegen/templates/` edit or a `Cargo.lock` bump
 # invalidates the embedded `template-hash` on every committed tree
-# (Q-§6.2.6-3 lock-in). Running this script + `git add -A` produces
+# (template-hash covers the whole template tree). Running this script + `git add -A` produces
 # a single coherent commit that re-greens the drift-verify gate
 # across every tracked context in one shot.
 #

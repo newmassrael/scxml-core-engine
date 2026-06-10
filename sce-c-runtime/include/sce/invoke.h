@@ -3,7 +3,7 @@
 //
 // W3C SCXML 6.4: invoke lifecycle types + helpers.
 //
-// Per c11_design_decisions.md (T3 lock-in + INTERFACE-only sce-c-runtime):
+// INTERFACE-only sce-c-runtime contract:
 // types and `static inline` helpers live here; per-SM lifecycle logic
 // (child SM creation, completion detection, event routing) is emitted
 // by `tools/codegen/templates/c/invoke_methods.jinja2` into each

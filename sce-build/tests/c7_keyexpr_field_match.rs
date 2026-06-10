@@ -1,11 +1,11 @@
-//! RFC c7-wildcard W-project — bounded-string element-field → borrowed
+//! Item C7 wildcard keyexpr — bounded-string element-field → borrowed
 //! `bytes`-view call-site projection, parity across all 6 backends.
 //!
 //! Locked projection semantics: an algorithm iterating a bounded-collection
 //! whose element-type carries a bounded-string field (`keyexpr_entry`'s
 //! `pattern`) projects that field to each backend's borrowed byte-view
-//! idiom when it flows into a `bytes` parameter — here W-index's
-//! `bytes_equal(a: bytes, b: bytes)`. The second argument `target` is the
+//! idiom when it flows into a `bytes` parameter — here the inner
+//! byte-compare algorithm's `bytes_equal(a: bytes, b: bytes)`. The second argument `target` is the
 //! outer's own `bytes` param (already a borrowed view) and passes through
 //! unprojected, exercising both argument forms that reach one `bytes`
 //! parameter list.
@@ -13,7 +13,7 @@
 //! Fixtures (in `tests/forge/resources/`):
 //! - `keyexpr_entry.scxml`         — element-type codec, `pattern` string.
 //! - `local_keyexpr_table.scxml`   — BC over `keyexpr_entry`.
-//! - `algorithm_bytes_equal.scxml` — W-index inner byte-compare.
+//! - `algorithm_bytes_equal.scxml` — inner byte-compare algorithm.
 //! - `algorithm_keyexpr_field_match.scxml` — outer, projects the field.
 //!
 //! Drives the same orchestrator path (`compile_scxml_with_imports`) as
@@ -693,7 +693,7 @@ fn cpp_field_match_multi_file_compiles_werror() {
 
 // ── Full Rust field-match compile gate (no-alloc, real cargo build) ──
 //
-// RFC c7-wildcard W3: a bounded-collection is an owned, self-contained,
+// RFC c7-wildcard: a bounded-collection is an owned, self-contained,
 // no-alloc container, so it stores the element codec's owned mirror —
 // which for a borrowed element (a `String` / `Bytes` field) is now the
 // no-alloc bounded-inline `{Element}Owned` (`heapless::String<N>`), not

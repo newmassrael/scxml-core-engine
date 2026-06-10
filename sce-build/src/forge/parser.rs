@@ -44,7 +44,7 @@ fn located_at_line<E: Into<ForgeError>>(
     Located::new(err.into(), name, line, None)
 }
 
-/// Watching-zenoh RFC §5.O Atomic 0c — build the per-IR-node
+/// Watching-zenoh RFC §5.O — build the per-IR-node
 /// `SourceLocation` for a forge model root.
 ///
 /// Mirrors [`crate::parser::source_location_of`] so the SCXML and Forge
@@ -111,16 +111,16 @@ pub fn parse_forge_with_imports(
     parse_forge_with_imports_and_plugin(content, label, &[])
 }
 
-/// Plugin-aware variant of [`parse_forge_with_imports`] (Atomic B
-/// consumer). Validates `<sce:extern>` declarations against the
+/// Plugin-aware variant of [`parse_forge_with_imports`] (deploy-yaml
+/// plugin consumer). Validates `<sce:extern>` declarations against the
 /// composed registry view (baseline + caller-supplied plugin
-/// extensions). Q-Call-6 (a) lock: plugin entries extend the baseline;
+/// extensions). Additive-composition lock: plugin entries extend the baseline;
 /// any baseline-shadowing was already rejected at plugin LOAD time
 /// per [`crate::forge::target_plugin::parse_target_plugin_yaml`]'s
 /// `BaselineConflict` arm, so the plugin slice arriving here is
 /// guaranteed conflict-free.
 ///
-/// Atomic A's [`parse_forge_with_imports`] now delegates here with an
+/// The baseline-only [`parse_forge_with_imports`] delegates here with an
 /// empty plugin slice — deploy-unaware callers (`parse_forge`,
 /// `compile_forge_with_imports`) preserve baseline-only validation.
 pub fn parse_forge_with_imports_and_plugin(
@@ -221,9 +221,9 @@ fn synthesize_cache_externs() -> Vec<crate::forge::model::ExternDeclaration> {
 }
 
 /// Scan `<sce:extern>` children of the document root and validate
-/// each against the §5.I baseline registry (watching-zenoh RFC §5.I,
-/// Atomic A). Mirrors `parse_imports` shape — Q-Call-4 (a) parse-time
-/// rejection lock — but raises one of four distinct `ValidationError`
+/// each against the §5.I baseline registry (watching-zenoh RFC
+/// §5.I). Mirrors `parse_imports` shape — parse-time
+/// rejection — but raises one of four distinct `ValidationError`
 /// variants per failure axis (`ExternSymbolNotInWhitelist` /
 /// `ExternAbiMismatch` / `ExternSignatureMismatch` /
 /// `ExternOrderingUnspecified`).
@@ -326,9 +326,9 @@ fn parse_externs(
         // Closed-set lookup + abi/sig match per §5.I lines 1846-1850.
         // Map each ExternFailure variant 1:1 onto its spec-verbatim
         // ValidationError variant (per `feedback_spec_mirror_parity.md`).
-        // Plugin slice extends the lookup per Atomic B
-        // (Q-Call-6 (a) additive composition); empty for deploy-unaware
-        // entry points so atomic A semantics are preserved unchanged.
+        // Plugin slice extends the lookup (additive composition);
+        // empty for deploy-unaware entry points so baseline-only
+        // semantics are preserved unchanged.
         match validate_extern_with_plugin(&name, &sig, &abi, plugin) {
             Ok(()) => {}
             Err(ExternFailure::NotInWhitelist { candidates }) => {
@@ -441,7 +441,7 @@ fn parse_forge_from_node(
     kind: ForgeKind,
 ) -> Result<ForgeDocument, Located<ForgeError>> {
     // RFC §5.B "Test vector": v1 supports algorithm kind (B2) and
-    // codec kind (B5-θ). Reject `<sce:test-vector>` elements
+    // codec kind (codec test vectors). Reject `<sce:test-vector>` elements
     // declared under any other kind here so the rejection anchors at
     // the offending element rather than at codegen time.
     if !matches!(kind, ForgeKind::Algorithm | ForgeKind::Codec) {
@@ -748,7 +748,7 @@ fn parse_lookup(
     })
 }
 
-// ── Enum parsing (NL→IR Item C1 Path A) ──────────────────────
+// ── Enum kind parsing ────────────────────────────────────────
 
 /// Parse an `sce:kind="enum"` document into an [`EnumModel`].
 ///
@@ -991,7 +991,7 @@ fn parse_enum(
         ));
     }
 
-    // NL→IR Item C1 Path A follow-up F-κ — `sce:strict-variants`
+    // Strict variant membership — `sce:strict-variants`
     // opt-out attribute on the enum's `<scxml>` root. Defaults to
     // `true` (strict) when absent. Reject any string other than the
     // canonical `"true"` / `"false"` so authors get a typed
@@ -1159,7 +1159,7 @@ fn parse_codec(
     }
 
     // Also check for <sce:field> elements (used in both standalone and inline codec)
-    // and <sce:flags> containers (RFC §5.B B1-γ — same wire shape as a
+    // and <sce:flags> containers (RFC §5.B flags primitive — same wire shape as a
     // plain unsigned-int field plus named-bit accessors emitted by codegen).
     // <sce:repeat> containers (RFC §5.B B2) sit alongside; their
     // bit_size = Repeat carries the count_ref + body alias for the
@@ -1191,7 +1191,7 @@ fn parse_codec(
         }
     }
 
-    // RFC §5.B B5-α: zero-field codecs are accepted (empty-body messages
+    // RFC §5.B: zero-field codecs are accepted (empty-body messages
     // like Zenoh's KeepAlive sit at the wire-protocol level as a
     // declared-but-empty body keyed by the surrounding header byte).
     // Downstream validators walk the field list and tolerate
@@ -1200,7 +1200,7 @@ fn parse_codec(
     // diagnostic surfaces from `parse_codec_variant` instead, with
     // a precise repair hint.
 
-    // RFC Axis-1 inversion — codec-level `<sce:flag-inputs>` block
+    // RFC flag inversion — codec-level `<sce:flag-inputs>` block
     // declaring named flag-shaped inputs the codec receives from its
     // caller (Zenoh upstream pattern: `_z_init_decode(.., uint8_t s,
     // uint8_t a)` typed per-input). Cross-codec layout match against
@@ -1209,7 +1209,7 @@ fn parse_codec(
     // `codec/flag-input-unbound`.
     let flag_inputs = parse_flag_inputs(root, label.diagnostic_label)?;
 
-    // RFC §5.B B1-δ + Axis-1 inversion present-if validation —
+    // RFC §5.B present-if validation (field + flag-input forms) —
     // every gated field's predicate must reference either a flags-
     // bearing carrier declared earlier (Local scope) or a declared
     // `<sce:flag-input>` on the codec itself (Input scope). Forward
@@ -1228,7 +1228,7 @@ fn parse_codec(
     // reuses the generic `validation/invalid-attribute`.
     validate_codec_repeat_count_refs(&fields, label, &datamodel)?;
 
-    // RFC §5.B B5-μ — co-gating constraint for
+    // RFC §5.B — co-gating constraint for
     // repeat-with-present-if. When a `<sce:repeat sce:count="X"
     // sce:present-if="P"/>` field is gated, the count source field
     // `X` MUST carry the IDENTICAL `sce:present-if="P"` predicate
@@ -1249,9 +1249,9 @@ fn parse_codec(
     // diagnostic naming the offending field.
     validate_codec_dma_alignment(&fields, label, &datamodel)?;
 
-    // RFC §5.B B5-κ Surface L — `sce:length-field="<carrier>.<flag>"`
+    // RFC §5.B — `sce:length-field="<carrier>.<flag>"`
     // dotted-path form (length value sourced from a multi-bit flag
-    // subfield inside a flags-bearing carrier, mirroring the B1-δ
+    // subfield inside a flags-bearing carrier, mirroring the present-if
     // present-if dotted-path grammar). Validation: carrier must be
     // declared earlier in the same codec, must be flags-bearing, must
     // contain a flag of that name, AND the flag must be multi-bit
@@ -1261,7 +1261,7 @@ fn parse_codec(
     // codegen-time lookup).
     validate_codec_length_field_refs(&fields, label, &datamodel)?;
 
-    // RFC §5.B Y0b — `<sce:embed sce:length-from="<id>"/>` must
+    // RFC §5.B bounded embed — `<sce:embed sce:length-from="<id>"/>` must
     // reference a sibling field declared earlier in the same codec
     // whose decoded value is an integer (so the inner cursor scope
     // can be sized before invoking the embedded codec). Forward /
@@ -1269,14 +1269,14 @@ fn parse_codec(
     // `validation/invalid-attribute`.
     validate_codec_embed_length_from(&fields, label, &datamodel)?;
 
-    // RFC §5.B variant primitive (B1-β): optional <sce:variant> suffix
+    // RFC §5.B variant primitive (item B1): optional <sce:variant> suffix
     // under <datamodel>. Resolves the tag field reference against the
     // codec's own field list; arm body aliases (resolved against
     // <sce:import> aliases) are validated downstream by the codegen
     // step which has the import set.
     let variant = parse_codec_variant(&datamodel, &fields, label)?;
 
-    // RFC §5.B B5-θ inline test vectors. Parsed against the field list
+    // RFC §5.B inline test vectors. Parsed against the field list
     // so each `<sce:decoded field="..." value|hex|string="..."/>` row
     // resolves to a typed value matching the field's `SceType`. Trunk
     // accepts plain (non-variant, non-TLV-chain, non-flag-input)
@@ -1296,7 +1296,7 @@ fn parse_codec(
         source_location: forge_source_location_of(root, label.diagnostic_label),
     })
 }
-/// RFC Axis-1 inversion — parse the optional codec-level
+/// RFC flag inversion — parse the optional codec-level
 /// `<sce:flag-inputs>` block containing `<sce:flag-input name="X"
 /// width="N"/>` children. Returns an empty `Vec` when the element is
 /// absent (the common case for codecs that need no caller-supplied
@@ -1429,7 +1429,7 @@ fn parse_flag_inputs(
     Ok(inputs)
 }
 
-/// RFC Axis-1 inversion — parse `<sce:flag-bind input="X" source="Y.Z"/>`
+/// RFC flag inversion — parse `<sce:flag-bind input="X" source="Y.Z"/>`
 /// children inside an `<sce:import>` element. Returns the resolved
 /// bindings list (empty when the import has no `<sce:flag-bind>`
 /// children). Each binding's `source` parses via the dotted-form rule:
@@ -1585,7 +1585,7 @@ fn parse_flag_binds(
 /// value domain. v1 considers uint8 (256 values) and uint16 (65536
 /// values) practically enumerable; uint32 / uint64 always require a
 /// default arm.
-/// RFC §5.B B1-δ present-if cross-field validation. Walks the
+/// RFC §5.B present-if cross-field validation. Walks the
 /// declared field list in source order; each field's `present_if`
 /// predicate must reference a *previously-declared* sibling field
 /// that carries the `<sce:flags>` shape (so the streaming decoder
@@ -1604,7 +1604,7 @@ fn validate_codec_present_if_predicates(
     use std::collections::BTreeMap;
     let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
     for field in fields {
-        // RFC §5.B Y3 atomic 2b-ii: validate every clause of the
+        // RFC §5.B disjunction chains: validate every clause of the
         // disjunction chain (`a.X || b.Y || ...`) — each clause
         // independently must satisfy the same Local/Input scope rules
         // as the v1 single-clause grammar. Walk the chain via the
@@ -1612,7 +1612,7 @@ fn validate_codec_present_if_predicates(
         let mut clause_opt = field.present_if.as_ref();
         while let Some(predicate) = clause_opt {
             if predicate.scope == PresentIfScope::Input {
-                // Axis-1 inversion: bare-name predicate resolves to a
+                // Flag inversion: bare-name predicate resolves to a
                 // codec-declared `<sce:flag-input>`. The leaf-side
                 // contract owns nothing about the parent's carrier;
                 // the cross-doc validator (`validate_cross_codec_flag_bind`)
@@ -1715,7 +1715,7 @@ fn validate_codec_present_if_predicates(
     Ok(())
 }
 
-/// RFC §5.B Y3 atomic 2b-ii peek-byte — parse `<sce:peek-byte
+/// RFC §5.B peek-byte — parse `<sce:peek-byte
 /// id="..." sce:type="uint8"><sce:flag .../></sce:peek-byte>`
 /// child of `<sce:variant>`. Returns `None` when absent.
 ///
@@ -1948,7 +1948,7 @@ fn parse_peek_byte_from_variant_node(
         // peek-byte flags declare layout only — the actual dispatch
         // value comes from the inner codec's MID flag, so peek-byte
         // flags never carry the `value=` wire-constant (RFC
-        // variant-default-uniformity Atomic α).
+        // variant-default-uniformity).
         flag_defs.push(FlagDef {
             name,
             bit,
@@ -1988,7 +1988,7 @@ fn parse_codec_variant(
         None => return Ok(None),
     };
 
-    // Y3 atomic 2b-ii peek-byte: peek-byte mode parses ahead of tag
+    // Peek-byte mode parses ahead of tag
     // validation since carrier resolution branches on its presence.
     let peek_byte = parse_peek_byte_from_variant_node(&variant_node, label)?;
 
@@ -1997,7 +1997,7 @@ fn parse_codec_variant(
     // convention for SCE-element-internal attributes; SCE-namespaced
     // attributes are reserved for attributes declared on non-SCE host
     // elements like <data sce:byte=...>).
-    // RFC B5-ν inversion β shape (Q-D-8): `<sce:variant>` without a
+    // Caller-tag variant shape: `<sce:variant>` without a
     // `tag=` attribute is the caller-tag form — the leaf has no own
     // carrier field; the dispatch value is supplied by the caller via
     // the `tag: u8` decode parameter. Codegen emits leaf decode as
@@ -2005,17 +2005,17 @@ fn parse_codec_variant(
     // own the carrier byte directly.
     //
     // Tagged form: `tag` attribute carries either a bare field id
-    // (B1-β whole-field) or a `<carrier>.<flag>` dotted path (B5-β
-    // multi-bit-flag).
+    // (whole-field) or a `<carrier>.<flag>` dotted path
+    // (multi-bit-flag).
     let raw_tag: Option<String> = variant_node.attribute("tag").map(|s| s.to_string());
 
-    // RFC §5.B B5-β multi-bit-flag dispatch: `tag="<carrier>.<flag>"`
+    // RFC §5.B multi-bit-flag dispatch: `tag="<carrier>.<flag>"`
     // names a bit-range within a flags-bearing carrier; bare
-    // `tag="<field>"` (B1-β whole-field form) keeps the original
-    // semantics. Grammar mirrors B1-δ present-if predicate exactly so
+    // `tag="<field>"` (whole-field form) keeps the original
+    // semantics. Grammar mirrors the present-if predicate exactly so
     // authors learn one dotted-path convention.
     //
-    // β shape (`raw_tag.is_none()`): tag_field stays `None` all the
+    // Caller-tag shape (`raw_tag.is_none()`): tag_field stays `None` all the
     // way through. Both `tag_flag` and `tag_scope` default to their
     // None/Local sentinels so downstream codegen takes the caller-tag
     // path purely off `tag_field.is_none()`.
@@ -2047,7 +2047,7 @@ fn parse_codec_variant(
         },
     };
 
-    // Y3 atomic 2b-ii peek-byte: peek-byte mode dispatches the tag from
+    // Peek-byte mode dispatches the tag from
     // the cursor's NEXT byte (peek-without-advance) rather than from
     // a real codec field. Tag validation branches accordingly:
     //
@@ -2056,13 +2056,13 @@ fn parse_codec_variant(
     //     the flag MUST exist in `peek_byte.flags`. Carrier type is
     //     fixed at uint8 (peek width is single-byte v1).
     //
-    //   - Own-field mode (B1-β / B5-β): existing logic — resolve
+    //   - Own-field mode (whole-field / multi-bit-flag): existing logic — resolve
     //     tag_field against codec's own fields, validate unsigned-int,
     //     validate flag against carrier's <sce:flags> children.
-    // RFC B5-ν inversion β shape: caller-tag — no own field, no peek,
+    // RFC caller-tag variant shape: caller-tag — no own field, no peek,
     // no parent-flag declaration. Dispatch width is unknown at the
     // leaf (the parent's import-site `<sce:variant-dispatch>` will
-    // pin it). Tag type fixes to Uint8 by β v1 lock-in (parent flag
+    // pin it). Tag type fixes to Uint8 for caller-tag v1 (parent flag
     // carrier is already uint8 per `<sce:requires-parent-flags>` v1
     // lock); arm-domain exhaustiveness shifts to the parent-local
     // validator (`validate_cross_codec_variant_dispatch`) which sees
@@ -2084,7 +2084,7 @@ fn parse_codec_variant(
         ));
     }
     // Continue past tag_type/tag_flag_width — values are unused
-    // for β shape (variant_obj's β branch reads neither).
+    // for the caller-tag shape (its variant_obj branch reads neither).
     let (tag_type, tag_flag_width): (SceType, Option<u32>) = match tag_field.as_ref() {
         None => (SceType::Uint8, None),
         Some(tag_field_name) => {
@@ -2153,7 +2153,7 @@ fn parse_codec_variant(
                 // wire-decoded unsigned scalar; signed / bytes / float tags have
                 // no valid discriminator semantics.
                 //
-                // For the B5-β `<carrier>.<flag>` form, the carrier additionally
+                // For the dotted `<carrier>.<flag>` form, the carrier additionally
                 // MUST be a `<sce:flags>`-bearing field (parser invariant: flags
                 // carriers are always unsigned-int, so the unsigned check still
                 // holds), and `flag` MUST name one of its `<sce:flag>` children.
@@ -2190,12 +2190,12 @@ fn parse_codec_variant(
                 };
                 let tag_type = tag_field_ref.sce_type.clone();
 
-                // B5-β: if the tag uses dotted form, the carrier must carry flags
+                // If the tag uses dotted form, the carrier must carry flags
                 // and the named flag must exist. Width of the named flag determines
                 // both the dispatch domain (1<<width) and the result-type used by
                 // arm value literals downstream. Failures stay on
                 // `validation/invalid-attribute` because the repair is still
-                // attribute-text-level (mirrors B1-δ present-if's choice).
+                // attribute-text-level (mirrors present-if's choice).
                 let tag_flag_width: Option<u32> = match &tag_flag {
                     Some(flag_name) => {
                         if tag_field_ref.flags.is_empty() {
@@ -2246,7 +2246,7 @@ fn parse_codec_variant(
 
     let mut arms: Vec<VariantArm> = Vec::new();
     let mut default_arm: Option<VariantArm> = None;
-    // RFC variant-default-uniformity Atomic α: at most one
+    // RFC variant-default-uniformity: at most one
     // `<sce:arm default="true"/>` per variant. Tracked across the
     // arm-iteration loop so the second occurrence raises
     // `codec/variant-duplicate-default-arm` with the offending
@@ -2296,7 +2296,7 @@ fn parse_codec_variant(
                         )
                     })?
                     .to_string();
-                // RFC variant-default-uniformity Atomic α: optional
+                // RFC variant-default-uniformity: optional
                 // `default="true"` marks this arm as the one chosen
                 // by the outer codec's `Default::default()`. Distinct
                 // from the catch-all `<sce:default>` element (whose
@@ -2342,10 +2342,10 @@ fn parse_codec_variant(
                 });
             }
             "default" => {
-                // RFC B5-ν inversion: `<sce:default>` catch-all on the
+                // RFC parent-tag dispatch: `<sce:default>` catch-all on the
                 // leaf's variant is now allowed unconditionally — under
-                // β shape, parents without `<sce:variant-dispatch>` use
-                // the default arm at construction time (Q-D-3 (a)).
+                // the caller-tag shape, parents without `<sce:variant-dispatch>` use
+                // the default arm at construction time.
                 // Legacy parent-scope rejection removed with the rest
                 // of the `tag="parent.X"` path.
                 if default_arm.is_some() {
@@ -2377,7 +2377,7 @@ fn parse_codec_variant(
                 // as a sentinel — codegen never reads this field for
                 // default arms (it dispatches via the catch-all branch).
                 // The catch-all is never the Default-trait starting
-                // arm (RFC variant-default-uniformity §3 Q-V3 (a) —
+                // arm (RFC variant-default-uniformity §3 —
                 // catch-all and default arm are distinct concepts).
                 default_arm = Some(VariantArm {
                     value: 0,
@@ -2385,7 +2385,7 @@ fn parse_codec_variant(
                     is_default: false,
                 });
             }
-            // Y3 atomic 2b-ii peek-byte: peek-byte was already parsed
+            // Peek-byte was already parsed
             // pre-pass — skip it here so the unknown-child fallback
             // below doesn't reject it.
             "peek-byte" => {}
@@ -2420,18 +2420,18 @@ fn parse_codec_variant(
     // entire value domain — otherwise some incoming tag value would
     // reach the runtime decoder with no matching branch. v1 considers
     // uint8 (256) and uint16 (65536) practically enumerable; uint32 /
-    // uint64 always require a default. For the B5-β multi-bit-flag
+    // uint64 always require a default. For the multi-bit-flag
     // dispatch form the domain shrinks to `1 << width` of the named
     // bit-range (e.g. width=5 ⇒ 32 values), which is always
     // practically enumerable since `<sce:flag>` width itself is bounded
     // by carrier_int_bit_width ≤ 64.
     //
-    // RFC B5-ν inversion β shape: the leaf doesn't know the parent's
+    // RFC caller-tag variant shape: the leaf doesn't know the parent's
     // flag width — domain is unknown at parse time. Exhaustiveness
     // check moves to the parent-local validator
     // (`validate_cross_codec_variant_dispatch`) which sees both arm
     // count and the parent's `<sce:variant-dispatch>` flag width.
-    // Skip the local check for β.
+    // Skip the local check for the caller-tag shape.
     if let (None, Some(tag_field_name)) = (&default_arm, tag_field.as_ref()) {
         let domain_size: Option<u64> = match tag_flag_width {
             Some(width) => Some(1u64 << width),
@@ -2561,7 +2561,7 @@ pub fn parse_codec_field_from_node(
             "vle" => {
                 // VLE bit-size pairs with the value type to derive the
                 // continuation-chain cap (RFC §5.B Appendix B). Only
-                // unsigned ints are valid carriers; B1-α ships u16/u32/u64.
+                // unsigned ints are valid carriers; item B1 ships u16/u32/u64.
                 let width_bits = match sce_type {
                     SceType::Uint16 => 16,
                     SceType::Uint32 => 32,
@@ -2603,7 +2603,7 @@ pub fn parse_codec_field_from_node(
     let max_size = sce_attr(node, "max-size").and_then(|s| parse_int(&s));
     let length_field = sce_attr(node, "length-field");
 
-    // RFC §5.B B5-δ Surface F — `sce:length-arith="+1"|"-1"` arithmetic
+    // RFC §5.B — `sce:length-arith="+1"|"-1"` arithmetic
     // offset on the length sibling's value. v1 grammar restricts to
     // `±1` (parser rejects 0 and `|x| > 1`); widening defers to a
     // reachable consumer. Standalone `length-arith` without
@@ -2664,7 +2664,7 @@ pub fn parse_codec_field_from_node(
         }
     };
 
-    // RFC §5.B B1-δ present-if primitive — accept the attribute and
+    // RFC §5.B present-if primitive — accept the attribute and
     // parse the v1 grammar `<field_id>.<flag_name>` here, but defer
     // the cross-field forward-reference and flags-carrier-existence
     // checks to the codec-level pass where the full field set is
@@ -2717,7 +2717,7 @@ pub fn parse_codec_field_from_node(
         }
     };
 
-    // RFC §5.B B5-ζ Surface H — `sce:type="string"` v1 surface:
+    // RFC §5.B — `sce:type="string"` v1 surface:
     // requires `sce:bit-size="length-ref"` (UTF-8 text is length-
     // prefixed; tail / fixed-bit / vle defer until a consumer
     // surfaces). The present-if ban on string fields is lifted —
@@ -2755,7 +2755,7 @@ pub fn parse_codec_field_from_node(
         ));
     }
 
-    // NL→IR Mapping Roadmap Item 4 — quantity annotation on the plain
+    // Physical-quantity surface — quantity annotation on the plain
     // codec field. The dedicated `<sce:repeat>` / `<sce:tlv-chain>` /
     // `<sce:embed>` shapes don't carry quantity (their wire-level
     // representation is byte-stream or list, not a scalar physical
@@ -2788,27 +2788,27 @@ pub fn parse_codec_field_from_node(
     })
 }
 
-/// RFC §5.B B1-δ + B5-γ + B5-λ + Axis-1 inversion present-if predicate
-/// grammar.
+/// RFC §5.B present-if predicate grammar (Local / Parent / negated /
+/// flag-input forms).
 ///
 /// Six forms in v1:
-///   - `<field_id>.<flag_name>` (B1-δ Local positive) — `field_id`
+///   - `<field_id>.<flag_name>` (Local positive) — `field_id`
 ///     names a flags-bearing sibling field declared earlier in the
 ///     same codec; predicate fires when the bit is set.
-///   - `!<field_id>.<flag_name>` (B5-λ Local negative) — same
+///   - `!<field_id>.<flag_name>` (Local negative) — same
 ///     carrier, predicate fires when the bit is *clear*.
-///   - `parent.<flag_name>` (B5-γ Parent positive) — the literal
+///   - `parent.<flag_name>` (Parent positive) — the literal
 ///     `parent` keyword references the codec's declared
 ///     `<sce:requires-parent-flags>` block; predicate fires when the
 ///     bit is set.
-///   - `!parent.<flag_name>` (B5-λ Parent negative) — fires when
+///   - `!parent.<flag_name>` (Parent negative) — fires when
 ///     the parent flag bit is clear. Required for Zenoh OpenSyn body
 ///     where cookie is present iff parent.A is NOT set.
-///   - `<name>` (Axis-1 inversion Input positive) — bare name (no dot)
+///   - `<name>` (Input positive) — bare name (no dot)
 ///     resolves to a declared `<sce:flag-input name="<name>">` on the
 ///     codec itself; predicate fires when the input value is non-zero
 ///     (single-bit envelope for v1 width=1).
-///   - `!<name>` (Axis-1 inversion Input negative) — same input,
+///   - `!<name>` (Input negative) — same input,
 ///     predicate fires when the input is zero. Mirrors the
 ///     Local/Parent negative shape.
 ///
@@ -2819,7 +2819,7 @@ pub fn parse_codec_field_from_node(
 /// Both halves match the SCE attribute name shape (alphanumeric +
 /// `_`, non-empty). Conjunction (`flag1 && flag2`) and equality
 /// (`field == value`) defer to a later B-stage. Disjunction
-/// (`a.X || b.Y || ...`) lifted at Y3 atomic 2b-ii — each `||`-
+/// (`a.X || b.Y || ...`) lifted by the disjunction-chain extension — each `||`-
 /// separated clause is itself one of the four single-clause forms
 /// (each can independently carry a leading `!`). Outer negation
 /// `!(a || b)` defers to a future RFC stage.
@@ -2851,7 +2851,7 @@ fn parse_present_if_predicate(
             },
         )
     };
-    // RFC §5.B Y3 atomic 2b-ii: split on `||` first so the leading-`!`
+    // RFC §5.B disjunction chains: split on `||` first so the leading-`!`
     // negation applies to each clause independently. v1 disjunction
     // grammar binds `||` looser than the per-clause `!` and `.` (matches
     // C/Python/Rust precedence), so `!a.X || b.Y` parses as
@@ -2865,7 +2865,7 @@ fn parse_present_if_predicate(
     if head_trim.is_empty() {
         return Err(invalid());
     }
-    // B5-λ: optional leading `!` for negation (per-clause).
+    // Negation: optional leading `!` (per-clause).
     let (negate, body) = match head_trim.strip_prefix('!') {
         Some(rest) => (true, rest.trim_start()),
         None => (false, head_trim),
@@ -2880,7 +2880,7 @@ fn parse_present_if_predicate(
                 }
             })
     };
-    // Axis-1 inversion bare-name form (Input scope) — when the clause has
+    // Flag-input bare-name form (Input scope) — when the clause has
     // no dot, treat the whole body as the leaf-declared flag-input name.
     // Cross-codec carrier/bit-position assertions live on the parent's
     // `<sce:flag-bind>` directive, so this leaf-side form references only
@@ -2932,7 +2932,7 @@ fn parse_present_if_predicate(
     })
 }
 
-/// RFC §5.B B1-γ flags primitive — parse `<sce:flags id=... sce:type=...
+/// RFC §5.B flags primitive — parse `<sce:flags id=... sce:type=...
 /// sce:byte=... sce:bit-size=N>` with `<sce:flag name="X" bit="N"/>`
 /// child decls. Reuses [`parse_codec_field_from_node`] for the carrier
 /// field (same byte-layout attrs as a plain `<sce:field>`), then walks
@@ -2986,7 +2986,7 @@ fn parse_codec_flags_from_node(
 
     let mut seen_names: std::collections::BTreeSet<String> = Default::default();
     // Track which bits within the carrier are already claimed so
-    // overlapping bit-ranges (B5-α multi-bit) are rejected with a
+    // overlapping bit-ranges (multi-bit) are rejected with a
     // precise repair hint.
     let mut occupied: u64 = 0;
     let mut flag_defs: Vec<FlagDef> = Vec::new();
@@ -3051,8 +3051,8 @@ fn parse_codec_flags_from_node(
                 },
             )
         })?;
-        // RFC §5.B B5-α multi-bit accessor: optional `width="W"`
-        // attribute (defaults to 1 for B1-γ single-bit back-compat).
+        // RFC §5.B multi-bit accessor: optional `width="W"`
+        // attribute (defaults to 1 for single-bit back-compat).
         // `bit + width <= carrier_int_bit_width` so the named range
         // stays within the carrier's natural width.
         let width = match child.attribute("width") {
@@ -3124,7 +3124,7 @@ fn parse_codec_flags_from_node(
             ));
         }
         occupied |= range_mask;
-        // RFC variant-default-uniformity Atomic α: optional
+        // RFC variant-default-uniformity: optional
         // `value="..."` wire-constant baked into the carrier's
         // `Default::default()`. Authors declare this on an inner
         // codec's MID flag so the codec's default instance is
@@ -3325,7 +3325,7 @@ fn parse_codec_repeat_from_node(
 
     let max_count = node.attribute("max-count").and_then(parse_int);
 
-    // RFC §5.B B5-μ — present-if on `<sce:repeat>`.
+    // RFC §5.B — present-if on `<sce:repeat>`.
     // Parses the optional `sce:present-if` attribute identically
     // to `<sce:field>` (`<carrier>.<flag>` Local, `parent.<flag>`
     // Parent, optional `!` negation). Cross-field co-gating with the
@@ -3510,7 +3510,7 @@ fn parse_codec_tlv_chain_from_node(
         }
     };
 
-    // RFC §5.B Y3 — `sce:terminate-on` selects chain termination.
+    // RFC §5.B — `sce:terminate-on` selects chain termination.
     // Default: cursor-exhaust + max_depth (B3 trunk shape — used when
     // nothing follows the chain on the wire). `entry-flag` reads a
     // named flag on each decoded entry's flags carrier; chain stops
@@ -3549,9 +3549,9 @@ fn parse_codec_tlv_chain_from_node(
         }
     };
 
-    // RFC §5.B Y3 atomic 2a — `<sce:tlv-chain sce:present-if="P">`
+    // RFC §5.B gated tlv-chain — `<sce:tlv-chain sce:present-if="P">`
     // gates the entire chain field on a flag predicate, mirroring
-    // B5-μ's repeat-with-present-if (X1) lift. Required by zenoh
+    // the repeat-with-present-if lift. Required by zenoh
     // network MID bodies (request/response/etc) whose ext chain is
     // `Z`-bit-gated on the per-MID header — when Z=0 the chain is
     // absent from the wire and any subsequent body fields start at
@@ -3591,7 +3591,7 @@ fn parse_codec_tlv_chain_from_node(
     })
 }
 
-/// RFC §5.B Y0c + Y0b — parse `<sce:embed id="X" type="codec_Y"
+/// RFC §5.B embed primitive — parse `<sce:embed id="X" type="codec_Y"
 /// sce:byte="N" [sce:present-if="..."] [sce:length-from="<id>"]/>`
 /// for a single imported-codec field embedded inline. Mirrors the
 /// `<sce:repeat>` / `<sce:tlv-chain>` shape: `id` + `type` (alias) +
@@ -3599,8 +3599,8 @@ fn parse_codec_tlv_chain_from_node(
 /// wire shape consumes/produces bytes directly via its own
 /// decode/encode methods.
 ///
-/// Y0c v1 covered always-present + cursor-direct embedding. Y0b lifts
-/// two optional attributes:
+/// The embed trunk covered always-present + cursor-direct embedding;
+/// two optional attributes lift it:
 ///   - `sce:present-if="<carrier>.<flag>" | "parent.<flag>" | "!..."`
 ///     gates the embed on a predicate (mirrors the present-if grammar
 ///     used by `<sce:field>` and `<sce:repeat>`). The host-language
@@ -3680,7 +3680,7 @@ fn parse_codec_embed_from_node(
         )
     })?;
 
-    // RFC §5.B Y0b — `sce:present-if` lifts the Y0c always-present
+    // RFC §5.B gated embed — `sce:present-if` lifts the always-present
     // restriction. Cross-field validation (carrier exists, predicate
     // resolves, parent-flags scope) runs in
     // `validate_codec_present_if_predicates` after field assembly,
@@ -3690,7 +3690,7 @@ fn parse_codec_embed_from_node(
         Some(raw) => Some(parse_present_if_predicate(&raw, node, doc_name, &id)?),
     };
 
-    // RFC §5.B Y0b — `sce:length-from="<id>"` bounds the embedded
+    // RFC §5.B bounded embed — `sce:length-from="<id>"` bounds the embedded
     // codec's decode-time cursor scope. Cross-field validation
     // (length-from references a prior integer-typed field with
     // VLE/Fixed bit-size, no forward references) runs in
@@ -3726,9 +3726,9 @@ fn parse_codec_embed_from_node(
 
 /// RFC §5.B B2 repeat cross-field validation. Walks the field list
 /// in source order; every `BitSize::Repeat { LengthField(id) }` must
-/// RFC §5.B B5-κ Surface L — `sce:length-field` cross-field validation.
+/// RFC §5.B — `sce:length-field` cross-field validation.
 ///
-/// Dotted-path form `<carrier>.<flag>` mirrors the B1-δ present-if
+/// Dotted-path form `<carrier>.<flag>` mirrors the present-if
 /// validator on three axes (forward-reference, carrier-shape, flag
 /// existence) plus a fourth specific to length semantics: the flag
 /// must be MULTI-BIT (`width > 1`) since width-1 flags are 0/1
@@ -3883,7 +3883,7 @@ fn validate_codec_length_field_refs(
     Ok(())
 }
 
-/// RFC §5.B Y0b — `<sce:embed sce:length-from="<id>"/>` cross-field
+/// RFC §5.B bounded embed — `<sce:embed sce:length-from="<id>"/>` cross-field
 /// validator. The named sibling MUST be declared earlier in the same
 /// codec (forward references are rejected so the streaming decoder
 /// reads the length value before reaching the embed payload) AND its
@@ -4002,7 +4002,7 @@ fn validate_codec_repeat_count_refs(
     Ok(())
 }
 
-/// RFC §5.B B5-μ — repeat-with-present-if co-gating validator.
+/// RFC §5.B — repeat-with-present-if co-gating validator.
 /// When `<sce:repeat sce:count="X" sce:present-if="P"/>`
 /// is gated, the count source field `X` MUST carry the IDENTICAL
 /// predicate `P`. Wire semantics: when the gate fires off the count
@@ -4012,7 +4012,7 @@ fn validate_codec_repeat_count_refs(
 /// equivalent) safely — the validator is the proof.
 ///
 /// `CountRef::UntilEof` skips this check (no count target). Non-gated
-/// repeat skips (back-compat — B2-α trunk shape). Predicate identity
+/// repeat skips (back-compat — item B2 trunk shape). Predicate identity
 /// compares all four fields of `PresentIfPredicate` (scope, field_id,
 /// flag_name, negate); any drift folds into `validation/invalid-
 /// attribute` with a precise repair hint naming both fields.
@@ -4091,7 +4091,7 @@ fn validate_codec_repeat_present_if_co_gating(
 /// Render a `PresentIfPredicate` back to its source-text form for
 /// diagnostic messages. Mirrors `parse_present_if_predicate` inverse
 /// so the repair hint reads as the author wrote it. Disjunction
-/// chains render as `<a> || <b> [|| ...]` (Y3 atomic 2b-ii).
+/// chains render as `<a> || <b> [|| ...]`.
 fn format_present_if_predicate_for_diag(p: &PresentIfPredicate) -> String {
     let prefix = if p.negate { "!" } else { "" };
     let head = match p.scope {
@@ -4187,7 +4187,7 @@ fn validate_codec_dma_alignment(
     Ok(())
 }
 
-// ── RFC §5.B B5-θ codec test-vector parsing ────────────────────
+// ── RFC §5.B codec test-vector parsing ────────────────────
 //
 // `<sce:test-vector hex="cafe">
 //    <sce:decoded field="sn" value="1"/>
@@ -4265,10 +4265,10 @@ fn parse_one_codec_test_vector(
                         element: "sce:test-vector".into(),
                         attr: "<child element>".into(),
                         value: format!("sce:{other}"),
-                        expected: "B5-θ trunk only accepts <sce:decoded field=\"...\" \
+                        expected: "test vectors only accept <sce:decoded field=\"...\" \
                                    value|hex|string=\"...\"/> children; \
                                    <sce:decoded-variant>/<sce:decoded-chain>/<sce:decoded-entry> \
-                                   defer to B5-θ closures"
+                                   are not supported"
                             .into(),
                     },
                 ));
@@ -4462,7 +4462,7 @@ fn parse_one_decoded_field(
                     attr: "field".into(),
                     value: name.to_string(),
                     expected: format!(
-                        "field '{}' has SceType {other:?} which is not yet supported in B5-θ \
+                        "field '{}' has SceType {other:?} which is not supported in \
                          test vectors (Bool/integer/Bytes/String only); float closures defer to \
                          the first float-bearing codec consumer",
                         codec_field.id
@@ -4860,7 +4860,7 @@ fn parse_procedure(
 
     // Bounded-bytes static consistency: catch
     // self-contradicting bytes max-size declarations before any
-    // backend codegen runs. The runtime β path (error.execution
+    // backend codegen runs. The runtime enforcement path (error.execution
     // raised at the actual cap-violation site in the generated
     // procedure runtime) covers data exceeding a consistently
     // declared cap; this static pass covers the orthogonal class of
@@ -5937,8 +5937,8 @@ fn parse_algorithm(
 
     let test_vectors = parse_test_vectors(root, &signature, label.diagnostic_label)?;
 
-    // RFC §5.A line 274 example + C7 keyexpr-fixture (sub-atomic 3 of 3,
-    // 2026-05-13): the `<scxml sce:kind="algorithm" name="X">`
+    // RFC §5.A line 274 example + item C7 keyexpr fixture
+    // (2026-05-13): the `<scxml sce:kind="algorithm" name="X">`
     // attribute is the algorithm's canonical author-facing name and
     // becomes the emitted function symbol per RFC §5.J.5 lowering
     // (Rust `pub fn <name_snake>`, Cpp `inline <return> <name_snake>`,
@@ -5948,7 +5948,7 @@ fn parse_algorithm(
     // the conformance harness). Resolving the attribute here keeps
     // `validate_and_enrich_imports::discover_primary_function` +
     // `build_qualified_call` aligned with the template emit on the
-    // cross-doc dispatch path (the C7-lowering renames pipeline
+    // cross-doc dispatch path (the item C7 lowering renames pipeline
     // substitutes `alias` with `<namespace>::<algorithm_name>` and
     // the consumed symbol must match).
     let name = root
@@ -5965,7 +5965,7 @@ fn parse_algorithm(
     })
 }
 
-// ── RFC §5.B test-vector parsing (B2-test-vector-prep) ──────────
+// ── RFC §5.B test-vector parsing (item B2) ──────────────────────
 //
 // `<sce:test-vector hex="313233343536373839" value="0x29B1"/>` —
 // inline reference oracle. v1 covers algorithm kind only with scalar
@@ -6783,23 +6783,20 @@ fn reject_param_assignment(
     Ok(())
 }
 
-// ── Link kind parser (RFC §5.C, B6-α/γ) ───────────────────────
+// ── Link kind parser (RFC §5.C, item B6) ───────────────────────
 //
-// Byte-stream link endpoint surface. B6-α shipped the minimum
-// vertical slice on `(rust, *)`; B6-γ adds the parse-time pair of
-// the §5.C negative-coverage diagnostics (the OS-axis pair waits on
-// the forge × deploy.yaml integration atomic — `platform.os` lives
-// per-machine in deploy.yaml per RFC §5.C lines 702-704).
-// Surface today: `<sce:link-class>` enum (5 classes; unknown values
-// raise dedicated `link/link-class-unknown` since γ) +
+// Byte-stream link endpoint surface with the parse-time pair of
+// the §5.C negative-coverage diagnostics (the OS-axis pair is
+// consumer-gated on forge × deploy.yaml integration — `platform.os`
+// lives per-machine in deploy.yaml per RFC §5.C lines 702-704).
+// Surface: `<sce:link-class>` enum (5 classes; unknown values
+// raise the dedicated `link/link-class-unknown`) +
 // `<sce:framer ref="..."/>` required (`link/framer-missing` if
-// absent) + `<sce:backpressure>` required since γ
-// (`link/backpressure-undeclared` if absent — α tolerated absence
-// with a parser-side default-to-`drop`, γ promotes it to a hard
-// error so the policy is declared intentionally) + `<sce:events>`
-// rows. The `<sce:rx-pool>` / `<sce:tx-pool>` elements defer to B7
-// with the buffer-pool kind (RFC §5.E) — authors who write them
-// today get the generic schema-unknown-element diagnostic.
+// absent) + `<sce:backpressure>` required
+// (`link/backpressure-undeclared` if absent — declared
+// intentionally rather than inheriting an implicit default) +
+// `<sce:events>` rows + the `<sce:rx-pool>` / `<sce:tx-pool>`
+// references into a sibling buffer-pool document (RFC §5.E).
 fn parse_link(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -6809,7 +6806,7 @@ fn parse_link(
     // `<sce:link-class>` body text — the closed enum at
     // `LinkClass::ALL_NAMES`. Missing element raises
     // `validation/missing-element`; unknown body text raises the
-    // dedicated `link/link-class-unknown` diagnostic (B6-γ — RFC
+    // dedicated `link/link-class-unknown` diagnostic (item B6 — RFC
     // §5.C lines 765-771 5-class enum).
     let class_node = find_sce_child(root, "link-class").ok_or_else(|| {
         located(
@@ -6833,8 +6830,8 @@ fn parse_link(
         )
     })?;
 
-    // `<sce:framer ref="...">` is required on every link kind in
-    // B6-α (RFC §5.C). Absence raises the dedicated `link/framer-missing`
+    // `<sce:framer ref="...">` is required on every link kind
+    // (RFC §5.C). Absence raises the dedicated `link/framer-missing`
     // diagnostic; presence without a `ref=` attribute raises the
     // generic `validation/missing-attribute`.
     let framer_node = find_sce_child(root, "framer").ok_or_else(|| {
@@ -6849,8 +6846,8 @@ fn parse_link(
     let framer = require_attr(&framer_node, "ref", "<sce:framer>", doc_name)?;
 
     // `<sce:backpressure>` body text — required per RFC §5.C body.
-    // B6-α tolerated absence with a parser-side default-to-`drop`;
-    // B6-γ promotes the missing element to a hard error
+    // Earlier revisions tolerated absence with a parser-side
+    // default-to-`drop`; a missing element is now a hard error
     // (`link/backpressure-undeclared`) so authors must declare the
     // policy intentionally rather than inheriting an implicit default.
     let backpressure_node = find_sce_child(root, "backpressure").ok_or_else(|| {
@@ -6877,8 +6874,8 @@ fn parse_link(
     })?;
 
     // `<sce:events>` carries `<sce:inbound>` / `<sce:outbound>` rows.
-    // Both are optional; an empty events block is legal (B6-δ closes
-    // the listener-link sibling pairing for inbound-only rows).
+    // Both are optional; an empty events block is legal (the
+    // listener-link sibling pairing covers inbound-only rows).
     let mut inbound: Vec<LinkInboundEvent> = Vec::new();
     let mut outbound: Vec<LinkOutboundEvent> = Vec::new();
     if let Some(events_node) = find_sce_child(root, "events") {
@@ -6902,9 +6899,9 @@ fn parse_link(
         }
     }
 
-    // RFC §5.C body + §5.E B7-α schema-only: `<sce:rx-pool ref="..."/>`
+    // RFC §5.C body + §5.E item B7 schema-only: `<sce:rx-pool ref="..."/>`
     // / `<sce:tx-pool ref="..."/>` bind the link to a `sce:kind="buffer-pool"`
-    // sibling document. B7-α parser accepts the elements + validates
+    // sibling document. The parser accepts the elements + validates
     // ref-attribute presence; cross-resolution validator (link/pool-slot-
     // smaller-than-framer-max) defers to a later atomic that wires the
     // pool ↔ framer through `compile_forge_with_imports`. Absence is
@@ -6917,7 +6914,7 @@ fn parse_link(
         Some(node) => Some(require_attr(&node, "ref", "<sce:tx-pool>", doc_name)?),
         None => None,
     };
-    // RFC §5.E B7-η' Atomic A1: link-side `<sce:stage-pool ref="X"/>`
+    // RFC §5.E sample-callback stage-pool: link-side `<sce:stage-pool ref="X"/>`
     // names the buffer-pool kind whose slots back `Sample::take()`'s
     // owned-copy destination. Schema locality on the link kind (not
     // on deploy.yaml) puts the source of truth alongside rx_pool/
@@ -6933,7 +6930,7 @@ fn parse_link(
     };
 
     // RFC §5.K lines 2356-2361 + 2509-2511 — per-link opt-out for
-    // the §5.M / ARCHITECTURE §9.3 stage-copy-rate gate. C13-γ
+    // the §5.M / ARCHITECTURE §9.3 stage-copy-rate gate. Item C13
     // recognizes the element's presence as the opt-out signal; body
     // text / `justification` attribute parsing defers until a
     // consumer exists per `[[feedback-no-versioning]]`. Under
@@ -6956,21 +6953,22 @@ fn parse_link(
     })
 }
 
-// ── BufferPool kind parser (RFC §5.E, B7-α) ────────────────────
+// ── BufferPool kind parser (RFC §5.E, item B7) ────────────────────
 //
-// SRAM-placed, DMA-aligned slot table. B7-α schema-only — minimum
-// shape covering 6 fields (`slot-count`, `slot-size`, `section`,
+// SRAM-placed, DMA-aligned slot table. The parser covers the minimum
+// shape of 6 fields (`slot-count`, `slot-size`, `section`,
 // `alignment`, `dma-channel?`, `cache-policy`). The 7-state lifecycle
-// FSM defers to B7-γ (codegen-time IR-level borrow check); cache
-// maintenance pinning defers to B7-δ (gated on §5.I `<sce:call>`
-// intrinsic registry); burst absorption analysis defers to B7-ζ
-// (gated on §5.K deploy.yaml fields).
+// FSM is declared canonically in `buffer_pool_fsm.rs` (consumed by
+// the Rust + C11 templates); cache maintenance pinning rides the
+// §5.I `<sce:call>` intrinsic registry
+// (`pool/cache-maintenance-misplaced`); burst absorption analysis is
+// consumer-gated (§5.K deploy.yaml fields).
 //
 // Schema validation here is intentionally narrow: parser rejects only
 // the load-bearing absences (missing element, malformed body text,
 // zero-valued count/size/alignment). Cross-resolution checks
 // (`mem/pool-section-conflict`, `mem/dma-channel-collision`) live on
-// `compile_forge_with_deploy` (η second consumer pattern).
+// `compile_forge_with_deploy` (second-consumer pattern).
 fn parse_buffer_pool(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -6983,7 +6981,7 @@ fn parse_buffer_pool(
 
     // Reject zero-valued count/size/alignment at parse time (load-bearing
     // for any subsequent layout / FSM logic). Power-of-2 alignment check
-    // defers to B7-β linker fragment emission where the constraint is
+    // rides the linker-fragment emission where the constraint is
     // observable through ALIGN(<n>) directives.
     for (name, value) in [
         ("slot-count", slot_count),
@@ -7063,7 +7061,7 @@ fn parse_buffer_pool(
         )
     })?;
 
-    // RFC §5.M C9-α — parse the optional `<sce:variant>` discriminator.
+    // RFC §5.M item C9 — parse the optional `<sce:variant>` discriminator.
     // Absent / "default" body text → `BufferPoolVariant::Default` (the
     // pre-C9 regular RX/TX/stage pool semantics). Body text "reassembly"
     // → `BufferPoolVariant::Reassembly(ReassemblyConfig { ... })` with
@@ -7085,15 +7083,15 @@ fn parse_buffer_pool(
 }
 
 /// Parse the `<sce:variant>` discriminator on a `<scxml sce:kind="buffer-pool">`
-/// document per RFC §5.M lines 2676-2698 (C9-α).
+/// document per RFC §5.M lines 2676-2698 (item C9).
 ///
 /// **Closed enum body-text set**: `default` (or absent) → `Default` arm;
 /// `reassembly` → `Reassembly(ReassemblyConfig { ... })` arm with the
 /// three required reassembly-only siblings parsed inline. Any other
 /// body-text value parse-rejects via `InvalidAttribute` (closed-enum
 /// gate; the open-set repair would require new spec primitives so a
-/// `FixCarriesCandidates` shape is appropriate downstream — but C9-α
-/// keeps the surface narrow per Q-C9-6 a, no new MCU-class codes).
+/// `FixCarriesCandidates` shape is appropriate downstream — but the
+/// parser keeps the surface narrow: no new MCU-class codes).
 ///
 /// **Cross-arm exclusivity**: the three reassembly-only siblings
 /// (`<sce:max-fragments-per-message>`, `<sce:reassembly-timeout-ms>`,
@@ -7101,7 +7099,7 @@ fn parse_buffer_pool(
 /// (absent or "default" body text) — their presence in that context
 /// raises `InvalidAttribute` naming the misapplied element. This is the
 /// type-system mirror at parse time of the sum-type's "only-on-arm"
-/// invariant per Q-C9-1 (a).
+/// invariant.
 ///
 /// **Missing reassembly-only siblings** under variant=`reassembly`:
 /// `<sce:max-fragments-per-message>` absence fires
@@ -7219,7 +7217,7 @@ fn parse_buffer_pool_variant(
         reject_zero_field(root, label, "per-peer-quota", v)?;
         v
     } else {
-        // Per RFC stub §3 Q-C9-1 commentary: the third reassembly-only
+        // Per RFC stub §3 commentary: the third reassembly-only
         // element reuses the generic MissingElement code; spec line
         // 2944-2945 only names the first two reassembly-specific codes.
         return Err(located(
@@ -7242,9 +7240,9 @@ fn parse_buffer_pool_variant(
 /// Reject `value == 0` on a reassembly-variant sibling; mirrors the
 /// inline zero-rejection in `parse_buffer_pool` for slot-count /
 /// slot-size / alignment. Refactor surface: extracted here only
-/// because the C9-α reassembly siblings reuse the pattern; the
+/// because the item C9 reassembly siblings reuse the pattern; the
 /// existing inline form in `parse_buffer_pool` stays unchanged to
-/// avoid touching B7-α's golden test surface.
+/// avoid touching the original buffer-pool golden test surface.
 fn reject_zero_field(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -7269,24 +7267,24 @@ fn reject_zero_field(
 
 /// Parse `<scxml sce:kind="worker">` per RFC §5.D lines 858-913.
 ///
-/// **Schema (C2-α).**
+/// **Schema (item C2).**
 /// - `<sce:link-rx ref="...">` (required) — driving link kind name.
 ///   Cross-resolution validator (`worker/link-rx-ref-unknown`) lives
-///   in [`crate::validate_worker_cross_refs`] (C2-β).
+///   in [`crate::validate_worker_cross_refs`] (item C2).
 /// - `<sce:inbox depth="N"/>` (required) — SPSC ring-buffer depth.
-///   Spec line 894 verbatim attribute form per Q-C2-4 (a) lock.
+///   Spec line 894 verbatim attribute form.
 /// - `<sce:outbox ref="...">` (optional) — recipient inbox path.
 ///   Cross-resolution validators
 ///   (`worker/outbox-ref-unknown` +
 ///   `worker/outbox-target-wrong-kind` +
 ///   `worker/outbox-target-suffix-invalid`) live in
-///   [`crate::validate_worker_outbox_references`] (C2 follow-up
-///   Atomic B). The parser accepts any non-empty value; semantic
+///   [`crate::validate_worker_outbox_references`] (item C2
+///   follow-up). The parser accepts any non-empty value; semantic
 ///   resolution rides the orchestrator's cross-doc registry.
 /// - `<sce:body>` (optional) — SCXML actions; usually empty per
 ///   spec line 897 ("link-rx drives event injection automatically").
 ///
-/// **Parse-time author guard (C2-α, spec line 911 layers 1 + 2).**
+/// **Parse-time author guard (item C2, spec line 911 layers 1 + 2).**
 /// `worker/shared-mutable-state` fires when:
 ///   1. A sibling `<sce:import kind="worker">` declares the document
 ///      imports another worker (workers cannot import other workers'
@@ -7301,15 +7299,15 @@ fn reject_zero_field(
 ///
 /// Layer 3 (`<sce:extern>` non-inbox symbol use in body) defers to
 /// a tracked follow-up atomic gated on C4 intrinsic-registry
-/// composition surface per Q-C2-7 (a)+(b) lock.
+/// composition surface.
 ///
 /// MachineSchedulerConfig deploy-aware validation
 /// (`worker/scheduler-unsupported` +
 /// `deploy/scheduler-incompatible-with-worker-count`) and
 /// inbox-ordering codegen invariants
 /// (`worker/inbox-ordering-relaxed-across-cores` +
-/// `worker/inbox-ordering-unspecified`) live in C2-γ + C2-β
-/// validators respectively.
+/// `worker/inbox-ordering-unspecified`) live in the item C2
+/// scheduler-capacity + cross-resolution validators respectively.
 fn parse_worker(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -7379,7 +7377,7 @@ fn parse_worker(
 
     // ── Required: <sce:inbox depth="N"/> ──
     //
-    // Spec line 894 verbatim attribute form (Q-C2-4 (a) lock). Reject
+    // Spec line 894 verbatim attribute form. Reject
     // depth=0 at parse time (load-bearing for any subsequent ring-
     // buffer layout / codegen logic; an empty inbox cannot service
     // even a single in-flight event).
@@ -7573,17 +7571,15 @@ fn require_u32_body(
 /// Parse a `<scxml sce:kind="bounded-collection">` document body per
 /// watching-zenoh RFC §5.L lines 2540-2655.
 ///
-/// C6-α scope: schema + parse + 2 parse-time structure validators
+/// Item C6 parse-time scope: schema + parse + 2 parse-time structure validators
 /// (`collection/ordering-sorted-requires-index-by` from spec line 2559 +
 /// `collection/overflow-policy-oldest-wins-requires-ordering-insertion`
 /// from spec line 2655). The other four diagnostics listed in
 /// the spec body (`collection/capacity-unresolved` deploy-time;
 /// `collection/element-type-not-a-kind` + `collection/index-by-field-
-/// missing` + `collection/multi-writer-without-atomics` cross-doc) defer
-/// to C6-β/γ when the consumer wiring is in place — per the
-/// `feedback_silently_broken_hooks` discipline, codes land alongside
-/// their cross-resolution producer rather than as wire-but-unconsumed
-/// surface.
+/// missing` + `collection/multi-writer-without-atomics` cross-doc)
+/// live with their cross-resolution / deploy-time producers in the
+/// orchestrator passes.
 fn parse_bounded_collection(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -7596,11 +7592,12 @@ fn parse_bounded_collection(
 
     // ── Required: <sce:element-type>NAME</sce:element-type> ──
     //
-    // Spec line 2552 verbatim element form. C6-α stores the body text
+    // Spec line 2552 verbatim element form. The parser stores the body text
     // as opaque String; cross-doc resolution against
     // `SceCrossDocRegistry` (verifying the name resolves AND is a
-    // codec/procedure kind per spec lines 2566-2567) lands in C6-β
-    // behind `collection/element-type-not-a-kind`.
+    // codec/procedure kind per spec lines 2566-2567) is enforced by
+    // the orchestrator cross-doc pass behind
+    // `collection/element-type-not-a-kind`.
     let element_type_node = find_sce_child(root, "element-type").ok_or_else(|| {
         located(
             root,
@@ -7833,11 +7830,10 @@ fn parse_bounded_collection(
     })
 }
 
-// ── Event-schema kind parser (NL→IR Item C1 Path A) ───────────
+// ── Event-schema kind parser ──────────────────────────────────
 
 /// Parse `<scxml sce:kind="event-schema" sce:event-name="X">…</scxml>` into
-/// an [`EventSchemaModel`] — NL→IR Mapping Roadmap Item C1 Path A,
-/// design RFC §3 DL-1' / DL-3' / DL-5' / DL-9'.
+/// an [`EventSchemaModel`].
 ///
 /// **Required attributes / structure**
 ///   * `sce:event-name` attribute on the `<scxml>` root — names the SCXML
@@ -7848,28 +7844,28 @@ fn parse_bounded_collection(
 ///     payload contract with no fields would not type any expression
 ///     and is almost certainly an authoring mistake.
 ///
-/// **Built-in event rejection (DL-9')**
+/// **Built-in event rejection**
 ///   Events whose name lies in the W3C SCXML reserved namespace
 ///   (`error.*`, `done.invoke.*`, `done.state.*`) are rejected with
 ///   `validation/event-schema-on-builtin-event`. The platform raises
 ///   these events with implementation-defined payload shape; an
 ///   authored schema cannot meaningfully constrain them.
 ///
-/// **Direction invariant (DL-5')**
+/// **Direction invariant**
 ///   Each `<data>` must declare `sce:direction="in"`. The payload is the
 ///   receiver's read-only view; an `out` field on a schema has no
-///   meaning and would surface as confusing codegen on Atomic 4.
+///   meaning and would surface as confusing codegen in the EventSchema payload lowering.
 ///
 /// **Duplicate field-id rejection**
 ///   Each field's `id` must be unique across the schema (the receive-
 ///   side typecheck would otherwise have to pick one declaration to
 ///   honor on `_event.data.<id>`, hiding the conflict from the author).
 ///
-/// **Out of scope (deferred to other atomics)**
+/// **Out of scope here (lives elsewhere)**
 ///   * Send-side payload validation against the schema (event_schema_check).
 ///   * Mesh cross-machine schema match (mesh/deploy validator).
-///   * Per-backend payload struct lowering (Atomic 4).
-///   * Inline `<sce:event-schema>` form (F-ζ).
+///   * Per-backend payload struct lowering (generator).
+///   * The inline `<sce:event-schema>` form is consumer-gated.
 fn parse_event_schema(
     root: &roxmltree::Node,
     label: DocumentLabel<'_>,
@@ -8015,7 +8011,7 @@ fn find_sce_child<'a>(node: &'a roxmltree::Node, local: &str) -> Option<roxmltre
 /// - `kind` (required): the forge kind of the imported document.
 /// - `as` (required): alias used in expressions.
 ///
-/// NL→IR Mapping Roadmap Item C1 Path A (DL-7' prerequisite): exposed
+/// Exposed
 /// `pub` so the SCXML parser (`crate::parser::SCXMLParser`) can capture
 /// `<sce:import>` declarations on the statechart root into
 /// `SCXMLModel::forge_imports`, enabling per-statechart EventSchema
@@ -8111,7 +8107,7 @@ pub fn parse_imports(
 
         let line = Some(child.document().text_pos_at(child.range().start).row);
 
-        // RFC §5.B variant-dispatch (B5-ν inversion) — parse the
+        // RFC §5.B parent-side variant-dispatch — parse the
         // optional `<sce:variant-dispatch flag="X.Y"/>` child element.
         // Cross-doc validator (`validate_cross_codec_variant_dispatch`)
         // resolves the dotted reference against the importing codec's
@@ -8184,7 +8180,7 @@ pub fn parse_imports(
             });
         }
 
-        // RFC Axis-1 inversion — parse `<sce:flag-bind>` children. Each
+        // RFC flag inversion — parse `<sce:flag-bind>` children. Each
         // supplies one of the imported leaf codec's declared
         // `<sce:flag-inputs>` from either a local flags-carrier flag
         // (dotted form) or one of this codec's own flag-inputs (chain-
@@ -8382,7 +8378,7 @@ fn parse_forge_field(
     })
 }
 
-/// NL→IR Mapping Roadmap Item 4 — parse the `sce:quantity` /
+/// Physical-quantity surface — parse the `sce:quantity` /
 /// `sce:scale` / `sce:offset` attribute trio.
 ///
 /// Returns `Ok(None)` when no attribute is present; returns `Ok(Some(q))`

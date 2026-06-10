@@ -22,7 +22,7 @@ class CodecZenohExtEntryVariant:
     matching ``Optional`` field carries the decoded body. ``default_tag``
     preserves the runtime tag value when the default arm fires so encode
     can round-trip it back onto the wire."""
-    # RFC variant-default-uniformity Atomic β-python: pick the declared
+    # RFC variant-default-uniformity (Python): pick the declared
     # default arm (``<sce:arm default="true"/>``) when present so a
     # freshly-constructed envelope round-trips byte-exactly through
     # ``encode() -> decode()``. The corresponding arm body field uses a

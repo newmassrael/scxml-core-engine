@@ -17,7 +17,7 @@
                                  positions differ: inner has N@0 and
                                  M@1, while per-MID header has N@5).
                                  The carrier-name distinction satisfies
-                                 B5-γ cross-codec parent-flag validator
+                                 parent-flags cross-codec parent-flag validator
                                  (validate_cross_codec_parent_flags is
                                  by-name AND by-bit; this codec carries
                                  its own local-scope `<sce:flags>`,
@@ -38,7 +38,7 @@
                                  `_z_zbuf_len(zbf)` on the bounded
                                  inner cursor. Tail naturally captures
                                  this when the outer envelope length-
-                                 bounds the inner cursor scope (Y0b
+                                 bounds the inner cursor scope (
                                  sce:length-from primitive).
 
      `inner_header` flag layout (declarations.c:42 verbatim):
@@ -51,10 +51,10 @@
                    value, but no `sce:present-if` consumer.
 
      SceType=bytes for `suffix` (NOT `string`) defers UTF-8 host-
-     language typing to a future Y0b-extension atomic. Y0a's
+     language typing to a future -extension atomic. 's
      codec_zenoh_wireexpr lifted gated-String only for length-ref
      bit-size; gated-String + Tail awaits a separate consumer-driven
-     lift (the Y0b envelope surface and the string-tail surface are
+     lift (the envelope surface and the string-tail surface are
      orthogonal). Caller treats `suffix` as UTF-8 by zenoh contract.
 
      Plain (no `<sce:requires-parent-flags>`) — this is a self-

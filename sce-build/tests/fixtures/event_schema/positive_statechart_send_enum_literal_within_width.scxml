@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  NL→IR Item C1 Path A Atomic 5 positive boundary fixture (send-side
+  Enum width-axis positive boundary fixture (send-side
   mirror of `positive_statechart_enum_literal_within_width.scxml`):
   `<send event="job.completed"><param name="status" expr="0xFF"/>`
   fits the uint8 carrier exactly. Locks the send-side branch of the
   narrowing layer against off-by-one drift.
 
-  Imports the open-set `result_open` enum pair so the F-κ membership
+  Imports the open-set `result_open` enum pair so the strict variant-membership
   layer silent-skips and the fixture exercises the width axis in
   isolation (post-F-κ axis split, same pattern as the receive-side
   mirror).

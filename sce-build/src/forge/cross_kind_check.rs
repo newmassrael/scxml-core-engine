@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// NL→IR Mapping Roadmap Item 2 — cross-kind typed binding verification.
+// Cross-kind typed binding verification.
 //
 // Walks every expression site in a parsed Forge document and validates each
 // `<alias>.<field>` member-access reference against the imported kind's

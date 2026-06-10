@@ -171,14 +171,14 @@ fn assert_sidecar_forge_lang(
     );
 }
 
-/// RFC §5.B B5-θ codec test-vector trunk gate-rejection helper.
+/// RFC §5.B codec test-vector trunk gate-rejection helper.
 /// Asserts that compiling the named codec SCXML for the given
 /// language yields exactly one output file (the primary codec
 /// header / module) — i.e. no sidecar emission. The 4 trunk-gated
-/// backends (Cpp / Kotlin / Go / Python) take this path until per-
-/// language B5-θ closures land; once a closure lifts the gate, the
-/// matching `forge_codec_..._<lang>_no_sidecar_until_closure` test
-/// rotates to a positive `assert_sidecar_forge_lang(...)` call.
+/// backends (Cpp / Kotlin / Go / Python) take this path while their
+/// sidecar emission stays consumer-gated; once a closure lifts the
+/// gate, the matching `forge_codec_..._<lang>_no_sidecar_until_closure`
+/// test rotates to a positive `assert_sidecar_forge_lang(...)` call.
 fn assert_no_codec_sidecar_until_closure(
     scxml_name: &str,
     language: sce_build::generator::Language,
@@ -205,7 +205,7 @@ fn assert_no_codec_sidecar_until_closure(
     assert_eq!(
         output.files.len(),
         1,
-        "B5-θ trunk gate: codec '{scxml_name}' on {language:?} must emit exactly one file \
+        "Test-vector trunk gate: codec '{scxml_name}' on {language:?} must emit exactly one file \
          (primary codec, no sidecar). Got {} files: {:?}",
         output.files.len(),
         output
@@ -637,7 +637,7 @@ fn assert_inline_codec_structural(
                 ),
                 "C11: missing cursor-based decode signature"
             );
-            // RFC §5.B B1-α writer-based encode: signature now takes a
+            // RFC §5.B writer-based encode: signature takes a
             // caller-owned `sce_forge_writer_t *w` and returns
             // `sce_forge_codec_status_t`; the legacy `_encoded_t`
             // envelope typedef no longer exists.
@@ -682,10 +682,10 @@ fn forge_cpp_algorithm_crc16_test_vector_sidecar() {
     );
 }
 
-// ── RFC c7-wildcard W-index: bytes-view random index + `len` builtin ──
-// `algorithm_bytes_equal` exercises `a[i]`/`b[i]` (bytes-view index,
-// Q-W-1/2) and `len(a)`/`len(b)` (length builtin, Q-W-3) on all six
-// backends. Drift guard for the S3 (Index emit) + S4 (len builtin)
+// ── Item C7 wildcard keyexpr: bytes-view random index + `len` builtin ──
+// `algorithm_bytes_equal` exercises `a[i]`/`b[i]` (bytes-view
+// index) and `len(a)`/`len(b)` (length builtin) on all six
+// backends. Drift guard for the index-emit + len-builtin
 // expressibility the runtime keyexpr matcher is built from.
 
 #[test]
@@ -730,14 +730,14 @@ fn forge_c11_algorithm_bytes_equal() {
     );
 }
 
-// ── RFC §5.B B5-θ codec test-vector sidecars (Rust + C11 trunk) ───
+// ── RFC §5.B codec test-vector sidecars (Rust + C11 trunk) ───
 //
 // 3 fixtures × 2 backends = 6 positive sidecar emissions; each row
 // builds the codec struct from declared `<sce:decoded>` field
 // values, encodes → asserts byte parity vs the row's `hex`, decodes
 // → asserts every field round-trips. Cpp / Kotlin / Go / Python
-// stay in the gate-rejection bucket (12 negative tests below) until
-// per-language B5-θ closures lift the trunk gate.
+// stay in the gate-rejection bucket (12 negative tests below);
+// their sidecar emission is consumer-gated.
 
 #[test]
 fn forge_rust_codec_zenoh_close_test_vector_sidecar() {
@@ -793,13 +793,13 @@ fn forge_c11_codec_zenoh_locator_test_vector_sidecar() {
     );
 }
 
-// ── B5-θ trunk gate-rejection: 4 backends × 3 fixtures = 12 ────
+// ── Test-vector trunk gate-rejection: 4 backends × 3 fixtures = 12 ──
 //
 // Each test asserts that the named codec compiles cleanly to its
 // primary file but emits NO sidecar on the targeted backend. When
 // per-language closures land, each test rotates to its matching
-// `assert_sidecar_forge_lang(...)` call (mirrors B1-β / B5-γ /
-// B5-ε / B5-ζ trunk-then-closures rotation pattern).
+// `assert_sidecar_forge_lang(...)` call (the recurring trunk-then-
+// closures rotation pattern).
 
 #[test]
 fn forge_codec_zenoh_close_cpp_no_sidecar_until_closure() {
@@ -885,16 +885,16 @@ fn forge_codec_zenoh_locator_python_no_sidecar_until_closure() {
     );
 }
 
-// ── B5-ι sidecar emit (Rust + C11) + 4 backend gate ─────────────
+// ── Cross-codec composition sidecar emit (Rust + C11) + 4 backend gate ──
 //
 // codec_zenoh_fragment carries inline `<sce:test-vector>` rows so the
 // per-fixture sidecar `*_test.rs` / `*_test.c.h` is emitted on Rust +
-// C11. cpp/kotlin/go/python remain gated until B5-θ closures land
-// (mirrors the close/frame/locator rotation pattern from B5-θ trunk).
+// C11. cpp/kotlin/go/python remain gated (their closures are
+// consumer-gated; mirrors the close/frame/locator rotation pattern).
 // codec_zenoh_decl_final has an empty body and no test vectors, so it emits
 // no sidecar on any backend. codec_zenoh_open_body's gated cookie
-// pair precludes inline `<sce:test-vector>` until B5-θ-optional lands
-// absent-vs-present markers (same constraint as codec_zenoh_scout).
+// pair precludes inline `<sce:test-vector>` — absent-vs-present
+// markers are consumer-gated (same constraint as codec_zenoh_scout).
 
 #[test]
 fn forge_rust_codec_zenoh_fragment_test_vector_sidecar() {
@@ -946,15 +946,15 @@ fn forge_codec_zenoh_fragment_python_no_sidecar_until_closure() {
     );
 }
 
-// ── RFC §5.B B5-κ Surface L sidecar emit (primitive demo) ──────
+// ── RFC §5.B dotted-path length-field sidecar emit (primitive demo) ──
 //
 // codec_length_ref_dotted_basic carries inline `<sce:test-vector>`
 // rows, so the per-fixture sidecar emits on Rust + C11. cpp/kotlin/
-// go/python remain gated until B5-θ closures land (rotating gate
-// pattern from B5-θ trunk). codec_zenoh_scout has no inline
-// test-vectors (B5-θ doesn't yet support absent-vs-present markers
-// for present-if codecs — `<sce:test-vector>` was rejected until that
-// closure), so its sidecar is uniformly empty across all 6 backends.
+// go/python remain gated (their closures are consumer-gated;
+// rotating gate pattern from the trunk). codec_zenoh_scout has no
+// inline test-vectors (test-vector support lacks absent-vs-present
+// markers for present-if codecs — `<sce:test-vector>` is rejected
+// there), so its sidecar is uniformly empty across all 6 backends.
 
 #[test]
 fn forge_rust_codec_length_ref_dotted_basic_test_vector_sidecar() {
@@ -1327,7 +1327,7 @@ fn forge_codec_vle_zint_u64() {
     assert_standalone_forge("codec_vle_zint_u64", "codec_vle_zint_u64.h");
 }
 
-// ── RFC §5.B B5-prep Zenoh transport-message body codecs ────
+// ── RFC §5.B item B5 Zenoh transport-message body codecs ────
 // First reachable downstream consumers of B1-B4 primitives from
 // the watching-zenoh authoring path (RFC §7 B-track sequence).
 // Pure composition — no new IR / parser / template surface.
@@ -1348,7 +1348,7 @@ fn forge_codec_zenoh_frame_cpp() {
     assert_standalone_forge("codec_zenoh_frame", "codec_zenoh_frame.h");
 }
 
-// ── RFC §5.B B5-ι cross-codec composition (Cpp) ───────────────
+// ── RFC §5.B cross-codec composition (Cpp) ───────────────
 // Cross-codec composition fixtures from the watching-zenoh authoring
 // path (RFC §7 B-track). Pure composition of B1-B5 primitives — no
 // new IR / parser / template surface. Each fixture mirrors an upstream
@@ -1379,10 +1379,10 @@ fn forge_codec_zenoh_decl_final_cpp() {
     assert_standalone_forge("codec_zenoh_decl_final", "codec_zenoh_decl_final.h");
 }
 
-// ── RFC §5.B B5-κ Surface L dotted-path length-field (cpp) ─────
+// ── RFC §5.B dotted-path length-field (cpp) ─────
 // Author writes `sce:length-field="<carrier>.<flag>"` to source the
 // byte count of a length-ref payload from a multi-bit flag subfield
-// inside a flags-bearing carrier — mirrors B1-δ present-if's
+// inside a flags-bearing carrier — mirrors present-if's
 // dotted-path grammar exactly. First reachable consumer:
 // codec_zenoh_scout where zenoh-pico packs zid_len_m1 into cbyte's
 // high nibble alongside what / I bits.
@@ -1400,12 +1400,12 @@ fn forge_codec_zenoh_scout_cpp() {
     assert_standalone_forge("codec_zenoh_scout", "codec_zenoh_scout.h");
 }
 
-// ── RFC §5.B B5-α multi-bit flag accessor + empty-codec lift ──
+// ── RFC §5.B multi-bit flag accessor + empty-codec lift ──
 // `codec_qos_byte` mirrors zenoh's `_z_n_qos_t._val`: a uint8 carrier
 // with five bit-ranges (priority:3 + reliable:1 + congestion:2 +
 // express:1 + reserved:1). Multi-bit ranges (priority/congestion)
 // emit uint8-typed get/set; single-bit ranges (reliable/express/
-// reserved) keep the bool shape from B1-γ. `codec_zenoh_keep_alive`
+// reserved) keep the single-bit bool shape. `codec_zenoh_keep_alive`
 // is the first reachable consumer of the empty-body lift — the
 // surrounding 1-byte transport-message header (MID + flags) marks
 // the message; the body codec emits zero wire bytes.
@@ -1420,7 +1420,7 @@ fn forge_codec_zenoh_keep_alive_cpp() {
     assert_standalone_forge("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.h");
 }
 
-// ── RFC §5.B B1-γ flags primitive ────────────────────────────
+// ── RFC §5.B flags primitive ────────────────────────────
 // `codec_flags_basic` declares a uint8 carrier `header` with four
 // named bits; codegen emits per-flag get/set accessors while the wire
 // layout is unchanged from a plain uint8 field. The fixture mirrors
@@ -1432,12 +1432,12 @@ fn forge_codec_flags_basic() {
     assert_standalone_forge("codec_flags_basic", "codec_flags_basic.h");
 }
 
-// ── RFC §5.B B1-δ present-if primitive (trunk) ──────────────
+// ── RFC §5.B present-if primitive ───────────────────────────
 // `codec_present_if_basic` declares a uint8 flags carrier with one
 // named bit `has_seq` followed by a uint16 BE field gated on that
-// bit. Trunk ships Rust + Cpp byte-stable goldens; Kotlin / Go /
-// C11 / Python land in B1-δ closures (each errors with
-// `generate/unsupported-feature` until then). The fixture round-
+// bit. All six backends ship byte-stable goldens (see the per-
+// language `forge_<lang>_codec_present_if_basic` tests). The
+// fixture round-
 // trips two oracle frames: `set_has_seq(true) + seq=Some(0xCAFE)`
 // → `0x01 0xCA 0xFE`; `set_has_seq(false) + seq=None` → `0x00`.
 
@@ -1446,7 +1446,7 @@ fn forge_codec_present_if_basic() {
     assert_standalone_forge("codec_present_if_basic", "codec_present_if_basic.h");
 }
 
-// ── RFC §5.B B5-λ present-if negation primitive (Cpp) ───────
+// ── RFC §5.B present-if negation primitive (Cpp) ───────
 // `codec_present_if_negation` mirrors `codec_present_if_basic`'s
 // shape but inverts the polarity: the trailing seq field is gated
 // on `!flags.absent_seq` so it's present iff the named bit is
@@ -1463,7 +1463,7 @@ fn forge_codec_present_if_negation() {
     assert_standalone_forge("codec_present_if_negation", "codec_present_if_negation.h");
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Cpp) ──
+// ── RFC §5.B present-if disjunction primitive (Cpp) ──
 // `codec_present_if_disjunction` mirrors the basic / negation
 // fixtures' shape but uses an OR chain — the trailing seq field is
 // gated on `flags.wants_a || flags.wants_b`. Each clause contributes
@@ -1474,7 +1474,7 @@ fn forge_codec_present_if_negation() {
 // consumer surfaces") for the disjunction half — zenoh-pico interest
 // is the surfaced consumer (`_Z_INTEREST_NOT_FINAL_MASK = (CURRENT
 // | FUTURE)`, interest.h:35), exercised at codec level by
-// codec_zenoh_interest in the same atomic.
+// codec_zenoh_interest.
 
 #[test]
 fn forge_codec_present_if_disjunction() {
@@ -1484,13 +1484,13 @@ fn forge_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Cpp) ──
+// ── RFC §5.B peek-byte primitive (Cpp) ──
 // `codec_variant_peek_basic` exercises `<sce:peek-byte>` as a child
 // of `<sce:variant>` — the cursor's NEXT byte is read without
 // advancing and dispatched on a named bit-range; the arm body
 // decoder reads that same byte as its own first wire byte. Models
 // the Zenoh response/request body MID dispatch shape per
-// `network.c:347-364`. The cross-codec validator (this atomic)
+// `network.c:347-364`. The cross-codec validator
 // enforces that each arm body's first `<sce:flags>` field at
 // byte_offset=0 declares peek-byte's named flags identically. Arm
 // body codecs `codec_peek_arm_a` / `codec_peek_arm_b` ship as
@@ -1512,24 +1512,24 @@ fn forge_codec_variant_peek_basic() {
     assert_standalone_forge("codec_variant_peek_basic", "codec_variant_peek_basic.h");
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii peek-byte first realistic peek-byte
+// ── RFC §5.B first realistic peek-byte
 // consumer: codec_zenoh_response (Cpp). Network-layer envelope
 // wrapping reply/err inner bodies — the inner body's own header
 // MID (Z_REPLY = 0x04 / Z_ERR = 0x05) identifies which arm body
 // codec consumes the trailing wire bytes. Mirrors zenoh-pico
-// `_z_response_encode/decode` (network.c). Composes Y3 atomic 2b-i
-// sub-codecs (msg_reply / msg_err) under the new peek-byte
-// primitive. Q4 envelope-only fidelity — inner wire detail strips
+// `_z_response_encode/decode` (network.c). Composes the
+// sub-codecs (msg_reply / msg_err) under the peek-byte
+// primitive. Envelope-only fidelity — inner wire detail strips
 // (VLE-LSB-as-flag, bit-shifted-length-prefix, source_info nested
-// ext) defer to follow-up atomic 2b-iii-{α,β,γ}.
+// ext) are consumer-gated.
 
 #[test]
 fn forge_codec_zenoh_response() {
     assert_standalone_forge("codec_zenoh_response", "codec_zenoh_response.h");
 }
 
-// ── RFC §5.B B2-β present-if + variable-length (Cpp) ─────────
-// B2-β lifts the v1 BitSize::Fixed-only restriction so present-if
+// ── RFC §5.B present-if + variable-length (Cpp) ─────────
+// This lift removes the BitSize::Fixed-only restriction so present-if
 // can gate Tail / LengthRef / Vle bit-sizes. Each fixture pairs
 // a uint8 flag carrier with a single gated variable-length field;
 // the encoded frame is exactly 1 byte when the flag is clear and
@@ -1583,8 +1583,8 @@ fn forge_codec_until_eof_basic_cpp() {
 
 // ── RFC §5.B repeat-with-present-if ────────────────────────────
 // `codec_repeat_present_if_basic` is the LOCAL-scope primitive demo
-// of `<sce:repeat sce:present-if="<carrier>.<flag>"/>`. Mirrors B5-κ
-// Surface L's two-fixture trunk pattern (primitive + realistic
+// of `<sce:repeat sce:present-if="<carrier>.<flag>"/>`. Mirrors the
+// dotted-path length-field two-fixture trunk pattern (primitive + realistic
 // consumer); the realistic consumer is `codec_zenoh_hello`.
 // Co-gating contract: the count field `num_elems` MUST carry the
 // IDENTICAL `sce:present-if="carrier.has_list"` predicate.
@@ -1600,11 +1600,13 @@ fn forge_codec_repeat_present_if_basic_cpp() {
     );
 }
 
-// `codec_zenoh_hello` is the realistic PARENT-scope consumer of B5-μ
+// `codec_zenoh_hello` is the realistic PARENT-scope consumer of
+// repeat-with-present-if
 // — mirrors zenoh-pico `_z_hello_encode` (message.c:646-664) +
 // `_Z_FLAG_T_HELLO_L = 0x20` at bit 5. Body's locator-list (VLE
 // num_locators + repeat<codec_zenoh_locator>) co-gates on the parent
-// header's L flag. Closes the final remaining Batch 1 fixture.
+// header's L flag. The final fixture of the first Zenoh
+// transport-message authoring batch.
 
 #[test]
 fn forge_codec_zenoh_hello_cpp() {
@@ -1612,17 +1614,18 @@ fn forge_codec_zenoh_hello_cpp() {
 }
 
 // ── Gated String + length-ref foundation ──────────────────────
-// Lifts the B5-ζ Surface H deferral on `sce:type="string"` +
-// `sce:present-if` (parser.rs:1583+ pre-Y0a) so zenoh-pico's
+// Lifts the earlier string-typing deferral on `sce:type="string"` +
+// `sce:present-if` (parser.rs:1583+) so zenoh-pico's
 // wireexpr (message.c:115-145 — VLE id + has_suffix-gated UTF-8
-// suffix) can be authored faithfully. Mirrors B5-μ X1's two-fixture
+// suffix) can be authored faithfully. Mirrors the repeat-with-
+// present-if two-fixture
 // trunk pattern: `codec_present_if_string` is the LOCAL-scope
 // primitive demo (carrier.has_text gates uint8 text_len + UTF-8
 // text) and `codec_zenoh_wireexpr` is the PARENT-scope realistic
 // body codec (parent.N gates VLE suffix_len + UTF-8 suffix; N flag
 // at bit 5 mirrors `_Z_DECL_KEXPR_FLAG_N = 0x20` and equivalents
-// across all 8 declare sub-types). 15+ Y1/Y3/Y4 consumers will
-// embed wireexpr via cross-codec parent-flag composition (B5-γ).
+// across all 8 declare sub-types). The declare/undeclare-family
+// consumers embed wireexpr via cross-codec parent-flag composition.
 
 #[test]
 fn forge_codec_present_if_string_cpp() {
@@ -1634,8 +1637,8 @@ fn forge_codec_zenoh_wireexpr_cpp() {
     assert_standalone_forge("codec_zenoh_wireexpr", "codec_zenoh_wireexpr.h");
 }
 
-// ── RFC §5.B Y0c — single-codec embed primitive ─────────────────────
-// Closes the Y1 prerequisite gap surfaced before authoring Wire RFC
+// ── RFC §5.B — single-codec embed primitive ─────────────────────
+// Closes the declare-family prerequisite gap surfaced before authoring Wire RFC
 // `<sce:embed>` rationale: the codec DSL had no way to compose a single imported
 // codec as an inline field. Repeat / TLV-chain / variant arm all use
 // codecs as container element types; embed is the missing "single
@@ -1645,8 +1648,8 @@ fn forge_codec_zenoh_wireexpr_cpp() {
 // consumer; four such consumers use this primitive).
 //
 // `codec_embed_basic` locks the wire-transparent emit shape across
-// 6 backends (`uint8 tag` + embedded `codec_zenoh_locator`). Y1's
-// realistic consumers compose this with B5-γ parent-flag threading
+// 6 backends (`uint8 tag` + embedded `codec_zenoh_locator`). The
+// declare-family consumers compose this with parent-flag threading
 // (Case B: pass-through `parent_flags`) for the wireexpr embed.
 
 #[test]
@@ -1669,8 +1672,8 @@ fn forge_codec_nested_parent_cpp() {
 }
 
 // ── RFC §5.B — declare/undeclare family (4
-// wireexpr-bearing decls + 1 trivial undecl). All compose Y0a's
-// codec_zenoh_wireexpr through Y0c embed grammar. The four
+// wireexpr-bearing decls + 1 trivial undecl). All compose
+// codec_zenoh_wireexpr through the embed grammar. The four
 // wireexpr-bearing decls (decl_keyexpr / decl_subscriber /
 // decl_queryable / decl_token) declare matching
 // `<sce:requires-parent-flags carrier="header">` blocks so the body's
@@ -1679,9 +1682,10 @@ fn forge_codec_nested_parent_cpp() {
 // queryable_info ext (ext_type uint8 + ext_value VLE u64 packed by
 // the host). undecl_keyexpr is a trivial single-VLE-id body.
 //
-// Y1 omits undecl_subscriber/queryable/token: they carry an optional
-// ext_keyexpr via TLV ext envelope (length-prefixed outer + inline-
-// suffix-by-implicit-length inner — new design surface scoped to Y0b).
+// undecl_subscriber/queryable/token are omitted here: they carry an
+// optional ext_keyexpr via TLV ext envelope (length-prefixed outer +
+// inline-suffix-by-implicit-length inner — the TLV-envelope
+// embed-attribute surface, covered below).
 
 #[test]
 fn forge_codec_zenoh_decl_kexpr_cpp() {
@@ -1713,7 +1717,7 @@ fn forge_codec_zenoh_undecl_kexpr_cpp() {
 
 // ── RFC §5.B — TLV envelope foundation ────
 // `codec_zenoh_decl_ext_keyexpr_inner` + `codec_zenoh_decl_ext_keyexpr`
-// lock the two Y0b embed-attribute lifts (sce:length-from + sce:
+// lock the two embed-attribute lifts (sce:length-from + sce:
 // present-if) as a primitive demo pair, with three undecl_*
 // realistic consumers exercising the parent.Z-gated optional embed
 // shape. Mirrors zenoh-pico declarations.c:38-50 + 90-104 verbatim.
@@ -1756,12 +1760,12 @@ fn forge_codec_zenoh_undecl_token_cpp() {
 }
 
 // ── RFC §5.B — _encode_ext envelope family ──
-// `codec_zenoh_source_info` is the second realistic consumer of B5-κ
-// dotted-path length-field + B5-δ length-arith (after codec_zenoh_scout),
+// `codec_zenoh_source_info` is the second realistic consumer of
+// dotted-path length-field + length-arith (after codec_zenoh_scout),
 // modelling `_z_source_info_encode/decode` (message.c:196-242). Its
 // `_encode_ext` envelope (message.c:243-254) and the bare timestamp's
 // `_z_timestamp_encode_ext` (message.c:95-100) are the only two
-// `_encode_ext` slots in upstream zenoh-pico — both compose the Y0b
+// `_encode_ext` slots in upstream zenoh-pico — both compose the
 // length-bound embed (`5a2c8afa`) over an existing body codec.
 
 #[test]
@@ -1786,8 +1790,8 @@ fn forge_codec_zenoh_timestamp_ext_cpp() {
 // `codec_tlv_chain_basic` declares a TLV chain bounded at max-depth=8
 // with on-overflow="reject". MCU-class — Cpp/Kotlin/Go/Python all
 // typed-reject with codegen/mcu-class-kind-on-non-mcu-language.
-// The trunk's "Cpp/Rust trunk" naming is consistent with B1-β/δ +
-// B2-α: "trunk" = first emit pair to land. For B3 the pair is
+// The trunk's "Cpp/Rust trunk" naming is consistent with the other
+// primitives: "trunk" = first emit pair to land. For item B3 the pair is
 // **Rust + C11** (not Rust + Cpp) because the kind is MCU-class —
 // Cpp would never be a valid emit target. Cpp gets a rejection test
 // instead. The Rust-only `forge_codec_tlv_chain_basic_rust` lives
@@ -1799,7 +1803,7 @@ fn forge_codec_tlv_entry_cpp() {
     // Plain entry codec (no MCU-only sub-features) — ships on all 6
     // backends. The cpp golden anchors the entry shape; the Rust
     // counterpart on the next test exercises the same fixture under
-    // the stream-correct length-ref shape introduced in B3-α.
+    // the stream-correct length-ref shape of the tlv-chain lift.
     assert_standalone_forge("codec_tlv_entry", "codec_tlv_entry.h");
 }
 
@@ -1813,12 +1817,12 @@ fn forge_codec_tlv_chain_basic_rust() {
     assert_standalone_forge_rust("codec_tlv_chain_basic", "codec_tlv_chain_basic.rs");
 }
 
-// ── RFC §5.B B5-ε surface G — TLV chain entry body keyed by carrier bits ─
+// ── RFC §5.B — TLV chain entry body keyed by carrier bits ─
 // `codec_zenoh_ext_envelope` carries a `<sce:tlv-chain>` of
 // `codec_zenoh_ext_entry` entries; each entry's body shape is selected
 // at runtime by the `enc` bit-range of its 1-byte header (mirrors
 // zenoh-pico `_z_msg_ext_decode_iter` + `_z_msg_ext_unknown_body_decode`).
-// Surface G freebie: no IR change. The `tlv_chain_body_alias` resolver
+// A freebie surface: no IR change. The `tlv_chain_body_alias` resolver
 // already accepts any imported codec; the chain decode helper invokes
 // the body codec's uniform `<codec>::decode(cursor)` /
 // `<codec>_decode(cursor, *out)` signature; a variant codec emits
@@ -1853,7 +1857,7 @@ fn forge_codec_zenoh_ext_envelope_rust() {
     assert_standalone_forge_rust("codec_zenoh_ext_envelope", "codec_zenoh_ext_envelope.rs");
 }
 
-// RFC §5.B B5-ε closures: cpp/kotlin/go/python now emit TLV chain via
+// RFC §5.B: cpp/kotlin/go/python emit TLV chain via
 // the host-language list shape (std::vector / MutableList / []T /
 // List). The previous gate-rejection test on `codec_zenoh_ext_envelope`
 // was retired alongside the analog on `codec_tlv_chain_basic` —
@@ -1882,7 +1886,7 @@ fn forge_codec_tlv_chain_basic_python() {
 // ── RFC §5.B — tlv-chain-with-present-if
 // `codec_tlv_chain_present_if_basic` is the minimal demo for the
 // `<sce:tlv-chain sce:present-if="P">` lift (mirrors codec_repeat_
-// present_if_basic for B5-μ). Single-bit local carrier gates the
+// present_if_basic). Single-bit local carrier gates the
 // chain; entries decode via the existing codec_tlv_entry. Locks the
 // gated-list host wrap shape across all 6 backends (Option<Vec<T>> /
 // std::optional<vector> / MutableList<T>? / bare []T (Go slice
@@ -1940,10 +1944,10 @@ fn forge_c11_codec_tlv_chain_present_if_basic() {
 // ── RFC §5.B — zenoh-specific demo
 // `codec_zenoh_query` mirrors zenoh-pico `_z_query_encode/decode`
 // (message.c:394-505). Used as the request body variant arm for
-// Y_QUERY (atomic 2b). Y3 atomic 2a uses it as the first realistic
+// Y_QUERY. Also the first realistic
 // consumer of tlv-chain-with-present-if; the chain is the codec's
 // last field so terminate-on stays at exhaust-or-depth (entry-flag
-// termination exercises in Y3 atomic 2b consumers like
+// termination is exercised in consumers like
 // codec_zenoh_request whose body variant follows the chain).
 
 #[test]
@@ -1979,8 +1983,8 @@ fn forge_c11_codec_zenoh_query() {
 // ── RFC §5.B — sub-codec atomic
 // `codec_zenoh_reply` mirrors zenoh-pico `_z_reply_encode/decode`
 // (message.c:507-543) at envelope-level wire fidelity. Response body
-// variant arm for Z_REPLY (atomic 2b consumer codec_zenoh_response).
-// First realistic consumer of Y3 atomic 1's entry-flag chain
+// variant arm for Z_REPLY (consumed by codec_zenoh_response).
+// First realistic consumer of the entry-flag chain
 // termination — chain is followed by the push_body embed so
 // exhaust-or-depth would not detect the body boundary.
 
@@ -2290,8 +2294,8 @@ fn forge_c11_codec_zenoh_msg_del() {
 
 // ── RFC §5.B — first realistic
 // peek-byte primitive consumer with msg_put / msg_del / query body
-// arms (atomic 2b-i sub-codecs + atomic 2a sub-codec composing through
-// atomic 2b-ii peek-byte primitive). Mirrors zenoh-pico
+// arms (sub-codecs composing through
+// the peek-byte primitive). Mirrors zenoh-pico
 // `_z_request_encode/decode` (network.c:113-238). Header carries N@5
 // + M@6 + Z@7 verbatim upstream (`_Z_FLAG_N_REQUEST_N=0x20` /
 // `_Z_FLAG_N_REQUEST_M=0x40` per network.h:70-71) — distinct from the
@@ -2479,7 +2483,7 @@ fn forge_c11_codec_zenoh_oam() {
 // mirrors zenoh-pico `_z_declare_encode/decode` (network.c:388-450).
 // Header carries MID 0x1e + I@5 (gates VLE u32 interest_id) + Z@7
 // (gates ext chain). Inner body is codec_zenoh_declaration embed
-// (atomic 2b-i sub-codec, 9-arm dispatcher). interest_id type = u32
+// (sub-codec, 9-arm dispatcher). interest_id type = u32
 // per upstream `_z_zint32_decode` at network.c:441.
 
 #[test]
@@ -2520,12 +2524,12 @@ fn forge_c11_codec_zenoh_declare() {
 // CURRENT@5 + FUTURE@6 + Z@7. Wire = header + ALWAYS-present VLE u64
 // id + present-if-(`header.CURRENT || header.FUTURE`)-gated
 // codec_zenoh_interest_body embed + Z-gated chain. The body embed is
-// the first realistic consumer of the Y3 atomic 2b-ii disjunction
+// the first realistic consumer of the present-if disjunction
 // primitive — matches upstream
 // `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` at interest.h:35.
 // Bundled refactor: codec_zenoh_interest_body drops the leading `id`
 // VLE field (parent-owns-id textbook composition) so its 6 byte
-// goldens regenerate alongside this atomic.
+// goldens regenerate alongside it.
 
 #[test]
 fn forge_codec_zenoh_interest_cpp() {
@@ -2557,10 +2561,10 @@ fn forge_c11_codec_zenoh_interest() {
     assert_standalone_forge_c("codec_zenoh_interest", "codec_zenoh_interest.c.h");
 }
 
-// `forge_codec_tlv_entry_cpp` already exists above (it predates B5-ε;
-// the entry codec ships on all 6 backends since it has no MCU-only
-// sub-features itself). The new B5-ε closures add the missing kotlin /
-// go / python entries below.
+// `forge_codec_tlv_entry_cpp` already exists above (it predates the
+// TLV-chain closures; the entry codec ships on all 6 backends since
+// it has no MCU-only sub-features itself). The kotlin /
+// go / python entries follow below.
 
 #[test]
 fn forge_codec_tlv_entry_kotlin() {
@@ -2677,7 +2681,7 @@ fn forge_codec_zenoh_ext_envelope_python() {
     assert_standalone_forge_python("codec_zenoh_ext_envelope", "codec_zenoh_ext_envelope.py");
 }
 
-// ── RFC §5.B B5-ζ Surface H — string-vs-bytes typing ─────────
+// ── RFC §5.B — string-vs-bytes typing ─────────
 // `codec_zenoh_locator` is the first reachable consumer for
 // `sce:type="string"` codec emit. Wire shape mirrors zenoh-pico
 // `_z_string_encode`/`_z_string_decode` (codec.c:324-343) — VLE-
@@ -2721,7 +2725,7 @@ fn forge_python_codec_zenoh_locator() {
     assert_standalone_forge_python("codec_zenoh_locator", "codec_zenoh_locator.py");
 }
 
-/// RFC §5.B B5-ζ Surface H parser validation: `sce:type="string"`
+/// RFC §5.B string-typing parser validation: `sce:type="string"`
 /// must pair with `sce:bit-size="length-ref"`. Tail / fixed-bit / vle
 /// shapes reject with `validation/invalid-attribute` reporting the
 /// legal combination so authors see the repair hint upfront. Mirror
@@ -2776,7 +2780,7 @@ fn forge_codec_string_with_tail_bit_size_rejects() {
 // tests positively exercise the lifted surface across all 6
 // backends.
 
-// ── RFC §5.B B5-η Surface I — recursive variant body ─────────
+// ── RFC §5.B — recursive variant body ─────────
 // `codec_zenoh_push` is a variant codec whose 0x1d-arm body is
 // itself a variant codec (`codec_zenoh_push_body`, dispatching
 // PUT 0x01 / DEL 0x02). The per-language emit must therefore
@@ -2785,19 +2789,19 @@ fn forge_codec_string_with_tail_bit_size_rejects() {
 // `std::variant<PushBodyVariant, ...>`, Kotlin `sealed class Push`
 // holding `sealed class PushBody`, Go pointer-tagged struct of
 // pointer-tagged struct, C11 tagged-union-of-tagged-union, Python
-// kind-discriminated dataclass-of-dataclass). Surface I was
+// kind-discriminated dataclass-of-dataclass). This surface was
 // preflight-validated as an IR-level freebie:
 // `resolve_variant_arm_body_type` only checks `imp.kind ==
 // "codec"`, with no variant-bearing-import gate, and a smoke
 // fixture importing codec_variant_dispatch as an arm body produced
 // byte-stable C11 compiling under `-std=c11 -Wall -Wextra
-// -Wpedantic -Werror`. The atomic-6 commit lands the production
-// composition on all 6 backends with no IR change.
+// -Wpedantic -Werror`. The production
+// composition lands on all 6 backends with no IR change.
 //
 // Leaves: codec_zenoh_put (1-byte payload) and codec_zenoh_del
-// (empty body, mirrors B5-α empty-codec lift) — both stripped down
+// (empty body, mirrors the empty-codec lift) — both stripped down
 // from upstream `_z_msg_put_t`/`_z_msg_del_t` to keep the recursion
-// surface focus and avoid pulling in B5-γ parent-flags. Inner
+// surface focus and avoid pulling in parent-flags. Inner
 // variant: codec_zenoh_push_body (mirrors zenoh-pico
 // `_z_push_body_decode` switch on `_Z_MID(header)` PUT/DEL/default).
 // Outer variant: codec_zenoh_push (mirrors a stripped `_z_n_msg_t`
@@ -2905,13 +2909,13 @@ fn forge_python_codec_zenoh_push() {
     assert_standalone_forge_python("codec_zenoh_push", "codec_zenoh_push.py");
 }
 
-// RFC §5.B B5-ε closures: TLV chain emit landed on cpp/kotlin/go/
+// RFC §5.B: TLV chain emit landed on cpp/kotlin/go/
 // python via the host-language list shape (std::vector / MutableList /
 // []T / List); the previous `forge_codec_tlv_chain_rejects_on_cpp`
 // gate-rejection test was retired in the same change. Positive byte-
 // golden tests for `codec_tlv_chain_basic` on the 4 newly supported
 // backends live alongside the existing Rust + C11 tests below. The DMA
-// alignment primitive (B3-β) stays MCU-only — its gate-rejection test
+// alignment primitive stays MCU-only — its gate-rejection test
 // remains at `forge_codec_dma_aligned_basic_rejects_on_*`.
 
 /// RFC §5.B B3: `<sce:tlv-chain>` without `max-depth` rejects with the
@@ -3263,7 +3267,7 @@ fn forge_codec_repeat_forward_count_rejects() {
     );
 }
 
-/// RFC §5.B B5-μ co-gating contract — repeat-with-present-if (Wire
+/// RFC §5.B co-gating contract — repeat-with-present-if (Wire
 /// repeat-with-present-if). When `<sce:repeat sce:count="X"
 /// sce:present-if="P"/>` is gated, the count source field `X` MUST
 /// also carry the IDENTICAL predicate `P`. Wire semantics: when the
@@ -3356,9 +3360,9 @@ fn forge_codec_repeat_present_if_count_predicate_mismatch_rejects() {
     );
 }
 
-// ── RFC §5.B B5-κ Surface L parser-validation reject tests ────
+// ── RFC §5.B dotted-path length-field parser-validation rejects ──
 //
-// Mirrors B1-δ present-if's reject coverage (forward-reference,
+// Mirrors present-if's reject coverage (forward-reference,
 // non-flags-bearing carrier, missing flag, single-bit flag rejected
 // for length-source semantics). Every failure folds into the
 // generic `validation/invalid-attribute` (no new diagnostic).
@@ -3583,7 +3587,7 @@ fn forge_algorithm_test_vector_parses() {
     );
 }
 
-/// RFC §5.B B5-θ positive: a codec with multiple `<sce:test-vector>`
+/// RFC §5.B test-vector positive: a codec with multiple `<sce:test-vector>`
 /// rows parses cleanly into the IR. Pins the field-name resolution
 /// (must match a declared `<sce:field>`), the per-type literal
 /// dispatch (uint integer + bytes hex), and the source_line tracking.
@@ -3630,7 +3634,7 @@ fn forge_codec_test_vector_parses() {
     assert!(matches!(&fields[1].value, DecodedFieldValue::Bytes(bs) if bs == &vec![0xCA, 0xFE]));
 }
 
-/// RFC §5.B B5-θ negative: `<sce:decoded field="...">` referencing a
+/// RFC §5.B test-vector negative: `<sce:decoded field="...">` referencing a
 /// field id that does not exist in the codec rejects with the
 /// generic `validation/invalid-attribute` slot — the repair stays
 /// attribute-text-level so no new diagnostic warranted.
@@ -3681,8 +3685,8 @@ fn forge_codec_test_vector_unknown_field_rejects() {
 /// non-supported kinds (filter / transform / lookup / etc.) cannot
 /// host a hex-bytes round-trip oracle in v1 — the parser-side gate
 /// keeps the rejection anchored at the offending element rather
-/// than letting it leak into codegen. B5-θ landed `<sce:test-vector>`
-/// support for codec; this test rotates from "codec rejects" to
+/// than letting it leak into codegen. With `<sce:test-vector>`
+/// support landed for codec, this test rotates from "codec rejects" to
 /// "filter still rejects" as the canary for the kind-allowlist gate.
 #[test]
 fn forge_test_vector_on_filter_rejects() {
@@ -3803,7 +3807,7 @@ fn forge_test_vector_invalid_value_rejects() {
     );
 }
 
-// ── RFC §5.B variant primitive (B1-β trunk) ──────────────────
+// ── RFC §5.B variant primitive (trunk) ──────────────────
 // `codec_variant_dispatch` imports two arm-body codecs and exposes
 // the discriminated-union shape across Rust + Cpp. Sub-codecs ship
 // their own goldens so the syn / cpp parser gates compile each
@@ -3830,7 +3834,7 @@ fn forge_codec_variant_dispatch_cpp() {
     assert_standalone_forge("codec_variant_dispatch", "codec_variant_dispatch.h");
 }
 
-/// RFC §5.B B5-β multi-bit-flag variant dispatch (Cpp): `<sce:variant
+/// RFC §5.B multi-bit-flag variant dispatch (Cpp): `<sce:variant
 /// tag="header.mid">` extracts the 5-bit MID slice from a uint8 flags
 /// carrier and dispatches into KeepAlive (empty body) / Close (uint8
 /// reason) / Default arms — mirrors zenoh-pico's transport-message
@@ -3841,7 +3845,7 @@ fn forge_codec_transport_envelope_cpp() {
     assert_standalone_forge("codec_transport_envelope", "codec_transport_envelope.h");
 }
 
-/// RFC §5.B B5-γ trunk (Cpp): body codec with `<sce:requires-parent-flags
+/// RFC §5.B parent-flags trunk (Cpp): body codec with `<sce:requires-parent-flags
 /// carrier="header"><sce:flag name="S" bit="6"/></sce:requires-parent-flags>`
 /// emits decode/encode signatures that take a `std::uint8_t parent_flags`
 /// parameter. Body fields gated by `sce:present-if="parent.S"` read the
@@ -3852,7 +3856,7 @@ fn forge_codec_init_syn_body_cpp() {
     assert_standalone_forge("codec_init_syn_body", "codec_init_syn_body.h");
 }
 
-/// RFC §5.B B5-γ trunk (Cpp): variant parent codec whose arm body
+/// RFC §5.B parent-flags trunk (Cpp): variant parent codec whose arm body
 /// declares `<sce:requires-parent-flags carrier="header">` — the
 /// dispatch threads the parent's `header` flags-carrier value into
 /// the body's `decode(cursor, header)` / `encode(header)` calls.
@@ -3864,7 +3868,7 @@ fn forge_codec_init_syn_envelope_cpp() {
     assert_standalone_forge("codec_init_syn_envelope", "codec_init_syn_envelope.h");
 }
 
-/// RFC §5.B B5-δ Surfaces D + E (Cpp): Init body cookie codec exercising
+/// RFC §5.B (Cpp): Init body cookie codec exercising
 /// VLE-length-ref bit-size on the length sibling AND a gated length
 /// sibling (cookie_size + cookie both gated by `parent.A`). The decode
 /// helper unwraps the std::optional<uint16_t> sibling inside the gated
@@ -3877,7 +3881,7 @@ fn forge_codec_init_cookie_body_cpp() {
     assert_standalone_forge("codec_init_cookie_body", "codec_init_cookie_body.h");
 }
 
-/// RFC §5.B B5-δ Surface F (Cpp): Scout/Hello/Init zid codec exercising
+/// RFC §5.B length-arith (Cpp): Scout/Hello/Init zid codec exercising
 /// arithmetic offset on the length sibling. Author writes
 /// `sce:length-arith="+1"` paired with `sce:length-field="zid_len_m1"`;
 /// decode reads `_n = sibling_value + 1` bytes. Mirrors zenoh-pico's
@@ -3887,7 +3891,7 @@ fn forge_codec_scout_zid_body_cpp() {
     assert_standalone_forge("codec_scout_zid_body", "codec_scout_zid_body.h");
 }
 
-/// RFC §5.B B1-β: `codec/variant-arm-unreachable` build-time check —
+/// RFC §5.B: `codec/variant-arm-unreachable` build-time check —
 /// a `<sce:variant>` over a uint8 tag with two arms and no
 /// `<sce:default>` leaves 254 tag values uncovered, so the parser
 /// must reject with the typed diagnostic naming the codec, the tag,
@@ -3941,12 +3945,12 @@ fn forge_codec_variant_missing_default_rejects() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic α: `<sce:arm default="true"/>`
+/// RFC variant-default-uniformity: `<sce:arm default="true"/>`
 /// is accepted on at most one arm — a second declaration raises
 /// `codec/variant-duplicate-default-arm` with both offending arm
 /// values preserved on the diagnostic so authors can identify
 /// which arm to demote. Independent of the catch-all `<sce:default>`
-/// element (per RFC §3 Q-V3 (a) the two are distinct concepts).
+/// element (per RFC §3 the two are distinct concepts).
 #[test]
 fn forge_codec_variant_duplicate_default_arm_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
@@ -3995,7 +3999,7 @@ fn forge_codec_variant_duplicate_default_arm_rejects() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic γ-1: when the outer
+/// RFC variant-default-uniformity: when the outer
 /// `<sce:arm default="true" value="X"/>` selects an inner codec
 /// that declares `<sce:flag value="Y"/>` on its matching peek-byte
 /// flag with X ≠ Y, codegen rejects with `codec/variant-default-
@@ -4066,11 +4070,11 @@ fn forge_codec_variant_default_arm_mid_mismatch_rejects() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic γ-1: when the outer
+/// RFC variant-default-uniformity: when the outer
 /// `<sce:arm default="true"/>` selects an inner codec that does
 /// NOT declare `<sce:flag value="..."/>` on its dispatch field —
 /// either because the inner has no flags carrier at offset 0
-/// (B5-η-stripped leaf) or because the matching flag is declared
+/// (recursion-stripped leaf) or because the matching flag is declared
 /// without a value — codegen rejects with `codec/variant-arm-
 /// inner-mid-undeclared`. Without the wire-MID baked into the
 /// inner's Default, round-trip would zero-fill the dispatch byte
@@ -4138,12 +4142,12 @@ fn forge_codec_variant_arm_inner_mid_undeclared_rejects() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic γ-3 (Q-V4 (a)): every
+/// RFC variant-default-uniformity: every
 /// `<sce:variant>` must declare an `<sce:arm default="true"/>` —
 /// codegen rejects the legacy "no marker = pick first declared
 /// arm" implicit fallback that led to the watching-zenoh R87
 /// defect. The catch-all `<sce:default>` is a separate concept
-/// and does not satisfy the requirement (Q-V3 (a)).
+/// and does not satisfy the requirement.
 #[test]
 fn forge_codec_variant_no_default_arm_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
@@ -4193,7 +4197,7 @@ fn forge_codec_variant_no_default_arm_rejects() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic α: `default="..."` on
+/// RFC variant-default-uniformity: `default="..."` on
 /// `<sce:arm>` is typed as `xs:boolean` in the XSD, so a misspelling
 /// like `default="yes"` is caught at the structural XSD layer before
 /// the parser runs. The parser's own fallback (rejecting non-"true"/
@@ -4235,7 +4239,7 @@ fn forge_codec_variant_arm_invalid_default_value_rejects() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic α: `<sce:flag value="N"/>`
+/// RFC variant-default-uniformity: `<sce:flag value="N"/>`
 /// must fit the declared bit-range — values exceeding
 /// `(1 << width) - 1` reject because the high bits would silently
 /// overlap adjacent flags' ranges. The `priority` field in
@@ -4280,7 +4284,7 @@ fn forge_codec_flag_value_out_of_range_rejects() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic α: `<sce:flag value="N"/>`
+/// RFC variant-default-uniformity: `<sce:flag value="N"/>`
 /// must parse as an unsigned integer (decimal or 0x-hex). A
 /// non-numeric token rejects with the same `validation/numeric-parse`
 /// shape as the existing `bit=`/`width=` parser.
@@ -4324,12 +4328,12 @@ fn forge_codec_flag_value_malformed_rejects() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic α: happy path — a single
+/// RFC variant-default-uniformity: happy path — a single
 /// arm with `default="true"` AND a catch-all `<sce:default>`
-/// coexist without conflict (Q-V3 (a) lock — the two declarations
+/// coexist without conflict (the two declarations
 /// answer independent questions). Verifies that codegen still
-/// succeeds end-to-end; the Atomic α surface is parse-only so
-/// no emission shape changes here.
+/// succeeds end-to-end; the default-marker surface is parse-only
+/// so no emission shape changes here.
 #[test]
 fn forge_codec_variant_default_arm_and_catch_all_coexist() {
     let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -4354,10 +4358,10 @@ fn forge_codec_variant_default_arm_and_catch_all_coexist() {
         &resource_dir(),
         &sce_build::ForgeCompileOptions::default(),
     )
-    .expect("default=\"true\" on one arm + <sce:default> catch-all must coexist (RFC Q-V3 (a))");
+    .expect("default=\"true\" on one arm + <sce:default> catch-all must coexist");
 }
 
-/// RFC variant-default-uniformity Atomic β (Rust): the inner arm body
+/// RFC variant-default-uniformity (Rust): the inner arm body
 /// codec with `<sce:flag value="0x02"/>` on its dispatch flag must
 /// emit a manual `impl Default` that bakes the wire-MID into the
 /// carrier byte. Without this, `CodecDefaultMarkerArmB::default()`
@@ -4399,7 +4403,7 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_rust() {
         .unwrap_or_else(|e| panic!("generated arm B source must parse as valid Rust: {e}"));
 }
 
-/// RFC variant-default-uniformity Atomic β (C++): the inner arm body
+/// RFC variant-default-uniformity (C++): the inner arm body
 /// codec with `<sce:flag value="0x02"/>` on its dispatch flag must
 /// emit a default member initializer `std::uint8_t header{0x02u}` so
 /// a freshly-constructed instance carries the wire-MID for its
@@ -4427,7 +4431,7 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_cpp() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (C++): the outer codec's
+/// RFC variant-default-uniformity (C++): the outer codec's
 /// `body` `std::variant` member must use `std::in_place_index<N>{}`
 /// to select the declared default arm — `N` is the 0-based index of
 /// the arm marked `default="true"`. Without this, `std::variant`'s
@@ -4460,7 +4464,7 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_cpp() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (Kotlin): the inner arm
+/// RFC variant-default-uniformity (Kotlin): the inner arm
 /// body codec with `<sce:flag value="0x02"/>` on its dispatch flag
 /// must emit a UByte-typed default `header: UByte = 0x02.toUByte()`
 /// on the data class primary constructor so a freshly-constructed
@@ -4491,7 +4495,7 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_kotlin() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (Kotlin): the outer
+/// RFC variant-default-uniformity (Kotlin): the outer
 /// codec's primary-constructor `body` default must construct the
 /// declared default arm — the one marked `default="true"` — rather
 /// than the first declared alternative. Kotlin has no positional
@@ -4535,7 +4539,7 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_kotlin() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (Python): the inner arm
+/// RFC variant-default-uniformity (Python): the inner arm
 /// body codec with `<sce:flag value="0x02"/>` on its dispatch flag
 /// must emit a Python-int default `header: int = 0x02` on the
 /// `@dataclass` so a freshly-constructed instance carries the
@@ -4562,7 +4566,7 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_python() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (Python): the outer
+/// RFC variant-default-uniformity (Python): the outer
 /// codec's `Variant` @dataclass must (a) select the declared default
 /// arm via `kind = "<ArmName>"` AND (b) populate that arm's body
 /// field via `field(default_factory=ArmType)`. Without (b) the body
@@ -4604,7 +4608,7 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_python() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (Go): the inner arm body
+/// RFC variant-default-uniformity (Go): the inner arm body
 /// codec with `<sce:flag value="0x02"/>` must emit a `NewT()`
 /// constructor returning a struct literal with `Header: uint8(0x02)`
 /// baked in. Go has no Default trait, so round-trip safety requires
@@ -4639,7 +4643,7 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_go() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (Go): the outer codec
+/// RFC variant-default-uniformity (Go): the outer codec
 /// must emit a `NewT()` constructor whose returned struct's `Body`
 /// is a Variant with the declared default arm's pointer populated
 /// via the inner codec's `New<Arm>()`. The bare `T{}` zero-value
@@ -4683,7 +4687,7 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_go() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (C11): the inner arm body
+/// RFC variant-default-uniformity (C11): the inner arm body
 /// codec with `<sce:flag value="0x02"/>` must emit a designated-
 /// initializer macro `<UPPER>_DEFAULT_INIT { .header = 0x02u, }` so
 /// `codec_t x = <UPPER>_DEFAULT_INIT;` constructs an instance whose
@@ -4715,7 +4719,7 @@ fn forge_codec_default_marker_arm_b_emits_baked_default_c11() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (C11): the outer codec
+/// RFC variant-default-uniformity (C11): the outer codec
 /// must emit a `_DEFAULT_INIT` macro whose body initializes the
 /// Variant `.kind` to the declared default arm's enum constant and
 /// composes the inner arm's own `_DEFAULT_INIT` into the matching
@@ -4763,7 +4767,7 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_c11() {
     );
 }
 
-/// RFC variant-default-uniformity Atomic β (Rust): the outer codec's
+/// RFC variant-default-uniformity (Rust): the outer codec's
 /// `*Variant::default()` must pick the arm marked `default="true"`
 /// (not the first declared arm). Combined with the inner manual
 /// Default (previous test), this closes the round-trip dispatch
@@ -4802,7 +4806,7 @@ fn forge_codec_variant_default_marker_outer_emits_declared_arm_rust() {
         .unwrap_or_else(|e| panic!("generated outer source must parse as valid Rust: {e}"));
 }
 
-/// RFC §5.B B5-β multi-bit-flag dispatch: `<sce:variant
+/// RFC §5.B multi-bit-flag dispatch: `<sce:variant
 /// tag="<carrier>.<flag>"/>` requires the carrier to be a
 /// `<sce:flags>`-bearing field. Pointing at a plain field rejects
 /// with `validation/invalid-attribute` so the author sees the
@@ -4849,7 +4853,7 @@ fn forge_codec_variant_dotted_tag_carrier_not_flags_rejects() {
     );
 }
 
-/// RFC §5.B B5-β multi-bit-flag dispatch: the named flag must exist
+/// RFC §5.B multi-bit-flag dispatch: the named flag must exist
 /// on the carrier. Typo'd or undeclared flag names reject with
 /// `validation/invalid-attribute`, naming the available flags so
 /// the author sees the right repair.
@@ -4901,7 +4905,7 @@ fn forge_codec_variant_dotted_tag_unknown_flag_rejects() {
     );
 }
 
-/// RFC §5.B B5-β multi-bit-flag dispatch: when the named bit-range
+/// RFC §5.B multi-bit-flag dispatch: when the named bit-range
 /// has small width (e.g. width=1 → domain {0,1}), the arm-domain
 /// validator computes domain = `1 << width` and the
 /// `codec/variant-arm-unreachable` diagnostic still surfaces if
@@ -5061,7 +5065,7 @@ fn forge_kotlin_codec_vle_zint_u64() {
     assert_standalone_forge_kotlin("codec_vle_zint_u64", "CodecVleZintU64.kt");
 }
 
-// ── RFC §5.B B5-prep Zenoh transport-message body codecs (Kotlin) ─
+// ── RFC §5.B item B5 Zenoh transport-message body codecs (Kotlin) ─
 
 #[test]
 fn forge_kotlin_codec_zenoh_close() {
@@ -5073,7 +5077,7 @@ fn forge_kotlin_codec_zenoh_frame() {
     assert_standalone_forge_kotlin("codec_zenoh_frame", "CodecZenohFrame.kt");
 }
 
-// ── RFC §5.B B5-ι cross-codec composition (Kotlin) ───────────
+// ── RFC §5.B cross-codec composition (Kotlin) ───────────
 
 #[test]
 fn forge_kotlin_codec_zenoh_open_body() {
@@ -5100,7 +5104,7 @@ fn forge_kotlin_codec_zenoh_decl_final() {
     assert_standalone_forge_kotlin("codec_zenoh_decl_final", "CodecZenohDeclFinal.kt");
 }
 
-// ── RFC §5.B B5-κ Surface L dotted-path length-field (Kotlin) ──
+// ── RFC §5.B dotted-path length-field (Kotlin) ──
 
 #[test]
 fn forge_kotlin_codec_length_ref_dotted_basic() {
@@ -5115,7 +5119,7 @@ fn forge_kotlin_codec_zenoh_scout() {
     assert_standalone_forge_kotlin("codec_zenoh_scout", "CodecZenohScout.kt");
 }
 
-// ── RFC §5.B B5-α multi-bit + empty-codec (Kotlin) ───────────
+// ── RFC §5.B multi-bit + empty-codec (Kotlin) ───────────
 
 #[test]
 fn forge_kotlin_codec_qos_byte() {
@@ -5127,14 +5131,14 @@ fn forge_kotlin_codec_zenoh_keep_alive() {
     assert_standalone_forge_kotlin("codec_zenoh_keep_alive", "CodecZenohKeepAlive.kt");
 }
 
-// ── RFC §5.B B1-γ flags primitive (Kotlin) ───────────────────
+// ── RFC §5.B flags primitive (Kotlin) ───────────────────
 
 #[test]
 fn forge_kotlin_codec_flags_basic() {
     assert_standalone_forge_kotlin("codec_flags_basic", "CodecFlagsBasic.kt");
 }
 
-// ── RFC §5.B variant primitive (Kotlin, B1-β closure) ────────
+// ── RFC §5.B variant primitive (Kotlin closure) ────────
 
 #[test]
 fn forge_kotlin_codec_variant_session_open() {
@@ -5156,21 +5160,21 @@ fn forge_kotlin_codec_transport_envelope() {
     assert_standalone_forge_kotlin("codec_transport_envelope", "CodecTransportEnvelope.kt");
 }
 
-// ── RFC §5.B B1-δ present-if primitive (Kotlin) ─────────────
+// ── RFC §5.B present-if primitive (Kotlin) ─────────────
 
 #[test]
 fn forge_kotlin_codec_present_if_basic() {
     assert_standalone_forge_kotlin("codec_present_if_basic", "CodecPresentIfBasic.kt");
 }
 
-// ── RFC §5.B B5-λ present-if negation primitive (Kotlin) ────
+// ── RFC §5.B present-if negation primitive (Kotlin) ────
 
 #[test]
 fn forge_kotlin_codec_present_if_negation() {
     assert_standalone_forge_kotlin("codec_present_if_negation", "CodecPresentIfNegation.kt");
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Kotlin) ──
+// ── RFC §5.B present-if disjunction primitive (Kotlin) ──
 
 #[test]
 fn forge_kotlin_codec_present_if_disjunction() {
@@ -5180,7 +5184,7 @@ fn forge_kotlin_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Kotlin) ──
+// ── RFC §5.B peek-byte primitive (Kotlin) ──
 
 #[test]
 fn forge_kotlin_codec_peek_arm_a() {
@@ -5202,7 +5206,7 @@ fn forge_kotlin_codec_zenoh_response() {
     assert_standalone_forge_kotlin("codec_zenoh_response", "CodecZenohResponse.kt");
 }
 
-// ── RFC §5.B B2-β present-if + variable-length (Kotlin) ─────
+// ── RFC §5.B present-if + variable-length (Kotlin) ─────
 
 #[test]
 fn forge_kotlin_codec_present_if_tail() {
@@ -5589,7 +5593,7 @@ fn forge_rust_codec_length_ref() {
     assert_standalone_forge_rust("codec_length_ref", "codec_length_ref.rs");
 }
 
-// ── RFC §5.B B5-prep Zenoh transport-message body codecs (Rust) ──
+// ── RFC §5.B item B5 Zenoh transport-message body codecs (Rust) ──
 
 #[test]
 fn forge_rust_codec_zenoh_close() {
@@ -5601,7 +5605,7 @@ fn forge_rust_codec_zenoh_frame() {
     assert_standalone_forge_rust("codec_zenoh_frame", "codec_zenoh_frame.rs");
 }
 
-// ── RFC §5.B B5-ι cross-codec composition (Rust) ─────────────
+// ── RFC §5.B cross-codec composition (Rust) ─────────────
 
 #[test]
 fn forge_rust_codec_zenoh_open_body() {
@@ -5628,7 +5632,7 @@ fn forge_rust_codec_zenoh_decl_final() {
     assert_standalone_forge_rust("codec_zenoh_decl_final", "codec_zenoh_decl_final.rs");
 }
 
-// ── RFC §5.B B5-κ Surface L dotted-path length-field (Rust) ────
+// ── RFC §5.B dotted-path length-field (Rust) ────
 
 #[test]
 fn forge_rust_codec_length_ref_dotted_basic() {
@@ -5643,7 +5647,7 @@ fn forge_rust_codec_zenoh_scout() {
     assert_standalone_forge_rust("codec_zenoh_scout", "codec_zenoh_scout.rs");
 }
 
-// ── RFC §5.B B5-α multi-bit + empty-codec (Rust) ─────────────
+// ── RFC §5.B multi-bit + empty-codec (Rust) ─────────────
 
 #[test]
 fn forge_rust_codec_qos_byte() {
@@ -5655,28 +5659,28 @@ fn forge_rust_codec_zenoh_keep_alive() {
     assert_standalone_forge_rust("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.rs");
 }
 
-// ── RFC §5.B B1-γ flags primitive (Rust) ─────────────────────
+// ── RFC §5.B flags primitive (Rust) ─────────────────────
 
 #[test]
 fn forge_rust_codec_flags_basic() {
     assert_standalone_forge_rust("codec_flags_basic", "codec_flags_basic.rs");
 }
 
-// ── RFC §5.B B1-δ present-if primitive (Rust) ───────────────
+// ── RFC §5.B present-if primitive (Rust) ───────────────
 
 #[test]
 fn forge_rust_codec_present_if_basic() {
     assert_standalone_forge_rust("codec_present_if_basic", "codec_present_if_basic.rs");
 }
 
-// ── RFC §5.B B5-λ present-if negation primitive (Rust) ──────
+// ── RFC §5.B present-if negation primitive (Rust) ──────
 
 #[test]
 fn forge_rust_codec_present_if_negation() {
     assert_standalone_forge_rust("codec_present_if_negation", "codec_present_if_negation.rs");
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Rust) ──
+// ── RFC §5.B present-if disjunction primitive (Rust) ──
 
 #[test]
 fn forge_rust_codec_present_if_disjunction() {
@@ -5686,7 +5690,7 @@ fn forge_rust_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Rust) ──
+// ── RFC §5.B peek-byte primitive (Rust) ──
 
 #[test]
 fn forge_rust_codec_peek_arm_a() {
@@ -5708,7 +5712,7 @@ fn forge_rust_codec_zenoh_response() {
     assert_standalone_forge_rust("codec_zenoh_response", "codec_zenoh_response.rs");
 }
 
-// ── RFC §5.B B2-β present-if + variable-length (Rust) ───────
+// ── RFC §5.B present-if + variable-length (Rust) ───────
 
 #[test]
 fn forge_rust_codec_present_if_tail() {
@@ -5888,7 +5892,7 @@ fn forge_rust_codec_ext_encoding_info() {
     assert_standalone_forge_rust("codec_ext_encoding_info", "codec_ext_encoding_info.rs");
 }
 
-// ── RFC §5.B variant primitive (Rust, B1-β trunk) ────────────
+// ── RFC §5.B variant primitive (Rust trunk) ────────────
 
 #[test]
 fn forge_rust_codec_variant_session_open() {
@@ -5916,7 +5920,7 @@ fn forge_rust_codec_transport_envelope() {
     assert_standalone_forge_rust("codec_transport_envelope", "codec_transport_envelope.rs");
 }
 
-/// RFC §5.B B5-γ trunk (Rust): body codec with parent-flags dependency.
+/// RFC §5.B parent-flags trunk (Rust): body codec with parent-flags dependency.
 /// Decode/encode signatures gain a `parent_flags: u8` parameter; body
 /// fields gated via `parent.<flag>` predicates emit
 /// `(parent_flags & 0x40) != 0` style bit-tests. Mirrors
@@ -5926,7 +5930,7 @@ fn forge_rust_codec_init_syn_body() {
     assert_standalone_forge_rust("codec_init_syn_body", "codec_init_syn_body.rs");
 }
 
-/// RFC §5.B B5-γ trunk (Rust): variant parent threading carrier value.
+/// RFC §5.B parent-flags trunk (Rust): variant parent threading carrier value.
 /// Each arm dispatches `Body::decode(cursor, header)` for arm bodies
 /// declaring `<sce:requires-parent-flags carrier="header">`; encode
 /// passes `body.encode(header)` symmetrically. Cross-codec validator
@@ -5937,7 +5941,7 @@ fn forge_rust_codec_init_syn_envelope() {
     assert_standalone_forge_rust("codec_init_syn_envelope", "codec_init_syn_envelope.rs");
 }
 
-/// RFC §5.B B5-δ Surfaces D + E (Rust): Init body cookie codec.
+/// RFC §5.B gated VLE length-sibling (Rust): Init body cookie codec.
 /// `cookie_size` is `Option<u16>` (gated VLE u16); `cookie` is
 /// `Option<Vec<u8>>` (gated length-ref bytes). Helper emits
 /// `cookie_size.unwrap() as usize` inside the predicate's true-branch.
@@ -5946,7 +5950,7 @@ fn forge_rust_codec_init_cookie_body() {
     assert_standalone_forge_rust("codec_init_cookie_body", "codec_init_cookie_body.rs");
 }
 
-/// RFC §5.B B5-δ Surface F (Rust): Scout/Hello/Init zid codec.
+/// RFC §5.B length-arith (Rust): Scout/Hello/Init zid codec.
 /// `length-arith="+1"` lifts the byte count by one above the sibling's
 /// value: helper emits `(zid_len_m1 as usize).wrapping_add(1)` for
 /// decode; encode trusts `zid.len()` as the source of truth (author
@@ -6072,7 +6076,7 @@ fn forge_go_codec_vle_zint_u64() {
     assert_standalone_forge_go("codec_vle_zint_u64", "codec_vle_zint_u64.go");
 }
 
-// ── RFC §5.B B5-prep Zenoh transport-message body codecs (Go) ────
+// ── RFC §5.B item B5 Zenoh transport-message body codecs (Go) ────
 
 #[test]
 fn forge_go_codec_zenoh_close() {
@@ -6084,7 +6088,7 @@ fn forge_go_codec_zenoh_frame() {
     assert_standalone_forge_go("codec_zenoh_frame", "codec_zenoh_frame.go");
 }
 
-// ── RFC §5.B B5-ι cross-codec composition (Go) ───────────────
+// ── RFC §5.B cross-codec composition (Go) ───────────────
 
 #[test]
 fn forge_go_codec_zenoh_open_body() {
@@ -6111,7 +6115,7 @@ fn forge_go_codec_zenoh_decl_final() {
     assert_standalone_forge_go("codec_zenoh_decl_final", "codec_zenoh_decl_final.go");
 }
 
-// ── RFC §5.B B5-κ Surface L dotted-path length-field (Go) ──────
+// ── RFC §5.B dotted-path length-field (Go) ──────
 
 #[test]
 fn forge_go_codec_length_ref_dotted_basic() {
@@ -6126,7 +6130,7 @@ fn forge_go_codec_zenoh_scout() {
     assert_standalone_forge_go("codec_zenoh_scout", "codec_zenoh_scout.go");
 }
 
-// ── RFC §5.B B5-α multi-bit + empty-codec (Go) ───────────────
+// ── RFC §5.B multi-bit + empty-codec (Go) ───────────────
 
 #[test]
 fn forge_go_codec_qos_byte() {
@@ -6138,14 +6142,14 @@ fn forge_go_codec_zenoh_keep_alive() {
     assert_standalone_forge_go("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.go");
 }
 
-// ── RFC §5.B B1-γ flags primitive (Go) ───────────────────────
+// ── RFC §5.B flags primitive (Go) ───────────────────────
 
 #[test]
 fn forge_go_codec_flags_basic() {
     assert_standalone_forge_go("codec_flags_basic", "codec_flags_basic.go");
 }
 
-// ── RFC §5.B variant primitive (Go, B1-β closure) ────────────
+// ── RFC §5.B variant primitive (Go closure) ────────────
 
 #[test]
 fn forge_go_codec_variant_session_open() {
@@ -6173,21 +6177,21 @@ fn forge_go_codec_transport_envelope() {
     assert_standalone_forge_go("codec_transport_envelope", "codec_transport_envelope.go");
 }
 
-// ── RFC §5.B B1-δ present-if primitive (Go) ─────────────────
+// ── RFC §5.B present-if primitive (Go) ─────────────────
 
 #[test]
 fn forge_go_codec_present_if_basic() {
     assert_standalone_forge_go("codec_present_if_basic", "codec_present_if_basic.go");
 }
 
-// ── RFC §5.B B5-λ present-if negation primitive (Go) ────────
+// ── RFC §5.B present-if negation primitive (Go) ────────
 
 #[test]
 fn forge_go_codec_present_if_negation() {
     assert_standalone_forge_go("codec_present_if_negation", "codec_present_if_negation.go");
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Go) ──
+// ── RFC §5.B present-if disjunction primitive (Go) ──
 
 #[test]
 fn forge_go_codec_present_if_disjunction() {
@@ -6197,7 +6201,7 @@ fn forge_go_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Go) ──
+// ── RFC §5.B peek-byte primitive (Go) ──
 
 #[test]
 fn forge_go_codec_peek_arm_a() {
@@ -6219,7 +6223,7 @@ fn forge_go_codec_zenoh_response() {
     assert_standalone_forge_go("codec_zenoh_response", "codec_zenoh_response.go");
 }
 
-// ── RFC §5.B B2-β present-if + variable-length (Go) ─────────
+// ── RFC §5.B present-if + variable-length (Go) ─────────
 
 #[test]
 fn forge_go_codec_present_if_tail() {
@@ -6554,7 +6558,7 @@ fn forge_python_codec_vle_zint_u64() {
     assert_standalone_forge_python("codec_vle_zint_u64", "codec_vle_zint_u64.py");
 }
 
-// ── RFC §5.B B5-prep Zenoh transport-message body codecs (Python) ─
+// ── RFC §5.B item B5 Zenoh transport-message body codecs (Python) ─
 
 #[test]
 fn forge_python_codec_zenoh_close() {
@@ -6566,7 +6570,7 @@ fn forge_python_codec_zenoh_frame() {
     assert_standalone_forge_python("codec_zenoh_frame", "codec_zenoh_frame.py");
 }
 
-// ── RFC §5.B B5-ι cross-codec composition (Python) ───────────
+// ── RFC §5.B cross-codec composition (Python) ───────────
 
 #[test]
 fn forge_python_codec_zenoh_open_body() {
@@ -6593,7 +6597,7 @@ fn forge_python_codec_zenoh_decl_final() {
     assert_standalone_forge_python("codec_zenoh_decl_final", "codec_zenoh_decl_final.py");
 }
 
-// ── RFC §5.B B5-κ Surface L dotted-path length-field (Python) ──
+// ── RFC §5.B dotted-path length-field (Python) ──
 
 #[test]
 fn forge_python_codec_length_ref_dotted_basic() {
@@ -6608,7 +6612,7 @@ fn forge_python_codec_zenoh_scout() {
     assert_standalone_forge_python("codec_zenoh_scout", "codec_zenoh_scout.py");
 }
 
-// ── RFC §5.B B5-α multi-bit + empty-codec (Python) ───────────
+// ── RFC §5.B multi-bit + empty-codec (Python) ───────────
 
 #[test]
 fn forge_python_codec_qos_byte() {
@@ -6620,14 +6624,14 @@ fn forge_python_codec_zenoh_keep_alive() {
     assert_standalone_forge_python("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.py");
 }
 
-// ── RFC §5.B B1-γ flags primitive (Python) ───────────────────
+// ── RFC §5.B flags primitive (Python) ───────────────────
 
 #[test]
 fn forge_python_codec_flags_basic() {
     assert_standalone_forge_python("codec_flags_basic", "codec_flags_basic.py");
 }
 
-// ── RFC §5.B variant primitive (Python, B1-β closure) ────────
+// ── RFC §5.B variant primitive (Python closure) ────────
 
 #[test]
 fn forge_python_codec_variant_session_open() {
@@ -6655,21 +6659,21 @@ fn forge_python_codec_transport_envelope() {
     assert_standalone_forge_python("codec_transport_envelope", "codec_transport_envelope.py");
 }
 
-// ── RFC §5.B B1-δ present-if primitive (Python) ─────────────
+// ── RFC §5.B present-if primitive (Python) ─────────────
 
 #[test]
 fn forge_python_codec_present_if_basic() {
     assert_standalone_forge_python("codec_present_if_basic", "codec_present_if_basic.py");
 }
 
-// ── RFC §5.B B5-λ present-if negation primitive (Python) ────
+// ── RFC §5.B present-if negation primitive (Python) ────
 
 #[test]
 fn forge_python_codec_present_if_negation() {
     assert_standalone_forge_python("codec_present_if_negation", "codec_present_if_negation.py");
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (Python) ──
+// ── RFC §5.B present-if disjunction primitive (Python) ──
 
 #[test]
 fn forge_python_codec_present_if_disjunction() {
@@ -6679,7 +6683,7 @@ fn forge_python_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (Python) ──
+// ── RFC §5.B peek-byte primitive (Python) ──
 
 #[test]
 fn forge_python_codec_peek_arm_a() {
@@ -6701,7 +6705,7 @@ fn forge_python_codec_zenoh_response() {
     assert_standalone_forge_python("codec_zenoh_response", "codec_zenoh_response.py");
 }
 
-// ── RFC §5.B B2-β present-if + variable-length (Python) ─────
+// ── RFC §5.B present-if + variable-length (Python) ─────
 
 #[test]
 fn forge_python_codec_present_if_tail() {
@@ -6966,7 +6970,7 @@ fn forge_c11_codec_vle_zint_u64() {
     assert_standalone_forge_c("codec_vle_zint_u64", "codec_vle_zint_u64.c.h");
 }
 
-// ── RFC §5.B B5-prep Zenoh transport-message body codecs (C11) ───
+// ── RFC §5.B item B5 Zenoh transport-message body codecs (C11) ───
 
 #[test]
 fn forge_c11_codec_zenoh_close() {
@@ -6978,7 +6982,7 @@ fn forge_c11_codec_zenoh_frame() {
     assert_standalone_forge_c("codec_zenoh_frame", "codec_zenoh_frame.c.h");
 }
 
-// ── RFC §5.B B5-ι cross-codec composition (C11) ──────────────
+// ── RFC §5.B cross-codec composition (C11) ──────────────
 
 #[test]
 fn forge_c11_codec_zenoh_open_body() {
@@ -7005,7 +7009,7 @@ fn forge_c11_codec_zenoh_decl_final() {
     assert_standalone_forge_c("codec_zenoh_decl_final", "codec_zenoh_decl_final.c.h");
 }
 
-// ── RFC §5.B B5-κ Surface L dotted-path length-field (C11) ─────
+// ── RFC §5.B dotted-path length-field (C11) ─────
 
 #[test]
 fn forge_c11_codec_length_ref_dotted_basic() {
@@ -7020,14 +7024,14 @@ fn forge_c11_codec_zenoh_scout() {
     assert_standalone_forge_c("codec_zenoh_scout", "codec_zenoh_scout.c.h");
 }
 
-// ── RFC §5.B B5-ζ Surface H string primitive (C11) ───────────
+// ── RFC §5.B string primitive (C11) ───────────
 
 #[test]
 fn forge_c11_codec_zenoh_locator() {
     assert_standalone_forge_c("codec_zenoh_locator", "codec_zenoh_locator.c.h");
 }
 
-// ── RFC §5.B B5-η Surface I recursive variant body (C11) ─────
+// ── RFC §5.B recursive variant body (C11) ─────
 
 #[test]
 fn forge_c11_codec_zenoh_put() {
@@ -7049,7 +7053,7 @@ fn forge_c11_codec_zenoh_push() {
     assert_standalone_forge_c("codec_zenoh_push", "codec_zenoh_push.c.h");
 }
 
-// ── RFC §5.B B5-α multi-bit + empty-codec (C11) ──────────────
+// ── RFC §5.B multi-bit + empty-codec (C11) ──────────────
 
 #[test]
 fn forge_c11_codec_qos_byte() {
@@ -7061,14 +7065,14 @@ fn forge_c11_codec_zenoh_keep_alive() {
     assert_standalone_forge_c("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.c.h");
 }
 
-// ── RFC §5.B B1-γ flags primitive (C11) ──────────────────────
+// ── RFC §5.B flags primitive (C11) ──────────────────────
 
 #[test]
 fn forge_c11_codec_flags_basic() {
     assert_standalone_forge_c("codec_flags_basic", "codec_flags_basic.c.h");
 }
 
-// ── RFC §5.B variant primitive (C11, B1-β closure) ───────────
+// ── RFC §5.B variant primitive (C11 closure) ───────────
 
 #[test]
 fn forge_c11_codec_variant_session_open() {
@@ -7096,21 +7100,21 @@ fn forge_c11_codec_transport_envelope() {
     assert_standalone_forge_c("codec_transport_envelope", "codec_transport_envelope.c.h");
 }
 
-// ── RFC §5.B B1-δ present-if primitive (C11) ────────────────
+// ── RFC §5.B present-if primitive (C11) ────────────────
 
 #[test]
 fn forge_c11_codec_present_if_basic() {
     assert_standalone_forge_c("codec_present_if_basic", "codec_present_if_basic.c.h");
 }
 
-// ── RFC §5.B B5-λ present-if negation primitive (C11) ───────
+// ── RFC §5.B present-if negation primitive (C11) ───────
 
 #[test]
 fn forge_c11_codec_present_if_negation() {
     assert_standalone_forge_c("codec_present_if_negation", "codec_present_if_negation.c.h");
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii present-if disjunction primitive (C11) ──
+// ── RFC §5.B present-if disjunction primitive (C11) ──
 
 #[test]
 fn forge_c11_codec_present_if_disjunction() {
@@ -7120,7 +7124,7 @@ fn forge_c11_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B Y3 atomic 2b-ii peek-byte peek-byte primitive (C11) ──
+// ── RFC §5.B peek-byte primitive (C11) ──
 
 #[test]
 fn forge_c11_codec_peek_arm_a() {
@@ -7142,7 +7146,7 @@ fn forge_c11_codec_zenoh_response() {
     assert_standalone_forge_c("codec_zenoh_response", "codec_zenoh_response.c.h");
 }
 
-// ── RFC §5.B B2-β present-if + variable-length (C11) ────────
+// ── RFC §5.B present-if + variable-length (C11) ────────
 
 #[test]
 fn forge_c11_codec_present_if_tail() {
@@ -7325,7 +7329,7 @@ fn forge_c11_codec_tlv_chain_basic() {
     assert_standalone_forge_c("codec_tlv_chain_basic", "codec_tlv_chain_basic.c.h");
 }
 
-// ── RFC §5.B B5-ε surface G — TLV chain entry body keyed by carrier bits ─
+// ── RFC §5.B — TLV chain entry body keyed by carrier bits ─
 // `codec_zenoh_ext_envelope` carries a `<sce:tlv-chain>` of
 // variant-bodied `codec_zenoh_ext_entry` entries. C11 trunk pins:
 //   - the envelope's MAX_BYTES = `1 + max_depth * entry_max` (345 =
@@ -8865,14 +8869,14 @@ fn crossfile_matrix_validator_interpolation() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ── B5-γ parent-flags dependency emission tests ──────────────
+// ── Parent-flags dependency emission tests ───────────────────
 // ═══════════════════════════════════════════════════════════════
 //
 // All six language closures landed; the historical gate-rejection
 // helper (`assert_b5_gamma_gate_rejects`) and its 4 per-language
 // rejection tests deleted at this final closure.
 
-/// RFC §5.B B5-γ Kotlin closure: body codec with parent-flags
+/// RFC §5.B parent-flags Kotlin closure: body codec with parent-flags
 /// dependency emits `parentFlags: UByte` parameter on decode/encode;
 /// `parent.<flag>` predicates compile to
 /// `(parentFlags.toInt() and 0xNN) != 0`. `@Suppress("UNUSED_PARAMETER")`
@@ -8883,7 +8887,7 @@ fn forge_kotlin_codec_init_syn_body() {
     assert_standalone_forge_kotlin("codec_init_syn_body", "CodecInitSynBody.kt");
 }
 
-/// RFC §5.B B5-γ Kotlin closure: variant parent threading carrier value.
+/// RFC §5.B parent-flags Kotlin closure: variant parent threading carrier value.
 /// The envelope's `when (val _b = this.body)` arms call
 /// `_b.body.encode(this.header)` and the companion `decode(cursor, header)`
 /// passes the just-decoded header local. Mirrors the Rust + Cpp goldens.
@@ -8892,7 +8896,7 @@ fn forge_kotlin_codec_init_syn_envelope() {
     assert_standalone_forge_kotlin("codec_init_syn_envelope", "CodecInitSynEnvelope.kt");
 }
 
-/// RFC §5.B B5-γ Go closure: body codec with parent-flags dependency
+/// RFC §5.B parent-flags Go closure: body codec with parent-flags dependency
 /// emits `parentFlags byte` parameter on `Decode<Pascal>` / `Encode`;
 /// `parent.<flag>` predicates compile to `(parentFlags & 0xNN) != 0`.
 /// Go function parameters tolerate being unused, so no `_ = parentFlags`
@@ -8903,7 +8907,7 @@ fn forge_go_codec_init_syn_body() {
     assert_standalone_forge_go("codec_init_syn_body", "codec_init_syn_body.go");
 }
 
-/// RFC §5.B B5-γ Go closure: variant parent threading carrier value.
+/// RFC §5.B parent-flags Go closure: variant parent threading carrier value.
 /// The envelope's `switch { case s.Body.X != nil ... }` arms call
 /// `s.Body.X.Encode(s.Header)` and the companion
 /// `Decode<Body>(cursor, Header)` passes the just-decoded PascalCase
@@ -8913,7 +8917,7 @@ fn forge_go_codec_init_syn_envelope() {
     assert_standalone_forge_go("codec_init_syn_envelope", "codec_init_syn_envelope.go");
 }
 
-/// RFC §5.B B5-γ C11 closure: body codec with parent-flags dependency
+/// RFC §5.B parent-flags C11 closure: body codec with parent-flags dependency
 /// emits `uint8_t parent_flags` parameter on `decode`/`encode` (after
 /// the existing `*cursor`/`*self` arg); `parent.<flag>` predicates
 /// compile to `(parent_flags & 0xNN) != 0`. `(void)parent_flags;`
@@ -8926,7 +8930,7 @@ fn forge_c11_codec_init_syn_body() {
     assert_standalone_forge_c("codec_init_syn_body", "codec_init_syn_body.c.h");
 }
 
-/// RFC §5.B B5-γ C11 closure: variant parent threading carrier value.
+/// RFC §5.B parent-flags C11 closure: variant parent threading carrier value.
 /// Decode-site dispatcher reads the just-decoded carrier from
 /// `out->header` (no separate local — C11 prefix decode writes
 /// directly to the parent struct); encode-site dispatcher reads from
@@ -8936,7 +8940,7 @@ fn forge_c11_codec_init_syn_envelope() {
     assert_standalone_forge_c("codec_init_syn_envelope", "codec_init_syn_envelope.c.h");
 }
 
-/// RFC §5.B B5-γ Python closure (final): body codec with parent-flags
+/// RFC §5.B parent-flags Python closure (final): body codec with parent-flags
 /// dependency emits `parent_flags: int` parameter on `decode`/`encode`
 /// (after the `cls, cursor` / `self` preceding args); `parent.<flag>`
 /// predicates compile to `(parent_flags & 0xNN) != 0`. `_ = parent_flags`
@@ -8947,11 +8951,11 @@ fn forge_python_codec_init_syn_body() {
     assert_standalone_forge_python("codec_init_syn_body", "codec_init_syn_body.py");
 }
 
-/// RFC §5.B B5-γ Python closure (final): variant parent threading
+/// RFC §5.B parent-flags Python closure (final): variant parent threading
 /// carrier value. Decode-site dispatcher reads the just-decoded
 /// snake_case carrier local; encode-site dispatcher reads through
 /// `self.<snake>`. Mirrors the Rust + Cpp + Kotlin + Go + C11 goldens.
-/// This is the FINAL B5-γ closure — the per-language gate code in
+/// This is the final parent-flags closure — the per-language gate code in
 /// `render_codec` and the 4 historical gate-rejection tests are
 /// deleted in the same commit.
 #[test]
@@ -8960,17 +8964,17 @@ fn forge_python_codec_init_syn_envelope() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ── B5-δ Surfaces D + E + F emission tests ───────────────────
+// ── Gated length-sibling + length-arith emission tests ───────
 // ═══════════════════════════════════════════════════════════════
 //
 // All six backends share the existing length-ref decode/encode
 // helper machinery — the helper now detects sibling `present_if`
-// to unwrap the gated Optional (Surface E) and applies
-// `field.length_arith` to the byte count (Surface F). Surface D
+// to unwrap the gated Optional and applies
+// `field.length_arith` to the byte count. The VLE-sibling case
 // is "free" (the streaming helper reads `sibling as usize` which
 // works for both Fixed and Vle siblings); fixture pin proves it.
 
-/// RFC §5.B B5-δ Surfaces D + E (Kotlin): Init body cookie codec.
+/// RFC §5.B gated VLE length-sibling (Kotlin): Init body cookie codec.
 /// `cookieSize: UShort?` (gated VLE u16); `cookie: ByteArray?` (gated
 /// length-ref bytes). Helper unwraps the sibling `!!.toInt()` inside
 /// the gated branch.
@@ -8979,7 +8983,7 @@ fn forge_kotlin_codec_init_cookie_body() {
     assert_standalone_forge_kotlin("codec_init_cookie_body", "CodecInitCookieBody.kt");
 }
 
-/// RFC §5.B B5-δ Surface F (Kotlin): Scout/Hello/Init zid codec.
+/// RFC §5.B length-arith (Kotlin): Scout/Hello/Init zid codec.
 /// `length-arith="+1"` emits `(zidLenM1.toInt() + 1)` for the byte
 /// count.
 #[test]
@@ -8987,7 +8991,7 @@ fn forge_kotlin_codec_scout_zid_body() {
     assert_standalone_forge_kotlin("codec_scout_zid_body", "CodecScoutZidBody.kt");
 }
 
-/// RFC §5.B B5-δ Surfaces D + E (Go): Init body cookie codec.
+/// RFC §5.B gated VLE length-sibling (Go): Init body cookie codec.
 /// `CookieSize *uint16` (pointer = presence wrapper for VLE u16);
 /// `Cookie []byte` (slice nilness encodes presence). Helper deref
 /// emits `int(*CookieSize)` inside the gated branch.
@@ -8996,14 +9000,14 @@ fn forge_go_codec_init_cookie_body() {
     assert_standalone_forge_go("codec_init_cookie_body", "codec_init_cookie_body.go");
 }
 
-/// RFC §5.B B5-δ Surface F (Go): Scout/Hello/Init zid codec.
+/// RFC §5.B length-arith (Go): Scout/Hello/Init zid codec.
 /// `length-arith="+1"` emits `(int(ZidLenM1) + 1)` for the byte count.
 #[test]
 fn forge_go_codec_scout_zid_body() {
     assert_standalone_forge_go("codec_scout_zid_body", "codec_scout_zid_body.go");
 }
 
-/// RFC §5.B B5-δ Surfaces D + E (C11): Init body cookie codec.
+/// RFC §5.B gated VLE length-sibling (C11): Init body cookie codec.
 /// C11 has no Option wrapper — sibling `cookie_size` is always-bound
 /// on the struct (zero on absent branch). Helper reads through
 /// `out->cookie_size` regardless of gating; the carrier bit is the
@@ -9013,7 +9017,7 @@ fn forge_c11_codec_init_cookie_body() {
     assert_standalone_forge_c("codec_init_cookie_body", "codec_init_cookie_body.c.h");
 }
 
-/// RFC §5.B B5-δ Surface F (C11): Scout/Hello/Init zid codec.
+/// RFC §5.B length-arith (C11): Scout/Hello/Init zid codec.
 /// `length-arith="+1"` emits `_n = (size_t)((int64_t)out->zid_len_m1 + 1)`
 /// for decode; the encode-loop's upper bound widens symmetrically to
 /// `_bi < (size_t)((int64_t)self->zid_len_m1 + 1)` so the wire-correct
@@ -9023,7 +9027,7 @@ fn forge_c11_codec_scout_zid_body() {
     assert_standalone_forge_c("codec_scout_zid_body", "codec_scout_zid_body.c.h");
 }
 
-/// RFC §5.B B5-δ Surfaces D + E (Python): Init body cookie codec.
+/// RFC §5.B gated VLE length-sibling (Python): Init body cookie codec.
 /// `cookie_size: Optional[int]` and `cookie: Optional[bytes]` — inside
 /// the gated branch the int local is guaranteed non-None by the same
 /// predicate. Helper reads `cookie_size` directly (no unwrap syntax).
@@ -9032,7 +9036,7 @@ fn forge_python_codec_init_cookie_body() {
     assert_standalone_forge_python("codec_init_cookie_body", "codec_init_cookie_body.py");
 }
 
-/// RFC §5.B B5-δ Surface F (Python): Scout/Hello/Init zid codec.
+/// RFC §5.B length-arith (Python): Scout/Hello/Init zid codec.
 /// `length-arith="+1"` emits `_n = (zid_len_m1 + 1)` for the byte
 /// count — Python's arbitrary-precision int handles `+1` without
 /// overflow.
@@ -9041,7 +9045,7 @@ fn forge_python_codec_scout_zid_body() {
     assert_standalone_forge_python("codec_scout_zid_body", "codec_scout_zid_body.py");
 }
 
-/// RFC §5.B B5-δ Surface F validation: standalone `sce:length-arith`
+/// RFC §5.B length-arith validation: standalone `sce:length-arith`
 /// without `sce:length-field` rejects with `validation/invalid-attribute`
 /// — the offset has no source to apply to.
 #[test]
@@ -9079,7 +9083,7 @@ fn forge_codec_length_arith_without_length_field_rejects() {
     );
 }
 
-/// RFC §5.B B5-δ Surface F validation: arithmetic offset must be ±1.
+/// RFC §5.B length-arith validation: arithmetic offset must be ±1.
 /// v1 grammar restricts the value (parser rejects 0 and `|x|>1`);
 /// widening defers to a reachable consumer.
 #[test]
@@ -9168,7 +9172,7 @@ fn rust_golden_syn_gate() {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// RFC variant-default-overlay Atomic A — deploy.yaml-overrides-SCXML
+// RFC variant-default-overlay — deploy.yaml-overrides-SCXML
 // tests.
 //
 // The wire-spec invariants (bit positions, MID values) stay in the
@@ -9342,23 +9346,23 @@ fn forge_variant_default_overlay_unknown_arm_rejects() {
     );
 }
 
-// ── RFC §5.B B5-ν — variant parent-tag dispatch (4 parser/validator tests) ─
+// ── RFC §5.B variant parent-tag dispatch (4 parser/validator tests) ─
 //
 // Tests below exercise the parser + validator + diagnostic surface;
 // the positive codegen round-trip is covered by
-// `forge_b5_nu_round_trip_local_nonlocal` further down.
+// `forge_parent_tag_round_trip_local_nonlocal` further down.
 
 // RFC §5.B parent-tag dispatch: the positive round-trip test
-// (`forge_b5_nu_round_trip_local_nonlocal`
+// (`forge_parent_tag_round_trip_local_nonlocal`
 // below) exercises the full encode → decode → encode chain on a
 // 2-arm parent-tag variant. The negative-path coverage lives in
 // the four parse-time / cross-doc diagnostics:
-// `forge_b5_nu_parent_tag_without_rpf_rejects`,
-// `forge_b5_nu_parent_tag_flag_not_in_rpf_rejects`,
-// `forge_b5_nu_parent_flag_derivation_conflict_rejects` (Q-3),
-// `forge_b5_nu_parent_tag_variant_before_carrier_rejects` (Q-6).
+// `forge_parent_tag_parent_tag_without_rpf_rejects`,
+// `forge_parent_tag_parent_tag_flag_not_in_rpf_rejects`,
+// `forge_parent_tag_parent_flag_derivation_conflict_rejects` (Q-3),
+// `forge_parent_tag_parent_tag_variant_before_carrier_rejects` (Q-6).
 
-/// Write a B5-ν cross-codec fixture set to a fresh temp directory and
+/// Write a parent-tag-dispatch cross-codec fixture set to a fresh temp directory and
 /// return the directory + the parent codec's SCXML path. Layout:
 /// - `codec_b5nu_parent.scxml`     — parent envelope (header flags + embed)
 /// - `codec_b5nu_keyexpr.scxml`    — parent-tag-dispatched variant carrier
@@ -9367,7 +9371,7 @@ fn forge_variant_default_overlay_unknown_arm_rejects() {
 ///
 /// Each fixture is independently parseable; cross-doc validation runs
 /// when the parent resolves its imports through the temp directory.
-fn b5_nu_write_round_trip_fixture(
+fn parent_tag_write_round_trip_fixture(
     parent_extra_field: &str,
     parent_header_static: &str,
 ) -> (std::path::PathBuf, std::path::PathBuf) {
@@ -9443,11 +9447,11 @@ fn b5_nu_write_round_trip_fixture(
 /// contains the `parent_flags`-driven decode dispatch and the encode-
 /// side `_derived_header` local that OR's the active arm's bit into
 /// the carrier byte. This exercises the full dispatch surface end-to-
-/// end (variant_obj Parent branch + `b5_nu_derivation_block` +
-/// `inject_b5_nu_carrier_suffix`).
+/// end (variant_obj Parent branch + `parent_tag_derivation_block` +
+/// `inject_parent_tag_carrier_suffix`).
 #[test]
-fn forge_b5_nu_round_trip_local_nonlocal_rust() {
-    let (dir, parent_path) = b5_nu_write_round_trip_fixture("", "");
+fn forge_parent_tag_round_trip_local_nonlocal_rust() {
+    let (dir, parent_path) = parent_tag_write_round_trip_fixture("", "");
 
     let content = std::fs::read_to_string(&parent_path).expect("read parent");
     let output = sce_build::compile_forge_with_imports(
@@ -9506,12 +9510,12 @@ fn forge_b5_nu_round_trip_local_nonlocal_rust() {
         keyexpr_rust.contains("pub fn decode(cursor: &mut SceCursor<'_>, tag: u8)"),
         "β leaf decode must take `tag: u8` parameter\n{keyexpr_rust}"
     );
-    // RFC B5-ν dispatcher self-gen cosmetic Gap — variant-only
+    // Dispatcher self-gen cosmetic gap — variant-only
     // dispatchers (no own `<sce:field>` siblings before the variant)
     // must NOT emit the dead prefix-decode block. Watching-zenoh R125c2
     // follow-up: under `warnings = "deny"`, the unused `let raw = ...`
     // would trip rustc's `unused_variables` lint. Negative assertion
-    // mirrors the atomic 11287248 / b35dbb66 substring-pattern.
+    // mirrors the 11287248 / b35dbb66 substring-pattern.
     assert!(
         !keyexpr_rust.contains("let raw = cursor.peek_slice(0)?;"),
         "variant-only dispatcher must NOT emit dead prefix-decode `let raw`\n{keyexpr_rust}"
@@ -9524,13 +9528,13 @@ fn forge_b5_nu_round_trip_local_nonlocal_rust() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν inversion β shape — fixture writer with parent-side
-/// `<sce:variant-dispatch flag="header.M"/>` declared on the import
-/// and a β-shape leaf (no `tag=` attribute, no RPF). Mirrors the
-/// pure-β `b5_nu_inversion_beta_write_fixture` shape but kept under
+/// Dispatch-inversion β (caller-tag) shape — fixture writer with
+/// parent-side `<sce:variant-dispatch flag="header.M"/>` declared on
+/// the import and a β-shape leaf (no `tag=` attribute, no RPF). Mirrors the
+/// pure-β `parent_tag_inversion_beta_write_fixture` shape but kept under
 /// its original name so the original positive round-trip test can
 /// assert the encode-side `_derived_header` block fires.
-fn b5_nu_inversion_write_round_trip_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
+fn parent_tag_inversion_write_round_trip_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -9595,7 +9599,7 @@ fn b5_nu_inversion_write_round_trip_fixture() -> (std::path::PathBuf, std::path:
     (dir, parent_path)
 }
 
-/// RFC B5-ν inversion positive round-trip — parent's import-site
+/// Dispatch-inversion positive round-trip — parent's import-site
 /// `<sce:variant-dispatch flag="header.M"/>` drives the new parent-local
 /// validator and the new collector data-source path. Encode-side
 /// codegen output must be byte-identical to the legacy leaf-side form
@@ -9603,8 +9607,8 @@ fn b5_nu_inversion_write_round_trip_fixture() -> (std::path::PathBuf, std::path:
 /// active arm) — the inversion path must emit the same codegen
 /// output as the leaf-side form.
 #[test]
-fn forge_b5_nu_inversion_round_trip_emits_derive_block() {
-    let (dir, parent_path) = b5_nu_inversion_write_round_trip_fixture();
+fn forge_parent_tag_inversion_round_trip_emits_derive_block() {
+    let (dir, parent_path) = parent_tag_inversion_write_round_trip_fixture();
 
     let content = std::fs::read_to_string(&parent_path).expect("read parent");
     let output = sce_build::compile_forge_with_imports(
@@ -9640,13 +9644,13 @@ fn forge_b5_nu_inversion_round_trip_emits_derive_block() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν inversion Q-D-5a negative: parent's `<sce:variant-dispatch
+/// Dispatch-inversion negative: parent's `<sce:variant-dispatch
 /// flag="header.X"/>` references a flag `X` that is not declared on
 /// carrier `header`. Cross-doc validator surfaces
 /// `codec/variant-dispatch-flag-not-resolved` with the declared flag
 /// names as repair candidates.
 #[test]
-fn forge_b5_nu_inversion_flag_not_resolved_rejects() {
+fn forge_parent_tag_inversion_flag_not_resolved_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
 
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -9742,20 +9746,20 @@ fn forge_b5_nu_inversion_flag_not_resolved_rejects() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν inversion β shape — pure caller-tag round-trip.
+/// Dispatch-inversion β shape — pure caller-tag round-trip.
 ///
 /// Leaf has **no** `<sce:requires-parent-flags>` and its
-/// `<sce:variant>` carries **no** `tag=` attribute (β shape per
-/// Q-D-8). Decode signature is therefore `decode(cursor, tag: u8)`.
+/// `<sce:variant>` carries **no** `tag=` attribute (the β
+/// caller-tag shape). Decode signature is therefore `decode(cursor, tag: u8)`.
 /// Parent declares `<sce:variant-dispatch flag="header.M"/>` so the
 /// parent's decode call site extracts `(header >> 6) & 0x1` and
 /// passes the masked value as the leaf's `tag` argument.
 ///
 /// Encode side stays byte-identical to the legacy form (per the
 /// RFC's "same codegen output" promise) — only the data source for
-/// `_derived_header` shifts from `leaf.codec_b5_nu_*` to
+/// `_derived_header` shifts from `leaf.codec_parent_tag_*` to
 /// `parent.embed_dispatch`.
-fn b5_nu_inversion_beta_write_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
+fn parent_tag_inversion_beta_write_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -9820,11 +9824,11 @@ fn b5_nu_inversion_beta_write_fixture() -> (std::path::PathBuf, std::path::PathB
     (dir, parent_path)
 }
 
-/// RFC B5-ν inversion β — leaf decode gains `tag: u8`; parent
+/// Dispatch-inversion β — leaf decode gains `tag: u8`; parent
 /// decode call site extracts the tag from the carrier and passes it.
 #[test]
-fn forge_b5_nu_inversion_beta_emits_caller_tag_signature() {
-    let (dir, parent_path) = b5_nu_inversion_beta_write_fixture();
+fn forge_parent_tag_inversion_beta_emits_caller_tag_signature() {
+    let (dir, parent_path) = parent_tag_inversion_beta_write_fixture();
 
     let content = std::fs::read_to_string(&parent_path).expect("read parent");
     let output = sce_build::compile_forge_with_imports(
@@ -9923,15 +9927,16 @@ fn forge_b5_nu_inversion_beta_emits_caller_tag_signature() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν inversion Q-D-4: parent's `<sce:flag name="M" value="0x01"/>`
-/// static constant conflicts with the variant-dispatch derivation
-/// (the bit is derived from the active arm, not a constant — Q-D-4 (a)).
+/// Dispatch-inversion static-value conflict: parent's `<sce:flag
+/// name="M" value="0x01"/>` static constant conflicts with the
+/// variant-dispatch derivation
+/// (the bit is derived from the active arm, not a constant).
 /// Cross-doc validator surfaces `codec/variant-dispatch-flag-has-static-value`.
 #[test]
-fn forge_b5_nu_inversion_dispatch_flag_static_value_rejects() {
+fn forge_parent_tag_inversion_dispatch_flag_static_value_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
 
-    let (dir, parent_path) = b5_nu_write_round_trip_fixture(
+    let (dir, parent_path) = parent_tag_write_round_trip_fixture(
         "",                 // no extra middle field
         r#" value="0x01""#, // STATIC value= on M flag conflicts with dispatch
     );
@@ -9944,7 +9949,7 @@ fn forge_b5_nu_inversion_dispatch_flag_static_value_rejects() {
         &dir,
         &sce_build::ForgeCompileOptions::default(),
     ) {
-        Ok(_) => panic!("cross-doc validator must reject Q-D-4 static-value conflict"),
+        Ok(_) => panic!("cross-doc validator must reject the static-value conflict"),
         Err(e) => e,
     };
 
@@ -9967,14 +9972,12 @@ fn forge_b5_nu_inversion_dispatch_flag_static_value_rejects() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// B5-ν Q-6 cross-doc: a parent that declares its B5-ν embed field
-/// BEFORE the flags carrier field violates the carrier-before-variant
-/// RFC B5-ν inversion Q-D-5 declaration-order — parent puts the embed
-/// field BEFORE the flags-carrier header field, breaking the
+/// Dispatch-inversion declaration-order negative — parent puts the
+/// embed field BEFORE the flags-carrier header field, breaking the
 /// carrier-before-variant rule. Cross-doc validator surfaces
 /// `codec/variant-dispatch-carrier-after-embed`.
 #[test]
-fn forge_b5_nu_inversion_dispatch_carrier_after_embed_rejects() {
+fn forge_parent_tag_inversion_dispatch_carrier_after_embed_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -9985,7 +9988,7 @@ fn forge_b5_nu_inversion_dispatch_carrier_after_embed_rejects() {
     std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
     // Parent puts the embed field BEFORE the flags-carrier header field
-    // — Q-D-5 declaration-order violation under the inversion form.
+    // — a declaration-order violation under the inversion form.
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -10041,7 +10044,7 @@ fn forge_b5_nu_inversion_dispatch_carrier_after_embed_rejects() {
         &dir,
         &sce_build::ForgeCompileOptions::default(),
     ) {
-        Ok(_) => panic!("cross-doc validator must reject Q-D-5 order violation"),
+        Ok(_) => panic!("cross-doc validator must reject the order violation"),
         Err(e) => e,
     };
     assert!(
@@ -10066,34 +10069,34 @@ fn forge_b5_nu_inversion_dispatch_carrier_after_embed_rejects() {
 // surfaced by a consumer against
 // pin `b719ee3e`. Tests below pin the textbook closures:
 //
-// * Gap 2 (`forge_b5_nu_consumer_parity_alias_neq_stem_rust`) —
+// * Gap 2 (`forge_parent_tag_consumer_parity_alias_neq_stem_rust`) —
 //   parent imports the dispatcher with `as="renamed_alias"` distinct
 //   from the dispatcher's stem; the encode-side match must reference
 //   the dispatcher's stem-derived variant enum, not the alias's
-//   PascalCase. The earlier regression `forge_b5_nu_round_trip_local_
+//   PascalCase. The earlier regression `forge_parent_tag_round_trip_local_
 //   nonlocal_rust` happens to use `as == stem`, which masked this bug.
 //
-// * Gap 3 (`forge_b5_nu_consumer_parity_present_if_gated_rust`) —
+// * Gap 3 (`forge_parent_tag_consumer_parity_present_if_gated_rust`) —
 //   parent gates the dispatcher embed with `sce:present-if`; the
 //   encode-side derivation must wrap the match in `Option` handling
 //   (`if let Some` for Rust; absent → derived carrier bit = 0).
 //
-// * Gap 1 positive (`forge_b5_nu_consumer_parity_chain_forwarding_
+// * Gap 1 positive (`forge_parent_tag_consumer_parity_chain_forwarding_
 //   resolves`) — dispatcher itself receives the flag via its own
 //   `<sce:flag-inputs>` and forwards it to the arm body via a bare-
 //   name `<sce:flag-bind source="...">` on the variant-arm import
-//   (RFC Axis-1 inversion replaces the legacy RPF chain mechanism).
+//   (the flag-inversion surface replaces the legacy RPF chain mechanism).
 //   The negative pair (chain_unresolved/chain_bit_drift) is gone —
 //   their typed validators were removed with the RPF struct.
 
-/// RFC B5-ν consumer-parity Gap 2 — alias ≠ stem at the parent's
+/// Parent-tag-dispatch consumer-parity Gap 2 — alias ≠ stem at the parent's
 /// import. The dispatcher's stem (`b5nu_consumer_disp`) drives the
 /// emitted variant enum type (`B5nuConsumerDispVariant`); the parent
 /// imports it under `as="renamed_alias"`. Regression: the original
 /// `embed_type_pascal: filters::to_pascal_case(alias.clone())` would
 /// have emitted `RenamedAliasVariant::...` — failing to compile.
 #[test]
-fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
+fn forge_parent_tag_consumer_parity_alias_neq_stem_rust() {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -10188,8 +10191,8 @@ fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
         "emit must NOT contain alias-derived `RenamedAliasVariant` \
          (Gap 2 regression);\n{parent_rust}"
     );
-    // RFC B5-ν dispatcher-self-gen Gap 6 — when the imported codec is
-    // a B5-ν dispatcher, the `use` statement must brace-list both the
+    // Dispatcher-self-gen Gap 6 — when the imported codec is
+    // a parent-tag dispatcher, the `use` statement must brace-list both the
     // struct and the variant enum so the consumer's encode-match
     // resolves at rustc-time. The original emitter emitted only
     // the struct import.
@@ -10201,7 +10204,7 @@ fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
          got:\n{parent_rust}"
     );
 
-    // RFC §5.B dispatcher self-gen Q-DSG-3 — end-to-end rustc-compile
+    // RFC §5.B dispatcher self-gen — end-to-end rustc-compile
     // verification of the full 4-codec emit (parent + dispatcher + 2
     // arm bodies). Substring assertions above check shape; this proves
     // composition into a compilable crate.
@@ -10215,19 +10218,19 @@ fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
         ],
         "alias_neq_stem",
     )
-    .expect("alias-neq-stem fixture must rustc-compile clean (Q-DSG-3)");
+    .expect("alias-neq-stem fixture must rustc-compile clean");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν consumer-parity Gap 3 — parent gates the dispatcher embed
+/// Parent-tag-dispatch consumer-parity Gap 3 — parent gates the dispatcher embed
 /// with `sce:present-if`. Encode-side derivation wraps the match in
 /// `Option` handling; absent embed → derived carrier bit = 0
 /// (deterministic extension of derivation to the don't-care case).
 /// Regression: the original emitter produced `match &self.<f>.body { ... }`
 /// unconditionally — fails to compile when `<f>` is `Option<T>`.
 #[test]
-fn forge_b5_nu_consumer_parity_present_if_gated_rust() {
+fn forge_parent_tag_consumer_parity_present_if_gated_rust() {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -10332,14 +10335,14 @@ fn forge_b5_nu_consumer_parity_present_if_gated_rust() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν consumer-parity Gap 1 positive — dispatcher itself
+/// Parent-tag-dispatch consumer-parity Gap 1 positive — dispatcher itself
 /// declares `<sce:requires-parent-flags>` forwarding the carrier; an
 /// arm body that consults a sibling parent flag (other than the
 /// variant tag flag) resolves against the dispatcher's forwarding
 /// source. Regression: the original `validate_cross_codec_parent_flags`
 /// would have errored with the legacy "no field named X" message.
 #[test]
-fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
+fn forge_parent_tag_consumer_parity_chain_forwarding_resolves() {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -10353,8 +10356,8 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
     // Chain-forwarding is no longer a separate mechanism — it is just
     // a parent codec whose `<sce:flag-bind source="N">` references
     // its own `<sce:flag-input name="N">` rather than a local
-    // carrier flag (RFC Axis-1 Q-11 folded B5-γ chain forwarding
-    // into the flag-input shape).
+    // carrier flag (the flag-inversion surface folded the legacy
+    // parent-flags chain forwarding into the flag-input shape).
     let dispatcher = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -10451,7 +10454,7 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
          (no such field on chain-forwarder dispatcher);\n{disp_rust}"
     );
 
-    // RFC §5.B dispatcher self-gen Q-DSG-3 — end-to-end rustc-compile
+    // RFC §5.B dispatcher self-gen — end-to-end rustc-compile
     // verification of the dispatcher + 2 arm bodies. Validates Gap
     // 4/5's Forwarding-source argument substitution produces actually
     // compilable Rust (not just shape-correct strings).
@@ -10464,7 +10467,7 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
         ],
         "chain_forwarding",
     )
-    .expect("chain-forwarding dispatcher must rustc-compile clean (Q-DSG-3)");
+    .expect("chain-forwarding dispatcher must rustc-compile clean");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -10477,13 +10480,13 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
 // argument substitution) + per-backend variant body discrimination
 // (Gap 7 Go field-presence, Gap 8 Python `.kind` string).
 
-/// Helper — write the standard B5-ν dispatcher-self-gen fixture set
-/// (RFC Axis-1 inversion shape): dispatcher with its own
+/// Helper — write the standard dispatcher-self-gen fixture set
+/// (flag-inversion shape): dispatcher with its own
 /// `<sce:flag-input name="N">` (chain-forwarder receiving N from its
 /// own caller) + variant arm imports binding arm_a's input `N` via
 /// bare-name source (`<sce:flag-bind input="N" source="N"/>`), plus
 /// arm_a (declares `<sce:flag-input name="N">`) and arm_b (plain).
-fn b5_nu_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String, String, String) {
+fn parent_tag_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String, String, String) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -10553,7 +10556,7 @@ fn b5_nu_dsg_write_fixture(namespace: &str) -> (std::path::PathBuf, String, Stri
 /// so per-language requirements (e.g. Go's `go_module_prefix`) are
 /// satisfied. The file lookup tolerates Kotlin's nested package-path
 /// emit by searching both the disp_id stem and a PascalCase variant.
-fn b5_nu_dsg_compile_disp(
+fn parent_tag_dsg_compile_disp(
     dir: &std::path::Path,
     disp_id: &str,
     lang: sce_build::generator::Language,
@@ -10567,8 +10570,8 @@ fn b5_nu_dsg_compile_disp(
         dir,
         &golden_options(lang),
     )
-    .expect("dispatcher codegen must succeed (B5-ν chain-forwarding fixture)");
-    let pascal = b5_nu_id_to_pascal(disp_id);
+    .expect("dispatcher codegen must succeed (chain-forwarding fixture)");
+    let pascal = parent_tag_id_to_pascal(disp_id);
     output
         .files
         .iter()
@@ -10582,7 +10585,7 @@ fn b5_nu_dsg_compile_disp(
         )
 }
 
-fn b5_nu_id_to_pascal(id: &str) -> String {
+fn parent_tag_id_to_pascal(id: &str) -> String {
     id.split('_')
         .map(|s| {
             let mut c = s.chars();
@@ -10594,7 +10597,7 @@ fn b5_nu_id_to_pascal(id: &str) -> String {
         .collect()
 }
 
-/// RFC §5.B B5-ν dispatcher self-gen Q-DSG-3 — rustc-compile harness.
+/// RFC §5.B dispatcher self-gen — rustc-compile harness.
 /// Compile every SCXML in `scxml_filenames` to Rust via
 /// `compile_forge_with_imports`, write the emitted `.rs` files into a
 /// standalone temp Cargo project that depends on the workspace's
@@ -10661,7 +10664,7 @@ fn rustc_run_codec_set(
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
     // Compile each SCXML to Rust and gather every `.rs` file the
-    // emit produced. A B5-ν dispatcher fixture typically emits 4
+    // emit produced. A parent-tag dispatcher fixture typically emits 4
     // files (parent + dispatcher + 2 arm bodies); test-vector
     // sidecars and helper files are also included verbatim.
     let lang = sce_build::generator::Language::Rust;
@@ -10711,7 +10714,7 @@ edition = "2021"
 path = "src/lib.rs"
 
 [features]
-# RFC §5.B B1-α: generated codec modules carry `#[cfg(feature = "alloc")]`
+# RFC §5.B: generated codec modules carry `#[cfg(feature = "alloc")]`
 # guards around `VecSink` / `encode_to_vec` so MCU / no_std consumers see
 # only the sink-based primary. The harness opts the entire crate into
 # `alloc` so the heap facade is exercised in the rustc-check + sidecar
@@ -10725,7 +10728,7 @@ sce-forge-runtime = {{ path = "{}", default-features = false, features = ["alloc
 
 [workspace]
 
-# RFC §5.B B5-ν dispatcher self-gen Q-DSG-3 — mirror the strictness
+# RFC §5.B dispatcher self-gen — mirror the strictness
 # watching-zenoh applies in their workspace (`warnings = "deny"`).
 # Lint regressions like dead `let raw` bindings for variant-only
 # dispatchers (R125c2 cosmetic Gap) become hard compile errors here,
@@ -10822,15 +10825,15 @@ warnings = "deny"
     Ok(())
 }
 
-/// RFC B5-ν dispatcher self-gen — Cpp dispatcher emit threads its
+/// Parent-tag dispatcher self-gen — Cpp dispatcher emit threads its
 /// own `<sce:flag-input name="N">` parameter (snake `n`) to arm body
 /// decode/encode calls via the bare-name flag-bind on the variant arm
-/// import (RFC Axis-1 chain-forwarder shape).
+/// import (flag-inversion chain-forwarder shape).
 #[test]
-fn forge_b5_nu_dispatcher_self_gen_cpp() {
-    let (dir, disp_id, arm_a_id, arm_b_id) = b5_nu_dsg_write_fixture("cpp");
-    let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Cpp);
-    let arm_a_pascal = b5_nu_id_to_pascal(&arm_a_id);
+fn forge_parent_tag_dispatcher_self_gen_cpp() {
+    let (dir, disp_id, arm_a_id, arm_b_id) = parent_tag_dsg_write_fixture("cpp");
+    let disp = parent_tag_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Cpp);
+    let arm_a_pascal = parent_tag_id_to_pascal(&arm_a_id);
     assert!(
         disp.contains(&format!("{arm_a_pascal}::decode(cursor, n)")),
         "Cpp dispatcher decode must pass `n` to arm_a; got:\n{disp}"
@@ -10845,19 +10848,19 @@ fn forge_b5_nu_dispatcher_self_gen_cpp() {
     compile_codec_set_cpp(
         &dir,
         &[&disp_file, &arm_a_file, &arm_b_file],
-        "forge_b5_nu_dispatcher_self_gen_cpp",
+        "forge_parent_tag_dispatcher_self_gen_cpp",
     )
     .expect("Cpp dispatcher emit must compile under g++ -Werror");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν dispatcher self-gen — Kotlin dispatcher emit threads its
+/// Parent-tag dispatcher self-gen — Kotlin dispatcher emit threads its
 /// `N` flag-input parameter to arm body encode calls (Kotlin uses
 /// to_camel_case; single-letter uppercase `N` is identity).
 #[test]
-fn forge_b5_nu_dispatcher_self_gen_kotlin() {
-    let (dir, disp_id, arm_a_id, arm_b_id) = b5_nu_dsg_write_fixture("kotlin");
-    let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Kotlin);
+fn forge_parent_tag_dispatcher_self_gen_kotlin() {
+    let (dir, disp_id, arm_a_id, arm_b_id) = parent_tag_dsg_write_fixture("kotlin");
+    let disp = parent_tag_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Kotlin);
     assert!(
         disp.contains("N: UByte"),
         "Kotlin dispatcher must declare `N: UByte` flag-input param; got:\n{disp}"
@@ -10872,25 +10875,25 @@ fn forge_b5_nu_dispatcher_self_gen_kotlin() {
     compile_codec_set_kotlin(
         &dir,
         &[&disp_file, &arm_a_file, &arm_b_file],
-        "forge_b5_nu_dispatcher_self_gen_kotlin",
+        "forge_parent_tag_dispatcher_self_gen_kotlin",
     )
     .expect("Kotlin dispatcher emit must compile under kotlinc -Werror");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν dispatcher self-gen — Go dispatcher emit threads its `N`
+/// Parent-tag dispatcher self-gen — Go dispatcher emit threads its `N`
 /// flag-input parameter at arm calls (Go uses to_camel_case for input
 /// names; single-letter uppercase `N` is identity).
 #[test]
-fn forge_b5_nu_dispatcher_self_gen_go() {
-    let (dir, disp_id, arm_a_id, arm_b_id) = b5_nu_dsg_write_fixture("go");
-    let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Go);
-    let arm_a_pascal = b5_nu_id_to_pascal(&arm_a_id);
+fn forge_parent_tag_dispatcher_self_gen_go() {
+    let (dir, disp_id, arm_a_id, arm_b_id) = parent_tag_dsg_write_fixture("go");
+    let disp = parent_tag_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::Go);
+    let arm_a_pascal = parent_tag_id_to_pascal(&arm_a_id);
     assert!(
         disp.contains(&format!("Decode{arm_a_pascal}(cursor, N)")),
         "Go dispatcher decode must pass `N` to arm_a; got:\n{disp}"
     );
-    // RFC §5.B B1-α writer-based encode: arm body call now threads
+    // RFC §5.B writer-based encode: arm body call threads
     // the parent sink first, then the dispatch tag (`Encode(w, N)`).
     assert!(
         disp.contains(".Encode(w, N)"),
@@ -10906,18 +10909,18 @@ fn forge_b5_nu_dispatcher_self_gen_go() {
     compile_codec_set_go(
         &dir,
         &[&disp_file, &arm_a_file, &arm_b_file],
-        "forge_b5_nu_dispatcher_self_gen_go",
+        "forge_parent_tag_dispatcher_self_gen_go",
     )
     .expect("Go dispatcher emit must compile under `go build ./... && go vet ./...`");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν dispatcher self-gen — C11 dispatcher emit threads its `n`
+/// Parent-tag dispatcher self-gen — C11 dispatcher emit threads its `n`
 /// flag-input parameter (snake_case) at arm calls.
 #[test]
-fn forge_b5_nu_dispatcher_self_gen_c11() {
-    let (dir, disp_id, arm_a_id, arm_b_id) = b5_nu_dsg_write_fixture("c11");
-    let disp = b5_nu_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::C11);
+fn forge_parent_tag_dispatcher_self_gen_c11() {
+    let (dir, disp_id, arm_a_id, arm_b_id) = parent_tag_dsg_write_fixture("c11");
+    let disp = parent_tag_dsg_compile_disp(&dir, &disp_id, sce_build::generator::Language::C11);
     assert!(
         disp.contains("uint8_t n"),
         "C11 dispatcher must declare `uint8_t n` flag-input param; got:\n{disp}"
@@ -10932,19 +10935,19 @@ fn forge_b5_nu_dispatcher_self_gen_c11() {
     compile_codec_set_c11(
         &dir,
         &[&disp_file, &arm_a_file, &arm_b_file],
-        "forge_b5_nu_dispatcher_self_gen_c11",
+        "forge_parent_tag_dispatcher_self_gen_c11",
     )
     .expect("C11 dispatcher emit must compile under gcc -Werror");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν dispatcher self-gen Gap 7 — Go consumer's b5_nu_switch_block
+/// Parent-tag dispatcher self-gen Gap 7 — Go consumer's parent_tag_switch_block
 /// uses field-presence Body.<Arm> != nil dispatch, NOT `.(type)` type-
 /// switch (invalid for the variant struct rep) and NOT bare arm body
 /// type names (which would lack package qualifier when arm bodies live
 /// in separate packages).
 #[test]
-fn forge_b5_nu_consumer_field_presence_dispatch_go() {
+fn forge_parent_tag_consumer_field_presence_dispatch_go() {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -11040,20 +11043,20 @@ fn forge_b5_nu_consumer_field_presence_dispatch_go() {
             "b5nu_go_local.scxml",
             "b5nu_go_nonlocal.scxml",
         ],
-        "forge_b5_nu_consumer_field_presence_dispatch_go",
+        "forge_parent_tag_consumer_field_presence_dispatch_go",
     )
     .expect("Go consumer dispatch emit must compile under `go build ./... && go vet ./...`");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC B5-ν dispatcher self-gen Gap 8 — Python consumer dispatches via
+/// Parent-tag dispatcher self-gen Gap 8 — Python consumer dispatches via
 /// `.body.kind == "<ArmName>"` string equality (matches Python codec
 /// template's `body.kind` discriminator at lines 28-50 + 154), NOT
 /// `isinstance(body, X.Y)` against a class hierarchy (Python variant
 /// body has no nested arm classes).
 #[test]
-fn forge_b5_nu_consumer_kind_string_dispatch_python() {
+fn forge_parent_tag_consumer_kind_string_dispatch_python() {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -11147,7 +11150,7 @@ fn forge_b5_nu_consumer_kind_string_dispatch_python() {
             "b5nu_py_local.scxml",
             "b5nu_py_nonlocal.scxml",
         ],
-        "forge_b5_nu_consumer_kind_string_dispatch_python",
+        "forge_parent_tag_consumer_kind_string_dispatch_python",
     )
     .expect("Python consumer dispatch emit must py_compile under `python3 -W error`");
 
@@ -11742,13 +11745,13 @@ fn compile_codec_set_kotlin(
     Ok(())
 }
 
-// RFC B5-ν inversion β shape: `<sce:default>` catch-all on the leaf's
-// caller-tag `<sce:variant>` is now ALLOWED (Q-D-3 (a) — parent
+// Dispatch-inversion β shape: `<sce:default>` catch-all on the leaf's
+// caller-tag `<sce:variant>` is ALLOWED (a parent
 // without `<sce:variant-dispatch>` uses the default arm's value as
 // the construction-time tag input). The legacy
-// `forge_b5_nu_dispatcher_default_arm_rejects` test asserted the
+// `forge_parent_tag_dispatcher_default_arm_rejects` test asserted the
 // obsolete `CodecVariantParentScopeDefaultArmForbidden` diagnostic
-// (one of the 5 deprecate codes per Q-D-6 (d)); deleted with the
+// (one of the 5 deprecated codes); it was deleted with the
 // code itself in the 5-code reverse-sync step.
 
 // ── Multi-byte plain-id length-field regression matrix ─────────
@@ -11891,9 +11894,9 @@ fn forge_c11_codec_length_ref_uint32_le() {
 
 // Sidecar round-trip gates: Rust + C11 emit the
 // `<sce:test-vector>`-driven sidecar today; cpp/kotlin/go/python
-// stay on the trunk-gated no-sidecar shape until their B5-θ
-// closures land (rotation pattern mirrors the dotted_basic
-// section above).
+// stay on the trunk-gated no-sidecar shape (their test-vector
+// closures are consumer-gated; rotation pattern mirrors the
+// dotted_basic section above).
 
 #[test]
 fn forge_rust_codec_length_ref_uint16_le_test_vector_sidecar() {
@@ -12489,7 +12492,7 @@ fn flag_inversion_bind_source_not_resolved_rejects() {
 
 /// Positive — chain-forwarder pattern: parent declares its own
 /// `<sce:flag-input>` and uses bare-name form on `<sce:flag-bind>` to
-/// forward it inward. Mirrors the legacy B5-γ chain forwarding shape
+/// forward it inward. Mirrors the legacy parent-flags chain forwarding shape
 /// translated into the inverted vocabulary.
 #[test]
 fn flag_inversion_chain_forwarder_bare_name_validates() {
@@ -13336,7 +13339,7 @@ fn round_trip_arm_a_with_suffix() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC Axis-1 inversion + B5-ν inversion β shape negative — the
+/// Flag-inversion + dispatch-inversion β shape negative — the
 /// validator rejects a parent codec whose variant arm body resolves to
 /// a codec in caller-tag β shape (no `tag=` attribute on the inner
 /// `<sce:variant>`). Without this upstream rejection the codegen
@@ -13365,7 +13368,7 @@ fn axis1_inversion_variant_arm_body_caller_tag_rejected() {
     // D1: parent dispatcher with its own `tag` field, two arms. Arm
     // value 0x00 imports D2 (caller-tag β shape), arm value 0x01
     // imports a normal leaf. `<sce:default>` reuses the normal leaf
-    // so the variant has a Default-trait starting arm per Q-V4 (a).
+    // so the variant has a Default-trait starting arm.
     let d1 = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -13472,7 +13475,7 @@ fn axis1_inversion_variant_arm_body_caller_tag_rejected() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC Axis-1 inversion — multi-flag-input order invariant. The
+/// Flag inversion — multi-flag-input order invariant. The
 /// dispatcher signature emits `params_after_first_arg` from
 /// `m.flag_inputs` (declaration order) and the caller's
 /// `embed_flag_bind_thread_args` emits args from
@@ -13504,7 +13507,7 @@ fn axis1_inversion_multi_flag_input_order() {
 
     // Parent: header carries three flags N (bit 5), M (bit 6), P (bit
     // 7); embed of dispatcher binds each input to its same-named flag.
-    // No variant-dispatch on the parent import (Q-D-3 (a) — the
+    // No variant-dispatch on the parent import (the
     // dispatcher's default arm makes this legal). This isolates the
     // multi-input ORDER invariant from the caller-tag arg-order
     // invariant covered by axis1_inversion_embed_dispatcher_arg_order.
@@ -13713,7 +13716,7 @@ fn multi_input_round_trip_n1_m0_p1() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC Axis-1 inversion + B5-ν inversion β shape negative —
+/// Flag-inversion + dispatch-inversion β shape negative —
 /// `<sce:default>` arm body in caller-tag β shape is rejected with the
 /// SAME typed diagnostic as enumerated arms, but with `arm_value:
 /// None` so the message renders `<default>` instead of a sentinel
@@ -13732,8 +13735,8 @@ fn axis1_inversion_variant_default_arm_caller_tag_rejected() {
     std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
     // D1: parent dispatcher whose enumerated arms are simple leaves
-    // but whose `<sce:default>` catch-all is the β-shape D2. Q-V4 (a)
-    // requires a `default="true"` marker on an enumerated arm too, so
+    // but whose `<sce:default>` catch-all is the β-shape D2. The
+    // default-marker rule requires `default="true"` on an enumerated arm too, so
     // arm 0x01 keeps the marker; the `<sce:default>` is the strict
     // catch-all the validator must now reject.
     let d1 = r#"<?xml version="1.0"?>

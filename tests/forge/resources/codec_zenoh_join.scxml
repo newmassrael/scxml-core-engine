@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Join body (RFC §5.B
-     B5-ι Batch 1).
+     cross-codec composition).
 
      Mirrors zenoh-pico `_z_join_encode` (src/protocol/codec/transport.c
      lines 40-102) verbatim. The transport-message header carries
@@ -29,10 +29,10 @@
                   next_sn_reliable     (VLE u64)
                   next_sn_best_effort  (VLE u64)
 
-     Composition: B5-α multi-bit flag (cbyte) + B5-κ Surface L
-     dotted-path length-field (`cbyte.zid_len_m1`) + B5-δ Surface F
-     length-arith (+1) + B5-γ Parent-scope present-if (parent.S) +
-     B1-α VLE (3 fields). No new primitive surface.
+     Composition: multi-bit flag (cbyte) + dotted-path
+     dotted-path length-field (`cbyte.zid_len_m1`) + length-ref
+     length-arith (1) + Parent-scope present-if (parent.S) +
+     VLE VLE (3 fields). No new primitive surface.
 
      Round-trip oracle:
        parent.S=1: version=0x05 cbyte=0x21 zid=[01 02 03] sn_res=0x33

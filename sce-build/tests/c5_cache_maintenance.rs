@@ -243,7 +243,7 @@ fn cache_none_emits_no_cache_calls() {
 fn cache_maintain_auto_injects_three_externs_in_sidecar_rust() {
     // Spec lines 1736-1740: `sce_dcache_clean_by_addr`,
     // `sce_dcache_invalidate_by_addr`, `sce_dcache_clean_invalidate_by_addr`.
-    // Q-C5-4 (a): all 3 visible in `<snake>_externs.rs` for deploy
+    // All 3 visible in `<snake>_externs.rs` for deploy
     // review transparency (auto-injected by parser hook when
     // cache-policy=maintain).
     let out = compile_pool_with_deploy(

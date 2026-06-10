@@ -14,7 +14,7 @@
 //!    `forge/source-hash-mismatch`.
 //!
 //! Why the helper-based fixture rather than full codegen: the helper
-//! exposes the contract surface (per Q-§6.2.6-4 (b) "6-backend header
+//! exposes the contract surface (the "6-backend header
 //! emit") without coupling to any one backend's generator pipeline. The
 //! follow-up atomic wires `apply_drift_headers_to_output` into every
 //! `cmd_*` codegen entry; that integration is out of scope for B9 per
@@ -186,7 +186,7 @@ fn verify_fails_when_template_drifts() {
 fn helper_emits_python_header_with_hash_prefix() {
     // 6-backend coverage check: helper picks `#` for `.py` and `//`
     // for everything else. This is the cross-backend invariant from
-    // Q-§6.2.6-4 — single helper, prefix derived from file extension.
+    // Single helper, prefix derived from file extension.
     let mut output = GeneratedOutput {
         files: vec![
             ("foo.py".into(), "def main():\n    pass\n".into()),
@@ -468,7 +468,7 @@ fn workspace_root() -> PathBuf {
         .to_path_buf()
 }
 
-// Q-§6.2.6-3 lock-in: `template-hash` covers the entire
+// Locked decision: `template-hash` covers the entire
 // `tools/codegen/templates/**` tree plus `Cargo.lock`. That means a
 // template edit in any backend invalidates *every* committed
 // generated tree's embedded hash — even backends whose own emit is
@@ -662,7 +662,7 @@ fn verify_passes_on_real_committed_go_donedata_tree() {
 // `sce-forge-runtime/go/round_trip/generated/`. The Go runtime test
 // `default_round_trip_test.go` includes them at build time. This
 // context was discovered after the §6.2.6 sweep audit found the
-// previous run of generate.sh had been on the pre-B1-α template
+// previous run of generate.sh had been on the pre-writer-encode template
 // tree — committed Encode() returned `[]byte` while the current
 // template emits `Encode(SceSink) error` + a `EncodeToBytes() []byte`
 // legacy facade. No CI lane was running `go test ./round_trip/`, so

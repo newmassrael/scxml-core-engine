@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: codec parent-flags dependency (RFC §5.B B5-γ,
+<!-- SCE Forge conformance: codec parent-flags dependency (RFC §5.B parent-flags,
      surface C from the watching-zenoh authoring path).
 
      Mirrors the upstream Zenoh InitSyn body's layout (zenoh-pico
@@ -10,7 +10,7 @@
      reads flags from the parent's header carrier to gate which body
      fields are present on the wire.
 
-     B5-γ adds `<sce:requires-parent-flags carrier="X">` to declare
+     parent-flags adds `<sce:requires-parent-flags carrier="X">` to declare
      the body codec's dependency on a parent's flags carrier. Body
      fields use the new `sce:present-if="parent.<flag>"` grammar to
      gate on those flags. Codegen extends decode/encode signatures

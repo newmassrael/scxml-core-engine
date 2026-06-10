@@ -208,8 +208,7 @@ pub struct TransportDescriptor {
     ///   resolved via vsomeip.json), but machine-lifetime synthesis
     ///   never consults vsomeip.json — it has no event_group_id to
     ///   emit, so the subscribe would land in the "unknown event" arm
-    ///   and silently drop. Tracked under
-    ///   `mesh_someip_sd_gaps_roadmap.md`.
+    ///   and silently drop; SOME/IP support here is consumer-gated.
     /// - `zenoh`: binding-wide `key:` is sufficient for subscribe
     ///   dispatch — no per-event resolution needed. `true`.
     /// - `dds` / `can`: unimplemented; set `false`.
@@ -406,8 +405,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // subscribe from vsomeip.json-resolved event_group_id), but the
         // machine-lifetime synthesis path has no external resolution
         // step — the subscribe envelope would hit the "unknown event"
-        // arm and drop. Gap tracked under
-        // `mesh_someip_sd_gaps_roadmap.md`.
+        // arm and drop; SOME/IP support here is consumer-gated.
         supports_machine_lifetime_subscribe: false,
         // SOME/IP's routing_manager tracks per-(service, instance) state
         // independently: `offer_service(SERVICE, i)` advertises one

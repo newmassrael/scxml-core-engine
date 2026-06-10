@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh decl_ext_keyexpr outer envelope (RFC §5.B —
      the load-bearing
-     primitive demo for Y0b's two embed-attribute lifts).
+     primitive demo for 's two embed-attribute lifts).
 
      Mirrors `_z_decl_ext_keyexpr_encode` (declarations.c:38-50)
      verbatim. The single-ext envelope wraps codec_zenoh_decl_ext_keyexpr_inner
@@ -54,7 +54,7 @@
                                       bit is clear, so encoder /
                                       decoder remain interoperable.
 
-     Y0b's two attribute lifts — both exercised in this fixture:
+     's two attribute lifts — both exercised in this fixture:
 
        (1) `<sce:embed sce:length-from="total_length">` bounds the
            inner codec's decode-time cursor scope to `total_length`
@@ -66,14 +66,14 @@
            (`validate_codec_embed_length_from`).
 
        (2) `<sce:embed>` itself is NOT gated here (single-ext outer
-           envelope is unconditional). The Y0b present-if-on-embed
+           envelope is unconditional). The present-if-on-embed
            lift exercises in the three undecl_* fixtures
            (codec_zenoh_undecl_subscriber / queryable / token) where
            the decl/undecl body's parent.Z flag gates this entire
            outer envelope.
 
-     Composition: B1-γ flags (outer_header) + B1-α VLE (total_length)
-     + Y0b length-bound embed (inner). Plain — no parent-flag
+     Composition: flags flags (outer_header) + VLE VLE (total_length)
+     + length-bound embed (inner). Plain — no parent-flag
      dependency at this level.
 
      Wire round-trip oracle:

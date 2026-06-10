@@ -20,19 +20,19 @@
 
      Composition (no new SCE primitives — the VLE+flags carrier
      composition was first shipped in codec_ext_encoding_info):
-       - B1-γ <sce:flags> on a B1-α <sce:bit-size="vle"> uint32 carrier
+       - flags <sce:flags> on a VLE <sce:bit-size="vle"> uint32 carrier
          (textbook composition — flag accessors operate on the decoded
          host integer regardless of the carrier's wire encoding;
          is_flags_carrier() is bit-size agnostic per
          model.rs::CodecField::is_flags_carrier).
-       - B1-δ present-if dotted-path `packed_id.has_schema` gates the
+       - present-if present-if dotted-path `packed_id.has_schema` gates the
          schema_len + schema pair.
-       - B5-ζ Surface H + Y0a `<sce:type="string" sce:bit-size="length-ref">`
+       - gated string `<sce:type="string" sce:bit-size="length-ref">`
          + present-if-on-string (already shipped).
 
      Closes 3 of the 4 deferrals enumerated in codec_ext_encoding_info
      (lines 17-42 of that fixture):
-       #2 (VLE u64 schema_len, not u8) — closed via Y0a string-with-
+       #2 (VLE u64 schema_len, not u8) — closed via string-with-
           present-if surface.
        #3 (gated schema_len for upstream-binary parity, not always-
           present) — closed via `present-if` on the schema_len field.
@@ -40,7 +40,7 @@
           has_schema=false (matches upstream wire — codec_ext_encoding_
           info diverges from upstream by the always-present schema_size
           byte).
-       #4 (string typing, not bytes) — closed via B5-ζ Surface H +
+       #4 (string typing, not bytes) — closed via the string primitive +
           UTF-8 validation on decode.
      Deferral #1 (derived `id = packed_id >> 1` accessor) stays
      deferred — the consumer (codec_zenoh_msg_put / msg_err) does the

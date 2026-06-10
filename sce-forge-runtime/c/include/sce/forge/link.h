@@ -82,7 +82,7 @@ typedef sce_forge_link_status_t (*sce_forge_link_tx_fn)(void *self, sce_forge_li
 /* Budget-aware tick hook (watching-zenoh RFC §5.N line 3050).
  * The cooperative scheduler invokes `poll(self, deadline_us)` once
  * per tick per link, with `deadline_us` capped to the deploy.yaml
- * `scheduler.per_link_budget_us` value the C10-β codegen pins as
+ * `scheduler.per_link_budget_us` value the scheduler codegen (item C10) pins as
  * the per-machine `PER_LINK_BUDGET_US` macro. Implementations use
  * the deadline to bound internal work — drain wire bytes, decode
  * frames into an internal queue, run housekeeping. Decoded frames

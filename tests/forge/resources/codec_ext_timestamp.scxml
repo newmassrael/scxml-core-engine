@@ -10,7 +10,7 @@
      wire layout matches `<u8 zid_size> + <length-ref bytes zid>`
      verbatim.
 
-     Applied combination: B1-α VLE primitive (`time`) + B2-β
+     Applied combination: VLE VLE primitive (`time`) + present-if-gating
      length-ref bytes (`zid` gated on `zid_size`). No new IR/parser
      surface — pure composition of B1/B2 primitives.
 

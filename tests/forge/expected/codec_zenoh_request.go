@@ -49,7 +49,7 @@ type CodecZenohRequest struct {
 // arm) requires using this constructor rather than the bare struct
 // literal `CodecZenohRequest{}`, which would zero-init every field
 // (and leave every Variant arm pointer nil for variant codecs).
-// RFC variant-default-uniformity Atomic β-go.
+// RFC variant-default-uniformity (Go).
 func NewCodecZenohRequest() *CodecZenohRequest {
 	return &CodecZenohRequest{
 		Header: uint8(0x1c),
@@ -65,7 +65,7 @@ func NewCodecZenohRequest() *CodecZenohRequest {
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohRequest(cursor *codec.SceCursor) (*CodecZenohRequest, error) {
-	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+	// RFC §5.B peek-byte / streaming-prefix:
 	// streaming prefix decode (variable-length fields supported via
 	// per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
 	// mode additionally peeks the cursor's next byte for variant tag
@@ -213,7 +213,7 @@ func (s *CodecZenohRequest) SetZ(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohRequest) Encode(w codec.SceSink) error {
-	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix.
+	// RFC §5.B peek-byte / streaming-prefix.
 	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
 		return err
 	}

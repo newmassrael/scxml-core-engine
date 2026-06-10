@@ -6,8 +6,8 @@
 #
 # Mirrors the cpp 4-tier shape (sce_core / sce_base / sce_scripting /
 # sce_runtime) adapted to the C11 backend reality: generated code carries
-# the runtime engine itself (per the c11_design_decisions.md T3 inline-
-# only lock-in), so the "tier 4" slot holds platform-specific impls
+# the runtime engine itself (jinja2-inline-only contract — no shared
+# runtime-engine .c), so the "tier 4" slot holds platform-specific impls
 # (POSIX / RTOS / lwIP) instead of a runtime-engine library.
 #
 # Layer mapping:

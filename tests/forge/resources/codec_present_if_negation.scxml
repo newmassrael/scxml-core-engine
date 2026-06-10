@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: present-if negation primitive (RFC §5.B B5-λ).
+<!-- SCE Forge conformance: present-if negation primitive (RFC §5.B present-if negation).
      One-byte uint8 carrier "flags" exposes a single named bit "absent_seq"
      (bit 0). The trailing "seq" field is uint16 BE gated on
      sce:present-if="!flags.absent_seq" — predicate fires when the bit is
      CLEAR (textbook negation: "seq is present iff absent_seq=0"). The
-     `(carrier & mask) == 0` test is the polarity inverse of B1-δ Local
+     `(carrier & mask) == 0` test is the polarity inverse of present-if Local
      positive's `!= 0`. Closes the grammar gap that previously forced
      specialized codec authoring (e.g. codec_zenoh_open_ack's "body when
      A=1" form) when the wire layout's "set means absent" semantics did

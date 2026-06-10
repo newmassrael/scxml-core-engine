@@ -429,7 +429,7 @@
               "type": "string"
             },
             "has_test_vectors": {
-              "description": "Derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the algorithm root. RFC §5.B B2-test-vector trunk emits a per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only; the conformance filter drops the fixture from Cpp/Kotlin/Go/Python harnesses until those closures land (mirrors B1-β codec_variant_dispatch's per-language gate). Empty in fixtures.json (manifest-side override is rejected); computed by `has_test_vectors_in_file` so the SCXML stays the single source of truth.",
+              "description": "Derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the algorithm root. RFC §5.B test-vector support (item B2) emits a per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only; the conformance filter drops the fixture from Cpp/Kotlin/Go/Python harnesses — those sidecars are consumer-gated (mirrors codec_variant_dispatch's per-language gate). Empty in fixtures.json (manifest-side override is rejected); computed by `has_test_vectors_in_file` so the SCXML stays the single source of truth.",
               "type": "boolean"
             },
             "kind": {

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  RFC c7-wildcard W-project — in-atomic consumer fixture (Q-W-5 (a) +
-  Q-W-8 W-project lock). Outer algorithm: iterates the bounded-
+  RFC c7-wildcard W-project — in-atomic consumer fixture (locked decision +
+  locked decision W-project lock). Outer algorithm: iterates the bounded-
   collection `keys` (whose element-type `keyexpr_entry` carries a
   bounded-string `pattern` field) and dispatches into W-index's
   `bytes_equal` to compare each stored keyexpr against the incoming
@@ -10,7 +10,7 @@
   This exercises exactly the one SCE-side expressibility addition
   W-project introduces, and nothing of the wildcard `*`/`**`/`$*`
   semantics (those are wz-authored in the W-matcher-fixture step, per
-  Q-C7-8):
+  locked decision):
 
     - `eq(entry.pattern, target)` — the bounded-string element-field
       `entry.pattern` projects to a borrowed `bytes` view at the call

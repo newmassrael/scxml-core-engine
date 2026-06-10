@@ -1121,7 +1121,7 @@ fn number_text_looks_like_int(n: &str) -> bool {
 ///     equality-as-bytes coercion at codegen).
 ///   * `SceType::Enum(EnumRef)` accepts `Int` literals (per the lattice
 ///     rule `Enum(E) ⊑ E.underlying_type` — the underlying type is an
-///     unsigned integer at every Path A α declared precedent). Width
+///     unsigned integer per the Enum kind's unsigned-only rule). Width
 ///     narrowing against the resolved `underlying_type` runs as a
 ///     second layer in [`enum_underlying_overflow`] — this helper
 ///     decides category only.
@@ -1176,8 +1176,9 @@ struct EnumUnderlyingOverflow {
 /// Hex / binary / octal literal forms (`0x`, `0b`, `0o` prefixes) are
 /// parsed alongside decimal so authors can write `_event.data.code ===
 /// 0xFF` against a `uint8` underlying without false rejections. Unary
-/// minus on enum operands is structurally unreachable here: Path A α
-/// declares unsigned-only underlying types (F-ι defers signed), so a
+/// minus on enum operands is structurally unreachable here: the Enum
+/// kind declares unsigned-only underlying types (signed underlying
+/// types are consumer-gated), so a
 /// negative literal is the wrong category and gets rejected earlier
 /// inside [`literal_is_compatible_with`] via the int category test.
 /// (`operand_literal_kind` walks through unary minus, but the
@@ -1213,7 +1214,7 @@ fn enum_underlying_overflow(
 /// octal — matches the lexer's [`crate::forge::expr`] numeric forms)
 /// into its `u64` value. Returns `None` for non-integer literals,
 /// unary-prefixed forms (signed literals — unsigned-only enum
-/// underlying), or values that do not fit in `u64`. The Path A α
+/// underlying), or values that do not fit in `u64`. The
 /// unsigned-only design lock means a `u64` carrier is always at least
 /// as wide as the largest legal underlying.
 fn integer_literal_value(operand: &TypedExpr) -> Option<u64> {
@@ -1315,8 +1316,8 @@ fn parse_int_literal_text(text: &str) -> Option<u64> {
 
 /// Compare an unsigned literal `value` against an enum's declared
 /// `underlying_type`. Returns `true` iff `value` fits without
-/// overflow. Path A α declares unsigned-only underlying (F-ι defers
-/// signed); the non-unsigned-int arm is structurally unreachable for
+/// overflow. The Enum kind declares unsigned-only underlying (signed
+/// is consumer-gated); the non-unsigned-int arm is structurally unreachable for
 /// enum underlying types (the parser rejects them with
 /// `validation/enum-unsupported-underlying-type`), but a permissive
 /// `true` here keeps the narrowing layer silent rather than producing
@@ -2287,7 +2288,7 @@ mod tests {
         );
         // 7 fits uint8 width (passes width narrowing) but is not declared.
         let err = run_with_enums(s, "_event.data.status === 7", enums)
-            .expect_err("7 must be rejected by F-κ membership check");
+            .expect_err("7 must be rejected by the strict variant-membership check");
         let msg = format!("{err}");
         assert!(
             msg.contains("not a declared variant") && msg.contains("Result"),

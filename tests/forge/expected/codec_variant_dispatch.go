@@ -42,7 +42,7 @@ type CodecVariantDispatch struct {
 // arm) requires using this constructor rather than the bare struct
 // literal `CodecVariantDispatch{}`, which would zero-init every field
 // (and leave every Variant arm pointer nil for variant codecs).
-// RFC variant-default-uniformity Atomic β-go.
+// RFC variant-default-uniformity (Go).
 func NewCodecVariantDispatch() *CodecVariantDispatch {
 	return &CodecVariantDispatch{
 		Body: CodecVariantDispatchVariant{

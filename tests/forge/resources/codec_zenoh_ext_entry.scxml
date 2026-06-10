@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh extension TLV entry — variant body
-     keyed by the entry header's `enc` bit-range (RFC §5.B B5-ε,
+     keyed by the entry header's `enc` bit-range (RFC §5.B,
      surface G from the watching-zenoh authoring path; layout
      since refined to wire fidelity).
 
@@ -11,7 +11,7 @@
 
          bits 0..3 : ext_id (4-bit extension identifier, mask 0x0f —
                        upstream `_z_decl_ext_keyexpr_encode` uses 0x0f
-                       which fits the 4-bit width; older B5-ε comment
+                       which fits the 4-bit width; an older comment
                        claimed 5-bit but never had a consumer of bit 4
                        as ext_id, and the wire spec is 4-bit).
          bit  4    : M     (`_Z_MSG_EXT_FLAG_M = 0x10` — mandatory
@@ -21,18 +21,18 @@
                        00 (UNIT), 01 (ZINT), 10 (ZBUF), 11 (reserved)
          bit  7    : Z     (`_Z_MSG_EXT_FLAG_Z = 0x80` — chain
                        continuation flag set on every entry except the
-                       last; consumed by Y3 `<sce:tlv-chain
+                       last; consumed by `<sce:tlv-chain
                        sce:terminate-on="entry-flag" entry-flag-name="Z">`
                        to drive multi-ext loop termination. Earlier
-                       B5-ε comment marked this bit "reserved /
-                       deferred" — Y3 closes that deferral.)
+                       variant-entry chain comment marked this bit "reserved /
+                       deferred" — closes that deferral.)
 
-     The variant primitive (B1-β) dispatches the body codec on the
-     `header.enc` dotted-path bit-range — the same B5-β multi-bit-flag
+     The variant primitive (variant) dispatches the body codec on the
+     `header.enc` dotted-path bit-range — the same multi-bit dispatch multi-bit-flag
      dispatch already proven by `codec_transport_envelope`. Each arm
      references an imported codec whose decode/encode honors the
      uniform `<codec>::decode(cursor)` / `<codec>_decode(cursor,
-     *out)` signature; B5-ε's surface-G freebie is that an imported
+     *out)` signature; variant-entry chains surface-G freebie is that an imported
      codec is allowed to *itself* be a variant (this entry codec) when
      used as the body of `<sce:tlv-chain>` — see
      `codec_zenoh_ext_envelope`.
@@ -47,7 +47,7 @@
      Ships on all 6 backends (cpp/kotlin/go/python emit the variant
      primitive natively; no MCU-only sub-features in this codec
      itself). The `<sce:tlv-chain>` wrapper in
-     `codec_zenoh_ext_envelope` was historically MCU-only but B5-ε
+     `codec_zenoh_ext_envelope` was historically MCU-only but variant-entry chain
      closures lifted that — both ship on all 6 backends now. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

@@ -22,7 +22,7 @@
  * the high 16 bits. The 16/16 split is ABI-identical to the C++ POD,
  * Rust tuple newtype, Kotlin @JvmInline value class, and Go uint32
  * newtype emit — cross-backend Handle interop is wire-format stable
- * (Q-γ2-Handle-bits + Q-γ3-Handle-cpp-shape lock).
+ *.
  *
  * Generation semantics (cross-backend parity): the counter is
  * incremented on `remove` (so a Handle to the freed slot becomes
@@ -34,7 +34,7 @@
  * remove/insert cycles on a single slot (acceptable: the use-after-
  * remove guard is best-effort, not cryptographic).
  *
- * Iteration (Q-γ4-C11-iter-shape (a) lock 2026-05-13): exposed as
+ * Iteration (locked 2026-05-13): exposed as
  * `<snake>_foreach(self, fn, user)` callback iteration. `fn` fires
  * exactly once per occupied slot in ascending slot-index order per
  * spec line 2616 ("exposes only occupied slots"). MCU-idiomatic, zero
@@ -74,8 +74,8 @@ _Static_assert({{ capacity }} <= UINT16_MAX,
 #define {{ upper_name }}_BITMAP_WORDS \
     (({{ upper_name }}_CAPACITY + 31u) / 32u)
 
-/* Slot-index bit width inside the packed Handle u32 (Q-γ2-Handle-bits
- * (a) symmetric split). */
+/* Slot-index bit width inside the packed Handle u32 (16/16
+ * symmetric split). */
 #define {{ upper_name }}_SLOT_BITS 16u
 /* Generation-counter bit width inside the packed Handle u32. */
 #define {{ upper_name }}_GEN_BITS 16u
@@ -261,7 +261,7 @@ static inline const {{ element_snake }}_t *{{ snake }}_get(
  * the Handle-based `_get`; slot-based access is for iteration paths
  * where the caller walks slot indices directly via the bitmap order).
  * Backs the C7 `<sce:foreach in="<bc-alias>">` index-loop lowering
- * across all 6 backends (Q-C7-2 (c) lock 2026-05-13). */
+ * across all 6 backends (locked 2026-05-13). */
 static inline const {{ element_snake }}_t *{{ snake }}_get_by_slot(
     const {{ snake }}_t *self,
     uint32_t slot)

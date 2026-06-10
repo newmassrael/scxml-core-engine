@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §5.O Atomic 0c — per-function SCE-MAP marker
+// Watching-zenoh RFC §5.O — per-function SCE-MAP marker
 // presence fixture.
 //
-// Atomic 0b landed module-level markers (one per generated file).
-// Atomic 0c extends to:
+// Beyond the module-level markers (one per generated file), the
+// per-function surface covers:
 //   1. Per-function markers above every emitted function header in
 //      each backend's statechart templates (entry/exit + transition).
 //   2. Forge per-kind body marker emission across all 6 backends
@@ -150,8 +150,8 @@ fn rand_suffix() -> String {
 ///         equivalent; Python lacks one too — both backends share the
 ///         module-level shape for per-function placement).
 ///
-/// The count includes both shapes so Atomic 0c's per-function emission
-/// surfaces alongside Atomic 0b's module-level baseline.
+/// The count includes both shapes so the per-function emission
+/// surfaces alongside the module-level baseline.
 fn count_markers(path: &Path, fixture_name: &str) -> usize {
     let body =
         std::fs::read_to_string(path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));

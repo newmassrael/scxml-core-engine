@@ -24,8 +24,8 @@ use crate::forge::types::{FuncSig, InferredType, TypeCtx};
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 /// Populate `ctx.vars` with every field from the slice, keyed by the
-/// field's `id` and typed via [`InferredType::from_sce_type`]. NL→IR
-/// Mapping Roadmap Item 4: fields carrying a `quantity` annotation
+/// field's `id` and typed via [`InferredType::from_sce_type`].
+/// Physical-quantity surface: fields carrying a `quantity` annotation
 /// surface in the context as `InferredType::Quantity { base, scale,
 /// offset, unit }` so unit propagates through arithmetic inference and
 /// unit mismatches collapse to `Unknown` for the post-pass diagnostic.
@@ -239,7 +239,7 @@ pub fn procedure<'a>(m: &'a ProcedureModel, imports: &'a [ImportContext]) -> Typ
 
 /// TypeCtx for a **Codec** kind. Codec expressions are encode/decode bit
 /// manipulations that reference byte-level fields. Each field of the codec
-/// is exposed by its `id`. NL→IR Mapping Roadmap Item 4: codec fields
+/// is exposed by its `id`. Physical-quantity surface: codec fields
 /// carrying `sce:quantity=…` surface as `InferredType::Quantity` so
 /// downstream expressions (e.g., codec predicate guards referencing a
 /// physically-tagged raw field) get the same unit-aware inference as

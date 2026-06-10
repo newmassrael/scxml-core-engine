@@ -29,7 +29,7 @@ typedef struct {
     size_t  extensions_len;
 } codec_zenoh_query_t;
 
-/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+/* RFC variant-default-uniformity (C11): designated-initializer
  * macro carrying the codec's wire-MID-baked defaults. C has no Default
  * trait — round-trip safety (`codec_zenoh_query_t x = CODEC_ZENOH_QUERY_DEFAULT_INIT;
  * codec_zenoh_query_t_encode(&x)` decodes back to the same arm)

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  NL→IR Item C1 Path A follow-up F-κ fixture: EventSchema referencing
+  Strict enum-variant-membership fixture: EventSchema referencing
   the open-set `uds_nrc_open.scxml` enum vocabulary. Pairs with
   `positive_statechart_enum_strict_opt_out.scxml` to exercise the
   opt-out branch — width narrowing still runs on the uint8 carrier,

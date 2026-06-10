@@ -510,11 +510,11 @@ fn max_fragments_happy_when_slot_size_sufficient() {
 
 #[test]
 fn expected_fragmentation_rate_high_fires_on_default_pool() {
-    // C13-α-1 parse-time `LinkExpectedP99ExceedsMtu` fires when p99 >
+    // The parse-time `LinkExpectedP99ExceedsMtu` fires when p99 >
     // mtu, so the fixture must keep p99 <= mtu while still triggering
     // the #3 rate calc (which compares p99 vs slot_size). Choose
     // p99=1500, mtu=1500, slot_size=1000:
-    //   parse-time C13-α-1: 1500 > 1500 false ⇒ passes
+    //   parse-time check: 1500 > 1500 false ⇒ passes
     //   #3 rate = (1500-1000)/1500 × 100 = 33% > 25% ⇒ fires
     let yaml = deploy_with_links(
         r#"          udp_data:
@@ -537,7 +537,7 @@ fn expected_fragmentation_rate_high_fires_on_default_pool() {
 
     // #1 fires first (slot_size=1000 < mtu=1500). To isolate #3, use
     // a fixture where slot_size >= mtu but p99 > slot_size. Spec
-    // allows mtu < p99? No — C13-α-1 rejects p99 > mtu. So the only
+    // allows mtu < p99? No — parse-time validation rejects p99 > mtu. So the only
     // way to fire #3 in isolation is with the bound pool's slot_size
     // < mtu, which #1 catches first. In production, an author who
     // hits #3 has either silenced #1 with the pool fix OR is using
@@ -563,9 +563,9 @@ fn expected_fragmentation_rate_high_fires_on_default_pool() {
 
 #[test]
 fn expected_fragmentation_silent_skip_on_reassembly_variant() {
-    // Q-C13-α2-4 (a) — #3 silent-skips when the bound pool is the
+    // #3 silent-skips when the bound pool is the
     // reassembly variant (no "regular RX pool" for the formula).
-    // Fixture keeps p99 == mtu to silence C13-α-1's parse-time
+    // Fixture keeps p99 == mtu to silence the parse-time
     // LinkExpectedP99ExceedsMtu check.
     let yaml = deploy_with_links(
         r#"          udp_data:
@@ -588,7 +588,8 @@ fn expected_fragmentation_silent_skip_on_reassembly_variant() {
     let mut pool_registry: HashMap<String, &BufferPoolModel> = HashMap::new();
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
-    // #3 must NOT fire on reassembly variant per Q-C13-α2-4 (a).
+    // #3 must NOT fire on the reassembly variant (no regular RX
+    // pool for the formula).
     // #6 also silent-skips because expected_p99 = 1024, memcpy = 1.0,
     // clock = 400 ⇒ wcet = 1024 × 1.0 / 400 = 3 µs ≪ 200 µs budget.
     validate_reassembly_cross_doc(
@@ -600,12 +601,12 @@ fn expected_fragmentation_silent_skip_on_reassembly_variant() {
     .expect("reassembly variant silent-skips #3 → Ok");
 }
 
-// ── #4 reassembly/untrusted-link-binding + C10-α reassembly/binding-on-unpaired-listener ──
+// ── #4 reassembly/untrusted-link-binding + reassembly/binding-on-unpaired-listener ──
 
 #[test]
 fn untrusted_link_binding_fires_on_untrusted_trust_class() {
-    // After C10-α the `reassembly/untrusted-link-binding` code
-    // narrows to `trust_class: untrusted` only (RFC §5.M lines
+    // With listener-link pairing, the `reassembly/untrusted-link-
+    // binding` code narrows to `trust_class: untrusted` only (RFC §5.M lines
     // 2964-2969 + 2982-2994). The historic session_arming subcase
     // shifts to `reassembly/binding-on-unpaired-listener` —
     // exercised by [`binding_on_unpaired_listener_fires_without_listener`]
@@ -651,7 +652,7 @@ fn untrusted_link_binding_fires_on_untrusted_trust_class() {
 
 #[test]
 fn binding_on_unpaired_listener_fires_without_listener() {
-    // C10-α retargets the session_arming subcase from the historic
+    // Listener-link pairing retargets the session_arming subcase from the historic
     // `reassembly/untrusted-link-binding` to the new
     // `reassembly/binding-on-unpaired-listener`. When the listener-
     // link set is empty (deploy declares `trust_class: session_arming`
@@ -660,7 +661,7 @@ fn binding_on_unpaired_listener_fires_without_listener() {
     // the validator surfaces the binding mistake at the only check
     // that can reach it.
     //
-    // The C13-β anti-flood validators require session_arming_quota +
+    // The anti-flood validators require session_arming_quota +
     // accept_rate_per_sec + accept_rate_burst — the fixture carries
     // those so the test exercises the post-parse cross-doc path.
     let yaml = deploy_with_links(
@@ -706,7 +707,7 @@ fn binding_on_unpaired_listener_fires_without_listener() {
 
 #[test]
 fn binding_on_session_arming_listener_passes() {
-    // C10-α happy-path: `trust_class: session_arming` + listener
+    // Listener-pairing happy-path: `trust_class: session_arming` + listener
     // (link name in `listener_links`) auto-rebinds the binding to
     // the synthesized Sibling EstablishedSession instance per RFC
     // §5.C lines 821-825. The validator silent-passes the #4 check
@@ -744,7 +745,7 @@ fn binding_on_session_arming_listener_passes() {
 #[test]
 fn trust_class_missing_on_fragmenting_link_fires() {
     // Reassembly pool bound to a link with domain_attrs entirely absent
-    // (Q-C13-α2-8 (a) lock — absence is the trigger).
+    // (absence is the trigger).
     let yaml = deploy_with_links(
         r#"          udp_data:
             bind: "0.0.0.0:7447"
@@ -786,7 +787,7 @@ fn trust_class_missing_on_fragmenting_link_fires() {
 fn stage_copy_wcet_exceeds_slot_budget_fires() {
     // Slow MCU + large p99: p99=16384, memcpy=4.0, clock=48 ⇒
     // wcet = 16384 × 4 / 48 = 1365 µs > 200 µs budget ⇒ fires.
-    // Fixture keeps p99 == mtu (both 16384) so C13-α-1 parse-time
+    // Fixture keeps p99 == mtu (both 16384) so the parse-time
     // `LinkExpectedP99ExceedsMtu` silent-passes.
     let yaml = r#"
 version: "1.0"
@@ -868,8 +869,9 @@ topology:
 
 #[test]
 fn stage_copy_wcet_silent_skip_on_missing_platform_field() {
-    // memcpy_cycles_per_byte absent ⇒ silent-skip per Q-η5 (a).
-    // Fixture keeps p99 == mtu to silence C13-α-1 parse-time.
+    // memcpy_cycles_per_byte absent ⇒ silent-skip per the absent-
+    // input rule.
+    // Fixture keeps p99 == mtu to silence the parse-time p99/mtu check.
     let yaml = r#"
 version: "1.0"
 topology:

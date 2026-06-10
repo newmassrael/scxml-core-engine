@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: peek-byte primitive demo arm body B (RFC §5.B
-     Y3 atomic 2b-ii peek-byte). Symmetric with codec_peek_arm_a but with
+     atomic 2b-ii peek-byte). Symmetric with codec_peek_arm_a but with
      a wider trailing payload — proves the parent variant dispatches by
      the peeked dispatch bit alone (each arm body's own width is its
      own concern).
