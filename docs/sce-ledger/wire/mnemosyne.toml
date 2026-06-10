@@ -1,7 +1,7 @@
 # Wire RFC design-ledger workspace (Mnemosyne adoption, `wire` namespace).
 #
 # Like docs/sce-ledger/mesh, this mirrors an *internal* SCE design document —
-# the Wire RFC (claudedocs/rfc-sce-diagnostic-wire-unification.md), whose §3
+# the Wire RFC (docs/sce-ledger/wire/rfc-sce-diagnostic-wire-unification.md), whose §3
 # milestone roadmap defines the commit-series waves W0..W5 (and the half-wave
 # W4.5). There is no external upstream (no [workspace.spec_source]) and no
 # vendored snapshot: the SSOT is the RFC, and the wave sections are regenerated
