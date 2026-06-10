@@ -4,7 +4,7 @@
 //! Worker kind dual-emit codegen + cross-resolution + inbox
 //! ordering integration fixtures.
 //!
-//! Per RFC §5.D + §5.I (textbook narrowing 2026-05-11 after
+//! Per RFC §synth-5-D + §synth-5-I (textbook narrowing 2026-05-11 after
 //! Gate B preflight): worker cross-refs validate directly against
 //! `parsed.imports` filtered by kind (η-precedent), inbox ordering is
 //! a required parse-time attribute, and cross-core ordering is a

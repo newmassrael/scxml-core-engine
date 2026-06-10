@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -45,7 +45,7 @@ impl<'a> CodecZenohDeclQueryable<'a> {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519).
+    /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>, n: u8, z: u8) -> Result<Self, CodecError> {
         // Declared-but-unconsumed flag inputs: defensive suppress per declared
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
@@ -53,7 +53,7 @@ impl<'a> CodecZenohDeclQueryable<'a> {
         // declaration; consumption is a per-codec design choice.
         let _ = n;
         let _ = z;
-        // RFC §5.B present-if primitive: streaming decode
+        // RFC §synth-5-B present-if primitive: streaming decode
         // advances the cursor per field. Gated fields wrap their
         // read inside an `if predicate { Some(...) } else { None }`
         // block computed at codegen time from the carrier field's
@@ -103,7 +103,7 @@ impl<'a> CodecZenohDeclQueryable<'a> {
         // declared `<sce:flag-input>`.
         let _ = n;
         let _ = z;
-        // RFC §5.B present-if encode: every field appends
+        // RFC §synth-5-B present-if encode: every field appends
         // its bytes via a per-field block; gated fields skip the
         // append when the optional is None. Per-field `is_repeat` /
         // `is_tlv_chain` route Repeat / TLV chain fields to their

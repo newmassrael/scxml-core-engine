@@ -19,7 +19,7 @@
 
 namespace SCE::Generated::CodecInitSynEnvelope {
 
-// RFC §5.B variant primitive: discriminated-union body for the
+// RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. `std::variant` carries one of N arm bodies
 // (each an imported codec type); the optional Default arm is a small
 // struct that bundles the runtime tag value with the catch-all body.
@@ -49,11 +49,11 @@ struct CodecInitSynEnvelope {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
+    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecInitSynEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
-        // Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
+        // Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
         uint8_t header = raw[0];
@@ -83,7 +83,7 @@ struct CodecInitSynEnvelope {
         };
     }
 
-    // RFC §5.B flags primitive: per-bit-range accessors.
+    // RFC §synth-5-B flags primitive: per-bit-range accessors.
     // Single-bit (width=1) reads as bool; multi-bit (width>=2) reads as
     // the smallest unsigned integer type that fits the range. Setters
     // mask + shift on the way in so out-of-range callers can't corrupt

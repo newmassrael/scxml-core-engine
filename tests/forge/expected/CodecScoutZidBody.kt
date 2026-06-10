@@ -19,7 +19,7 @@ data class CodecScoutZidBody(
     var zid_len_m1: UByte = 0.toUByte(),
     var zid: ByteArray = byteArrayOf()
 ) {
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
@@ -44,7 +44,7 @@ data class CodecScoutZidBody(
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
         fun decode(cursor: SceCursor): CodecScoutZidBody? {
             val frameLen = cursor.remaining()
             if (frameLen < 1) return null

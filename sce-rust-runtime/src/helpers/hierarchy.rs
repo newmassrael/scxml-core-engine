@@ -22,7 +22,7 @@
 //! SCXML; the functions panic with a diagnostic message. Matches C++ `throw std::runtime_error`
 //! semantics — both are fatal, unrecoverable errors.
 //!
-//! ## no_std variant (Watching-zenoh RFC §5.J.2)
+//! ## no_std variant (Watching-zenoh RFC §synth-5-J-2)
 //!
 //! Under `--features=no_std`, the chain return type [`StateChain`] is a stack-allocated
 //! `heapless::Vec` capped at [`MAX_HIERARCHY_DEPTH`] (= 16). The same depth-guard panic
@@ -49,7 +49,7 @@ pub const MAX_HIERARCHY_DEPTH: usize = 16;
 ///   no_std is infallible-by-construction; a heapless push failure indicates a
 ///   generator bug (cyclic parent relationship the depth guard missed).
 ///
-/// Watching-zenoh RFC §5.J.2 (lines 1989-1994): reuses [`MAX_HIERARCHY_DEPTH`] rather
+/// Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): reuses [`MAX_HIERARCHY_DEPTH`] rather
 /// than introducing a new capacity constant — the same depth invariant bounds both
 /// the iteration count and the heapless allocation.
 #[cfg(not(feature = "no_std"))]

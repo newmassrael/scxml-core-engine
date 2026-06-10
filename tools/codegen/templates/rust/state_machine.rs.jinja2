@@ -5,7 +5,7 @@
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 
 {% if no_std %}
-// Watching-zenoh RFC §5.J.2: no_std variant of the statechart
+// Watching-zenoh RFC §synth-5-J-2: no_std variant of the statechart
 // emitter. `sce-rust-runtime` ships a `no_std` feature gate, and
 // the generated crate omits `std::*` paths — Duration comes from
 // `core::time`, the microstep dedup set is `heapless::FnvIndexSet`,
@@ -73,7 +73,7 @@
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
 
-{# Watching-zenoh RFC §5.O: per-backend SCE-MAP marker
+{# Watching-zenoh RFC §synth-5-O: per-backend SCE-MAP marker
    anchoring the generated module to the `<scxml>` root element's
    post-preprocessor source position. Both forms emitted per spec
    lines 3135-3136 — the `#![doc]` form survives in rustdoc, the
@@ -83,13 +83,13 @@
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
 {% if model.has_parallel_states %}
-// Watching-zenoh RFC §5.J.2: `.push_bounded()` on the microstep conflict-resolution
+// Watching-zenoh RFC §synth-5-J-2: `.push_bounded()` on the microstep conflict-resolution
 // buffers (std `Vec` / no_std capacity-bounded `heapless::Vec`).
 use sce_rust_runtime::BoundedPush;
 {% endif %}
 {% if model.event_queue_capacity %}
 
-// Watching-zenoh RFC §5.J.2 + §5.L (item C3): per-document
+// Watching-zenoh RFC §synth-5-J-2 + §synth-5-L (item C3): per-document
 // event-queue capacity declared via
 // `<scxml sce:capacity="N">` or sourced from deploy.yaml
 // `machines.<m>.scheduler.default_event_queue_capacity`. Consumed
@@ -184,7 +184,7 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
     //
-    // Watching-zenoh RFC §5.J.2: type is the runtime crate's
+    // Watching-zenoh RFC §synth-5-J-2: type is the runtime crate's
     // [`StateChain`] alias — `Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
     // under no_std. The std alias preserves the existing ABI; the no_std alias keeps
     // the generated code allocator-free.
@@ -197,7 +197,7 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% if model.needs_event_name %}
     // W3C SCXML 5.10: Event name for _event.name binding
     //
-    // Watching-zenoh RFC §5.J.2: typed as the runtime crate's [`SceString`]
+    // Watching-zenoh RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
     // alias — `String` under std (unchanged ABI), `heapless::String<MAX_EVENT_STRING_LEN>`
     // under no_std — so the emitted field is allocator-free on MCU targets.
     pending_event_name: ::sce_rust_runtime::SceString,
@@ -236,7 +236,7 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% for history_id, history_info in model.history_states | dictsort %}
     // W3C SCXML 3.11: History state {{ history_id }} ({{ history_info.type }})
     //
-    // Watching-zenoh RFC §5.J.2: the recorded configuration is a
+    // Watching-zenoh RFC §synth-5-J-2: the recorded configuration is a
     // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
     // under no_std), mirroring `active_states`. Recorded history is always a
     // subset of the active configuration, so it cannot exceed the depth bound.
@@ -257,7 +257,7 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% if not no_std %}
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
-    // Watching-zenoh RFC §5.J.2: gated to !no_std. Under `--no-std` both the
+    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
     // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
     // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
     // session identity is ever tracked and the alloc-coupled `String` is omitted.
@@ -293,14 +293,14 @@ pub struct {{ machine_name }}Policy{{ policy_generics_decl }} {
 {% if not no_std %}
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
-    // `--no-std` (Watching-zenoh RFC §5.J.2) the SCXML `<invoke>` element
+    // `--no-std` (Watching-zenoh RFC §synth-5-J-2) the SCXML `<invoke>` element
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
 {% endif %}
 {% if not no_std %}
     // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
-    // Watching-zenoh RFC §5.J.2: gated to !no_std — `<invoke>` is codegen-rejected
+    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std — `<invoke>` is codegen-rejected
     // under no_std, so a machine is never instantiated as a child and this
     // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
@@ -434,12 +434,12 @@ impl Default for {{ machine_name }}Policy {
 impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy_generics_use }} {
     type State = {{ machine_name }}State;
     type Event = {{ machine_name }}Event;
-    // EventSchema MCU native-lowering RFC §10.2: `()` = schemaless (dynamic
+    // EventSchema native lowering: `()` = schemaless (dynamic
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = {{ event_payload_type }};
 {% if no_std %}
-    // Watching-zenoh RFC §5.J.2: under no_std the std-backed `StdHal`
+    // Watching-zenoh RFC §synth-5-J-2: under no_std the std-backed `StdHal`
     // (`std::time::Instant` / `OnceLock`) does not implement `Hal`. The
     // generated machine defaults to `NoOpHal` so the no_std surface compiles
     // standalone. `NoOpHal` reports zero ticks and panics on `wake`/`irq_save`
@@ -632,7 +632,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 
     // W3C SCXML 3.6: Get initial children of a compound state
     //
-    // Watching-zenoh RFC §5.J.2: return type is the runtime crate's
+    // Watching-zenoh RFC §synth-5-J-2: return type is the runtime crate's
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
@@ -714,7 +714,7 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     }
 
 {% if model.has_parallel_states or model.uses_in_predicate %}
-    // Watching-zenoh RFC §5.J.2: trait default in `sce-rust-runtime::policy`
+    // Watching-zenoh RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
     // returns `StateChain<Self::State>`; this override matches that signature
     // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
     // both resolve correctly.
@@ -1139,7 +1139,7 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 {% if model.on_sample_links %}
 
 // ======================================================================
-// watching-zenoh RFC §5.E sample-callback codegen wire-up
+// watching-zenoh RFC §synth-5-E sample-callback codegen wire-up
 // ======================================================================
 //
 // Per-link Sample delivery surface. The host's link RX task (e.g. a

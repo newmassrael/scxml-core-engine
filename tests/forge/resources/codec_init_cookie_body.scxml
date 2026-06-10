@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Init body cookie (RFC §5.B length-ref Surfaces D + E).
+<!-- SCE Forge conformance: Init body cookie (RFC §synth-5-B length-ref Surfaces D + E).
 
      Mirrors the upstream zenoh-pico Init message's optional cookie
      payload (src/protocol/codec/transport.c lines 268-275 + lines

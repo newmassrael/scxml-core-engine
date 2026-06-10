@@ -1,4 +1,4 @@
-/* SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B) */
+/* SCE Forge: Auto-generated codec test-vector sidecar (RFC §synth-5-B) */
 /* Companion to codec_length_ref_dotted_basic.h — do not edit; regenerate from the source SCXML. */
 
 #ifndef SCE_FORGE_CODEC_LENGTH_REF_DOTTED_BASIC_TEST_H

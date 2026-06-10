@@ -1,5 +1,5 @@
 //! Worker outbox cross-resolution integration tests — watching-zenoh
-//! RFC §5.D.
+//! RFC §synth-5-D.
 //!
 //! Distinguishing value: SCXML-side `<sce:outbox ref="X">`
 //! cross-resolution against the build's `SceCrossDocRegistry`,

@@ -22,10 +22,10 @@ class CodecZenohDeclSubscriber:
     def decode(cls, cursor: SceCursor, n: int) -> Optional[CodecZenohDeclSubscriber]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
-        (RFC §5.B L494-519); on success the cursor advances past the
+        (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        # RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
         # LengthRef siblings of VLE fields through
         # `present_if_decode_stmt` (predicate=None arms). Pure-VLE
         # codecs stay byte-stable.
@@ -42,12 +42,12 @@ class CodecZenohDeclSubscriber:
         )
 
     def encode(self, w: SceSink, n: int) -> None:
-        """RFC §5.B encode-side primary: write ``self`` into the
+        """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B B4: per-field bit-size dispatch.
+        # RFC §synth-5-B B4: per-field bit-size dispatch.
         _vle = int(self.id)
         while _vle >= 0x80:
             w.write_u8((_vle & 0x7F) | 0x80)

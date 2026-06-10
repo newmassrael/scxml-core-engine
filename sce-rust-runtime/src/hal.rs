@@ -3,7 +3,7 @@
 
 //! Hardware Abstraction Layer trait for the runtime's std-touching surface.
 //!
-//! Per watching-zenoh RFC §5.J.2 line 1984:
+//! Per watching-zenoh RFC §synth-5-J-2 line 1984:
 //!
 //! > The scheduler, event queue, and external-event hooks are the primary
 //! > `std`-touching surfaces and must be re-expressed against `core::` + a
@@ -16,7 +16,7 @@
 //!
 //! ## Crate boundary (locked 2026-05-12)
 //!
-//! Spec §5.J.2 originally named `sce_intrinsics_runtime` as the trait owner,
+//! Spec §synth-5-J-2 originally named `sce_intrinsics_runtime` as the trait owner,
 //! anticipating a separate runtime crate. C4 (`b0b2a059` / `3d4792dc` /
 //! `8bc8a6c3`, 2026-05-10) closed the `<sce:extern>` intrinsic chain with
 //! build-time registries only; no `sce_intrinsics_runtime` runtime crate was
@@ -45,7 +45,7 @@ use core::marker::PhantomData;
 
 /// The 3-method HAL trait the runtime parameterizes its std-touching surface on.
 ///
-/// Per watching-zenoh RFC §5.J.2 line 1984 the trait surface is **ticks**,
+/// Per watching-zenoh RFC §synth-5-J-2 line 1984 the trait surface is **ticks**,
 /// **wake**, and **irq-save**. Each method is a `fn` (associated, not
 /// instance) so the trait can be used as a zero-sized type parameter:
 /// generated code emits `Engine<MyPolicy, StdHal>` and the compiler
@@ -127,7 +127,7 @@ pub struct StdHal {
     _private: PhantomData<()>,
 }
 
-/// Watching-zenoh RFC §5.J.2: [`StdHal`]'s `Hal` impl is host-clock-coupled
+/// Watching-zenoh RFC §synth-5-J-2: [`StdHal`]'s `Hal` impl is host-clock-coupled
 /// (`std::time::Instant` + `std::sync::OnceLock`) and therefore gated to
 /// `!no_std`. The `StdHal` *struct* itself stays available (it's a
 /// zero-sized marker type) so the [`StatePolicy::Hal`](crate::StatePolicy::Hal) associated type can

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// RFC §5.F build-time const-fold — single-source host interpreter.
+// RFC §synth-5-F build-time const-fold — single-source host interpreter.
 //
 // Purpose: evaluate `<sce:fold>` bodies on the host at code-generation
-// time, producing a `Vec<ConstValue>` that the §5.J.5 emitters
+// time, producing a `Vec<ConstValue>` that the §synth-5-J-5 emitters
 // serialize into per-language array literals. The interpreter is
 // pure (no I/O, no allocation beyond the output vector) and
 // budget-bounded (default 1_000_000 iterations across all folds in
@@ -15,7 +15,7 @@
 // numeric data is therefore guaranteed by construction — only the
 // per-language array-literal *syntax* differs.
 //
-// Statement vocabulary (RFC §5.A): Var / Assign / If / While /
+// Statement vocabulary (RFC §synth-5-A): Var / Assign / If / While /
 // Foreach are supported inside fold bodies; Return / Call are
 // rejected (a fold body produces an array element via `<sce:yield>`,
 // not via early return, and cannot invoke other algorithms).
@@ -39,7 +39,7 @@ use crate::forge::model::{AlgorithmStmt, FoldBody, SceType};
 // Internal error kind — boundary-lifted to typed `GenerateError`
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Context-free shape for the three RFC §5.F wire codes. Internal
+/// Context-free shape for the three RFC §synth-5-F wire codes. Internal
 /// helpers raise these without knowing which algorithm + const
 /// declaration owns the failure; the public entry points
 /// ([`evaluate_fold`] / [`evaluate_scalar_init`]) attach the locator
@@ -112,7 +112,7 @@ pub(crate) struct ConstSite<'a> {
 
 /// Iteration budget for the host interpreter.
 ///
-/// RFC §5.F bound 1: "Total iterations across all folds ≤
+/// RFC §synth-5-F bound 1: "Total iterations across all folds ≤
 /// configurable budget (default 1M)". The same counter is decremented
 /// on every fold iteration and on every nested-loop tick (while body,
 /// foreach body), so a malicious or misauthored body cannot turn
@@ -130,7 +130,7 @@ pub struct Budget {
 }
 
 impl Budget {
-    /// RFC §5.F default budget (1_000_000 total iterations).
+    /// RFC §synth-5-F default budget (1_000_000 total iterations).
     pub const DEFAULT_MAX_ITERS: u64 = 1_000_000;
 
     pub fn new(max_iters: u64) -> Self {
@@ -157,9 +157,9 @@ impl Default for Budget {
 
 /// One concrete numeric value the host interpreter produces.
 ///
-/// Variants mirror every scalar `SceType` admitted by RFC §5.A
+/// Variants mirror every scalar `SceType` admitted by RFC §synth-5-A
 /// algorithm bodies. `Bytes` and `String` are excluded because RFC
-/// §5.F's `array<elem, len>` outer type only admits scalar elements
+/// §synth-5-F's `array<elem, len>` outer type only admits scalar elements
 /// (the parser enforces this). Each variant carries the same
 /// fixed-width integer / float / bool that the eventual emitted
 /// const slot will hold.
@@ -251,7 +251,7 @@ pub(crate) fn evaluate_scalar_init(
     eval_expr_typed(init_expr, &scope, declared).map_err(|k| k.into_generate_error(site))
 }
 
-/// Iter-variable type. RFC §5.F worked example uses `i: u32` over
+/// Iter-variable type. RFC §synth-5-F worked example uses `i: u32` over
 /// `0..256`, but the IR derives the iter var's storage type from the
 /// fold's `elem-type`. Picking the elem type is sufficient for every
 /// fixture today (CRC-table form treats `i` as the same-width
@@ -274,7 +274,7 @@ fn iter_var_type(elem_type: &SceType, _iter_value: u32) -> SceType {
 /// Render an evaluated `Vec<ConstValue>` as a per-language array
 /// literal body — the contents inside the brackets/braces. Caller
 /// wraps with `[N]T{...}` (Go), `[T; N]` (Rust), `std::array<T, N>{
-/// ... }` (Cpp), etc., per RFC §5.J.5.
+/// ... }` (Cpp), etc., per RFC §synth-5-J-5.
 ///
 /// Element formatting:
 /// - Integers emit decimal — readable for hand-authored tables and
@@ -788,7 +788,7 @@ fn bitwise_int(op: BinOp, a: i128, b: i128) -> Result<i128, ConstFoldKind> {
                     "shift count {b} out of range"
                 )));
             }
-            // RFC §5.F evaluator follows arithmetic-right-shift on
+            // RFC §synth-5-F evaluator follows arithmetic-right-shift on
             // the wide i128 domain. Per-language `>>>` (unsigned)
             // semantics are reproduced at storage time: every
             // non-negative coerce-into-unsigned-narrow target masks
@@ -901,7 +901,7 @@ fn coerce_to_const(value: EvalValue, ty: &SceType) -> Result<ConstValue, ConstFo
         (EvalValue::Int(i), Int32) => Ok(ConstValue::I32(i as i32)),
         (EvalValue::Int(i), Int64) => Ok(ConstValue::I64(i as i64)),
 
-        // String / Bytes are not RFC §5.F element types — the parser
+        // String / Bytes are not RFC §synth-5-F element types — the parser
         // already rejects them on `array<elem>` so this arm is
         // unreachable for fixtures, but keeping the explicit error
         // closes the typed-coercion match exhaustively.

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! SCE Forge — codegen kind × language matrix (RFC §5.J.4 / §5.J.5).
+//! SCE Forge — codegen kind × language matrix (RFC §synth-5-J-4 / §synth-5-J-5).
 //!
 //! Single source of truth for which `(ForgeKind, Language)` pairs are
-//! emit-eligible per the watching-zenoh RFC §5.J.4 matrix. Two
+//! emit-eligible per the watching-zenoh RFC §synth-5-J-4 matrix. Two
 //! invariants live here:
 //!
 //! 1. Every `ForgeKind` declares a `KindClass` (`Generic` or
@@ -31,7 +31,7 @@ use crate::forge::error::GenerateError;
 use crate::forge::model::ForgeKind;
 use crate::generator::Language;
 
-/// Class of a kind per RFC §5.J.4. Drives which `(kind, language)`
+/// Class of a kind per RFC §synth-5-J-4. Drives which `(kind, language)`
 /// pairs are reachable; combined with `template_ships` it determines
 /// which A1 diagnostic fires when an unreachable pair is requested.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -56,7 +56,7 @@ pub enum EmitOutcome {
     McuClassOnNonMcuLanguage,
 }
 
-/// Classify a kind per the §5.J.4 matrix.
+/// Classify a kind per the §synth-5-J-4 matrix.
 ///
 /// Exhaustive over `ForgeKind` so a new variant fails `cargo check`
 /// until classified — same lock-in pattern as `ForgeKind::ALL_ATTR_NAMES`.
@@ -74,7 +74,7 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         | ForgeKind::Timer
         | ForgeKind::Observer
         | ForgeKind::Algorithm
-        // RFC §5.L lines 2566-2581: BoundedCollection ships on all 6
+        // RFC §synth-5-L lines 2566-2581: BoundedCollection ships on all 6
         // backends with language-builtin primitives (no MCU-specific
         // hardware constraint like DMA section/cache for BufferPool, no
         // cross-core atomics constraint like Worker). Generic class.
@@ -91,18 +91,18 @@ pub const fn kind_class(kind: ForgeKind) -> KindClass {
         // type via the import context. No MCU-specific hardware
         // constraint; Generic class matches Enum's stance.
         | ForgeKind::EventSchema => KindClass::Generic,
-        // RFC §5.C / §5.J.4: Link is the first MCU-class kind.
+        // RFC §synth-5-C / §synth-5-J-4: Link is the first MCU-class kind.
         // Authoring it on cpp/kotlin/go/python raises
         // `codegen/mcu-class-kind-on-non-mcu-language`. The (rust, *)
         // and (c11, bare_metal) substrate is in `sce-link-runtime`
         // (rust trait + per-OS downstream impls) and the c11 lower.
         ForgeKind::Link => KindClass::McuClass,
-        // RFC §5.E / §5.J.4: BufferPool is the second MCU-class kind.
+        // RFC §synth-5-E / §synth-5-J-4: BufferPool is the second MCU-class kind.
         // Same matrix as Link: `(rust, *)` + `(c11, bare_metal)` only;
         // cpp/kotlin/go/python rejected via the same diagnostic; rust
         // and c11 templates both ship.
         ForgeKind::BufferPool => KindClass::McuClass,
-        // RFC §5.D / §5.J.4: Worker is the third MCU-class kind.
+        // RFC §synth-5-D / §synth-5-J-4: Worker is the third MCU-class kind.
         // Same matrix as Link + BufferPool: `(rust, *)` + `(c11, bare_metal)`
         // only; cpp/kotlin/go/python rejected via the same diagnostic;
         // Worker dual-emits rust + c11 codegen.
@@ -139,8 +139,8 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Python
             | Language::C11 => true,
         },
-        // RFC §5.A Algorithm: closed across all six backends.
-        // Item A3 landed Rust + Cpp; item A5 closed C11 (RFC §7
+        // RFC §synth-5-A Algorithm: closed across all six backends.
+        // Item A3 landed Rust + Cpp; item A5 closed C11 (RFC §synth-7
         // line 3382); a follow-up trio added Go + Kotlin + Python
         // in three independent commits.
         ForgeKind::Algorithm => match lang {
@@ -151,7 +151,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             | Language::Kotlin
             | Language::Python => true,
         },
-        // RFC §5.C Link: rust and c11 templates ship.
+        // RFC §synth-5-C Link: rust and c11 templates ship.
         // cpp/kotlin/go/python are MCU-class-rejected by `kind_class`
         // ahead of this lookup, so their `template_ships` value never
         // enters the diagnostic flow — `false` here documents "no
@@ -160,7 +160,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §5.E BufferPool: rust and c11 templates ship (c11:
+        // RFC §synth-5-E BufferPool: rust and c11 templates ship (c11:
         // `__attribute__((section, aligned))` storage table +
         // sidecar linker fragment + section attribute round-trip).
         // cpp/kotlin/go/python are MCU-class-rejected by `kind_class`
@@ -170,7 +170,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §5.D Worker: dual-emit codegen on Rust + C11.
+        // RFC §synth-5-D Worker: dual-emit codegen on Rust + C11.
         // Rust template uses a self-contained SPSC ring buffer
         // (spec line 904 author intent was `heapless::spsc` but the
         // emit stays no-external-crate to match the C11 ring-buffer
@@ -178,14 +178,14 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // `<sce:inbox ordering="...">` drives `Ordering::Acquire/Release`
         // vs `Ordering::Relaxed` selection). C11 template emits the
         // opaque `sce_inbox_producer_t` / `sce_inbox_consumer_t` family
-        // backed by `sce_atomic_*_u32` intrinsics from the §5.I
+        // backed by `sce_atomic_*_u32` intrinsics from the §synth-5-I
         // baseline registry. cpp/kotlin/go/python remain MCU-class-
         // rejected by `kind_class` ahead of this lookup.
         ForgeKind::Worker => match lang {
             Language::Rust | Language::C11 => true,
             Language::Cpp | Language::Kotlin | Language::Go | Language::Python => false,
         },
-        // RFC §5.L BoundedCollection: the 6-backend codegen matrix is
+        // RFC §synth-5-L BoundedCollection: the 6-backend codegen matrix is
         // closed per spec lines 2571-2581. `Rust` ships (heapless::Vec
         // <T, N> std / no_std + 16/16 packed Handle u32 + insert/remove/
         // get/find_by_index/iter/len/capacity per spec lines 2609-2622),
@@ -198,14 +198,14 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // overflow per spec lines 2580-2581) + `C11` (struct slots[N] +
         // generation[N] + bitmap[(N+31)/32] + count with snake_case
         // _insert/_remove/_get/_find_by_index/_foreach API per spec
-        // lines 2573-2575). All 6 backends emit; the §5.L matrix is
+        // lines 2573-2575). All 6 backends emit; the §synth-5-L matrix is
         // entirely closed.
         ForgeKind::BoundedCollection => true,
         // Enum ships on all 6 backends
         // via `tools/codegen/templates/forge/<lang>/enum.<ext>.jinja2`
         // — `generator.rs::render_enum` lowers `EnumModel` to a typed
         // backend-native enum. Matches the
-        // §5.J.4 Generic-class contract; matrix dispatch lets every
+        // §synth-5-J-4 Generic-class contract; matrix dispatch lets every
         // `(Enum, lang)` pair through to the per-language render arm.
         ForgeKind::Enum => true,
         // EventSchema ships on all 6
@@ -214,7 +214,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
         // `EventSchemaModel` to a per-backend payload struct
         // (`struct <Schema>Payload` / `data class <Schema>Payload` /
         // `@dataclass` / `typedef struct ... <Schema>Payload_t`).
-        // Matches the §5.J.4 Generic-class contract; matrix dispatch
+        // Matches the §synth-5-J-4 Generic-class contract; matrix dispatch
         // lets every `(EventSchema, lang)`
         // pair through to the per-language render arm.
         ForgeKind::EventSchema => true,
@@ -223,7 +223,7 @@ pub const fn template_ships(kind: ForgeKind, lang: Language) -> bool {
 
 /// Walk the matrix for `(kind, language)`. Returns `EmitOutcome::Emit`
 /// when the template ships and the pair is on-policy; otherwise the
-/// outcome names the §5.J.4 violation.
+/// outcome names the §synth-5-J-4 violation.
 pub const fn lookup(kind: ForgeKind, lang: Language) -> EmitOutcome {
     match kind_class(kind) {
         KindClass::McuClass => match lang {
@@ -275,7 +275,7 @@ pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
 /// injects `__attribute__((section("...")))` which has no equivalent
 /// emit on the non-MCU backends (cpp / rust / kotlin / go / python);
 /// silently dropping it would let the directive vanish on a non-C11
-/// compile, matching the §5.I extern-sidecar non-MCU reject pattern.
+/// compile, matching the §synth-5-I extern-sidecar non-MCU reject pattern.
 ///
 /// Caller-supplied flag: the section attribute lives on `deploy.yaml`
 /// not on `ForgeKind`, so this helper takes a boolean rather than a

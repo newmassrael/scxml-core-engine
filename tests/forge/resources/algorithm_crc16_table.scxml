@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   CRC16-CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflect, no xor-out)
-  in the **table form** — RFC §5.F build-time const-fold acceptance
+  in the **table form** — RFC §synth-5-F build-time const-fold acceptance
   fixture.
 
   The 256-entry `array<u16, 256>` table is computed at code-generation
@@ -9,7 +9,7 @@
   and emitted as a per-language static array literal. The body then
   uses one byte-keyed table lookup per input byte, replacing the
   inner 8-iteration bit-by-bit loop carried by `algorithm_crc16.scxml`
-  (RFC §5.A Appendix A).
+  (RFC §synth-5-A Appendix A).
 
   Both fixtures compute the same CRC16-CCITT-FALSE checksum byte-for-
   byte (the cross-(Rust, C11) runtime equivalence is the §A6

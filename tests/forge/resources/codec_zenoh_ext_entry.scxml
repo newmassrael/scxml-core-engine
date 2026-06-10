@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh extension TLV entry — variant body
-     keyed by the entry header's `enc` bit-range (RFC §5.B,
+     keyed by the entry header's `enc` bit-range (RFC §synth-5-B,
      surface G from the watching-zenoh authoring path; layout
      since refined to wire fidelity).
 

@@ -42,7 +42,7 @@
           ]
         },
         {
-          "description": "Used by codec fields declared `sce:type=\"uint64\" sce:bit-size=\"vle\"` (RFC §5.B App. B canonical Zenoh ZInt). Round-trip oracle vectors store the decoded value as a JSON integer literal up to u64::MAX.",
+          "description": "Used by codec fields declared `sce:type=\"uint64\" sce:bit-size=\"vle\"` (RFC §synth-5-B App. B canonical Zenoh ZInt). Round-trip oracle vectors store the decoded value as a JSON integer literal up to u64::MAX.",
           "type": "string",
           "enum": [
             "u64"
@@ -375,7 +375,7 @@
               }
             },
             "has_test_vectors": {
-              "description": "RFC §5.B test-vector flag: derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the codec root. The per-backend codec sidecar (`<fixture>_test.{rs,h}`) is emitted on Rust + C11 only; Cpp/Kotlin/Go/Python have no codec sidecar template, so the flag is forced false for them (mirrors the algorithm `has_test_vectors` precedent). Empty in fixtures.json (manifest-side override is rejected); computed by `read_codec_has_test_vectors` so the SCXML stays the single source of truth.",
+              "description": "RFC §synth-5-B test-vector flag: derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the codec root. The per-backend codec sidecar (`<fixture>_test.{rs,h}`) is emitted on Rust + C11 only; Cpp/Kotlin/Go/Python have no codec sidecar template, so the flag is forced false for them (mirrors the algorithm `has_test_vectors` precedent). Empty in fixtures.json (manifest-side override is rejected); computed by `read_codec_has_test_vectors` so the SCXML stays the single source of truth.",
               "type": "boolean"
             },
             "kind": {
@@ -409,7 +409,7 @@
           }
         },
         {
-          "description": "RFC §5.A pure free function with bounded loops. Mirrors `Transform`'s `(args -> scalar output)` shape but admits `bytes` parameters because the algorithm body's `<sce:foreach>` over bytes is the canonical surface for byte-stream computations (CRC, parity, hash). The `function` field carries the algorithm's exported symbol name so the fragment can call it directly; in C11 the harness prepends the fixture name (mirrors `Transform`'s flat-scope prefix).",
+          "description": "RFC §synth-5-A pure free function with bounded loops. Mirrors `Transform`'s `(args -> scalar output)` shape but admits `bytes` parameters because the algorithm body's `<sce:foreach>` over bytes is the canonical surface for byte-stream computations (CRC, parity, hash). The `function` field carries the algorithm's exported symbol name so the fragment can call it directly; in C11 the harness prepends the fixture name (mirrors `Transform`'s flat-scope prefix).",
           "type": "object",
           "required": [
             "args",
@@ -425,11 +425,11 @@
               }
             },
             "function": {
-              "description": "Exported function symbol — equals the algorithm `<sce:name>` in snake-case for Rust/C11. Carried in the manifest because RFC §5.A allows the algorithm name to differ from the fixture file name (the algorithm fixture's SCXML root carries `sce:kind=\"algorithm\"` and the function's identity comes from the model, not the filename). C11 harness rendering rewrites this to the prefixed form `<fixture>_<function>` to match the flat-scope identifier.",
+              "description": "Exported function symbol — equals the algorithm `<sce:name>` in snake-case for Rust/C11. Carried in the manifest because RFC §synth-5-A allows the algorithm name to differ from the fixture file name (the algorithm fixture's SCXML root carries `sce:kind=\"algorithm\"` and the function's identity comes from the model, not the filename). C11 harness rendering rewrites this to the prefixed form `<fixture>_<function>` to match the flat-scope identifier.",
               "type": "string"
             },
             "has_test_vectors": {
-              "description": "Derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the algorithm root. RFC §5.B test-vector support (item B2) emits a per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only; the conformance filter drops the fixture from Cpp/Kotlin/Go/Python harnesses — those sidecars are consumer-gated (mirrors codec_variant_dispatch's per-language gate). Empty in fixtures.json (manifest-side override is rejected); computed by `has_test_vectors_in_file` so the SCXML stays the single source of truth.",
+              "description": "Derived at harness-rendering time from SCXML — true iff at least one `<sce:test-vector>` element appears under the algorithm root. RFC §synth-5-B test-vector support (item B2) emits a per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only; the conformance filter drops the fixture from Cpp/Kotlin/Go/Python harnesses — those sidecars are consumer-gated (mirrors codec_variant_dispatch's per-language gate). Empty in fixtures.json (manifest-side override is rejected); computed by `has_test_vectors_in_file` so the SCXML stays the single source of truth.",
               "type": "boolean"
             },
             "kind": {

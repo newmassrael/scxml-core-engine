@@ -20,7 +20,7 @@ type CodecTlvEntry struct {
 // DecodeCodecTlvEntry decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecTlvEntry(cursor *codec.SceCursor) (*CodecTlvEntry, error) {
 	frameLen := cursor.Remaining()

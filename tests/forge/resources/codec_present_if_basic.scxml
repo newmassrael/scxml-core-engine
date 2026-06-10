@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: codec present-if primitive (RFC §5.B present-if).
+<!-- SCE Forge conformance: codec present-if primitive (RFC §synth-5-B present-if).
      One-byte uint8 carrier "flags" exposes a single named bit "has_seq"
      (bit 0). The trailing "seq" field is uint16 BE gated on
      sce:present-if="flags.has_seq"; when the bit is clear the field is

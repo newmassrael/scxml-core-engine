@@ -24,7 +24,7 @@ struct CodecLengthRefDottedBasic {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
+    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecLengthRefDottedBasic> decode(::SCE::Forge::SceCursor& cursor) {
@@ -42,7 +42,7 @@ struct CodecLengthRefDottedBasic {
         return _decoded;
     }
 
-    // RFC §5.B flags primitive: per-bit-range accessors.
+    // RFC §synth-5-B flags primitive: per-bit-range accessors.
     // Single-bit (width=1) reads as bool; multi-bit (width>=2) reads as
     // the smallest unsigned integer type that fits the range. Setters
     // mask + shift on the way in so out-of-range callers can't corrupt

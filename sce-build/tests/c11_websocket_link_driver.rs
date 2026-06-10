@@ -1,10 +1,10 @@
 //! Spec C11 follow-up — WebSocket link driver (`websocket_tcp`)
 //! deploy.yaml allowlist.
 //!
-//! watching-zenoh RFC §8 Q8 line 3747 names `websocket_tcp` as one
-//! of the six core-shipped drivers; §5.C row 4 (line 770) names the
+//! watching-zenoh RFC §synth-8 Q8 line 3747 names `websocket_tcp` as one
+//! of the six core-shipped drivers; §synth-5-C row 4 (line 770) names the
 //! `websocket` link class with "TCP + WebSocket framing" semantics.
-//! Spec §7 item C11 ("Serial + WebSocket link drivers", line 3626)
+//! Spec §synth-7 item C11 ("Serial + WebSocket link drivers", line 3626)
 //! commits this driver. The serial sub-scope landed via `4f1c8bfa`
 //! (2026-05-14, see `c11_serial_link_driver.rs`); this file covers
 //! the WebSocket sub-scope.
@@ -15,7 +15,7 @@
 //! — `websocket_tcp` runs over IPv4 + TCP and inherits that
 //! encapsulation overhead. The per-frame WebSocket header (RFC 6455
 //! 2-14 bytes) is application-protocol framing and lives in the
-//! §5.B framer codec, not in the driver MTU floor — same layer
+//! §synth-5-B framer codec, not in the driver MTU floor — same layer
 //! split that lets `serial_uart` carry floor 0.
 //!
 //! The driver↔class cross-validator (e.g. rejecting

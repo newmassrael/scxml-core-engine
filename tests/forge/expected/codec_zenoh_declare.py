@@ -25,10 +25,10 @@ class CodecZenohDeclare:
     def decode(cls, cursor: SceCursor) -> Optional[CodecZenohDeclare]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
-        (RFC §5.B L494-519); on success the cursor advances past the
+        (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B present-if primitive: streaming decode
+        # RFC §synth-5-B present-if primitive: streaming decode
         # advances the cursor per field. Per-field statements live
         # inside one outer `try:` block so the first peek/advance
         # failure unwinds to a single `except NeedMoreBytes`. Per-
@@ -69,7 +69,7 @@ class CodecZenohDeclare:
             declaration=declaration,
         )
 
-    # RFC §5.B flags primitive: per-bit-range accessors over
+    # RFC §synth-5-B flags primitive: per-bit-range accessors over
     # the carrier field. Single-bit (width=1) reads as bool; multi-bit
     # (width>=2) reads as ``int`` (Python ints are unbounded, so a single
     # ``int`` covers every result-type width). Setters mask + shift on
@@ -103,12 +103,12 @@ class CodecZenohDeclare:
             self.header = self.header & (0xFF ^ 0x80)
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B encode-side primary: write ``self`` into the
+        """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B present-if encode.
+        # RFC §synth-5-B present-if encode.
         w.write_u8(self.header & 0xFF)
         if self.interest_id is not None:
             _vle = int(self.interest_id)

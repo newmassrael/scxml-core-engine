@@ -26,7 +26,7 @@ from typing import Optional{{ ", List" if has_repeat_fields or has_tlv_chain_fie
 {% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
 @dataclass
 class {{ struct_name }}Variant:
-    """RFC §5.B variant primitive: discriminated-union body for
+    """RFC §synth-5-B variant primitive: discriminated-union body for
     the codec's tag-field suffix. ``kind`` selects the active arm; the
     matching ``Optional`` field carries the decoded body. ``default_tag``
     preserves the runtime tag value when the default arm fires so encode
@@ -67,7 +67,7 @@ class {{ struct_name }}Variant:
 @dataclass
 class {{ struct_name }}:
 {% if has_no_fields %}
-    # RFC §5.B empty body — Python @dataclass tolerates zero
+    # RFC §synth-5-B empty body — Python @dataclass tolerates zero
     # fields; `pass` keeps the class body syntactically non-empty so
     # methods below attach correctly.
     pass
@@ -88,11 +88,11 @@ class {{ struct_name }}:
     def decode(cls, cursor: SceCursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Optional[{{ struct_name }}]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
-        (RFC §5.B L494-519); on success the cursor advances past the
+        (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
 {% if has_parent_flags %}
-        # RFC §5.B: ``parent_flags`` is the parent codec's flags
+        # RFC §synth-5-B: ``parent_flags`` is the parent codec's flags
         # carrier value, threaded by the variant arm dispatcher. Body
         # fields gated via ``parent.<flag>`` predicates read from this
         # parameter; the ``_ = parent_flags`` defensive guard suppresses
@@ -103,12 +103,12 @@ class {{ struct_name }}:
         _ = parent_flags
 {% endif %}
 {% if has_no_fields %}
-        # RFC §5.B empty body — zero-byte payload, no cursor work.
+        # RFC §synth-5-B empty body — zero-byte payload, no cursor work.
         _ = cursor
         return cls()
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-        # RFC §5.B peek-byte / streaming-prefix:
+        # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix decode (variable-length fields supported via
         # per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         # mode additionally peeks the cursor's next byte for variant tag
@@ -132,7 +132,7 @@ class {{ struct_name }}:
             return None
 {% else %}
 {% if fields %}
-        # Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
+        # Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
         try:
             raw = cursor.peek_slice({{ min_bytes }})
         except NeedMoreBytes:
@@ -178,7 +178,7 @@ class {{ struct_name }}:
             body=body,
         )
 {% elif has_present_if_fields %}
-        # RFC §5.B present-if primitive: streaming decode
+        # RFC §synth-5-B present-if primitive: streaming decode
         # advances the cursor per field. Per-field statements live
         # inside one outer `try:` block so the first peek/advance
         # failure unwinds to a single `except NeedMoreBytes`. Per-
@@ -205,7 +205,7 @@ class {{ struct_name }}:
 {% endfor %}
         )
 {% elif has_vle_fields %}
-        # RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        # RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
         # LengthRef siblings of VLE fields through
         # `present_if_decode_stmt` (predicate=None arms). Pure-VLE
         # codecs stay byte-stable.
@@ -229,7 +229,7 @@ class {{ struct_name }}:
 {% endfor %}
         )
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        # RFC §5.B B2 repeat primitive: streaming decode mixes plain
+        # RFC §synth-5-B B2 repeat primitive: streaming decode mixes plain
         # fixed-width reads (per-field via the present-if helper's
         # non-gated arm) with `for _ in range(N)` / `while
         # cursor.remaining() > 0` loops that iterate the imported
@@ -320,7 +320,7 @@ class {{ struct_name }}:
 {% endfor %}
 {% endif %}
 {% if has_flags %}
-    # RFC §5.B flags primitive: per-bit-range accessors over
+    # RFC §synth-5-B flags primitive: per-bit-range accessors over
     # the carrier field. Single-bit (width=1) reads as bool; multi-bit
     # (width>=2) reads as ``int`` (Python ints are unbounded, so a single
     # ``int`` covers every result-type width). Setters mask + shift on
@@ -355,29 +355,29 @@ class {{ struct_name }}:
 {% endfor %}
 {% endif %}
     def encode(self, w: SceSink{{ params_after_first_arg }}) -> None:
-        """RFC §5.B encode-side primary: write ``self`` into the
+        """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
 {% if has_parent_flags %}
-        # RFC §5.B: see ``decode`` — same parameter, same suppress.
+        # RFC §synth-5-B: see ``decode`` — same parameter, same suppress.
         _ = parent_flags
 {% endif %}
 {% if has_parent_tag_derivation %}
-        # RFC §5.B parent-tag carriers — derive carrier bits from each embedded
+        # RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
         # parent-tag variant's active arm before the carrier byte is
         # emitted. Each `_derived_<carrier>` value is OR'd into the
         # carrier's encode site.
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if has_no_fields %}
-        # RFC §5.B empty body — zero-byte payload.
+        # RFC §synth-5-B empty body — zero-byte payload.
         _ = w
         return
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-        # RFC §5.B peek-byte / streaming-prefix:
+        # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix encode.
 {% for field in fields %}
 {% if field.is_repeat %}
@@ -406,7 +406,7 @@ class {{ struct_name }}:
             self.body.{{ variant.default_arm.c_union_field }}.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }})
 {% endif %}
 {% elif has_present_if_fields %}
-        # RFC §5.B present-if encode.
+        # RFC §synth-5-B present-if encode.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -419,7 +419,7 @@ class {{ struct_name }}:
 {% endif %}
 {% endfor %}
 {% elif has_vle_fields %}
-        # RFC §5.B B4: per-field bit-size dispatch.
+        # RFC §synth-5-B B4: per-field bit-size dispatch.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
@@ -432,7 +432,7 @@ class {{ struct_name }}:
 {% endif %}
 {% endfor %}
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        # RFC §5.B B2 encode: list fields iterate ``self.<id>`` and
+        # RFC §synth-5-B B2 encode: list fields iterate ``self.<id>`` and
         # write each element through the same sink.
 {% for field in fields %}
 {% if field.is_repeat %}

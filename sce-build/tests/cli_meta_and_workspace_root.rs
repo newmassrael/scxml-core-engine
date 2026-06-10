@@ -9,7 +9,7 @@
 //      CLI convention; lets vendor pinners verify the binary matches
 //      their pinned source.
 //   2. `generate --help` does not parrot the stale
-//      "C11 is RFC §5.J.1 foundation only — emitter lands in M2+"
+//      "C11 is RFC §synth-5-J-1 foundation only — emitter lands in M2+"
 //      sentence. The c11 emitter is fully landed; the stale text
 //      mis-led one consumer into a `hand-author header path` workaround
 //      (vendor pin R30 → R53), so a regression here would re-open the

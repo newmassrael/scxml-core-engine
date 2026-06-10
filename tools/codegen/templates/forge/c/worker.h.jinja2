@@ -7,7 +7,7 @@
 /* Runtime: sce-c-runtime atomics (sce_atomic_*_u32 family). */
 /* Do not edit — regenerate from the source SCXML file. */
 /*
- * watching-zenoh RFC §5.D worker primitive: SPSC inbox driven by a
+ * watching-zenoh RFC §synth-5-D worker primitive: SPSC inbox driven by a
  * link-rx source (`<sce:link-rx ref="{{ link_rx }}"/>`) feeding a
  * concurrent execution context on cooperative-scheduler MCUs. Spec
  * line 904: "inbox = heapless::spsc (Rust) or fixed ring buffer (C)".
@@ -15,9 +15,9 @@
  * prototypes; the `.c` sibling carries the ring-buffer storage and
  * impl bodies.
  *
- * RFC §5.I lines 1752-1758 ordering choice: `ordering="{{ inbox_ordering }}"`
+ * RFC §synth-5-I lines 1752-1758 ordering choice: `ordering="{{ inbox_ordering }}"`
  * pins the head/tail atomic operations to either acq/rel or relaxed
- * variants of the §5.I baseline `sce_atomic_*_u32` family (C4 atomic
+ * variants of the §synth-5-I baseline `sce_atomic_*_u32` family (C4 atomic
  * A registry). Cross-core placement with `relaxed` raises
  * `worker/inbox-ordering-relaxed-across-cores` at codegen time when
  * deploy.placement is supplied.
@@ -86,7 +86,7 @@ typedef struct {{ snake_name }}_inbox_consumer_s {{ snake_name }}_inbox_consumer
  * full so the caller can apply backpressure (drop, retry, signal-
  * overflow per the link's `<sce:backpressure>` policy). Atomic
  * ordering on head/tail matches the `ordering="{{ inbox_ordering }}"`
- * choice via the §5.I baseline atomic family. */
+ * choice via the §synth-5-I baseline atomic family. */
 bool {{ snake_name }}_inbox_try_push(
     {{ snake_name }}_inbox_producer_t *producer, uint32_t event);
 

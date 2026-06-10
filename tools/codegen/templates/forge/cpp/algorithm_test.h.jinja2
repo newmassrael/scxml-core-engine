@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# RFC §5.B test-vector: per-fixture C++ test-vector sidecar.
+{# RFC §synth-5-B test-vector: per-fixture C++ test-vector sidecar.
    Aggregates every `<sce:test-vector>` row into a single
    `static inline int test_vector_<fixture>()` returning the
    row-failure count. The C++ conformance harness folds the return
@@ -10,10 +10,10 @@
    algorithm header so the function symbol resolves regardless of
    include order in the harness TU. Bytes literals lower to a
    C-style array (extent auto-deduced by the compiler) constructed
-   into `std::span<const std::uint8_t>` per RFC §5.J.5 (cpp
+   into `std::span<const std::uint8_t>` per RFC §synth-5-J-5 (cpp
    `algorithm_param_type` arm). #}
 
-/* SCE Forge: Auto-generated test-vector sidecar (RFC §5.B B2) */
+/* SCE Forge: Auto-generated test-vector sidecar (RFC §synth-5-B B2) */
 /* Companion to {{ name }}.h — do not edit; regenerate from the source SCXML. */
 
 #pragma once

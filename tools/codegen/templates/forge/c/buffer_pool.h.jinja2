@@ -7,7 +7,7 @@
 /* Runtime: header-only, no SCE-side helper crate. */
 /* Do not edit — regenerate from the source SCXML file. */
 /*
- * watching-zenoh RFC §5.E DMA-aligned slot table with the seven-state
+ * watching-zenoh RFC §synth-5-E DMA-aligned slot table with the seven-state
  * lifecycle FSM and tag-checked `sce_slot_handle_t` author API per
  * spec lines 1116-1180 + 1232-1242. C lacks Rust's lifetimes and
  * Drop, so the per-slot state is enforced at runtime: every transition
@@ -31,7 +31,7 @@
  *
  * A sidecar linker fragment (`{{ snake_name }}_pool.ld`) is emitted
  * alongside this header — it carries the SECTIONS{} entry with
- * explicit `ALIGN()` directives + inter-pool sentinel per §5.E lines
+ * explicit `ALIGN()` directives + inter-pool sentinel per §synth-5-E lines
  * 1031-1086.
  *
  * Generated from `name="{{ name }}"` with section `{{ section }}`,
@@ -45,7 +45,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Layer 1 ownership pull-through (item B7, RFC §5.E). `sce-c-runtime/include/sce/
+/* Layer 1 ownership pull-through (item B7, RFC §synth-5-E). `sce-c-runtime/include/sce/
  * sample.h` provides the `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
  * `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / `SCE_WARN_UNUSED`
  * attribute family + `sce_sample_t` borrow type + 3 function decls
@@ -53,7 +53,7 @@
  * include silently disables Layer 1 typestate analysis on consumer
  * builds (Clang ≥ 9 with `-Wconsumed -Wthread-safety`); the
  * `pool/sample-typestate-attributes-disabled` codegen-invariant
- * diagnostic guards against template regression. RFC §5.E lines
+ * diagnostic guards against template regression. RFC §synth-5-E lines
  * 1276-1346 + 1520-1525. */
 #include <sce/sample.h>
 
@@ -88,9 +88,9 @@ extern "C" {
 
 {%- if cache_maintain %}
 
-/* C5 cache-maintenance externs (spec §5.I lines 1736-1740). The
+/* C5 cache-maintenance externs (spec §synth-5-I lines 1736-1740). The
  * implementations live in `sce_intrinsics_runtime` (or a target
- * plugin's vendor crate per RFC §5.I lines 1760-1787). Forward
+ * plugin's vendor crate per RFC §synth-5-I lines 1760-1787). Forward
  * declarations also appear in the sidecar `{{ snake_name }}_externs.h`
  * for deploy-review transparency; both forward declarations are
  * legal and unify at link time because the symbols are identical. */
@@ -102,40 +102,40 @@ extern void sce_dcache_invalidate_by_addr(void *start, size_t len);
 
 /* Number of declared lifecycle states. Mirrors
  * `forge::buffer_pool_fsm::STATE_COUNT` — the seven states from
- * spec §5.E lines 1129-1135. */
+ * spec §synth-5-E lines 1129-1135. */
 #define {{ upper_name }}_STATE_COUNT ((size_t)7)
 
 /* Number of declared lifecycle transitions. Mirrors
  * `forge::buffer_pool_fsm::TRANSITION_COUNT` — the eleven legal
- * edges from spec §5.E lines 1141-1156. */
+ * edges from spec §synth-5-E lines 1141-1156. */
 #define {{ upper_name }}_TRANSITION_COUNT ((size_t)11)
 
 {%- if variant_reassembly %}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- * Reassembly variant per-slot state (RFC §5.M lines 2680-2698
- * + 2864-2876). The reassembly variant of §5.E extends the slot
+ * Reassembly variant per-slot state (RFC §synth-5-M lines 2680-2698
+ * + 2864-2876). The reassembly variant of §synth-5-E extends the slot
  * table with three additional per-slot fields the author-level
- * Fragment FSM (RFC §5.M lines 2864-2876, lives in downstream SCXML
+ * Fragment FSM (RFC §synth-5-M lines 2864-2876, lives in downstream SCXML
  * statechart) consumes:
  *   - `bitmap[FRAGMENT_BITMAP_WORDS]` — fragment-index bitmap marking
  *     each received fragment; bitmap width derived from
- *     `<sce:max-fragments-per-message>` (RFC §5.M line 2688 +
+ *     `<sce:max-fragments-per-message>` (RFC §synth-5-M line 2688 +
  *     2694-2698).
  *   - `deadline` — per-slot reassembly deadline in raw ms ticks;
- *     `<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) drives the
+ *     `<sce:reassembly-timeout-ms>` (RFC §synth-5-M line 2689) drives the
  *     timer the FSM's `Receiving → TimedOut` edge consumes
  *     (`docs/reassembly-fsm.md` §2.4.5).
- *   - `peer_id[16]` — handshake-derived ZID (RFC §5.M lines
+ *   - `peer_id[16]` — handshake-derived ZID (RFC §synth-5-M lines
  *     2700-2738). Reassembly is forbidden on non-`established_session`
  *     links by the cross-doc validator
  *     `reassembly/untrusted-link-binding`, so the peer-id is always
  *     the 16-byte ZID — never the spoofable wire source address.
  *     The `reassembly/peer-id-not-zid-on-established-session`
  *     codegen self-check enforces this template invariant per RFC
- *     §5.M lines 2976-2981.
+ *     §synth-5-M lines 2976-2981.
  *
- * Quota enforcement (RFC §5.M lines 2848-2856) lives in the author
+ * Quota enforcement (RFC §synth-5-M lines 2848-2856) lives in the author
  * SCXML algorithm (`<scxml sce:kind="algorithm">`) that walks the
  * slot table at `Fragment.First` arrival — intentionally NOT emitted
  * from the pool template. Same for fragment-index marking and
@@ -149,22 +149,22 @@ extern void sce_dcache_invalidate_by_addr(void *start, size_t len);
 #define {{ upper_name }}_FRAGMENT_BITMAP_WORDS \
     ((size_t)(({{ max_fragments_per_message }} + 31) / 32))
 
-/* `<sce:max-fragments-per-message>` (RFC §5.M line 2688) — the closed
+/* `<sce:max-fragments-per-message>` (RFC §synth-5-M line 2688) — the closed
  * cap a reassembled message's fragment count cannot exceed. */
 #define {{ upper_name }}_MAX_FRAGMENTS_PER_MESSAGE ((uint32_t){{ max_fragments_per_message }})
 
-/* `<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) — per-slot
+/* `<sce:reassembly-timeout-ms>` (RFC §synth-5-M line 2689) — per-slot
  * deadline value in milliseconds. */
 #define {{ upper_name }}_REASSEMBLY_TIMEOUT_MS ((uint32_t){{ reassembly_timeout_ms }})
 
-/* `<sce:per-peer-quota>` (RFC §5.M lines 2690, 2841-2861) — caps
+/* `<sce:per-peer-quota>` (RFC §synth-5-M lines 2690, 2841-2861) — caps
  * the in-flight reassembly slots a single peer (keyed by ZID) may
  * hold. Consumed by the SCXML-side per-peer quota algorithm. */
 #define {{ upper_name }}_PER_PEER_QUOTA ((uint32_t){{ per_peer_quota }})
 
-/* Handshake-derived peer identifier — 16-byte Zenoh ZID (RFC §5.M
+/* Handshake-derived peer identifier — 16-byte Zenoh ZID (RFC §synth-5-M
  * lines 2708-2714). The `reassembly/peer-id-not-zid-on-established-
- * session` codegen self-check (RFC §5.M lines 2976-2981) enforces
+ * session` codegen self-check (RFC §synth-5-M lines 2976-2981) enforces
  * that this typedef emits the `uint8_t[16]` byte-array shape on
  * every reassembly-variant pool — wire-source typedefs would
  * silently inherit UDP source-IP spoofing exposure.
@@ -174,7 +174,7 @@ extern void sce_dcache_invalidate_by_addr(void *start, size_t len);
 /* SCE-EMIT: kind=reassembly.peer-id-zid */
 typedef uint8_t {{ snake_name }}_peer_id_t[16];
 
-/* Per-slot reassembly state — RFC §5.M lines 2680-2698. Author SCXML
+/* Per-slot reassembly state — RFC §synth-5-M lines 2680-2698. Author SCXML
  * FSM bodies (`docs/reassembly-fsm.md`) reach into `bitmap` and
  * `deadline` directly; `peer_id` is matched on `Fragment.Continue`
  * / `Final` to bind continuation fragments to the originating ZID. */
@@ -189,16 +189,16 @@ typedef struct {
  * bitmap type does not silently re-define the per-slot wire layout
  * the author FSM and cross-language tracing observe. */
 _Static_assert(sizeof(uint32_t) == 4,
-               "fragment-index bitmap word is fixed to uint32_t (4 bytes) per RFC §5.M line 2696");
+               "fragment-index bitmap word is fixed to uint32_t (4 bytes) per RFC §synth-5-M line 2696");
 _Static_assert(sizeof(uint64_t) == 8,
-               "reassembly slot deadline is fixed to uint64_t (8 bytes) per RFC §5.M line 2697");
+               "reassembly slot deadline is fixed to uint64_t (8 bytes) per RFC §synth-5-M line 2697");
 _Static_assert(sizeof({{ snake_name }}_peer_id_t) == 16,
-               "reassembly slot peer-id is fixed to 16-byte ZID per RFC §5.M lines 2708-2714");
+               "reassembly slot peer-id is fixed to 16-byte ZID per RFC §synth-5-M lines 2708-2714");
 {%- endif %}
 
 /* `sce_slot_state_t` (the seven-state FSM enum + `SCE_SLOT_INVALID`
- * sentinel, spec §5.E lines 1129-1135) and `sce_slot_handle_t` (the
- * tag-checked handle, spec §5.E lines 1239-1242) are provided by
+ * sentinel, spec §synth-5-E lines 1129-1135) and `sce_slot_handle_t` (the
+ * tag-checked handle, spec §synth-5-E lines 1239-1242) are provided by
  * `<sce/sample.h>` above. Anonymous-tag typedefs are not redeclarable
  * across translation units — declaring them per pool would shadow the
  * runtime header's symbols, so the per-pool emit reuses the runtime
@@ -213,7 +213,7 @@ _Static_assert(sizeof({{ snake_name }}_peer_id_t) == 16,
 
 /* Pool storage. Placed in the section declared by `<sce:section>` via
  * `__attribute__((section, aligned))`; the sidecar linker fragment
- * provides the matching SECTIONS{} entry. The §5.E defense-in-depth
+ * provides the matching SECTIONS{} entry. The §synth-5-E defense-in-depth
  * contract (lines 1066-1073): `aligned(N)` here + `ALIGN(N)` in the
  * fragment + inter-pool ALIGN sentinel + future `_Static_assert` on
  * field layout enforce the same invariant at four layers, so a
@@ -227,7 +227,7 @@ static uint8_t {{ snake_name }}_storage[{{ slot_count }}][{{ slot_size }}];
  * with the full seven-state FSM tracking. */
 static sce_slot_state_t {{ snake_name }}_slot_states[{{ slot_count }}] = { SCE_SLOT_FREE };
 
-/* Acquire a free slot for CPU-side encoding. Spec §5.E line 1141:
+/* Acquire a free slot for CPU-side encoding. Spec §synth-5-E line 1141:
  * `free → cpu-mut`. Returns `INVALID_HANDLE` when every slot is
  * in use. The returned handle's `state` is `SCE_SLOT_CPU_MUT`. */
 static inline sce_slot_handle_t {{ snake_name }}_pool_acquire_for_encode(void) {
@@ -243,7 +243,7 @@ static inline sce_slot_handle_t {{ snake_name }}_pool_acquire_for_encode(void) {
     return {{ upper_name }}_INVALID_HANDLE;
 }
 
-/* Arm a free slot for peripheral RX. Spec §5.E line 1146:
+/* Arm a free slot for peripheral RX. Spec §synth-5-E line 1146:
  * `free → dma-armed-rx`. Returns `INVALID_HANDLE` when every slot
  * is in use. C5: pre-arm `sce_dcache_invalidate_by_addr` is emitted
  * here when `cache-policy: maintain && platform.has_speculative_prefetch`
@@ -251,7 +251,7 @@ static inline sce_slot_handle_t {{ snake_name }}_pool_acquire_for_encode(void) {
  * prefetcher / speculative load may have populated for this slot
  * region while it sat on the freelist. Without the pre-arm
  * invalidate, those stale lines would shadow DMA writes even after
- * the post-RX invalidate (RFC §5.E lines 1199-1212). */
+ * the post-RX invalidate (RFC §synth-5-E lines 1199-1212). */
 static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
     for (size_t i = 0; i < {{ upper_name }}_SLOT_COUNT; ++i) {
         if ({{ snake_name }}_slot_states[i] == SCE_SLOT_FREE) {
@@ -270,7 +270,7 @@ static inline sce_slot_handle_t {{ snake_name }}_link_arm_rx(void) {
     return {{ upper_name }}_INVALID_HANDLE;
 }
 
-/* Hand the slot off to the link's TX path. Spec §5.E line 1142:
+/* Hand the slot off to the link's TX path. Spec §synth-5-E line 1142:
  * `cpu-mut → dma-armed-tx`. Tag check: handle must be in
  * `SCE_SLOT_CPU_MUT`. On success the pool's internal state for the
  * slot transitions to `SCE_SLOT_DMA_ARMED_TX` and the handle is
@@ -295,7 +295,7 @@ static inline bool {{ snake_name }}_link_arm_tx(sce_slot_handle_t *handle) {
     return true;
 }
 
-/* Return the slot to the freelist. Spec §5.E lines 1152, 1155:
+/* Return the slot to the freelist. Spec §synth-5-E lines 1152, 1155:
  * `cpu-ref → free` ("handler complete; pool_return") and
  * `cpu-mut → free` ("abort encode (error path)"). Tag check: handle
  * must be in `SCE_SLOT_CPU_MUT` or `SCE_SLOT_CPU_REF`. On success

@@ -715,7 +715,7 @@ pub fn check(
         }
         for c in &algo.consts {
             // `init` is `None` when the const carries a `<sce:fold>`
-            // body instead — RFC §5.F build-time fold path. Fold
+            // body instead — RFC §synth-5-F build-time fold path. Fold
             // expressions have their own typed-binding surface
             // handled by the const-fold module; the alias.field
             // walker stays narrow on scalar consts.

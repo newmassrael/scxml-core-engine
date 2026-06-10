@@ -14,7 +14,7 @@ from typing import Optional
 
 @dataclass
 class CodecZenohKeepAlive:
-    # RFC §5.B empty body — Python @dataclass tolerates zero
+    # RFC §synth-5-B empty body — Python @dataclass tolerates zero
     # fields; `pass` keeps the class body syntactically non-empty so
     # methods below attach correctly.
     pass
@@ -23,20 +23,20 @@ class CodecZenohKeepAlive:
     def decode(cls, cursor: SceCursor) -> Optional[CodecZenohKeepAlive]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
-        (RFC §5.B L494-519); on success the cursor advances past the
+        (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B empty body — zero-byte payload, no cursor work.
+        # RFC §synth-5-B empty body — zero-byte payload, no cursor work.
         _ = cursor
         return cls()
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B encode-side primary: write ``self`` into the
+        """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B empty body — zero-byte payload.
+        # RFC §synth-5-B empty body — zero-byte payload.
         _ = w
         return
 

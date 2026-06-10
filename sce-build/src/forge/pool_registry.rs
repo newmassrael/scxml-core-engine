@@ -10,11 +10,11 @@
 // alignment, DMA channel, cache policy) from pool *bindings* (deploy.yaml
 // fields that wire a binding to a named template). Until this module
 // landed, deploy.yaml had no cross-schema reference into forge — the
-// rx-pool / tx-pool pairing was a forge-internal concern (§5.C link kind
+// rx-pool / tx-pool pairing was a forge-internal concern (§synth-5-C link kind
 // fields), and deploy.yaml validators only consulted the `DeployConfig`
 // itself.
 //
-// Spec anchor. watching-zenoh RFC §5.E (Sample API contract) introduces
+// Spec anchor. watching-zenoh RFC §synth-5-E (Sample API contract) introduces
 // the `<sce:on-sample>` callback path whose `Sample::take()` requires a
 // stage-copy destination pool, declared via `binding.stage_pool` in
 // deploy.yaml. The cross-reference resolution this module implements is
@@ -34,7 +34,7 @@ use super::model::ForgeDocument;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForgePoolKind {
     /// `<scxml sce:kind="buffer-pool">` — fixed-slot RX/TX/stage pool
-    /// (§5.E). Today the only pool kind a deploy.yaml
+    /// (§synth-5-E). Today the only pool kind a deploy.yaml
     /// `stage_pool:` reference may resolve to.
     BufferPool,
 }

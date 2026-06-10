@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: stripped-down Zenoh PUT body leaf (RFC §5.B
+<!-- SCE Forge conformance: stripped-down Zenoh PUT body leaf (RFC §synth-5-B
      recursive variant body). Used as the PUT-arm
      body inside the inner variant codec_zenoh_push_body, which is in
      turn an arm body of the outer variant codec_zenoh_push. The inner

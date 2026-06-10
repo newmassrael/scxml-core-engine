@@ -36,10 +36,10 @@ func NewCodecZenohReply() *CodecZenohReply {
 // DecodeCodecZenohReply decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohReply(cursor *codec.SceCursor) (*CodecZenohReply, error) {
-	// RFC §5.B present-if primitive: streaming decode
+	// RFC §synth-5-B present-if primitive: streaming decode
 	// advances the cursor per field. Gated fields use `*T` for fixed
 	// (nil = absent) or `[]byte` (nil = absent) for tail/length-ref;
 	// VLE gating uses `*T` like fixed. Per-field `is_repeat` routes
@@ -103,7 +103,7 @@ func DecodeCodecZenohReply(cursor *codec.SceCursor) (*CodecZenohReply, error) {
 	}, nil
 }
 
-// RFC §5.B flags primitive: per-bit-range accessors over
+// RFC §synth-5-B flags primitive: per-bit-range accessors over
 // the carrier field. Single-bit (width=1) reads as bool; multi-bit
 // (width>=2) reads as the smallest unsigned int type that fits. Setters
 // mask + shift on the way in so out-of-range callers can't corrupt
@@ -160,7 +160,7 @@ func (s *CodecZenohReply) SetZ(v bool) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohReply) Encode(w codec.SceSink) error {
-	// RFC §5.B present-if encode.
+	// RFC §synth-5-B present-if encode.
 	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
 		return err
 	}

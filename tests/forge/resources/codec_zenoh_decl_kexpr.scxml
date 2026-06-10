@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh declare-keyexpr body (RFC §5.B)
+<!-- SCE Forge conformance: Zenoh declare-keyexpr body (RFC §synth-5-B)
      . First wireexpr-bearing declare body — composes 
      wireexpr through the embed grammar with Parent-scope parent-
      flag threading (Case B: pass-through `parent_flags`).

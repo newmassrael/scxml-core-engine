@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: TLV chain entry body codec (RFC §5.B B3).
+<!-- SCE Forge conformance: TLV chain entry body codec (RFC §synth-5-B B3).
      Each entry has the canonical id+len+value shape (RFC line 488):
      uint8 entry_type, uint8 entry_len, then `entry_len` value bytes
      (length-ref). Imported by codec_tlv_chain_basic.scxml as the

@@ -16,7 +16,7 @@
 # No tmp staging of the fixture, no `// From:` sed rewrite, no
 # `--input-root` override: now that the parser captures inline children
 # in-memory and codegen sets `model.scxml_source_path` directly from
-# the canonical input path, the embedded `// From:` and the §6.2.6
+# the canonical input path, the embedded `// From:` and the §synth-6.2.6
 # `source-hash` already point at `integration_resources/...`.
 #
 # Usage (from repo root):

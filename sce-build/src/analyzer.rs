@@ -176,7 +176,7 @@ fn analyze_model_features(model: &mut SCXMLModel) {
         }
     }
 
-    // watching-zenoh RFC §5.E sample-callback codegen wire-up: collect the
+    // watching-zenoh RFC §synth-5-E sample-callback codegen wire-up: collect the
     // unique set of forge link names referenced by any
     // `<sce:on-sample link="X" .../>` block across all states.
     // Empty for documents without sample subscriptions; non-empty

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Master regeneration for every committed §6.2.6 generated tree
+# Master regeneration for every committed §synth-6.2.6 generated tree
 # tracked by the SCE workspace. Runs in three groups:
 #
 #   1. W3C IRP committed trees (Rust + Kotlin)
@@ -13,7 +13,7 @@
 #
 # Build-time backends (cpp / c11 / Python) are intentionally absent
 # — their generated trees materialise at CMake / CI time without a
-# committed §6.2.6 header to refresh.
+# committed §synth-6.2.6 header to refresh.
 #
 # Use when a `tools/codegen/templates/` edit or a `Cargo.lock` bump
 # invalidates the embedded `template-hash` on every committed tree

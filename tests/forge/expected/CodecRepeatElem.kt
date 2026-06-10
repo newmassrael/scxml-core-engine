@@ -18,7 +18,7 @@ import com.sce.forge.runtime.SceSink
 data class CodecRepeatElem(
     var seq: UShort = 0.toUShort()
 ) {
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
@@ -43,7 +43,7 @@ data class CodecRepeatElem(
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
         fun decode(cursor: SceCursor): CodecRepeatElem? {
             val raw = cursor.peekSlice(2) ?: return null
             val seq = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()

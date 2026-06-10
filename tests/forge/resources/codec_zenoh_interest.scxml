@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh INTEREST envelope (RFC §5.B —
+<!-- SCE Forge conformance: Zenoh INTEREST envelope (RFC §synth-5-B —
      first realistic disjunction primitive
      consumer + parent-owns-id refactor pin).
 

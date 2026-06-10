@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh declare-final body (RFC §5.B cross-codec composition —
+<!-- SCE Forge conformance: Zenoh declare-final body (RFC §synth-5-B cross-codec composition —
      cross-codec composition fixture authoring the ~30 zenoh messages
      end-to-end on B1-B5 primitives).
 

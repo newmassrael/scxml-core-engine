@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` target-plugin loader — watching-zenoh RFC §5.I.
-// Spec lines 1760-1787 verbatim: architectures may extend the §5.I
+// `<sce:extern>` target-plugin loader — watching-zenoh RFC §synth-5-I.
+// Spec lines 1760-1787 verbatim: architectures may extend the §synth-5-I
 // whitelist through a target plugin declared via deploy.yaml
 // (`extern_symbols.target_plugin: <path>`). The plugin file is a YAML
 // document listing additional symbols with signatures.
 //
 // Path-pointed YAML file, single plugin per deploy.
-// Plugin entries are *additive*; redefining a §5.I
+// Plugin entries are *additive*; redefining a §synth-5-I
 // baseline symbol surfaces as `extern/target-plugin-symbol-conflict`
 // (spec line 1852 verbatim — "target plugin redefines a core whitelist
 // symbol"). Repair shape: plugin author renames the
@@ -145,7 +145,7 @@ pub enum TargetPluginLoadError {
         name: String,
         abi: String,
     },
-    /// Plugin entry's `name` field already exists in the §5.I baseline
+    /// Plugin entry's `name` field already exists in the §synth-5-I baseline
     /// registry. Surfaced as `extern/target-plugin-symbol-conflict`
     /// (spec line 1852 verbatim) — additive-composition
     /// lock: plugins extend, never override.
@@ -169,7 +169,7 @@ pub enum TargetPluginLoadError {
 /// 5. Return `Vec<PluginSymbol>` in source order (plugin authors expect
 ///    deterministic ordering matching their YAML).
 ///
-/// The conflict check runs against the §5.I 101-entry baseline using
+/// The conflict check runs against the §synth-5-I 101-entry baseline using
 /// [`lookup_symbol`] — exactly the same key the runtime
 /// `<sce:extern>` validator uses, so any baseline-name change propagates
 /// to plugin-conflict detection without a separate code path.

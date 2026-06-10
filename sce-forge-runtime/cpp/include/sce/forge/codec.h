@@ -3,9 +3,9 @@
 
 // sce_forge_runtime — codec cursor + sink + typed error contract.
 //
-// Mirrors `sce-forge-runtime/rust/src/codec.rs`. RFC §5.B L494-519 pins
+// Mirrors `sce-forge-runtime/rust/src/codec.rs`. RFC §synth-5-B L494-519 pins
 // the per-language cursor + need-more-bytes contract on decode so a
-// truncated input never aborts. RFC §5.B extends the contract to the
+// truncated input never aborts. RFC §synth-5-B extends the contract to the
 // write side: `SceSink` is the abstract base that codec `encode`
 // bodies emit into; `VectorSink` (heap-backed, infallible) and
 // `SpanSink` (caller-owned `uint8_t*` + cap, raises `BufferOverflow`
@@ -27,7 +27,7 @@ namespace SCE::Forge {
 /// return: `std::nullopt` = success, value = error).
 ///
 /// The variant primitive intentionally does NOT need a typed
-/// `UnknownVariantTag` — RFC §5.B requires `<sce:default>` when arms
+/// `UnknownVariantTag` — RFC §synth-5-B requires `<sce:default>` when arms
 /// don't exhaust the tag domain (build-time `codec/variant-arm-unreachable`
 /// otherwise), so the default arm catches every unmatched tag at runtime.
 ///
@@ -42,9 +42,9 @@ namespace SCE::Forge {
 enum class CodecError : std::uint8_t {
     NeedMoreBytes = 1,
     /// A `vle_u<N>` field's continuation chain implies a value wider
-    /// than the declared type. RFC §5.B `codec/vle-width-overflow`.
+    /// than the declared type. RFC §synth-5-B `codec/vle-width-overflow`.
     VleWidthOverflow = 2,
-    /// RFC §5.B encode-side counterpart to `NeedMoreBytes`: the
+    /// RFC §synth-5-B encode-side counterpart to `NeedMoreBytes`: the
     /// destination sink reported insufficient remaining capacity for
     /// the next write. Only the bounded `SpanSink` (caller-owned
     /// `uint8_t*` + cap) can raise this; the heap-backed `VectorSink`
@@ -91,7 +91,7 @@ public:
     /// Returns `std::nullopt` on `NeedMoreBytes` and signals
     /// `VleWidthOverflow` via `last_vle_overflow()` flag — split from
     /// the std::optional return to keep the hot decode path branch-light.
-    /// Mirrors the Zenoh ZInt wire format (RFC §5.B Appendix B).
+    /// Mirrors the Zenoh ZInt wire format (RFC §synth-5-B Appendix B).
     std::optional<std::uint64_t> read_vle_u16() noexcept { return read_vle_inner(16); }
     std::optional<std::uint64_t> read_vle_u32() noexcept { return read_vle_inner(32); }
     std::optional<std::uint64_t> read_vle_u64() noexcept { return read_vle_inner(64); }
@@ -133,7 +133,7 @@ private:
     bool vle_overflow_ = false;
 };
 
-/// RFC §5.B string typing (`sce:type="string"`): validate that `[p, p+n)` is a well-formed
+/// RFC §synth-5-B string typing (`sce:type="string"`): validate that `[p, p+n)` is a well-formed
 /// UTF-8 byte sequence. Returns `true` for valid UTF-8 (including the
 /// empty range), `false` for any malformed sequence (invalid lead
 /// byte, incomplete multi-byte sequence, overlong encoding, or

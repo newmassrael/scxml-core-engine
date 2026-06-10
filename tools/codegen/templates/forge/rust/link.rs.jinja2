@@ -8,9 +8,9 @@
 // Runtime: sce_link_runtime
 // Do not edit — regenerate from the source SCXML file.
 //
-// watching-zenoh RFC §5.C byte-stream link endpoint. The struct
+// watching-zenoh RFC §synth-5-C byte-stream link endpoint. The struct
 // owns an `impl Link` driver (downstream `sce_link_runtime_<os>`
-// implementation) and routes RX bytes through the §5.B framer
+// implementation) and routes RX bytes through the §synth-5-B framer
 // codec's decode + injects the configured SCXML event, while TX
 // pulls bytes from the framer's encode and submits them through
 // the driver's `tx`. The c11 emit mirrors this rust-target slice.
@@ -58,7 +58,7 @@ impl<L: Link> {{ pascal_name }}<L> {
         self.driver.tx(TxFrame::new(bytes))
     }
 
-    /// Budget-aware tick hook (RFC §5.N line 3050) — invoked once
+    /// Budget-aware tick hook (RFC §synth-5-N line 3050) — invoked once
     /// per cooperative-scheduler tick with `deadline_us` capped to
     /// the per-machine `PER_LINK_BUDGET_US`. Passthrough to the
     /// underlying `impl Link::poll`; see [`sce_link_runtime::Link::poll`]
@@ -82,7 +82,7 @@ impl<L: Link> {{ pascal_name }}<L> {
     pub const BACKPRESSURE: &'static str = "{{ backpressure }}";
 {% if has_rx_pool %}
     /// `<sce:rx-pool ref="{{ rx_pool }}"/>` — RX buffer-pool name
-    /// (RFC §5.E schema-only). Consumers resolve this against
+    /// (RFC §synth-5-E schema-only). Consumers resolve this against
     /// the imported buffer-pool map; the
     /// `link/pool-slot-smaller-than-framer-max` validator
     /// cross-checks the pool slot size against the framer max.
@@ -90,12 +90,12 @@ impl<L: Link> {{ pascal_name }}<L> {
 {% endif %}
 {% if has_tx_pool %}
     /// `<sce:tx-pool ref="{{ tx_pool }}"/>` — TX buffer-pool name
-    /// (RFC §5.E schema-only). Same shape as `RX_POOL`.
+    /// (RFC §synth-5-E schema-only). Same shape as `RX_POOL`.
     pub const TX_POOL: &'static str = "{{ tx_pool }}";
 {% endif %}
 {% if has_stage_pool %}
     /// `<sce:stage-pool ref="{{ stage_pool }}"/>` — stage-copy
-    /// destination pool (RFC §5.E). Names the
+    /// destination pool (RFC §synth-5-E). Names the
     /// `<scxml sce:kind="buffer-pool">` artifact whose slots back
     /// `Sample::take()`'s owned-copy destination. SCXML on-sample
     /// validators look this constant up at SCXML compile time via
@@ -108,20 +108,20 @@ impl<L: Link> {{ pascal_name }}<L> {
 }
 {% if is_listener_with_sibling %}
 
-// ── Listener-link Sibling half (RFC §5.C lines 802-833) ──
+// ── Listener-link Sibling half (RFC §synth-5-C lines 802-833) ──
 //
-// The listener-link sibling-pair contract per RFC §5.C lines 802-803:
+// The listener-link sibling-pair contract per RFC §synth-5-C lines 802-803:
 // codegen models this `session_arming` listener (machine source SCXML
-// carries `Accepting.*` substate per RFC §5.C line 806) as TWO logical
+// carries `Accepting.*` substate per RFC §synth-5-C line 806) as TWO logical
 // link-instances sharing one physical socket. The `{{ pascal_name }}`
 // struct above is the Listener half (pre-handshake / `session_arming`
 // trust); the `{{ pascal_name }}EstablishedSession` struct below is
 // the synthesized Sibling half (post-handshake / `established_session`
 // trust). The Sibling inherits the same 6 fields (`bind`, `driver`,
 // `mtu_bytes`, `expected_p99_bytes`, `burst_pps`, `rx_dispatch`) by
-// codegen-time projection per RFC §5.C lines 814-816; it deliberately
-// does NOT inherit the §5.K accept-side hardening fields per RFC
-// §5.C lines 816-820 (those are meaningful only on the
+// codegen-time projection per RFC §synth-5-C lines 814-816; it deliberately
+// does NOT inherit the §synth-5-K accept-side hardening fields per RFC
+// §synth-5-C lines 816-820 (those are meaningful only on the
 // `session_arming` half).
 //
 // Reverse-linkage marker: the validator reads this declaration
@@ -138,7 +138,7 @@ impl<L: Link> {{ pascal_name }}EstablishedSession<L> {
     /// Build the Sibling wrapper from a driver impl sharing the same
     /// physical socket as the Listener half. Per-peer dispatch routes
     /// bytes to this half after the unicast session FSM transitions
-    /// out of `Accepting.*` (RFC §5.C lines 810-813); that dispatch
+    /// out of `Accepting.*` (RFC §synth-5-C lines 810-813); that dispatch
     /// is a runtime concern, NOT part of the listener-link codegen surface.
     pub fn new(driver: L) -> Self {
         Self { driver }
@@ -157,7 +157,7 @@ impl<L: Link> {{ pascal_name }}EstablishedSession<L> {
         self.driver.tx(TxFrame::new(bytes))
     }
 
-    /// Budget-aware tick hook (RFC §5.N line 3050) — invoked once
+    /// Budget-aware tick hook (RFC §synth-5-N line 3050) — invoked once
     /// per cooperative-scheduler tick with `deadline_us` capped to
     /// the per-machine `PER_LINK_BUDGET_US`. Passthrough to the
     /// underlying `impl Link::poll`.

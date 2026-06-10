@@ -7,10 +7,10 @@
 /* Runtime: sce-c-runtime atomics (sce_atomic_*_u32 family). */
 /* Do not edit — regenerate from the source SCXML file. */
 /*
- * watching-zenoh RFC §5.D worker primitive impl translation unit.
- * Ring-buffer storage + producer/consumer halves backed by the §5.I
+ * watching-zenoh RFC §synth-5-D worker primitive impl translation unit.
+ * Ring-buffer storage + producer/consumer halves backed by the §synth-5-I
  * baseline `sce_atomic_*_u32` family. Ordering selection from
- * `<sce:inbox ordering="{{ inbox_ordering }}"/>` pins which §5.I
+ * `<sce:inbox ordering="{{ inbox_ordering }}"/>` pins which §synth-5-I
  * variant the head/tail atomic loads + stores resolve to.
  *
  * Generated from `name="{{ name }}"` with depth `{{ inbox_depth }}`,
@@ -22,7 +22,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/* §5.I atomic intrinsic externs — C4 atomic A baseline registry.
+/* §synth-5-I atomic intrinsic externs — C4 atomic A baseline registry.
  * Both ordering choices need acq/rel for the relaxed path's no-op
  * fallback when running on hosts that lack a true relaxed primitive;
  * however, SCE's spec contract is to honor the author's choice
@@ -52,7 +52,7 @@ static struct {{ snake_name }}_inbox_producer_s g_producer = {0};
 static struct {{ snake_name }}_inbox_consumer_s g_consumer = {0};
 
 static volatile uint32_t g_storage[{{ upper_name }}_INBOX_DEPTH];
-/* Volatile-qualified for the §5.I atomic family's pointer contract;
+/* Volatile-qualified for the §synth-5-I atomic family's pointer contract;
  * the field-internal access in `_try_push` / `_try_pop` uses the
  * `sce_atomic_*_u32` primitives so the qualification is contract-
  * level, not ad-hoc compiler-fence emission. */
@@ -75,14 +75,14 @@ bool {{ snake_name }}_inbox_try_push(
     {{ snake_name }}_inbox_producer_t *producer, uint32_t event) {
     (void)producer;
 {%- if ordering_is_acq_rel %}
-    /* RFC §5.I lines 1752-1754: acq/rel pairing on head/tail. The
+    /* RFC §synth-5-I lines 1752-1754: acq/rel pairing on head/tail. The
      * producer reads `head` with acquire to observe the consumer's
      * latest pops, then publishes its write to `tail` with release
      * so the consumer's matching acquire load sees the new event. */
     uint32_t tail = sce_atomic_load_acquire_u32(&g_tail);
     uint32_t head = sce_atomic_load_acquire_u32(&g_head);
 {%- else %}
-    /* RFC §5.I lines 1755-1756: relaxed ordering. Single-core fast-
+    /* RFC §synth-5-I lines 1755-1756: relaxed ordering. Single-core fast-
      * path only; the codegen-invariant
      * `worker/inbox-ordering-relaxed-across-cores` fires when this
      * combination is paired with cross-core deploy.placement. */

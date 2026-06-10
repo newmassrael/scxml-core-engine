@@ -20,18 +20,18 @@
 typedef struct {
     uint8_t outer_header;
     uint64_t total_length;
-    /* RFC §5.B embed: nested codec_zenoh_decl_ext_keyexpr_inner_t struct (no length prefix on the wire) */
+    /* RFC §synth-5-B embed: nested codec_zenoh_decl_ext_keyexpr_inner_t struct (no length prefix on the wire) */
     codec_zenoh_decl_ext_keyexpr_inner_t inner;
 } codec_zenoh_decl_ext_keyexpr_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_decl_ext_keyexpr_decode(sce_forge_cursor_t *cursor, codec_zenoh_decl_ext_keyexpr_t *out) {
     /* Streaming codec: each field reads from cursor directly (VLE
-     * base-128 chain, 1..=ceil(N/7) bytes per field). RFC §5.B B4:
+     * base-128 chain, 1..=ceil(N/7) bytes per field). RFC §synth-5-B B4:
      * per-field bit-size dispatch routes Fixed / LengthRef siblings
      * of VLE fields through `present_if_decode_stmt` (predicate=None
      * arms — for VLE the helper emits the local-decl + `out->` assign
@@ -61,14 +61,14 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_ext_keyexpr_decode(sce_f
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_DECL_EXT_KEYEXPR_MAX_BYTES bytes and use
  * `codec_zenoh_decl_ext_keyexpr_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_zenoh_decl_ext_keyexpr_encode(const codec_zenoh_decl_ext_keyexpr_t *self, sce_forge_writer_t *w) {
-    /* RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+    /* RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
      * LengthRef / Tail siblings of VLE fields through
      * `present_if_encode_block` (predicate=None arms). Pure-VLE
      * codecs stay byte-stable. */
@@ -99,7 +99,7 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_ext_keyexpr_encode_to_bu
     return _st;
 }
 
-/* RFC §5.B flags primitive: per-bit-range accessors over
+/* RFC §synth-5-B flags primitive: per-bit-range accessors over
  * the carrier field. Single-bit (width=1) reads as bool; multi-bit
  * (width>=2) reads as the smallest unsigned C11 integer type that fits
  * (uint8_t / uint16_t / uint32_t / uint64_t). Setters mask + shift on

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh ext_encoding (encoding-info) codec
-     (RFC §5.B B4 applied — wire-spec-subset.md §7.1 Encoding).
+     (RFC §synth-5-B B4 applied — wire-spec-subset.md §7.1 Encoding).
 
      Upstream zenoh-pico shape (`_z_encoding_encode` in
      src/protocol/codec.c:356-381): u32 VLE `combined_id` carrying

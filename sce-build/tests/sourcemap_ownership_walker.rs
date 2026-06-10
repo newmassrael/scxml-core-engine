@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Watching-zenoh RFC §5.O — ownership-boundary
+// Watching-zenoh RFC §synth-5-O — ownership-boundary
 // walker integration fixture.
 //
 // `forge::sourcemap::validate_emitted_files_have_markers` runs at the
 // end of every successful `cmd_generate` / `cmd_generate_w3c` and
 // enforces ARCHITECTURE.md "Traceability Ownership Boundary": every
-// file SCE emitted (one carrying a §6.2.6 drift header) must contain
+// file SCE emitted (one carrying a §synth-6.2.6 drift header) must contain
 // at least one `SCE-MAP:` marker line. External meta-generator output
 // (no drift header) is silently out-of-scope.
 //
@@ -214,13 +214,13 @@ fn walker_diagnostic_code_is_meta_generated_source_line_marker_missing() {
 #[test]
 fn walker_does_not_descend_into_files_with_non_source_extensions() {
     // Files with non-source extensions (`.json`, `.txt`, `.d`,
-    // `.scxml`) are never §6.2.6 drift-eligible, so the walker
+    // `.scxml`) are never §synth-6.2.6 drift-eligible, so the walker
     // skips them by extension before reading. Plant one such file
     // missing its marker; walker must still pass.
     let tmp = tempfile::TempDir::new().unwrap();
     let out_dir = tmp.path().join("out");
     fs::create_dir_all(&out_dir).unwrap();
-    // sce_sourcemap.json is a sidecar emitted per §5.O; it
+    // sce_sourcemap.json is a sidecar emitted per §synth-5-O; it
     // never carries a `SCE-MAP:` marker (the markers live in the
     // accompanying *_sm.rs file), so the walker must NOT inspect it.
     fs::write(

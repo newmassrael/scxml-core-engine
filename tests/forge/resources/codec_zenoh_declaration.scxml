@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh DECLARATION 9-arm dispatcher (RFC §5.B
-     RFC §5.B — sub-codec, declare envelope embeddee).
+<!-- SCE Forge conformance: Zenoh DECLARATION 9-arm dispatcher (RFC §synth-5-B
+     RFC §synth-5-B — sub-codec, declare envelope embeddee).
 
      Mirrors zenoh-pico `_z_declaration_encode` / `_z_declaration_decode`
      (src/protocol/codec/declarations.c:137-180) — pure dispatcher on

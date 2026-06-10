@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §5.O — sourcemap + symbol mangling +
+// Watching-zenoh RFC §synth-5-O — sourcemap + symbol mangling +
 // addr2sce integration fixture.
 //
 // The contract (spec lines 3055-3057, 3219-3243, 3253-3278,
@@ -10,7 +10,7 @@
 //   D18(i)   Sourcemap JSON shape — version + source_hash +
 //            template_hash + symbols map.
 //   D18(ii)  Byte-identity across the 6 backends for the same SCXML.
-//   D18(iii) source_hash byte-equal to §6.2.6 drift header.
+//   D18(iii) source_hash byte-equal to §synth-6.2.6 drift header.
 //   D18(iv)  Symbol mangling round-trip with `_u_` escape.
 //   D18(v)   Each new diagnostic fires on a synthetic offender.
 //   D18(vi)  `sce-codegen addr2sce` resolves a known symbol.
@@ -198,7 +198,7 @@ fn symbol_mangling_round_trip() {
 /// D18(v.a) — `traceability/state-id-collision` fires on a synthetic
 /// duplicate-mangled-symbol scenario (constructed at the library
 /// level since the SCXML parser already rejects duplicate state ids
-/// via `ValidationDuplicateId`; the §5.O collision case kicks in
+/// via `ValidationDuplicateId`; the §synth-5-O collision case kicks in
 /// only after XInclude / template composition unifies two distinct
 /// fragments).
 #[test]

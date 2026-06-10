@@ -1,7 +1,7 @@
-//! Cross-doc validators for §5.M reassembly + §5.K burst
+//! Cross-doc validators for §synth-5-M reassembly + §synth-5-K burst
 //! invariants.
 //!
-//! Per watching-zenoh RFC §5.M lines 2946-2995 + §5.K lines 2489-2500:
+//! Per watching-zenoh RFC §synth-5-M lines 2946-2995 + §synth-5-K lines 2489-2500:
 //! 8 new codes total, all consuming the same
 //! [`resolve_link_rx_pool_slot_count`] 3-way join (deploy.links → forge
 //! `<sce:link>` → forge `<sce:rx-pool ref>` → `BufferPoolModel`).
@@ -606,7 +606,7 @@ fn expected_fragmentation_silent_skip_on_reassembly_variant() {
 #[test]
 fn untrusted_link_binding_fires_on_untrusted_trust_class() {
     // With listener-link pairing, the `reassembly/untrusted-link-
-    // binding` code narrows to `trust_class: untrusted` only (RFC §5.M lines
+    // binding` code narrows to `trust_class: untrusted` only (RFC §synth-5-M lines
     // 2964-2969 + 2982-2994). The historic session_arming subcase
     // shifts to `reassembly/binding-on-unpaired-listener` —
     // exercised by [`binding_on_unpaired_listener_fires_without_listener`]
@@ -710,7 +710,7 @@ fn binding_on_session_arming_listener_passes() {
     // Listener-pairing happy-path: `trust_class: session_arming` + listener
     // (link name in `listener_links`) auto-rebinds the binding to
     // the synthesized Sibling EstablishedSession instance per RFC
-    // §5.C lines 821-825. The validator silent-passes the #4 check
+    // §synth-5-C lines 821-825. The validator silent-passes the #4 check
     // and continues with #3 / #6 against the same field set.
     let yaml = deploy_with_links(
         r#"          udp_listener:

@@ -8,10 +8,10 @@
 /* Runtime: sce_forge_runtime_c (header-only INTERFACE library) */
 /* Do not edit — regenerate from the source SCXML file. */
 /*
- * watching-zenoh RFC §5.C byte-stream link endpoint. The wrapper
+ * watching-zenoh RFC §synth-5-C byte-stream link endpoint. The wrapper
  * composes a `sce_forge_link_t` driver handle (from
  * `sce-c-runtime`-adjacent contract `sce/forge/link.h`) and routes
- * RX bytes through the §5.B framer codec's decode + injects the
+ * RX bytes through the §synth-5-B framer codec's decode + injects the
  * configured SCXML event, while TX pulls bytes from the framer's
  * encode and submits them through the driver's `tx`. The c11
  * mirror of the rust-target slice uses the canonical Linux-kernel
@@ -50,7 +50,7 @@ extern "C" {
 
 {% if has_stage_pool %}
 /* `<sce:stage-pool ref="{{ stage_pool }}"/>` — stage-copy
- * destination pool (RFC §5.E). Names the
+ * destination pool (RFC §synth-5-E). Names the
  * `<scxml sce:kind="buffer-pool">` artifact whose slots back
  * `sce_sample_take()`'s owned-copy destination. SCXML on-sample
  * validators look this macro up at SCXML compile time via
@@ -97,7 +97,7 @@ static inline sce_forge_link_status_t {{ snake_name }}_link_tx(
     return self->driver.ops->tx(self->driver.self, frame);
 }
 
-/* Budget-aware tick hook (RFC §5.N line 3050) — invoked once per
+/* Budget-aware tick hook (RFC §synth-5-N line 3050) — invoked once per
  * cooperative-scheduler tick with `deadline_us` capped to the
  * per-machine `PER_LINK_BUDGET_US` macro. Passthrough to the
  * underlying `ops->poll`. */
@@ -107,11 +107,11 @@ static inline void {{ snake_name }}_link_poll(
 }
 
 {% if is_listener_with_sibling %}
-/* ── Listener-link Sibling half (RFC §5.C lines 802-833) ──
+/* ── Listener-link Sibling half (RFC §synth-5-C lines 802-833) ──
  *
- * The listener-link sibling-pair contract per RFC §5.C lines 802-803:
+ * The listener-link sibling-pair contract per RFC §synth-5-C lines 802-803:
  * codegen models this `session_arming` listener (machine source SCXML
- * carries `Accepting.*` substate per RFC §5.C line 806) as TWO
+ * carries `Accepting.*` substate per RFC §synth-5-C line 806) as TWO
  * logical link-instances sharing one physical socket. The
  * `{{ snake_name }}_link_t` typedef above is the Listener half
  * (pre-handshake / `session_arming` trust); the
@@ -119,9 +119,9 @@ static inline void {{ snake_name }}_link_poll(
  * synthesized Sibling half (post-handshake / `established_session`
  * trust). The Sibling inherits the same 6 fields (`bind`, `driver`,
  * `mtu_bytes`, `expected_p99_bytes`, `burst_pps`, `rx_dispatch`) by
- * codegen-time projection per RFC §5.C lines 814-816; it
- * deliberately does NOT inherit the §5.K accept-side hardening
- * fields per RFC §5.C lines 816-820 (those are meaningful only on
+ * codegen-time projection per RFC §synth-5-C lines 814-816; it
+ * deliberately does NOT inherit the §synth-5-K accept-side hardening
+ * fields per RFC §synth-5-C lines 816-820 (those are meaningful only on
  * the `session_arming` half).
  *
  * Reverse-linkage: the validator reads the marker below
@@ -138,7 +138,7 @@ typedef struct {
 /* Build the Sibling wrapper from a driver handle sharing the same
  * physical socket as the Listener half. Per-peer dispatch routes
  * bytes to this half after the unicast session FSM transitions out
- * of `Accepting.*` (RFC §5.C lines 810-813); that dispatch is a
+ * of `Accepting.*` (RFC §synth-5-C lines 810-813); that dispatch is a
  * runtime concern, NOT part of the listener-link codegen surface. */
 static inline void {{ snake_name }}_established_session_init(
     {{ snake_name }}_established_session_t *self, sce_forge_link_t driver) {

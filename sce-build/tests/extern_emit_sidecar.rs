@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// watching-zenoh RFC §5.I `<sce:extern>` per-language sidecar emit —
+// watching-zenoh RFC §synth-5-I `<sce:extern>` per-language sidecar emit —
 // end-to-end fixtures. Each test exercises
 // `compile_forge_with_imports` against an inline SCXML carrying one
 // or more `<sce:extern>` declarations and asserts on the emitted

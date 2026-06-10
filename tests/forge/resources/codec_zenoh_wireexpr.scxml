@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh wireexpr (RFC §5.B string primitive)
+<!-- SCE Forge conformance: Zenoh wireexpr (RFC §synth-5-B string primitive)
      . Body codec (parent-scope) consumed by
      all 8 declare sub-types (decl_keyexpr / decl_subscriber /
      decl_queryable / decl_token + their undecl_* counterparts via

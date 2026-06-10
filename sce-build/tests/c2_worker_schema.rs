@@ -1,6 +1,6 @@
 //! Worker kind schema + parse-time shared-state author guard.
 //!
-//! Per RFC §5.D lines 858-913 + spec line 911 layered enforcement
+//! Per RFC §synth-5-D lines 858-913 + spec line 911 layered enforcement
 //! (locked 2026-05-10): the schema vertical slice covers
 //! `<sce:link-rx>` / `<sce:inbox>` / `<sce:outbox>` / `<sce:body>`, and
 //! the parse-time author guard fires `worker/shared-mutable-state` on:

@@ -2,9 +2,9 @@
 <!--
   CRC16-CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflect, no xor-out).
 
-  Bit-by-bit byte-loop form per RFC §5.A Appendix A — uses only the
+  Bit-by-bit byte-loop form per RFC §synth-5-A Appendix A — uses only the
   core algorithm body primitives (no <sce:const> table; the table
-  form is the §5.F build-time const-fold fixture
+  form is the §synth-5-F build-time const-fold fixture
   `algorithm_crc16_table`). Verifies
   the cross-language byte-equivalence acceptance gate (RFC §A6).
 -->
@@ -37,7 +37,7 @@
     <sce:return expr="crc"/>
   </sce:body>
   <!--
-    RFC §5.B B2-test-vector: canonical CRC16-CCITT-FALSE reference
+    RFC §synth-5-B B2-test-vector: canonical CRC16-CCITT-FALSE reference
     vector (ASCII "123456789" -> 0x29B1). Coexists with the bulk
     9-case JSON oracle (numerical_reference.json) — this inline
     anchor pins the RFC example into the SCXML so the per-backend

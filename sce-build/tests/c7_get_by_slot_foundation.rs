@@ -1,7 +1,7 @@
 //! C7-foundation — `get_by_slot` method emit integration tests
 //! across all 6 BC backends.
 //!
-//! Per watching-zenoh RFC §5.L lines 2642-2647: BC iteration from
+//! Per watching-zenoh RFC §synth-5-L lines 2642-2647: BC iteration from
 //! algorithm bodies lowers to an
 //! index loop using `len()` + a slot-indexed read `get_by_slot
 //! (slot) -> Option<&T>` (per-backend idiom). This file is the

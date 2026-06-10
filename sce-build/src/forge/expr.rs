@@ -1696,7 +1696,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                     bits: 8,
                 },
                 _ => {
-                    // RFC §5.A: `<sce:const name="X" type="array<elem, N>">`
+                    // RFC §synth-5-A: `<sce:const name="X" type="array<elem, N>">`
                     // registers `X` in `ctx.array_elems`. Recover the
                     // element type so per-language emitters (Kotlin's
                     // narrow-unsigned widening, in particular) can wrap
@@ -3316,7 +3316,7 @@ fn python_emit_node(expr: &TypedExpr) -> String {
                 r_raw
             };
             let raw = format!("{l} {} {r}", python_binop(*op));
-            // RFC §5.A: Python's `int` is arbitrary-precision, so an
+            // RFC §synth-5-A: Python's `int` is arbitrary-precision, so an
             // operation that would truncate on a fixed-width unsigned
             // type in C/Rust (e.g. `crc << 1` where crc is u16, then
             // `^ 0x1021`) keeps growing. To preserve byte-equivalence

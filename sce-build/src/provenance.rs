@@ -7,7 +7,7 @@
 //!
 //! Not to be confused with [`crate::forge::provenance`] — that
 //! module is the codegen-internal `source_location`-populate guard
-//! for the §5.O traceability sourcemap (Atomic 0a). This module is
+//! for the §synth-5-O traceability sourcemap (Atomic 0a). This module is
 //! the wire-level metadata family that flows through the
 //! parser → IR → diagnostic → codegen pipeline.
 

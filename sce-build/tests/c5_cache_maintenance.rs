@@ -1,6 +1,6 @@
-//! C5 — Cache maintenance intrinsics wired into §5.E codegen.
+//! C5 — Cache maintenance intrinsics wired into §synth-5-E codegen.
 //!
-//! Pins the spec-driven 6-code surface (RFC §5.E lines 1543-1545 +
+//! Pins the spec-driven 6-code surface (RFC §synth-5-E lines 1543-1545 +
 //! 1548 + 1552-1553) + the auto-inject + 2 author-visible cache call
 //! sites + sidecar pinning matrix. Per `feedback_silently_broken_hooks.md`
 //! every conditional emission path needs an explicit fixture.

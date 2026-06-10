@@ -1,6 +1,6 @@
 //! Bounded-collection Rust template emit integration tests.
 //!
-//! Per watching-zenoh RFC §5.L lines 2540-2655, this suite covers
+//! Per watching-zenoh RFC §synth-5-L lines 2540-2655, this suite covers
 //! the Rust backend emit for `<scxml sce:kind="bounded-
 //! collection">`. The template emits a slot table over
 //! `Vec<Option<T>>` (std) / `heapless::Vec<Option<T>, N>` (no_std),

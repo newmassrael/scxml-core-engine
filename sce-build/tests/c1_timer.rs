@@ -1,5 +1,5 @@
 //! C1 integration tests — Timer kind shape migration to watching-zenoh
-//! RFC §5.D line 880-886 + 2 spec-named codes (timer/period-below-tick-rate +
+//! RFC §synth-5-D line 880-886 + 2 spec-named codes (timer/period-below-tick-rate +
 //! timer/slot-overflow).
 //!
 //! Test matrix:

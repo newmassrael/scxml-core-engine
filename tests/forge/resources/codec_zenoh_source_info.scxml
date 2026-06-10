@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh source_info body (RFC §5.B Y2 — second
+<!-- SCE Forge conformance: Zenoh source_info body (RFC §synth-5-B Y2 — second
      realistic consumer of the dotted-path length-field +
      length-ref arithmetic offset, after codec_zenoh_scout).
 

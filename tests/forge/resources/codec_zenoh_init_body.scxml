@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Init body, unified
-     InitSyn + InitAck shape (RFC §5.B cross-codec composition).
+     InitSyn + InitAck shape (RFC §synth-5-B cross-codec composition).
 
      Mirrors zenoh-pico `_z_init_encode` (src/protocol/codec/transport.c
      lines 182-219) verbatim. The transport-message header carries

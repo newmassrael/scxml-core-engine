@@ -9,7 +9,7 @@
 // and asserts that a freshly-constructed instance round-trips through
 // encode → decode into the declared default arm.
 //
-// RFC §5.B: encode is sink-based — the test exercises both the
+// RFC §synth-5-B: encode is sink-based — the test exercises both the
 // heap-backed `encodeToByteArray()` convenience facade and the primary
 // `encode(SceSink)` over caller-owned sinks (MutableListSink for
 // growable, ByteArraySink for bounded + BufferOverflow path).
@@ -81,7 +81,7 @@ class DefaultRoundTripTest {
             "decode → encode must produce byte-equal output (round-trip stability)",
         )
 
-        // RFC §5.B writer-direct path: MutableListSink-backed encode
+        // RFC §synth-5-B writer-direct path: MutableListSink-backed encode
         // must produce bytes equal to the facade output (the facade is
         // implemented over MutableListSink so this is tautological — the
         // pin protects future re-implementations of encodeToByteArray).

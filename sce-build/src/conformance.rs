@@ -30,7 +30,7 @@ pub enum CanonicalType {
     U16,
     U32,
     /// Used by codec fields declared `sce:type="uint64" sce:bit-size="vle"`
-    /// (RFC §5.B App. B canonical Zenoh ZInt). Round-trip oracle vectors
+    /// (RFC §synth-5-B App. B canonical Zenoh ZInt). Round-trip oracle vectors
     /// store the decoded value as a JSON integer literal up to u64::MAX.
     U64,
     F32,
@@ -357,7 +357,7 @@ pub enum FixtureSpec {
     /// naming convention.
     Codec {
         fields: Vec<StructField>,
-        /// RFC §5.B test-vector flag: derived at harness-rendering time
+        /// RFC §synth-5-B test-vector flag: derived at harness-rendering time
         /// from SCXML — true iff at least one `<sce:test-vector>` element
         /// appears under the codec root. The per-backend codec
         /// sidecar (`<fixture>_test.{rs,h}`) is emitted on Rust + C11 only;
@@ -378,7 +378,7 @@ pub enum FixtureSpec {
     /// verified by triggering the mock's stored callback and checking that
     /// the recording handler received the expected call.
     Timer { timers: Vec<TimerFixtureEntry> },
-    /// RFC §5.A pure free function with bounded loops. Mirrors `Transform`'s
+    /// RFC §synth-5-A pure free function with bounded loops. Mirrors `Transform`'s
     /// `(args -> scalar output)` shape but admits `bytes` parameters because
     /// the algorithm body's `<sce:foreach>` over bytes is the canonical
     /// surface for byte-stream computations (CRC, parity, hash). The
@@ -389,7 +389,7 @@ pub enum FixtureSpec {
         args: Vec<CanonicalType>,
         output: ScalarOutput,
         /// Exported function symbol — equals the algorithm `<sce:name>` in
-        /// snake-case for Rust/C11. Carried in the manifest because RFC §5.A
+        /// snake-case for Rust/C11. Carried in the manifest because RFC §synth-5-A
         /// allows the algorithm name to differ from the fixture file name
         /// (the algorithm fixture's SCXML root carries `sce:kind="algorithm"`
         /// and the function's identity comes from the model, not the
@@ -398,7 +398,7 @@ pub enum FixtureSpec {
         function: String,
         /// Derived at harness-rendering time from SCXML — true iff at
         /// least one `<sce:test-vector>` element appears under the
-        /// algorithm root. RFC §5.B test-vector support (item B2) emits a
+        /// algorithm root. RFC §synth-5-B test-vector support (item B2) emits a
         /// per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11
         /// only; the conformance filter drops the fixture from
         /// Cpp/Kotlin/Go/Python harnesses — those sidecars are
@@ -840,7 +840,7 @@ impl Manifest {
                     fields: _,
                     has_test_vectors,
                 } => {
-                    // RFC §5.B empty-codec rule: zero-field codecs
+                    // RFC §synth-5-B empty-codec rule: zero-field codecs
                     // (Zenoh KeepAlive et al.) are permitted. The
                     // round-trip test body still asserts encode →
                     // decode → encoded byte parity (an empty body
@@ -977,7 +977,7 @@ pub fn harness_layout(language: Language) -> HarnessLayout {
             template_subdir: "forge/cpp/conformance",
             template_filename: "harness.cpp.jinja2",
         },
-        // RFC §5.J.1: C11 backend foundation lands in M1; the
+        // RFC §synth-5-J-1: C11 backend foundation lands in M1; the
         // conformance harness template (`forge/c/conformance/harness.c.jinja2`)
         // is M2+ work. The layout is wired here so a CLI invocation with
         // `--language c11` fails at template-load with a precise file path
@@ -1012,7 +1012,7 @@ pub fn harness_filename(language: Language) -> &'static str {
 /// CLI can apply the same filter that `generate-conformance` uses,
 /// keeping the c11 cmake harness's fixture set auto-derived from the
 /// single manifest source of truth instead of hand-maintained.
-/// RFC §5.J.4 per-fixture matrix gate: combines the kind-level
+/// RFC §synth-5-J-4 per-fixture matrix gate: combines the kind-level
 /// `template_ships` matrix with two per-fixture predicates that the
 /// matrix cannot express:
 ///
@@ -1119,7 +1119,7 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         // emit through the same C11 codegen path. No catch-all arm, so
         // a future kind addition forces an explicit decision here.
         FixtureSpec::Timer { .. } => true,
-        // RFC §7 A6: §5.A algorithm kind. The C11 algorithm template
+        // RFC §synth-7 A6: §synth-5-A algorithm kind. The C11 algorithm template
         // (`tools/codegen/templates/forge/c/algorithm.h.jinja2`) shipped
         // at A5; A6 promotes the byte-equivalence preview to a permanent
         // ctest gate by routing the two CRC16 fixtures through the
@@ -1323,7 +1323,7 @@ fn read_lookup_enum_values(scxml_path: &Path) -> Result<Vec<String>, String> {
 /// stateless free-function call shape and the stateful struct + pointer
 /// pass shape. Other backends emit uniform method calls
 /// regardless of state and ignore the flag.
-/// RFC §5.B test-vector: scan an SCXML root for any
+/// RFC §synth-5-B test-vector: scan an SCXML root for any
 /// `<sce:test-vector>` child element. The forge parser already
 /// validates the attributes and stores the parsed vectors on
 /// `AlgorithmModel.test_vectors` or `CodecModel.test_vectors`;
@@ -1359,7 +1359,7 @@ fn has_test_vectors_in_file(scxml_path: &Path) -> Result<bool, String> {
     }))
 }
 
-/// RFC §5.J.4 per-fixture matrix gate: scan a codec SCXML for MCU-only
+/// RFC §synth-5-J-4 per-fixture matrix gate: scan a codec SCXML for MCU-only
 /// features. Mirrors `CodecModel::has_mcu_only_features` (currently
 /// `has_dma_aligned_fields` — any `<sce:field>` carrying the
 /// `sce:dma-burst-align` attribute). Non-MCU backends (cpp / kotlin /
@@ -1597,7 +1597,7 @@ pub fn render_harness(
             FixtureSpec::Codec {
                 has_test_vectors, ..
             } => {
-                // RFC §5.B test-vector: enrich the manifest with the
+                // RFC §synth-5-B test-vector: enrich the manifest with the
                 // SCXML-derived `<sce:test-vector>` flag so the per-language
                 // harness fragment can fold the per-fixture sidecar's failure
                 // count into the global accumulator without re-scanning
@@ -1628,7 +1628,7 @@ pub fn render_harness(
                 // resolver also read. This replaces the per-language casing
                 // filter (`| to_pascal_case` / `| to_camel_case` /
                 // `| to_snake_case`) the harness fragments used to apply, so
-                // the casing rule lives in one place. RFC §7 items A5/A6: the
+                // the casing rule lives in one place. RFC §synth-7 items A5/A6: the
                 // algorithm name *is* the fixture stem in every shipped SCXML,
                 // so — unlike lookup/condition/transform on C11 — no fixture
                 // prefix is composed; `forge_algorithm_symbol` returns the
@@ -1698,7 +1698,7 @@ pub fn render_harness(
         }
     }
 
-    // Matrix-aware fixture filter (RFC §5.J.4 single source of truth).
+    // Matrix-aware fixture filter (RFC §synth-5-J-4 single source of truth).
     // The forge codegen matrix at `forge::codegen_matrix::template_ships`
     // declares which `(kind, language)` pairs have a shipped product
     // template. The conformance harness piggy-backs on the same gate

@@ -1,7 +1,7 @@
-//! Deploy.yaml §5.K `machines.<n>.links.<name>` block
+//! Deploy.yaml §synth-5-K `machines.<n>.links.<name>` block
 //! schema + parse-time validators + cross-doc link-name resolution.
 //!
-//! Per watching-zenoh RFC §5.K lines 2232-2540: per-machine `links:`
+//! Per watching-zenoh RFC §synth-5-K lines 2232-2540: per-machine `links:`
 //! HashMap with required `bind` + `driver` and optional `mtu_bytes`,
 //! `expected_p99_bytes`, `burst_pps`, `rx_dispatch`, `domain_attrs`.
 //! Five intra-link parse-time validators (driver-unknown, mtu-below-
@@ -20,7 +20,7 @@
 //! PlatformConfig WCET extensions (`clock_freq_mhz`,
 //! `memcpy_cycles_per_byte`, `vle_decode_cycles_per_byte`,
 //! `tlv_chain_per_entry_overhead_us`) are parse-only in this file;
-//! the §5.B aggregate WCET + reassembly stage-copy-wcet consumers
+//! the §synth-5-B aggregate WCET + reassembly stage-copy-wcet consumers
 //! are exercised by their own cross-doc validator tests.
 
 use sce_build::mesh::deploy::{parse_deploy_str, validate_links_cross_doc, RxDispatch, TrustClass};
@@ -382,7 +382,7 @@ fn link_cross_doc_happy_when_names_match() {
 }
 
 /// PlatformConfig WCET extensions: all 4 new fields parse + carry
-/// through unchanged. Consumers (§5.B aggregate WCET + the
+/// through unchanged. Consumers (§synth-5-B aggregate WCET + the
 /// reassembly stage-copy WCET check) attach downstream.
 #[test]
 fn platform_wcet_extensions_parse() {

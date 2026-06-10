@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh request envelope (RFC §5.B —
+<!-- SCE Forge conformance: Zenoh request envelope (RFC §synth-5-B —
      first realistic peek-byte primitive
      consumer with msg_put / msg_del / query body arms).
 
@@ -55,7 +55,7 @@
        FAILED, so default arm is a defensive recovery shape rather
        than a routine path).
 
-     Cross-codec validator (RFC §5.B atomic 2b-ii peek-byte)
+     Cross-codec validator (RFC §synth-5-B atomic 2b-ii peek-byte)
      confirms: codec_zenoh_msg_put.header.mid + codec_zenoh_msg_del.
      header.mid + codec_zenoh_query.header.mid (all bit=0 width=5)
      match this peek-byte's mid declaration. Each arm body's

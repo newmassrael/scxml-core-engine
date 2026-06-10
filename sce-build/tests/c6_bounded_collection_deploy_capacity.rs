@@ -1,6 +1,6 @@
 //! Bounded-collection deploy-time capacity resolution.
 //!
-//! Per watching-zenoh RFC §5.L lines 2583-2585 + 2649:
+//! Per watching-zenoh RFC §synth-5-L lines 2583-2585 + 2649:
 //! `<sce:capacity source="deploy" key="machines.<m>.limits.<k>"/>`
 //! resolves against `machines.<m>.limits:` in deploy.yaml. The
 //! validator fires `collection/capacity-unresolved` when the key

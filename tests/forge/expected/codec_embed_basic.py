@@ -22,10 +22,10 @@ class CodecEmbedBasic:
     def decode(cls, cursor: SceCursor) -> Optional[CodecEmbedBasic]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
-        (RFC §5.B L494-519); on success the cursor advances past the
+        (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B B2 repeat primitive: streaming decode mixes plain
+        # RFC §synth-5-B B2 repeat primitive: streaming decode mixes plain
         # fixed-width reads (per-field via the present-if helper's
         # non-gated arm) with `for _ in range(N)` / `while
         # cursor.remaining() > 0` loops that iterate the imported
@@ -47,12 +47,12 @@ class CodecEmbedBasic:
         )
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B encode-side primary: write ``self`` into the
+        """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B B2 encode: list fields iterate ``self.<id>`` and
+        # RFC §synth-5-B B2 encode: list fields iterate ``self.<id>`` and
         # write each element through the same sink.
         w.write_u8(self.tag & 0xFF)
         self.locator.encode(w)

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: single-codec embed primitive demo (RFC §5.B
+<!-- SCE Forge conformance: single-codec embed primitive demo (RFC §synth-5-B
      ). Locks the `<sce:embed type="codec_X">` grammar shape across
      all 6 backends with the simplest possible wire layout: a uint8
      prefix followed by an embedded `codec_zenoh_locator` (VLE u64

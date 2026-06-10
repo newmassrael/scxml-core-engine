@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -16,7 +16,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
-// RFC §5.B B3 DMA alignment primitive: structural drift detection.
+// RFC §synth-5-B B3 DMA alignment primitive: structural drift detection.
 // Build-time validation already guaranteed `byte_offset % burst_align
 // == 0` and that all preceding fields are Fixed bit-size. These
 // `const _: () = assert!` declarations catch any future hand-edit to
@@ -30,7 +30,7 @@ use sce_forge_runtime::codec::VecSink;
 #[allow(clippy::eq_op, clippy::assertions_on_constants)]
 const _: () = assert!(
     32 % 32 == 0,
-    "RFC §5.B B3: codec field 'aligned_payload' offset must be 32-aligned"
+    "RFC §synth-5-B B3: codec field 'aligned_payload' offset must be 32-aligned"
 );
 
 // pub API: codecs are intended for cross-crate consumption (SCE_FORGE.md
@@ -58,9 +58,9 @@ impl<'a> CodecDmaAlignedBasic<'a> {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519).
+    /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
-        // Variable-length codec. RFC §5.B B3 stream-correct shape:
+        // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
         // cursor remaining. Codecs WITH a tail field still consume
@@ -100,10 +100,10 @@ impl<'a> CodecDmaAlignedBasic<'a> {
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
         w.write_u8(self.msg_id)?;
         w.write_u8(self.reserved)?;
-        // RFC §5.B B3 DMA padding: zero-fill any gap between the
+        // RFC §synth-5-B B3 DMA padding: zero-fill any gap between the
         // current write position and this field's authored byte
         // offset (deterministic zeros on the wire so peers stay
-        // byte-compatible regardless of host allocator — RFC §5.B
+        // byte-compatible regardless of host allocator — RFC §synth-5-B
         // "wire layout, not host allocator").
         while w.position() < 32 {
             w.write_u8(0)?;

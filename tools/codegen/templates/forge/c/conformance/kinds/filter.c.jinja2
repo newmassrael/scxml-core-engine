@@ -2,7 +2,7 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {# Filter kind — stateful update over a fixed input/expected sequence.
-   Oracle is pre-baked into the harness source (RFC §5.J.2 F7). #}
+   Oracle is pre-baked into the harness source (RFC §synth-5-J-2 F7). #}
 static void test_{{ f.name }}(void) {
     static const struct {
         {{ f.input | c_type }} input;
