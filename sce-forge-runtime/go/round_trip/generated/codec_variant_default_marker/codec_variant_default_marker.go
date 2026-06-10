@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9ffa89e83988cec88d8cbd0e24ec1c25726aced2de1a82197e932bbb2d905974
-// template-hash: 2c4f76809986b4347703e89a8e901379e8391f815371b53c5a7eecbe187e1cf5
-// generated-at: 1781084365
+// source-hash: 2ce787851bfd7d827a1b4bdac3cef96251774343aaef3194d8c8364157a45dff
+// template-hash: f835a323a3abc9cebc80341e1840b22b95739a2efa1726ad2c440477eff36482
+// generated-at: 1781089333
 // SCE-MAP: codec_variant_default_marker.scxml:30
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -45,7 +45,7 @@ type CodecVariantDefaultMarker struct {
 // arm) requires using this constructor rather than the bare struct
 // literal `CodecVariantDefaultMarker{}`, which would zero-init every field
 // (and leave every Variant arm pointer nil for variant codecs).
-// RFC variant-default-uniformity Atomic β-go.
+// RFC variant-default-uniformity (Go).
 func NewCodecVariantDefaultMarker() *CodecVariantDefaultMarker {
 	return &CodecVariantDefaultMarker{
 		Body: CodecVariantDefaultMarkerVariant{
@@ -60,7 +60,7 @@ func NewCodecVariantDefaultMarker() *CodecVariantDefaultMarker {
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecVariantDefaultMarker(cursor *codec.SceCursor) (*CodecVariantDefaultMarker, error) {
-	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+	// RFC §5.B peek-byte / streaming-prefix:
 	// streaming prefix decode (variable-length fields supported via
 	// per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
 	// mode additionally peeks the cursor's next byte for variant tag
@@ -107,7 +107,7 @@ func DecodeCodecVariantDefaultMarker(cursor *codec.SceCursor) (*CodecVariantDefa
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecVariantDefaultMarker) Encode(w codec.SceSink) error {
-	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix.
+	// RFC §5.B peek-byte / streaming-prefix.
 	// Append the active arm body's encoded bytes via the same sink.
 	switch {
 	case s.Body.CodecDefaultMarkerArmA != nil:

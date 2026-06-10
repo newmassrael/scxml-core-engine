@@ -138,7 +138,7 @@ pub enum TargetPluginLoadError {
     /// declares an unparseable ABI.
     #[error(
         "target plugin {path} symbol `{name}` declares unknown ABI `{abi}`; \
-         only `c` and `rust` are accepted (Q-Call-3 closed set)"
+         only `c` and `rust` are accepted (closed set)"
     )]
     UnknownAbi {
         path: String,
@@ -151,7 +151,7 @@ pub enum TargetPluginLoadError {
     /// lock: plugins extend, never override.
     #[error(
         "target plugin {path} symbol `{name}` redefines a baseline whitelist \
-         entry (Q-Call-6 additive lock — plugins extend, not override)"
+         entry (additive rule — plugins extend, not override)"
     )]
     BaselineConflict { path: String, name: String },
 }

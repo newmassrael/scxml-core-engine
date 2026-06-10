@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: present-if disjunction primitive (RFC §5.B
-     Y3 atomic 2b-ii). One-byte uint8 carrier "flags" exposes two named
+     atomic 2b-ii). One-byte uint8 carrier "flags" exposes two named
      bits "wants_a" (bit 0) and "wants_b" (bit 1). The trailing "seq"
      field is uint16 BE gated on sce:present-if="flags.wants_a ||
      flags.wants_b" — predicate fires when EITHER bit is set. Mirrors

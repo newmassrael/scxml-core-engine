@@ -12,7 +12,7 @@
 
 {% include 'license_header.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
-{# Watching-zenoh RFC §5.O Atomic 0b: SCE-MAP marker anchoring the
+{# Watching-zenoh RFC §5.O: SCE-MAP marker anchoring the
    generated C11 header. Module-level form is a comment, not the
    `#line` directive — `#line` in a header would propagate into
    every including translation unit's diagnostics. #}
@@ -38,8 +38,8 @@
 
 {% if (model.invokes | scxml_family) %}
 /* W3C SCXML 6.4: invoke types + helpers (sce-c-runtime/include/sce/invoke.h).
-   Header-only — types and `static inline` helpers per c11_design_decisions.md
-   T3 lock-in. cpp's `core/InvokeHelper.h` template class is the equivalent
+   Header-only — types and `static inline` helpers (jinja2-inline
+   contract, no shared .c). cpp's `core/InvokeHelper.h` template class is the equivalent
    shape. */
 #include "sce/invoke.h"
 {% for invoke_info in model.invokes | scxml %}
@@ -155,7 +155,7 @@ typedef struct {{ model.name }}_event_with_meta {
    inside `removeConflictingTransitions` via `ConflictResolutionHelper::
    computeExitSet`, but the C11 backend evaluates it once at collect
    time so conflict checks reduce to bitmap intersection (no helper
-   class dispatch — T3 lock-in). The struct is fixture-local rather
+   class dispatch — jinja2-inline contract). The struct is fixture-local rather
    than runtime-shared because state_t is per-fixture.
 
    Fields are read by:
@@ -211,7 +211,7 @@ typedef struct {{ model.name }}_scheduled_entry {
        _event.data, and releases the registry slot via luaL_unref. Mirrors
        cpp `EventWithMetadata::data` per-entry carry — cpp ships a JSON
        string because its EventWithMetadata must cross engine-agnostic
-       boundaries; C11's P1 lock-in (Lua 5.4 only) makes the lua-native
+       boundaries; C11's Lua 5.4-only engine makes the lua-native
        ref the round-trip-free equivalent of the same per-entry carry. */
     int payload_lua_ref;
 {% endif %}
@@ -494,10 +494,11 @@ bool {{ model.name }}_is_final_state({{ model.name }}_state_t s);
    custom_tcp dispatch loop, …) calls the matching function for
    every Sample arriving on the named link. The body iterates the
    active configuration, fires the user-supplied callback (when
-   `<sce:on-sample callback>` is declared with a future c:-prefix
-   axis — Q-Callback-2 v1 is `rust:` only and is silently ignored
-   on the C11 backend today), then enqueues `event="..."` onto the
-   external queue (Q-Wire-3 lock: event always raised). Sample
+   `<sce:on-sample callback>` is declared with a `c:`-prefix
+   axis, which is consumer-gated — the callback attribute is
+   `rust:`-only and is silently ignored on the C11 backend),
+   then enqueues `event="..."` onto the
+   external queue (the event is always raised). Sample
    borrow drops at function exit; slot return is the host's
    responsibility per the `sce_sub_callback_t` contract in
    `<sce/sample.h>`. */

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
-# RFC variant-default-uniformity Atomic γ-3 (go half) — regenerate the
+# RFC variant-default-uniformity (go half) — regenerate the
 # 3 default-marker fixtures used by the round-trip property test
 # (default_round_trip_test.go). Mirrors the conformance harness'
 # generate.sh shape (sce-forge-runtime/go/conformance/generate.sh) but

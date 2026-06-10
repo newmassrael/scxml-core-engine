@@ -145,7 +145,7 @@ fn peer_table_invariant_silent_skip_when_block_absent() {
 #[test]
 fn peer_table_invariant_silent_skip_when_max_handshake_time_absent() {
     // stateless_accept declared but max_handshake_time_s omitted — the
-    // invariant has no LHS to compute, so silent-skip per Q-η5 (a).
+    // invariant has no LHS to compute, so silent-skip per the absent-input rule.
     let yaml = deploy_with_link(
         r#"            bind: "0.0.0.0:7447"
             driver: lwip_udp
@@ -172,7 +172,7 @@ fn peer_table_invariant_silent_skip_when_max_handshake_time_absent() {
 fn peer_table_invariant_silent_skip_when_peer_table_absent() {
     // stateless_accept declared, max_handshake_time_s declared, but
     // peer_table sub-block absent. The invariant cannot compute the
-    // RHS bound — silent-skip per Q-η5 (a).
+    // RHS bound — silent-skip per the absent-input rule.
     let yaml = deploy_with_link(
         r#"            bind: "0.0.0.0:7447"
             driver: lwip_udp

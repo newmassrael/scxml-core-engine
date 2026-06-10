@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Init body, unified
-     InitSyn + InitAck shape (RFC §5.B B5-ι Batch 1).
+     InitSyn + InitAck shape (RFC §5.B cross-codec composition).
 
      Mirrors zenoh-pico `_z_init_encode` (src/protocol/codec/transport.c
      lines 182-219) verbatim. The transport-message header carries
@@ -10,10 +10,10 @@
        - parent.A=1 → cookie present (acknowledgment carrying cookie)
      The version byte and cbyte+zid prefix are always present;
      parent.S and parent.A independently gate two field pairs. Both
-     gates use "set means present" — the standard B5-γ Parent-scope
+     gates use "set means present" — the standard Parent-scope
      present-if grammar without negation.
 
-     This unified codec replaces the prior B5-γ Surface C demo
+     This unified codec replaces the prior parent-flags demo
      `codec_init_syn_body` (no-zid simplified form, kept for parser
      trunk reference); the present codec is the realistic body for
      all Init transport instances regardless of S/A combination.
@@ -28,10 +28,10 @@
        parent.A : cookie_len (VLE u64)
                   cookie     (length-ref bytes, length=cookie_len, max=128)
 
-     Composition: B5-α multi-bit flag (cbyte) + B5-κ Surface L
-     dotted-path length-field (`cbyte.zid_len_m1`) + B5-δ Surface F
-     length-arith (+1) + B5-γ Parent-scope present-if (parent.S /
-     parent.A) + B1-α VLE (cookie_len) + B2-β present-if + length-ref
+     Composition: multi-bit flag (cbyte) + dotted-path
+     dotted-path length-field (`cbyte.zid_len_m1`) + length-ref
+     length-arith (1) + Parent-scope present-if (parent.S /
+     parent.A) + VLE (cookie_len) + gated present-if + length-ref
      (cookie). No new primitive surface.
 
      Round-trip oracles:

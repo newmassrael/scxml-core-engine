@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: codec flags primitive (RFC §5.B B1-γ).
+<!-- SCE Forge conformance: codec flags primitive (RFC §5.B flags).
      Single uint8 carrier field "header" with four named bits laid out
      to mirror the Zenoh Fragment header (see watching-zenoh/docs/
      wire-spec-subset.md §4.2): `reliable` (bit 7), `more` (bit 6),

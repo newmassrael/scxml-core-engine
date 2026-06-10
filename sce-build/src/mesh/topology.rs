@@ -650,9 +650,8 @@ pub struct ServerBinding {
     /// validation in [`super::deploy::ServerConfig`] rejects the
     /// knob on non-zenoh transports, so by the time codegen reads
     /// this field the transport invariant holds. SOME/IP server-side
-    /// response lifecycles are tracked separately under
-    /// `mesh_someip_sd_gaps_roadmap.md` and will land under their
-    /// own knob rather than overloading this one.
+    /// response lifecycles are consumer-gated and would land under
+    /// their own knob rather than overloading this one.
     pub query_timeout_ms: Option<u64>,
     /// SCE_MESH.md §14.4 — multi-instance server pool member
     /// list. Propagated verbatim from
@@ -1746,11 +1745,11 @@ pub(crate) fn contribute_send_partials(
 /// [`build_resolved_targets`].
 ///
 /// Each field is consumed by exactly one contributor function. Adding a
-/// new contributor (e.g. runtime `<invoke srcexpr>` target binding per
-/// Gap 4, or reply-source routing per Gap 6) extends this struct with a
+/// new contributor (e.g. a consumer-gated runtime `<invoke srcexpr>`
+/// target binding, or reply-source routing) extends this struct with a
 /// new field rather than growing `build_resolved_targets`' positional
 /// argument list — the pattern that was pushing the signature from
-/// five parameters toward seven before Z5a.
+/// five parameters toward seven before this struct was introduced.
 ///
 /// All fields are borrows; the caller owns the underlying data for the
 /// lifetime of the `build_resolved_targets` call.
@@ -4520,8 +4519,8 @@ topology:
 
     #[test]
     fn subscription_on_non_pubsub_transport_rejected() {
-        // SOME/IP currently has no `case EventSubscribe` in its send path
-        // (mesh_someip_sd_gaps_roadmap.md). A deploy.yaml that points a
+        // SOME/IP currently has no `case EventSubscribe` in its send path.
+        // A deploy.yaml that points a
         // subscription source at a SOME/IP binding would otherwise build
         // successfully and silently drop every subscribe envelope at the
         // transport. Topology-stage reject pins this fail-closed so the

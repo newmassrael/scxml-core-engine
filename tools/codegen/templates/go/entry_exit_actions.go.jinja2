@@ -15,7 +15,7 @@
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
 // ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
-{# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP marker
+{# Watching-zenoh RFC §5.O — function-scope SCE-MAP marker
    above `ExecuteEntryActions`. `//line file:N` is a Go compiler
    directive recognized by panic stack traces and `go vet`; it must
    start at column 0 (no leading indent). #}

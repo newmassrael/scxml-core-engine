@@ -73,24 +73,24 @@ pub struct DeployConfig {
     #[serde(default)]
     pub distributability: Option<DistributabilityMode>,
     /// watching-zenoh RFC §5.I lines 1761-1764 — target-plugin path
-    /// pointer for `<sce:extern>` whitelist extension. Q-Call-2 (a)
-    /// lock: path-pointed YAML file (loaded via
+    /// pointer for `<sce:extern>` whitelist extension: a path-pointed
+    /// YAML file (loaded via
     /// [`crate::forge::target_plugin::parse_target_plugin_yaml`]),
-    /// single plugin per deploy. Q-Call-6 (a) lock: plugin entries
+    /// single plugin per deploy. Plugin entries
     /// extend the §5.I baseline registry; baseline-shadowing
     /// surfaces as `extern/target-plugin-symbol-conflict` at plugin
     /// load time.
     ///
     /// Absent ⇒ baseline-only registry (the deploy-unaware default).
-    /// Plugin-extension axes ride later atomics through the same
+    /// Consumer-gated plugin-extension axes ride through the same
     /// field's reserved keys (`linker_flavor`,
     /// `fuzz_coverage_transport`); the plugin file itself accepts
-    /// these forward-compat slots so a v1 sce-build can load a
-    /// plugin authored for a future Atomic C without a schema bump.
+    /// these forward-compat slots so today's sce-build can load a
+    /// plugin authored for a later extension without a schema bump.
     #[serde(default)]
     pub extern_symbols: Option<ExternSymbolsConfig>,
 
-    /// RFC variant-default-overlay Atomic A — consumer-shaped default
+    /// Variant-default overlay — consumer-shaped default
     /// arm choice for `<sce:variant>` peek-byte dispatch.
     ///
     /// SCE-side SCXMLs declare wire-spec invariants only — the bit
@@ -121,9 +121,9 @@ pub struct DeployConfig {
     pub variant_defaults: BTreeMap<String, u64>,
 }
 
-/// `extern_symbols:` block in deploy.yaml. Atomic B carries one
-/// field; Atomic C will lift `ordering_default` (spec line 1851 and
-/// the cross-core inbox companion `worker/inbox-ordering-*` family).
+/// `extern_symbols:` block in deploy.yaml. Today carries one
+/// field; `ordering_default` (spec line 1851 and the cross-core inbox
+/// companion `worker/inbox-ordering-*` family) is consumer-gated.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExternSymbolsConfig {
@@ -514,18 +514,18 @@ pub struct PlatformConfig {
     /// Drives the stage-copy WCET formula (`expected_p99_bytes ×
     /// memcpy_cycles_per_byte / clock_freq_mhz`) gated by
     /// `reassembly/stage-copy-wcet-exceeds-slot-budget` (RFC §5.M line
-    /// 2995, C9-β consumer) and the §5.B aggregate WCET roll-up.
-    /// Optional at parse time; consumer-side validators (C9-β) require
-    /// it when a reassembly-variant buffer pool is bound to a link on
-    /// this machine. C13-α schema-only addition.
+    /// 2995, §5.M reassembly consumer) and the §5.B aggregate WCET
+    /// roll-up. Optional at parse time; the reassembly cross-doc
+    /// validators require it when a reassembly-variant buffer pool is
+    /// bound to a link on this machine.
     #[serde(default)]
     pub clock_freq_mhz: Option<u32>,
     /// Per-target memcpy cost in cycles-per-byte (watching-zenoh RFC
     /// §5.K line 2188-2192). Architecture defaults per spec:
     /// M0/M0+ = 4.0, M3/M4 = 2.0, M7 = 1.0, A-class = 0.5. Used by the
     /// §5.M `reassembly/stage-copy-wcet-exceeds-slot-budget` consumer
-    /// (C9-β) alongside `clock_freq_mhz`. Optional at parse time per
-    /// Q-C13-6 (a); consumer-side validators raise when missing AND a
+    /// alongside `clock_freq_mhz`. Optional at parse time;
+    /// consumer-side validators raise when missing AND a
     /// reassembly-variant pool is bound.
     #[serde(default)]
     pub memcpy_cycles_per_byte: Option<f32>,
@@ -542,11 +542,10 @@ pub struct PlatformConfig {
     /// Architecture defaults per spec: M0/M0+ = 1.5, M3/M4 = 0.8,
     /// M7 = 0.5, A-class = 0.2. REQUIRED at §5.B aggregate WCET when
     /// any codec on the deploy contains a `tlv-chain` AND
-    /// `scheduler.kind=cooperative`. Optional at parse time per
-    /// Q-C13-6 (a).
+    /// `scheduler.kind=cooperative`. Optional at parse time.
     #[serde(default)]
     pub tlv_chain_per_entry_overhead_us: Option<f32>,
-    /// Watching-zenoh RFC §5.O Atomic 1 — escalation flag for the
+    /// Watching-zenoh RFC §5.O — escalation flag for the
     /// `traceability/symbol-name-exceeds-c-identifier-limit`
     /// diagnostic. Default `None` = warn-only (the sourcemap still
     /// emits, the long identifier still ships to downstream compilers
@@ -558,7 +557,7 @@ pub struct PlatformConfig {
     /// the default.
     #[serde(default)]
     pub strict_c99_identifiers: Option<bool>,
-    /// Watching-zenoh RFC §5.2 Round F-α — search root for `<sce:driver
+    /// Watching-zenoh RFC §5.2 — search root for `<sce:driver
     /// href="..."/>` resolution. When set, `href` values are resolved
     /// relative to this directory; otherwise resolution falls back to
     /// the SCXML file's parent directory. Optional at parse time;
@@ -566,31 +565,32 @@ pub struct PlatformConfig {
     /// alongside `mcu/driver-header-not-found`.
     #[serde(default)]
     pub driver_root: Option<String>,
-    /// Watching-zenoh RFC §5.2 Round F-α — C11-backend-only linker
+    /// Watching-zenoh RFC §5.2 — C11-backend-only linker
     /// section attribute injection. When `class` is set, every emitted
     /// statechart function definition is prefixed with
     /// `__attribute__((section("<class>")))`. When `driver` is set,
-    /// the same is true for emitted driver-glue functions (deferred to
-    /// F-β; F-α only emits the `class` half). Non-C11 backends reject
-    /// this section with `mcu/section-attribute-on-non-mcu-target`
-    /// (Q-Call-7 pattern). Only the GCC / Clang / Keil common
-    /// `__attribute__((section("...")))` syntax is emitted in F-α;
-    /// IAR's `@".name"` placement syntax is deferred to F-β.
+    /// the same is intended for emitted driver-glue functions
+    /// (consumer-gated; only the `class` half is emitted today).
+    /// Non-C11 backends reject this section with
+    /// `mcu/section-attribute-on-non-mcu-target` (the same non-MCU
+    /// reject pattern as `<sce:extern>`). Only the GCC / Clang / Keil
+    /// common `__attribute__((section("...")))` syntax is emitted;
+    /// IAR's `@".name"` placement syntax is consumer-gated.
     #[serde(default)]
     pub c11_section_attribute: Option<C11SectionAttribute>,
 }
 
-/// Watching-zenoh RFC §5.2 Round F-α — C11 linker section attribute
+/// Watching-zenoh RFC §5.2 — C11 linker section attribute
 /// injection knobs. Set on `machines.<n>.platform.c11_section_attribute`
 /// in `deploy.yaml`. `class` controls statechart function placement;
-/// `driver` is reserved for the F-β driver-glue half and is parsed but
-/// not yet consumed by F-α codegen.
+/// `driver` is reserved for the driver-glue half — parsed but
+/// not yet consumed by codegen (consumer-gated).
 ///
 /// Only the GCC / Clang / Keil common `__attribute__((section("...")))`
-/// syntax is emitted in F-α. IAR's `@".name"` placement syntax is
-/// deferred to F-β. Non-C11 backends (cpp / rust / kotlin / go / python)
+/// syntax is emitted. IAR's `@".name"` placement syntax is
+/// consumer-gated. Non-C11 backends (cpp / rust / kotlin / go / python)
 /// raise `mcu/section-attribute-on-non-mcu-target` when this section is
-/// present, matching the Q-Call-7 non-MCU reject pattern.
+/// present, matching the `<sce:extern>` non-MCU reject pattern.
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct C11SectionAttribute {
@@ -600,9 +600,9 @@ pub struct C11SectionAttribute {
     /// `.text.statechart`.
     #[serde(default)]
     pub class: Option<String>,
-    /// Section name for driver-glue functions. Parsed by F-α but
-    /// consumed by F-β codegen (driver glue emission is itself F-β
-    /// scope per [[project-round-f-scope-split]]). Reserved.
+    /// Section name for driver-glue functions. Parsed today but
+    /// its codegen consumer (driver-glue emission) is consumer-gated.
+    /// Reserved.
     #[serde(default)]
     pub driver: Option<String>,
 }
@@ -618,17 +618,17 @@ pub struct C11SectionAttribute {
 /// - `established_session` — Frame / data plane (may fragment). Pool
 ///   binding **required** for reassembly.
 ///
-/// C13-α parses the enum; C9-β validators (`reassembly/untrusted-
-/// link-binding` + `reassembly/trust-class-missing-on-fragmenting-link`)
-/// consume it at cross-doc resolution time. Q-C13-4 (a) lock: no
+/// The parser carries the enum; the reassembly validators (`reassembly/
+/// untrusted-link-binding` + `reassembly/trust-class-missing-on-fragmenting-link`)
+/// consume it at cross-doc resolution time. No
 /// default; required when `domain_attrs` is declared.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TrustClass {
     /// Scout / Hello traffic only. Reassembly-pool binding raises
-    /// `reassembly/untrusted-link-binding` (C9-β, RFC §5.M line 2964).
+    /// `reassembly/untrusted-link-binding` (RFC §5.M line 2964).
     Untrusted,
-    /// INIT / OPEN handshake traffic. Anti-flood fields apply (C13-β).
+    /// INIT / OPEN handshake traffic. Anti-flood fields apply.
     /// Reassembly-pool binding raises `reassembly/untrusted-link-binding`.
     SessionArming,
     /// Post-handshake Frame / data plane traffic. ONLY trust class
@@ -640,7 +640,7 @@ impl TrustClass {
     /// Snake-case wire label matching the `#[serde(rename_all = "snake_case")]`
     /// rendition. Used by diagnostic message text + `actual` payload so
     /// the wire form stays stable across Rust edition / `Debug`-impl
-    /// changes. The C13-α-2 reassembly cross-doc validator emits this
+    /// changes. The reassembly cross-doc validator emits this
     /// in the `actual` field of `reassembly/untrusted-link-binding`.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -651,14 +651,14 @@ impl TrustClass {
     }
 }
 
-/// Axis-3 inversion — explicit cross-document role declaration for a
+/// Explicit cross-document listener-role declaration for a
 /// deploy.yaml link.
-/// Decouples the implicit "trust_class: session_arming = listener"
-/// claim from C10-α into an explicit named-role contract that pairs
+/// Decouples the historic implicit "trust_class: session_arming =
+/// listener" claim into an explicit named-role contract that pairs
 /// with the SCXML-side `<sce:session-role kind="..."/>` declaration.
 ///
 /// Top-level peer of `bind`, `driver`, `mtu_bytes`, `domain_attrs`
-/// (per RFC Q-A3 (a) — NOT nested under `domain_attrs` so the
+/// (NOT nested under `domain_attrs` so the
 /// role and trust-tier remain conceptually distinct fields).
 ///
 /// Cardinality: optional. Default `None` = "this link does not
@@ -673,7 +673,8 @@ impl TrustClass {
 pub enum LinkRole {
     /// Pre-handshake listener half of the session-FSM accept-side
     /// pair. Pairs with a machine SCXML that declares
-    /// `<sce:session-role kind="accept-side"/>`. Per RFC Q-A4 (d), a
+    /// `<sce:session-role kind="accept-side"/>`. Per the
+    /// role/trust-class matrix, a
     /// `Listener` role on a link with `trust_class != session_arming`
     /// fires the typed validator
     /// `link/role-listener-with-non-session-arming-trust-class`.
@@ -688,7 +689,8 @@ pub enum LinkRole {
 
 impl LinkRole {
     /// Snake-case wire label. Used in diagnostic `actual` / `expected`
-    /// payloads (RFC Q-A7 codes) and in deploy.yaml deserialization.
+    /// payloads (the listener-role partial-claim codes) and in
+    /// deploy.yaml deserialization.
     pub fn as_str(self) -> &'static str {
         match self {
             LinkRole::Listener => "listener",
@@ -706,10 +708,10 @@ impl LinkRole {
 /// - `worker_tick` — RX only progresses on cooperative tick (simpler,
 ///   lower wire-rate ceiling).
 ///
-/// Q-C13-3 (a) conditional default per spec line 2261: `IsrToPool`
+/// Conditional default per spec line 2261: `IsrToPool`
 /// when `burst_pps` declared, `WorkerTick` otherwise. Applied at the
 /// field-resolver layer (post-parse), not parser-tier — same pattern
-/// as C2-γ `WorkerPlacementConfig` populator.
+/// as the `WorkerPlacementConfig` populator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RxDispatch {
@@ -721,7 +723,7 @@ pub enum RxDispatch {
 }
 
 /// Machine-wide stage-copy policy enum (watching-zenoh RFC §5.K
-/// lines 2351-2369). Drives the C13-γ promotion of
+/// lines 2351-2369). Drives the policy promotion of
 /// `reassembly/expected-fragmentation-rate-high` (warning under
 /// `warn`) to `pool/stage-copy-policy-error` (hard error under
 /// `error` / `forbid`), and gates the per-link `<sce:accept-stage-
@@ -733,7 +735,7 @@ pub enum RxDispatch {
 /// only when both `pool_defaults` and `pool_defaults.stage_copy_policy`
 /// are present in declaration syntax but treated as their literal
 /// default; absence of `pool_defaults` entirely keeps the validator's
-/// pre-C13-γ behavior unchanged via [`MachineConfig::resolved_stage_copy_policy`].
+/// pre-`pool_defaults` behavior unchanged via [`MachineConfig::resolved_stage_copy_policy`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StageCopyPolicy {
@@ -775,9 +777,9 @@ impl StageCopyPolicy {
 }
 
 /// Machine-wide pool-defaults block (watching-zenoh RFC §5.K
-/// lines 2350-2369). C13-γ ships only `stage_copy_policy`; future
-/// pool-default fields land here additively (each gated on its
-/// in-atomic consumer per `[[feedback-silently-broken-hooks]]`).
+/// lines 2350-2369). Today carries only `stage_copy_policy`; further
+/// pool-default fields are consumer-gated and land here additively
+/// (each gated on its consumer per `[[feedback-silently-broken-hooks]]`).
 ///
 /// `#[serde(deny_unknown_fields)]` parse-rejects unknown nested keys
 /// — future fields (`cache_default_policy`, `dma_alignment_floor`,
@@ -899,7 +901,7 @@ pub struct StatelessAccept {
     /// (peer-tracking shape is anti-flood / DoS-hardening state).
     /// Optional at parse time; absence silent-skips the invariant
     /// check (`deploy/session-arming-quota-vs-peer-table-invariant-
-    /// violated`) per the Q-η5 (a) silent-skip discipline.
+    /// violated`) per the absent-input silent-skip discipline.
     #[serde(default)]
     pub peer_table: Option<PeerTable>,
     /// Spec §5.K line 2460-2462 — per-handshake time budget in
@@ -916,19 +918,19 @@ pub struct StatelessAccept {
 
 /// Per-link domain attributes (watching-zenoh RFC §5.K line 2263-2271).
 ///
-/// When declared, `trust_class` is REQUIRED per Q-C13-4 (a) — spec
+/// When declared, `trust_class` is REQUIRED — spec
 /// line 2731 makes `established_session` the explicit gating intent
 /// for reassembly; defaulting would mask author confusion.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LinkDomainAttrs {
-    /// `untrusted | session_arming | established_session` (Q-C13-4 a:
-    /// required when `domain_attrs` declared, no default). Spec line
+    /// `untrusted | session_arming | established_session` (required
+    /// when `domain_attrs` declared, no default). Spec line
     /// 2265.
     pub trust_class: TrustClass,
     /// `true` when the link is exposed to a network the deployment
     /// does not control (public Internet, untrusted LAN). When
-    /// `true`, `stateless_accept` becomes REQUIRED (C13-β consumer).
+    /// `true`, `stateless_accept` becomes REQUIRED (anti-flood consumer).
     /// Spec line 2266-2271. Defaults to `false`.
     #[serde(default)]
     pub untrusted_source: bool,
@@ -936,24 +938,22 @@ pub struct LinkDomainAttrs {
 
 /// Per-link configuration entry (watching-zenoh RFC §5.K line 2232-2349).
 ///
-/// Q-C13-2 (a) lock: only `bind` + `driver` are required at the schema
+/// Only `bind` + `driver` are required at the schema
 /// level; every other field is `Option` because spec mandates them
 /// conditionally on sibling-field presence (e.g. `burst_pps` only
 /// matters when `rx_dispatch: isr_to_pool` is in play). Conditional
 /// requirements are enforced by `validate_link_*` consumers (parser-
 /// time, run after `parse_str`).
 ///
-/// **C13-α scope** carries 7 fields; the C13-β anti-flood family
-/// (`session_arming_quota`, `accept_rate_*`, `accepting_inactivity_
-/// timeout_ms`) and the `stateless_accept` sub-block are intentionally
-/// NOT in this struct per `[[feedback-silently-broken-hooks]]` —
-/// `#[serde(deny_unknown_fields)]` parse-rejects them with the
-/// standard "unknown field" message until C13-β lands the fields
-/// alongside their semantic enforcement.
+/// The struct carries the 7 core link fields plus the anti-flood
+/// family (`session_arming_quota`, `accept_rate_*`,
+/// `accepting_inactivity_timeout_ms`) and the `stateless_accept`
+/// sub-block, each landed together with its semantic enforcement per
+/// `[[feedback-silently-broken-hooks]]`.
 ///
 /// **Cross-doc resolution**: the `name` axis (HashMap key) is joined
 /// against forge `<scxml sce:kind="link" name="X">` document names via
-/// `validate_link_name_cross_doc` (Q-C13-5 a). Two new diagnostics:
+/// `validate_link_name_cross_doc`. Two diagnostics:
 /// `deploy/link-not-declared-in-deploy` (forge name has no deploy
 /// counterpart) + `deploy/link-not-declared-in-forge` (deploy name
 /// has no forge counterpart).
@@ -962,20 +962,20 @@ pub struct LinkDomainAttrs {
 pub struct LinkConfig {
     /// `bind:` (spec line 2234) — endpoint address. Wire format is
     /// driver-specific (UDP: `host:port`, TCP: `host:port`, multicast:
-    /// `224.x.x.x:port`); parser-side is opaque `String`. C13-α
+    /// `224.x.x.x:port`); parser-side is opaque `String`. Parse-time
     /// validators don't normalize or split — driver-level parsing
     /// belongs to the link-driver runtime.
     pub bind: String,
-    /// `driver:` (spec line 2235) — link-driver kind name. Q-C13-8 (a):
+    /// `driver:` (spec line 2235) — link-driver kind name,
     /// kept as `String` (not Rust enum) so forge `<sce:link>` author-
     /// declared drivers extend organically without freezing the set.
     /// Closed-allowlist validator (`deploy/link-driver-unknown`) rejects
-    /// values absent from the C13-α known-driver baseline (currently
+    /// values absent from the known-driver baseline (currently
     /// `{lwip_udp, lwip_tcp}`; extended as new forge link-kind docs
     /// ship) AND from any cross-doc forge link-kind registry entry.
     pub driver: String,
-    /// `role:` (Axis-3 inversion, Q-A3 (a))
-    /// — explicit cross-document role declaration. Pairs with the
+    /// `role:`
+    /// — explicit cross-document listener-role declaration. Pairs with the
     /// SCXML-side `<sce:session-role kind="..."/>` top-level element
     /// on the machine's source SCXML.
     ///
@@ -987,12 +987,12 @@ pub struct LinkConfig {
     ///
     /// Default `None` is the explicit "this link does not claim a
     /// session-FSM role" case (legacy fixtures silent-pass per the
-    /// Q-A9 staged-migration discipline); the Q-A4 (d) matrix
+    /// staged-migration discipline); the role/trust-class matrix
     /// rejects `role: listener` on any non-`session_arming` link.
     #[serde(default)]
     pub role: Option<LinkRole>,
     /// `mtu_bytes:` (spec line 2236-2242) — link-layer MTU. REQUIRED
-    /// for fragmenting links (per the C9-β `reassembly/max-fragments-
+    /// for fragmenting links (per the `reassembly/max-fragments-
     /// insufficient-for-mtu` consumer, RFC §5.M line 2947). Optional at
     /// parse time; when missing on a Fragment-FSM-bound link, the
     /// consumer raises `deploy/link-mtu-missing-on-fragmenting-link`.
@@ -1011,24 +1011,24 @@ pub struct LinkConfig {
     /// (`deploy/link-burst-absorption-insufficient`, RFC §5.K line
     /// 2489-2495). For multicast: derive from worst peer count × per-
     /// peer rate. REQUIRED when `rx_dispatch: isr_to_pool` per spec
-    /// line 2261-2262 (Q-C13-3 a default).
+    /// line 2261-2262 (conditional `rx_dispatch` default).
     #[serde(default)]
     pub burst_pps: Option<u32>,
     /// `rx_dispatch:` (spec line 2254-2262) — `isr_to_pool` for IRQ-
     /// driven wire-rate absorption, `worker_tick` for cooperative-tick-
-    /// driven RX. Q-C13-3 (a) default: `IsrToPool` when `burst_pps`
+    /// driven RX. Conditional default: `IsrToPool` when `burst_pps`
     /// declared, `WorkerTick` otherwise. Default applied by the
     /// field-resolver layer (post-parse).
     #[serde(default)]
     pub rx_dispatch: Option<RxDispatch>,
     /// `domain_attrs:` (spec line 2263-2271) — trust-class + untrusted-
-    /// source flag. Optional at parse time; presence opens C9-β cross-
+    /// source flag. Optional at parse time; presence opens reassembly cross-
     /// doc validator paths (`reassembly/{untrusted-link-binding,
     /// trust-class-missing-on-fragmenting-link}`).
     #[serde(default)]
     pub domain_attrs: Option<LinkDomainAttrs>,
 
-    // ── C13-β anti-flood + stateless_accept (RFC §5.K lines
+    // ── Anti-flood + stateless_accept (RFC §5.K lines
     //    2272-2349 + 2449-2473). All five anti-flood fields plus the
     //    stateless_accept block are conditionally required when
     //    `domain_attrs.trust_class: session_arming` (the listener
@@ -1046,7 +1046,7 @@ pub struct LinkConfig {
     /// `deploy/session-arming-quota-vs-peer-table-invariant-violated`
     /// fires when violated; both sibling fields live on the
     /// `stateless_accept` sub-block, so the check is conditional on
-    /// stateless_accept presence per Q-η5 (a) silent-skip).
+    /// stateless_accept presence — absent-input silent-skip).
     #[serde(default)]
     pub session_arming_quota: Option<u32>,
     /// Spec line 2290-2299 — token-bucket refill rate per (link,
@@ -1065,7 +1065,7 @@ pub struct LinkConfig {
     /// table. Default `4 × session_arming_quota`. Spike from many
     /// src_addrs falls through to a single shared bucket (degraded
     /// mode) emitting runtime `session/accept-rate-table-saturated`.
-    /// Not required at C13-β parse-time (downstream consumer fires
+    /// Not required at parse-time (downstream consumer fires
     /// runtime informational only).
     #[serde(default)]
     pub accept_rate_table_capacity: Option<u32>,
@@ -1088,7 +1088,7 @@ pub struct LinkConfig {
 }
 
 impl LinkConfig {
-    /// Q-C13-3 (a) conditional default resolution: `IsrToPool` when
+    /// Conditional default resolution: `IsrToPool` when
     /// `burst_pps` is declared, `WorkerTick` otherwise. Spec line 2261
     /// verbatim. Returns the explicit author value when present.
     pub fn resolved_rx_dispatch(&self) -> RxDispatch {
@@ -1133,8 +1133,8 @@ pub struct MachineSchedulerConfig {
     /// Together with `worker_slot_budget_us` derives the per-tick slot
     /// capacity used by [`validate_machine_scheduler_worker_capacity`].
     /// Optional at parse time; required for the worker-count vs slot-count
-    /// check to fire (when absent, the check silent-skips per Q-η5 (a)
-    /// precedent).
+    /// check to fire (when absent, the check silent-skips per the
+    /// absent-input precedent).
     #[serde(default)]
     pub tick_period_us: Option<u32>,
     /// Per-slot WCET ceiling in microseconds (spec line 2213). REQUIRED
@@ -1158,34 +1158,34 @@ pub struct MachineSchedulerConfig {
     /// `machines.<m>.timers`, the slot-overflow validator
     /// ([`validate_machine_timer_wheel_capacity`]) fires when
     /// `timers.len() > timer_wheel_depth`. Absent ⇒ silent-skip
-    /// (Q-η5 (a) precedent — deploy-unaware paths don't have the
-    /// wheel sizing information).
+    /// (absent-input silent-skip precedent — deploy-unaware paths
+    /// don't have the wheel sizing information).
     #[serde(default)]
     pub timer_wheel_depth: Option<u32>,
-    /// Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3
-    /// Atomic B-γ1): fallback event-queue capacity for machines
+    /// Watching-zenoh RFC §5.J.2 + §5.L (item C3):
+    /// fallback event-queue capacity for machines
     /// whose SCXML document omits the per-instance
     /// `<scxml sce:capacity="N">` attribute. Unit: events.
     ///
     /// Resolution rule: per-instance `SCXMLModel.event_queue_capacity`
     /// wins; this field supplies the deploy-default for the
-    /// remainder. Both absent is permitted at B-γ1 (std builds do
-    /// not consume the capacity); B-γ2's heapless adoption makes
+    /// remainder. Both absent is permitted on std builds (they do
+    /// not consume the capacity); the heapless no_std path makes
     /// the value load-bearing for `no_std` builds and adds a
     /// `default_event_queue_capacity-missing` diagnostic when the
     /// no_std codegen path has nothing to source the literal from.
     #[serde(default)]
     pub default_event_queue_capacity: Option<u32>,
-    /// Watching-zenoh RFC §5.N line 3056-3057 (C10-β) — per-link
+    /// Watching-zenoh RFC §5.N line 3056-3057 — per-link
     /// work cap inside one cooperative scheduler tick. Unit:
     /// microseconds. Optional at parse time; required for both
-    /// C10-β codes that consume it
+    /// §5.N codes that consume it
     /// (`link/concurrent-count-exceeds-scheduler-slots` derives the
     /// MCU slot ceiling via
-    /// `floor(tick_period_us / per_link_budget_us)` per Q-C10-β-2 a;
+    /// `floor(tick_period_us / per_link_budget_us)`;
     /// `link/per-link-budget-exceeds-tick-period` fires when
-    /// `per_link_budget_us > tick_period_us` per Q-C10-β-3 a).
-    /// Silent-skip when absent per Q-η5 (a) precedent — single-doc
+    /// `per_link_budget_us > tick_period_us`).
+    /// Silent-skip when absent — single-doc
     /// compile paths + AP machines that use `tokio::spawn` per link
     /// don't consume the slot accounting.
     #[serde(default)]
@@ -1214,14 +1214,14 @@ impl SchedulerKind {
     }
 }
 
-/// Per-machine worker placement entry (watching-zenoh RFC §5.D + §5.I,
-/// C2-γ). Declares which core hosts each worker doc's inbox producer
+/// Per-machine worker placement entry (watching-zenoh RFC §5.D + §5.I).
+/// Declares which core hosts each worker doc's inbox producer
 /// (link-rx-driven path) and consumer (SCXML processing thread).
 ///
 /// Threaded into [`crate::ForgeCompileOptions::worker_placement`] by
 /// [`crate::compile_forge_with_deploy`] for the codegen-invariant
 /// validator [`crate::validate_worker_inbox_ordering_placement`]
-/// (C2-β `e2980d83`) to detect cross-core relaxed-ordering violations
+/// (`e2980d83`) to detect cross-core relaxed-ordering violations
 /// (`worker/inbox-ordering-relaxed-across-cores`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1232,7 +1232,7 @@ pub struct WorkerPlacementConfig {
     pub consumer_core: u32,
 }
 
-/// Per-machine worker descriptor (watching-zenoh RFC §5.D + §5.K, C2-γ).
+/// Per-machine worker descriptor (watching-zenoh RFC §5.D + §5.K).
 /// Authors list every worker doc bound to the machine and declare its
 /// runtime placement when cross-core ordering matters. Absent
 /// `placement:` ⇒ codegen-invariant validator silent-skips for that
@@ -1734,14 +1734,15 @@ pub struct RetryPolicyConfig {
 /// The author's `error.communication` transition is the cleanup
 /// boundary; operator must restart the binary to re-trust.
 ///
-/// Per-transport applicability (Q2 = (a) mTLS + (d) defer to binding):
+/// Per-transport applicability (auth = mTLS-style peer pinning, wired
+/// per transport binding):
 /// * `zenoh` — `peer_fingerprint` pins the peer cert; failed handshake
 ///   classifies on `ZException::what()` text.
 /// * `someip` — `sd_denied_classifies_as_unauthorized: true` opts in
 ///   to classifying SOMEIP SD denial as UNAUTHORIZED instead of
 ///   PEER_PARTITIONED.
-/// * `custom_tcp` / `shm` — rejected at parse time: out of scope for
-///   v1 (Q2 lock-in). The validator surfaces a clear error message
+/// * `custom_tcp` / `shm` — rejected at parse time: no auth wiring is
+///   defined for these transports. The validator surfaces a clear error message
 ///   pointing authors at zenoh / someip.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -2147,8 +2148,8 @@ pub struct MachineConfig {
     #[serde(default)]
     pub memory: Option<MemoryConfig>,
 
-    /// Per-machine worker doc registry (watching-zenoh RFC §5.D + §5.K,
-    /// C2-γ). Keyed by worker name (matches `<scxml sce:kind="worker"
+    /// Per-machine worker doc registry (watching-zenoh RFC §5.D + §5.K).
+    /// Keyed by worker name (matches `<scxml sce:kind="worker"
     /// name="...">`). The map's length feeds the cooperative slot-count
     /// check ([`validate_machine_scheduler_worker_capacity`]); each entry
     /// can carry an optional cross-core `placement:` block consumed by
@@ -2175,7 +2176,7 @@ pub struct MachineConfig {
     pub timers: HashMap<String, TimerDeployConfig>,
 
     /// Per-machine dynamic-state capacity ceilings (watching-zenoh RFC
-    /// §5.L lines 2570-2585 + 2649, C6-γ1). Keyed by limit name —
+    /// §5.L lines 2570-2585 + 2649). Keyed by limit name —
     /// the dotted suffix of a `<sce:capacity source="deploy"
     /// key="machines.<machine>.limits.<limit>">` reference on a
     /// bounded-collection doc. Value is the compile-time slot count
@@ -2183,7 +2184,7 @@ pub struct MachineConfig {
     /// `heapless::Vec<T, N>` / Cpp `std::array<T, N>` / etc per spec
     /// §5.J.5).
     ///
-    /// Absent ⇒ machine declares no limits; the C6-γ1
+    /// Absent ⇒ machine declares no limits;
     /// [`validate_bounded_collection_capacity_resolution`] silent-
     /// skips for any BC doc whose `<sce:capacity>` keys this machine.
     /// Present ⇒ each BC doc with a `deploy` capacity source resolves
@@ -2204,7 +2205,7 @@ pub struct MachineConfig {
     pub limits: HashMap<String, u32>,
 
     /// Per-machine link configuration registry (watching-zenoh RFC §5.K
-    /// line 2232-2349, C13-α). Keyed by link name (joined against forge
+    /// line 2232-2349). Keyed by link name (joined against forge
     /// `<scxml sce:kind="link" name="X">` document names via the
     /// cross-doc validator pair `deploy/{link-not-declared-in-deploy,
     /// link-not-declared-in-forge}`).
@@ -2214,19 +2215,19 @@ pub struct MachineConfig {
     /// ⇒ each entry's `bind` + `driver` + optional fields are validated
     /// at parse time + cross-doc resolved at orchestrator pass-2.
     ///
-    /// Q-C13-1 (a) scope: C13-α ships core link fields (`bind`,
+    /// [`LinkConfig`] carries the core link fields (`bind`,
     /// `driver`, `mtu_bytes`, `expected_p99_bytes`, `burst_pps`,
-    /// `rx_dispatch`, `domain_attrs`). C13-β adds anti-flood fields
+    /// `rx_dispatch`, `domain_attrs`) plus the anti-flood fields
     /// (`session_arming_quota`, `accept_rate_*`,
     /// `accepting_inactivity_timeout_ms`, `stateless_accept` block);
-    /// those fields parse-reject under C13-α via
+    /// any other key parse-rejects via
     /// `#[serde(deny_unknown_fields)]` on [`LinkConfig`].
     #[serde(default)]
     pub links: HashMap<String, LinkConfig>,
 
     /// Machine-wide pool-defaults block (watching-zenoh RFC §5.K
-    /// lines 2350-2369, C13-γ). Today carries only
-    /// `stage_copy_policy`; future fields land additively per
+    /// lines 2350-2369). Today carries only
+    /// `stage_copy_policy`; further consumer-gated fields land additively per
     /// `[[feedback-silently-broken-hooks]]`. Absent ⇒
     /// `stage_copy_policy = Warn` (existing
     /// `reassembly/expected-fragmentation-rate-high` warning
@@ -2237,7 +2238,7 @@ pub struct MachineConfig {
 
 impl MachineConfig {
     /// Resolved stage-copy policy. Absence of `pool_defaults` entirely
-    /// keeps the pre-C13-γ behavior (Warn). When `pool_defaults` is
+    /// keeps the default behavior (Warn). When `pool_defaults` is
     /// declared, its `stage_copy_policy` String field maps to the
     /// typed enum via [`StageCopyPolicy::from_wire_str`]; unknown values
     /// are unreachable here because [`validate_pool_defaults`]
@@ -2396,9 +2397,8 @@ pub struct ServerConfig {
     /// (`pending_server_requests_` for vsomeip), not the
     /// `pending_server_queries_` map that this knob targets. Parse-time
     /// validation rejects the knob on non-zenoh servers so a SOME/IP
-    /// author cannot inadvertently ship a silent no-op. A future
-    /// SOME/IP equivalent will land under its own gap memo
-    /// (`mesh_someip_sd_gaps_roadmap.md`) with its own knob.
+    /// author cannot inadvertently ship a silent no-op. A SOME/IP
+    /// equivalent is consumer-gated and would land under its own knob.
     ///
     /// Absent ⇒ no deadline armed per inbound query, matching the
     /// pre-Z2 behaviour where `pending_server_queries_` leaks any entry
@@ -2618,7 +2618,7 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_from: Option<String>,
 
-    /// watching-zenoh RFC §5.E B7-η' — name reference into the forge
+    /// watching-zenoh RFC §5.E — name reference into the forge
     /// pool registry naming the buffer-pool kind artifact whose slots
     /// the link's RX-side `Sample::take()` copies into. Resolved
     /// against [`forge::pool_registry::ForgePoolRegistry`] (built by
@@ -2638,7 +2638,7 @@ pub struct BindingConfig {
     ///
     /// Single source of truth: the pool *template* (slot count, slot
     /// size, section, alignment, DMA channel, cache policy) lives in
-    /// the `.forge` file (B7-α/β/γ landed). deploy.yaml only adds the
+    /// the `.forge` file. deploy.yaml only adds the
     /// per-binding name reference; duplicating the template fields
     /// here would split authoring across two files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2789,7 +2789,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
-/// C13-α-1 — `machines.<n>.links.<name>` parse-time validators.
+/// `machines.<n>.links.<name>` parse-time validators (§5.K).
 ///
 /// Five intra-link checks (RFC §5.K lines 2421-2503):
 ///   1. `deploy/link-driver-unknown` — driver in known baseline or
@@ -2811,14 +2811,15 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///      2731) AND `mtu_bytes.is_none()`, fire.
 ///
 /// The cross-doc validators `deploy/link-not-declared-in-deploy` +
-/// `deploy/link-not-declared-in-forge` (Q-C13-5 a) need the forge
+/// `deploy/link-not-declared-in-forge` need the forge
 /// cross-doc registry; they live in [`validate_links_cross_doc`] and
 /// run from the orchestrator pass, not from `parse_str`.
 ///
-/// Per Q-C13-1 (a) + RFC §8 explicit defer:
 /// `deploy/link-burst-absorption-insufficient` + `deploy/link-rx-
-/// dispatch-worker-tick-on-high-burst` defer to C13-α-2 — both
-/// require RX pool slot_count cross-doc resolution.
+/// dispatch-worker-tick-on-high-burst` live in
+/// [`validate_links_burst_invariants`] — both
+/// require RX pool slot_count cross-doc resolution, so they run from
+/// the orchestrator pass as well.
 /// Known-driver baseline carrying protocol class + min-MTU floor.
 ///
 /// Single source of truth for the driver allowlist. Each core driver
@@ -2926,8 +2927,8 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                 }
 
                 // 4. burst-pps-missing-on-isr-dispatch — resolved
-                //    rx_dispatch via [`LinkConfig::resolved_rx_dispatch`]
-                //    (Q-C13-3 a). The conditional default makes
+                //    rx_dispatch via [`LinkConfig::resolved_rx_dispatch`].
+                //    The conditional default makes
                 //    `burst_pps` declared → `IsrToPool` already; the
                 //    failure mode is `rx_dispatch: isr_to_pool` set
                 //    explicitly without `burst_pps`, OR future user-
@@ -2943,8 +2944,8 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                     });
                 }
 
-                // 5. mtu-missing-on-fragmenting-link — Q-C13-2 (a) +
-                //    Q-C13-5 (a) — under-approximation per
+                // 5. mtu-missing-on-fragmenting-link —
+                //    under-approximation per
                 //    [`DiagnosticCode::MeshDeployLinkMtuMissingOnFragmentingLink`]
                 //    doc comment.
                 if let Some(domain) = link.domain_attrs.as_ref() {
@@ -2958,7 +2959,7 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                     }
                 }
 
-                // ── C13-β anti-flood + stateless_accept ──
+                // ── Anti-flood + stateless_accept ──
                 //
                 // The five checks below mirror the spec-section walk
                 // order of `RFC §5.K lines 2449-2473`:
@@ -3092,7 +3093,7 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                 // (stateless_accept block omitted, peer_table sub-block
                 // omitted, max_handshake_time_s sibling omitted, or
                 // session_arming_quota omitted at link level) — per
-                // Q-η5 (a) silent-skip discipline. session_arming_quota
+                // the absent-input silent-skip discipline. session_arming_quota
                 // missing on a session_arming link is already caught by
                 // check #7 above, so the silent-skip here doesn't mask
                 // that case.
@@ -3127,7 +3128,7 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
-/// C13-α-1 cross-doc link-name resolution (Q-C13-5 a lock).
+/// Cross-doc link-name resolution (§5.K).
 ///
 /// Two validators run after the forge cross-doc registry is populated:
 ///   - `deploy/link-not-declared-in-deploy` — every forge
@@ -3262,7 +3263,7 @@ pub fn validate_link_driver_class_consistency(
 /// Cross-document join for §5.K + §5.M validators that need the RX
 /// pool slot count of a deploy-declared link.
 ///
-/// Three steps, each silent-skipping on absence per Q-η5 (a) precedent
+/// Three steps, each silent-skipping on absence per the absent-input precedent
 /// (the [`MachineSchedulerConfig::tick_period_us`] populator): forge
 /// `<sce:link name=link_name>` must exist, its `<sce:rx-pool ref=Y>`
 /// must be declared, and that pool name must resolve to a
@@ -3272,7 +3273,7 @@ pub fn validate_link_driver_class_consistency(
 /// consumers can distinguish reassembly bindings (§5.M) from regular
 /// RX (§5.K burst-rate) cases without re-joining.
 ///
-/// Single source of truth for the 3-way join — Q-C13-α2-2 (a) lock.
+/// Single source of truth for the 3-way join.
 /// Callers are validators in this module (`validate_links_burst_invariants`)
 /// and in [`crate::forge::validate`] / cross-doc orchestration paths
 /// where the same join is required. The function avoids `forge::*`
@@ -3299,8 +3300,8 @@ pub fn resolve_link_rx_pool_slot_count<'a>(
 /// [`resolve_link_rx_pool_slot_count`] to check the cooperative-tick
 /// drain capacity against the declared inbound burst rate.
 ///
-/// Silent-skips when any of the following are absent (per Q-η5 (a)
-/// precedent — `[[feedback-silently-broken-hooks]]` discipline,
+/// Silent-skips when any of the following are absent (per the
+/// absent-input precedent — `[[feedback-silently-broken-hooks]]` discipline,
 /// "data unavailable" must not synthesize false errors):
 ///   - `link.burst_pps` (no declared burst rate to test against)
 ///   - `scheduler.tick_period_us` (no cooperative tick to bound the
@@ -3403,8 +3404,7 @@ pub fn validate_links_burst_invariants(
 /// Watching-zenoh RFC §5.M lines 2946-2999 cross-doc validators for
 /// reassembly-variant buffer pools bound to deploy-declared links.
 ///
-/// Six codes ride through this one entry point (the
-/// `[[diagnostic-code-edit-checklist]]` atomic family per Q-C13-α2-6 a);
+/// Six codes ride through this one entry point;
 /// each fires from a join of `deploy.links.<X>` → forge `<sce:link
 /// name=X>` → its `<sce:rx-pool ref=Y>` → `BufferPoolModel` for Y
 /// (resolved via [`resolve_link_rx_pool_slot_count`]). The validators
@@ -3414,7 +3414,7 @@ pub fn validate_links_burst_invariants(
 /// `mem/*` + `reassembly/*` slash-paths align with the validation
 /// stage in `[[SCE_ERROR_CONTRACT]]`.
 ///
-/// Each validator silent-skips on absence per Q-η5 (a) precedent. The
+/// Each validator silent-skips on absent inputs. The
 /// six are ordered by spec line in the same way the diagnostic catalog
 /// presents them, so a deterministic first-failure return reproduces
 /// the catalog reading order.
@@ -3425,7 +3425,7 @@ pub fn validate_links_burst_invariants(
 /// uses `(expected_p99 - regular_pool.slot_size) / expected_p99 >
 /// 0.25` per spec line 2902) walks every `BufferPoolVariant::Default`
 /// pool bound to the link by scanning both rx_pool and tx_pool refs
-/// for completeness, but Q-C13-α2-4 (a) silent-skips when no Default
+/// for completeness, but silent-skips when no Default
 /// pool is bound to the link — the formula references "the regular
 /// RX pool's slot_size" which doesn't exist for the link in that
 /// scenario.
@@ -3433,7 +3433,7 @@ pub fn validate_reassembly_cross_doc(
     cfg: &DeployConfig,
     forge_link_models: &std::collections::HashMap<String, &crate::forge::model::LinkModel>,
     pool_registry_full: &std::collections::HashMap<String, &crate::forge::model::BufferPoolModel>,
-    // C10-α (Q-C10-4 a) — orchestrator-resolved listener-link set
+    // Orchestrator-resolved listener-link set
     // (`<link_name>` for every `session_arming` link whose machine's
     // source SCXML carries any `Accepting.*` substate). Drives the
     // session_arming branch of the #4 check below: when the bound
@@ -3477,7 +3477,7 @@ pub fn validate_reassembly_cross_doc(
                 ) else {
                     continue;
                 };
-                // C13-γ accept_stage_copy_rate lookup — same join the
+                // accept_stage_copy_rate lookup — same join the
                 // resolver did, surfacing the forge LinkModel reference
                 // for the opt-out semantics. The lookup cannot fail
                 // when the resolver succeeded (3-way join shares the
@@ -3550,14 +3550,14 @@ pub fn validate_reassembly_cross_doc(
                     }
 
                     // ── #4 reassembly/untrusted-link-binding +
-                    //    C10-α reassembly/binding-on-unpaired-listener ──
+                    //    reassembly/binding-on-unpaired-listener ──
                     //
                     // Spec line 2964-2969 frames `untrusted-link-
                     // binding` as the rejection for non-
                     // `established_session` bindings; spec lines
                     // 2982-2994 (`binding-on-unpaired-listener`)
                     // narrows the `session_arming` subcase to the
-                    // listener-pair-aware path. Q-C10-4 (a) routing:
+                    // listener-pair-aware path. Routing:
                     //
                     //   trust_class = EstablishedSession → pass
                     //   trust_class = SessionArming + listener →
@@ -3568,7 +3568,7 @@ pub fn validate_reassembly_cross_doc(
                     //     fire `reassembly/binding-on-unpaired-listener`
                     //   trust_class = Untrusted → fire
                     //     `reassembly/untrusted-link-binding`
-                    //     (Untrusted-only after C10-α)
+                    //     (Untrusted-only since the listener-pair split)
                     //
                     // Silent-skip when domain_attrs entirely absent
                     // — that scenario is named by #5 below.
@@ -3617,13 +3617,13 @@ pub fn validate_reassembly_cross_doc(
                         }
                     } else {
                         // ── #5 reassembly/trust-class-missing-on-fragmenting-link ──
-                        // Spec line 2970-2975. Q-C13-α2-8 (a) lock:
+                        // Spec line 2970-2975:
                         // domain_attrs absent on a reassembly-bound
                         // link triggers the diagnostic; the
                         // "declared without trust_class" case is
                         // already parse-rejected by
                         // `LinkDomainAttrs.trust_class` required-when-
-                        // block-declared shape (C13-α-1).
+                        // block-declared shape (parse-time).
                         return Err(Box::new(
                             ValidationError::ReassemblyTrustClassMissingOnFragmentingLink {
                                 pool_name: pool_name.to_string(),
@@ -3633,19 +3633,18 @@ pub fn validate_reassembly_cross_doc(
                         ));
                     }
 
-                    // ── Axis-2 declared-consumption — reassembly/
+                    // ── Declared-consumption — reassembly/
                     //    per-peer-quota-build-invariant-violated ──
                     //
                     // Spec line 2841-2861 verbatim:
                     //   `peer_table.capacity × per-peer-quota ≥ slot_count`
                     //
-                    // The placeholder comment in `forge/diagnostic.rs:1170`
-                    // deferred this to C9-β where the `peer_table.capacity`
-                    // source becomes available; it lands here instead,
-                    // closing the last open Axis-2 declared-consumption
-                    // gap found by the 6-axis program audit.
+                    // This check lives here (rather than a
+                    // reassembly-side consumer) because the
+                    // `peer_table.capacity` source is available at
+                    // this join.
                     //
-                    // Silent-skip per Q-η5 (a) when:
+                    // Silent-skip when:
                     //   - link.stateless_accept absent (no session_arming
                     //     hardening block on the link — the peer_table
                     //     source is unreachable)
@@ -3685,7 +3684,7 @@ pub fn validate_reassembly_cross_doc(
                     }
                 }
 
-                // ── C13-γ pool/stage-copy-accept-rejected-under-forbid ──
+                // ── pool/stage-copy-accept-rejected-under-forbid ──
                 // Spec line 2512-2516 — under `forbid` policy, the
                 // mere presence of `<sce:accept-stage-copy-rate>` on
                 // a link source is a hard error regardless of whether
@@ -3707,17 +3706,17 @@ pub fn validate_reassembly_cross_doc(
                 }
 
                 // ── #3 reassembly/expected-fragmentation-rate-high ──
-                //     (or its C13-γ promotion `pool/stage-copy-policy-error`)
+                //     (or its policy promotion `pool/stage-copy-policy-error`)
                 //
                 // Spec line 2950-2952 verbatim — the formula references
                 // "the regular RX pool's slot_size", which is the
                 // `BufferPoolVariant::Default` pool bound to the link.
-                // Per Q-C13-α2-4 (a): silent-skip when no Default pool
+                // Silent-skip when no Default pool
                 // is bound — that means the link has no "regular RX"
                 // path the formula can reference. When the resolved
                 // pool IS the Default variant, use its slot_size.
                 //
-                // C13-γ promotion semantics (RFC §5.K lines 2358-2367):
+                // Policy promotion semantics (RFC §5.K lines 2358-2367):
                 //   - `Warn` (default): #3 fires unless the link
                 //     declares `<sce:accept-stage-copy-rate>` (opt-out
                 //     suppresses the warning per spec line 2356-2357).
@@ -3827,14 +3826,14 @@ pub fn validate_reassembly_cross_doc(
 /// block, the `hmac_extern` + `rng_extern` symbol names must be
 /// present in the §5.I baseline intrinsics whitelist
 /// ([`crate::forge::intrinsic_registry::BASELINE_SYMBOLS`]) OR in the
-/// passed `plugin_symbols` slice (target_plugin-loaded entries per C4
-/// Atomic B). When the symbol is in neither, the validator returns
+/// passed `plugin_symbols` slice (target_plugin-loaded entries per the
+/// §5.I plugin loader). When the symbol is in neither, the validator returns
 /// [`DeployError::StatelessAcceptExternNotWhitelisted`] carrying the
 /// sorted union of baseline + plugin names as `Fix::ReplaceOneOf`
 /// candidates.
 ///
 /// Lives at the orchestrator level because target-plugin loading is
-/// deploy-driven, mirroring the C4 Atomic B precedent — the baseline
+/// deploy-driven, mirroring the target-plugin loader precedent — the baseline
 /// whitelist is a compile-time const, but the plugin set varies per
 /// deploy.
 pub fn validate_stateless_accept_externs(
@@ -4008,8 +4007,8 @@ fn validate_keepalive_jitter_required_when_cooperative(
 /// Validator silent-skips when:
 /// - `scheduler.kind` is not `cooperative` (tokio/rt use preemption, no
 ///   slot accounting),
-/// - `tick_period_us` is absent (no derivation possible — Q-η5 (a)
-///   precedent silent-skip on missing deploy info),
+/// - `tick_period_us` is absent (no derivation possible —
+///   absent-input silent-skip on missing deploy info),
 /// - `worker_slot_budget_us` is absent (already caught by
 ///   [`validate_worker_slot_budget_required_when_cooperative`]).
 ///
@@ -4018,14 +4017,14 @@ fn validate_keepalive_jitter_required_when_cooperative(
 /// when a Worker doc compiles against a machine without an entry for
 /// itself in `machines.<m>.workers` (signals: undeclared worker, scheduler
 /// cannot account for it).
-/// Watching-zenoh RFC §5.N lines 3060-3061 (C10-β) — paired
+/// Watching-zenoh RFC §5.N lines 3060-3061 — paired
 /// validators for the multi-link concurrency contract on the
 /// cooperative-scheduler path.
 ///
 /// **#1 `link/concurrent-count-exceeds-scheduler-slots`** (MCU-only
 /// per spec line 3060 prose, gated on `platform.class: mcu`). The
 /// per-tick slot ceiling is
-/// `floor(tick_period_us / per_link_budget_us)` per Q-C10-β-2 (a),
+/// `floor(tick_period_us / per_link_budget_us)`,
 /// mirroring [`validate_machine_scheduler_worker_capacity`]. Fires
 /// when `links.len() > slot_count`.
 ///
@@ -4034,13 +4033,12 @@ fn validate_keepalive_jitter_required_when_cooperative(
 /// tick" regardless of platform). Fires when
 /// `per_link_budget_us > tick_period_us`.
 ///
-/// Both silent-skip when any of the following are absent (per Q-η5
-/// (a) precedent):
+/// Both silent-skip when any of the following are absent:
 ///   - `scheduler.kind` != `cooperative` (tokio/rt use preemption;
 ///     spec §5.N AP path uses `tokio::spawn` per link — no slot
 ///     accounting),
 ///   - `tick_period_us` absent,
-///   - `per_link_budget_us` absent (the C10-β new field — single-doc
+///   - `per_link_budget_us` absent (single-doc
 ///     compile paths + machines that opt out of the budget cap
 ///     silent-skip).
 ///
@@ -4064,7 +4062,7 @@ fn validate_machine_scheduler_link_concurrency(cfg: &DeployConfig) -> Result<(),
             // ── #2 `link/per-link-budget-exceeds-tick-period` ──
             // Spec line 3061 verbatim. All cooperative-scheduled
             // platforms, regardless of class. Single-link sanity
-            // check (Q-C10-β-3 a literal code-name reading).
+            // check (literal code-name reading).
             if per_link_budget_us > tick_period_us {
                 return Err(DeployError::LinkPerLinkBudgetExceedsTickPeriod {
                     machine: machine_name.clone(),
@@ -4144,8 +4142,8 @@ fn validate_machine_scheduler_worker_capacity(cfg: &DeployConfig) -> Result<(), 
 ///
 /// Validator silent-skips when:
 /// - `machine.scheduler` is absent (no scheduler declared → no wheel),
-/// - `scheduler.timer_wheel_depth` is absent (Q-η5 (a) precedent —
-///   the deploy doesn't carry wheel sizing yet),
+/// - `scheduler.timer_wheel_depth` is absent (absent-input
+///   silent-skip — the deploy doesn't carry wheel sizing),
 /// - `machine.timers` is empty (no timers to overflow).
 fn validate_machine_timer_wheel_capacity(cfg: &DeployConfig) -> Result<(), DeployError> {
     for device in cfg.topology.values() {
@@ -4896,17 +4894,16 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
 }
 
 /// Transports whose RX path supports buffer-pool kind staging
-/// (watching-zenoh RFC §5.E B7-η' Q-StagePool-3 (a)). A binding may
+/// (watching-zenoh RFC §5.E). A binding may
 /// declare `stage_pool: <name>` only on a transport in this list; any
 /// other transport raises `mesh/deploy-stage-pool-transport-mismatch`.
 ///
 /// Currently empty. The mesh RPC transports SCE knows today (zenoh,
 /// someip, dds, shm, local, custom_tcp) route logical events rather
 /// than allocating from a slot table — none of them actually surface
-/// `Sample::take()` semantics. Entries land here as concrete
-/// transport-side wiring grows: η' codegen for forge link kind on a
-/// future deploy.yaml `links:` section is the first expected
-/// contributor. Empty-list MVP keeps the diagnostic strict — every
+/// `Sample::take()` semantics. Entries are consumer-gated on
+/// concrete transport-side wiring landing.
+/// The empty list keeps the diagnostic strict — every
 /// `stage_pool` declaration today fails loud, matching the
 /// `feedback_silently_broken_hooks.md` invariant. See watching-zenoh
 /// RFC §5.E.
@@ -4914,7 +4911,7 @@ const TRANSPORTS_SUPPORTING_STAGE_POOL: &[&str] = &[];
 
 /// Validate that every `binding.stage_pool` declaration sits on a
 /// transport whose RX path supports buffer-pool kind staging
-/// (watching-zenoh RFC §5.E B7-η' Q-StagePool-3 (a)). Runs as part of
+/// (watching-zenoh RFC §5.E). Runs as part of
 /// [`parse_deploy_str`] so the diagnostic fires at parse time —
 /// independent of forge-side cross-reference resolution, which lives
 /// in [`validate_stage_pool_references`] (a separate post-parse pass
@@ -4950,7 +4947,7 @@ fn validate_stage_pool_transport(cfg: &DeployConfig) -> Result<(), DeployError> 
 
 /// Validate that every `binding.stage_pool` reference resolves to a
 /// declared forge buffer-pool kind name (watching-zenoh RFC §5.E
-/// B7-η' Q-StagePool-1 (Y) cross-schema reference resolution). Runs
+/// cross-schema reference resolution). Runs
 /// as a post-parse pass — `parse_deploy_str` produces the
 /// `DeployConfig` first, the build pipeline assembles the
 /// [`crate::forge::pool_registry::ForgePoolRegistry`] from every
@@ -5572,8 +5569,7 @@ impl DeployConfig {
     }
 }
 
-// ── NL→IR Mapping Roadmap Item C1 Path A (DL-7') cross-machine
-//    EventSchema validation ──────────────────────────────────────
+// ── Cross-machine EventSchema validation ───────────────────────
 //
 // For every `<send target="#X">` whose sender and receiver are
 // distinct machines on the mesh topology, the validator compares
@@ -5586,7 +5582,7 @@ impl DeployConfig {
 //   * SenderOnly — sender declares a schema, receiver does not.
 //   * ReceiverOnly — receiver declares a schema, sender does not.
 //
-// Both-schemaless events fall through silently per DL-9' schemaless
+// Both-schemaless events fall through silently per the schemaless
 // fallback (the same contract the receive-side and send-side
 // validators honour). W3C-reserved targets (`#_parent` / `#_child`
 // / `#_internal` / `#_scxml_`) and intra-machine sends skip the
@@ -5611,7 +5607,7 @@ struct CrossMachineSendSite<'a> {
 /// onentry/onexit block, initial-transition / history-default
 /// sequence, `<if>` / `<foreach>` body) collecting every
 /// `<send target="#X">` site whose event + target are statically
-/// resolvable. Dynamic shapes silently skip per DL-7' contract.
+/// resolvable. Dynamic shapes silently skip by contract.
 fn collect_cross_machine_send_sites<'a>(
     actions: &'a [crate::model::Action],
     out: &mut Vec<CrossMachineSendSite<'a>>,
@@ -5662,7 +5658,7 @@ fn collect_cross_machine_send_sites<'a>(
 /// human-readable diagnostic messages without dragging in a
 /// cryptographic hash dependency.
 ///
-/// Path A swap from prior `LookupRef` shape: an `Enum(EnumRef)`
+/// Changed from the prior `LookupRef` shape: an `Enum(EnumRef)`
 /// field's hash incorporates the alias string verbatim (the same
 /// text the author wrote in `sce:type="enum:<alias>"`), so the
 /// structural hash is invariant under the Lookup→Enum reshape of
@@ -5691,7 +5687,7 @@ fn canonical_event_schema_hash(schema: &crate::forge::model::EventSchemaModel) -
     format!("{:016x}", hash)
 }
 
-/// NL→IR Mapping Roadmap Item C1 Path A (DL-7') — cross-machine
+/// Cross-machine
 /// EventSchema consistency check. See module-level commentary above
 /// for the full rejection-shape contract.
 ///
@@ -5787,7 +5783,7 @@ pub fn validate_event_schemas_cross_machine(
             // [`crate::mesh::target::TargetId::name`]. Reject
             // W3C-reserved targets here without a TargetId roundtrip
             // — the literal-set match is short and the
-            // failure-mode-of-interest at DL-7' is cross-machine
+            // failure-mode-of-interest here is cross-machine
             // routing, not the W3C internals.
             if !site.target.starts_with('#') {
                 continue;
@@ -9151,8 +9147,8 @@ topology:
 
     #[test]
     fn scheduler_cooperative_with_budget_parses() {
-        // C2-γ extends the required-when-cooperative set: stack budget
-        // (C2-α), slot budget (line 2428-9), keepalive jitter budget
+        // The required-when-cooperative set: stack budget,
+        // slot budget (line 2428-9), keepalive jitter budget
         // (line 2430-1). All three must be present for the cooperative
         // arm to parse without error.
         let yaml = r##"
@@ -9285,7 +9281,7 @@ topology:
         assert!(machine.memory.is_none());
     }
 
-    // ── watching-zenoh RFC §5.E B7-η' stage_pool field ──────────────
+    // ── watching-zenoh RFC §5.E stage_pool field ────────────────────
     //
     // These cover the deploy.yaml side of the cross-schema reference
     // surface. The transport-mismatch path is exercised at parse time
@@ -9325,7 +9321,7 @@ topology:
         // Today no mesh RPC transport is in
         // `TRANSPORTS_SUPPORTING_STAGE_POOL`, so any present
         // `stage_pool:` raises `StagePoolTransportMismatch` — this is
-        // the canonical fail-loud rejection per Q-StagePool-3 (a).
+        // the canonical fail-loud rejection.
         let yaml = r##"
 version: "1.0"
 topology:

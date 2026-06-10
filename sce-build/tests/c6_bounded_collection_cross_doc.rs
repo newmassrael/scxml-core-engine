@@ -1,4 +1,4 @@
-//! C6-β — Bounded-collection cross-doc resolution integration tests.
+//! Bounded-collection cross-doc resolution integration tests.
 //!
 //! Per watching-zenoh RFC §5.L lines 2566-2567 + 2615 + 2560-2562:
 //! three failure axes against the build's forge-doc set, exercised
@@ -18,7 +18,7 @@
 //!  7. index_by_field_missing_fires
 //!  8. multi_writer_without_atomic_extern_fires
 //!
-//! Existing `c6_bounded_collection.rs` (C6-α scope) is left untouched.
+//! Existing `c6_bounded_collection.rs` (parse-time scope) is left untouched.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -61,14 +61,12 @@ fn run_orchestrator(
     )
 }
 
-/// Happy-path assertion helper. C6-β's validator runs before codegen
-/// (pass-3); the bounded-collection codegen template lands in C6-γ
-/// and is intentionally absent today, so a build that passes the
-/// validator currently fails downstream with
-/// `CodegenGenericKindBackendEmitMissing { kind: "bounded-collection" }`.
-/// Asserting on this specific downstream error proves the C6-β
-/// validator silent-passed; once C6-γ ships, the happy tests will
-/// flip to `Ok(_)` and this helper goes away.
+/// Happy-path assertion helper. The cross-doc validator runs before
+/// codegen (pass-3). With the bounded-collection codegen template
+/// shipped, the happy path is `Ok(_)`; the
+/// `CodegenGenericKindBackendEmitMissing { kind: "bounded-collection" }`
+/// arm is also accepted because reaching that downstream error still
+/// proves the validator silent-passed.
 fn assert_validator_silent_passed(
     result: Result<
         Vec<(String, sce_build::generator::GeneratedOutput)>,
@@ -76,28 +74,28 @@ fn assert_validator_silent_passed(
     >,
 ) {
     match result {
-        Ok(_) => {} // C6-γ landed — validator pass + codegen succeeded.
+        Ok(_) => {} // Validator pass + codegen succeeded.
         Err(located) => match &located.error {
             ForgeError::Generate(boxed) => match boxed.as_ref() {
                 GenerateError::CodegenGenericKindBackendEmitMissing { kind, .. }
                     if kind == "bounded-collection" =>
                 {
-                    // C6-γ not landed yet — codegen reached the BC emit
-                    // site, which proves the C6-β validator passed (a
+                    // Codegen reached the BC emit site, which
+                    // proves the cross-doc validator passed (a
                     // validator failure would short-circuit before
                     // codegen).
                 }
                 other => {
-                    panic!("C6-β validator must silent-pass; got an unrelated error: {other:?}")
+                    panic!("validator must silent-pass; got an unrelated error: {other:?}")
                 }
             },
-            other => panic!("C6-β validator must silent-pass; got an unrelated error: {other:?}"),
+            other => panic!("validator must silent-pass; got an unrelated error: {other:?}"),
         },
     }
 }
 
 /// Codec doc with two fields; both field ids are exposed via
-/// `discover_stateful_member_fields`'s codec arm so the C6-β
+/// `discover_stateful_member_fields`'s codec arm so the cross-doc
 /// index-by validator can enumerate them.
 fn codec_doc(name: &str) -> String {
     format!(

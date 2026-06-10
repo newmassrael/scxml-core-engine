@@ -398,11 +398,12 @@ pub enum FixtureSpec {
         function: String,
         /// Derived at harness-rendering time from SCXML — true iff at
         /// least one `<sce:test-vector>` element appears under the
-        /// algorithm root. RFC §5.B B2-test-vector trunk emits a
+        /// algorithm root. RFC §5.B test-vector support (item B2) emits a
         /// per-backend sidecar (`<fixture>_test.{rs,h}`) on Rust + C11
         /// only; the conformance filter drops the fixture from
-        /// Cpp/Kotlin/Go/Python harnesses until those closures land
-        /// (mirrors B1-β codec_variant_dispatch's per-language gate).
+        /// Cpp/Kotlin/Go/Python harnesses — those sidecars are
+        /// consumer-gated (mirrors codec_variant_dispatch's
+        /// per-language gate).
         /// Empty in fixtures.json (manifest-side override is rejected);
         /// computed by `has_test_vectors_in_file` so the SCXML
         /// stays the single source of truth.
@@ -533,8 +534,8 @@ pub fn go_type_for(ty: &str) -> &'static str {
 }
 
 /// Map a canonical type to its C11 native type name. Codec `bytes`
-/// fields land as a fixed-buffer + len pair under V1β
-/// (`forge_c11_phase_a_landed`), so this helper reports just the buffer
+/// fields land as a fixed-buffer + len pair in the C11 emission,
+/// so this helper reports just the buffer
 /// element type — the harness fragment generates the matching `[N]`
 /// declaration alongside an explicit `_len` companion.
 pub fn c_type_for(ty: &str) -> &'static str {
@@ -1746,7 +1747,7 @@ pub fn render_harness(
     // C11: pre-bake the oracle into the harness source (no runtime JSON parser).
     // Other backends parse `numerical_reference.json` at test-runtime via
     // their language's JSON library, but C11 has no zero-deps parser
-    // that survives the R3 lock-in — so we attach a `cases` array to
+    // compatible with the backend's zero-dependency rule — so we attach a `cases` array to
     // each fixture and emit `static const` arrays at codegen time.
     //
     // `float_tolerance` is exposed so the harness can `#define` the

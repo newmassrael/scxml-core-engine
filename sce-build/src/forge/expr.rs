@@ -1764,7 +1764,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
                     }
                     ret
                 }
-                // RFC c7-wildcard W-index: the `len(<bytes|str>)` builtin is
+                // Item C7 wildcard-keyexpr lowering: the `len(<bytes|str>)` builtin is
                 // not a registered signature, but its result is an integer
                 // length, not `Unknown`. Typing it `UntypedInt` lets the
                 // surrounding comparison adopt the *other* operand's concrete
@@ -2006,7 +2006,7 @@ fn binary_operand_type(op: BinOp, left: InferredType, right: InferredType) -> In
 /// two-cursor keyexpr matcher uses to bound `pi < len(pattern)`. Each
 /// emitter lowers it to its native length idiom (C11 `.len`, Rust
 /// `.len()`, Cpp `.size()`, Kotlin `.size`, Go/Python `len(x)`) rather
-/// than the generic `len(args)` call. RFC c7-wildcard W-index Q-W-3.
+/// than the generic `len(args)` call. Item C7 wildcard-keyexpr lowering.
 fn is_len_builtin(callee: &TypedExpr, args: &[TypedExpr]) -> bool {
     args.len() == 1
         && matches!(args[0].ty, InferredType::Bytes | InferredType::Str)
@@ -2447,7 +2447,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
             };
             // A `bytes` operand is a `ByteArray`; `[i]` yields a signed
             // `Byte`, so normalize to `UByte` exactly as the foreach arm
-            // does. RFC c7-wildcard W-index Q-W-2.
+            // does. Item C7 wildcard-keyexpr lowering.
             let norm = if matches!(object.ty, InferredType::Bytes) {
                 ".toUByte()"
             } else {
@@ -3008,7 +3008,7 @@ fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, ExprError
     // cannot do this: it types `len(x)` as `UntypedInt` (the infer lattice's
     // always-wider stand-in) and short-circuits `UntypedInt → _` to a no-op
     // on the untyped-constant assumption. Mirrors the Rust `.len() as uN`
-    // push-down (RFC c7-wildcard W-index Q-W-3).
+    // push-down (item C7 wildcard-keyexpr lowering).
     if let ExprKind::Call { callee, args } = &expr.kind {
         if is_len_builtin(callee, args) {
             if let InferredType::Int { signed, bits } = expected {
@@ -3628,7 +3628,7 @@ fn c_emit_node(expr: &TypedExpr) -> String {
             // A `bytes` operand lowers to `sce_forge_bytes_view_t`
             // (`{const uint8_t *data; size_t len}`), so a random byte
             // read projects through `.data` — mirroring the foreach
-            // arm's `src.data[__i]`. RFC c7-wildcard W-index Q-W-1.
+            // arm's `src.data[__i]`. Item C7 wildcard-keyexpr lowering.
             let accessor = if matches!(object.ty, InferredType::Bytes) {
                 ".data"
             } else {

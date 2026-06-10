@@ -7,7 +7,7 @@
 //!
 //! Runs after [`crate::forge::parser::parse_procedure`] has built a
 //! [`ProcedureModel`]; catches inconsistencies between two declared
-//! caps before any backend codegen runs. The runtime β path
+//! caps before any backend codegen runs. The runtime enforcement path
 //! (`error.execution` raised on actual cap violations) is the safety
 //! net for cases where the declarations are consistent but real data
 //! exceeds the cap; this pass is the static counterpart that prevents

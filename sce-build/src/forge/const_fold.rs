@@ -56,14 +56,14 @@ enum ConstFoldKind {
     /// Body construct outside the foldable substrate. `detail` quotes
     /// the specific clause (member access, runtime ident, malformed
     /// literal, …) so consumers reading the message text retain the
-    /// β-era diagnostic shape.
+    /// established diagnostic shape.
     NotFoldable(String),
     /// Iteration budget exhausted. `budget` is the *configured* maximum
     /// (not the remaining count), so the message can quote the policy
     /// the operator is hitting verbatim.
     BudgetExceeded { budget: u64 },
     /// Coercion to the declared scalar / element type rejected. Mirrors
-    /// the β slug payload (`actual → expected`).
+    /// the established slug payload (`actual → expected`).
     YieldTypeMismatch { expected: SceType, actual: String },
 }
 

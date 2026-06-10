@@ -35,7 +35,7 @@ use sce_build::mesh::deploy::{parse_deploy_str, validate_reassembly_cross_doc};
 use sce_build::model::{SCXMLModel, State};
 use sce_build::{accepting_substate_present, resolve_listener_links};
 
-// ── Sub-Q-C10-α-3 (a) Accepting.* prefix walker ────────────────
+// ── Accepting.* prefix walker ──────────────────────────────────
 
 #[test]
 fn accepting_substate_present_matches_exact_id() {
@@ -233,7 +233,8 @@ fn resolve_listener_links_silent_skips_established_session_link() {
 // `binding_on_session_arming_listener_passes` +
 // `untrusted_link_binding_fires_on_untrusted_trust_class`. This
 // suite carries the orchestrator-side join tests above; the
-// validator tests live alongside the existing C13-α-2 corpus per the
+// validator tests live alongside the existing reassembly cross-doc
+// corpus (`c13_alpha2_reassembly_cross_doc.rs`) per the
 // established sibling-test placement.
 
 // ── Sibling inheritance contract (RFC §5.C lines 814-820) ──────
@@ -364,9 +365,9 @@ fn validate_reassembly_with_empty_listener_links_still_rejects_untrusted() {
     pool_registry.insert("rx_reassembly_pool".to_string(), &pool);
 
     let err = validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &BTreeSet::new())
-        .expect_err("Untrusted binding still rejected post-C10-α");
+        .expect_err("Untrusted binding is rejected");
     assert!(
         matches!(*err, ValidationError::ReassemblyUntrustedLinkBinding { .. }),
-        "C10-α retains `reassembly/untrusted-link-binding` for Untrusted: {err:?}"
+        "`reassembly/untrusted-link-binding` fires for Untrusted: {err:?}"
     );
 }

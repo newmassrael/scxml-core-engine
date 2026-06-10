@@ -2911,7 +2911,8 @@ impl LinkClass {
     /// namespace placeholder. Anything off the table fires
     /// `link/class-unsupported-on-target` at validate-time.
     ///
-    /// Single source of truth for [`forge::validate`]'s η check.
+    /// Single source of truth for [`forge::validate`]'s link-class × OS
+    /// admissibility check.
     /// Future OS-specific classes (e.g. `unix_socket`, `qnx_msg`) land
     /// additively as new enum rows when the corresponding OS support
     /// is wired.
@@ -3335,8 +3336,8 @@ pub struct ReassemblyConfig {
 /// - `<sce:slot-count>` (u32, > 0) — number of slots in the pool
 /// - `<sce:slot-size>` (u32, > 0) — bytes per slot
 /// - `<sce:section>` (string) — SRAM region name (matches deploy.yaml
-///   `machines.<m>.memory.sram_regions.<name>`); η-second-consumer
-///   validator `mem/pool-section-conflict` fires when the section is
+///   `machines.<m>.memory.sram_regions.<name>`); the deploy-aware
+///   second-consumer validator `mem/pool-section-conflict` fires when the section is
 ///   declared but absent from the resolved machine's memory map
 /// - `<sce:alignment>` (u32, power of 2, > 0) — DMA alignment requirement
 /// - `<sce:dma-channel>` (string, optional) — DMA channel binding

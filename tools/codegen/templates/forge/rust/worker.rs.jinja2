@@ -12,7 +12,7 @@
 // concurrent execution context. Spec line 904: "inbox = heapless::spsc
 // (Rust) or fixed ring buffer (C)". This template emits the fixed
 // ring-buffer shape directly (no external crate dependency); the
-// Producer/Consumer split is the type-level FSM per Q-C2-8 (b) lock
+// Producer/Consumer split is the type-level FSM
 // (heapless::spsc inspires the shape, not the dependency).
 //
 // RFC §5.I lines 1752-1758 ordering choice: `ordering="{{ inbox_ordering }}"`

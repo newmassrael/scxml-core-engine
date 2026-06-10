@@ -5,7 +5,7 @@
 //
 // Mirrors `sce-forge-runtime/rust/src/codec.rs`. RFC §5.B L494-519 pins
 // the per-language cursor + need-more-bytes contract on decode so a
-// truncated input never aborts. RFC B1-α extends the contract to the
+// truncated input never aborts. RFC §5.B extends the contract to the
 // write side: `SceSink` is the abstract base that codec `encode`
 // bodies emit into; `VectorSink` (heap-backed, infallible) and
 // `SpanSink` (caller-owned `uint8_t*` + cap, raises `BufferOverflow`
@@ -26,12 +26,12 @@ namespace SCE::Forge {
 /// sentinel + cursor side-flag) and encode (`std::optional<CodecError>`
 /// return: `std::nullopt` = success, value = error).
 ///
-/// The B1-β variant primitive intentionally does NOT need a typed
+/// The variant primitive intentionally does NOT need a typed
 /// `UnknownVariantTag` — RFC §5.B requires `<sce:default>` when arms
 /// don't exhaust the tag domain (build-time `codec/variant-arm-unreachable`
 /// otherwise), so the default arm catches every unmatched tag at runtime.
 ///
-/// The B3-α TLV chain primitive emits on cpp after the B5-ε closures
+/// The TLV chain primitive emits on cpp
 /// (it was originally MCU-only as a conservative scope choice; Zenoh
 /// extension envelopes need server-class peers too). On reject-policy
 /// overflow cpp collapses the failure to the truncation sentinel
@@ -44,7 +44,7 @@ enum class CodecError : std::uint8_t {
     /// A `vle_u<N>` field's continuation chain implies a value wider
     /// than the declared type. RFC §5.B `codec/vle-width-overflow`.
     VleWidthOverflow = 2,
-    /// RFC §5.B B1-α encode-side counterpart to `NeedMoreBytes`: the
+    /// RFC §5.B encode-side counterpart to `NeedMoreBytes`: the
     /// destination sink reported insufficient remaining capacity for
     /// the next write. Only the bounded `SpanSink` (caller-owned
     /// `uint8_t*` + cap) can raise this; the heap-backed `VectorSink`
@@ -133,7 +133,7 @@ private:
     bool vle_overflow_ = false;
 };
 
-/// RFC §5.B B5-ζ Surface H: validate that `[p, p+n)` is a well-formed
+/// RFC §5.B string typing (`sce:type="string"`): validate that `[p, p+n)` is a well-formed
 /// UTF-8 byte sequence. Returns `true` for valid UTF-8 (including the
 /// empty range), `false` for any malformed sequence (invalid lead
 /// byte, incomplete multi-byte sequence, overlong encoding, or

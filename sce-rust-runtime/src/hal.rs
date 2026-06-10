@@ -14,7 +14,7 @@
 //! and [`NoOpHal`] (no_std fallback that panics on `wake` / `irq_save` until
 //! a downstream MCU integration crate wires real platform code).
 //!
-//! ## Crate boundary (per RFC Q-RustNoStd-4 (d), 2026-05-12 refresh)
+//! ## Crate boundary (locked 2026-05-12)
 //!
 //! Spec §5.J.2 originally named `sce_intrinsics_runtime` as the trait owner,
 //! anticipating a separate runtime crate. C4 (`b0b2a059` / `3d4792dc` /

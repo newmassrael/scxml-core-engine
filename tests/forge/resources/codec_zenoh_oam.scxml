@@ -31,7 +31,7 @@
                               0x02 per oam_encode lines 512-521 with
                               safety margin; entry-flag-Z termination
                               since the variant body follows the
-                              chain — Y3 atomic 1 grammar).
+                              chain — atomic 1 grammar).
        inner    : body       — own-field variant on `header.enc`:
                                 0x00 → codec_zenoh_ext_unit (empty)
                                 0x01 → codec_zenoh_ext_zint (VLE u64)
@@ -46,12 +46,12 @@
                                        round-trip with the most-
                                        benign zero-body shape).
 
-     Composition: B1-γ flags (header with multi-bit ENC subfield) +
-     Y3 atomic 2a present-if-on-tlv-chain (header.Z gate) + Y3 atomic
+     Composition: flags flags (header with multi-bit ENC subfield) +
+     atomic 2a present-if-on-tlv-chain (header.Z gate) + atomic
      1 entry-flag termination (chain followed by variant body) +
-     B5-ε surface G (chain element = codec_zenoh_ext_entry variant) +
-     B5-η Surface I (recursive variant body — ext_zint and ext_zbuf
-     as arm bodies) + B5-β multi-bit-flag own-field variant dispatch.
+     variant-entry chain (chain element = codec_zenoh_ext_entry variant) +
+     recursive variant body (recursive variant body — ext_zint and ext_zbuf
+     as arm bodies) + multi-bit dispatch multi-bit-flag own-field variant dispatch.
      No new primitives. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

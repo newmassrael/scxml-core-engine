@@ -36,7 +36,7 @@ using CodecVariantDispatchVariant = std::variant<
 
 struct CodecVariantDispatch {
     uint8_t msg_id;
-    // RFC variant-default-uniformity Atomic β-cpp: the
+    // RFC variant-default-uniformity (Cpp): the
     // `std::in_place_index_t<N>{}` tag-type selects the arm marked
     // `<sce:arm default="true"/>` by index so a freshly-constructed
     // envelope holds that arm (not the first declared alternative

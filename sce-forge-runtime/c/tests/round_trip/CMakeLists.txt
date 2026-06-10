@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
-# RFC variant-default-uniformity Atomic γ-3 (c11 half) — runtime
+# RFC variant-default-uniformity (c11 half) — runtime
 # round-trip property test mirroring
 # sce-forge-runtime/rust/tests/forge_default_round_trip.rs.
 #

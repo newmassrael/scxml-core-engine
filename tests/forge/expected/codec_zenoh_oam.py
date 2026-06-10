@@ -23,7 +23,7 @@ class CodecZenohOamVariant:
     matching ``Optional`` field carries the decoded body. ``default_tag``
     preserves the runtime tag value when the default arm fires so encode
     can round-trip it back onto the wire."""
-    # RFC variant-default-uniformity Atomic β-python: pick the declared
+    # RFC variant-default-uniformity (Python): pick the declared
     # default arm (``<sce:arm default="true"/>``) when present so a
     # freshly-constructed envelope round-trips byte-exactly through
     # ``encode() -> decode()``. The corresponding arm body field uses a
@@ -52,7 +52,7 @@ class CodecZenohOam:
         (RFC §5.B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        # RFC §5.B peek-byte / streaming-prefix:
         # streaming prefix decode (variable-length fields supported via
         # per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         # mode additionally peeks the cursor's next byte for variant tag
@@ -152,7 +152,7 @@ class CodecZenohOam:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        # RFC §5.B peek-byte / streaming-prefix:
         # streaming prefix encode.
         w.write_u8(self.header & 0xFF)
         _vle = int(self.id)

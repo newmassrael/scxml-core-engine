@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e241fa666c961fb422709417b6a7ad55bf4f514221912d403c52d7358707c2e3
-// template-hash: 2c4f76809986b4347703e89a8e901379e8391f815371b53c5a7eecbe187e1cf5
-// generated-at: 1781082052
+// source-hash: 8b44af7c4be9f9d3e84b1c4126178f5afe8c2f85b2841545a49fd218d7c48472
+// template-hash: f835a323a3abc9cebc80341e1840b22b95739a2efa1726ad2c440477eff36482
+// generated-at: 1781089330
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -116,7 +116,7 @@ pub enum StatechartMinimalPayload {
 /// Bring into scope with `use …::StatechartMinimalInject;` to call the
 /// `raise_<event>` methods on the engine.
 pub trait StatechartMinimalInject {
-    /// NL→IR Item C1 Path A: typed `_event.data` inject for `job.completed`.
+    /// Typed `_event.data` inject for `job.completed`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_job_completed(&mut self, payload: StatechartMinimalJobCompletedPayload);

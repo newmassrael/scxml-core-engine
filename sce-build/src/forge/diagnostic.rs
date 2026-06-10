@@ -585,21 +585,22 @@ pub enum DiagnosticCode {
     ScxmlAlwaysFalseGuard,
     #[serde(rename = "scxml/shadowed-transition")]
     ScxmlShadowedTransition,
-    // ── watching-zenoh RFC §5.E B7-η' SCXML on-sample family ──
-    // Author-facing rules for `<sce:on-sample>` SCE extension. Atomic A
-    // ships the structural diagnostics (placement, uniqueness,
-    // event-name-conflict); cross-ref diagnostics (link-not-declared,
-    // link-wrong-kind) are gated on Atomic B's SceCrossDocRegistry.
+    // ── watching-zenoh RFC §5.E sample-callback SCXML on-sample family ──
+    // Author-facing rules for `<sce:on-sample>` SCE extension: the
+    // structural diagnostics (placement, uniqueness,
+    // event-name-conflict) here, plus the cross-ref diagnostics
+    // (link-not-declared, link-wrong-kind) that resolve against the
+    // SceCrossDocRegistry.
     #[serde(rename = "scxml/on-sample-invalid-parent")]
     ScxmlOnSampleInvalidParent,
     #[serde(rename = "scxml/on-sample-link-duplicate-in-state")]
     ScxmlOnSampleLinkDuplicateInState,
     #[serde(rename = "scxml/on-sample-event-name-conflict")]
     ScxmlOnSampleEventNameConflict,
-    // ── watching-zenoh RFC §5.E B7-η' Atomic B cross-ref family ──
+    // ── watching-zenoh RFC §5.E sample-callback cross-ref family ──
     // Cross-reference resolution surface for `<sce:on-sample link="X">`
-    // against the build's `SceCrossDocRegistry`. Atomic A landed the
-    // structural codes above; Atomic B opens the cross-ref pair.
+    // against the build's `SceCrossDocRegistry`, complementing the
+    // structural codes above.
     // `link-wrong-kind` is wired forward-compat — today
     // `ScxmlDocKind` has the `Link` variant only, so the validator's
     // match never reaches the `Some(non-Link)` arm in production.
@@ -608,7 +609,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "scxml/on-sample-link-wrong-kind")]
     ScxmlOnSampleLinkWrongKind,
 
-    // ── Axis-3 inversion — top-level `<sce:session-role
+    // ── Listener-role declaration — top-level `<sce:session-role
     //    kind="..."/>` SCXML extension structural validators: the
     //    parse-time kind-value family. The three cross-doc
     //    partial-claim codes below join this set with deploy.yaml
@@ -617,10 +618,10 @@ pub enum DiagnosticCode {
     ScxmlUnknownSessionRoleKind,
     #[serde(rename = "scxml/duplicate-session-role-declaration")]
     ScxmlDuplicateSessionRoleDeclaration,
-    // ── Axis-3 inversion (Q-A7 (a) — typed-per-direction)
-    //    cross-doc partial-claim family + Q-A4 (d) matrix validator.
+    // ── Listener-role typed-per-direction cross-doc partial-claim
+    //    family + role × trust-class matrix validator.
     //    Three NeutralOrDeterministic codes covering each direction
-    //    of the listener-role declaration cross-claim. C10-α's
+    //    of the listener-role declaration cross-claim. The legacy
     //    silent-skip discipline at `lib.rs:3210-3220` becomes a typed
     //    diagnostic with `key_fragments` on `(machine, link_name)` or
     //    `(machine, source)`.
@@ -630,15 +631,15 @@ pub enum DiagnosticCode {
     ScxmlAcceptSideRoleWithoutListenerLink,
     #[serde(rename = "link/role-listener-with-non-session-arming-trust-class")]
     LinkRoleListenerWithNonSessionArmingTrustClass,
-    // ── Axis-3 inversion migration-helper (RFC Q-A8 (c) flip)
-    //    — fires when an SCXML carries reserved `Accepting.*` state
+    // ── Listener-role migration-helper — fires when an SCXML
+    //    carries reserved `Accepting.*` state
     //    ids but no `<sce:session-role kind="accept-side"/>`
     //    declaration. Repurposes the legacy `accepting_substate_
     //    present` walker into a typed parser-time author diagnostic
     //    rather than deleting it outright.
     #[serde(rename = "scxml/accept-side-states-without-role-declaration")]
     ScxmlAcceptSideStatesWithoutRoleDeclaration,
-    // ── Axis-2 declared-consumption (watching-zenoh RFC §5.M
+    // ── Declared-consumption invariant (watching-zenoh RFC §5.M
     //    lines 2841-2861) — `peer_table.capacity × per_peer_quota ≥
     //    slot_count` invariant. Forge buffer-pool declares its quota
     //    + slot count; deploy.yaml link declares its peer-table
@@ -702,7 +703,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codegen/generic-kind-backend-emit-missing")]
     CodegenGenericKindBackendEmitMissing,
 
-    // ── §5.J.2 Rust no_std variant rejection (C3 Atomic B-β).
+    // ── §5.J.2 Rust no_std variant rejection (item C3).
     //    Producer: `cmd_generate` walks the parsed SCXML model when
     //    `--no-std` is passed to `sce-codegen generate -l rust` and
     //    rejects documents that depend on std-coupled runtime
@@ -717,12 +718,12 @@ pub enum DiagnosticCode {
     CodegenNoStdScriptNotSupported,
     #[serde(rename = "codegen/no-std-http-not-supported")]
     CodegenNoStdHttpNotSupported,
-    // C3 Atomic B-γ2c: <data src="..."> requires PathBuf + std::fs::read_to_string,
+    // Item C3: <data src="..."> requires PathBuf + std::fs::read_to_string,
     // both alloc/OS-coupled. RFC §5.J.2 lines 1989-1994 forbid alloc paths in
     // generated no_std code.
     #[serde(rename = "codegen/no-std-fs-load-not-supported")]
     CodegenNoStdFsLoadNotSupported,
-    // C3 Atomic B-γ2c: <invoke> binds child-session lifecycle via
+    // Item C3: <invoke> binds child-session lifecycle via
     // Arc<Mutex<Vec<...>>> + HashMap, all alloc-coupled. Same RFC §5.J.2 rule.
     #[serde(rename = "codegen/no-std-invoke-not-supported")]
     CodegenNoStdInvokeNotSupported,
@@ -734,9 +735,8 @@ pub enum DiagnosticCode {
     //    the iteration budget, or produces a value the declared
     //    element / scalar type cannot hold. Stage = Generate (the
     //    interpreter runs inside `lower_algorithm_consts` during
-    //    template rendering). β shipped these as
-    //    `generate/unsupported-feature` slug payloads; γ promotes
-    //    them to first-class wire codes. ──
+    //    template rendering). Formerly `generate/unsupported-feature`
+    //    slug payloads, now first-class wire codes. ──
     #[serde(rename = "algorithm/const-not-foldable")]
     AlgorithmConstNotFoldable,
     #[serde(rename = "algorithm/const-fold-budget-exceeded")]
@@ -744,7 +744,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "algorithm/const-yield-type-mismatch")]
     AlgorithmConstYieldTypeMismatch,
 
-    // ── §5.B variant primitive (watching-zenoh RFC §5.B, B1-β).
+    // ── §5.B variant primitive (watching-zenoh RFC §5.B, item B1).
     //    Build-time check on `<sce:variant>` codec suffix: the
     //    enumerated `<sce:arm value=...>` set must cover the tag
     //    field's value domain when no `<sce:default>` is declared,
@@ -755,7 +755,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-unreachable")]
     CodecVariantArmUnreachable,
 
-    // ── RFC variant-default-uniformity Atomic α. Parse-time check on
+    // ── RFC variant-default-uniformity. Parse-time check on
     //    `<sce:variant>` children: at most one `<sce:arm>` may
     //    declare `default="true"`. The marker steers the outer
     //    codec's `Default::default()` to a single deliberately-
@@ -767,7 +767,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-duplicate-default-arm")]
     CodecVariantDuplicateDefaultArm,
 
-    // ── RFC variant-default-uniformity Atomic γ-1: cross-doc check
+    // ── RFC variant-default-uniformity: cross-doc check
     //    that the outer `<sce:arm default="true" value="X"/>` and
     //    the inner codec's matching peek-byte `<sce:flag value="Y"/>`
     //    declare the same wire constant. Mismatch lands the wrong
@@ -775,7 +775,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-mid-mismatch")]
     CodecVariantArmMidMismatch,
 
-    // ── RFC variant-default-uniformity Atomic γ-1: cross-doc check
+    // ── RFC variant-default-uniformity: cross-doc check
     //    that the inner codec selected by a default-marked outer
     //    arm declares a wire-MID constant via `<sce:flag value="..."/>`.
     //    Absence means the inner's Default zero-fills the dispatch
@@ -783,9 +783,9 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-inner-mid-undeclared")]
     CodecVariantArmInnerMidUndeclared,
 
-    // ── RFC Axis-1 inversion + B5-ν inversion β shape: a variant arm
+    // ── Caller-tag variant shape: a variant arm
     //    body resolves to a codec whose `<sce:variant>` is itself in
-    //    caller-tag β shape (no `tag=` attribute). β-shape requires the
+    //    caller-tag shape (no `tag=` attribute). Caller-tag shape requires the
     //    caller to supply the dispatch tag positionally; in a
     //    variant-arm context there is no natural source for that tag
     //    (the parent dispatcher's own tag selects WHICH arm, not what
@@ -796,7 +796,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-body-caller-tag-unsupported")]
     CodecVariantArmBodyCallerTagUnsupported,
 
-    // ── RFC variant-default-overlay Atomic A: deploy.yaml
+    // ── RFC variant-default-overlay: deploy.yaml
     //    `variant_defaults:` names a codec + arm value, but the codec
     //    has no <sce:variant> or its declared arms do not include the
     //    overlay value. Stage = Validation. Fix carries the declared
@@ -805,7 +805,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-default-overlay-arm-not-declared")]
     CodecVariantDefaultOverlayArmNotDeclared,
 
-    // ── RFC variant-default-uniformity Atomic γ-3 (Q-V4 (a)): every
+    // ── RFC variant-default-uniformity: every
     //    `<sce:variant>` must declare an `<sce:arm default="true"/>`
     //    marker. Without it codegen would silently re-introduce the
     //    "first declared arm" implicit fallback that the RFC closes.
@@ -813,7 +813,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-no-default-arm")]
     CodecVariantNoDefaultArm,
 
-    // ── RFC B5-ν inversion Q-D-5(a): a parent codec's
+    // ── Parent-tag dispatch: a parent codec's
     //    `<sce:variant-dispatch flag="X.Y">` does not resolve — either
     //    the carrier X or the flag Y is not declared on the parent.
     //    Candidates list supplies available carriers (or flags on
@@ -821,7 +821,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-dispatch-flag-not-resolved")]
     CodecVariantDispatchFlagNotResolved,
 
-    // ── RFC B5-ν inversion Q-D-5(a): a parent codec's
+    // ── Parent-tag dispatch: a parent codec's
     //    `<sce:variant-dispatch>` names a flag whose `width` cannot
     //    encode the imported codec's arm count. Dispatch domain is
     //    `1 << width`; the imported variant has more arms than that.
@@ -829,7 +829,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-dispatch-bit-width-mismatch")]
     CodecVariantDispatchBitWidthMismatch,
 
-    // ── RFC B5-ν inversion Q-D-3(a): a parent codec imports a variant
+    // ── Parent-tag dispatch: a parent codec imports a variant
     //    codec without `<sce:variant-dispatch>` AND the imported codec
     //    has no `default="true"` arm. Decode cannot pick an arm
     //    deterministically. Author adds either a dispatch declaration
@@ -837,21 +837,21 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-dispatch-arms-not-distinguishable-without-default")]
     CodecVariantDispatchArmsNotDistinguishableWithoutDefault,
 
-    // ── RFC B5-ν inversion Q-D-4(a): a parent codec's
+    // ── Parent-tag dispatch: a parent codec's
     //    `<sce:variant-dispatch>` targets a flag that ALSO carries a
     //    static `value=` constant. Derived and static cannot coexist
-    //    on the same bit (Q-D-4). Stage = Validation. ──
+    //    on the same bit. Stage = Validation. ──
     #[serde(rename = "codec/variant-dispatch-flag-has-static-value")]
     CodecVariantDispatchFlagHasStaticValue,
 
-    // ── RFC B5-ν inversion Q-D-5(a): a parent codec declares a field
+    // ── Parent-tag dispatch: a parent codec declares a field
     //    with `<sce:variant-dispatch>` BEFORE the carrier field that
     //    the dispatch flag belongs to. Readable declaration order is
     //    carrier-first; matches wire order. Stage = Validation. ──
     #[serde(rename = "codec/variant-dispatch-carrier-after-embed")]
     CodecVariantDispatchCarrierAfterEmbed,
 
-    // ── RFC Axis-1 inversion: parent's `<sce:flag-bind input="X" ...>`
+    // ── Flag inversion: parent's `<sce:flag-bind input="X" ...>`
     //    references a leaf-side input name that the imported codec does
     //    not declare in its `<sce:flag-inputs>` block. Either the leaf
     //    renamed the input or the parent's bind has a typo. Candidates
@@ -860,7 +860,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/flag-bind-input-not-declared")]
     CodecFlagBindInputNotDeclared,
 
-    // ── RFC Axis-1 inversion: parent's `<sce:flag-bind source="...">`
+    // ── Flag inversion: parent's `<sce:flag-bind source="...">`
     //    references a source that resolves to neither a local flags-
     //    carrier flag (dotted `<carrier>.<flag>` form) nor one of the
     //    parent's own `<sce:flag-input>` declarations (bare-name chain-
@@ -868,14 +868,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/flag-bind-source-not-resolved")]
     CodecFlagBindSourceNotResolved,
 
-    // ── RFC Axis-1 inversion: parent's `<sce:flag-bind>` source width
+    // ── Flag inversion: parent's `<sce:flag-bind>` source width
     //    does not match the leaf-side input's declared width. v1 fixes
     //    flag-input width at 1; multi-bit inputs defer to a reachable
     //    consumer. Stage = Validation. ──
     #[serde(rename = "codec/flag-bind-width-mismatch")]
     CodecFlagBindWidthMismatch,
 
-    // ── RFC Axis-1 inversion: the imported leaf codec declares a
+    // ── Flag inversion: the imported leaf codec declares a
     //    `<sce:flag-input name="X" .../>` but the parent's `<sce:import>`
     //    does not supply a matching `<sce:flag-bind input="X" .../>`.
     //    The leaf would receive an undefined value for that input —
@@ -883,14 +883,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/flag-input-unbound")]
     CodecFlagInputUnbound,
 
-    // ── RFC Axis-1 inversion: a parent's `<sce:import>` declares two
+    // ── Flag inversion: a parent's `<sce:import>` declares two
     //    `<sce:flag-bind>` children with the same `input=` attribute.
     //    Each leaf-side input must be bound at most once. Stage =
     //    Validation. ──
     #[serde(rename = "codec/flag-bind-duplicate-input")]
     CodecFlagBindDuplicateInput,
 
-    // ── RFC Axis-1 inversion: a parent's `<sce:flag-bind source="X.Y">`
+    // ── Flag inversion: a parent's `<sce:flag-bind source="X.Y">`
     //    names a local carrier whose field is declared AFTER the embed
     //    that consumes the bound input. Streaming-order requires
     //    carrier-first. Mirrors the legacy carrier-after-embed ordering
@@ -898,7 +898,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/flag-bind-carrier-after-embed")]
     CodecFlagBindCarrierAfterEmbed,
 
-    // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ).
+    // ── §5.B present-if primitive (watching-zenoh RFC §5.B, item B1).
     //    Build-time check on `<sce:field sce:present-if="X.Y"/>`: the
     //    referenced field `X` must be declared earlier in the same
     //    codec so the streaming decoder has already consumed it by
@@ -921,12 +921,12 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/repeat-count-refs-later-field")]
     CodecRepeatCountRefsLaterField,
 
-    // ── §5.B test-vector primitive (watching-zenoh RFC §5.B B2) ──
-    //    `<sce:test-vector hex value/>` is supported only on
-    //    `sce:kind="algorithm"` in v1. Multi-field codec test vectors
-    //    defer to B5 alongside the Zenoh msg-set authoring; until
-    //    then the existing `numerical_reference.json` oracle harness
-    //    is the route for codec round-trips. Stage = Validation. ──
+    // ── §5.B test-vector primitive (watching-zenoh RFC §5.B,
+    //    items B2 + B5) ── `<sce:test-vector hex value/>` is
+    //    supported on `sce:kind="algorithm"` and `sce:kind="codec"`;
+    //    any other kind is rejected here (the kind-specific harness
+    //    oracle is the route for everything else). Stage =
+    //    Validation. ──
     #[serde(rename = "algorithm/test-vector-unsupported-kind")]
     AlgorithmTestVectorUnsupportedKind,
 
@@ -952,7 +952,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/dma-alignment-unsatisfiable")]
     CodecDmaAlignmentUnsatisfiable,
 
-    /// RFC §5.B Y3 atomic 2b-ii peek-byte cross-codec contract — a
+    /// RFC §5.B peek-byte cross-codec contract — a
     /// parent variant's `<sce:peek-byte>` flag layout and an arm body
     /// codec's first `<sce:flags>` field must agree exactly on bit and
     /// width for each named flag. Mismatch surfaces at variant arm
@@ -961,18 +961,18 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/peek-byte-flag-layout-mismatch")]
     CodecPeekByteFlagLayoutMismatch,
 
-    // ── §5.C link kind (watching-zenoh RFC §5.C, B6-α/γ). MCU-class
-    //    byte-stream link endpoint. Three of seven §5.C diagnostic
-    //    codes ship at γ landing — the parse-time pair grew the count
-    //    from 172 to 174. The remaining codes
-    //    (`link/class-unsupported-on-target`,
-    //    `link/link-class-incompatible-with-os`,
-    //    `link/listener-link-not-paired-with-established-sibling`)
-    //    defer: the OS-axis pair waits on the forge × deploy.yaml
-    //    integration atomic (η; `platform.os` lives per-machine in
-    //    deploy.yaml per RFC §5.C lines 702-704), the listener self-
-    //    check waits on B6-δ, and `link/pool-slot-smaller-than-framer-
-    //    max` defers to B7 with the buffer-pool kind. Stage = Validation. ──
+    // ── §5.C link kind (watching-zenoh RFC §5.C, item B6). MCU-class
+    //    byte-stream link endpoint. The parse-time trio
+    //    (`link/framer-missing`, `link/link-class-unknown`,
+    //    `link/backpressure-undeclared`) fires from the forge parser;
+    //    the OS-axis check (`link/class-unsupported-on-target`) fires
+    //    via the forge × deploy.yaml integration (`platform.os` lives
+    //    per-machine in deploy.yaml per RFC §5.C lines 702-704); the
+    //    link↔pool cross-resolution (`link/pool-slot-smaller-than-
+    //    framer-max`) fires from `compile_forge_with_imports`. The
+    //    listener self-check (`link/listener-link-not-paired-with-
+    //    established-sibling`) is declared with the §5.M reassembly
+    //    family below. Stage = Validation. ──
     /// `<sce:framer ref="..."/>` is required on `sce:kind="link"`;
     /// absence is rejected at parse time so the codegen never
     /// reaches the missing-codec branch. Repair: add the framer ref.
@@ -991,10 +991,9 @@ pub enum DiagnosticCode {
 
     /// `<sce:backpressure>` element is required on `sce:kind="link"`
     /// declarations — the policy is load-bearing for the runtime
-    /// crate's RX queue behavior under load (RFC §5.C body). B6-α
-    /// shipped a parser-side `default-to-drop` for the missing case;
-    /// γ promotes the absence to a hard error so authors must declare
-    /// the policy intentionally. Repair: add a `<sce:backpressure>`
+    /// crate's RX queue behavior under load (RFC §5.C body). The
+    /// absence is a hard error (no silent `default-to-drop`) so
+    /// authors must declare the policy intentionally. Repair: add a `<sce:backpressure>`
     /// child whose body is `drop`, `block`, or `signal-event`.
     #[serde(rename = "link/backpressure-undeclared")]
     LinkBackpressureUndeclared,
@@ -1027,12 +1026,13 @@ pub enum DiagnosticCode {
     #[serde(rename = "link/pool-slot-smaller-than-framer-max")]
     LinkPoolSlotSmallerThanFramerMax,
 
-    /// RFC §5.E B7-α buffer-pool placement validation: declared
+    /// RFC §5.E buffer-pool placement validation (item B7): declared
     /// `<sce:section>` body is not in deploy.yaml `machines.<m>.memory.
     /// sram_regions`. Validate-time — fires only via
     /// [`compile_forge_with_deploy`] when both `deploy` and
     /// `target_machine` resolve and the machine has a `memory` block;
-    /// missing pieces skip silently per Q-η5 (a) precedent. Repair:
+    /// missing pieces skip silently per the deploy-unaware
+    /// silent-skip discipline. Repair:
     /// `Fix::ReplaceOneOf` carries the section-name axis (the list of
     /// regions the resolved machine declares) so the author can rename
     /// the pool's `<sce:section>` body or extend the deploy.yaml memory
@@ -1040,19 +1040,19 @@ pub enum DiagnosticCode {
     #[serde(rename = "mem/pool-section-conflict")]
     MemPoolSectionConflict,
 
-    /// RFC §5.E B7-β buffer-pool size validation: storage footprint
+    /// RFC §5.E buffer-pool size validation (item B7): storage footprint
     /// (`slot_count × slot_size`) does not fit inside the resolved
     /// region's `size` field. Validate-time — fires only via
     /// [`compile_forge_with_deploy`] after `mem/pool-section-conflict`
     /// passes (the section must resolve before its size matters); same
-    /// Q-η5 (a) silent-skip when deploy.yaml is unavailable. No
+    /// silent-skip when deploy.yaml is unavailable. No
     /// candidate set — the repair is to raise the region size in
     /// deploy.yaml or shrink `slot_count` / `slot_size`, both of which
     /// are author choices. RFC §5.E lines 1031-1086 spec anchor.
     #[serde(rename = "mem/pool-too-large")]
     MemPoolTooLarge,
 
-    /// RFC §5.E B7-β codegen self-check: the rendered linker fragment
+    /// RFC §5.E codegen self-check (item B7): the rendered linker fragment
     /// is missing the explicit `. = ALIGN(<n>);` inter-pool sentinel.
     /// Codegen-invariant violation, not an authoring mistake — fires
     /// only when the buffer-pool linker fragment template itself drops
@@ -1066,7 +1066,7 @@ pub enum DiagnosticCode {
     /// is smaller than the resolved target's `platform.dcache_line_size`
     /// while `cache-policy: maintain` is in effect. Validate-time —
     /// fires only via [`compile_forge_with_deploy`] after section
-    /// validation passes (Q-η5 (a) silent-skip when deploy.yaml is
+    /// validation passes (silent-skip when deploy.yaml is
     /// unavailable). Partial-line cache_invalidate_by_addr corrupts
     /// adjacent slot data on the start side. RFC §5.E line 1544 +
     /// §5.I lines 1742-1744 spec anchor.
@@ -1136,7 +1136,7 @@ pub enum DiagnosticCode {
     PoolCachePreArmInvalidateMissingOnSpeculativeCore,
 
     // ── §5.E pool kind Layer 1 ownership (watching-zenoh RFC §5.E,
-    //    B7-ε). Layer 1 typestate-attribute family is exposed to
+    //    item B7). Layer 1 typestate-attribute family is exposed to
     //    consumer builds through `sce-c-runtime/include/sce/sample.h`,
     //    pulled in by the generated pool header. The diagnostic catches
     //    a future template edit that drops the `#include` — Layer 1
@@ -1164,7 +1164,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/sample-typestate-attributes-disabled")]
     PoolSampleTypestateAttributesDisabled,
 
-    /// watching-zenoh RFC §5.E B7-η' Atomic A1 application-layer
+    /// watching-zenoh RFC §5.E sample-callback application-layer
     /// ownership diagnostic (spec lines 1513-1515): a state declares
     /// `<sce:on-sample link="X">` and link X is registered, but the
     /// link's forge document does not declare a `<sce:stage-pool>`
@@ -1177,47 +1177,48 @@ pub enum DiagnosticCode {
     /// `<sce:stage-pool>` to the link or restricting the callback to
     /// borrow-only access.
     ///
-    /// Schema-locality choice (Atomic A1): the stage pool is a *link*
+    /// Schema-locality choice: the stage pool is a *link*
     /// property co-located with rx_pool/tx_pool on the link kind
-    /// document, not a deploy-yaml binding property. The Q-StagePool
-    /// `BindingConfig.stage_pool` field (already landed) becomes a
-    /// deploy-time override mechanism — orthogonal to this diagnostic.
+    /// document, not a deploy-yaml binding property. The
+    /// `BindingConfig.stage_pool` field is a deploy-time override
+    /// mechanism — orthogonal to this diagnostic.
     #[serde(rename = "pool/sample-take-without-stage-pool")]
     PoolSampleTakeWithoutStagePool,
 
-    /// watching-zenoh RFC §5.E B7-η' Atomic A2 application-layer
-    /// ownership diagnostic (spec lines 1516-1519): an
+    /// watching-zenoh RFC §5.E sample-callback callback-path
+    /// diagnostic (spec lines 1516-1519): an
     /// `<sce:on-sample callback="rust:...">` attribute carries an
-    /// authoring path that fails the Q-Callback-3 Rust path subset.
-    /// SCE-side reachable arms today are path-syntax (unknown
+    /// authoring path that fails the `rust:crate::module::fn` path
+    /// subset. SCE-side reachable arms today are path-syntax (unknown
     /// language prefix, leading/trailing `::`, malformed segment,
-    /// empty path); future signature inspection (β-extension on top
-    /// of α) extends the same code with shape-mismatch arms.
+    /// empty path); signature-inspection shape-mismatch arms stay
+    /// absent until a consumer needs them — they would extend the
+    /// same code.
     /// Diagnostic name preserves spec wording verbatim per
     /// `feedback_spec_mirror_parity.md`; the per-instance message's
     /// reason clause names the specific path-syntax mistake.
     #[serde(rename = "pool/sample-callback-signature-non-borrow")]
     PoolSampleCallbackSignatureNonBorrow,
 
-    // ── §5.D Worker kind (watching-zenoh RFC §5.D, C2-α). The
+    // ── §5.D Worker kind (watching-zenoh RFC §5.D, item C2). The
     //    worker primitive is a concurrent execution context driven
     //    by a `<sce:link-rx>` source; it owns an SPSC inbox and
     //    communicates only through that channel + an optional outbox.
     //    Spec line 911 enforces encapsulation: "any non-inbox access
-    //    to another worker's state" is a diagnostic. C2-α implements
-    //    static recognition layers (sibling `<sce:import kind="worker">`
-    //    + body SCXML data-refs); C4-composition hardening for the
-    //    `<sce:extern>` non-inbox-symbol path is a tracked follow-up
-    //    atomic. Diagnostic names are spec verbatim per
-    //    `feedback_spec_mirror_parity.md`. ──
+    //    to another worker's state" is a diagnostic. Static
+    //    recognition covers two layers (sibling `<sce:import
+    //    kind="worker">` + body SCXML data-refs); the `<sce:extern>`
+    //    non-inbox-symbol path (item C4 composition) stays
+    //    unimplemented until a consumer needs it. Diagnostic names
+    //    are spec verbatim per `feedback_spec_mirror_parity.md`. ──
     /// `<sce:body>` or sibling-document scope reaches another
     /// worker's state through a path other than its own inbox + a
-    /// recipient's inbox (via `<sce:outbox ref>`). Per Q-C2-7 (a)
-    /// lock 2026-05-10: C2-α covers `<sce:import kind="worker">`
-    /// rejection (layer 1) and body SCXML cross-namespace data-ref
-    /// rejection (layer 2). Layer 3 (`<sce:extern>` non-inbox
-    /// symbol use in body) defers to a tracked follow-up atomic
-    /// gated on C4 intrinsic-registry composition surface.
+    /// recipient's inbox (via `<sce:outbox ref>`). Covered layers:
+    /// `<sce:import kind="worker">` rejection (layer 1) and body
+    /// SCXML cross-namespace data-ref rejection (layer 2). Layer 3
+    /// (`<sce:extern>` non-inbox symbol use in body) stays
+    /// unimplemented until a consumer needs the §5.I
+    /// intrinsic-registry composition surface.
     ///
     /// Diagnostic name preserves spec wording verbatim
     /// (`worker/shared-mutable-state`) per
@@ -1228,12 +1229,12 @@ pub enum DiagnosticCode {
     #[serde(rename = "worker/shared-mutable-state")]
     WorkerSharedMutableState,
 
-    // ── §5.D + §5.I C2-β cross-resolution + inbox ordering ──────────
+    // ── §5.D + §5.I worker cross-resolution + inbox ordering ──────
     //    Worker docs reference (a) the driving link kind via
     //    `<sce:link-rx ref>` and (b) the recipient state machine's
     //    inbox via `<sce:outbox ref>`. Both refs cross-resolve against
     //    the worker doc's own `<sce:import>` declarations
-    //    (η-precedent: `validate_link_pool_framer_resolution` resolves
+    //    (precedent: `validate_link_pool_framer_resolution` resolves
     //    framer codec aliases the same way). The 2 ordering codes
     //    cover §5.I lines 1752-1758: every SPSC inbox must declare
     //    acquire/release vs relaxed; relaxed-across-cores is a
@@ -1243,7 +1244,7 @@ pub enum DiagnosticCode {
     /// `<sce:link-rx ref>` names an alias not imported as kind=link.
     /// Repair surface = `Fix::ReplaceOneOf` over the sorted set of
     /// link-kind import aliases on this worker doc. Non-spec
-    /// diagnostic per Q-C2-2 (a) lock 2026-05-10; cross-resolution is
+    /// diagnostic; cross-resolution is
     /// SCE's per-doc strengthening of the spec example's elided import
     /// shape.
     #[serde(rename = "worker/link-rx-ref-unknown")]
@@ -1266,8 +1267,8 @@ pub enum DiagnosticCode {
     /// pins inbox producer and consumer on different cores. Spec §5.I
     /// lines 1755-1756 verbatim: relaxed on cross-worker shared state
     /// is insufficient. Codegen-invariant guard: silent-skip when
-    /// `ForgeCompileOptions.worker_placement` is absent (Q-η5 (a)
-    /// precedent), fires when explicit cross-core placement coexists
+    /// `ForgeCompileOptions.worker_placement` is absent (deploy-unaware
+    /// silent-skip precedent), fires when explicit cross-core placement coexists
     /// with `relaxed` ordering. Repair surface = no closed candidate
     /// list (author either changes ordering to `acq_rel` or co-locates
     /// the worker on a single core); `fix: None`. Spec-verbatim name
@@ -1290,15 +1291,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "worker/scheduler-unsupported")]
     WorkerSchedulerUnsupported,
 
-    // ── §5.D C2 follow-up: SCXML-side `<sce:outbox ref>` cross-
+    // ── §5.D worker outbox: SCXML-side `<sce:outbox ref>` cross-
     //    resolution against the build-wide
-    //    [`crate::forge::cross_doc_registry::SceCrossDocRegistry`].
-    //    Atomic A (`3e5e26e9`) landed the orchestrator + registry +
-    //    3-kind variant; Atomic B (this batch) adds the validator
-    //    consumer. Q-Outbox-6 (a) strict-suffix lock (`.inbox`) +
-    //    Q-Outbox-3 (b) recipient kinds (statechart + worker) +
-    //    Q-Outbox-8 (c) 3-code split per repair axis (unknown /
-    //    wrong-kind / suffix-invalid).
+    //    [`crate::forge::cross_doc_registry::SceCrossDocRegistry`]
+    //    (orchestrator + registry + 3-kind variant landed in
+    //    `3e5e26e9`; these codes are its validator consumer).
+    //    Strict-suffix rule (`.inbox`) + recipient kinds
+    //    (statechart + worker) + 3-code split per repair axis
+    //    (unknown / wrong-kind / suffix-invalid).
     /// `<sce:outbox ref>`'s owner segment does not match any
     /// statechart or worker doc in the build's cross-doc registry.
     /// Distinct from [`Self::WorkerOutboxTargetWrongKind`] (owner
@@ -1307,8 +1307,8 @@ pub enum DiagnosticCode {
     /// failure independent of registry state). Repair surface =
     /// `Fix::ReplaceOneOf` over the sorted union of statechart +
     /// worker doc names (each suffixed with `.inbox` so candidates
-    /// are drop-in replacements). Non-spec diagnostic per Q-Outbox-8
-    /// (c) lock 2026-05-12.
+    /// are drop-in replacements). Non-spec diagnostic splitting the
+    /// failure axes by repair surface.
     #[serde(rename = "worker/outbox-ref-unknown")]
     WorkerOutboxRefUnknown,
 
@@ -1319,7 +1319,7 @@ pub enum DiagnosticCode {
     /// a link import alias with a statechart name. Repair surface =
     /// `Fix::ReplaceOneOf` over the same sorted statechart + worker
     /// `.inbox` set as [`Self::WorkerOutboxRefUnknown`]. Non-spec
-    /// diagnostic per Q-Outbox-8 (c) lock 2026-05-12.
+    /// diagnostic splitting the failure axes by repair surface.
     #[serde(rename = "worker/outbox-target-wrong-kind")]
     WorkerOutboxTargetWrongKind,
 
@@ -1330,29 +1330,28 @@ pub enum DiagnosticCode {
     /// keep the authored owner segment, replace the suffix with
     /// `inbox`. `Fix::ReplaceWith` carries `"{owner}.inbox"`. Single-
     /// value repair → `NeutralOrDeterministic` non-overlap class.
-    /// Non-spec diagnostic per Q-Outbox-6 (a) + Q-Outbox-8 (c) lock
-    /// 2026-05-12.
+    /// Non-spec diagnostic; the strict-suffix rule splits this
+    /// syntactic axis from the registry-dependent pair.
     #[serde(rename = "worker/outbox-target-suffix-invalid")]
     WorkerOutboxTargetSuffixInvalid,
 
     // ── §5.M Fragment-reassembly buffer-pool variant diagnostics
-    //    (watching-zenoh RFC §5.M lines 2944-2945). C9-α ships the two
-    //    parse-level structure codes here; cross-doc validators that
-    //    reference §5.K `links.<name>.{mtu_bytes, expected_p99_bytes,
-    //    domain_attrs.trust_class}` (6-8 codes including
-    //    `reassembly/max-fragments-insufficient-for-mtu`,
-    //    `reassembly/untrusted-link-binding`, etc.) defer to C9-β
-    //    co-landing with C13 §5.K `links:` block. The
-    //    `reassembly/per-peer-quota-build-invariant-violated` invariant
-    //    (peer_table.capacity × per-peer-quota ≥ slot_count) defers to
-    //    C9-β where `peer_table.capacity` source becomes available.
-    //    Codegen-side per-slot bitmap/deadline/peer-id emission +
-    //    `reassembly/peer-id-not-zid-on-established-session` template-
-    //    regression guard defer to C9-γ. Listener-link sibling-split
+    //    (watching-zenoh RFC §5.M lines 2944-2945, item C9). The two
+    //    parse-level structure codes live here; the cross-doc
+    //    validators that reference §5.K `links.<name>.{mtu_bytes,
+    //    expected_p99_bytes, domain_attrs.trust_class}`
+    //    (`reassembly/max-fragments-insufficient-for-mtu`,
+    //    `reassembly/untrusted-link-binding`, etc.) and the
+    //    `reassembly/per-peer-quota-build-invariant-violated`
+    //    invariant (peer_table.capacity × per-peer-quota ≥
+    //    slot_count, declared above) join the §5.K `links:` block
+    //    cross-doc family. Codegen-side per-slot
+    //    bitmap/deadline/peer-id emission is guarded by the
+    //    `reassembly/peer-id-not-zid-on-established-session`
+    //    template-regression check. Listener-link sibling-split
     //    (`link/listener-link-not-paired-with-established-sibling` +
     //    `reassembly/binding-on-unpaired-listener`) is a §5.C codegen
-    //    contract (spec line 2820-2824) and lands with C10/C11.
-    //    Q-C9-6 (a) lock: backend coverage diagnostic reuses
+    //    contract (spec line 2820-2824). Backend coverage reuses
     //    `codegen/mcu-class-kind-on-non-mcu-language` per spec line 2664
     //    verbatim — no new MCU-class code minted here. ──
     /// `<sce:variant>reassembly</sce:variant>` declared on a buffer-pool
@@ -1381,13 +1380,14 @@ pub enum DiagnosticCode {
     #[serde(rename = "mem/reassembly-pool-variant-missing-timeout")]
     MemReassemblyPoolVariantMissingTimeout,
 
-    // ── §5.M Fragment-reassembly cross-doc validators (C13-α-2 +
-    //    C9-β co-land, watching-zenoh RFC §5.M lines 2946-2995).
+    // ── §5.M Fragment-reassembly cross-doc validators (items C9 +
+    //    C13, watching-zenoh RFC §5.M lines 2946-2995).
     //    Each fires from a cross-doc resolver that walks
     //    `deploy.links.<X>` → forge `<sce:link name=X>` → its
     //    `<sce:rx-pool ref=Y>` → `ForgePoolRegistry`'s BufferPoolModel
-    //    for Y. Silent-skip on any join-step failure per Q-η5 (a) /
-    //    Q-C13-α2-4 (a). All six ride NeutralOrDeterministic — every
+    //    for Y. Silent-skip on any join-step failure per the
+    //    deploy-unaware silent-skip discipline. All six ride
+    //    NeutralOrDeterministic — every
     //    code has multi-axis repair paths (raise slot_size, lower
     //    expected_p99, change max-fragments-per-message, lower
     //    mtu_bytes, change trust_class, raise worker_slot_budget_us)
@@ -1419,13 +1419,12 @@ pub enum DiagnosticCode {
     /// expected_p99_bytes > 0.25`. The 25% threshold is the spec's
     /// default warning point — beyond it, the link runs the
     /// ARCHITECTURE §9.3 stage-copy path on >¼ of inbound traffic.
-    /// Warning (not hard error per C13-α-2 scope; suppressible via
+    /// Warning, not hard error; suppressible via
     /// `<sce:accept-stage-copy-rate>` on the link source; promotable
     /// to `pool/stage-copy-policy-error` via §5.K
-    /// `pool_defaults.stage_copy_policy: error` — both routes defer
-    /// to C13-γ). Silent-skip when no regular RX pool is bound (the
-    /// "regular RX pool" the formula references doesn't exist), per
-    /// Q-C13-α2-4 (a).
+    /// `pool_defaults.stage_copy_policy: error`. Silent-skip when no
+    /// regular RX pool is bound (the "regular RX pool" the formula
+    /// references doesn't exist).
     #[serde(rename = "reassembly/expected-fragmentation-rate-high")]
     ReassemblyExpectedFragmentationRateHigh,
 
@@ -1445,10 +1444,10 @@ pub enum DiagnosticCode {
     /// Reassembly pool bound to a link, but the link has no
     /// `domain_attrs` block at all (so `trust_class` is implicitly
     /// undeclared). RFC §5.M line 2970-2975 verbatim: hard error;
-    /// build cannot decide whether the binding is safe. Per
-    /// Q-C13-α2-8 (a) lock: absence of the `domain_attrs` block is
+    /// build cannot decide whether the binding is safe. Absence of
+    /// the `domain_attrs` block is
     /// the trigger — when `domain_attrs` is declared without
-    /// `trust_class`, C13-α-1's parser rejection
+    /// `trust_class`, the deploy parser rejection
     /// (`LinkDomainAttrs.trust_class` is required-when-block-declared)
     /// catches it earlier. Repair: declare `trust_class:
     /// established_session` for data-plane links, or remove the
@@ -1463,7 +1462,7 @@ pub enum DiagnosticCode {
     /// the stage-copy path alone blows the cooperative slot, starving
     /// Keepalive and other parallel-region timers (ARCHITECTURE §9.3 +
     /// §3.4). Silent-skip when any of the four platform/scheduler
-    /// inputs are absent (per Q-η5 (a) precedent). Repair: raise
+    /// inputs are absent (deploy-unaware silent-skip precedent). Repair: raise
     /// `worker_slot_budget_us`, lower `expected_p99_bytes` so stage
     /// copy is never invoked at that size, or raise the bound pool's
     /// `<sce:slot-size>` to absorb p99 without invoking stage copy.
@@ -1518,7 +1517,7 @@ pub enum DiagnosticCode {
     /// template emits both halves unconditionally when the listener
     /// flag is set); mirrors the `reassembly/peer-id-not-zid-on-
     /// established-session` self-check shape per generator.rs:10225.
-    /// NeutralOrDeterministic (Q-C10-7 a) — pure template-regression
+    /// NeutralOrDeterministic — pure template-regression
     /// guard with no closed candidate set.
     #[serde(rename = "link/listener-link-not-paired-with-established-sibling")]
     LinkListenerLinkNotPairedWithEstablishedSibling,
@@ -1541,14 +1540,14 @@ pub enum DiagnosticCode {
     /// sibling` (which is the §5.C-side codegen self-check)."
     ///
     /// Wired into
-    /// [`crate::mesh::deploy::validate_reassembly_cross_doc`] (C13-α-2 +
-    /// C13-γ landing site): when the bound link's resolved
+    /// [`crate::mesh::deploy::validate_reassembly_cross_doc`]: when
+    /// the bound link's resolved
     /// `trust_class` is `session_arming` AND the orchestrator-resolved
     /// listener-link set does NOT contain the link name (i.e. no
     /// `Accepting.*` substate on the machine's source SCXML), the
     /// validator fires this code in place of the historic
     /// `reassembly/untrusted-link-binding` for the session-arming
-    /// subcase. NeutralOrDeterministic (Q-C10-7 a) — two valid repair
+    /// subcase. NeutralOrDeterministic — two valid repair
     /// paths: add an `Accepting.*` substate to the machine's source
     /// SCXML (making the link a real listener so the sibling
     /// auto-synthesizes), or remove the reassembly-pool binding.
@@ -1560,13 +1559,13 @@ pub enum DiagnosticCode {
     /// cooperative-scheduler accounting: more links than the
     /// scheduler can accommodate within one tick. Hard error.
     ///
-    /// Slot ceiling derivation (Q-C10-β-2 a): `floor(tick_period_us
-    /// / per_link_budget_us)` mirrors the C2-γ
+    /// Slot ceiling derivation: `floor(tick_period_us
+    /// / per_link_budget_us)` mirrors the
     /// `validate_machine_scheduler_worker_capacity` precedent at
     /// mesh/deploy.rs `worker_slot_budget_us`. Validator silent-
     /// skips when `platform.class != mcu`, `scheduler.kind !=
     /// cooperative`, `tick_period_us` absent, or `per_link_budget_us`
-    /// absent (per Q-η5 (a) precedent). Repair: raise
+    /// absent (deploy-unaware silent-skip precedent). Repair: raise
     /// `per_link_budget_us`, lower `tick_period_us`, or remove a
     /// link declaration from `machines.<m>.links`.
     #[serde(rename = "link/concurrent-count-exceeds-scheduler-slots")]
@@ -1576,7 +1575,7 @@ pub enum DiagnosticCode {
     /// (`link/per-link-budget-exceeds-tick-period`). Per-link budget
     /// must fit inside one cooperative tick:
     /// `per_link_budget_us > tick_period_us` is the single-link
-    /// sanity check (Q-C10-β-3 a literal code-name reading). Hard
+    /// sanity check (the diagnostic name is read literally). Hard
     /// error. NeutralOrDeterministic — two-axis repair (lower
     /// `per_link_budget_us` or raise `tick_period_us`). Validator
     /// silent-skips when either input absent or scheduler is not
@@ -1589,15 +1588,15 @@ pub enum DiagnosticCode {
     /// at least one `<sce:inbound>` event but the downstream FSM's
     /// event queue depth is undeclared. Hard error.
     ///
-    /// Two acceptable size sources per Q-C10-β-4 a: SCXML
+    /// Two acceptable size sources: SCXML
     /// per-instance `<scxml sce:capacity="N">` (preferred — pins
     /// the FSM-side spsc capacity to the machine's actual event
     /// volume) or deploy
     /// `machines.<m>.scheduler.default_event_queue_capacity`
     /// (fallback — single default applied to every undeclared
     /// machine on the deploy). Validator extends
-    /// `compile_scxml_with_imports` pass-2 (C13 + C10-α
-    /// orchestrator-level precedent). Silent-skip when the link has
+    /// `compile_scxml_with_imports` pass-2 (the orchestrator-level
+    /// cross-doc precedent). Silent-skip when the link has
     /// no inbound events declared or when no SCXML imports the link
     /// (no FSM downstream to size). NeutralOrDeterministic —
     /// two-axis repair (per-instance vs per-machine source).
@@ -1605,10 +1604,10 @@ pub enum DiagnosticCode {
     LinkInboundEventQueueUnsized,
 
     // ── §5.L Bounded-collection kind diagnostics (watching-zenoh RFC
-    //    §5.L lines 2540-2655). C6-α ships the two structure-only codes
-    //    here; cross-doc (element-type-not-a-kind / index-by-field-
-    //    missing / multi-writer-without-atomics) defers to C6-β,
-    //    deploy-time (capacity-unresolved) defers to C6-γ. ──
+    //    §5.L lines 2540-2655, item C6). Two structure-only parse-time
+    //    codes, three cross-doc codes (element-type-not-a-kind /
+    //    index-by-field-missing / multi-writer-without-atomics), and
+    //    one deploy-time code (capacity-unresolved). ──
     /// `<sce:ordering>sorted-by(index-by)</sce:ordering>` declared
     /// without an accompanying `<sce:index-by field="..."/>` element.
     /// Spec line 2559 fixes the SortedByIndex iteration order to the
@@ -1636,8 +1635,8 @@ pub enum DiagnosticCode {
     /// `<sce:element-type>NAME</sce:element-type>` body text does not
     /// resolve to a codec-kind struct or procedure-kind state record
     /// anywhere in the build's forge-doc set. Spec line 2566-2567
-    /// restricts element types to these two kinds. Cross-doc validator
-    /// in C6-β consumes the orchestrator-assembled element-type
+    /// restricts element types to these two kinds. The cross-doc
+    /// validator consumes the orchestrator-assembled element-type
     /// candidate map (`HashMap<String, ForgeDocument>` populated only
     /// for codec + procedure docs). Closed candidate set rides
     /// `Fix::ReplaceOneOf` ⇒ FixCarriesCandidates non_overlap_class.
@@ -1672,7 +1671,7 @@ pub enum DiagnosticCode {
     /// compile-time constant lowering. Fires only on the
     /// `compile_forge_with_deploy` path (deploy + target_machine both
     /// Some); silent-skips when the key's machine segment != target
-    /// per Q-η5 (a) precedent. Closed candidate set (sorted declared
+    /// (deploy-unaware silent-skip precedent). Closed candidate set (sorted declared
     /// limit names under target_machine.limits) rides
     /// `Fix::ReplaceOneOf` ⇒ FixCarriesCandidates non_overlap_class.
     #[serde(rename = "collection/capacity-unresolved")]
@@ -1697,26 +1696,26 @@ pub enum DiagnosticCode {
     /// sized at compile time; declaring more timers than slots
     /// overflows the wheel. Fired from the deploy.yaml validator
     /// after counting `machines.<m>.timers.len()`. Silent-skip when
-    /// `timer_wheel_depth` is absent (Q-η5 (a) precedent — deploy-
+    /// `timer_wheel_depth` is absent (deploy-
     /// unaware paths don't have the wheel sizing information).
     #[serde(rename = "timer/slot-overflow")]
     TimerSlotOverflow,
 
     // ── §5.I `<sce:extern>` whitelisted intrinsic registry
-    //    (watching-zenoh RFC §5.I, Atomic A). Four spec-verbatim
+    //    (watching-zenoh RFC §5.I, item C4). Four spec-verbatim
     //    codes (lines 1847-1850) that fire at parse-time on
     //    `<sce:extern>` declarations. The 101-symbol baseline lives
     //    in `crate::forge::intrinsic_registry::BASELINE_SYMBOLS`;
     //    closed-set lookup is in `extern_validator::validate_extern`.
     //    Diagnostic names are spec verbatim per
-    //    `feedback_spec_mirror_parity.md`. Plugin-extension axes
-    //    (`extern/target-plugin-*`, `extern/linker-flavor-*`) defer
-    //    to Atomic B/C of `rfc-sce-call-intrinsic-registry.md`. ──
+    //    `feedback_spec_mirror_parity.md`. The target-plugin
+    //    extension axis (`extern/target-plugin-symbol-conflict`) is
+    //    declared below; further plugin axes (`extern/linker-flavor-*`)
+    //    stay unimplemented until a consumer needs them. ──
     /// `<sce:extern name>` references a symbol absent from the
     /// §5.I baseline registry. Repair surface = `Fix::ReplaceOneOf`
-    /// over closest baseline names (bounded top-8). Q-Call-4 (a)
-    /// parse-time lock; mirrors `LinkLinkClassUnknown` (B6-γ)
-    /// closed-enum precedent.
+    /// over closest baseline names (bounded top-8). Parse-time;
+    /// mirrors the `LinkLinkClassUnknown` closed-enum precedent.
     #[serde(rename = "extern/symbol-not-in-whitelist")]
     ExternSymbolNotInWhitelist,
 
@@ -1746,8 +1745,8 @@ pub enum DiagnosticCode {
     /// Target plugin YAML (`extern_symbols.target_plugin: <path>`)
     /// declares a symbol whose `name` already exists in the §5.I
     /// baseline registry. Spec line 1852 verbatim semantic: "target
-    /// plugin redefines a core whitelist symbol". Q-Call-6 (a)
-    /// additive-composition lock — plugin entries extend, never
+    /// plugin redefines a core whitelist symbol". Additive-
+    /// composition rule — plugin entries extend, never
     /// override. Repair surface is non-algorithmic (`fix: None`):
     /// the plugin author must rename the conflicting entry to a
     /// non-baseline name; SCE cannot synthesize a candidate name.
@@ -1819,7 +1818,7 @@ pub enum DiagnosticCode {
     MeshDeployPoolInvalidPlaceholder,
     #[serde(rename = "mesh/deploy-server-pool-not-supported")]
     MeshDeployServerPoolNotSupported,
-    // ── watching-zenoh RFC §5.E B7-η' deploy.yaml stage_pool family ──
+    // ── watching-zenoh RFC §5.E sample-callback deploy.yaml stage_pool family ──
     // These diagnostics validate the deploy.yaml `binding.stage_pool:`
     // cross-reference into the forge buffer-pool registry. Distinct
     // family from the `mesh/deploy-pool-*` SOME/IP-instance-routing
@@ -1902,7 +1901,7 @@ pub enum DiagnosticCode {
     /// (`deploy/worker-stack-budget-missing`). Cooperative scheduler
     /// declared without `worker_stack_budget`. Renamed from the
     /// SCE-Mesh-prefix wire (`mesh/deploy-scheduler-cooperative-missing-stack-budget`)
-    /// to the watching-zenoh-prefix wire at C2-γ landing; SCE Mesh §14
+    /// to the watching-zenoh-prefix wire; SCE Mesh §14
     /// continues to anchor to the same variant.
     #[serde(rename = "deploy/worker-stack-budget-missing")]
     MeshDeploySchedulerCooperativeMissingStackBudget,
@@ -1935,26 +1934,26 @@ pub enum DiagnosticCode {
     MeshDeploySchedulerIncompatibleWithWorkerCount,
 
     // ── §5.K `links:` block parse-time + cross-doc validators
-    //    (watching-zenoh RFC §5.K lines 2232-2540, C13-α-1). 9 codes:
+    //    (watching-zenoh RFC §5.K lines 2232-2540, item C13). 9 codes:
     //    7 spec-named (`link-driver-unknown` at line 2421, `link-mtu-*`
     //    at lines 2440-2448, `link-burst-*` at lines 2489-2503) plus 2
-    //    cross-doc joins (Q-C13-5 a) that pair forge `<sce:link name>`
+    //    cross-doc joins that pair forge `<sce:link name>`
     //    documents against deploy.yaml `machines.<n>.links.<name>`
-    //    entries. C13-β anti-flood / stateless_accept codes + the 6
-    //    C9-β reassembly cross-doc codes (`mem/reassembly-slot-size-
+    //    entries. The anti-flood / stateless_accept codes and the 6
+    //    reassembly cross-doc codes (`mem/reassembly-slot-size-
     //    below-declared-mtu`, `reassembly/{max-fragments-insufficient-
     //    for-mtu, expected-fragmentation-rate-high, untrusted-link-
     //    binding, trust-class-missing-on-fragmenting-link, stage-copy-
-    //    wcet-exceeds-slot-budget}`) defer to C13-α-2 follow-up atomic
-    //    per scope-split decision. ──
+    //    wcet-exceeds-slot-budget}`) are declared in their own
+    //    sections. ──
     /// Watching-zenoh RFC §5.K line 2421 verbatim
     /// (`deploy/link-driver-unknown`). `machines.<n>.links.<name>.driver`
-    /// value is not in the C13-α-known-driver baseline (currently
+    /// value is not in the known-driver baseline (currently
     /// `{lwip_udp, lwip_tcp}`; extends as new forge link-kind docs
     /// ship) AND not declared as a forge `<sce:link>` document name in
     /// the build's [`crate::forge::cross_doc_registry::SceCrossDocRegistry`].
     /// `Fix::ReplaceOneOf` over the known-driver + forge-link-doc-name
-    /// union, sorted. Q-C13-8 (a) lock: enum-shape kept as `String` so
+    /// union, sorted. Enum-shape kept as `String` so
     /// forge-side driver authoring extends organically; closed-allowlist
     /// validator is the gate, not the type system.
     #[serde(rename = "deploy/link-driver-unknown")]
@@ -1965,14 +1964,14 @@ pub enum DiagnosticCode {
     /// `machines.<n>.links.<name>` entry is bound to a forge
     /// `<sce:link name="...">` whose FSM emits/consumes Fragment codec
     /// events, but `mtu_bytes` is absent. Without it the build cannot
-    /// size reassembly pool slots per §5.M C9-β. The C13-α-1 detector
-    /// uses a conservative under-approximation per Q-C13-2 / Q-C13-5
-    /// shape — it fires for every `domain_attrs.trust_class:
+    /// size reassembly pool slots per §5.M. This parse-time detector
+    /// uses a conservative under-approximation
+    /// — it fires for every `domain_attrs.trust_class:
     /// established_session` link missing `mtu_bytes`, since
     /// `established_session` is the only trust class permitted to carry
-    /// Fragment traffic per RFC §5.M line 2731. Precise Fragment-FSM
-    /// detection awaits the §5.M reassembly-pool-bound-to-link
-    /// cross-doc validator (C13-α-2 + C9-β co-land); the C13-α-1
+    /// Fragment traffic per RFC §5.M line 2731. The §5.M
+    /// reassembly-pool-bound-to-link cross-doc validator performs the
+    /// precise Fragment-FSM detection; the parse-time
     /// under-approximation surfaces the same author error class earlier.
     #[serde(rename = "deploy/link-mtu-missing-on-fragmenting-link")]
     MeshDeployLinkMtuMissingOnFragmentingLink,
@@ -2008,13 +2007,12 @@ pub enum DiagnosticCode {
 
     /// Watching-zenoh RFC §5.K line 2446-2448 verbatim
     /// (`deploy/link-expected-p99-exceeds-mtu`). `expected_p99_bytes >
-    /// mtu_bytes` AND no reassembly pool is bound to the link (precise
-    /// "no reassembly pool" check defers to C13-α-2 + C9-β co-land; the
-    /// C13-α-1 detector fires the warning whenever
+    /// mtu_bytes` AND no reassembly pool is bound to the link (this
+    /// parse-time detector fires the warning whenever
     /// `expected_p99_bytes > mtu_bytes` regardless of pool binding,
     /// matching the spec's "the p99 message would always fragment but
     /// no reassembly path exists" intent — authors with a reassembly
-    /// pool already see C9-β's `reassembly/expected-fragmentation-
+    /// pool already see the `reassembly/expected-fragmentation-
     /// rate-high` consumer, the two diagnostics complement).
     #[serde(rename = "deploy/link-expected-p99-exceeds-mtu")]
     MeshDeployLinkExpectedP99ExceedsMtu,
@@ -2025,11 +2023,11 @@ pub enum DiagnosticCode {
     /// one cooperative tick window: `slot_count × ticks_per_second /
     /// burst_pps < 1.0` with safety factor 2.0 (i.e. the check fires
     /// when `slot_count × 1_000_000 / tick_period_us < burst_pps × 2`).
-    /// Pool will deplete during burst and drop packets. C13-α-2 fires
+    /// Pool will deplete during burst and drop packets. Fires
     /// from a cross-doc resolver that joins `deploy.links.<X>` → forge
     /// `<sce:link name=X>` → `<sce:rx-pool ref>` → ForgePoolRegistry's
     /// `BufferPoolModel.slot_count`. Silent-skip on any join failure
-    /// or missing scheduler.tick_period_us per Q-η5 (a). Multi-axis
+    /// or missing scheduler.tick_period_us. Multi-axis
     /// repair: raise `<sce:slot-count>` on the pool, lower
     /// `scheduler.tick_period_us`, or switch `rx_dispatch` to
     /// `isr_to_pool` when currently `worker_tick`.
@@ -2042,17 +2040,17 @@ pub enum DiagnosticCode {
     /// tick_period_us / 1_000_000 > slot_count` (one tick window of
     /// arrivals overruns the pool). Hard error unless author justifies
     /// via `<sce:accept-burst-drop-rate>` on the link source (a
-    /// forge-side opt-out gated by C13-γ, not yet shipped at C13-α-2;
-    /// the C13-α-2 detector treats the opt-out as absent). C13-α-2
-    /// silent-skips when join steps or `tick_period_us` are missing.
+    /// forge-side opt-out that stays unimplemented until a consumer
+    /// needs it; the detector treats the opt-out as absent). The
+    /// detector silent-skips when join steps or `tick_period_us` are missing.
     /// Multi-axis repair: switch `rx_dispatch` to `isr_to_pool`, raise
     /// `<sce:slot-count>` to absorb the per-tick burst, or lower
     /// `tick_period_us` so each window admits fewer arrivals.
     #[serde(rename = "deploy/link-rx-dispatch-worker-tick-on-high-burst")]
     MeshDeployLinkRxDispatchWorkerTickOnHighBurst,
 
-    // ── C13-γ pool_defaults.stage_copy_policy (RFC §5.K lines
-    //    2350-2369 + 2504-2519). Three codes wire the policy enum
+    // ── §5.K pool_defaults.stage_copy_policy (RFC §5.K lines
+    //    2350-2369 + 2504-2519, item C13). Three codes wire the policy enum
     //    plus the per-link `<sce:accept-stage-copy-rate>` opt-out
     //    semantics. ──
     /// Watching-zenoh RFC §5.K line 2504-2511 verbatim
@@ -2089,20 +2087,20 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/stage-copy-policy-unknown")]
     MeshDeployStageCopyPolicyUnknown,
 
-    // ── C13-β anti-flood + stateless_accept (RFC §5.K lines
-    //    2272-2349 + 2449-2473). Five codes wire the conditional
-    //    requirement, dead-config rejection, opt-out requirement,
-    //    and key-rotation invariant. C13 deferred-2 closes the two
-    //    follow-ups originally deferred:
+    // ── §5.K anti-flood + stateless_accept (RFC §5.K lines
+    //    2272-2349 + 2449-2473, item C13). Five codes wire the
+    //    conditional requirement, dead-config rejection, opt-out
+    //    requirement, and key-rotation invariant, plus two siblings:
     //      - `deploy/session-arming-quota-vs-peer-table-invariant-violated`
-    //        (line 2460-2462) — landed alongside `peer_table` +
+    //        (line 2460-2462) — rides the `peer_table` +
     //        `max_handshake_time_s` schema fields on the
     //        `stateless_accept` block (validator wired into
     //        `validate_links` per per-link invariant scope).
     //      - `deploy/stateless-accept-extern-not-whitelisted`
-    //        (line 2466-2469) — landed at the orchestrator level
+    //        (line 2466-2469) — lives at the orchestrator level
     //        where the §5.I baseline + loaded `target_plugin`
-    //        symbols converge, mirroring C4 Atomic B precedent.
+    //        symbols converge, mirroring the
+    //        `extern/target-plugin-symbol-conflict` precedent.
     /// Watching-zenoh RFC §5.K line 2449-2451 verbatim
     /// (`deploy/session-arming-quota-missing`). Link declares
     /// `trust_class: session_arming` but no `session_arming_quota`.
@@ -2162,7 +2160,7 @@ pub enum DiagnosticCode {
     /// `peer_table.capacity`, lower `session_arming_quota`, or lower
     /// `max_handshake_time_s`); the wire payload carries the
     /// violating product in `actual` and the bound in `expected`.
-    /// C13 deferred-2 lands the consuming validator inside
+    /// The consuming validator lives inside
     /// `validate_links` alongside the other anti-flood checks.
     #[serde(rename = "deploy/session-arming-quota-vs-peer-table-invariant-violated")]
     MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated,
@@ -2174,11 +2172,11 @@ pub enum DiagnosticCode {
     /// any loaded `target_plugin`. Hard error.
     /// FixCarriesCandidates — closed-set candidates is the sorted
     /// union of §5.I baseline names + target-plugin-loaded names
-    /// (`Fix::ReplaceOneOf`). C13 deferred-2 lands the consuming
-    /// validator at the orchestrator level
+    /// (`Fix::ReplaceOneOf`). The consuming
+    /// validator lives at the orchestrator level
     /// (`compile_scxml_with_imports` + `compile_forge_with_deploy`)
     /// because target-plugin loading is deploy-driven, mirroring
-    /// the C4 Atomic B precedent.
+    /// the `extern/target-plugin-symbol-conflict` precedent.
     #[serde(rename = "deploy/stateless-accept-extern-not-whitelisted")]
     MeshDeployStatelessAcceptExternNotWhitelisted,
 
@@ -2188,24 +2186,24 @@ pub enum DiagnosticCode {
     /// is `IsrToPool` but `burst_pps` is not declared. ISR fast-path
     /// requires the rate to size descriptor ring + validate stack
     /// budget. Repair: declare `burst_pps`, or set `rx_dispatch:
-    /// worker_tick` explicitly. C13-α-1 detector fires at parse-time
+    /// worker_tick` explicitly. The detector fires at parse-time
     /// since the resolution is purely intra-link-config.
     #[serde(rename = "deploy/link-burst-pps-missing-on-isr-dispatch")]
     MeshDeployLinkBurstPpsMissingOnIsrDispatch,
 
-    /// C13-α-1 cross-doc validator pair (Q-C13-5 a lock). A forge
+    /// Cross-doc validator pair (item C13). A forge
     /// `<scxml sce:kind="link" name="X">` document was imported by
     /// some statechart/worker on this machine, but no
     /// `deploy.yaml::machines.<n>.links.<X>` entry exists. Build
     /// cannot resolve the link's `bind` address, `mtu_bytes`, or
     /// `domain_attrs`. `Fix::ReplaceOneOf` over the deploy-side
-    /// link-name set for this machine (sorted). Mirrors B6-η
-    /// `validate_stage_pool_references` + C2-outbox
+    /// link-name set for this machine (sorted). Mirrors the
+    /// `validate_stage_pool_references` +
     /// `validate_worker_outbox_references` precedents.
     #[serde(rename = "deploy/link-not-declared-in-deploy")]
     MeshDeployLinkNotDeclaredInDeploy,
 
-    /// C13-α-1 cross-doc validator pair (Q-C13-5 a lock). A
+    /// Cross-doc validator pair (item C13). A
     /// `deploy.yaml::machines.<n>.links.<X>` entry exists, but no
     /// forge `<scxml sce:kind="link" name="X">` document was
     /// declared/imported. The deploy entry has no wire framer / codec
@@ -2287,11 +2285,11 @@ pub enum DiagnosticCode {
     MeshIo,
 
     // ── Forge generated-source drift detection (watching-zenoh RFC
-    //    §6.2.6, B9 atomic 2026-05-14). Single code covers both axes
+    //    §6.2.6, item B9). Single code covers both axes
     //    of `sce-codegen verify`'s recomputed-vs-embedded comparison:
     //    `source-hash` mismatch (input SCXML or deploy.yaml drifted
     //    since generation) and `template-hash` mismatch (codegen
-    //    template tree or Cargo.lock drifted). Per Q-§6.2.6-5 lock —
+    //    template tree or Cargo.lock drifted). The
     //    `actual` field carries the axis label (`source`|`template`)
     //    plus the embedded hex; `expected` carries the recomputed
     //    hex. Repair is `sce-codegen <regen-command>` (deterministic,
@@ -2299,7 +2297,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "forge/source-hash-mismatch")]
     ForgeSourceHashMismatch,
 
-    // ── Traceability §5.O Atomic 0 — IR provenance pre-emit guard
+    // ── Traceability §5.O IR provenance pre-emit guard
     //    (watching-zenoh RFC §5.O lines 3289-3290 verbatim:
     //    "XInclude / sce:template composition MUST track per-element
     //    (file_id, line, column) and attach it to every IR node.
@@ -2307,8 +2305,8 @@ pub enum DiagnosticCode {
     //    `traceability/scxml-line-range-missing` (codegen-internal)").
     //    Fires at the compile-pipeline pre-emit pass when a node
     //    eligible for marker emission carries `source_location: None`
-    //    — guarantees the per-backend SCE-MAP marker family (Atomic 0
-    //    function-level, Atomic 1 per-symbol attribution) is never
+    //    — guarantees the per-backend SCE-MAP marker family
+    //    (function-level markers + per-symbol attribution) is never
     //    silently dropped on an unpopulated IR record. Author repair
     //    is empty: this is a codegen-internal invariant, so authors
     //    never see it in practice; the diagnostic exists so a future
@@ -2318,7 +2316,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "traceability/scxml-line-range-missing")]
     TraceabilityScxmlLineRangeMissing,
 
-    // ── Traceability §5.O Atomic 1 — symbol mangling collision
+    // ── Traceability §5.O symbol mangling collision
     //    detector. Spec lines 3055-3057 fix the per-symbol mangling
     //    pattern (`<machine>__<state_path>__<artifact>`); XInclude or
     //    `sce:template` composition can produce two distinct IR nodes
@@ -2328,7 +2326,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "traceability/state-id-collision")]
     TraceabilityStateIdCollision,
 
-    // ── Traceability §5.O Atomic 1 — mangled symbol exceeds the C99
+    // ── Traceability §5.O — mangled symbol exceeds the C99
     //    §5.2.4.1 external identifier limit (31 chars). Default
     //    rendering is warn; `platform.strict_c99_identifiers: true`
     //    in deploy.yaml escalates to hard-error. The diagnostic
@@ -2337,7 +2335,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "traceability/symbol-name-exceeds-c-identifier-limit")]
     TraceabilitySymbolNameExceedsCIdentifierLimit,
 
-    // ── Traceability §5.O Atomic 1 — sourcemap `source_hash` drift
+    // ── Traceability §5.O — sourcemap `source_hash` drift
     //    against the §6.2.6 header. Spec lines 3321-3324 require
     //    byte-equality between the sourcemap JSON's `source_hash`
     //    field and the per-file `// source-hash:` header value;
@@ -2346,17 +2344,17 @@ pub enum DiagnosticCode {
     #[serde(rename = "traceability/sourcemap-source-hash-mismatch")]
     TraceabilitySourcemapSourceHashMismatch,
 
-    // ── Traceability §5.O Atomic 1 — Rust SCE-MAP marker preservation
+    // ── Traceability §5.O — Rust SCE-MAP marker preservation
     //    guard (OQ-W16 (b)). Empirical: rustdoc may strip `#[doc]`
     //    attributes under specific profile / no_std combinations.
     //    Fires from `sce-codegen addr2sce` when the rustdoc JSON dump
     //    lacks the expected `SCE-MAP:` `#[doc]` line; the `// SCE-MAP:`
-    //    line-comment fallback (dual-emit since Atomic 0c) covers the
+    //    line-comment fallback (the default dual-emit form) covers the
     //    miss. Diagnostic signals the fallback was needed.
     #[serde(rename = "traceability/sce-map-attribute-stripped")]
     TraceabilitySceMapAttributeStripped,
 
-    // ── Traceability §5.O Atomic 1 follow-up — codegen-internal
+    // ── Traceability §5.O — codegen-internal
     //    invariant: every SCE-emitted file (one carrying a §6.2.6
     //    drift header) MUST contain at least one `SCE-MAP:` marker.
     //    Walker `forge::sourcemap::validate_emitted_files_have_markers`
@@ -2368,26 +2366,26 @@ pub enum DiagnosticCode {
     #[serde(rename = "traceability/meta-generated-source-line-marker-missing")]
     TraceabilityMetaGeneratedSourceLineMarkerMissing,
 
-    // ── Round F-α (watching-zenoh RFC §5.2) — MCU driver/class
-    //    boundary on the C11 backend. The two codes split along the
-    //    Q-Round-F-D2 + D3 locks:
+    // ── MCU driver/class boundary on the C11 backend (watching-zenoh
+    //    RFC §5.2). The two codes split by repair surface:
     //    `mcu/driver-header-not-found` fires at compile-model time
     //    when `<sce:driver href="..."/>` cannot be resolved against
     //    `deploy.yaml`'s `platform.driver_root` (or the SCXML file's
     //    parent directory as fallback). Cross-TU signature checking
-    //    is delegated to the C compiler (Q-Round-F-D2); SCE only
+    //    is delegated to the C compiler; SCE only
     //    confirms the file exists.
     //    `mcu/section-attribute-on-non-mcu-target` fires at codegen
     //    entry when `platform.c11_section_attribute` is set but the
-    //    target backend is not C11 — mirrors the Q-Call-7 non-MCU
-    //    reject pattern (Q-Round-F-D3) so the section directive does
+    //    target backend is not C11 — mirrors the
+    //    `codegen/mcu-class-kind-on-non-mcu-language` non-MCU
+    //    reject pattern so the section directive does
     //    not silently disappear on non-MCU compiles.
     #[serde(rename = "mcu/driver-header-not-found")]
     McuDriverHeaderNotFound,
     #[serde(rename = "mcu/section-attribute-on-non-mcu-target")]
     McuSectionAttributeOnNonMcuTarget,
 
-    // ── NL→IR Item C1 Path A: Enum kind invariants (Atomic 1) ───
+    // ── NL→IR Item C1 Path A: Enum kind invariants ───
     /// Enum document declares no `<sce:variant>` children — see
     /// [`ValidationError::EnumNoVariants`].
     #[serde(rename = "validation/enum-no-variants")]
@@ -2412,7 +2410,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "validation/enum-unsupported-underlying-type")]
     ValidationEnumUnsupportedUnderlyingType,
 
-    // ── NL→IR Item C1 Path A: EventSchema kind (Atomic 3) ───────
+    // ── NL→IR Item C1 Path A: EventSchema kind ───────
     //    Three new codes for the 18th Forge kind:
     //    `validation/event-schema-on-builtin-event` (DL-9'; rejects
     //    schema declarations against the W3C SCXML reserved event
@@ -2552,16 +2550,16 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlOnSampleEventNameConflict,
         ScxmlOnSampleLinkNotDeclared,
         ScxmlOnSampleLinkWrongKind,
-        // Axis-3 inversion — top-level `<sce:session-role>` structural codes
+        // Listener-role — top-level `<sce:session-role>` structural codes
         ScxmlUnknownSessionRoleKind,
         ScxmlDuplicateSessionRoleDeclaration,
-        // Axis-3 inversion — cross-doc partial-claim + matrix validators
+        // Listener-role — cross-doc partial-claim + matrix validators
         LinkDeployRoleListenerWithoutScxmlAcceptSideRole,
         ScxmlAcceptSideRoleWithoutListenerLink,
         LinkRoleListenerWithNonSessionArmingTrustClass,
-        // Axis-3 inversion — migration-helper parser diagnostic
+        // Listener-role — migration-helper parser diagnostic
         ScxmlAcceptSideStatesWithoutRoleDeclaration,
-        // Axis-2 declared-consumption — reassembly cross-doc invariant
+        // Declared-consumption — reassembly cross-doc invariant
         ReassemblyPerPeerQuotaBuildInvariantViolated,
         // Expression
         ExpressionEmpty,
@@ -2590,7 +2588,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
         // Codegen Rust no_std variant rejection (watching-zenoh RFC §5.J.2,
-        // C3 Atomic B-β + B-γ2c)
+        // item C3)
         CodegenNoStdScriptNotSupported,
         CodegenNoStdHttpNotSupported,
         CodegenNoStdFsLoadNotSupported,
@@ -2599,53 +2597,53 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmConstNotFoldable,
         AlgorithmConstFoldBudgetExceeded,
         AlgorithmConstYieldTypeMismatch,
-        // Codec §5.B variant primitive (watching-zenoh RFC §5.B, B1-β)
+        // Codec §5.B variant primitive (watching-zenoh RFC §5.B, item B1)
         CodecVariantArmUnreachable,
-        // RFC variant-default-uniformity Atomic α — duplicate default-arm marker
+        // RFC variant-default-uniformity — duplicate default-arm marker
         CodecVariantDuplicateDefaultArm,
-        // RFC variant-default-uniformity Atomic γ-1 — cross-doc MID mismatch
+        // RFC variant-default-uniformity — cross-doc MID mismatch
         CodecVariantArmMidMismatch,
-        // RFC variant-default-uniformity Atomic γ-1 — inner codec missing wire-MID constant
+        // RFC variant-default-uniformity — inner codec missing wire-MID constant
         CodecVariantArmInnerMidUndeclared,
-        // RFC Axis-1 inversion + B5-ν inversion β shape — variant arm body
+        // Caller-tag variant shape — variant arm body
         // is a caller-tag dispatcher with no natural tag source
         CodecVariantArmBodyCallerTagUnsupported,
-        // RFC variant-default-uniformity Atomic γ-3 — every variant must mark a default arm
+        // RFC variant-default-uniformity — every variant must mark a default arm
         CodecVariantNoDefaultArm,
-        // RFC variant-default-overlay Atomic A — deploy.yaml overlay names an undeclared arm
+        // RFC variant-default-overlay — deploy.yaml overlay names an undeclared arm
         CodecVariantDefaultOverlayArmNotDeclared,
-        // RFC B5-ν inversion — parent-side variant-dispatch (5 codes)
+        // Parent-tag dispatch — parent-side variant-dispatch (5 codes)
         CodecVariantDispatchFlagNotResolved,
         CodecVariantDispatchBitWidthMismatch,
         CodecVariantDispatchArmsNotDistinguishableWithoutDefault,
         CodecVariantDispatchFlagHasStaticValue,
         CodecVariantDispatchCarrierAfterEmbed,
-        // RFC Axis-1 inversion — parent-side flag-bind (6 codes)
+        // Flag inversion — parent-side flag-bind (6 codes)
         CodecFlagBindInputNotDeclared,
         CodecFlagBindSourceNotResolved,
         CodecFlagBindWidthMismatch,
         CodecFlagInputUnbound,
         CodecFlagBindDuplicateInput,
         CodecFlagBindCarrierAfterEmbed,
-        // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ)
+        // Codec §5.B present-if primitive (watching-zenoh RFC §5.B, item B1)
         CodecPresentIfRefsLaterField,
         // Codec §5.B repeat primitive (watching-zenoh RFC §5.B, B2)
         CodecRepeatCountRefsLaterField,
-        // Algorithm §5.B test-vector primitive (watching-zenoh RFC §5.B, B2-test-vector)
+        // Algorithm §5.B test-vector primitive (watching-zenoh RFC §5.B, items B2 + B5)
         AlgorithmTestVectorUnsupportedKind,
         // Codec §5.B B3 TLV chain primitive (watching-zenoh RFC §5.B)
         CodecTlvChainDepthUnspecified,
         // Codec §5.B B3 DMA alignment primitive (watching-zenoh RFC §5.B)
         CodecDmaAlignmentUnsatisfiable,
-        // Codec §5.B Y3 atomic 2b-ii peek-byte cross-codec layout match
+        // Codec §5.B peek-byte cross-codec layout match
         CodecPeekByteFlagLayoutMismatch,
-        // Link §5.C byte-stream link endpoint (watching-zenoh RFC §5.C, B6-α/γ/η + B6-α')
+        // Link §5.C byte-stream link endpoint (watching-zenoh RFC §5.C, item B6)
         LinkFramerMissing,
         LinkLinkClassUnknown,
         LinkBackpressureUndeclared,
         LinkClassUnsupportedOnTarget,
         LinkPoolSlotSmallerThanFramerMax,
-        // BufferPool §5.E DMA-aligned slot table (watching-zenoh RFC §5.E, B7-α/β)
+        // BufferPool §5.E DMA-aligned slot table (watching-zenoh RFC §5.E, item B7)
         MemPoolSectionConflict,
         MemPoolTooLarge,
         MemInterPoolPaddingNotEmitted,
@@ -2656,61 +2654,61 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         PoolCacheMaintenanceMisplaced,
         PoolSpeculativePrefetchFlagMissing,
         PoolCachePreArmInvalidateMissingOnSpeculativeCore,
-        // BufferPool §5.E Layer 1 ownership pull-through (watching-zenoh RFC §5.E, B7-ε)
+        // BufferPool §5.E Layer 1 ownership pull-through (watching-zenoh RFC §5.E, item B7)
         PoolSampleTypestateAttributesDisabled,
-        // Sample API §5.E B7-η' Atomic A1 application-layer ownership (watching-zenoh RFC §5.E)
+        // Sample API §5.E sample-callback application-layer ownership (watching-zenoh RFC §5.E)
         PoolSampleTakeWithoutStagePool,
-        // Sample API §5.E B7-η' Atomic A2 callback-path syntax (watching-zenoh RFC §5.E)
+        // Sample API §5.E sample-callback callback-path syntax (watching-zenoh RFC §5.E)
         PoolSampleCallbackSignatureNonBorrow,
-        // Worker kind shared-state encapsulation (watching-zenoh RFC §5.D, C2-α)
+        // Worker kind shared-state encapsulation (watching-zenoh RFC §5.D, item C2)
         WorkerSharedMutableState,
-        // Worker kind cross-resolution + inbox ordering (watching-zenoh RFC §5.D + §5.I, C2-β)
+        // Worker kind cross-resolution + inbox ordering (watching-zenoh RFC §5.D + §5.I, item C2)
         WorkerLinkRxRefUnknown,
         WorkerInboxOrderingUnspecified,
         WorkerInboxOrderingRelaxedAcrossCores,
-        // Worker kind scheduler-capacity forge-side anchor (watching-zenoh RFC §5.D, C2-γ)
+        // Worker kind scheduler-capacity forge-side anchor (watching-zenoh RFC §5.D, item C2)
         WorkerSchedulerUnsupported,
-        // Worker kind SCXML-side outbox cross-resolution (watching-zenoh RFC §5.D, C2 follow-up Atomic B)
+        // Worker kind SCXML-side outbox cross-resolution (watching-zenoh RFC §5.D, item C2)
         WorkerOutboxRefUnknown,
         WorkerOutboxTargetWrongKind,
         WorkerOutboxTargetSuffixInvalid,
-        // Fragment-reassembly buffer-pool variant parse-time structure validators (watching-zenoh RFC §5.M, C9-α)
+        // Fragment-reassembly buffer-pool variant parse-time structure validators (watching-zenoh RFC §5.M, item C9)
         MemReassemblyPoolVariantMissingMaxFragments,
         MemReassemblyPoolVariantMissingTimeout,
-        // Fragment-reassembly cross-doc validators (watching-zenoh RFC §5.M, C13-α-2 + C9-β co-land)
+        // Fragment-reassembly cross-doc validators (watching-zenoh RFC §5.M, items C9 + C13)
         MemReassemblySlotSizeBelowDeclaredMtu,
         ReassemblyMaxFragmentsInsufficientForMtu,
         ReassemblyExpectedFragmentationRateHigh,
         ReassemblyUntrustedLinkBinding,
         ReassemblyTrustClassMissingOnFragmentingLink,
         ReassemblyStageCopyWcetExceedsSlotBudget,
-        // Fragment-reassembly codegen self-check (watching-zenoh RFC §5.M, C9-γ)
+        // Fragment-reassembly codegen self-check (watching-zenoh RFC §5.M, item C9)
         ReassemblyPeerIdNotZidOnEstablishedSession,
-        // Listener-link sibling-pair (watching-zenoh RFC §5.C + §5.M, C10-α)
+        // Listener-link sibling-pair (watching-zenoh RFC §5.C + §5.M, item C10)
         LinkListenerLinkNotPairedWithEstablishedSibling,
         MeshDeployReassemblyBindingOnUnpairedListener,
-        // Multi-link concurrency contract (watching-zenoh RFC §5.N, C10-β)
+        // Multi-link concurrency contract (watching-zenoh RFC §5.N, item C10)
         LinkConcurrentCountExceedsSchedulerSlots,
         LinkPerLinkBudgetExceedsTickPeriod,
         LinkInboundEventQueueUnsized,
-        // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §5.L, C6-α)
+        // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §5.L, item C6)
         CollectionOrderingSortedRequiresIndexBy,
         CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
-        // Bounded-collection kind cross-doc resolution (watching-zenoh RFC §5.L, C6-β)
+        // Bounded-collection kind cross-doc resolution (watching-zenoh RFC §5.L, item C6)
         CollectionElementTypeNotAKind,
         CollectionIndexByFieldMissing,
         CollectionMultiWriterWithoutAtomics,
-        // Bounded-collection kind deploy-time capacity resolution (watching-zenoh RFC §5.L, C6-γ1)
+        // Bounded-collection kind deploy-time capacity resolution (watching-zenoh RFC §5.L, item C6)
         CollectionCapacityUnresolved,
         // Timer kind diagnostics (watching-zenoh RFC §5.D, C1)
         TimerPeriodBelowTickRate,
         TimerSlotOverflow,
-        // `<sce:extern>` whitelisted intrinsic registry (watching-zenoh RFC §5.I, Atomic A)
+        // `<sce:extern>` whitelisted intrinsic registry (watching-zenoh RFC §5.I, item C4)
         ExternSymbolNotInWhitelist,
         ExternAbiMismatch,
         ExternSignatureMismatch,
         ExternOrderingUnspecified,
-        // `<sce:extern>` target-plugin extension (watching-zenoh RFC §5.I, Atomic B)
+        // `<sce:extern>` target-plugin extension (watching-zenoh RFC §5.I, item C4)
         ExternTargetPluginSymbolConflict,
         // Io
         IoFilesystem,
@@ -2781,11 +2779,11 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDistributabilityR2CrossRegionTransition,
         MeshDeployPlatformClassOsMismatch,
         MeshDeploySchedulerCooperativeMissingStackBudget,
-        // C2-γ scheduler-capacity axis (watching-zenoh RFC §5.K lines 2423/2428-9/2430-1)
+        // Scheduler-capacity axis (watching-zenoh RFC §5.K lines 2423/2428-9/2430-1)
         MeshDeploySchedulerCooperativeMissingSlotBudget,
         MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
         MeshDeploySchedulerIncompatibleWithWorkerCount,
-        // C13-α-1 `links:` block schema + parse-time + cross-doc (RFC §5.K lines 2232-2540)
+        // §5.K `links:` block schema + parse-time + cross-doc (RFC §5.K lines 2232-2540)
         MeshDeployLinkDriverUnknown,
         MeshDeployLinkMtuMissingOnFragmentingLink,
         MeshDeployLinkMtuBelowDriverFloor,
@@ -2794,20 +2792,20 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDeployLinkBurstPpsMissingOnIsrDispatch,
         MeshDeployLinkNotDeclaredInDeploy,
         MeshDeployLinkNotDeclaredInForge,
-        // C13-α-2 cross-doc RX pool burst invariants (RFC §5.K lines 2489-2500)
+        // Cross-doc RX pool burst invariants (RFC §5.K lines 2489-2500)
         MeshDeployLinkBurstAbsorptionInsufficient,
         MeshDeployLinkRxDispatchWorkerTickOnHighBurst,
-        // C13-γ pool_defaults.stage_copy_policy (RFC §5.K lines 2350-2369 + 2504-2519)
+        // pool_defaults.stage_copy_policy (RFC §5.K lines 2350-2369 + 2504-2519)
         PoolStageCopyPolicyError,
         PoolStageCopyAcceptRejectedUnderForbid,
         MeshDeployStageCopyPolicyUnknown,
-        // C13-β anti-flood + stateless_accept (RFC §5.K lines 2272-2349 + 2449-2473)
+        // Anti-flood + stateless_accept (RFC §5.K lines 2272-2349 + 2449-2473)
         MeshDeploySessionArmingQuotaMissing,
         MeshDeployAcceptRateConfigMissing,
         MeshDeploySessionArmingFieldsOnNonArmingLink,
         MeshDeployStatelessAcceptRequiredOnUntrustedSource,
         MeshDeployStatelessAcceptKeyRotationShorterThanLifetime,
-        // C13 deferred-2: peer_table invariant + extern allowlist (RFC §5.K lines 2460-2462 + 2466-2469)
+        // Peer-table invariant + extern allowlist (RFC §5.K lines 2460-2462 + 2466-2469)
         MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated,
         MeshDeployStatelessAcceptExternNotWhitelisted,
         // Mesh External config
@@ -2849,35 +2847,35 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshIo,
         // Forge generated-source drift detection (watching-zenoh RFC §6.2.6)
         ForgeSourceHashMismatch,
-        // Traceability §5.O Atomic 0 — IR provenance pre-emit guard
+        // Traceability §5.O — IR provenance pre-emit guard
         // (watching-zenoh RFC §5.O lines 3289-3290).
         TraceabilityScxmlLineRangeMissing,
-        // Traceability §5.O Atomic 1 — symbol mangling + sourcemap
+        // Traceability §5.O — symbol mangling + sourcemap
         // contract (watching-zenoh RFC §5.O lines 3055-3057, 3219-3243,
         // 3321-3324, OQ-W16 a/b locks).
         TraceabilityStateIdCollision,
         TraceabilitySymbolNameExceedsCIdentifierLimit,
         TraceabilitySourcemapSourceHashMismatch,
         TraceabilitySceMapAttributeStripped,
-        // Traceability §5.O Atomic 1 follow-up — ownership-boundary
+        // Traceability §5.O — ownership-boundary
         // walker fires this when a drift-headered file is missing
         // its SCE-MAP marker. ARCHITECTURE.md "Traceability Ownership
         // Boundary" defines the scope.
         TraceabilityMetaGeneratedSourceLineMarkerMissing,
-        // Round F-α (watching-zenoh RFC §5.2) — MCU driver/class
-        // boundary on the C11 backend. `mcu/driver-header-not-found`
+        // MCU driver/class boundary on the C11 backend (watching-zenoh
+        // RFC §5.2). `mcu/driver-header-not-found`
         // covers `<sce:driver href="..."/>` resolution failure;
-        // `mcu/section-attribute-on-non-mcu-target` covers Q-Round-F-D3
+        // `mcu/section-attribute-on-non-mcu-target` covers the
         // non-MCU backend reject of `platform.c11_section_attribute`.
         McuDriverHeaderNotFound,
         McuSectionAttributeOnNonMcuTarget,
-        // ── NL→IR Item C1 Path A Atomic 1: Enum kind invariants ──
+        // ── NL→IR Item C1 Path A: Enum kind invariants ──
         ValidationEnumNoVariants,
         ValidationEnumVariantDuplicateName,
         ValidationEnumVariantDuplicateValue,
         ValidationEnumVariantValueOverflowsUnderlying,
         ValidationEnumUnsupportedUnderlyingType,
-        // ── NL→IR Item C1 Path A Atomic 3: EventSchema kind ────
+        // ── NL→IR Item C1 Path A: EventSchema kind ────
         ValidationEventSchemaOnBuiltinEvent,
         ValidationEventPayloadFieldUnknown,
         ValidationBytesComparisonNotEquality,
@@ -2999,7 +2997,7 @@ impl DiagnosticCode {
             | AlgorithmConstFoldBudgetExceeded
             | AlgorithmConstYieldTypeMismatch => Some("watching-zenoh RFC §5.F"),
 
-            // ── Codec §5.B variant + present-if + repeat + tlv-chain + dma-align primitives (B1-β/δ + B2 + B3) ─
+            // ── Codec §5.B variant + present-if + repeat + tlv-chain + dma-align primitives (items B1 + B2 + B3) ─
             CodecVariantArmUnreachable
             | CodecVariantDuplicateDefaultArm
             | CodecVariantArmMidMismatch
@@ -3033,8 +3031,8 @@ impl DiagnosticCode {
             | LinkPoolSlotSmallerThanFramerMax => Some("watching-zenoh RFC §5.C"),
 
             // ── BufferPool §5.E DMA-aligned slot table + Layer 1
-            //    ownership pull-through (B7-α/β/ε) + B7-η' Sample API
-            //    application-layer ownership ────────────────────────
+            //    ownership pull-through + sample-callback Sample API
+            //    application-layer ownership (item B7) ──────────────
             MemPoolSectionConflict
             | MemPoolTooLarge
             | MemInterPoolPaddingNotEmitted
@@ -3057,18 +3055,18 @@ impl DiagnosticCode {
             | ScxmlOnSampleLinkWrongKind => Some("watching-zenoh RFC §5.E"),
 
             // ── §5.I `<sce:extern>` whitelisted intrinsic registry
-            //    (Atomic A baseline + Atomic B target-plugin extension) ──
+            //    (baseline + target-plugin extension, item C4) ──
             ExternSymbolNotInWhitelist
             | ExternAbiMismatch
             | ExternSignatureMismatch
             | ExternOrderingUnspecified
             | ExternTargetPluginSymbolConflict => Some("watching-zenoh RFC §5.I"),
 
-            // ── §5.D Worker kind encapsulation (C2-α) ───────────────
+            // ── §5.D Worker kind encapsulation (item C2) ───────────
             WorkerSharedMutableState => Some("watching-zenoh RFC §5.D"),
 
-            // ── Worker cross-resolution (RFC §5.D, C2-β) + SPSC inbox
-            //    ordering (RFC §5.I lines 1752-1758, C2-β) ──
+            // ── Worker cross-resolution (RFC §5.D) + SPSC inbox
+            //    ordering (RFC §5.I lines 1752-1758) ──
             //    Cross-ref codes carry §5.D spec anchor (worker schema
             //    is §5.D's domain). Ordering codes carry §5.I anchor
             //    (the SPSC/MPSC ordering contract is §5.I's domain).
@@ -3076,7 +3074,7 @@ impl DiagnosticCode {
             WorkerInboxOrderingUnspecified
             | WorkerInboxOrderingRelaxedAcrossCores => Some("watching-zenoh RFC §5.I"),
 
-            // ── Worker scheduler-capacity axis (RFC §5.D + §5.K, C2-γ) ──
+            // ── Worker scheduler-capacity axis (RFC §5.D + §5.K) ──
             //    Forge-side anchor (line 912) lives in §5.D worker
             //    domain; the three deploy-side anchors (line 2423 /
             //    2428-9 / 2430-1) live in §5.K deploy.yaml domain.
@@ -3085,7 +3083,7 @@ impl DiagnosticCode {
             | TimerSlotOverflow => Some("watching-zenoh RFC §5.D"),
 
             // ── Worker SCXML-side outbox cross-resolution (RFC §5.D,
-            //    C2 follow-up Atomic B). All three axes live in §5.D
+            //    item C2). All three axes live in §5.D
             //    worker domain (the worker schema's `<sce:outbox>` is
             //    §5.D's; the recipient codegen contract is §5.D's
             //    inbox lowering).
@@ -3095,11 +3093,12 @@ impl DiagnosticCode {
 
             // ── §5.L Bounded-collection kind parse-time structure
             //    validators (watching-zenoh RFC §5.L lines 2540-2655,
-            //    C6-α + C6-β). C6-α codes are XML-structure-only — the
-            //    sorted ordering requires an explicit `<sce:index-by>`
-            //    field (spec line 2559), and `oldest-wins` overflow
-            //    requires `insertion` ordering (spec line 2655). C6-β
-            //    codes are cross-doc — element-type kind resolution
+            //    item C6). The parse-time codes are XML-structure-only
+            //    — the sorted ordering requires an explicit
+            //    `<sce:index-by>` field (spec line 2559), and
+            //    `oldest-wins` overflow requires `insertion` ordering
+            //    (spec line 2655). The cross-doc
+            //    codes cover element-type kind resolution
             //    (lines 2566-2567), index-by field enumeration
             //    (line 2615), multi-writer atomic-import surface
             //    (lines 2560-2562). All five sit on §5.L.
@@ -3114,16 +3113,16 @@ impl DiagnosticCode {
 
             // ── §5.M Fragment-reassembly variant parse-time structure
             //    validators (watching-zenoh RFC §5.M lines 2944-2945,
-            //    C9-α). Both codes fire when
+            //    item C9). Both codes fire when
             //    `<sce:variant>reassembly</sce:variant>` is declared
             //    without one of its required sibling elements
             //    (max-fragments-per-message at spec line 2688,
-            //    reassembly-timeout-ms at spec line 2689). Cross-doc /
-            //    cross-link / codegen-side reassembly diagnostics defer
-            //    to C9-β/γ + C10/C11 per RFC stub §1.7 phase column.
+            //    reassembly-timeout-ms at spec line 2689). The
+            //    cross-doc / cross-link / codegen-side reassembly
+            //    diagnostics are anchored below.
             MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout
-            // C13-α-2 + C9-β cross-doc validators (RFC §5.M lines 2946-2995).
+            // Cross-doc validators (RFC §5.M lines 2946-2995).
             // The 6 cross-doc reassembly codes share §5.M spec anchor.
             | MemReassemblySlotSizeBelowDeclaredMtu
             | ReassemblyMaxFragmentsInsufficientForMtu
@@ -3131,24 +3130,24 @@ impl DiagnosticCode {
             | ReassemblyUntrustedLinkBinding
             | ReassemblyTrustClassMissingOnFragmentingLink
             | ReassemblyStageCopyWcetExceedsSlotBudget
-            // C9-γ codegen self-check (RFC §5.M lines 2976-2981).
+            // Codegen self-check (RFC §5.M lines 2976-2981).
             | ReassemblyPeerIdNotZidOnEstablishedSession
-            // C10-α reassembly side of the listener-pair (RFC §5.M
-            // lines 2982-2994). Shares §5.M anchor with the C9-γ
-            // codegen self-check + the 6 C9-β / C13-α-2 cross-doc
+            // Reassembly side of the listener-pair (RFC §5.M
+            // lines 2982-2994). Shares §5.M anchor with the
+            // codegen self-check + the 6 cross-doc
             // reassembly codes.
             | MeshDeployReassemblyBindingOnUnpairedListener => {
                 Some("watching-zenoh RFC §5.M")
             }
-            // C10-α listener-pair codegen self-check (RFC §5.C lines
-            // 849-856). The §5.C anchor matches the existing B6-α/β/γ
+            // Listener-pair codegen self-check (RFC §5.C lines
+            // 849-856). The §5.C anchor matches the existing item B6
             // link family.
             LinkListenerLinkNotPairedWithEstablishedSibling => {
                 Some("watching-zenoh RFC §5.C")
             }
 
-            // C10-β multi-link concurrency contract (RFC §5.N lines
-            // 3031-3062). All three codes share the §5.N anchor —
+            // Multi-link concurrency contract (RFC §5.N lines
+            // 3031-3062, item C10). All three codes share the §5.N anchor —
             // distinct §5 section from §5.C (B6 link kind) and §5.M
             // (reassembly variant) so the spec table-of-contents stays
             // readable.
@@ -3227,9 +3226,9 @@ impl DiagnosticCode {
             | MeshDeployPartitionBarrierTimeoutInvalid
             | MeshDeployPlatformClassOsMismatch => Some("SCE Mesh §14"),
 
-            // ── C2-γ scheduler-capacity deploy-side anchors
+            // ── Scheduler-capacity deploy-side anchors
             //    (watching-zenoh RFC §5.K lines 2423 / 2426 / 2428-9 / 2430-1).
-            //    The stack-budget variant was renamed at C2-γ landing
+            //    The stack-budget variant was renamed
             //    from the SCE-Mesh-prefix wire to the watching-zenoh-prefix
             //    wire (`deploy/worker-stack-budget-missing`); the spec
             //    anchor follows the rename. The three sibling variants
@@ -3238,8 +3237,8 @@ impl DiagnosticCode {
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
             | MeshDeploySchedulerIncompatibleWithWorkerCount
-            // C13-α-1 `links:` block (RFC §5.K lines 2232-2540) +
-            // C13-α-2 cross-doc RX-pool burst invariants (RFC §5.K
+            // §5.K `links:` block (RFC §5.K lines 2232-2540) +
+            // cross-doc RX-pool burst invariants (RFC §5.K
             // lines 2489-2500).
             | MeshDeployLinkDriverUnknown
             | MeshDeployLinkMtuMissingOnFragmentingLink
@@ -3251,19 +3250,19 @@ impl DiagnosticCode {
             | MeshDeployLinkBurstAbsorptionInsufficient
             | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
             | MeshDeployLinkDriverClassMismatch
-            // C13-γ pool_defaults.stage_copy_policy (RFC §5.K lines
+            // pool_defaults.stage_copy_policy (RFC §5.K lines
             // 2350-2369 + 2504-2519). Three codes share §5.K anchor.
             | PoolStageCopyPolicyError
             | PoolStageCopyAcceptRejectedUnderForbid
             | MeshDeployStageCopyPolicyUnknown
-            // C13-β anti-flood + stateless_accept (RFC §5.K lines
+            // Anti-flood + stateless_accept (RFC §5.K lines
             // 2272-2349 + 2449-2473). Five codes share §5.K anchor.
             | MeshDeploySessionArmingQuotaMissing
             | MeshDeployAcceptRateConfigMissing
             | MeshDeploySessionArmingFieldsOnNonArmingLink
             | MeshDeployStatelessAcceptRequiredOnUntrustedSource
             | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
-            // C13 deferred-2: peer_table invariant (RFC §5.K line
+            // Peer-table invariant (RFC §5.K line
             // 2460-2462) + extern allowlist (RFC §5.K line 2466-2469).
             | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
             | MeshDeployStatelessAcceptExternNotWhitelisted
@@ -3289,7 +3288,7 @@ impl DiagnosticCode {
             MeshDistributabilityR1SharedWrite
             | MeshDistributabilityR2CrossRegionTransition => Some("SCE Mesh §16.3"),
 
-            // ── §5.J.2 Rust no_std variant (C3 Atomic B-β) ───────
+            // ── §5.J.2 Rust no_std variant (item C3) ─────────────
             //    Both rejections anchor on the watching-zenoh RFC
             //    section that defines the no_std variant of the Rust
             //    backend; the script-engine incompatibility is line
@@ -3307,18 +3306,18 @@ impl DiagnosticCode {
             //    contract + `sce-build verify` recompute pipeline.
             ForgeSourceHashMismatch => Some("watching-zenoh RFC §6.2.6"),
 
-            // ── §5.O Atomic 0 — traceability IR provenance pre-emit
+            // ── §5.O traceability IR provenance pre-emit
             //    guard. Spec lines 3289-3290 verbatim: "Codegen failure
             //    ... surfaced via `traceability/scxml-line-range-
             //    missing` (codegen-internal)". Anchors the diagnostic
             //    against the per-IR-node `(file_id, line, column)`
-            //    invariant the Atomic 0 markers + Atomic 1 sourcemap
+            //    invariant the SCE-MAP markers + sourcemap
             //    both consume.
             TraceabilityScxmlLineRangeMissing => Some("watching-zenoh RFC §5.O"),
 
-            // ── §5.O Atomic 1 — symbol mangling + sourcemap contract.
+            // ── §5.O symbol mangling + sourcemap contract.
             //    All 4 anchor at watching-zenoh RFC §5.O (the same
-            //    section heading) per Q-§5.O-9: spec lines 3055-3057
+            //    section heading): spec lines 3055-3057
             //    (mangling pattern), 3219-3243 (sourcemap JSON shape),
             //    3321-3324 (source_hash byte-equality), OQ-W16 a/b
             //    (escape encoding + `#[doc]` preservation).
@@ -3328,9 +3327,9 @@ impl DiagnosticCode {
             | TraceabilitySceMapAttributeStripped
             | TraceabilityMetaGeneratedSourceLineMarkerMissing => Some("watching-zenoh RFC §5.O"),
 
-            // ── Round F-α (watching-zenoh RFC §5.2) — MCU driver/class
-            //    boundary on the C11 backend. Both anchor at §5.2 per
-            //    Q-Round-F-D2/D3/D5/D6 locks (driver header reference
+            // ── MCU driver/class boundary on the C11 backend
+            //    (watching-zenoh RFC §5.2). Both anchor at §5.2
+            //    (driver header reference
             //    + non-MCU section attribute reject).
             McuDriverHeaderNotFound | McuSectionAttributeOnNonMcuTarget => {
                 Some("watching-zenoh RFC §5.2")
@@ -3428,7 +3427,7 @@ impl DiagnosticCode {
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshIo
-            // Axis-3 inversion — the listener-role contract is
+            // The listener-role contract is
             // SCE-internal, not a watching-zenoh spec section. The
             // codes describe an SCE-only cross-doc role contract;
             // spec_anchor stays None until / unless a future spec
@@ -3474,7 +3473,7 @@ impl DiagnosticCode {
             // hygiene.
             | ScxmlAlwaysFalseGuard
             | ScxmlShadowedTransition => None,
-            // The Axis-2 reassembly invariant carries the spec anchor
+            // The reassembly declared-consumption invariant carries the spec anchor
             // that lived in the diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
                 Some("watching-zenoh RFC §5.M")
@@ -3488,7 +3487,7 @@ impl DiagnosticCode {
             | ValidationEnumVariantDuplicateValue
             | ValidationEnumVariantValueOverflowsUnderlying
             | ValidationEnumUnsupportedUnderlyingType
-            // NL→IR Item C1 Path A: EventSchema kind (Atomic 3) — the
+            // NL→IR Item C1 Path A: EventSchema kind — the
             // three rejections (built-in-event schema, send-side
             // payload field-unknown, mesh cross-machine schema
             // mismatch) are SCE-internal hygiene with no external
@@ -3952,7 +3951,7 @@ impl DiagnosticCode {
             ValidationEnumUnsupportedUnderlyingType => {
                 "validation/enum-unsupported-underlying-type"
             }
-            // ── NL→IR Item C1 Path A: EventSchema kind (Atomic 3) ──
+            // ── NL→IR Item C1 Path A: EventSchema kind ──
             ValidationEventSchemaOnBuiltinEvent => "validation/event-schema-on-builtin-event",
             ValidationEventPayloadFieldUnknown => "validation/event-payload-field-unknown",
             ValidationBytesComparisonNotEquality => "validation/bytes-comparison-not-equality",
@@ -5782,7 +5781,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             key_fragments: vec![state_id.clone(), link.clone(), actual_kind.clone()],
         },
         ValidationError::ScxmlUnknownSessionRoleKind { kind, allowed } => DiagnosticPayload {
-            // Axis-3 inversion — closed-set kind vocabulary
+            // Listener-role — closed-set kind vocabulary
             // rides `Fix::ReplaceOneOf` per FixCarriesCandidates
             // non-overlap class. `expected` stays None (the candidate
             // list lives in fix, not expected, per the non-overlap
@@ -5797,7 +5796,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             key_fragments: vec![kind.clone()],
         },
         ValidationError::ScxmlDuplicateSessionRoleDeclaration { kind } => DiagnosticPayload {
-            // Axis-3 inversion — single-axis repair (delete
+            // Listener-role — single-axis repair (delete
             // the duplicate); no closed candidate list. `actual`
             // surfaces the offending kind so CLI consumers see which
             // kind was duplicated without parsing the message body.
@@ -5813,11 +5812,11 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             link_name,
         } => {
             DiagnosticPayload {
-                // Axis-3 inversion — typed partial-claim.
+                // Listener-role — typed partial-claim.
                 // 2-axis repair (add SCXML role OR remove deploy role);
-                // NeutralOrDeterministic per C10-α Q-C10-7 precedent.
+                // NeutralOrDeterministic.
                 // `actual` carries the link name; `key_fragments`
-                // mirror the C10-α `reassembly/binding-on-unpaired-
+                // mirror the `reassembly/binding-on-unpaired-
                 // listener` `(machine, link_name)` shape so external
                 // consumers can join diagnostic streams without
                 // re-parsing.
@@ -5833,7 +5832,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             machine,
             scxml_source,
         } => DiagnosticPayload {
-            // Axis-3 inversion — typed partial-claim mirror
+            // Listener-role — typed partial-claim mirror
             // direction. 2-axis repair. `actual` carries the SCXML
             // source basename so consumers can navigate to the
             // offending file; `key_fragments` carry both fields.
@@ -5849,7 +5848,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             link_name,
             trust_class,
         } => DiagnosticPayload {
-            // Axis-3 inversion — Q-A4 (d) matrix check.
+            // Listener-role — role × trust-class matrix check.
             // 2-axis repair (change trust_class OR remove role);
             // NeutralOrDeterministic. `actual` carries the wrong
             // trust_class wire-form value so the violation is visible
@@ -5863,7 +5862,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         },
         ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration { offending_ids } => {
             DiagnosticPayload {
-                // Axis-3 inversion migration-helper. 2-axis
+                // Listener-role migration-helper. 2-axis
                 // repair (add role declaration OR rename states); no
                 // closed candidate set so `fix: None`. `actual`
                 // serializes the offending id list in document order
@@ -5887,7 +5886,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             per_peer_quota,
             product,
         } => DiagnosticPayload {
-            // Axis-2 declared-consumption — peer_table.capacity × per_peer_quota
+            // Declared-consumption — peer_table.capacity × per_peer_quota
             // >= slot_count. 3-axis repair; NeutralOrDeterministic.
             // `actual` carries the violating product so consumers can
             // see the shortfall without parsing the message body.
@@ -5981,7 +5980,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 worker_shared_state_actual(reason),
             ],
         },
-        // ── §5.D C2-β cross-resolution: link-rx + outbox ref ──
+        // ── §5.D worker cross-resolution: link-rx + outbox ref ──
         ValidationError::WorkerLinkRxRefUnknown {
             worker_name,
             ref_name,
@@ -5992,7 +5991,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             stage: Stage::Validation,
             // `actual` carries the offending ref; closed candidate
             // list (sorted kind=link import aliases) rides
-            // `Fix::ReplaceOneOf`. η-precedent: LinkClassUnsupportedOnTarget.
+            // `Fix::ReplaceOneOf`. Precedent: `LinkClassUnsupportedOnTarget`.
             expected: None,
             actual: Some(ref_name.clone()),
             fix: Some(Fix::ReplaceOneOf {
@@ -6000,7 +5999,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![worker_name.clone(), ref_name.clone()],
         },
-        // ── §5.I C2-β SPSC inbox ordering ──
+        // ── §5.I SPSC inbox ordering ──
         ValidationError::WorkerInboxOrderingUnspecified { worker_name } => DiagnosticPayload {
             code: DiagnosticCode::WorkerInboxOrderingUnspecified,
             stage: Stage::Validation,
@@ -6053,7 +6052,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![worker_name.clone(), machine.clone()],
         },
-        // ── §5.D C2 follow-up Atomic B outbox cross-resolution ──
+        // ── §5.D worker outbox cross-resolution ──
         ValidationError::WorkerOutboxRefUnknown {
             worker_name,
             outbox_value,
@@ -6067,7 +6066,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // surfaces what was written (owner segment alone hides the
             // suffix); closed candidate list (sorted statechart +
             // worker `.inbox` set) rides `Fix::ReplaceOneOf`.
-            // η-precedent: `WorkerLinkRxRefUnknown` carries candidates
+            // Precedent: `WorkerLinkRxRefUnknown` carries candidates
             // the same way.
             expected: None,
             actual: Some(outbox_value.clone()),
@@ -6117,7 +6116,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![worker_name.clone(), owner.clone(), suffix.clone()],
         },
-        // ── §5.L Bounded-collection parse-time structure validators (C6-α) ──
+        // ── §5.L Bounded-collection parse-time structure validators (item C6) ──
         ValidationError::CollectionOrderingSortedRequiresIndexBy { collection_name } => {
             DiagnosticPayload {
                 code: DiagnosticCode::CollectionOrderingSortedRequiresIndexBy,
@@ -6145,7 +6144,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![collection_name.clone()],
         },
-        // ── §5.M Fragment-reassembly variant parse-time structure validators (C9-α) ──
+        // ── §5.M Fragment-reassembly variant parse-time structure validators (item C9) ──
         ValidationError::MemReassemblyPoolVariantMissingMaxFragments { pool_name } => {
             DiagnosticPayload {
                 code: DiagnosticCode::MemReassemblyPoolVariantMissingMaxFragments,
@@ -6172,7 +6171,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![pool_name.clone()],
             }
         }
-        // ── §5.M Fragment-reassembly cross-doc validators (C13-α-2 + C9-β) ──
+        // ── §5.M Fragment-reassembly cross-doc validators (items C9 + C13) ──
         ValidationError::MemReassemblySlotSizeBelowDeclaredMtu {
             pool_name,
             slot_size,
@@ -6233,7 +6232,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             stage: Stage::Validation,
             // `actual` = the computed rate percent; `expected` = the
             // 25% threshold (default per spec, suppressible via §5.K
-            // pool_defaults C13-γ scope).
+            // `pool_defaults.stage_copy_policy`).
             actual: Some(rate_percent.to_string()),
             expected: Some(vec!["25".to_string()]),
             fix: None,
@@ -6257,8 +6256,8 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // `actual` = the offending trust_class; expected omitted
             // (single permitted value `established_session` would
             // collapse to a FixCarriesCandidates shape, but
-            // Q-C13-α2-7 (a) keeps the second valid repair "remove
-            // binding entirely" in scope so the code stays
+            // the second valid repair "remove
+            // binding entirely" stays in scope so the code stays
             // NeutralOrDeterministic and the message carries the
             // canonical replacement value).
             actual: Some(trust_class.clone()),
@@ -6317,7 +6316,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 stage_copy_wcet_us.to_string(),
             ],
         },
-        // ── §5.M C9-γ codegen self-check ──
+        // ── §5.M reassembly codegen self-check ──
         ValidationError::ReassemblyPeerIdNotZidOnEstablishedSession {
             pool_name,
             language,
@@ -6334,14 +6333,14 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![pool_name.clone(), language.clone()],
         },
-        // ── §5.C C10-α codegen self-check ──
+        // ── §5.C listener-pair codegen self-check ──
         ValidationError::LinkListenerLinkNotPairedWithEstablishedSibling {
             link_name,
             language,
         } => DiagnosticPayload {
             code: DiagnosticCode::LinkListenerLinkNotPairedWithEstablishedSibling,
             stage: Stage::Validation,
-            // Codegen-internal invariant — same shape as C9-γ
+            // Codegen-internal invariant — same shape as
             // `ReassemblyPeerIdNotZidOnEstablishedSession`. Author-
             // side `actual` / `expected` / `fix` carry no useful
             // information.
@@ -6350,7 +6349,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![link_name.clone(), language.clone()],
         },
-        // ── §5.M C10-α reassembly-binding-on-unpaired-listener ──
+        // ── §5.M reassembly-binding-on-unpaired-listener ──
         ValidationError::ReassemblyBindingOnUnpairedListener {
             pool_name,
             machine,
@@ -6368,7 +6367,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![pool_name.clone(), machine.clone(), link_name.clone()],
         },
-        // ── §5.N C10-β link/inbound-event-queue-unsized ──
+        // ── §5.N link/inbound-event-queue-unsized ──
         ValidationError::LinkInboundEventQueueUnsized {
             machine,
             link_name,
@@ -6390,7 +6389,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 inbound_event_count.to_string(),
             ],
         },
-        // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
+        // ── §5.K stage-copy policy promotion + opt-out rejection ──
         ValidationError::PoolStageCopyPolicyError {
             pool_name,
             slot_size,
@@ -6432,7 +6431,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![machine.clone(), link_name.clone()],
             }
         }
-        // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
+        // ── §5.L Bounded-collection cross-doc resolution (item C6) ──
         ValidationError::CollectionElementTypeNotAKind {
             collection_name,
             element_type,
@@ -6444,7 +6443,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             // `actual` carries the authored element-type body text so the
             // diagnostic surfaces what was written; closed candidate list
             // (sorted codec + procedure name union) rides
-            // `Fix::ReplaceOneOf`. η-precedent: `WorkerOutboxRefUnknown`
+            // `Fix::ReplaceOneOf`. Precedent: `WorkerOutboxRefUnknown`
             // carries the same shape.
             expected: None,
             actual: Some(element_type.clone()),
@@ -6495,7 +6494,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![collection_name.clone()],
             }
         }
-        // ── §5.L Bounded-collection deploy-time capacity resolution (C6-γ1) ──
+        // ── §5.L Bounded-collection deploy-time capacity resolution (item C6) ──
         ValidationError::CollectionCapacityUnresolved {
             collection_name,
             key,
@@ -6541,7 +6540,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 tick_period_us.to_string(),
             ],
         },
-        // ── §5.I `<sce:extern>` whitelist rejection (Atomic A) ──
+        // ── §5.I `<sce:extern>` whitelist rejection ──
         ValidationError::ExternSymbolNotInWhitelist {
             name,
             candidates,
@@ -6612,7 +6611,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![base.clone()],
         },
-        // ── §5.I target-plugin baseline-shadowing (Atomic B) ──
+        // ── §5.I target-plugin baseline-shadowing ──
         ValidationError::ExternTargetPluginSymbolConflict { name, plugin_path } => {
             DiagnosticPayload {
                 code: DiagnosticCode::ExternTargetPluginSymbolConflict,
@@ -6623,14 +6622,14 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 // axes without parsing the message text.
                 expected: None,
                 actual: Some(name.clone()),
-                // Q-Call-6 (a): repair is "rename the plugin entry";
+                // Repair is "rename the plugin entry";
                 // SCE cannot synthesize a non-baseline name. The
                 // diagnostic stays advisory (`fix: None`).
                 fix: None,
                 key_fragments: vec![name.clone(), plugin_path.clone()],
             }
         }
-        // ── §5.O Atomic 0 — IR provenance pre-emit guard ─────────
+        // ── §5.O IR provenance pre-emit guard ────────────────────
         //    Codegen-internal invariant: an IR node eligible for
         //    SCE-MAP marker emission reached the pre-emit walker
         //    with `source_location: None`. No author repair (the
@@ -6649,7 +6648,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![(*node_kind).into(), node_id.clone()],
             }
         }
-        // ── §5.O Atomic 1 — symbol mangling collision detector. The
+        // ── §5.O symbol mangling collision detector. The
         //    dual-location payload rides `Fix::ReplaceOneOf` with the
         //    two `<file>:<line>` strings as the closed candidate set:
         //    the author picks whichever site to rename to break the
@@ -6674,7 +6673,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             }),
             key_fragments: vec![mangled.clone()],
         },
-        // ── §5.O Atomic 1 — mangled symbol exceeds C99 identifier
+        // ── §5.O — mangled symbol exceeds C99 identifier
         //    limit. NeutralOrDeterministic: the author has multiple
         //    repair axes (shorten machine id, shorten state id,
         //    shorten artifact suffix, or relax the strict flag) so
@@ -6691,7 +6690,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![mangled.clone(), actual_len.to_string(), over_by.to_string()],
         },
-        // ── §5.O Atomic 1 — sourcemap source_hash drift against
+        // ── §5.O — sourcemap source_hash drift against
         //    §6.2.6 header. NeutralOrDeterministic: regenerate via
         //    `sce-codegen generate` is the only repair.
         ValidationError::TraceabilitySourcemapSourceHashMismatch {
@@ -6706,7 +6705,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![file.clone(), sourcemap_hash.clone(), header_hash.clone()],
         },
-        // ── §5.O Atomic 1 — Rust SCE-MAP `#[doc]` preservation guard
+        // ── §5.O — Rust SCE-MAP `#[doc]` preservation guard
         //    (OQ-W16 b). NeutralOrDeterministic: the dual-emit
         //    fallback `// SCE-MAP:` line comment already covers the
         //    strip, so this is a heads-up rather than a hard error.
@@ -6722,7 +6721,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![crate_name.clone(), function.clone(), profile.clone()],
         },
-        // ── §5.O Atomic 1 follow-up — codegen-internal traceability
+        // ── §5.O — codegen-internal traceability
         //    invariant: SCE-emitted file lacks an SCE-MAP marker.
         //    NeutralOrDeterministic. No author repair — the fix is in
         //    a template `tools/codegen/templates/` upstream.
@@ -6736,14 +6735,14 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![file.clone()],
             }
         }
-        // ── Round F-α (watching-zenoh RFC §5.2) — `<sce:driver href>`
+        // ── MCU `<sce:driver href>` (watching-zenoh RFC §5.2) —
         //    resolution failure. `actual` carries the verbatim author-
         //    written href so the diagnostic message round-trips the
         //    original string; `key_fragments` include both href and
         //    resolved_dir so two identical-named misses under different
         //    search roots hash distinct wire-ids. Stage = Validation —
         //    the diagnostic fires before codegen, at compile-model
-        //    time, matching the §5.O Atomic 1 stage for similar
+        //    time, matching the stage of similar
         //    compile-model-time codes.
         ValidationError::McuDriverHeaderNotFound { href, resolved_dir } => DiagnosticPayload {
             code: DiagnosticCode::McuDriverHeaderNotFound,
@@ -6753,7 +6752,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             fix: None,
             key_fragments: vec![href.clone(), resolved_dir.clone()],
         },
-        // ── NL→IR Item C1 Path A: Enum kind invariants (Atomic 1) ──
+        // ── NL→IR Item C1 Path A: Enum kind invariants ──
         ValidationError::EnumNoVariants { name } => DiagnosticPayload {
             code: DiagnosticCode::ValidationEnumNoVariants,
             stage: Stage::Validation,
@@ -6927,8 +6926,8 @@ fn callback_reason_tag(reason: &crate::forge::error::CallbackPathReason) -> &'st
 /// rationale to [`callback_reason_tag`]: keeps wire ids distinct when
 /// the same worker carries violations from multiple layers, and lets
 /// downstream test fixtures key on the layer without parsing the
-/// per-instance message. (C2-α has two reachable layers; future C4-
-/// composition hardening grows the enum without disturbing existing
+/// per-instance message. (Two layers are reachable today; additional
+/// layers grow the enum without disturbing existing
 /// ids.)
 fn worker_shared_state_layer_tag(
     reason: &crate::forge::error::WorkerSharedStateReason,
@@ -7164,14 +7163,14 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
                 key_fragments: vec![kind.clone(), language.clone()],
             }
         }
-        // ── Round F-α (watching-zenoh RFC §5.2) — non-MCU backend
-        //    refuses `platform.c11_section_attribute` (Q-Round-F-D3).
+        // ── Non-MCU backend refuses `platform.c11_section_attribute`
+        //    (watching-zenoh RFC §5.2).
         //    `actual` carries the offending backend name (`cpp` /
         //    `rust` / `kotlin` / `go` / `python`); `key_fragments`
         //    use the same single value so the wire-id is stable per
         //    backend across runs. Stage = Generate — the reject fires
         //    inside the codegen-matrix walker, matching the existing
-        //    Q-Call-7 sibling.
+        //    `codegen/mcu-class-kind-on-non-mcu-language` sibling.
         GenerateError::McuSectionAttributeOnNonMcuTarget { backend } => DiagnosticPayload {
             code: DiagnosticCode::McuSectionAttributeOnNonMcuTarget,
             stage: Stage::Generate,
@@ -8213,7 +8212,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:d4a8c789490ede2b","code":"scxml/shadowed-transition","stage":"validation","message":"Transition #1 in state 'armed' (event 'fire') is shadowed by an earlier unconditional transition #0 with the same event descriptor. The shadowed transition can never fire. Reorder the transitions, add a guard to the shadowing transition, or remove the shadowed transition.","actual":"fire"}"#,
             ),
             (
-                // watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a)
+                // watching-zenoh RFC §5.E sample-callback placement rule
                 "forge/scxml-on-sample-invalid-parent",
                 ValidationError::OnSampleInvalidParent {
                     path: "scxml > onentry".into(),
@@ -8224,7 +8223,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:90051ac7a8571e3a","code":"scxml/on-sample-invalid-parent","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"<sce:on-sample> at scxml > onentry: must appear directly inside a <state> or <parallel>; found inside <onentry>. Move the element under a state or parallel ancestor.","actual":"onentry"}"#,
             ),
             (
-                // watching-zenoh RFC §5.E B7-η' Q-OnSample-5 (a)
+                // watching-zenoh RFC §5.E sample-callback per-state uniqueness rule
                 "forge/scxml-on-sample-link-duplicate-in-state",
                 ValidationError::OnSampleLinkDuplicateInState {
                     state_id: "running".into(),
@@ -8235,7 +8234,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:ab4ec9e9ef9663b9","code":"scxml/on-sample-link-duplicate-in-state","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': duplicate <sce:on-sample link=\"scout_link\"> declarations. Each link is allowed at most one on-sample block per state; merge the duplicates or rename one of the link references.","actual":"scout_link"}"#,
             ),
             (
-                // watching-zenoh RFC §5.E B7-η' Q-OnSample-7
+                // watching-zenoh RFC §5.E sample-callback reserved-event-name rule
                 "forge/scxml-on-sample-event-name-conflict",
                 ValidationError::OnSampleEventNameConflict {
                     event: "error.io".into(),
@@ -8246,7 +8245,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:3b804e5f18b5b65a","code":"scxml/on-sample-event-name-conflict","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"<sce:on-sample event=\"error.io\"> collides with the reserved W3C SCXML internal event prefix 'error.'. Pick an event name outside that family (e.g. 'sample.error.io') so dispatched samples stay distinct from built-in lifecycle events.","actual":"error.io"}"#,
             ),
             (
-                // watching-zenoh RFC §5.E B7-η' Atomic B Q-OnSample-3
+                // watching-zenoh RFC §5.E sample-callback
                 // cross-ref pair — `not-declared` is reachable today.
                 "forge/scxml-on-sample-link-not-declared",
                 ValidationError::OnSampleLinkNotDeclared {
@@ -8275,7 +8274,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:38b424712554fe91","code":"scxml/on-sample-link-wrong-kind","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_codec\"> resolves to a forge 'codec' kind, not 'link'. Only link kind documents back the on-sample subscriber contract. Repoint the reference at one of the build's link kind names. See watching-zenoh RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_link"]}}"#,
             ),
             (
-                // Axis-3 inversion — `<sce:session-role kind="X"/>`
+                // Listener-role — `<sce:session-role kind="X"/>`
                 // unknown-kind structural diagnostic. Carries the
                 // closed-set vocabulary via `Fix::ReplaceOneOf` so
                 // authors get a closed picker even when v1 has only
@@ -8290,7 +8289,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:1a3bf2135f63c092","code":"scxml/unknown-session-role-kind","stage":"validation","message":"<sce:session-role kind=\"listener\"/>: unknown session-role kind. v1 vocabulary: [\"accept-side\"]. Repair: change `kind` to one of the listed values or remove the element if no session-FSM role applies.","actual":"listener","fix":{"kind":"replace_one_of","candidates":["accept-side"]}}"#,
             ),
             (
-                // Axis-3 inversion — duplicate
+                // Listener-role — duplicate
                 // `<sce:session-role>` declaration on one document.
                 // NeutralOrDeterministic non_overlap class; no
                 // candidate list. Hash placeholder — patched by byte-
@@ -8303,7 +8302,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:ebc5cc71107bd7e9","code":"scxml/duplicate-session-role-declaration","stage":"validation","message":"<sce:session-role kind=\"accept-side\"/>: declared more than once on this SCXML document. Each session-role kind may appear at most once per document. Repair: delete the duplicate `<sce:session-role kind=\"accept-side\"/>` element.","actual":"accept-side"}"#,
             ),
             (
-                // Axis-3 inversion — deploy declares listener
+                // Listener-role — deploy declares listener
                 // role but SCXML lacks accept-side declaration. Hash
                 // placeholder — patched by byte-stability assertion.
                 "forge/link-deploy-role-listener-without-scxml-accept-side-role",
@@ -8315,7 +8314,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:c2f9a854621bdaa3","code":"link/deploy-role-listener-without-scxml-accept-side-role","stage":"validation","message":"deploy machine 'mcu_node' link 'udp_listener': declares `role: listener` but its source SCXML carries no `<sce:session-role kind=\"accept-side\"/>` top-level declaration. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if it implements the session-FSM accept-side, OR remove `role: listener` from the deploy link if the link is not a listener half.","actual":"udp_listener"}"#,
             ),
             (
-                // Axis-3 inversion — SCXML declares accept-side
+                // Listener-role — SCXML declares accept-side
                 // but no deploy link has listener role. Hash placeholder.
                 "forge/scxml-accept-side-role-without-listener-link",
                 ValidationError::ScxmlAcceptSideRoleWithoutListenerLink {
@@ -8326,7 +8325,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:126e3b7664c66f4a","code":"scxml/accept-side-role-without-listener-link","stage":"validation","message":"SCXML machine 'mcu_node' (source `session_fsm.scxml`): declares `<sce:session-role kind=\"accept-side\"/>` but no deploy link on this machine has `role: listener`. Repair: add `role: listener` to the deploy link that hosts the accept-side handshake, OR remove the `<sce:session-role>` element from the SCXML if it does not serve as the accept-side FSM.","actual":"session_fsm.scxml"}"#,
             ),
             (
-                // Axis-3 inversion Q-A4 (d) matrix — listener
+                // Listener-role matrix — listener
                 // role with wrong trust_class. Hash placeholder.
                 "forge/link-role-listener-with-non-session-arming-trust-class",
                 ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
@@ -8338,7 +8337,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:df7bcfc9e6b3e2ec","code":"link/role-listener-with-non-session-arming-trust-class","stage":"validation","message":"deploy machine 'mcu_node' link 'udp_listener': declares `role: listener` but `trust_class: untrusted` (not `session_arming`). The listener-role declaration applies only to pre-handshake traffic, which lives on the `session_arming` trust tier. Repair: change `trust_class` to `session_arming`, OR remove `role: listener`.","actual":"untrusted"}"#,
             ),
             (
-                // Axis-3 inversion migration-helper — Accepting.*
+                // Listener-role migration-helper — Accepting.*
                 // state ids without role declaration. Hash placeholder.
                 "forge/scxml-accept-side-states-without-role-declaration",
                 ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration {
@@ -8351,7 +8350,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:9c490c868c1407cc","code":"scxml/accept-side-states-without-role-declaration","stage":"validation","message":"SCXML doc carries state ids matching the reserved `Accepting.*` prefix ([\"Accepting\", \"Accepting.AwaitingInitSyn\"]) but no top-level `<sce:session-role kind=\"accept-side\"/>` declaration. The canonical session-FSM accept-side state names are reserved for documents that claim the accept-side role. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if the doc implements the session-FSM accept-side, OR rename the offending state ids to avoid the `Accepting.*` reservation.","actual":"Accepting,Accepting.AwaitingInitSyn"}"#,
             ),
             (
-                // Axis-2 declared-consumption — reassembly per-peer-quota peer-table
+                // Declared-consumption — reassembly per-peer-quota peer-table
                 // build invariant violated. Hash placeholder.
                 "forge/reassembly-per-peer-quota-build-invariant-violated",
                 ValidationError::ReassemblyPerPeerQuotaBuildInvariantViolated {
@@ -8367,7 +8366,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:3c94c473897424b8","code":"reassembly/per-peer-quota-build-invariant-violated","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (slot_count=16) bound to machine 'mcu_node' link 'udp_listener' violates the per-peer-quota build invariant: `peer_table.capacity (2) × per_peer_quota (4) = 8` < `slot_count (16)`. RFC §5.M lines 2841-2861 — without this bound a peer storm can occupy more slots than the per-peer cap permits, silently degrading per-peer accounting into shared-pool contention. Repair: raise `peer_table.capacity` on the link's `stateless_accept`, raise `per_peer_quota` on the pool, or lower `slot_count` on the pool.","actual":"8 < 16"}"#,
             ),
             (
-                // RFC §5.E B7-η' Atomic A1: on-sample subscriber on a
+                // RFC §5.E sample-callback: on-sample subscriber on a
                 // link whose forge document has no `<sce:stage-pool>` —
                 // `Sample::take()` would route to the runtime's
                 // `PanicOnTakeHook` default. Candidates pull from the
@@ -8383,12 +8382,12 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:1c55aabc0ddc8d36","code":"pool/sample-take-without-stage-pool","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\"> targets a link kind whose forge document does not declare a `<sce:stage-pool>` element. Subscriber callbacks on this link cannot escape the borrow lifetime via `Sample::take()` because there is no stage-copy destination. Add `<sce:stage-pool ref=\"...\">` to the link's `.forge` document or restrict callbacks to borrow-only access. See watching-zenoh RFC §5.E.","actual":"scout_link","fix":{"kind":"replace_one_of","candidates":["scout_stage_pool"]}}"#,
             ),
             (
-                // RFC §5.E B7-η' Atomic A2 callback-path syntax: an
+                // RFC §5.E sample-callback callback-path syntax: an
                 // `<sce:on-sample callback="rust:...">` value fails the
-                // Q-Callback-3 Rust path subset. Today's reachable arms
-                // are syntax failures (UnknownLanguagePrefix shown here);
-                // future signature inspection extends the same code with
-                // shape-mismatch arms. NeutralOrDeterministic non_overlap
+                // `rust:crate::module::fn` path subset. Today's reachable
+                // arms are syntax failures (UnknownLanguagePrefix shown
+                // here); signature-inspection shape-mismatch arms stay
+                // absent until a consumer needs them. NeutralOrDeterministic non_overlap
                 // class — no `Fix::ReplaceOneOf` surface (free-form
                 // path; closed candidate set doesn't apply).
                 "forge/pool-sample-callback-signature-non-borrow",
@@ -8402,16 +8401,16 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:c1db04cc9e2b921b","code":"pool/sample-callback-signature-non-borrow","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\" callback=\"cpp:my_app::on_scout\"> uses an unsupported language prefix `cpp` (only `rust:` is accepted today). The `callback` value must match `rust:crate::module::fn` (Q-Callback-3 Rust path subset). The borrow-mode contract is enforced at the dispatch site; rustc rejects owned-mode signatures at user-crate compile time. See watching-zenoh RFC §5.E.","actual":"cpp:my_app::on_scout"}"#,
+                r#"{"v":1,"id":"fnv1a:c1db04cc9e2b921b","code":"pool/sample-callback-signature-non-borrow","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\" callback=\"cpp:my_app::on_scout\"> uses an unsupported language prefix `cpp` (only `rust:` is accepted today). The `callback` value must match the `rust:crate::module::fn` path subset. The borrow-mode contract is enforced at the dispatch site; rustc rejects owned-mode signatures at user-crate compile time. See watching-zenoh RFC §5.E.","actual":"cpp:my_app::on_scout"}"#,
             ),
             (
-                // RFC §5.D line 911 C2-α: worker shared-state encapsulation.
-                // Layer 1 reachable today (`<sce:import kind="worker">` is
-                // the structural author error a parse-time guard catches).
-                // Layer 2 (body SCXML cross-namespace data-refs) lands with
-                // the same code in this atomic. Layer 3 (`<sce:extern>`
-                // non-inbox symbol use in body) defers to a tracked
-                // follow-up atomic gated on C4 intrinsic-registry
+                // RFC §5.D line 911: worker shared-state encapsulation.
+                // Layer 1 (`<sce:import kind="worker">` is
+                // the structural author error a parse-time guard catches)
+                // and layer 2 (body SCXML cross-namespace data-refs)
+                // share this code. Layer 3 (`<sce:extern>`
+                // non-inbox symbol use in body) stays unimplemented
+                // until a consumer needs the §5.I intrinsic-registry
                 // composition surface. NeutralOrDeterministic non_overlap
                 // class — no `Fix::ReplaceOneOf` surface (the offending
                 // path may be removed, refactored through the inbox, or
@@ -8429,10 +8428,10 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:f054d112eea16560","code":"worker/shared-mutable-state","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': declares <sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>; workers cannot import other worker kinds. Workers must communicate with other workers only through their own inbox (consume) and the recipient's inbox via <sce:outbox ref=\"...\"> (produce); all other paths to another worker's state are forbidden per RFC §5.D line 911 (\"any non-inbox access to another worker's state\").","actual":"<sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>"}"#,
             ),
-            // ── §5.D C2-β worker cross-resolution: link-rx + outbox ref ──
+            // ── §5.D worker cross-resolution: link-rx + outbox ref ──
             (
-                // RFC §5.D C2-β: `<sce:link-rx ref="X">` must reference
-                // an alias imported as `kind="link"`. Mirrors η-precedent
+                // RFC §5.D: `<sce:link-rx ref="X">` must reference
+                // an alias imported as `kind="link"`. Mirrors the
                 // `validate_link_pool_framer_resolution` resolution shape.
                 // FixCarriesCandidates with the sorted kind=link import
                 // alias set on this worker doc.
@@ -8447,9 +8446,9 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:60c2fe22d1085b50","code":"worker/link-rx-ref-unknown","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:link-rx ref=\"udp_scout\"> references a name that is not imported as a link kind. Declare the link via <sce:import as=\"udp_scout\" src=\"...\" kind=\"link\"/> on this worker document, or replace the ref with one of the imported link-kind aliases (closest matches: status_link).","actual":"udp_scout","fix":{"kind":"replace_one_of","candidates":["status_link"]}}"#,
             ),
-            // ── §5.I C2-β SPSC inbox ordering ──
+            // ── §5.I SPSC inbox ordering ──
             (
-                // RFC §5.I lines 1757-1758 C2-β: `<sce:inbox>` declared
+                // RFC §5.I lines 1757-1758: `<sce:inbox>` declared
                 // without an `ordering` attribute. SCE's error-only wire
                 // realizes the spec "warning" as a required-when-worker-
                 // exists error so authors get a load-bearing choice
@@ -8463,7 +8462,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:066432600b5950a2","code":"worker/inbox-ordering-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"worker 'rx_loop': <sce:inbox> declared without an `ordering` attribute. Pick `ordering=\"acq_rel\"` (safe default; producer and consumer pair head/tail with acquire+release on every push/pop) or `ordering=\"relaxed\"` (single-core fast-path; cross-core placement raises `worker/inbox-ordering-relaxed-across-cores`). Spec §5.I line 1752-1758 mandates one of these two for every SPSC inbox."}"#,
             ),
             (
-                // RFC §5.I lines 1755-1756 C2-β: codegen-invariant
+                // RFC §5.I lines 1755-1756: codegen-invariant
                 // guard. Silent-skip when `ForgeCompileOptions.worker_
                 // placement` is `None` (deploy-unaware path); fires
                 // only when explicit cross-core placement coexists with
@@ -8481,7 +8480,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:b605193320262358","code":"worker/inbox-ordering-relaxed-across-cores","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"worker 'rx_loop': <sce:inbox ordering=\"relaxed\"> declared but deploy.placement pins producer on core 0 and consumer on core 1. Cross-core SPSC inboxes require acquire/release pairing on head/tail (per spec §5.I lines 1752-1758). Replace with `ordering=\"acq_rel\"` or co-locate producer + consumer on the same core via deploy.placement.","actual":"relaxed"}"#,
             ),
             (
-                // RFC §5.D line 912 C2-γ: forge-side anchor for scheduler
+                // RFC §5.D line 912: forge-side anchor for scheduler
                 // capacity violations. Fires when a Worker doc compiles
                 // against a machine that did not list it in
                 // `machines.<m>.workers`. NeutralOrDeterministic — author
@@ -8496,9 +8495,9 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:39f753b9c4918241","code":"worker/scheduler-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': not declared in deploy.yaml under `machines.mcu_node.workers`. watching-zenoh RFC §5.D line 912 (`worker/scheduler-unsupported`) — the cooperative scheduler tracks one tick slot per declared worker; an undeclared worker has no slot. Repair: add `rx_loop:` under `machines.mcu_node.workers:` in deploy.yaml, or remove the Worker doc from the build.","actual":"rx_loop"}"#,
             ),
-            // ── §5.D C2 follow-up Atomic B worker outbox cross-resolution ──
+            // ── §5.D worker outbox cross-resolution ──
             (
-                // RFC §5.D C2 follow-up Atomic B: owner segment not in
+                // RFC §5.D worker outbox: owner segment not in
                 // SceCrossDocRegistry. FixCarriesCandidates — sorted
                 // statechart + worker `.inbox` set rides Fix::ReplaceOneOf.
                 "forge/worker-outbox-ref-unknown",
@@ -8518,7 +8517,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:99378501ddb9866e","code":"worker/outbox-ref-unknown","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"sesion_fsm.inbox\"> names owner 'sesion_fsm' which is not a registered statechart or worker. Declare the recipient as a separate `.scxml` document in this build (statechart: `<scxml name=\"sesion_fsm\">`; worker: `<scxml sce:kind=\"worker\" name=\"sesion_fsm\">`), or replace the ref with one of the registered recipients: session_fsm.inbox, tx_loop.inbox.","actual":"sesion_fsm.inbox","fix":{"kind":"replace_one_of","candidates":["session_fsm.inbox","tx_loop.inbox"]}}"#,
             ),
             (
-                // RFC §5.D C2 follow-up Atomic B: owner found but kind not
+                // RFC §5.D worker outbox: owner found but kind not
                 // in {statechart, worker} — today's only other kind in the
                 // registry is `link`. FixCarriesCandidates — same sorted
                 // union shape as outbox-ref-unknown.
@@ -8540,8 +8539,8 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:1efb5e754cd03d3d","code":"worker/outbox-target-wrong-kind","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"udp_scout.inbox\"> names 'udp_scout' which is registered as a link kind, not a statechart or worker. Outbox refs may only target statechart or worker inboxes (RFC §5.D line 911 \"any non-inbox access\" by negation admits inbox access on statechart + worker kinds). Replace with one of: session_fsm.inbox, tx_loop.inbox.","actual":"udp_scout.inbox","fix":{"kind":"replace_one_of","candidates":["session_fsm.inbox","tx_loop.inbox"]}}"#,
             ),
             (
-                // RFC §5.D C2 follow-up Atomic B: suffix !=  `inbox` per
-                // Q-Outbox-6 (a) strict-suffix lock. Deterministic
+                // RFC §5.D worker outbox: suffix !=  `inbox` per
+                // the strict-suffix rule. Deterministic
                 // single-value Fix::ReplaceWith.
                 // NeutralOrDeterministic non_overlap_class.
                 "forge/worker-outbox-target-suffix-invalid",
@@ -8571,7 +8570,7 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:a84c33faf2495d72","code":"timer/period-below-tick-rate","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"timer 'keepalive': <sce:period> = 500 us is shorter than scheduler.tick_period_us = 1000 us on machine 'mcu_node'. watching-zenoh RFC §5.D line 909 (`timer/period-below-tick-rate`) — the cooperative scheduler dispatches at most one timer per tick, so a period below the tick rate would miss every other deadline. Repair: raise `<sce:period>` to >= 1000us, or lower `scheduler.tick_period_us` (warning: lowering tick rate increases scheduler overhead), or switch the target machine to `scheduler.kind: tokio` / `rt` (preemptive).","expected":["1000"],"actual":"500"}"#,
             ),
-            // ── §5.L Bounded-collection parse-time structure validators (C6-α) ──
+            // ── §5.L Bounded-collection parse-time structure validators (item C6) ──
             (
                 // RFC §5.L line 2559: sorted-by ordering with no
                 // <sce:index-by> field — codegen has no comparator
@@ -8597,7 +8596,7 @@ mod tests {
                 // Hash placeholder — byte-stability assertion patches.
                 r#"{"v":1,"id":"fnv1a:31723798e4ccd410","code":"collection/overflow-policy-oldest-wins-requires-ordering-insertion","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:on-overflow>oldest-wins</sce:on-overflow> requires <sce:ordering>insertion</sce:ordering>, but ordering is `sorted-by(index-by)`. watching-zenoh RFC §5.L line 2655 lists this combination as the explicit anti-pattern: `oldest-wins` presumes a temporal ordering that `sorted-by` replaces with the `index-by` field comparator. Repair: change `<sce:ordering>` to `insertion` (keeps the oldest-wins policy), or change `<sce:on-overflow>` to `reject` / `diagnostic-event`."}"#,
             ),
-            // ── §5.M Fragment-reassembly variant parse-time structure validators (C9-α) ──
+            // ── §5.M Fragment-reassembly variant parse-time structure validators (item C9) ──
             (
                 // RFC §5.M line 2944: <sce:variant>reassembly with no
                 // <sce:max-fragments-per-message> sibling — codegen has
@@ -8624,7 +8623,7 @@ mod tests {
                 // Hash placeholder — byte-stability assertion patches.
                 r#"{"v":1,"id":"fnv1a:1c6a61294467efab","code":"mem/reassembly-pool-variant-missing-timeout","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"buffer-pool 'rx_reassembly_pool': <sce:variant>reassembly</sce:variant> declared without <sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>. watching-zenoh RFC §5.M line 2689 fixes the per-slot deadline field to this value; without it the reassembly FSM has no `Receiving → TimedOut` edge timer (`docs/reassembly-fsm.md` §2.4.5). Repair: add an `<sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>` element with a positive integer N (milliseconds) derived from link latency budget and acceptable hold time."}"#,
             ),
-            // ── §5.M Fragment-reassembly cross-doc validators (C13-α-2 + C9-β) ──
+            // ── §5.M Fragment-reassembly cross-doc validators (items C9 + C13) ──
             (
                 // RFC §5.M line 2946: rx-pool slot_size < link mtu_bytes.
                 // NeutralOrDeterministic, no Fix payload (multi-axis
@@ -8671,12 +8670,12 @@ mod tests {
                     link_name: "udp_data".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:79cd242c82f712e0","code":"reassembly/expected-fragmentation-rate-high","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': `expected_p99_bytes: 1024` exceeds RX pool 'rx_data_pool' `<sce:slot-size>700</sce:slot-size>` by more than the 25% default stage-copy threshold (rate = 31%). watching-zenoh RFC §5.M line 2950-2952 — `(expected_p99_bytes - rx_pool.slot_size) / expected_p99_bytes > 0.25` triggers the warning. Repair: raise `<sce:slot-size>` on pool 'rx_data_pool', lower `expected_p99_bytes` (with justification), or add `<sce:accept-stage-copy-rate>` on the link source (C13-γ scope).","expected":["25"],"actual":"31"}"#,
+                r#"{"v":1,"id":"fnv1a:79cd242c82f712e0","code":"reassembly/expected-fragmentation-rate-high","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': `expected_p99_bytes: 1024` exceeds RX pool 'rx_data_pool' `<sce:slot-size>700</sce:slot-size>` by more than the 25% default stage-copy threshold (rate = 31%). watching-zenoh RFC §5.M line 2950-2952 — `(expected_p99_bytes - rx_pool.slot_size) / expected_p99_bytes > 0.25` triggers the warning. Repair: raise `<sce:slot-size>` on pool 'rx_data_pool', lower `expected_p99_bytes` (with justification), or add `<sce:accept-stage-copy-rate>` on the link source.","expected":["25"],"actual":"31"}"#,
             ),
             (
                 // RFC §5.M line 2964-2969: reassembly pool bound to a
                 // link with trust_class != established_session. Hard error.
-                // NeutralOrDeterministic (per Q-C13-α2-7 a — two valid
+                // NeutralOrDeterministic (two valid
                 // repairs: change trust_class OR remove binding).
                 "forge/reassembly-untrusted-link-binding",
                 ValidationError::ReassemblyUntrustedLinkBinding {
@@ -8735,7 +8734,7 @@ mod tests {
                 // RFC §5.C lines 849-856: codegen self-check —
                 // listener-link must emit both Listener + Sibling
                 // halves. NeutralOrDeterministic; pure template-
-                // regression guard (mirrors C9-γ
+                // regression guard (mirrors
                 // `reassembly/peer-id-not-zid-on-established-session`).
                 "forge/link-listener-link-not-paired-with-established-sibling",
                 ValidationError::LinkListenerLinkNotPairedWithEstablishedSibling {
@@ -8777,7 +8776,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d927379bfa06a12a","code":"link/inbound-event-queue-unsized","stage":"validation","spec":"watching-zenoh RFC §5.N","message":"link 'udp_listener' on machine 'mcu_node': declares 3 inbound event(s) but no downstream FSM event-queue capacity is bound. watching-zenoh RFC §5.N line 3062 — link declared but downstream FSM inbox depth unset. Repair: add `<scxml sce:capacity=\"N\">` to machine 'mcu_node's source SCXML (per-instance), or add `scheduler.default_event_queue_capacity: N` under `machines.mcu_node` (per-machine fallback).","actual":"3"}"#,
             ),
-            // ── §5.K C13-γ stage-copy policy promotion + opt-out rejection ──
+            // ── §5.K stage-copy policy promotion + opt-out rejection ──
             (
                 // RFC §5.K line 2504-2511: warning promoted to hard error.
                 // NeutralOrDeterministic; multi-axis repair.
@@ -8805,7 +8804,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:c4ce58defa7ffd7f","code":"pool/stage-copy-accept-rejected-under-forbid","stage":"validation","spec":"watching-zenoh RFC §5.K","message":"link 'udp_data' on machine 'mcu_node': `<sce:accept-stage-copy-rate>` declared but `pool_defaults.stage_copy_policy: forbid` rejects the opt-out outright. watching-zenoh RFC §5.K line 2512-2516 — only structural fixes (raise `<sce:slot-size>` or lower `expected_p99_bytes`) are accepted under `forbid`. Repair: remove `<sce:accept-stage-copy-rate>` from link 'udp_data', or change `pool_defaults.stage_copy_policy` to `error` (which permits the opt-out).","actual":"<sce:accept-stage-copy-rate>"}"#,
             ),
-            // ── §5.L Bounded-collection cross-doc resolution (C6-β) ──
+            // ── §5.L Bounded-collection cross-doc resolution (item C6) ──
             (
                 // RFC §5.L lines 2566-2567: element-type body text does
                 // not resolve to a codec-kind struct or procedure-kind
@@ -8863,7 +8862,7 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:b944cb27eabbfac8","code":"collection/multi-writer-without-atomics","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:concurrency>multi-writer</sce:concurrency> requires at least one §5.I atomic intrinsic to be declared via <sce:extern> somewhere in this build. watching-zenoh RFC §5.L lines 2560-2562 — multi-writer codegen lowers to acquire/release atomics on head/tail; the build's <sce:extern> trust-surface must acknowledge atomic intrinsics for codegen to emit them. Repair: either declare an atomic intrinsic via <sce:extern> (e.g. `<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u32\" abi=\"c\"/>` in any forge doc in this build), or change `<sce:concurrency>` to `single-writer`."}"#,
             ),
-            // ── §5.L Bounded-collection deploy-time capacity resolution (C6-γ1) ──
+            // ── §5.L Bounded-collection deploy-time capacity resolution (item C6) ──
             (
                 // RFC §5.L lines 2583-2585: `<sce:capacity source="deploy"
                 // key=…/>` references an undeclared limit under
@@ -8886,7 +8885,7 @@ mod tests {
                 // Hash placeholder — patched by byte-stability assertion.
                 r#"{"v":1,"id":"fnv1a:4604decf96012397","code":"collection/capacity-unresolved","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:capacity source=\"deploy\" key=\"machines.mcu_node.limits.local_subscriptions\"/> references limit 'local_subscriptions' on machine 'mcu_node', but deploy.yaml does not declare `machines.mcu_node.limits.local_subscriptions`. watching-zenoh RFC §5.L lines 2583-2585 — `<sce:capacity source=\"deploy\">` resolves at codegen time to a per-language compile-time constant from `machines.<machine>.limits.<limit>:`; an unresolved limit blocks emission. Repair: declare `local_subscriptions: <count>` under `machines.mcu_node.limits:` in deploy.yaml (declared limits today: in_flight_reassembly, subscription_table), or switch the BC's `<sce:capacity>` to `const=\"N\"`.","actual":"machines.mcu_node.limits.local_subscriptions","fix":{"kind":"replace_one_of","candidates":["in_flight_reassembly","subscription_table"]}}"#,
             ),
-            // ── §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A) ──
+            // ── §5.I `<sce:extern>` whitelisted intrinsic registry ──
             (
                 // RFC §5.I line 1847: symbol absent from the §5.I baseline
                 // registry. Closest-match candidates ride `Fix::ReplaceOneOf`
@@ -8951,9 +8950,9 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:4e511900e9aed2c8","code":"extern/ordering-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_load\"> is an atomic-family base without an explicit ordering + width suffix. Pick one of: sce_atomic_load_acquire_u32, sce_atomic_load_relaxed_u32.","actual":"sce_atomic_load","fix":{"kind":"replace_one_of","candidates":["sce_atomic_load_acquire_u32","sce_atomic_load_relaxed_u32"]}}"#,
             ),
             (
-                // RFC §5.I line 1852 (Atomic B): target plugin redefines
-                // a baseline whitelist symbol. Q-Call-6 (a) additive
-                // composition lock — plugins extend, never override.
+                // RFC §5.I line 1852: target plugin redefines
+                // a baseline whitelist symbol. Additive-
+                // composition rule — plugins extend, never override.
                 // Repair is non-algorithmic (`fix: None`); plugin author
                 // renames to a non-baseline name.
                 "forge/extern-target-plugin-symbol-conflict",
@@ -8963,7 +8962,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:0133c811a527ab82","code":"extern/target-plugin-symbol-conflict","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"target plugin configs/target_extensions_stm32h7.yaml redefines core whitelist symbol `sce_atomic_load_acquire_u32`. Plugin entries extend the §5.I baseline registry but cannot override it (Q-Call-6 additive-composition lock). Rename the plugin entry to a name not already in the §5.I baseline; for a platform-specific impl, declare the entry under a vendor-prefixed name (e.g. `sce_hw_<symbol>`) and route through the registry entry's `crate` field.","actual":"sce_atomic_load_acquire_u32"}"#,
+                r#"{"v":1,"id":"fnv1a:0133c811a527ab82","code":"extern/target-plugin-symbol-conflict","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"target plugin configs/target_extensions_stm32h7.yaml redefines core whitelist symbol `sce_atomic_load_acquire_u32`. Plugin entries extend the §5.I baseline registry but cannot override it (additive composition — extend, never override). Rename the plugin entry to a name not already in the §5.I baseline; for a platform-specific impl, declare the entry under a vendor-prefixed name (e.g. `sce_hw_<symbol>`) and route through the registry entry's `crate` field.","actual":"sce_atomic_load_acquire_u32"}"#,
             ),
             (
                 "forge/expression-empty",
@@ -9249,7 +9248,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (watching-zenoh RFC §5.J.4 expects all six backends to emit)"}"#,
             ),
             // ── Watching-zenoh RFC §5.J.2 Rust no_std variant rejections
-            //    (C3 Atomic B-β). Author-side `--no-std` gate on
+            //    (item C3). Author-side `--no-std` gate on
             //    `sce-codegen generate -l rust`. ──
             (
                 "forge/codegen-no-std-script-not-supported",
@@ -9270,7 +9269,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:1e0ad94889d9bb0c","code":"codegen/no-std-http-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects HTTP send: document 'demo' uses BasicHTTPEventProcessor at <send target=\"http://localhost\"> in state 'send_step' (watching-zenoh RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `http-send`)"}"#,
             ),
             // ── Watching-zenoh RFC §5.J.2 Rust no_std variant rejections
-            //    (C3 Atomic B-γ2c). Helper runtime cfg-gate companion
+            //    (item C3). Helper runtime cfg-gate companion
             //    pair: filesystem load + invoke. ──
             (
                 "forge/codegen-no-std-fs-load-not-supported",
@@ -9414,7 +9413,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5d993dd11e2f6ddb","code":"algorithm/const-yield-type-mismatch","stage":"generate","spec":"watching-zenoh RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-yield-type-mismatch: cannot coerce float to Uint16","actual":"float"}"#,
             ),
-            // ── §5.B variant primitive (watching-zenoh RFC §5.B, B1-β) ─
+            // ── §5.B variant primitive (watching-zenoh RFC §5.B, item B1) ─
             (
                 "forge/codec-variant-arm-unreachable",
                 ValidationError::CodecVariantArmUnreachable {
@@ -9427,7 +9426,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:fb2f4b7fefc04603","code":"codec/variant-arm-unreachable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': variant on tag 'msg_id' (type uint8) has 3 arm(s) but no <sce:default> declared (tag type domain has 256 values) — at least one tag value would have no matching arm at runtime; add <sce:default type=\"...\"/> or enumerate the missing values explicitly","actual":"msg_id"}"#,
             ),
-            // ── RFC variant-default-uniformity Atomic α — duplicate default-arm marker ─
+            // ── RFC variant-default-uniformity — duplicate default-arm marker ─
             (
                 "forge/codec-variant-duplicate-default-arm",
                 ValidationError::CodecVariantDuplicateDefaultArm {
@@ -9438,7 +9437,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e0a8b8b88b736596","code":"codec/variant-duplicate-default-arm","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares more than one <sce:arm default=\"true\"/> (first arm value=0x1, second arm value=0x2) — only one arm may be marked the Default-trait starting value; remove default=\"true\" from all but the intended arm. (The catch-all <sce:default> element is unrelated and still permitted once.)","actual":"session_envelope"}"#,
             ),
-            // ── RFC variant-default-uniformity Atomic γ-1 — outer arm vs inner flag mismatch ─
+            // ── RFC variant-default-uniformity — outer arm vs inner flag mismatch ─
             (
                 "forge/codec-variant-arm-mid-mismatch",
                 ValidationError::CodecVariantArmMidMismatch {
@@ -9451,7 +9450,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:27db9fad022a4f48","code":"codec/variant-arm-mid-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:arm value=0x2/> selects inner codec 'session_put' but that codec declares <sce:flag name='mid' value=0x1/> on its dispatch field — outer arm value and inner flag value must match for round-trip dispatch to resolve to the same arm; align one to the other","expected":["0x2"],"actual":"0x1"}"#,
             ),
-            // ── RFC variant-default-uniformity Atomic γ-1 — inner codec missing wire-MID ─
+            // ── RFC variant-default-uniformity — inner codec missing wire-MID ─
             (
                 "forge/codec-variant-arm-inner-mid-undeclared",
                 ValidationError::CodecVariantArmInnerMidUndeclared {
@@ -9463,7 +9462,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:0bf3318e19f672aa","code":"codec/variant-arm-inner-mid-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:arm value=0x2/> selects inner codec 'session_put', but 'session_put' does not declare a <sce:flag value=\"...\"/> constant on its dispatch field — the inner's Default would zero-fill the wire byte and break round-trip; add <sce:flag name='mid' value=0x2/> to 'session_put'","expected":["0x2"],"actual":"session_put"}"#,
             ),
-            // ── RFC Axis-1 inversion + B5-ν β shape — variant arm body is caller-tag dispatcher ─
+            // ── Caller-tag variant shape — variant arm body is caller-tag dispatcher ─
             (
                 "forge/codec-variant-arm-body-caller-tag-unsupported",
                 ValidationError::CodecVariantArmBodyCallerTagUnsupported {
@@ -9473,9 +9472,9 @@ mod tests {
                     embedded_codec: "session_inner".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:8259656376e7288f","code":"codec/variant-arm-body-caller-tag-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': variant arm value=0x3 (alias 'session_inner') resolves to codec 'session_inner' whose <sce:variant> is in caller-tag β shape (no tag= attribute) — there is no natural source for the inner tag in a variant-arm context. Either add tag=\"<field>\" to 'session_inner' so it reads its tag from its own wire bytes, or expose 'session_inner' via <sce:embed> + <sce:variant-dispatch> on a parent flag instead of as a variant arm body.","expected":["0x3"],"actual":"session_inner"}"#,
+                r#"{"v":1,"id":"fnv1a:8259656376e7288f","code":"codec/variant-arm-body-caller-tag-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': variant arm value=0x3 (alias 'session_inner') resolves to codec 'session_inner' whose <sce:variant> is in caller-tag shape (no tag= attribute) — there is no natural source for the inner tag in a variant-arm context. Either add tag=\"<field>\" to 'session_inner' so it reads its tag from its own wire bytes, or expose 'session_inner' via <sce:embed> + <sce:variant-dispatch> on a parent flag instead of as a variant arm body.","expected":["0x3"],"actual":"session_inner"}"#,
             ),
-            // ── RFC variant-default-uniformity Atomic γ-3 — no default arm declared ─
+            // ── RFC variant-default-uniformity — no default arm declared ─
             (
                 "forge/codec-variant-no-default-arm",
                 ValidationError::CodecVariantNoDefaultArm {
@@ -9484,7 +9483,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:9778351f6ba08771","code":"codec/variant-no-default-arm","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares no <sce:arm default=\"true\"/> — every variant must mark one arm as the deliberate Default-trait starting value so codegen does not implicitly pick the first declared arm; add default=\"true\" to the intended arm. (The catch-all <sce:default> element is a separate concept and does not satisfy this requirement.)","actual":"session_envelope"}"#,
             ),
-            // ── RFC variant-default-overlay Atomic A — deploy.yaml overlay ─
+            // ── RFC variant-default-overlay — deploy.yaml overlay ─
             (
                 "forge/codec-variant-default-overlay-arm-not-declared",
                 ValidationError::CodecVariantDefaultOverlayArmNotDeclared {
@@ -9495,7 +9494,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:eeb51f3d4f6560b6","code":"codec/variant-default-overlay-arm-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': deploy.yaml variant_defaults names arm value 0xff, but the codec declares no matching <sce:arm value=...> — declared arms: [0x1, 0x2, 0x3]; align the overlay entry with one of the declared values or remove it from variant_defaults","expected":["0xff"],"actual":"session_envelope","fix":{"kind":"replace_one_of","candidates":["0x1","0x2","0x3"]}}"#,
             ),
-            // ── RFC B5-ν inversion — parent-side variant-dispatch (5 codes) ─
+            // ── Parent-tag dispatch — parent-side variant-dispatch (5 codes) ─
             (
                 "forge/codec-variant-dispatch-flag-not-resolved",
                 ValidationError::CodecVariantDispatchFlagNotResolved {
@@ -9559,7 +9558,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:ca182b36796032f0","code":"codec/variant-dispatch-carrier-after-embed","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"parent codec 'codec_zenoh_push': field 'key' (import 'key') has <sce:variant-dispatch flag=\"header.M\"/>, but carrier 'header' is declared at field index 1 which is AFTER the embed field at index 0. Reorder fields so 'header' precedes 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
             ),
-            // ── RFC Axis-1 inversion — parent-side flag-bind validators ─
+            // ── Flag inversion — parent-side flag-bind validators ─
             (
                 "forge/codec-flag-bind-input-not-declared",
                 ValidationError::CodecFlagBindInputNotDeclared {
@@ -9633,7 +9632,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:3bb9387760da5afb","code":"codec/flag-bind-carrier-after-embed","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.N\"/> on <sce:import as=\"key\"> references a carrier 'header' declared at field-index 1 but the embed 'key' (which consumes the bound input) is at field-index 0. Streaming decode requires carrier to precede consumer — reorder the fields so 'header' is declared before 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
             ),
-            // ── §5.B present-if primitive (watching-zenoh RFC §5.B, B1-δ) ─
+            // ── §5.B present-if primitive (watching-zenoh RFC §5.B, item B1) ─
             (
                 "forge/codec-present-if-refs-later-field",
                 ValidationError::CodecPresentIfRefsLaterField {
@@ -9655,7 +9654,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f1e97717ebdba39a","code":"codec/repeat-count-refs-later-field","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'fragment_burst': repeat field 'frags' has sce:count=\"num_frags\" but 'num_frags' is not declared earlier in this codec — repeat count references must resolve to a sibling integer field that the streaming decoder has already consumed; reorder the fields so the count comes first, or correct the attribute","actual":"frags"}"#,
             ),
-            // ── §5.B test-vector primitive (watching-zenoh RFC §5.B, B2 + B5-θ) ─
+            // ── §5.B test-vector primitive (watching-zenoh RFC §5.B, items B2 + B5) ─
             (
                 "forge/algorithm-test-vector-unsupported-kind",
                 ValidationError::TestVectorUnsupportedKind {
@@ -9663,7 +9662,7 @@ mod tests {
                     kind: ForgeKind::Filter,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:b10188077e684de4","code":"algorithm/test-vector-unsupported-kind","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"<sce:test-vector> is only supported on sce:kind=\"algorithm\" (B2) and sce:kind=\"codec\" (B5-θ), but 'session_filter' declares sce:kind=\"Filter\" — move the test vector to an algorithm/codec file or use the kind-specific harness oracle","actual":"session_filter"}"#,
+                r#"{"v":1,"id":"fnv1a:b10188077e684de4","code":"algorithm/test-vector-unsupported-kind","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"<sce:test-vector> is only supported on sce:kind=\"algorithm\" and sce:kind=\"codec\", but 'session_filter' declares sce:kind=\"Filter\" — move the test vector to an algorithm/codec file or use the kind-specific harness oracle","actual":"session_filter"}"#,
             ),
             // ── §5.B B3 TLV chain primitive (watching-zenoh RFC §5.B) ─
             (
@@ -9687,7 +9686,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:98584368c0e405fa","code":"codec/dma-alignment-unsatisfiable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': field 'aligned_payload' with sce:dma-burst-align=\"32\" cannot be honored — preceding field 'value' has bit-size 'vle' (variable-length); static padding cannot honor sce:dma-burst-align when any prior field's wire size depends on runtime values (RFC §5.B \"fixed-offset positions only — no VLE-following alignment\")","actual":"aligned_payload"}"#,
             ),
-            // ── §5.B Y3 atomic 2b-ii peek-byte cross-codec layout ─
+            // ── §5.B peek-byte cross-codec layout ─
             (
                 "forge/codec-peek-byte-flag-layout-mismatch",
                 ValidationError::CodecPeekByteFlagLayoutMismatch {
@@ -9698,7 +9697,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f143872e85c94270","code":"codec/peek-byte-flag-layout-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_peek_arm_a' (arm body): peek-byte flag layout mismatch against parent codec 'codec_variant_peek_basic' — parent <sce:peek-byte id=\"peek\"> places flag 'kind' at bit=0 width=2 but arm body 'codec_peek_arm_a' header field 'header' places 'kind' at bit=1 width=2 — fix one side (the peeked byte and the arm body's own first byte are the same wire byte, so the two declarations MUST agree)","actual":"codec_peek_arm_a"}"#,
             ),
-            // ── §5.C B6-α link kind (watching-zenoh RFC §5.C) ─
+            // ── §5.C link kind (watching-zenoh RFC §5.C) ─
             (
                 "forge/link-framer-missing",
                 ValidationError::LinkFramerMissing {
@@ -9707,7 +9706,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:293d71926c63758a","code":"link/framer-missing","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': missing required <sce:framer ref=\"...\"/> child — `sce:kind=\"link\"` requires a framer codec reference so RX bytes can be decoded and TX events can be encoded; add a <sce:framer ref=\"<codec_name>\"/> child","actual":"udp_scout"}"#,
             ),
-            // ── §5.C B6-γ link kind negative coverage parse-time pair ─
+            // ── §5.C link kind negative coverage parse-time pair ─
             (
                 "forge/link-link-class-unknown",
                 ValidationError::LinkLinkClassUnknown {
@@ -9725,7 +9724,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d9cf8dea54e29a00","code":"link/backpressure-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': missing required <sce:backpressure> child — `sce:kind=\"link\"` requires an explicit backpressure policy declaration per RFC §5.C; add a <sce:backpressure>drop|block|signal-event</sce:backpressure> child","actual":"udp_scout"}"#,
             ),
-            // ── §5.C B6-η OS-axis validate-time diagnostic ───────
+            // ── §5.C OS-axis validate-time diagnostic ────────────
             (
                 "forge/link-class-unsupported-on-target",
                 ValidationError::LinkClassUnsupportedOnTarget {
@@ -9737,7 +9736,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5b4e6cb8ccacd634","code":"link/class-unsupported-on-target","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': link-class `serial` cannot run on target OS `linux` per RFC §5.C lines 765-771; the matrix admits `serial` on [\"bare_metal\"] only — change either the <sce:link-class> body or the deploy.yaml `machines.<id>.platform.os` for the target machine","actual":"linux","fix":{"kind":"replace_one_of","candidates":["bare_metal"]}}"#,
             ),
-            // ── §5.C B6-α' link↔pool cross-resolution diagnostic ─
+            // ── §5.C link↔pool cross-resolution diagnostic ───────
             (
                 "forge/link-pool-slot-smaller-than-framer-max",
                 ValidationError::LinkPoolSlotSmallerThanFramerMax {
@@ -9751,7 +9750,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:b02945fcd497fac4","code":"link/pool-slot-smaller-than-framer-max","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': rx-pool 'rx_pool_sram1' slot-size 64 bytes is smaller than framer 'scout_frame_codec' worst-case encoded size 256 bytes — raise <sce:slot-size> on the bound pool or shrink the codec's worst-case body","actual":"64"}"#,
             ),
-            // ── §5.E B7-α buffer-pool placement validate-time diagnostic ─
+            // ── §5.E buffer-pool placement validate-time diagnostic ─
             (
                 "forge/mem-pool-section-conflict",
                 ValidationError::BufferPoolSectionConflict {
@@ -9763,7 +9762,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:12ceca0bfb0b761a","code":"mem/pool-section-conflict","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': section `sram1` is not declared in deploy.yaml `machines.mcu_node.memory.sram_regions` — extend the memory map or rename the pool's <sce:section> body to one of [\"dtcm\", \"sram2\"]","actual":"sram1","fix":{"kind":"replace_one_of","candidates":["dtcm","sram2"]}}"#,
             ),
-            // ── §5.E B7-β buffer-pool size validate-time diagnostic ──
+            // ── §5.E buffer-pool size validate-time diagnostic ──
             (
                 "forge/mem-pool-too-large",
                 ValidationError::BufferPoolTooLarge {
@@ -9778,7 +9777,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:8eb07e1d20f16ce2","code":"mem/pool-too-large","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': storage footprint 131072 bytes (32 × 4096) does not fit in deploy.yaml `machines.mcu_node.memory.sram_regions.sram1` of size 65536 bytes — raise the region size or shrink slot-count/slot-size","actual":"131072"}"#,
             ),
-            // ── §5.E B7-β linker fragment codegen self-check ─────
+            // ── §5.E linker fragment codegen self-check ──────────
             (
                 "forge/mem-inter-pool-padding-not-emitted",
                 ValidationError::BufferPoolInterPoolPaddingNotEmitted {
@@ -9787,7 +9786,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f3d92b158c62567b","code":"mem/inter-pool-padding-not-emitted","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': linker fragment is missing the inter-pool `. = ALIGN(N);` sentinel — codegen invariant violation per RFC §5.E lines 1059-1064; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
-            // ── §5.E B7-ε pool header Layer 1 ownership pull-through self-check ─
+            // ── §5.E pool header Layer 1 ownership pull-through self-check ─
             (
                 "forge/pool-sample-typestate-attributes-disabled",
                 ValidationError::BufferPoolSampleTypestateAttributesDisabled {
@@ -9862,7 +9861,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e043d4876ee880bd","code":"pool/cache-pre-arm-invalidate-missing-on-speculative-core","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated source for backend `rust` is missing the `sce_dcache_invalidate_by_addr` call on the `free → dma-armed-rx` edge despite `cache-policy: maintain` + `platform.has_speculative_prefetch: true` — codegen invariant violation per RFC §5.E lines 1186-1198 + 1552; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
-            // ── §5.O Atomic 0 IR provenance pre-emit guard ─────────
+            // ── §5.O IR provenance pre-emit guard ──────────────────
             //    Codegen-internal invariant: a node eligible for SCE-
             //    MAP marker emission carries `source_location: None`.
             //    Author-facing fields stay empty (`actual: None`,
@@ -9875,9 +9874,9 @@ mod tests {
                     node_id: "S0".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c468c384e2af3fcf","code":"traceability/scxml-line-range-missing","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"<state> 'S0': source_location not populated — §5.O Atomic 0 pre-emit guard (parser site missed)"}"#,
+                r#"{"v":1,"id":"fnv1a:c468c384e2af3fcf","code":"traceability/scxml-line-range-missing","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"<state> 'S0': source_location not populated — sourcemap pre-emit guard (parser site missed)"}"#,
             ),
-            // ── §5.O Atomic 1 — symbol mangling + sourcemap contract goldens ──
+            // ── §5.O symbol mangling + sourcemap contract goldens ──
             //    Dual-location collision report. `actual` is the
             //    colliding mangled symbol; the `Fix::ReplaceOneOf`
             //    candidate list names the two offending sites so the
@@ -9934,7 +9933,7 @@ mod tests {
                     profile: "release".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:eefcdcd7864bca4d","code":"traceability/sce-map-attribute-stripped","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"SCE-MAP `#[doc]` marker stripped from 'test144::on_entry_s0_0' in sce_rust_tests (release); falling back to `// SCE-MAP:` line comments. Repair: re-emit with the dual-marker form (default since §5.O Atomic 0c) or upstream the rustdoc fix","actual":"test144::on_entry_s0_0"}"#,
+                r#"{"v":1,"id":"fnv1a:eefcdcd7864bca4d","code":"traceability/sce-map-attribute-stripped","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"SCE-MAP `#[doc]` marker stripped from 'test144::on_entry_s0_0' in sce_rust_tests (release); falling back to `// SCE-MAP:` line comments. Repair: re-emit with the dual-marker form (the default dual-marker form) or upstream the rustdoc fix","actual":"test144::on_entry_s0_0"}"#,
             ),
             //    SCE-MAP marker missing on a §6.2.6-headered file
             //    (codegen-internal invariant per ARCHITECTURE.md
@@ -9949,7 +9948,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:052d4d7f20b67021","code":"traceability/meta-generated-source-line-marker-missing","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"emitted file 'out/test144/test144_sm.rs' carries a §6.2.6 drift header but no `SCE-MAP:` marker line. Per ARCHITECTURE.md \"Traceability Ownership Boundary\", every SCE-emitted file must carry at least one marker. Repair: a template under `tools/codegen/templates/` is missing its `sce_map_marker` macro call — report upstream","actual":"out/test144/test144_sm.rs"}"#,
             ),
-            // ── Round F-α (watching-zenoh RFC §5.2) — driver header
+            // ── MCU driver/class boundary (watching-zenoh RFC §5.2) — driver header
             //    reference cannot be resolved against the platform
             //    driver_root (or SCXML file's parent). `actual` carries
             //    the verbatim href; `key_fragments` add both href and
@@ -9964,9 +9963,9 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:a887dfe8c01e0694","code":"mcu/driver-header-not-found","stage":"validation","spec":"watching-zenoh RFC §5.2","message":"driver header reference 'missing.h' could not be resolved (searched under '/tmp/round_f_alpha'). Repair: correct the `<sce:driver href=\"...\"/>` value, add the missing header, or set `platform.driver_root` in deploy.yaml so the relative path resolves.","actual":"missing.h"}"#,
             ),
-            // ── Round F-α (watching-zenoh RFC §5.2) — non-MCU backend
-            //    refuses `platform.c11_section_attribute` (Q-Round-F-D3,
-            //    mirrors Q-Call-7). `actual` carries the offending
+            // ── Non-MCU backend refuses `platform.c11_section_attribute`
+            //    (watching-zenoh RFC §5.2; mirrors
+            //    `codegen/mcu-class-kind-on-non-mcu-language`). `actual` carries the offending
             //    backend; `key_fragments` reuse the same single value
             //    so the wire-id is stable per backend across runs.
             (
@@ -9977,7 +9976,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:d9ee1c8383fc6b8f","code":"mcu/section-attribute-on-non-mcu-target","stage":"generate","spec":"watching-zenoh RFC §5.2","message":"platform.c11_section_attribute is set in deploy.yaml but the target backend is 'rust', not 'c11'. The section attribute injects `__attribute__((section(...)))` which only the C11 backend emits. Repair: remove the section attribute, switch the backend to 'c11', or split deploy configurations per target.","actual":"rust"}"#,
             ),
-            // ── NL→IR Item C1 Path A Atomic 1: Enum kind invariants ──
+            // ── NL→IR Item C1 Path A: Enum kind invariants ──
             //   `id` hashes are placeholders; the goldens test prints
             //   the actual FNV1a on first run, copy them back here.
             (
@@ -10026,9 +10025,9 @@ mod tests {
                     declared: "float32".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1438d7bd57263c36","code":"validation/enum-unsupported-underlying-type","stage":"validation","message":"enum 'result': sce:underlying-type='float32' is not supported (Path A α: uint8 | uint16 | uint32 | uint64)","actual":"float32"}"#,
+                r#"{"v":1,"id":"fnv1a:1438d7bd57263c36","code":"validation/enum-unsupported-underlying-type","stage":"validation","message":"enum 'result': sce:underlying-type='float32' is not supported (supported: uint8 | uint16 | uint32 | uint64)","actual":"float32"}"#,
             ),
-            // ── NL→IR Item C1 Path A Atomic 3: EventSchema kind ───
+            // ── NL→IR Item C1 Path A: EventSchema kind ───
             //   `id` hashes are placeholders; the goldens test prints
             //   the actual FNV1a on first run, copy them back here.
             (
@@ -10696,7 +10695,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:f26a225afadc7a9a","code":"deploy/scheduler-incompatible-with-worker-count","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': declared 5 workers under machines.mcu_node.workers, but cooperative scheduler can host only 3 per tick window (derived from tick_period_us 1000 / worker_slot_budget_us 300). watching-zenoh RFC §5.K line 2423 (`deploy/scheduler-incompatible-with-worker-count`). Repair: raise `tick_period_us`, lower `worker_slot_budget_us`, remove excess workers, or switch `scheduler.kind:` to a preemptive host (`tokio` / `rt`).","expected":["3"],"actual":"5"}"#,
             ),
-            // ── C13-α-1 §5.K `links:` block (RFC §5.K lines 2232-2540) ──
+            // ── §5.K `links:` block (RFC §5.K lines 2232-2540) ──
             (
                 "deploy/link-driver-unknown",
                 DeployError::LinkDriverUnknown {
@@ -10773,7 +10772,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:ae5e6142a2e8c826","code":"deploy/link-burst-pps-missing-on-isr-dispatch","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' resolves to `rx_dispatch: isr_to_pool` but `burst_pps` is not declared. watching-zenoh RFC §5.K line 2501-2503 (`deploy/link-burst-pps-missing-on-isr-dispatch`) — ISR fast-path requires `burst_pps` to size the descriptor ring and validate the stack budget. Repair: declare `burst_pps: <pps>`, or explicitly set `rx_dispatch: worker_tick` to opt into the slower cooperative-tick path."}"#,
             ),
             (
-                // C13-α-2 cross-doc: declared burst_pps overruns RX
+                // Cross-doc: declared burst_pps overruns RX
                 // pool drain capacity within one cooperative tick.
                 "deploy/link-burst-absorption-insufficient",
                 DeployError::LinkBurstAbsorptionInsufficient {
@@ -10789,7 +10788,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:149ee464a43d20f6","code":"deploy/link-burst-absorption-insufficient","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `burst_pps: 50000` against RX pool 'rx_data_pool' with `<sce:slot-count>16</sce:slot-count>` and scheduler `tick_period_us: 1000`. Effective drain capacity is 16000 pps (with the 2.0 safety factor required by watching-zenoh RFC §5.K line 2489-2495), insufficient for the declared burst. Repair: raise `<sce:slot-count>` on pool 'rx_data_pool', lower `scheduler.tick_period_us`, or switch `rx_dispatch: isr_to_pool` when currently `worker_tick`.","expected":["16000"],"actual":"50000"}"#,
             ),
             (
-                // C13-α-2 cross-doc: rx_dispatch: worker_tick overruns
+                // Cross-doc: rx_dispatch: worker_tick overruns
                 // RX pool in one tick window.
                 "deploy/link-rx-dispatch-worker-tick-on-high-burst",
                 DeployError::LinkRxDispatchWorkerTickOnHighBurst {
@@ -10812,7 +10811,7 @@ mod tests {
                     candidates_list: "udp_scout".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:7769451379390caa","code":"deploy/link-not-declared-in-deploy","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"forge `<sce:link name=\"udp_data\">` declared but no `deploy.yaml::machines.<n>.links.udp_data` entry exists. C13-α-1 cross-doc validator (`deploy/link-not-declared-in-deploy`) per Q-C13-5 (a) lock. Repair: add the deploy entry under one of [udp_scout] or another machine, or remove the forge link doc.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
+                r#"{"v":1,"id":"fnv1a:7769451379390caa","code":"deploy/link-not-declared-in-deploy","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"forge `<sce:link name=\"udp_data\">` declared but no `deploy.yaml::machines.<n>.links.udp_data` entry exists. Cross-doc validator (`deploy/link-not-declared-in-deploy`). Repair: add the deploy entry under one of [udp_scout] or another machine, or remove the forge link doc.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
             ),
             (
                 "deploy/link-not-declared-in-forge",
@@ -10823,10 +10822,10 @@ mod tests {
                     candidates_list: "udp_scout".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:68d69cab5e950a11","code":"deploy/link-not-declared-in-forge","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declared in deploy.yaml but no forge `<scxml sce:kind=\"link\" name=\"udp_data\">` document was declared/imported. C13-α-1 cross-doc validator (`deploy/link-not-declared-in-forge`) per Q-C13-5 (a) lock. Repair: declare the forge link doc and import it from a statechart/worker on this machine, or pick one of [udp_scout] (forge link doc names known to this build), or remove the orphan deploy entry.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
+                r#"{"v":1,"id":"fnv1a:68d69cab5e950a11","code":"deploy/link-not-declared-in-forge","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declared in deploy.yaml but no forge `<scxml sce:kind=\"link\" name=\"udp_data\">` document was declared/imported. Cross-doc validator (`deploy/link-not-declared-in-forge`). Repair: declare the forge link doc and import it from a statechart/worker on this machine, or pick one of [udp_scout] (forge link doc names known to this build), or remove the orphan deploy entry.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
             ),
             (
-                // C13-γ parse-time typo guard for the policy enum.
+                // Parse-time typo guard for the policy enum.
                 // FixCarriesCandidates over StageCopyPolicy::ALL.
                 "deploy/stage-copy-policy-unknown",
                 DeployError::StageCopyPolicyUnknown {
@@ -10842,7 +10841,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:5ca8faec9e11c481","code":"deploy/stage-copy-policy-unknown","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': `pool_defaults.stage_copy_policy: errr` is not a known policy. watching-zenoh RFC §5.K line 2517-2519 (`deploy/stage-copy-policy-unknown`) — closed-set typo guard. Repair: pick one of [warn, error, forbid].","actual":"errr","fix":{"kind":"replace_one_of","candidates":["warn","error","forbid"]}}"#,
             ),
-            // ── C13-β anti-flood + stateless_accept (RFC §5.K lines 2272-2349 + 2449-2473) ──
+            // ── Anti-flood + stateless_accept (RFC §5.K lines 2272-2349 + 2449-2473) ──
             (
                 "deploy/session-arming-quota-missing",
                 DeployError::SessionArmingQuotaMissing {
@@ -11315,7 +11314,7 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:8d27e49c9b609f34","code":"mesh/io","stage":"io","message":"I/O error on /tmp/mesh.log: entity not found"}"#,
             ),
-            // ── NL→IR Item C1 Path A Atomic 3: EventSchema mesh DL-7' ──
+            // ── NL→IR Item C1 Path A: EventSchema mesh DL-7' ──
             (
                 "mesh/event-schema-mismatch",
                 DeployError::EventSchemaMismatch {
@@ -11642,7 +11641,7 @@ mod tests {
             | PoolSampleTakeWithoutStagePool
             | ScxmlOnSampleLinkNotDeclared
             | ScxmlOnSampleLinkWrongKind
-            // Axis-3 inversion — `<sce:session-role kind="X"/>`
+            // Listener-role — `<sce:session-role kind="X"/>`
             // unknown-kind diagnostic rides `Fix::ReplaceOneOf` with
             // the v1 vocabulary (currently `["accept-side"]`). Future
             // kind variants extend the candidate list in lockstep
@@ -11671,18 +11670,18 @@ mod tests {
             // multi-axis or codegen-invariant repairs (Fix::None)
             // and sit in NeutralOrDeterministic below.
             | MemCachePolicyUnsupportedOnNoDcacheCore
-            // C2-β worker cross-resolution: link-rx ref-unknown rides
+            // Worker cross-resolution: link-rx ref-unknown rides
             // `Fix::ReplaceOneOf` with sorted alias lists from
-            // `parsed.imports` filtered to kind=link. η-precedent:
+            // `parsed.imports` filtered to kind=link. Precedent:
             // `LinkClassUnsupportedOnTarget` carries closed candidates
             // the same way. (Outbox cross-resolution against statechart
-            // / worker docs landed in C2 follow-up Atomic B alongside
+            // / worker docs rides
             // the SCXML-side `compile_scxml_with_imports` orchestrator
             // that builds the cross-doc registry the validator
             // consumes — see `WorkerOutboxRefUnknown` +
             // `WorkerOutboxTargetWrongKind` below.)
             | WorkerLinkRxRefUnknown
-            // ── C2 follow-up Atomic B outbox cross-resolution ──
+            // ── Worker outbox cross-resolution ──
             //   Two of the three outbox axes carry a closed candidate
             //   list (sorted statechart + worker `.inbox` set);
             //   suffix-invalid is deterministic (`{owner}.inbox` is the
@@ -11690,8 +11689,8 @@ mod tests {
             //   below.
             | WorkerOutboxRefUnknown
             | WorkerOutboxTargetWrongKind
-            // ── C6-β Bounded-collection cross-doc resolution ──
-            //   Two of the three β codes carry a closed candidate
+            // ── Bounded-collection cross-doc resolution ──
+            //   Two of the three cross-doc codes carry a closed candidate
             //   list (sorted codec + procedure name union for element-
             //   type-not-a-kind; sorted field-name list for index-by-
             //   field-missing). The third (multi-writer-without-atomics)
@@ -11699,7 +11698,7 @@ mod tests {
             //   atomic family and rides `NeutralOrDeterministic` below.
             | CollectionElementTypeNotAKind
             | CollectionIndexByFieldMissing
-            // C6-γ1 deploy-time capacity resolution: sorted set of
+            // Bounded-collection deploy-time capacity resolution: sorted set of
             // declared limit names under `machines.<machine>.limits:`
             // rides `Fix::ReplaceOneOf`. Mirrors the
             // `BufferPoolSectionConflict` precedent for sorted-
@@ -11717,8 +11716,8 @@ mod tests {
             // The other four sit in NeutralOrDeterministic below.
             | AlgorithmCallTargetUnknown
             | AlgorithmCallTargetMethodUnknown
-            // C13-α-1 `links:` block cross-doc + driver-unknown
-            // (RFC §5.K lines 2421, Q-C13-5 a, Q-C13-8 a). All three
+            // §5.K `links:` block cross-doc + driver-unknown
+            // (RFC §5.K line 2421). All three
             // ride `Fix::ReplaceOneOf`:
             //   - `deploy/link-driver-unknown`: closed candidate set =
             //     known-driver baseline + forge link-doc names (sorted).
@@ -11726,7 +11725,7 @@ mod tests {
             //     set = deploy-side link-name set on the same machine.
             //   - `deploy/link-not-declared-in-forge`: closed candidate
             //     set = forge-side link-name set (across the build).
-            // The other 6 C13-α-1 link codes have multi-axis or
+            // The other 6 `links:` block codes have multi-axis or
             // author-domain repairs and sit in NeutralOrDeterministic
             // below.
             | MeshDeployLinkDriverUnknown
@@ -11740,13 +11739,13 @@ mod tests {
             // side class swap is named in prose but stays out of
             // the structured Fix per non-overlap invariant.
             | MeshDeployLinkDriverClassMismatch
-            // C13-γ deploy/stage-copy-policy-unknown — closed set
+            // deploy/stage-copy-policy-unknown — closed set
             // {warn, error, forbid} (RFC §5.K line 2351 + 2517-2519
             // verbatim, single source of truth at
             // `StageCopyPolicy::ALL`). FixCarriesCandidates over the
             // three values.
             | MeshDeployStageCopyPolicyUnknown
-            // C13 deferred-2 deploy/stateless-accept-extern-not-
+            // deploy/stateless-accept-extern-not-
             // whitelisted (RFC §5.K line 2466-2469). Closed set =
             // sorted union of §5.I baseline intrinsics names + any
             // target-plugin-loaded symbol names; Fix::ReplaceOneOf
@@ -11754,7 +11753,7 @@ mod tests {
             // candidate list independent of which registry the
             // symbol originated in.
             | MeshDeployStatelessAcceptExternNotWhitelisted
-            // ── §5.O Atomic 1 — symbol collision dual-location report.
+            // ── §5.O symbol collision dual-location report.
             //    The two `<file>:<line>` strings ride `Fix::ReplaceOneOf`
             //    as the closed candidate set; the agent / author picks
             //    which site to rename to break the clash. Two-element
@@ -11762,7 +11761,7 @@ mod tests {
             //    case but the choice surface (which of two sites to
             //    rename) is real, not a degenerate dropdown.
             | TraceabilityStateIdCollision
-            // ── RFC variant-default-overlay Atomic A — closed set =
+            // ── RFC variant-default-overlay — closed set =
             //    the codec's declared `<sce:arm value=...>` values
             //    (sorted, hex-formatted). Author replaces their
             //    overlay entry with one of these or removes the
@@ -11771,13 +11770,13 @@ mod tests {
             //    code-level class stays FixCarriesCandidates since
             //    the dominant case carries the closed set.
             | CodecVariantDefaultOverlayArmNotDeclared
-            // ── RFC B5-ν inversion — parent's own carrier or flag
+            // ── Parent-tag dispatch — parent's own carrier or flag
             //    names form the closed-set candidate list for the
             //    dotted reference repair (carrier-missing case lists
             //    parent fields; flag-missing-on-carrier case lists
             //    flags on the resolved carrier).
             | CodecVariantDispatchFlagNotResolved
-            // ── RFC Axis-1 inversion — `flag-bind-input-not-declared`
+            // ── Flag inversion — `flag-bind-input-not-declared`
             //    carries the leaf-side declared input names as a
             //    closed-set candidate list for typo repair.
             //    `flag-input-unbound` rides `Fix::AddAttribute` with the
@@ -11870,32 +11869,32 @@ mod tests {
             | PoolCachePreArmInvalidateMissingOnSpeculativeCore
             | PoolSampleTypestateAttributesDisabled
             | PoolSampleCallbackSignatureNonBorrow
-            // Worker kind shared-state encapsulation (RFC §5.D line 911,
-            // C2-α): author repair is "remove the offending
+            // Worker kind shared-state encapsulation (RFC §5.D line
+            // 911): author repair is "remove the offending
             // `<sce:import>` or refactor body XML to inbox-only access".
             // No closed candidate set — the foreign-namespace path is
             // arbitrary, so `fix: None` ⇒ NeutralOrDeterministic.
             | WorkerSharedMutableState
-            // C2-β inbox ordering codes: author chooses `acq_rel` vs
+            // Worker inbox ordering codes: author chooses `acq_rel` vs
             // `relaxed` based on placement; codegen-invariant fires
             // when relaxed coexists with cross-core placement. Both
             // axes are author-judgment (not closed candidate), so
             // `fix: None`.
             | WorkerInboxOrderingUnspecified
             | WorkerInboxOrderingRelaxedAcrossCores
-            // C2-γ worker scheduler-capacity forge-side anchor
+            // Worker scheduler-capacity forge-side anchor
             // (RFC §5.D line 912). Author repair is either adding the
             // worker to `deploy.machines.<m>.workers` or removing the
             // Worker doc; no closed candidate list.
             | WorkerSchedulerUnsupported
-            // C2 follow-up Atomic B outbox suffix-invalid axis: spec
+            // Worker outbox suffix-invalid axis: spec
             // §5.D line 895 + line 1998 fix the recipient queue name
             // to `inbox`, so the repair is deterministic
             // (`{owner}.inbox`) and rides `Fix::ReplaceWith`. The other
             // two outbox axes (unknown / wrong-kind) carry a closed
             // candidate set and live in FixCarriesCandidates above.
             | WorkerOutboxTargetSuffixInvalid
-            // C6-α Bounded-collection parse-time structure validators
+            // Bounded-collection parse-time structure validators
             // (RFC §5.L lines 2559 + 2655). Neither carries a closed
             // candidate set:
             // - `ordering-sorted-requires-index-by`: the repair is to
@@ -11910,7 +11909,7 @@ mod tests {
             //   single canonical candidate → NeutralOrDeterministic.
             | CollectionOrderingSortedRequiresIndexBy
             | CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion
-            // C9-α Fragment-reassembly variant parse-time structure
+            // Fragment-reassembly variant parse-time structure
             // validators (RFC §5.M lines 2944-2945). Neither carries a
             // closed candidate set:
             // - `mem/reassembly-pool-variant-missing-max-fragments`: the
@@ -11924,8 +11923,8 @@ mod tests {
             //   hold time; author-domain knowledge.
             | MemReassemblyPoolVariantMissingMaxFragments
             | MemReassemblyPoolVariantMissingTimeout
-            // C13-α-2 + C9-β Fragment-reassembly cross-doc validators
-            // (RFC §5.M lines 2946-2995). Per Q-C13-α2-7 (a) lock: all
+            // Fragment-reassembly cross-doc validators
+            // (RFC §5.M lines 2946-2995). All
             // six ride NeutralOrDeterministic. Every code has multi-axis
             // repair (raise slot_size / lower expected_p99 / change
             // max-fragments-per-message / lower mtu_bytes / change
@@ -11943,7 +11942,7 @@ mod tests {
             | ReassemblyUntrustedLinkBinding
             | ReassemblyTrustClassMissingOnFragmentingLink
             | ReassemblyStageCopyWcetExceedsSlotBudget
-            // C9-γ codegen self-check (RFC §5.M lines 2976-2981). Pure
+            // Reassembly codegen self-check (RFC §5.M lines 2976-2981). Pure
             // template-regression guard with no author-domain repair —
             // "report the bug upstream" is the only path forward.
             // NeutralOrDeterministic mirrors the
@@ -11951,19 +11950,19 @@ mod tests {
             // codegen-internal invariants where author-side `actual` /
             // `expected` / `fix` carry no useful information.
             | ReassemblyPeerIdNotZidOnEstablishedSession
-            // C10-α listener-pair codegen self-check (RFC §5.C lines
+            // Listener-pair codegen self-check (RFC §5.C lines
             // 849-856). Pure template-regression guard — mirrors
             // `reassembly/peer-id-not-zid-on-established-session`
-            // shape. NeutralOrDeterministic (Q-C10-7 a).
+            // shape. NeutralOrDeterministic.
             | LinkListenerLinkNotPairedWithEstablishedSibling
-            // C10-α reassembly-binding-on-unpaired-listener (RFC §5.M
+            // reassembly-binding-on-unpaired-listener (RFC §5.M
             // lines 2982-2994). Two valid repair paths (add
             // `Accepting.*` substate vs remove the binding) — no
-            // closed candidate set. NeutralOrDeterministic (Q-C10-7 a).
+            // closed candidate set. NeutralOrDeterministic.
             | MeshDeployReassemblyBindingOnUnpairedListener
-            // C10-β multi-link concurrency codes (RFC §5.N lines
+            // Multi-link concurrency codes (RFC §5.N lines
             // 3060-3062). All three are multi-axis author-domain
-            // repairs with no closed candidate sets per Q-C10-β-8 (a):
+            // repairs with no closed candidate sets:
             //   `concurrent-count-exceeds-scheduler-slots`: raise
             //   per_link_budget_us / lower tick_period_us / drop a
             //   link.
@@ -11975,7 +11974,7 @@ mod tests {
             | LinkConcurrentCountExceedsSchedulerSlots
             | LinkPerLinkBudgetExceedsTickPeriod
             | LinkInboundEventQueueUnsized
-            // C6-β multi-writer without atomic imports: the C4 baseline
+            // Bounded-collection multi-writer without atomic imports: the item C4 baseline
             // atomic family spans 100+ symbols (load/store/cas/fetch ×
             // 5 widths × multiple orderings) so a `Fix::ReplaceOneOf`
             // candidate list would be neither useful nor compact —
@@ -11992,8 +11991,8 @@ mod tests {
             // `Fix::Replace` with the canonical sig. The other three
             // codes sit in FixCarriesCandidates above.
             | ExternSignatureMismatch
-            // `<sce:extern>` target-plugin baseline-shadowing (Atomic B,
-            // spec line 1852): plugin author must rename the conflicting
+            // `<sce:extern>` target-plugin baseline-shadowing (spec
+            // line 1852): plugin author must rename the conflicting
             // entry; SCE cannot synthesize a candidate name. `fix: None`
             // ⇒ NeutralOrDeterministic non_overlap_class.
             | ExternTargetPluginSymbolConflict
@@ -12026,21 +12025,21 @@ mod tests {
             // ScxmlOnSampleLinkNotDeclared + ScxmlOnSampleLinkWrongKind
             // sit in FixCarriesCandidates above (cross-ref ride
             // `Fix::ReplaceOneOf` with the registry's name list).
-            // Axis-3 inversion duplicate-declaration: repair
+            // Listener-role duplicate-declaration: repair
             // is single-axis (delete the duplicate); no closed
             // candidate list. NeutralOrDeterministic.
             | ScxmlDuplicateSessionRoleDeclaration
-            // Axis-3 inversion partial-claim codes — all
-            // three are NeutralOrDeterministic (C10-α Q-C10-7
-            // precedent: 2-axis repair, no closed candidate set).
+            // Listener-role partial-claim codes — all
+            // three are NeutralOrDeterministic (2-axis repair,
+            // no closed candidate set).
             | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
             | ScxmlAcceptSideRoleWithoutListenerLink
             | LinkRoleListenerWithNonSessionArmingTrustClass
-            // Axis-3 inversion migration-helper —
+            // Listener-role migration-helper —
             // NeutralOrDeterministic (2-axis repair: add role or
             // rename states).
             | ScxmlAcceptSideStatesWithoutRoleDeclaration
-            // Axis-2 declared-consumption — 3-axis repair (raise
+            // Declared-consumption — 3-axis repair (raise
             // peer_table.capacity, raise per_peer_quota, or lower
             // slot_count); no closed candidate set.
             | ReassemblyPerPeerQuotaBuildInvariantViolated
@@ -12064,7 +12063,7 @@ mod tests {
             | GenerateUnsupportedFeature
             | CodegenMcuClassKindOnNonMcuLanguage
             | CodegenGenericKindBackendEmitMissing
-            // C3 Atomic B-β + B-γ2c no_std rejections: author repair is
+            // Item C3 no_std rejections: author repair is
             // "drop --no-std" or "remove the offending construct"
             // (`<script>` / HTTP send / `<data src>` / `<invoke>`).
             // No closed candidate set, so `fix: None` ⇒
@@ -12156,15 +12155,15 @@ mod tests {
             | MeshDistributabilityR2CrossRegionTransition
             | MeshDeployPlatformClassOsMismatch
             | MeshDeploySchedulerCooperativeMissingStackBudget
-            // C2-γ scheduler-capacity deploy-side anchors (RFC §5.K
+            // Scheduler-capacity deploy-side anchors (RFC §5.K
             // lines 2423 / 2428-9 / 2430-1). Author repair = add the
             // missing field or rebalance worker count; no closed
             // candidate list, so `fix: None` ⇒ NeutralOrDeterministic.
             | MeshDeploySchedulerCooperativeMissingSlotBudget
             | MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget
             | MeshDeploySchedulerIncompatibleWithWorkerCount
-            // C13-α-1 `links:` block parse-level + multi-axis repairs
-            // (RFC §5.K lines 2440-2503). 6 of the 9 C13-α-1 codes
+            // §5.K `links:` block parse-level + multi-axis repairs
+            // (RFC §5.K lines 2440-2503). 6 of the 9 `links:` block codes
             // carry author-domain or multi-axis repairs with no closed
             // candidate set — driver MTU floor is the LOWER bound (not
             // the exact author value), expected_p99 vs mtu has two
@@ -12177,14 +12176,14 @@ mod tests {
             | MeshDeployLinkMtuBelowDriverFloor
             | MeshDeployLinkExpectedP99ExceedsMtu
             | MeshDeployLinkBurstPpsMissingOnIsrDispatch
-            // C13-α-2 cross-doc RX-pool burst invariants. Both ride
+            // Cross-doc RX-pool burst invariants. Both ride
             // NeutralOrDeterministic — repair is multi-axis per spec
             // (raise slot_count, lower tick_period_us, switch rx_dispatch
             // mode); author chooses the axis fitting the deployment
             // budget. No closed candidate set.
             | MeshDeployLinkBurstAbsorptionInsufficient
             | MeshDeployLinkRxDispatchWorkerTickOnHighBurst
-            // C13-γ stage-copy promotion + opt-out rejection. Both
+            // Stage-copy promotion + opt-out rejection. Both
             // ride NeutralOrDeterministic:
             //   - pool/stage-copy-policy-error: multi-axis repair
             //     (raise slot_size / lower expected_p99 / add
@@ -12197,7 +12196,7 @@ mod tests {
             //     NeutralOrDeterministic.
             | PoolStageCopyPolicyError
             | PoolStageCopyAcceptRejectedUnderForbid
-            // C13-β anti-flood + stateless_accept. All five ride
+            // Anti-flood + stateless_accept. All five ride
             // NeutralOrDeterministic — author-domain numeric values
             // for the *-missing codes; two-axis repair for the
             // key-rotation-shorter-than-lifetime invariant; remove-
@@ -12209,7 +12208,7 @@ mod tests {
             | MeshDeploySessionArmingFieldsOnNonArmingLink
             | MeshDeployStatelessAcceptRequiredOnUntrustedSource
             | MeshDeployStatelessAcceptKeyRotationShorterThanLifetime
-            // C13 deferred-2 peer-table invariant. NeutralOrDeterministic
+            // Peer-table invariant. NeutralOrDeterministic
             // — three-axis repair (raise peer_table.capacity, lower
             // session_arming_quota, or lower max_handshake_time_s).
             // The wire payload's `expected` carries the bound
@@ -12248,13 +12247,13 @@ mod tests {
             //    deterministic `sce-codegen <regen-command>` — no
             //    candidate set across multiple repair paths. ──
             | ForgeSourceHashMismatch
-            // ── §5.O Atomic 0 — IR provenance guard. Codegen-internal
+            // ── §5.O IR provenance guard. Codegen-internal
             //    invariant: an empty source_location means the parser
             //    site that produced this node failed to attach a
             //    SourceLocation. No author repair — the fix lives in
             //    the parser site, not the document. ──
             | TraceabilityScxmlLineRangeMissing
-            // ── §5.O Atomic 1 — three of the four codes ride
+            // ── §5.O — three of the four sourcemap-contract codes ride
             //    NeutralOrDeterministic. Symbol-length: multi-axis
             //    repair (shorten any of three contributing names OR
             //    relax the strict flag). Sourcemap-source-hash drift:
@@ -12264,14 +12263,14 @@ mod tests {
             | TraceabilitySymbolNameExceedsCIdentifierLimit
             | TraceabilitySourcemapSourceHashMismatch
             | TraceabilitySceMapAttributeStripped
-            // ── §5.O Atomic 1 follow-up — ownership-boundary walker.
+            // ── §5.O — ownership-boundary walker.
             //    Codegen-internal invariant: no author repair, the
             //    fix is in the template that lost its SCE-MAP macro
             //    call. NeutralOrDeterministic since the diagnostic is
             //    informational toward upstream pipeline-bug repair. ──
             | TraceabilityMetaGeneratedSourceLineMarkerMissing
-            // ── Round F-α (watching-zenoh RFC §5.2) — both MCU
-            //    driver/class boundary codes ride NeutralOrDeterministic.
+            // ── MCU driver/class boundary (watching-zenoh RFC §5.2)
+            //    — both codes ride NeutralOrDeterministic.
             //    `mcu/driver-header-not-found`: author-domain repair
             //    (fix href / add file / set driver_root) — no closed
             //    candidate set. `mcu/section-attribute-on-non-mcu-target`:
@@ -12280,7 +12279,7 @@ mod tests {
             //    outside FixCarriesCandidates by design.
             | McuDriverHeaderNotFound
             | McuSectionAttributeOnNonMcuTarget
-            // ── RFC Axis-1 inversion — flag-bind sibling codes that
+            // ── Flag inversion — flag-bind sibling codes that
             //    don't carry candidate lists:
             //   - `flag-bind-source-not-resolved`: open-ended repair
             //     (author edits the source attribute or adds a missing
@@ -12356,14 +12355,14 @@ mod tests {
             // overflow / duplicate diagnostics name the conflicting
             // pair without proposing a replacement). The unsupported-
             // underlying code could ride `Fix::ReplaceOneOf` with
-            // the four legal carriers; deferring that refinement to
-            // post-Atomic-1 keeps the initial 11-site sync minimal.
+            // the four legal carriers; that refinement stays out
+            // until a consumer needs it.
             | ValidationEnumNoVariants
             | ValidationEnumVariantDuplicateName
             | ValidationEnumVariantDuplicateValue
             | ValidationEnumVariantValueOverflowsUnderlying
             | ValidationEnumUnsupportedUnderlyingType
-            // NL→IR Item C1 Path A (Atomic 3): EventSchema built-in-
+            // NL→IR Item C1 Path A: EventSchema built-in-
             // event schema rejection — repair is author-domain
             // (rename `sce:event-name` to a non-reserved value or
             // delete the schema document). Reserved-prefix list is
@@ -12376,7 +12375,7 @@ mod tests {
             // deterministic, no closed candidate set the validator can
             // predict, so NeutralOrDeterministic.
             | ValidationBytesComparisonNotEquality
-            // NL→IR Item C1 Path A (Atomic 3): mesh cross-machine
+            // NL→IR Item C1 Path A: mesh cross-machine
             // EventSchema mismatch — repair is two-axis (realign
             // sender ↔ receiver schemas by editing one side's field
             // declarations, or declare a schema on the side that is
@@ -12838,21 +12837,21 @@ mod tests {
                 | MeshIo
                 // B9 §6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
-                // §5.O Atomic 0 IR provenance pre-emit guard
+                // §5.O IR provenance pre-emit guard
                 | TraceabilityScxmlLineRangeMissing
-                // §5.O Atomic 1 — symbol mangling + sourcemap contract
+                // §5.O symbol mangling + sourcemap contract
                 | TraceabilityStateIdCollision
                 | TraceabilitySymbolNameExceedsCIdentifierLimit
                 | TraceabilitySourcemapSourceHashMismatch
                 | TraceabilitySceMapAttributeStripped
-                // §5.O Atomic 1 follow-up — boundary walker
+                // §5.O boundary walker
                 | TraceabilityMetaGeneratedSourceLineMarkerMissing
-                // Round F-α (watching-zenoh RFC §5.2) — MCU driver/class
-                // boundary codes; both ride NeutralOrDeterministic per
+                // MCU driver/class boundary (watching-zenoh RFC §5.2)
+                // codes; both ride NeutralOrDeterministic per
                 // the non_overlap_class match above.
                 | McuDriverHeaderNotFound
                 | McuSectionAttributeOnNonMcuTarget
-                // RFC Axis-1 inversion — parent-side flag-bind cross-doc
+                // Flag inversion — parent-side flag-bind cross-doc
                 // validator codes. One in FixCarriesCandidates
                 // (`flag-bind-input-not-declared`) and five in
                 // NeutralOrDeterministic (the other five) per the
@@ -12869,7 +12868,7 @@ mod tests {
                 | ValidationEnumVariantDuplicateValue
                 | ValidationEnumVariantValueOverflowsUnderlying
                 | ValidationEnumUnsupportedUnderlyingType
-                // NL→IR Item C1 Path A: EventSchema kind (Atomic 3)
+                // NL→IR Item C1 Path A: EventSchema kind
                 | ValidationEventSchemaOnBuiltinEvent
                 | ValidationEventPayloadFieldUnknown
                 | ValidationBytesComparisonNotEquality

@@ -268,14 +268,14 @@ pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
     }
 }
 
-/// Watching-zenoh RFC §5.2 Round F-α — Q-Round-F-D3 reject: when
+/// Watching-zenoh RFC §5.2 MCU section-attribute reject: when
 /// `deploy.yaml`'s `platform.c11_section_attribute` is present but the
 /// target codegen backend is not C11, surface
 /// `mcu/section-attribute-on-non-mcu-target`. The section attribute
 /// injects `__attribute__((section("...")))` which has no equivalent
 /// emit on the non-MCU backends (cpp / rust / kotlin / go / python);
 /// silently dropping it would let the directive vanish on a non-C11
-/// compile, matching the Q-Call-7 non-MCU reject pattern.
+/// compile, matching the §5.I extern-sidecar non-MCU reject pattern.
 ///
 /// Caller-supplied flag: the section attribute lives on `deploy.yaml`
 /// not on `ForgeKind`, so this helper takes a boolean rather than a

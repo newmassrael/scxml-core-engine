@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 9ffa89e83988cec88d8cbd0e24ec1c25726aced2de1a82197e932bbb2d905974
-// template-hash: 2c4f76809986b4347703e89a8e901379e8391f815371b53c5a7eecbe187e1cf5
-// generated-at: 1781084365
+// source-hash: 2ce787851bfd7d827a1b4bdac3cef96251774343aaef3194d8c8364157a45dff
+// template-hash: f835a323a3abc9cebc80341e1840b22b95739a2efa1726ad2c440477eff36482
+// generated-at: 1781089333
 // SCE-MAP: codec_default_marker_arm_a.scxml:16
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -26,7 +26,7 @@ type CodecDefaultMarkerArmA struct {
 // arm) requires using this constructor rather than the bare struct
 // literal `CodecDefaultMarkerArmA{}`, which would zero-init every field
 // (and leave every Variant arm pointer nil for variant codecs).
-// RFC variant-default-uniformity Atomic β-go.
+// RFC variant-default-uniformity (Go).
 func NewCodecDefaultMarkerArmA() *CodecDefaultMarkerArmA {
 	return &CodecDefaultMarkerArmA{
 		Header: uint8(0x01),

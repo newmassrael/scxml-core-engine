@@ -44,7 +44,7 @@
       <xs:enumeration value="lookup"/>
       <xs:enumeration value="condition"/>
       <xs:enumeration value="codec"/>
-      <!-- peek-byte mode dispatch (RFC §5.B Y3 atomic 2b-ii) -->
+      <!-- peek-byte mode dispatch (RFC §5.B) -->
       <xs:enumeration value="procedure"/>
       <xs:enumeration value="validator"/>
       <!-- Signal-processing kinds -->
@@ -72,9 +72,9 @@
            `sce:event-name`; declares typed `<data>` children that
            are read by transition `cond` expressions as
            `_event.data.<field>` and written via `<send>/<param>`
-           payloads. Atomic 3 scope: parse + receive/send-side
-           typecheck + mesh DL-7'. Per-backend payload struct
-           codegen lands at Atomic 4. -->
+           payloads. Covers parse + receive/send-side typecheck +
+           mesh DL-7'; `_event.data.<field>` reads lower natively
+           on every backend. -->
       <xs:enumeration value="event-schema"/>
     </xs:restriction>
   </xs:simpleType>
@@ -223,7 +223,7 @@
        `validation/enum-unsupported-underlying-type`). -->
   <xs:attribute name="underlying-type" type="sce:sceType"/>
 
-  <!-- NL→IR Item C1 Path A follow-up F-κ — `sce:strict-variants` on
+  <!-- NL→IR Item C1 Path A — `sce:strict-variants` on
        a `sce:kind="enum"` `<scxml>` root opts the enum out of the
        strict variant-membership check that runs over integer
        literals compared against (receive-side) or assigned to
@@ -276,7 +276,7 @@
   <xs:attribute name="length" type="xs:nonNegativeInteger"/>
   <xs:attribute name="length-field" type="xs:string"/>
 
-  <!-- RFC §5.B B1-δ present-if primitive (sce:present-if attribute).
+  <!-- RFC §5.B present-if primitive (sce:present-if attribute).
        Predicate grammar v1: exactly `<field_id>.<flag_name>` — the
        referenced field must be a `<sce:flags>` carrier declared
        earlier in the same codec. Field shape (string typed at the XSD
@@ -296,7 +296,7 @@
        `codec/dma-alignment-unsatisfiable`). -->
   <xs:attribute name="dma-burst-align" type="xs:positiveInteger"/>
 
-  <!-- RFC §5.B B5-δ Surface F (sce:length-arith attribute).
+  <!-- RFC §5.B length-arith primitive (sce:length-arith attribute).
        Arithmetic offset on the length-field source value. Effective
        payload length is `sibling_value + length_arith` bytes.
        Authored as `sce:length-arith="+1"` or `sce:length-arith="-1"`
@@ -307,7 +307,7 @@
        (zid_len_m1 = actual_len - 1, decode reconstructs actual_len). -->
   <xs:attribute name="length-arith" type="xs:integer"/>
 
-  <!-- RFC §5.B Y0b — `sce:length-from="<sibling_field_id>"` on
+  <!-- RFC §5.B — `sce:length-from="<sibling_field_id>"` on
        `<sce:embed>`. Bounds the embedded codec's decode-time cursor
        scope to the named earlier integer field's value. Mirrors
        zenoh-pico declarations.c:206 `_z_slice_as_zbuf` inner-cursor
@@ -391,8 +391,8 @@
        ═══════════════════════════════════════════════════════════════ -->
 
   <!-- Section 5: Cross-file kind import. The optional
-       <sce:variant-dispatch> child carries the RFC B5-ν inversion
-       declaration: when the imported codec is a `<sce:variant>` codec,
+       <sce:variant-dispatch> child carries the parent-side dispatch
+       inversion declaration: when the imported codec is a `<sce:variant>` codec,
        the parent uses this child to designate which of its own flags
        drives the variant's arm dispatch (dotted `<carrier>.<flag>`).
        Parent-local cross-doc validator confirms the named carrier and
@@ -401,7 +401,7 @@
     <xs:complexType>
       <xs:sequence>
         <xs:element ref="sce:variant-dispatch" minOccurs="0" maxOccurs="1"/>
-        <!-- RFC Axis-1 inversion: parent-side flag-bind declarations
+        <!-- Flag inversion: parent-side flag-bind declarations
              supply values for the imported leaf's declared
              `<sce:flag-inputs>`. Each `<sce:flag-bind>` names one
              leaf-side input and a source on the parent (either a
@@ -419,7 +419,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- RFC B5-ν inversion: parent-side variant-dispatch declaration.
+  <!-- Dispatch inversion: parent-side variant-dispatch declaration.
        Dotted `flag="<carrier>.<flag>"` references one of the parent
        codec's own carriers and one of its declared flags. Cross-doc
        validator (`validate_cross_codec_variant_dispatch`) enforces
@@ -432,7 +432,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- RFC Axis-1 inversion: parent-side `<sce:flag-bind>` directive
+  <!-- Flag inversion: parent-side `<sce:flag-bind>` directive
        (child of `<sce:import>`). The `input=` attribute names one of
        the imported leaf's declared `<sce:flag-input name="X" .../>`
        declarations. The `source=` attribute resolves via the dotted-
@@ -448,7 +448,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- RFC Axis-1 inversion: codec-level `<sce:flag-inputs>` block
+  <!-- Flag inversion: codec-level `<sce:flag-inputs>` block
        containing one or more `<sce:flag-input name="X" width="N"/>`
        child declarations. Each input becomes a positional typed
        parameter on the generated `decode`/`encode` signatures; the
@@ -464,7 +464,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- RFC Axis-1 inversion: a single `<sce:flag-input>` child of
+  <!-- Flag inversion: a single `<sce:flag-input>` child of
        `<sce:flag-inputs>`. The `name=` is the logical input name
        (referenced by `<sce:flag-bind input="X" .../>` at the parent's
        import site, and by `sce:present-if="X"` predicates in this
@@ -478,7 +478,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- §5.I `<sce:extern>` whitelisted intrinsic registry (Atomic A).
+  <!-- §5.I `<sce:extern>` whitelisted intrinsic registry.
        Bounded escape hatch for platform-specific intrinsics
        (atomic CAS / fences / cache maintenance / IRQ control).
        The `name` is closed-set checked at parse time against the
@@ -534,7 +534,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B variant primitive (B1-β)
+       RFC §5.B variant primitive
 
        Discriminated-union suffix on a codec. The `<sce:variant>` element
        sits under <datamodel> alongside <sce:field> declarations; its
@@ -559,7 +559,7 @@
       <!-- Body codec alias; must resolve to an <sce:import as="alias"/>
            in the same document. Resolution happens at codegen time. -->
       <xs:attribute name="type" type="xs:NCName" use="required"/>
-      <!-- RFC variant-default-uniformity Atomic α: optional
+      <!-- RFC variant-default-uniformity: optional
            default="true" marker selects this arm as the body chosen
            by the outer codec's Default::default(). Parser enforces
            at-most-one per <sce:variant> via
@@ -571,17 +571,17 @@
 
   <!-- `<sce:variant>` serves three distinct purposes by host kind:
 
-       1. **Codec discriminated-union suffix (RFC §5.B B1-β / Y3-2b-ii)**
+       1. **Codec discriminated-union suffix (RFC §5.B)**
           Inside `<datamodel>` of `<scxml sce:kind="codec">` — carries
           `tag` attribute + `<sce:peek-byte>` / `<sce:arm>` /
           `<sce:default>` children. Parser `parse_codec_variant`
           enforces `tag` presence + arm shape.
-       2. **Buffer-pool variant discriminator (RFC §5.M C9-α)**
+       2. **Buffer-pool variant discriminator (RFC §5.M)**
           Top-level child of `<scxml sce:kind="buffer-pool">` — carries
           plain text content `reassembly` (or `default`). Parser
           `parse_buffer_pool` enforces the closed enum + the three
           reassembly-only sibling elements.
-       3. **Enum variant declaration (NL→IR Item C1 Path A Atomic 1)**
+       3. **Enum variant declaration (NL→IR Item C1 Path A)**
           Child of `<data>` inside `<scxml sce:kind="enum">` — carries
           `name` + `value` attributes. Parser `parse_enum` enforces
           the bijectivity invariant on `value` and uniqueness on `name`.
@@ -597,7 +597,7 @@
   <xs:element name="variant">
     <xs:complexType mixed="true">
       <xs:sequence>
-        <!-- RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode:
+        <!-- RFC §5.B peek-byte mode:
              singleton `<sce:peek-byte>` child opts the variant into
              dispatch on the cursor's NEXT byte (read without
              advancing) instead of an own-codec field. Every arm
@@ -630,7 +630,7 @@
       </xs:sequence>
       <!-- Tag field id (codec context only) — must reference a sibling
            <sce:field>/<data> with an unsigned-int sce:type. Parser
-           `parse_codec_variant` enforces presence + resolution. C9-α
+           `parse_codec_variant` enforces presence + resolution. Item C9
            (RFC §5.M) relaxes the XSD requirement to `optional` so the
            buffer-pool reassembly variant (text content `reassembly`,
            no `tag`) passes; `parse_buffer_pool` enforces the closed
@@ -647,7 +647,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B B1-γ + B5-α flags primitive
+       RFC §5.B flags primitive
 
        Named-bit-range accessor container over an unsigned-int carrier
        field. The `<sce:flags>` element occupies the same wire bytes as
@@ -655,8 +655,8 @@
        `sce:bit-size`; its `<sce:flag name="X" bit="N" [width="W"]/>`
        children declare ergonomic per-bit-range get/set accessors that
        codegen emits alongside the generated struct. Bit positions are
-       0 = LSB, `bit + width - 1 = MSB`. `width` defaults to 1 (B1-γ
-       single-bit shape — getter/setter use bool); B5-α multi-bit
+       0 = LSB, `bit + width - 1 = MSB`. `width` defaults to 1 (the
+       single-bit shape — getter/setter use bool); multi-bit
        (width >= 2) returns the smallest unsigned int type that fits.
        Bit-range overlap and `bit + width > carrier_bit_width` are
        rejected at parse time by sce-build.
@@ -673,13 +673,13 @@
            the carrier's bit width: 0..7 for uint8, 0..15 for uint16,
            0..31 for uint32, 0..63 for uint64. Enforced by sce-build. -->
       <xs:attribute name="bit" type="xs:nonNegativeInteger" use="required"/>
-      <!-- B5-α multi-bit accessor: contiguous bit-range size. Defaults
-           to 1 (single-bit B1-γ shape — bool getter/setter). When > 1
+      <!-- Multi-bit accessor: contiguous bit-range size. Defaults
+           to 1 (the single-bit shape — bool getter/setter). When > 1
            the accessor returns the smallest unsigned integer type that
            fits the range. `bit + width <= carrier_bit_width` and no
            overlap with sibling flags — both enforced by sce-build. -->
       <xs:attribute name="width" type="xs:positiveInteger" use="optional"/>
-      <!-- RFC variant-default-uniformity Atomic α: optional
+      <!-- RFC variant-default-uniformity: optional
            wire-constant baked into the carrier's Default::default().
            Decimal or 0x-hex unsigned integer (parsed via parse_int_u64);
            sce-build rejects values that exceed `(1 << width) - 1`. Used
@@ -749,9 +749,9 @@
            carry the IDENTICAL `sce:present-if` predicate (co-gating
            contract enforced by `validate_codec_repeat_present_if_co_
            gating` — wire bytes for both count and elements appear or
-           disappear atomically). Predicate grammar mirrors B1-δ
-           (`<carrier>.<flag>` Local) and B5-γ (`parent.<flag>`
-           Parent), with B5-λ optional `!` negation. -->
+           disappear atomically). Predicate grammar covers the
+           `<carrier>.<flag>` (Local) and `parent.<flag>`
+           (Parent) forms, with optional `!` negation. -->
       <xs:attribute ref="sce:present-if"/>
     </xs:complexType>
   </xs:element>
@@ -792,7 +792,7 @@
              codegen/mcu-class-kind-on-non-mcu-language
        ═══════════════════════════════════════════════════════════════ -->
 
-  <!-- RFC §5.B Y3 — `<sce:tlv-chain>` termination strategies. Trunk
+  <!-- RFC §5.B — `<sce:tlv-chain>` termination strategies. The
        default `exhaust-or-depth` ends the chain on cursor-exhaust +
        max-depth (used when nothing follows the chain on the wire).
        `entry-flag` reads a named flag on each decoded entry's flags
@@ -825,18 +825,18 @@
            where `count` / `until-eof` mutex is parser-enforced. -->
       <xs:attribute name="max-depth" type="xs:positiveInteger"/>
       <xs:attribute name="on-overflow" type="xs:string"/>
-      <!-- RFC §5.B Y3 — termination strategy + flag-name attribute.
-           Default `exhaust-or-depth` matches B3 trunk shape (cursor-
-           exhaust + max-depth). `entry-flag` reads `entry-flag-name`
+      <!-- RFC §5.B — termination strategy + flag-name attribute.
+           Default `exhaust-or-depth` ends on cursor-exhaust +
+           max-depth (the item B3 tlv-chain shape). `entry-flag` reads `entry-flag-name`
            on each decoded entry's flags carrier and stops the chain
            when the flag is clear; required when the wire stream
            continues past the chain. Parser enforces flag-name
            presence when terminate-on="entry-flag". -->
       <xs:attribute name="terminate-on" type="sce:tlvTerminateOnType"/>
       <xs:attribute name="entry-flag-name" type="xs:string"/>
-      <!-- RFC §5.B Y3 atomic 2a — `<sce:tlv-chain sce:present-if="P">`
-           gates the entire chain on a flag predicate (mirrors B5-μ
-           repeat-with-present-if X1 lift). When the predicate is
+      <!-- RFC §5.B — `<sce:tlv-chain sce:present-if="P">`
+           gates the entire chain on a flag predicate (mirrors the
+           repeat-with-present-if lift). When the predicate is
            false the chain field is absent from the wire; the
            host-language type wraps as a per-language optional
            (Option<Vec<T>> / std::optional<vector> / MutableList<T>?
@@ -849,23 +849,23 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B Y0c + Y0b — single-codec embed primitive
+       RFC §5.B — single-codec embed primitive
 
        Embeds an imported codec inline at the named byte position.
        The embedded codec's own decode/encode methods consume/produce
        bytes directly; the host language emits a nested struct of the
        imported codec's type. Mirrors `<sce:repeat>` / `<sce:tlv-chain>`
-       tri-attr shape (id + type + sce:byte) plus two optional Y0b
+       tri-attr shape (id + type + sce:byte) plus two optional
        attributes that compose freely.
 
-       First reachable consumer (Y0c): zenoh-pico declare bodies
+       First reachable consumer: zenoh-pico declare bodies
        (decl_keyexpr / decl_subscriber / decl_queryable / decl_token)
        embedding `codec_zenoh_wireexpr` after the body's VLE id field
        — Zenoh wire packs id + wireexpr inline with no length prefix
        between them, so the always-present cursor-direct shape exactly
        mirrors that wire layout.
 
-       Y0b lifts two attributes:
+       The two optional attributes:
 
          - `sce:present-if="<carrier>.<flag>" | "parent.<flag>" | "!..."`
            gates the embed on a runtime predicate (mirrors the
@@ -889,7 +889,7 @@
          - sce:length-from references later/unknown sibling
          - sce:length-from references non-integer sibling
          - sce:present-if cross-field validation reuses the existing
-           B1-δ / B5-γ predicate validators
+           present-if predicate validators
        ═══════════════════════════════════════════════════════════════ -->
 
   <xs:element name="embed">
@@ -901,10 +901,10 @@
            `<sce:arm type=...>` shape. -->
       <xs:attribute name="type" type="xs:NCName" use="required"/>
       <xs:attribute ref="sce:byte" use="required"/>
-      <!-- RFC §5.B Y0b — optional present-if predicate gating the
+      <!-- RFC §5.B — optional present-if predicate gating the
            embed. Same grammar as `<sce:field sce:present-if>`. -->
       <xs:attribute ref="sce:present-if"/>
-      <!-- RFC §5.B Y0b — optional `sce:length-from="<id>"` bounds
+      <!-- RFC §5.B — optional `sce:length-from="<id>"` bounds
            the embedded codec's decode-time cursor scope to the named
            sibling integer field's value. Author-trust on encode
            (sibling value must match emitted byte count). -->
@@ -937,7 +937,7 @@
 
   <!-- Algorithm form (B2): attribute `value=` declares the scalar
        expected return — content is empty.
-       Codec form (B5-θ): nested `<sce:decoded field=...>` rows
+       Codec form: nested `<sce:decoded field=...>` rows
        declare the field-by-field expected struct. The two forms are
        union'd via choice on the schema; the parser dispatches on
        `sce:kind` so an algorithm fixture with `<sce:decoded>` rows
@@ -950,7 +950,7 @@
       </xs:choice>
       <xs:attribute name="hex" type="xs:string" use="required"/>
       <!-- `value` is required for algorithm form (B2); codec form
-           (B5-θ) sets it via nested <sce:decoded> rows instead. The
+           sets it via nested <sce:decoded> rows instead. The
            parser enforces the per-kind requirement; making `value`
            optional here keeps the XSD a structural surface and lets
            the kind-aware parser return the precise diagnostic. -->
@@ -958,11 +958,12 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- RFC §5.B B5-θ codec test-vector field assignment. Trunk shape:
+  <!-- RFC §5.B codec test-vector field assignment. Shape:
        `<sce:decoded field="..." (value|hex|string)="..."/>`.
-       Variant / TLV-chain / repeat closures will add sibling element
-       names (`<sce:decoded-variant>`, `<sce:decoded-chain>`,
-       `<sce:decoded-entry>`); v1 only declares the leaf field form. -->
+       Variant / TLV-chain / repeat sibling element names
+       (`<sce:decoded-variant>`, `<sce:decoded-chain>`,
+       `<sce:decoded-entry>`) are consumer-gated; only the leaf
+       field form is declared. -->
   <xs:element name="decoded">
     <xs:complexType>
       <xs:attribute name="field" type="xs:string" use="required"/>
@@ -1219,7 +1220,7 @@
 
   <!--
     watching-zenoh RFC §5.C (item B6, MCU-class): byte-stream link
-    endpoint declared via `<scxml sce:kind="link">`. B6-α surface is
+    endpoint declared via `<scxml sce:kind="link">`. This surface is
     the minimum vertical slice that exercises the rust codegen path:
     `<sce:link-class>` enum body + `<sce:framer ref="..."/>` (required) +
     `<sce:backpressure>` + `<sce:events>` rows. `<sce:rx-pool>` /
@@ -1296,11 +1297,11 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.E B7-α schema-only: link-side `<sce:rx-pool>`
+    watching-zenoh RFC §5.E: link-side `<sce:rx-pool>`
     / `<sce:tx-pool>` reference a `<scxml sce:kind="buffer-pool">`
-    sibling document by name. Cross-resolution validator
-    (`link/pool-slot-smaller-than-framer-max`) defers to a later atomic
-    that wires pool ↔ framer through `compile_forge_with_imports`.
+    sibling document by name. The cross-resolution validator
+    (`link/pool-slot-smaller-than-framer-max`) wires pool ↔ framer
+    through `compile_forge_with_imports`.
   -->
   <xs:element name="rx-pool">
     <xs:complexType>
@@ -1315,7 +1316,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.E B7-η' Atomic A1: link-side `<sce:stage-pool>`
+    watching-zenoh RFC §5.E sample-callback surface: link-side `<sce:stage-pool>`
     references a `<scxml sce:kind="buffer-pool">` sibling document by
     name. Single source of truth for `Sample::take()`'s stage-copy
     destination, co-located with `<sce:rx-pool>` / `<sce:tx-pool>` on
@@ -1333,9 +1334,10 @@
   <!--
     watching-zenoh RFC §5.E (item B7, MCU-class): SRAM-placed,
     DMA-aligned slot table declared via `<scxml sce:kind="buffer-pool">`.
-    B7-α surface is the minimum schema vertical slice. The 7-state
-    lifecycle FSM (B7-γ) + cache maintenance pinning (B7-δ) defer to
-    later atomics; the schema itself is stable for what B7-α emits.
+    The schema here is the minimum vertical slice; the 7-state
+    lifecycle FSM and cache-maintenance pinning are realised by the
+    buffer-pool codegen (`sce-build/src/forge/buffer_pool_fsm.rs` +
+    the per-backend buffer_pool templates).
   -->
 
   <!-- RFC §5.E lines 948-957 cache-policy enumeration. -->
@@ -1396,7 +1398,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.M reassembly-variant buffer-pool fields (C9-α)
+       RFC §5.M reassembly-variant buffer-pool fields (item C9)
 
        Three sibling elements required when
        `<sce:variant>reassembly</sce:variant>` is declared on a
@@ -1406,8 +1408,8 @@
        `mem/reassembly-pool-variant-missing-timeout` codes. Cross-doc
        validators that read `<sce:per-peer-quota>` against §5.K's
        `peer_table.capacity` (build-time invariant
-       `peer_table.capacity × per-peer-quota ≥ slot_count`) defer to
-       C9-β co-landing with C13.
+       `peer_table.capacity × per-peer-quota ≥ slot_count`) run at
+       deploy time (`sce-build/src/mesh/deploy.rs`).
        ═══════════════════════════════════════════════════════════════ -->
   <xs:element name="max-fragments-per-message">
     <xs:complexType>
@@ -1435,14 +1437,15 @@
 
   <!--
     watching-zenoh RFC §5.D (item C2, MCU-class): Worker kind declared
-    via `<scxml sce:kind="worker">`. C2-α schema vertical slice covers
+    via `<scxml sce:kind="worker">`. The schema vertical slice covers
     the four worker body elements:
       - <sce:link-rx ref="..."/>  required driving link kind reference
       - <sce:inbox depth="N"/>    required SPSC ring-buffer depth
       - <sce:outbox ref="..."/>   optional recipient inbox path
       - <sce:body>...</sce:body>  optional SCXML actions (usually empty)
-    Cross-resolution + ordering + scheduler validators defer to C2-β/γ;
-    XSD enforces structural shape only.
+    Cross-resolution + ordering validators live in sce-build
+    (`worker/link-rx-ref-unknown`, `worker/inbox-ordering-unspecified`);
+    the XSD enforces structural shape only.
   -->
   <xs:element name="link-rx">
     <xs:complexType>
@@ -1453,7 +1456,7 @@
   <xs:element name="inbox">
     <xs:complexType>
       <xs:attribute name="depth" type="xs:positiveInteger" use="required"/>
-      <!-- watching-zenoh RFC §5.I lines 1752-1758 (C2-β): SPSC inbox
+      <!-- watching-zenoh RFC §5.I lines 1752-1758: SPSC inbox
            ordering choice. Spec phrasing labels missing-ordering a
            "warning"; SCE's error-only wire realizes the warning as a
            required-when-worker-exists error (parse-time
@@ -1483,18 +1486,18 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- watching-zenoh RFC §5.E B7-η': SCXML state-level subscriber
-       declaration. Lifts the spec line 1269 callback contract ("the
-       subscriber callback receives `&Sample<'_>`") into a state-scoped
-       `<sce:on-sample link="X" event="E"/>` extension. Q-OnSample-1
-       (Y) parser-AST extension; Q-OnSample-3 v1 attributes are link +
-       event (both required). Cross-reference resolution against the
-       forge link kind registry is the Atomic B follow-on. Atomic A2
-       adds optional `callback="rust:crate::path::fn"` extern reference
-       attribute (Q-Callback-1 Option α): codegen wires the path into
+  <!-- watching-zenoh RFC §5.E sample-callback: SCXML state-level
+       subscriber declaration. Lifts the spec line 1269 callback
+       contract ("the subscriber callback receives `&Sample<'_>`")
+       into a state-scoped `<sce:on-sample link="X" event="E"/>`
+       parser-AST extension; attributes are link + event (both
+       required). Cross-reference resolution against the forge link
+       kind registry runs in `validate_on_sample_link_references`.
+       The optional `callback="rust:crate::path::fn"` extern
+       reference attribute: codegen wires the path into
        the dispatch shim with a borrow-mode call site. XSD enforces
        attribute presence shape only; the language-prefixed Rust path
-       subset (Q-Callback-3) is checked by the Rust validator
+       subset is checked by the Rust validator
        `validate_on_sample_callback_paths` so the diagnostic message
        can name specific path-syntax mistakes per
        `pool/sample-callback-signature-non-borrow`. -->
@@ -1506,11 +1509,11 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- watching-zenoh RFC §5.2 Round F-α: top-level driver-header
-       reference. Allowed only as a direct child of `<scxml>` root
-       (Q-Round-F-D6); the C11 backend emits `#include "<resolved>"`
+  <!-- watching-zenoh RFC §5.2: top-level driver-header
+       reference. Allowed only as a direct child of `<scxml>` root;
+       the C11 backend emits `#include "<resolved>"`
        at the top of the generated `*_sm.c` so cross-TU symbol
-       resolution is handled by the C compiler (Q-Round-F-D2). `href`
+       resolution is handled by the C compiler. `href`
        is required; the parser resolves it against
        `deploy.yaml`'s `platform.driver_root` (or the SCXML file's
        parent directory as fallback). Unresolved paths surface

@@ -1,9 +1,9 @@
-//! C13-γ — pool_defaults.stage_copy_policy promotion + opt-out
+//! pool_defaults.stage_copy_policy promotion + opt-out
 //! rejection.
 //!
 //! Per watching-zenoh RFC §5.K lines 2350-2369 + 2504-2519: machine-
 //! wide `pool_defaults.stage_copy_policy` (warn | error | forbid)
-//! drives the C13-α-2 `reassembly/expected-fragmentation-rate-high`
+//! drives the cross-doc `reassembly/expected-fragmentation-rate-high`
 //! warning's promotion to hard error (`error` / `forbid`) plus the
 //! `<sce:accept-stage-copy-rate>` opt-out semantics:
 //!   - warn (default): warning fires unless opt-out present.
@@ -58,7 +58,7 @@ fn default_pool(name: &str, slot_count: u32, slot_size: u32) -> BufferPoolModel 
 /// Deploy fixture with `pool_defaults.stage_copy_policy: <policy_value>`
 /// plugged in. The link `udp_data` declares `expected_p99_bytes: 1024`
 /// with no `mtu_bytes` and no `domain_attrs` (the latter two would
-/// trigger C13-α-1 parse-time checks that prevent reaching the
+/// trigger links-block parse-time checks that prevent reaching the
 /// promotion site). Pool's `slot_size = 700` makes the rate
 /// `(1024-700)/1024 × 100 = 31% > 25% threshold`. #1 (slot < mtu)
 /// silent-skips since mtu_bytes is absent; #4/#5 silent-skip since

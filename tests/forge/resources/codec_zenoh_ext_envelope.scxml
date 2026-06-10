@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh extension chain envelope — TLV chain
-     of variant-bodied entries (RFC §5.B B5-ε surface G; chain
+     of variant-bodied entries (RFC §5.B; chain
      termination strategy since refined to wire fidelity).
 
      Mirrors zenoh-pico `_z_msg_ext_decode_iter` (src/protocol/codec/
      ext.c lines 226-238): an iterative chain of `_z_msg_ext_t`
      entries where each entry's body shape is selected at runtime by
      the `enc` bit-range of its 1-byte header AND the chain
-     terminates when the entry's `Z` bit (bit 7) is clear. B5-ε's
+     terminates when the entry's `Z` bit (bit 7) is clear. The chain's
      surface-G freebie is that an imported codec can itself be a
      variant (this envelope's `codec_zenoh_ext_entry` body) without
-     IR change. Y3 lifts the chain termination strategy from
-     "cursor-exhaust + max-depth" (B5-ε deferral) to "entry-flag" so
+     IR change. lifts the chain termination strategy from
+     "cursor-exhaust + max-depth" (variant-entry chain deferral) to "entry-flag" so
      the wire stream can carry payload after the chain — required by
      zenoh-pico request/response/declare/oam bodies whose body
      variant follows the ext chain.

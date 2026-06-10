@@ -2,7 +2,7 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 
-{# Watching-zenoh RFC §5.O Atomic 0b: per-backend SCE-MAP marker
+{# Watching-zenoh RFC §5.O: per-backend SCE-MAP marker
    anchoring the transport header to the originating SCXML root's
    post-preprocessor source position. Required for every SCE-emitted
    file carrying a §6.2.6 drift header — otherwise the codegen
@@ -1581,7 +1581,7 @@ struct TransportRouter {
     // `registerDeadline(env.id, ...)` collided with the invoke
     // deadline's registration and silently rolled back into
     // SEND_FAILED. Splitting the uuids restores the "key spaces
-    // never alias" invariant the Q4 lock-in described.
+    // never alias" invariant the design locked in.
     //
     // InvokeSiteKey is a typed composite of (target, fieldSuffix). A
     // string-concat key (`target + ":" + fieldSuffix`) would have

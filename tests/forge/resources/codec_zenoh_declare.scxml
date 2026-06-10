@@ -31,7 +31,7 @@
                               406-415 with safety margin for future
                               additions; entry-flag-Z termination
                               since the declaration body follows the
-                              chain — Y3 atomic 1 grammar).
+                              chain — atomic 1 grammar).
        inner    : declaration (codec_zenoh_declaration embed — 9-arm
                               dispatcher on the inner declaration's
                               own per-MID header byte; the inner
@@ -39,12 +39,12 @@
                               that the dispatched arm body consumes
                               via Case B parent-flag pass-through).
 
-     Composition: B1-γ flags (header with I@5 + Z@7 subfields) +
-     B1-α VLE u32 with present-if (interest_id, header.I gate) + Y3
-     atomic 2a present-if-on-tlv-chain (header.Z gate) + Y3 atomic 1
+     Composition: flags flags (header with I@5 + Z@7 subfields) +
+     VLE VLE u32 with present-if (interest_id, header.I gate) + Y3
+     atomic 2a present-if-on-tlv-chain (header.Z gate) + atomic 1
      entry-flag termination (chain followed by declaration body) +
-     B5-ε surface G (chain element = codec_zenoh_ext_entry variant) +
-     Y0c <sce:embed> (codec_zenoh_declaration inner dispatcher). No
+     variant-entry chain (chain element = codec_zenoh_ext_entry variant) +
+     <sce:embed> (codec_zenoh_declaration inner dispatcher). No
      new primitives. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

@@ -2,7 +2,7 @@
 <!--
   watching-zenoh RFC §5.A line 311 + §5.L line 2642-2647 (C7 keyexpr-
   fixture sub-atomic 3 of 3, 2026-05-13): inner algorithm for the
-  runtime KeyExpr matching reference exemplar. Q-C7-9 (a) lock —
+  runtime KeyExpr matching reference exemplar. Locked decision —
   v1 matching semantics are exact uint32 ID equality. The BC's
   element-type carries `callback_id: uint32` registered at compile
   time (RFC §3 line 4001-4003 — KeyExpr set is compile-time fixed).

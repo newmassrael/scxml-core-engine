@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §5.O Atomic 1 — sourcemap + symbol mangling +
+// Watching-zenoh RFC §5.O — sourcemap + symbol mangling +
 // addr2sce integration fixture.
 //
-// The Atomic 1 contract (spec lines 3055-3057, 3219-3243, 3253-3278,
+// The contract (spec lines 3055-3057, 3219-3243, 3253-3278,
 // 3321-3324):
 //
 //   D18(i)   Sourcemap JSON shape — version + source_hash +
@@ -92,7 +92,7 @@ fn sourcemap_shape_matches_spec() {
 
 /// D18(ii) — byte-identity across the 6 backends. Same SCXML input
 /// produces a byte-equal sourcemap regardless of which backend wrote
-/// it (Q-§5.O-8). Only checks the non-language-specific portion: the
+/// it. Only checks the non-language-specific portion: the
 /// symbol table + hash values. Note: the `scxml_file` field carries
 /// the tmp-dir path which is unique per invocation, so we normalize
 /// before comparing.

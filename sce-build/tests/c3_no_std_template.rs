@@ -114,7 +114,7 @@ fn malformed_sce_capacity_attribute_emits_invalid_attribute() {
 
 #[test]
 fn zero_sce_capacity_attribute_rejects() {
-    // Q-RustNoStd-7 (a): capacity is the event-queue size; zero is
+    // Capacity is the event-queue size; zero is
     // not a meaningful value. Reject at parse time so downstream
     // codegen cannot emit a 0-sized `heapless::Vec<E, 0>` (which
     // compiles but always overflows on first push).
@@ -220,7 +220,7 @@ topology:
 #[test]
 fn populate_event_queue_capacity_from_deploy_preserves_instance_attribute() {
     // Per-instance attribute wins over deploy.yaml fallback per
-    // Q-RustNoStd-7 (a) resolution rule.
+    // the capacity resolution rule.
     let dir = tempfile::tempdir().expect("tempdir");
     let deploy_path = dir.path().join("deploy.yaml");
     std::fs::write(
@@ -257,7 +257,7 @@ topology:
 fn populate_event_queue_capacity_from_deploy_silent_skip_when_field_absent() {
     // Deploy parses but lacks the new field ⇒ model stays None.
     // Mirrors cache_platform / worker_placement silent-skip
-    // precedent (Q-η5 (a)).
+    // precedent (absent-input silent-skip).
     let dir = tempfile::tempdir().expect("tempdir");
     let deploy_path = dir.path().join("deploy.yaml");
     std::fs::write(

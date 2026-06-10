@@ -31,7 +31,7 @@ typedef struct {
     uint8_t payload[256];
 } codec_zenoh_err_t;
 
-/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+/* RFC variant-default-uniformity (C11): designated-initializer
  * macro carrying the codec's wire-MID-baked defaults. C has no Default
  * trait — round-trip safety (`codec_zenoh_err_t x = CODEC_ZENOH_ERR_DEFAULT_INIT;
  * codec_zenoh_err_t_encode(&x)` decodes back to the same arm)

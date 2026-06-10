@@ -3,7 +3,7 @@
 //
 // SCE Forge: Physical-quantity annotation primitives for numeric fields.
 //
-// NL→IR Mapping Roadmap Item 4: codegen-effective `sce:quantity` / `sce:scale`
+// Codegen-effective `sce:quantity` / `sce:scale`
 // / `sce:offset` attributes on `<sce:field>` and `<data>` elements declare a
 // linear `physical = raw * scale + offset` conversion in a named unit. The
 // resulting types thread through expression inference so that two operands

@@ -70,7 +70,7 @@ fn statechart_minimal(name: &str) -> String {
     )
 }
 
-/// Forge `<sce:link>` referencing a `<sce:rx-pool>` so C13-α-2's
+/// Forge `<sce:link>` referencing a `<sce:rx-pool>` so the cross-doc
 /// reassembly/burst validators have a 3-way join to follow when deploy
 /// is supplied.
 fn link_with_rx_pool(name: &str, rx_pool: &str) -> String {
@@ -169,7 +169,7 @@ fn run_orchestrate(
 fn orchestrate_without_deploy_silent_skips_c13_validators() {
     // Forge declares `udp_data`; a deploy.yaml WITHOUT `udp_data`
     // would fire `deploy/link-not-declared-in-deploy`. Omitting
-    // --deploy entirely must silent-skip per Q-η5 (a) precedent;
+    // --deploy entirely must silent-skip per the absent-input rule;
     // the CLI exits 0 and emits codegen output.
     let dir = ScratchDir::new("cli-orch-no-deploy");
     let scxml = write_doc(
@@ -210,7 +210,7 @@ fn orchestrate_without_deploy_silent_skips_c13_validators() {
 fn orchestrate_with_deploy_fires_link_not_declared_in_deploy() {
     // Forge has `udp_data`; deploy.yaml has `udp_scout` only. Pass A
     // (forge → deploy) fires `deploy/link-not-declared-in-deploy`
-    // through the C13-α-1 validator. CLI exits non-zero with NDJSON
+    // through `validate_links_cross_doc`. CLI exits non-zero with NDJSON
     // diagnostic on stderr.
     let dir = ScratchDir::new("cli-orch-not-declared");
     let scxml = write_doc(

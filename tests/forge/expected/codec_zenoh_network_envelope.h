@@ -45,7 +45,7 @@ using CodecZenohNetworkEnvelopeVariant = std::variant<
 >;
 
 struct CodecZenohNetworkEnvelope {
-    // RFC variant-default-uniformity Atomic β-cpp: the
+    // RFC variant-default-uniformity (Cpp): the
     // `std::in_place_index_t<N>{}` tag-type selects the arm marked
     // `<sce:arm default="true"/>` by index so a freshly-constructed
     // envelope holds that arm (not the first declared alternative
@@ -64,7 +64,7 @@ struct CodecZenohNetworkEnvelope {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecZenohNetworkEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // RFC §5.B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         // mode additionally peeks the cursor's next byte for variant tag
@@ -144,7 +144,7 @@ struct CodecZenohNetworkEnvelope {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // RFC §5.B peek-byte / streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
         // separate tag byte here. Streaming-prefix mode (own-field):

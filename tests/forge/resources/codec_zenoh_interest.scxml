@@ -44,7 +44,7 @@
                               terminates at the last entry and
                               supports future composition).
 
-     Disjunction primitive (Y3 atomic 2b-ii) consumer: the
+     Disjunction primitive (atomic 2b-ii) consumer: the
      `header.CURRENT || header.FUTURE` predicate on the body embed is
      the first realistic consumer of present_if's `||` chain grammar
      after the codec_present_if_disjunction demo fixture — matches
@@ -61,13 +61,13 @@
      restricted-gated wireexpr" — exactly the upstream not-is_final
      fragment after interest.c:43.
 
-     Composition: B1-γ flags (header with CURRENT@5 + FUTURE@6 + Z@7
-     subfields) + B1-α VLE u64 (always-present id) + B5-μ X1 present-
-     if-on-embed with Y3 atomic 2b-ii disjunction primitive
-     (header.CURRENT || header.FUTURE gate on body embed) + Y3 atomic
-     2a present-if-on-tlv-chain (header.Z gate) + Y3 atomic 1 entry-
-     flag termination (chain-as-last-field branch) + B5-ε surface G
-     (chain element = codec_zenoh_ext_entry variant) + Y0c <sce:embed>
+     Composition: flags flags (header with CURRENT@5 + FUTURE@6 + Z@7
+     subfields) + VLE u64 (always-present id) + repeat present-
+     if-on-embed with atomic 2b-ii disjunction primitive
+     (header.CURRENT || header.FUTURE gate on body embed) + atomic
+     2a present-if-on-tlv-chain (header.Z gate) + atomic 1 entry-
+     flag termination (chain-as-last-field branch) + variant-entry chain surface G
+     (chain element = codec_zenoh_ext_entry variant) + <sce:embed>
      (codec_zenoh_interest_body inner body fragment). No new
      primitives. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

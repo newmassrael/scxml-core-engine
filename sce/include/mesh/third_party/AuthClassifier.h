@@ -7,7 +7,7 @@
 // contract is auditable in isolation rather than locked inside a
 // minijinja template body.
 //
-// Q3 lock-in: transport-specific rejection signals classify on
+// Decision: transport-specific rejection signals classify on
 // substring presence — Zenoh ZException::what() contains certificate
 // / tls / auth / handshake tokens; SOMEIP availability=false on a
 // binding that opted into SD-denial classification fires unconditionally

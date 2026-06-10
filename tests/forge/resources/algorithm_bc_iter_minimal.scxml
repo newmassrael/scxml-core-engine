@@ -9,7 +9,7 @@
   uint16 return contract).
 
   Single fixture exercises four C7-lowering surfaces:
-    1. `<sce:foreach in="<bc-alias>">` source dispatch (Q-Lowering-4 b).
+    1. `<sce:foreach in="<bc-alias>">` source dispatch (locked decision b).
     2. Field access on the BC element (`entry.callback_id`).
     3. Native early `<sce:return>` from inside the BC iteration.
     4. The `for_each` body emit's `slot_idx` local — note we don't

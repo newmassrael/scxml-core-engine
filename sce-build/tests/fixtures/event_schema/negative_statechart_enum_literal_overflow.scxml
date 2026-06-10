@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  NL→IR Item C1 Path A Atomic 5 negative fixture: a statechart imports
+  Enum width-axis negative fixture: a statechart imports
   the cross-doc enum-bearing schema AND the underlying Enum doc, then
   compares `_event.data.status` (typed `enum:Result` over uint8) against
   an integer literal that overflows the underlying width. The narrowing
@@ -9,7 +9,7 @@
   no new wire code). The statechart-direct `<sce:import kind="enum"
   as="Result"/>` is required for the alias to resolve from the
   statechart's view; without it the narrowing silent-skips per the
-  Atomic 3 conservative-accept default.
+  conservative-accept default.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Watching-zenoh RFC §5.2 Round F-α — `<sce:driver href>` + C11 section
+// Watching-zenoh RFC §5.2 — `<sce:driver href>` + C11 section
 // attribute boundary fixture.
 //
 // Three contracts pinned here:
@@ -9,8 +9,8 @@
 //   1. A top-level `<sce:driver href="..."/>` whose target file exists
 //      under the SCXML file's parent directory lowers to a
 //      `#include "<resolved>"` line at the top of the emitted C11
-//      translation unit — proves the driver/class boundary
-//      (Q-Round-F-D2) where cross-TU symbol verification is delegated
+//      translation unit — proves the driver/class boundary,
+//      where cross-TU symbol verification is delegated
 //      to the C compiler.
 //
 //   2. A `<sce:driver href="missing.h"/>` whose target does NOT exist
@@ -23,11 +23,11 @@
 //   3. `platform.c11_section_attribute` set in `deploy.yaml` paired
 //      with a non-C11 codegen target (rust / cpp / kotlin / go /
 //      python) surfaces `mcu/section-attribute-on-non-mcu-target` at
-//      codegen entry — mirrors the Q-Call-7 non-MCU reject pattern
-//      (Q-Round-F-D3) so the section directive does not silently
+//      codegen entry — mirrors the extern-emit non-MCU reject
+//      pattern so the section directive does not silently
 //      disappear on a non-C11 compile. Function-definition prefix
-//      application on C11 itself is deferred to F-α-2 follow-up; this
-//      atomic only locks the reject half.
+//      application on C11 itself is exercised below (`SCE_SM_FN`
+//      emission).
 
 use std::fs;
 use std::path::PathBuf;
@@ -75,7 +75,7 @@ const FIXTURE_DRIVER_MISSING: &str = r#"<?xml version="1.0"?>
 /// Mock driver header — exists only so `resolve_driver_refs` can confirm
 /// filesystem presence. The C11 backend `#include`s the path verbatim;
 /// cross-TU symbol verification stays the C compiler's job.
-const DRIVER_HEADER_BODY: &str = "/* Round F-α test driver header */\n";
+const DRIVER_HEADER_BODY: &str = "/* section-driver test header */\n";
 
 fn template_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -139,7 +139,7 @@ fn fixture_b_driver_refs_absent_byte_stable_with_existing_fixtures() {
         .map(|(_, body)| body)
         .expect("C11 codegen emits a *_sm.c file");
     // The empty `for d in model.driver_refs` loop is byte-elided by the
-    // Round F-α template change, so a baseline fixture must not contain
+    // driver-header template change, so a baseline fixture must not contain
     // any stray `#include` line that wasn't there before.
     let extraneous = sm_c
         .lines()
@@ -185,7 +185,7 @@ fn fixture_d_section_attribute_on_non_mcu_target_rejects() {
 
     // Synthesise a minimal `deploy.yaml` carrying
     // `platform.c11_section_attribute` so the orchestrator's
-    // Q-Round-F-D3 reject fires on a non-C11 backend (rust).
+    // The section-attribute reject fires on a non-C11 backend (rust).
     let deploy_yaml = r#"
 topology:
   app_device:
@@ -225,7 +225,7 @@ topology:
 
 #[test]
 fn fixture_e_section_attribute_emits_macro_and_function_prefix() {
-    // Round F-α-2: C11 backend + `platform.c11_section_attribute.class`
+    // Section-attribute path: C11 backend + `platform.c11_section_attribute.class`
     // must (i) emit the `SCE_SM_FN` macro definition with the requested
     // section name, and (ii) prefix every statechart function definition
     // with `SCE_SM_FN`. Author override via pre-include `#define
@@ -283,7 +283,7 @@ topology:
     assert!(
         fn_prefix_count >= 10,
         "Expected SCE_SM_FN to appear on ≥10 function definition sites \
-         (the §5.O Atomic 0 minimal fixture emits ~30 statechart \
+         (the sourcemap minimal fixture emits ~30 statechart \
          functions). Got {fn_prefix_count}.",
     );
 }

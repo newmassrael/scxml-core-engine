@@ -1,4 +1,4 @@
-//! C2-γ integration tests — scheduler-capacity axis (4 spec-named
+//! Scheduler-capacity axis integration tests (4 spec-named
 //! codes + 1 renamed wire, watching-zenoh RFC §5.K lines 2423 / 2426 /
 //! 2428-9 / 2430-1 + RFC §5.D line 912).
 //!
@@ -24,7 +24,7 @@
 //! - Populator round-trip — placement block threads into
 //!   `ForgeCompileOptions.worker_placement` with sorted entries.
 //! - Silent-skip — deploy-unaware path leaves `worker_placement`
-//!   `None` per Q-η5 (a) precedent.
+//!   `None` per the absent-input silent-skip precedent.
 
 use std::fs;
 use std::path::Path;
@@ -391,7 +391,8 @@ fn placement_block_populates_worker_placement_options() {
     //   2. `compile_forge_with_deploy` populates
     //      `ForgeCompileOptions.worker_placement` from the deploy.
     //   3. Codegen-invariant `worker/inbox-ordering-relaxed-across-cores`
-    //      fires from the C2-β validator using the populated slice.
+    //      fires from the worker cross-resolution validator using
+    //      the populated slice.
     //
     // This pins the populator → validator wire end-to-end without
     // manually constructing `ForgeCompileOptions` in the test.

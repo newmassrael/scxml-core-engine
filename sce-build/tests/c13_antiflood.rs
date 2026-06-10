@@ -1,4 +1,4 @@
-//! C13-β — anti-flood + stateless_accept parse-time validators.
+//! Anti-flood + stateless_accept parse-time validators.
 //!
 //! Per watching-zenoh RFC §5.K lines 2272-2349 + 2449-2473:
 //! `trust_class: session_arming` listener links require the

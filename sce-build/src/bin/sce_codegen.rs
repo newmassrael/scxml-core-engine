@@ -3232,8 +3232,8 @@ impl W3cBackend for RustBackend {
         // W3C SCXML W3C-test runner always emits std-coupled code:
         // the 202-fixture AOT suite exercises std-backed engine paths
         // (HTTP, script engines, multi-thread Arc<Mutex> external
-        // queue). `--no-std` is a CLI-only profile per B-β; W3C
-        // fixtures stay byte-identical to the pre-B-γ2b state.
+        // queue). `--no-std` is a CLI-only profile; W3C
+        // fixtures stay byte-identical to the std emission.
         let code = sce_build::generator::generate(model, &self.tmpl_dir, false)?;
         Ok(vec![(format!("{input_stem}_sm.rs"), code)])
     }
@@ -3313,7 +3313,7 @@ impl W3cBackend for RustBackend {
         } else {
             3
         };
-        // Engine DI Parity RFC (Path B+): instantiate LuaEngine per-test and pass it
+        // Engine DI parity: instantiate LuaEngine per-test and pass it
         // to `Policy::new(engine)` instead of registering a process-global singleton.
         let policy_ctor = if needs_script {
             "    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> = \
@@ -3499,7 +3499,7 @@ impl W3cBackend for GoBackend {
         };
 
         let engine_setup = if needs_script {
-            // Engine DI Parity RFC (Path B+): each test owns its LuaEngine; the
+            // Engine DI parity: each test owns its LuaEngine; the
             // process-global `RegisterLuaEngine` / `GetScriptEngine` singleton
             // pair was deleted in the step #6 cleanup.
             format!(
@@ -3857,14 +3857,14 @@ impl W3cBackend for CppBackend {
 // ── PythonBackend ──────────────────────────────────────────────
 //
 // Emits AOT Python statechart modules through the existing
-// `sce_build::generator::generate_python` pipeline (γ-1..γ-5 surface).
+// `sce_build::generator::generate_python` pipeline.
 // `<invoke>` is still reject-walled by `reject_python_unsupported_features`
 // so any W3C fixture exercising invoke surfaces a clean InvalidConfig
 // at this layer and is reported as a generation failure rather than a
 // silent skip. Tests that pass the codegen filter land at
 // `sce-python-tests/generated/test{id}/test{id}_sm.py` and can be
 // driven by an external pytest harness (the harness wrapper itself
-// lands as a γ-6 follow-up — see the python_aot_gamma6_partial memo).
+// is consumer-gated).
 
 struct PythonBackend {
     sm_base: PathBuf,
@@ -3913,7 +3913,7 @@ impl W3cBackend for PythonBackend {
         write_if_changed_drift_aware(&child_file, &code, drift_ctx);
     }
 
-    // γ-4f: pytest wrapper lives alongside the generated `*_sm.py`
+    // The pytest wrapper lives alongside the generated `*_sm.py`
     // in `sce-python-tests/generated/test{N}/test_w3c_{N}.py`. The
     // wrapper imports the SM module by relative path (using sys.path
     // insertion at the test's own parent), instantiates an engine via
@@ -4901,9 +4901,9 @@ fn cmd_addr2sce(
             // human-readable prose. Exit non-zero so a CI gate that
             // depends on resolution does not silently green.
             eprintln!(
-                "addr2sce: --pc / --hardfault modes deferred to a follow-up atomic. \
-                 Atomic 1 ships --symbol only; add a consumer (e.g. an MCU JTAG \
-                 debugger config) to drive the addr2line / gimli dependency in."
+                "addr2sce: --pc / --hardfault modes are not implemented; \
+                 --symbol is the supported mode. A consumer (e.g. an MCU JTAG \
+                 debugger config) is needed to drive the addr2line / gimli dependency in."
             );
             std::process::exit(2);
         }

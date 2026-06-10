@@ -68,7 +68,7 @@ type {{ struct_name }} struct {
 // arm) requires using this constructor rather than the bare struct
 // literal `{{ struct_name }}{}`, which would zero-init every field
 // (and leave every Variant arm pointer nil for variant codecs).
-// RFC variant-default-uniformity Atomic β-go.
+// RFC variant-default-uniformity (Go).
 func New{{ struct_name }}() *{{ struct_name }} {
 	return &{{ struct_name }}{
 {% for field in fields %}
@@ -101,7 +101,7 @@ func Decode{{ struct_name }}(cursor *codec.SceCursor{{ params_after_first_arg }}
 	return &{{ struct_name }}{}, nil
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+	// RFC §5.B peek-byte / streaming-prefix:
 	// streaming prefix decode (variable-length fields supported via
 	// per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
 	// mode additionally peeks the cursor's next byte for variant tag
@@ -365,7 +365,7 @@ func (s *{{ struct_name }}) Encode(w codec.SceSink{{ params_after_first_arg }}) 
 	return nil
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-	// RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix.
+	// RFC §5.B peek-byte / streaming-prefix.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}

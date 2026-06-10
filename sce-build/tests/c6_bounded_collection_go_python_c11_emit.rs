@@ -172,7 +172,7 @@ fn c11_happy_compile_const_no_index_by() {
     assert!(code.contains("static inline uint32_t local_sub_table_len("));
     assert!(code.contains("static inline uint32_t local_sub_table_capacity("));
 
-    // Q-γ4-C11-iter-shape (a): callback iteration.
+    // C11 iteration shape: callback iteration.
     assert!(code.contains("static inline void local_sub_table_foreach("));
     assert!(code.contains("void (*fn)(const subscription_entry_t *elem, void *user),"));
 
@@ -319,7 +319,7 @@ fn go_happy_compile_const_no_index_by() {
     assert!(code.contains("const LocalSubTableCapacity = 8"));
     assert!(code.contains("const _ = uint16(8)"));
 
-    // Q-γ4-Go-Handle-method-set (a): receiver methods on uint32 newtype.
+    // Go Handle shape: receiver methods on uint32 newtype.
     assert!(code.contains("type LocalSubTableHandle uint32"));
     assert!(code.contains("func (h LocalSubTableHandle) Slot() uint32 {"));
     assert!(code.contains("func (h LocalSubTableHandle) Generation() uint32 {"));
@@ -346,7 +346,7 @@ fn go_happy_compile_const_no_index_by() {
     assert!(code.contains("func (t *LocalSubTable) Len() int {"));
     assert!(code.contains("func (t *LocalSubTable) Capacity() int {"));
 
-    // Q-γ4-Go-iter-shape (a): ForEach callback.
+    // Go iteration shape: ForEach callback.
     assert!(code.contains(
         "func (t *LocalSubTable) ForEach(fn func(subscription_entry.SubscriptionEntry)) {"
     ));
@@ -528,7 +528,7 @@ fn python_happy_compile_const_no_index_by() {
     assert!(code.contains("CAPACITY: int = 8"));
     assert!(code.contains("assert CAPACITY <= 0xFFFF,"));
 
-    // Q-γ4-Python-Handle-shape (a): frozen @dataclass(slots=True).
+    // Python Handle shape: frozen @dataclass(slots=True).
     assert!(code.contains("@dataclasses.dataclass(frozen=True, slots=True)"));
     assert!(code.contains("class LocalSubTableHandle:"));
     assert!(code.contains("raw: int"));
@@ -538,7 +538,7 @@ fn python_happy_compile_const_no_index_by() {
     assert!(code.contains("class LocalSubTable:"));
     assert!(code.contains("__slots__ = (\"_slots\", \"_generation\", \"_occupied\", \"_count\")"));
 
-    // Q-γ4-Python-overflow-emit (a): Optional[Handle] (None on reject).
+    // Python overflow emit: Optional[Handle] (None on reject).
     assert!(code
         .contains("def insert(self, elem: SubscriptionEntry) -> Optional[LocalSubTableHandle]:"));
     assert!(code.contains("def remove(self, handle: LocalSubTableHandle) -> bool:"));

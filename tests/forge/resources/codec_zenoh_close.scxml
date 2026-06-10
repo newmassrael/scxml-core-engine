@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Close body (RFC §5.B
-     B5-prep — first reachable downstream consumer of B1-B4 primitives
+     zenoh groundwork — first reachable downstream consumer of B1-B4 primitives
      from the watching-zenoh authoring path).
 
      Upstream zenoh-pico shape (`_z_close_encode` in
@@ -19,7 +19,7 @@
   <datamodel>
     <sce:field id="reason" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
   </datamodel>
-  <!-- RFC §5.B B5-θ inline test vectors. Each row pins one wire byte
+  <!-- RFC §5.B test-vector inline test vectors. Each row pins one wire byte
        sequence to the expected decoded form; the per-backend sidecar
        (`<fixture>_test.{rs,h}`) generates a round-trip oracle. Same
        4 reason codes as the numerical_reference.json oracle harness

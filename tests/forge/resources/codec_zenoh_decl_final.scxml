@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh declare-final body (RFC §5.B B5-ι —
+<!-- SCE Forge conformance: Zenoh declare-final body (RFC §5.B cross-codec composition —
      cross-codec composition fixture authoring the ~30 zenoh messages
      end-to-end on B1-B5 primitives).
 
@@ -13,7 +13,7 @@
      header carrying the sub-variant tag is written outside this body
      codec, so the body scope is empty.
 
-     Mirrors codec_zenoh_keep_alive's empty-body shape; B5-α already
+     Mirrors codec_zenoh_keep_alive's empty-body shape; flags already
      lifted parser.rs's zero-field codec rejection so this fixture is
      pure composition with no new IR/parser/template surface. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

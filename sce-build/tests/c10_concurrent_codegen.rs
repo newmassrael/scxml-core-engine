@@ -1,4 +1,4 @@
-//! C10-β — multi-link concurrency contract + 3 codes (260 → 263).
+//! Multi-link concurrency contract + 3 codes (260 → 263).
 //!
 //! Per watching-zenoh RFC §5.N lines 3031-3062: cooperative scheduler
 //! slot ceiling, per-link budget sanity, FSM event-queue sizing, plus
@@ -398,7 +398,7 @@ fn render_c11_silent_skips_without_budgets() {
 }
 
 #[test]
-fn render_other_backends_silent_skip_per_q_c10_beta_7() {
+fn render_other_backends_silent_skip() {
     for lang in [
         Language::Cpp,
         Language::Kotlin,
@@ -416,7 +416,7 @@ fn render_other_backends_silent_skip_per_q_c10_beta_7() {
         .expect("non-Rust/C11 silent-skip succeeds");
         assert!(
             files.is_empty(),
-            "{:?} has no link template footprint per Q-C10-β-7 (a)",
+            "{:?} has no link template footprint (rust+c11 only)",
             lang
         );
     }

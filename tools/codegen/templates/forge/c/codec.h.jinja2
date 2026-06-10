@@ -122,7 +122,7 @@ typedef struct {
 {% for arm in variant.arms %}{% if arm.is_default %}{% set ns.default_arm = arm %}{% endif %}{% endfor %}
 {% endif %}
 {% if has_flag_default or (has_variant and ns.default_arm) %}
-/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+/* RFC variant-default-uniformity (C11): designated-initializer
  * macro carrying the codec's wire-MID-baked defaults. C has no Default
  * trait — round-trip safety (`{{ c_struct_typedef }} x = {{ c_default_init_macro }};
  * {{ c_struct_typedef }}_encode(&x)` decodes back to the same arm)
@@ -182,7 +182,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     return SCE_FORGE_CODEC_OK;
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-    /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+    /* RFC §5.B peek-byte / streaming-prefix:
      * streaming prefix decode (variable-length fields supported via
      * per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
      * mode additionally peeks the cursor's next byte for variant tag
@@ -389,7 +389,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
     return SCE_FORGE_CODEC_OK;
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-    /* RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+    /* RFC §5.B peek-byte / streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode
      * prepends its own header byte (which the decoder peeked); no
      * separate tag byte here. Streaming-prefix mode (own-field):

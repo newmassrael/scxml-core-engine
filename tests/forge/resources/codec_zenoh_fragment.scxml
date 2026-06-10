@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Fragment body (RFC
-     §5.B B5-ι — cross-codec composition fixture authoring the ~30
+     §5.B — cross-codec composition fixture authoring the ~30
      zenoh messages end-to-end on B1-B5 primitives).
 
      Upstream zenoh-pico shape (`_z_fragment_encode` in
@@ -17,7 +17,7 @@
      the body). The R-flag's reliable/best-effort semantics is also
      host-level.
 
-     Applied composition: B1-α VLE primitive (sn) + B1 tail (payload).
+     Applied composition: VLE VLE primitive (sn) + B1 tail (payload).
      max-size for payload is 65536 — same upper bound as codec_zenoh_frame
      since fragment shares the per-batch link MTU constraint. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -28,7 +28,7 @@
     <sce:field id="payload" sce:type="bytes"  sce:byte="1" sce:bit-size="tail"
                sce:max-size="65536"/>
   </datamodel>
-  <!-- RFC §5.B B5-θ inline test vectors. Mirrors the codec_zenoh_frame
+  <!-- RFC §5.B test-vector inline test vectors. Mirrors the codec_zenoh_frame
        4-case oracle (same VLE width boundaries on sn + tail-byte
        payload composition); fragment and frame share an identical
        body wire shape, differing only in the enclosing MID. -->

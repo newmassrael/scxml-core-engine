@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: codec variant primitive (RFC §5.B B1-β).
+<!-- SCE Forge conformance: codec variant primitive (RFC §5.B variant).
      Reads a uint8 message-id tag, then dispatches into one of two
      enumerated arm bodies (SessionOpen / SessionClose) imported as
      codec aliases. The <sce:default> arm catches unenumerated tag

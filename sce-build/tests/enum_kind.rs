@@ -1,8 +1,8 @@
-//! NL→IR Mapping Roadmap Item C1 Path A Atomic 1 — Enum kind IR.
+//! NL→IR Mapping Roadmap Item C1 Path A — Enum kind IR.
 //!
 //! Verifies the parse-time invariants of `sce:kind="enum"` documents
-//! per design RFC §2 (DL-3'). Atomic 1 ships parser + IR only; codegen
-//! is gated to `template_ships(Enum, *) = false` and lands in Atomic 2.
+//! per design RFC §2 (DL-3'). This file covers parser + IR plus the
+//! `template_ships` codegen-matrix gate.
 //!
 //! Coverage:
 //! - 3 positive fixtures: minimal (3 variants, uint8), wide (uint16
@@ -11,10 +11,10 @@
 //!   value-overflows-underlying, unsupported-underlying-type
 //! - Cross-cutting: ForgeKind::Enum is supported, listed in
 //!   `ALL_ATTR_NAMES`, displays as "enum", classifies as Generic, and
-//!   `template_ships(Enum, *) = false` on every backend
+//!   `template_ships(Enum, *)` holds on every backend
 //! - Lattice: `SceType::Enum(EnumRef)` parses from `enum:Alias`;
 //!   `InferredType::from_sce_type` returns `Unknown` (cross-doc
-//!   resolution defers to Atomic 5 narrowing)
+//!   resolution happens at literal-width narrowing)
 
 use sce_build::forge::error::ValidationError;
 use sce_build::forge::model::{EnumRef, ForgeDocument, ForgeKind, RuntimeDep, SceType};
@@ -55,21 +55,19 @@ fn forge_kind_enum_is_stateless_zero_runtime_dep() {
 
 #[test]
 fn forge_kind_enum_count_is_eighteen() {
-    // Atomic 1: pre-existing 16 + Enum = 17. Atomic 3 landed
-    // EventSchema as the 18th kind.
+    // Pre-existing 16 + Enum = 17; EventSchema is the 18th kind.
     assert_eq!(ForgeKind::ALL_ATTR_NAMES.len(), 18);
 }
 
-// ── codegen_matrix gate (Atomic 2: 6-backend lockstep) ──────────
+// ── codegen_matrix gate (6-backend lockstep) ────────────────────
 
 #[test]
 fn enum_template_ships_on_all_six_backends() {
     use sce_build::forge::codegen_matrix::template_ships;
     use sce_build::generator::Language;
-    // NL→IR Item C1 Path A Atomic 2 acceptance gate per design RFC §5.2:
+    // NL→IR Item C1 Path A acceptance gate per design RFC §5.2:
     // Enum lowers to a backend-native typed enum on every Generic-class
-    // backend. Atomic 1 shipped with `false` on every arm (kind in IR
-    // only); Atomic 2 flips the matrix in lockstep with the 6 new
+    // backend; the matrix flips in lockstep with the 6
     // templates under `tools/codegen/templates/forge/<lang>/enum.<ext>.jinja2`.
     for lang in [
         Language::Cpp,
@@ -81,7 +79,7 @@ fn enum_template_ships_on_all_six_backends() {
     ] {
         assert!(
             template_ships(ForgeKind::Enum, lang),
-            "Atomic 2 expects template_ships(Enum, {lang:?}) = true; \
+            "Enum codegen expects template_ships(Enum, {lang:?}) = true; \
              per-backend Jinja2 template must ship in lockstep with this flag"
         );
     }
@@ -108,9 +106,9 @@ fn sce_type_from_attr_rejects_empty_alias() {
 
 #[test]
 fn sce_type_enum_inferred_type_is_unknown_until_resolution() {
-    // Atomic 1 stance: the inference layer declines to claim the
-    // type (Unknown). Atomic 5 literal-width narrowing resolves
-    // against the imported EnumModel's underlying_type.
+    // The inference layer declines to claim the type (Unknown);
+    // literal-width narrowing resolves against the imported
+    // EnumModel's underlying_type.
     let t = SceType::Enum(EnumRef {
         alias: "Result".into(),
     });
@@ -267,18 +265,19 @@ fn negative_enum_unsupported_underlying_rejects() {
     );
 }
 
-// ── F-κ doc-as-contract: codegen ignores strict_variants ─────────
+// ── strict-variants doc-as-contract: codegen ignores it ──────────
 
 /// `forge::generator::render_enum` carries a comment asserting that
 /// `EnumModel::strict_variants` is never consumed by codegen — the
-/// F-κ opt-out is a parse-time validator concern. This drift guard
+/// strict-variants opt-out is a parse-time validator concern. This drift guard
 /// mechanises that claim: two enum documents differing only in
 /// `sce:strict-variants` (and sharing the same identifier so the
 /// emitted symbol names stay byte-identical) must produce
 /// byte-identical [`GeneratedOutput`] at every backend. Any
 /// divergence signals codegen has started reading the opt-out
 /// flag — at which point either the codegen-side read must revert
-/// or design RFC §8 F-κ must expand to cover the new surface.
+/// or design RFC §8 (strict variant membership) must expand to
+/// cover the new surface.
 #[test]
 fn enum_codegen_ignores_strict_variants_at_every_backend() {
     use sce_build::compile_forge_from_string;

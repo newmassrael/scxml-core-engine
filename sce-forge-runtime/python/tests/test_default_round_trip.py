@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
-# RFC variant-default-uniformity Atomic γ-3 python half — runtime
+# RFC variant-default-uniformity python half — runtime
 # round-trip property test. Mirrors
 # sce-forge-runtime/rust/tests/forge_default_round_trip.rs for the
 # Python backend: compiles the 3 default-marker fixtures into a
@@ -153,7 +153,7 @@ class TestDefaultRoundTrip(unittest.TestCase):
             "decode → encode must produce byte-equal output (round-trip stability)",
         )
 
-        # RFC §5.B B1-α writer-direct path: BytearraySink-backed encode
+        # RFC §5.B writer-direct path: BytearraySink-backed encode
         # must produce bytes equal to the facade output.
         dst = bytearray()
         result = decoded.encode(BytearraySink(dst))

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// NL→IR Item C1 Path A Atomic 2 — per-backend Enum codegen smoke gate.
+// NL→IR Item C1 Path A — per-backend Enum codegen smoke gate.
 //
 // Generates each of the 3 positive Enum fixtures under
 // `tests/fixtures/enum/` on all 6 backends and feeds the output to a

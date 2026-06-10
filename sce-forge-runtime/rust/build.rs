@@ -92,7 +92,7 @@ fn main() {
     std::fs::write(&harness_path, harness)
         .unwrap_or_else(|e| panic!("write {}: {e}", harness_path.display()));
 
-    // Step 4: RFC variant-default-uniformity Atomic β-Rust runtime round-
+    // Step 4: RFC variant-default-uniformity Rust runtime round-
     // trip — generate the 3 default-marker fixtures outside the
     // conformance manifest (they're not part of the numerical-conformance
     // catalog; they exist solely to prove the Default-emission contract
@@ -120,7 +120,7 @@ fn main() {
 
     // Step 5: owned->borrowed projection round-trip. The *fallible*
     // `try_as_borrowed` path (`try_project_bounded` over a bounded list,
-    // plus embed / present-if / list of a fallible body) has no B5-θ
+    // plus embed / present-if / list of a fallible body) has no
     // test-vector sidecar — that gate rejects repeat / tlv-chain /
     // present-if codecs — so generate the nested-fallible codecs (and
     // their locator leaf) here for an explicit runtime round-trip +

@@ -1,11 +1,12 @@
-//! C9-γ — Fragment / reassembly buffer-pool variant codegen surface.
+//! Fragment / reassembly buffer-pool variant codegen surface.
 //!
 //! Per watching-zenoh RFC §5.M lines 2680-2698 (variant schema) +
 //! 2864-2876 (fragment FSM consumer) + 2976-2981 (codegen self-check
-//! anchor) + 2659-2664 (backend coverage). C9-α (`8c6b4e1e`) shipped the
+//! anchor) + 2659-2664 (backend coverage). `8c6b4e1e` shipped the
 //! `BufferPoolVariant::Reassembly(ReassemblyConfig)` schema + 2
-//! parse-time validators; C9-β cross-doc validators folded into C13-α-2
-//! (`c7287424`). C9-γ closes the chain by extending the Rust + C11
+//! parse-time validators; the cross-doc validators folded into the
+//! deploy-time reassembly checks (`c7287424`). This surface closes
+//! the chain by extending the Rust + C11
 //! buffer-pool templates with the reassembly-variant per-slot state
 //! (fragment-index bitmap + deadline + ZID peer-id) the author-level
 //! Fragment FSM (`docs/reassembly-fsm.md` §2) consumes.
@@ -13,7 +14,7 @@
 //! Backend coverage per RFC §5.M lines 2659-2664 — emits only on
 //! `(rust, *)` + `(c11, bare_metal)`. Non-MCU backends inherit
 //! `codegen/mcu-class-kind-on-non-mcu-language` rejection from the
-//! existing C9-α `ForgeKind::BufferPool` axis.
+//! existing `ForgeKind::BufferPool` axis.
 //!
 //! ## Test surface
 //!

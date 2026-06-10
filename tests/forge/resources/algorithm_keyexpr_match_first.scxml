@@ -5,18 +5,18 @@
   KeyExpr matching reference exemplar. Iterates the bounded-collection
   `subs` (via the C7-foundation `get_by_slot` index-loop) and dispatches
   into the inner `keyexpr_intersect` algorithm (cross-doc algorithm
-  import — Q-C7-4 / Q-C7-8 (a) lock). Returns the matching slot index
+  import — locked decision). Returns the matching slot index
   (1-based; 0xFFFF reserved as not-found sentinel matching the uint16
   return contract).
 
-  Q-C7-9 (a) lock — v1 calls `keyexpr_intersect(entry.callback_id,
+  locked decision — v1 calls `keyexpr_intersect(entry.callback_id,
   target)` for exact uint32 ID equality. Watching-zenoh-side fixtures
   (C8 multicast session FSM, C12 liveliness token FSM) author their
   own `keyexpr_intersect` variants with wildcard / prefix semantics
   against this v1 BC-iter contract.
 
   Two C7-lowering surfaces exercised:
-    1. `<sce:foreach in="subs">` — BC-foreach index-loop emit (Q-C7-2 (c)).
+    1. `<sce:foreach in="subs">` — BC-foreach index-loop emit (locked decision).
     2. `km(entry.callback_id, target)` — cross-algorithm dispatch via
        expression-form qualified-call rename (alias `km` substituted by
        `<namespace>::<name>` for Rust/Cpp, `<namespace>.<Name>` for Go,
@@ -24,7 +24,7 @@
        camelCase bare on Kotlin via wildcard import).
 
   The expression-form dispatch is the value-returning path (cond reads
-  bool). The `<sce:call>` statement form (Q-C7-4) is for void-returning
+  bool). The `<sce:call>` statement form (locked decision) is for void-returning
   cross-doc dispatch which is rarer in v1 — covered by lower-level
   unit tests in c7_keyexpr_match.rs rather than this fixture.
 -->

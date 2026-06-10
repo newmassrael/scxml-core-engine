@@ -46,7 +46,7 @@ using {{ element_pascal }}Type = ::SCE::Generated::{{ element_pascal }}::{{ elem
 inline constexpr std::size_t CAPACITY = {{ capacity }};
 
 /// Slot-index bit width inside the packed `{{ pascal }}Handle` u32.
-/// Q-γ2-Handle-bits (a) symmetric split — 65536 slots × 65536
+/// 16/16 symmetric split — 65536 slots × 65536
 /// generations, ABI-parity with C11 `uint32_t`.
 inline constexpr std::uint32_t SLOT_BITS = 16;
 /// Generation-counter bit width inside the packed `{{ pascal }}Handle` u32.
@@ -211,7 +211,7 @@ public:
     /// based access is for iteration paths where the caller walks
     /// slot indices directly). Backs the C7 `<sce:foreach in=
     /// "<bc-alias>">` index-loop lowering across all 6 backends
-    /// (Q-C7-2 (c) lock 2026-05-13).
+    /// (locked 2026-05-13).
     std::optional<{{ element_pascal }}Type> get_by_slot(std::uint32_t slot) const {
         const std::size_t s = static_cast<std::size_t>(slot);
         if (s >= CAPACITY) return std::nullopt;
