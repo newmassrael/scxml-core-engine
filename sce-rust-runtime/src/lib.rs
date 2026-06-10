@@ -156,21 +156,23 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 ///
 /// ## Per-entry footprint (no_std)
 ///
-/// Each `ScheduledEntry` is dominated by its `heapless::String<256>` fields
-/// (~264 B each), so at this capacity the ring is the largest single
-/// contributor to the no_std `Engine`. The delayed-send `event_data` JSON
-/// string is **elided** under no_std — the no_std build has no script engine
-/// and the scheduler drain discards the data string anyway (see the
-/// `ScheduledEntry` doc-comment in `engine.rs`), removing ~264 B per entry with
-/// no behavioral change. The per-entry `send_id` string is **retained**: it is
-/// load-bearing for `<cancel>` (`PullScheduler::cancel_event` matches by send
-/// id). Eliding it for cancel-free machines would require a per-policy
-/// `StatePolicy::ScheduledSendId` associated type (a zero-size store vs
-/// `SceString`, mirroring the `EventQueue` associated type) gated on a
-/// `<cancel>`-presence capability — deferred until an MCU consumer surfaces a
-/// cancel-free delayed-send machine, per the same
-/// `feedback_planned_not_yagni` discipline (footprint infra rides consumer
-/// signal, not speculation).
+/// Each `ScheduledEntry`'s two `heapless::String<256>` fields (~264 B each)
+/// are removed under no_std unless load-bearing:
+///
+/// - The delayed-send `event_data` JSON string is **elided** profile-wide:
+///   the no_std build has no script engine and the scheduler drain discards
+///   the data string anyway (see the `ScheduledEntry` doc-comment in
+///   `engine.rs`), so removal has no behavioral effect.
+/// - The `send_id` cancel key is **per-machine**: it is read only by
+///   `PullScheduler::cancel_event` (W3C SCXML 6.3 `<cancel sendid>` matches
+///   by send id), so codegen selects the zero-size [`ElidedSendId`] via the
+///   `StatePolicy::ScheduledSendId` associated type (mirroring the
+///   `EventQueue` associated type) for documents with no `<cancel>`, and the
+///   load-bearing `SceString` otherwise.
+///
+/// A cancel-free entry thus carries only the event value and its `ready_at`
+/// time-point; the ring remains the largest single `Engine` contributor under
+/// no_std, but at hundreds of bytes rather than kilobytes.
 ///
 /// The std build's `PullScheduler` keeps `Vec<ScheduledEntry<E>>` (unbounded)
 /// so this constant only affects the `--features=no_std` variant.
