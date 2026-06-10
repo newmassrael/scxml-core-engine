@@ -45,19 +45,21 @@ concurrency:
 
 env:
   # Pin to a Mnemosyne commit, never a branch; --locked builds against its
-  # committed Cargo.lock for a reproducible binary. c2dbdf1 (R423) adds the
-  # MisclassifiedCoverage invariant (an exempt section carrying an implements/
-  # verifies binding is rejected under severity_classification); R421/R422
-  # introduced the 3-state coverage_expectation (normative|out_of_scope_here|
-  # informational) and retired the legacy `informative` value; R416-R420 add the
-  # opt-in confirmation subsystem (severity_confirmation unset = off here).
+  # committed Cargo.lock for a reproducible binary. a32f284 (R427) completes the
+  # verify-axis validity rung from SCE's field report: R425 adds the
+  # BlanketVerifies detector (severity_blanket) + the unconfirmed_verifies
+  # surface, R426 adds the authoritative verifies-catalog linkage check
+  # ([verifies_catalog] + validate-verifies-linkage), R427 lets a catalog-
+  # validated binding count as confirmed without a model review. R423 added the
+  # MisclassifiedCoverage invariant (severity_classification); R421/R422 the
+  # 3-state coverage_expectation; R416-R420 the confirmation subsystem.
   # Earlier on this line: R400 retired the markdown-doc render path (store is the
   # sole SSOT, no GENERATED.md round-trip), R402-R405 added the offline
   # content-drift gate (NormativeExcerpt.text_sha256 + committed-EPUB file pin),
   # R407 projects each section body from the pinned EPUB, R413 added the verify
   # axis. The scxml store is schema v11; mesh/wire stay v8 (the v11 CLI reads
   # them, validate is read-only). See claudedocs/rfc-epub-ssot-adoption-poc.md.
-  MNEMOSYNE_REV: c2dbdf1440bfd32cb1285e702b092e154f38565f
+  MNEMOSYNE_REV: a32f28438ede6e0a21310245c8b5a4cfb0972994
 
 jobs:
   citations:
@@ -90,6 +92,7 @@ jobs:
             ( cd "${ws}" \
                 && mnemosyne-cli validate-workspace \
                 && mnemosyne-cli validate-code-refs \
+                && mnemosyne-cli validate-verifies-linkage \
                 && mnemosyne-cli validate-content-drift )
             echo "::endgroup::"
           done

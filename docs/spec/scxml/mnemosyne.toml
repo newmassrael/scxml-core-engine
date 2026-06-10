@@ -140,6 +140,12 @@ severity_verification = "reject"
 # binding asserts code, so the section is not exempt. Rejects the scxml-3.11 /
 # scxml-6.4.4 shape mechanically (the gate that was missing when those slipped).
 severity_classification = "reject"
+# R425 BlanketVerifies: one (file, symbol) carrying `verifies` on >1 section.
+# A conformance test verifies one section; N>1 is the blanket-binding smell that
+# produced the 67% mis-binding episode this ledger corrected. warn is the
+# regression fence — after the specnum rebuild each test targets exactly one
+# section, so this reports 0; a future re-introduction trips it.
+severity_blanket = "warn"
 comment_only = true
 
 # This workspace owns the `scxml-` namespace (W3C SCXML spec mirror). A citation's
@@ -171,3 +177,17 @@ backend = "tree-sitter-cpp"
 [plugins.symbol_resolver.rust]
 transport = "in-process"
 backend = "tree-sitter-rust"
+
+# R426 verifies-catalog linkage (SCE field-report P2). The authoritative
+# correctness gate for the verify axis: every `verifies` binding must match the
+# section the test's own W3C metadata.txt `specnum` declares it targets. The
+# catalog JSON is consumer-generated (Mnemosyne takes only the neutral
+# `verifies-catalog/v1` contract, never the metadata.txt parser) by
+# tools/mnemosyne-adoption/gen_verifies_catalog.py; a CI drift guard keeps it in
+# lockstep with the test metadata. reject because a binding that contradicts the
+# test's declared target is a wrong claim, not an intermediate state. Also powers
+# the R427 confirmed-rule catalog-live branch: a catalog-validated binding counts
+# as confirmed without a model semantic_review (deterministic > model).
+[verifies_catalog]
+path = "docs/spec/scxml/.atomic/verifies-catalog.json"
+severity = "reject"
