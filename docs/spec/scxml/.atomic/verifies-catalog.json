@@ -1,1396 +1,1396 @@
 {
-  "version": 1,
+  "format": "verifies-catalog/v1",
   "entries": [
     {
       "file": "tests/w3c/aot_tests/Test144.h",
       "symbol": "Test144",
-      "sections": [
+      "section_ids": [
         "scxml-4.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test147.h",
       "symbol": "Test147",
-      "sections": [
+      "section_ids": [
         "scxml-4.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test148.h",
       "symbol": "Test148",
-      "sections": [
+      "section_ids": [
         "scxml-4.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test149.h",
       "symbol": "Test149",
-      "sections": [
+      "section_ids": [
         "scxml-4.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test150.h",
       "symbol": "Test150",
-      "sections": [
+      "section_ids": [
         "scxml-4.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test151.h",
       "symbol": "Test151",
-      "sections": [
+      "section_ids": [
         "scxml-4.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test152.h",
       "symbol": "Test152",
-      "sections": [
+      "section_ids": [
         "scxml-4.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test153.h",
       "symbol": "Test153",
-      "sections": [
+      "section_ids": [
         "scxml-4.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test155.h",
       "symbol": "Test155",
-      "sections": [
+      "section_ids": [
         "scxml-4.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test156.h",
       "symbol": "Test156",
-      "sections": [
+      "section_ids": [
         "scxml-4.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test158.h",
       "symbol": "Test158",
-      "sections": [
+      "section_ids": [
         "scxml-4.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test159.h",
       "symbol": "Test159",
-      "sections": [
+      "section_ids": [
         "scxml-4.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test172.h",
       "symbol": "Test172",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test173.h",
       "symbol": "Test173",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test174.h",
       "symbol": "Test174",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test175.h",
       "symbol": "Test175",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test176.h",
       "symbol": "Test176",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test178.h",
       "symbol": "Test178",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test179.h",
       "symbol": "Test179",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test183.h",
       "symbol": "Test183",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test185.h",
       "symbol": "Test185",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test186.h",
       "symbol": "Test186",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test187.h",
       "symbol": "Test187",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test189.h",
       "symbol": "Test189",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test190.h",
       "symbol": "Test190",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test191.h",
       "symbol": "Test191",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test192.h",
       "symbol": "Test192",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test193.h",
       "symbol": "Test193",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test194.h",
       "symbol": "Test194",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test198.h",
       "symbol": "Test198",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test199.h",
       "symbol": "Test199",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test200.h",
       "symbol": "Test200",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test201.h",
       "symbol": "Test201",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test205.h",
       "symbol": "Test205",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test207.h",
       "symbol": "Test207",
-      "sections": [
+      "section_ids": [
         "scxml-6.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test208.h",
       "symbol": "Test208",
-      "sections": [
+      "section_ids": [
         "scxml-6.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test210.h",
       "symbol": "Test210",
-      "sections": [
+      "section_ids": [
         "scxml-6.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test215.h",
       "symbol": "Test215",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test216.h",
       "symbol": "Test216",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test220.h",
       "symbol": "Test220",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test223.h",
       "symbol": "Test223",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test224.h",
       "symbol": "Test224",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test225.h",
       "symbol": "Test225",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test226.h",
       "symbol": "Test226",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test228.h",
       "symbol": "Test228",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test229.h",
       "symbol": "Test229",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test230.h",
       "symbol": "Test230",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test232.h",
       "symbol": "Test232",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test233.h",
       "symbol": "Test233",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test234.h",
       "symbol": "Test234",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test235.h",
       "symbol": "Test235",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test236.h",
       "symbol": "Test236",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test237.h",
       "symbol": "Test237",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test239.h",
       "symbol": "Test239",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test240.h",
       "symbol": "Test240",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test241.h",
       "symbol": "Test241",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test242.h",
       "symbol": "Test242",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test243.h",
       "symbol": "Test243",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test244.h",
       "symbol": "Test244",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test245.h",
       "symbol": "Test245",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test247.h",
       "symbol": "Test247",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test250.h",
       "symbol": "Test250",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test252.h",
       "symbol": "Test252",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test253.h",
       "symbol": "Test253",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test276.h",
       "symbol": "Test276",
-      "sections": [
+      "section_ids": [
         "scxml-5.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test277.h",
       "symbol": "Test277",
-      "sections": [
+      "section_ids": [
         "scxml-5.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test278.h",
       "symbol": "Test278",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test279.h",
       "symbol": "Test279",
-      "sections": [
+      "section_ids": [
         "scxml-5.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test280.h",
       "symbol": "Test280",
-      "sections": [
+      "section_ids": [
         "scxml-5.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test286.h",
       "symbol": "Test286",
-      "sections": [
+      "section_ids": [
         "scxml-5.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test287.h",
       "symbol": "Test287",
-      "sections": [
+      "section_ids": [
         "scxml-5.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test294.h",
       "symbol": "Test294",
-      "sections": [
+      "section_ids": [
         "scxml-5.5"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test298.h",
       "symbol": "Test298",
-      "sections": [
+      "section_ids": [
         "scxml-5.7"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test301.h",
       "symbol": "Test301",
-      "sections": [
+      "section_ids": [
         "scxml-5.8"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test302.h",
       "symbol": "Test302",
-      "sections": [
+      "section_ids": [
         "scxml-5.8"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test303.h",
       "symbol": "Test303",
-      "sections": [
+      "section_ids": [
         "scxml-5.8"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test304.h",
       "symbol": "Test304",
-      "sections": [
+      "section_ids": [
         "scxml-5.8"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test307.h",
       "symbol": "Test307",
-      "sections": [
+      "section_ids": [
         "scxml-5.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test309.h",
       "symbol": "Test309",
-      "sections": [
+      "section_ids": [
         "scxml-5.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test310.h",
       "symbol": "Test310",
-      "sections": [
+      "section_ids": [
         "scxml-5.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test311.h",
       "symbol": "Test311",
-      "sections": [
+      "section_ids": [
         "scxml-5.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test312.h",
       "symbol": "Test312",
-      "sections": [
+      "section_ids": [
         "scxml-5.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test313.h",
       "symbol": "Test313",
-      "sections": [
+      "section_ids": [
         "scxml-5.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test314.h",
       "symbol": "Test314",
-      "sections": [
+      "section_ids": [
         "scxml-5.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test318.h",
       "symbol": "Test318",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test319.h",
       "symbol": "Test319",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test321.h",
       "symbol": "Test321",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test322.h",
       "symbol": "Test322",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test323.h",
       "symbol": "Test323",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test324.h",
       "symbol": "Test324",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test325.h",
       "symbol": "Test325",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test326.h",
       "symbol": "Test326",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test329.h",
       "symbol": "Test329",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test330.h",
       "symbol": "Test330",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test331.h",
       "symbol": "Test331",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test332.h",
       "symbol": "Test332",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test333.h",
       "symbol": "Test333",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test335.h",
       "symbol": "Test335",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test336.h",
       "symbol": "Test336",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test337.h",
       "symbol": "Test337",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test338.h",
       "symbol": "Test338",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test339.h",
       "symbol": "Test339",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test342.h",
       "symbol": "Test342",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test343.h",
       "symbol": "Test343",
-      "sections": [
+      "section_ids": [
         "scxml-5.7"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test344.h",
       "symbol": "Test344",
-      "sections": [
+      "section_ids": [
         "scxml-5.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test346.h",
       "symbol": "Test346",
-      "sections": [
+      "section_ids": [
         "scxml-5.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test347.h",
       "symbol": "Test347",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test348.h",
       "symbol": "Test348",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test349.h",
       "symbol": "Test349",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test350.h",
       "symbol": "Test350",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test351.h",
       "symbol": "Test351",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test352.h",
       "symbol": "Test352",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test354.h",
       "symbol": "Test354",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test355.h",
       "symbol": "Test355",
-      "sections": [
+      "section_ids": [
         "scxml-3.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test364.h",
       "symbol": "Test364",
-      "sections": [
+      "section_ids": [
         "scxml-3.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test372.h",
       "symbol": "Test372",
-      "sections": [
+      "section_ids": [
         "scxml-3.7"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test375.h",
       "symbol": "Test375",
-      "sections": [
+      "section_ids": [
         "scxml-3.8"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test376.h",
       "symbol": "Test376",
-      "sections": [
+      "section_ids": [
         "scxml-3.8"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test377.h",
       "symbol": "Test377",
-      "sections": [
+      "section_ids": [
         "scxml-3.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test378.h",
       "symbol": "Test378",
-      "sections": [
+      "section_ids": [
         "scxml-3.9"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test387.h",
       "symbol": "Test387",
-      "sections": [
+      "section_ids": [
         "scxml-3.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test388.h",
       "symbol": "Test388",
-      "sections": [
+      "section_ids": [
         "scxml-3.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test396.h",
       "symbol": "Test396",
-      "sections": [
+      "section_ids": [
         "scxml-3.12"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test399.h",
       "symbol": "Test399",
-      "sections": [
+      "section_ids": [
         "scxml-3.12"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test401.h",
       "symbol": "Test401",
-      "sections": [
+      "section_ids": [
         "scxml-3.12"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test402.h",
       "symbol": "Test402",
-      "sections": [
+      "section_ids": [
         "scxml-3.12"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test404.h",
       "symbol": "Test404",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test405.h",
       "symbol": "Test405",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test406.h",
       "symbol": "Test406",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test407.h",
       "symbol": "Test407",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test409.h",
       "symbol": "Test409",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test411.h",
       "symbol": "Test411",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test412.h",
       "symbol": "Test412",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test413.h",
       "symbol": "Test413",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test415.h",
       "symbol": "Test415",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test416.h",
       "symbol": "Test416",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test417.h",
       "symbol": "Test417",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test419.h",
       "symbol": "Test419",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test421.h",
       "symbol": "Test421",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test422.h",
       "symbol": "Test422",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test423.h",
       "symbol": "Test423",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test436.h",
       "symbol": "Test436",
-      "sections": [
+      "section_ids": [
         "scxml-B-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test444.h",
       "symbol": "Test444",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test445.h",
       "symbol": "Test445",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test446.h",
       "symbol": "Test446",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test448.h",
       "symbol": "Test448",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test449.h",
       "symbol": "Test449",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test451.h",
       "symbol": "Test451",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test452.h",
       "symbol": "Test452",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test453.h",
       "symbol": "Test453",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test456.h",
       "symbol": "Test456",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test457.h",
       "symbol": "Test457",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test459.h",
       "symbol": "Test459",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test460.h",
       "symbol": "Test460",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test487.h",
       "symbol": "Test487",
-      "sections": [
+      "section_ids": [
         "scxml-5.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test488.h",
       "symbol": "Test488",
-      "sections": [
+      "section_ids": [
         "scxml-5.7"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test495.h",
       "symbol": "Test495",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test496.h",
       "symbol": "Test496",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test500.h",
       "symbol": "Test500",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test501.h",
       "symbol": "Test501",
-      "sections": [
+      "section_ids": [
         "scxml-C-1"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test503.h",
       "symbol": "Test503",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test504.h",
       "symbol": "Test504",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test505.h",
       "symbol": "Test505",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test506.h",
       "symbol": "Test506",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test509.h",
       "symbol": "Test509",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test510.h",
       "symbol": "Test510",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test513.h",
       "symbol": "Test513",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test518.h",
       "symbol": "Test518",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test519.h",
       "symbol": "Test519",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test520.h",
       "symbol": "Test520",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test521.h",
       "symbol": "Test521",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test522.h",
       "symbol": "Test522",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test525.h",
       "symbol": "Test525",
-      "sections": [
+      "section_ids": [
         "scxml-4.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test527.h",
       "symbol": "Test527",
-      "sections": [
+      "section_ids": [
         "scxml-5.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test528.h",
       "symbol": "Test528",
-      "sections": [
+      "section_ids": [
         "scxml-5.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test529.h",
       "symbol": "Test529",
-      "sections": [
+      "section_ids": [
         "scxml-5.6"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test530.h",
       "symbol": "Test530",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test531.h",
       "symbol": "Test531",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test532.h",
       "symbol": "Test532",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test533.h",
       "symbol": "Test533",
-      "sections": [
+      "section_ids": [
         "scxml-3.13"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test534.h",
       "symbol": "Test534",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test550.h",
       "symbol": "Test550",
-      "sections": [
+      "section_ids": [
         "scxml-5.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test551.h",
       "symbol": "Test551",
-      "sections": [
+      "section_ids": [
         "scxml-5.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test552.h",
       "symbol": "Test552",
-      "sections": [
+      "section_ids": [
         "scxml-5.3"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test553.h",
       "symbol": "Test553",
-      "sections": [
+      "section_ids": [
         "scxml-6.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test554.h",
       "symbol": "Test554",
-      "sections": [
+      "section_ids": [
         "scxml-6.4"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test557.h",
       "symbol": "Test557",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test558.h",
       "symbol": "Test558",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test560.h",
       "symbol": "Test560",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test561.h",
       "symbol": "Test561",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test562.h",
       "symbol": "Test562",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test567.h",
       "symbol": "Test567",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test569.h",
       "symbol": "Test569",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test570.h",
       "symbol": "Test570",
-      "sections": [
+      "section_ids": [
         "scxml-3.7"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test576.h",
       "symbol": "Test576",
-      "sections": [
+      "section_ids": [
         "scxml-3.2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test577.h",
       "symbol": "Test577",
-      "sections": [
+      "section_ids": [
         "scxml-C-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test578.h",
       "symbol": "Test578",
-      "sections": [
+      "section_ids": [
         "scxml-B-2"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test579.h",
       "symbol": "Test579",
-      "sections": [
+      "section_ids": [
         "scxml-3.10"
       ]
     },
     {
       "file": "tests/w3c/aot_tests/Test580.h",
       "symbol": "Test580",
-      "sections": [
+      "section_ids": [
         "scxml-3.10"
       ]
     }
