@@ -105,16 +105,15 @@ pub struct SCXMLParser {
 /// expanded text into [`SCXMLParser::parse_impl`] and remaps any
 /// downstream diagnostic via the returned map) and by the
 /// `sce-codegen expand` subcommand (which prints the expanded text
-/// to stdout for the Phase B SSOT parity harness —
-/// `tests/w3c_phase_b_parity/` consumes the same bytes the
+/// to stdout for the SSOT parity harness —
+/// `tests/w3c_template_parity/` consumes the same bytes the
 /// codegen pipeline consumes).
 ///
 /// Extracting this into a free function keeps the preprocessor
 /// sequence single-source: any future third pass, or any change
 /// to the xinclude/template ordering, is picked up by both the
 /// codegen consumer and the parity harness without a second edit.
-/// Phase B RFC §1 Q1 (`claudedocs/rfc-sce-template-phase-b.md`)
-/// commits this SSOT guarantee at the Rust-side boundary; the
+/// This SSOT guarantee holds at the Rust-side boundary; the
 /// cross-language SSOT guarantee is enforced by the C++ harness
 /// driver diffing canonicalised outputs.
 pub fn expand_preprocessors(
@@ -153,14 +152,14 @@ pub fn expand_preprocessors(
         })?;
 
     // `sce:template` expansion runs immediately after XInclude
-    // so templates see a post-XInclude document. Phase A v1 is
-    // AOT-only per RFC §6.5 Q5; Phase B brings C++ Interpreter
-    // parity over milestones M1-M5 (see
-    // `claudedocs/rfc-sce-template-phase-b.md`).
+    // so templates see a post-XInclude document. The C++
+    // Interpreter performs the same string-level expansion
+    // (`sce/src/parsing/TemplateExpander.cpp`); the template
+    // parity harness keeps both sides byte-equivalent.
     //
     // The expander composes `xinclude_map` with its own entries
     // (File origins for template-body bytes, CallSite origins
-    // for `{$param}` splices per RFC §6.3 Q3 / SCE_ACCEPTED_
+    // for `{$param}` splices per SCE_ACCEPTED_
     // SUBSET.md §2.9) and returns a `final_map` that replaces
     // `xinclude_map` for post-expansion remapping — every
     // emitted byte, wherever it came from, traces back to a
@@ -175,7 +174,7 @@ pub fn expand_preprocessors(
                 // author file — host or `xi:include`'d fragment — so a
                 // `<sce:use>` failure inside a fragment surfaces with
                 // fragment-file coordinates instead of host-file
-                // post-XInclude coordinates. Phase X RFC §1 Q2; mirrors
+                // post-XInclude coordinates. Mirrors
                 // the C++ side's `inputMap.lookup` at the useLocation
                 // stamp.
                 let byte = crate::position_map::rowcol_to_offset(&included, loc.row, loc.col);
@@ -207,7 +206,7 @@ pub fn expand_preprocessors(
     Ok((expanded, final_map, deps))
 }
 
-/// Watching-zenoh RFC §5.O Atomic 0: capture the post-preprocessor
+/// Watching-zenoh RFC §5.O: capture the post-preprocessor
 /// source position of an XML element for the SCE-MAP traceability
 /// chain. Templates lower the returned [`SourceLocation`] to a
 /// per-backend marker (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`)
@@ -236,7 +235,7 @@ fn source_location_of(
 /// and the child-element form
 /// (`<sce:unresolved id reason candidates/>`). Multiple element-form
 /// children produce multiple markers; the attribute form contributes
-/// at most one. NL→IR Mapping Roadmap Item 5: the parser silently
+/// at most one. The parser silently
 /// collects; `--strict-unresolved` lifts to a build-failing error
 /// via [`crate::provenance::check_strict_unresolved`].
 fn collect_sce_unresolved(
@@ -329,7 +328,7 @@ fn inherit_req(block_req: &[crate::provenance::RequirementId], block: &mut [crat
 /// the whitespace-separated requirement IDs. Returns `Ok(vec![])`
 /// when the attribute is absent. Rejects the first duplicate token
 /// on a single node with `ValidationError::DuplicateRequirementId`
-/// — opaque token by design (NL→IR Mapping Roadmap Item 1), but
+/// — opaque token by design, but
 /// duplicates mask a missing annotation in downstream req-coverage
 /// NDJSON so they are caught here.
 ///
@@ -382,8 +381,6 @@ fn collect_sce_req(
 /// `"no"` — rejects the document via `validation/invalid-attribute`
 /// so authors do not silently mis-spell the opt-out and learn from
 /// the build instead of the runtime.
-///
-/// NL→IR Mapping Roadmap Item 3 Phase B.
 fn parse_sce_exhaustive_optout(
     node: &roxmltree::Node,
     element_label_fn: impl FnOnce() -> String,
@@ -477,7 +474,7 @@ impl SCXMLParser {
     ) -> Result<SCXMLModel, crate::forge::error::Located<crate::forge::error::ForgeError>> {
         use crate::forge::error::{ForgeError, Located, XmlError};
         let content = std::fs::read_to_string(scxml_path).map_err(|e| {
-            // RFC §W4 D2: distinguish "file not found" from generic
+            // §wire-W4 D2: distinguish "file not found" from generic
             // I/O failure so the wire surface can route the
             // parser-entry retry strategy. Other I/O failures
             // (permission denied, busy, etc.) keep flowing through
@@ -568,7 +565,7 @@ impl SCXMLParser {
         self.parse_impl(content, label, None)
     }
 
-    /// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+    /// EventSchema MCU native lowering —
     /// resolve a statechart's `<sce:import kind="event-schema">`
     /// declarations to their [`EventSchemaModel`]s by following each
     /// `src=` to the sibling document under `base_dir`, returning the
@@ -679,7 +676,7 @@ impl SCXMLParser {
         })?;
         let root = doc.root_element();
 
-        // RFC §W4 D2: catch the previously-silent failure mode where
+        // §wire-W4 D2: catch the previously-silent failure mode where
         // the SCXML pipeline is asked to compile a non-SCXML document
         // (root tag isn't `<scxml>` in the SCXML namespace). Without
         // this check, `parse_states` walks an unrecognised tree and
@@ -718,8 +715,8 @@ impl SCXMLParser {
             }
         }
 
-        // Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3
-        // Atomic B-γ1): `<scxml sce:capacity="N">` declares the
+        // Watching-zenoh RFC §5.J.2 + §5.L:
+        // `<scxml sce:capacity="N">` declares the
         // per-document event-queue capacity. Two-pass extraction:
         // (1) read the namespaced attribute via the SCE_NAMESPACE
         // URI; (2) if present, parse as u32 and reject zero / non-
@@ -727,9 +724,9 @@ impl SCXMLParser {
         // ⇒ `None`, deploy.yaml `default_event_queue_capacity`
         // fallback applies later in the toolchain (populator hook
         // mirrors the `cache_platform` precedent in
-        // `compile_forge_with_deploy`). The value becomes load-
-        // bearing in Atomic B-γ2 when `heapless::spsc::Queue<E, N>`
-        // replaces `Vec<E>` in `helpers/event_queue.rs`.
+        // `compile_forge_with_deploy`). The value feeds the
+        // `EVENT_QUEUE_CAPACITY` bound of the heapless event queue
+        // in `--no-std` emission.
         let event_queue_capacity =
             match root.attribute((crate::forge::model::SCE_NAMESPACE, "capacity")) {
                 None => None,
@@ -752,7 +749,7 @@ impl SCXMLParser {
                 },
             };
 
-        // Watching-zenoh RFC §5.O Atomic 0: anchor the model at the
+        // Watching-zenoh RFC §5.O: anchor the model at the
         // `<scxml>` root element's post-preprocessor position. Codegen
         // templates lower this to the top-level SCE-MAP marker above
         // the generated state machine. XInclude / sce:template
@@ -767,8 +764,7 @@ impl SCXMLParser {
             col: Some(root_pos.col),
         });
 
-        // NL→IR Mapping Roadmap Item C1 Path A (DL-7' prerequisite) —
-        // capture `<sce:import>` declarations on the statechart root.
+        // Capture `<sce:import>` declarations on the statechart root.
         // The same parser pass used by Forge documents (codec / lookup
         // / event-schema / …) so the wire shape and rejection
         // semantics (missing `src`, missing `kind`, unknown kind,
@@ -821,7 +817,7 @@ impl SCXMLParser {
         // Parse Named Context declarations (must be before states for transforms)
         self.parse_sce_contexts(&root, &mut model, diag_label)?;
 
-        // Watching-zenoh RFC §5.2 Round F-α — top-level `<sce:driver
+        // Top-level `<sce:driver
         // href="..."/>` references. Resolution against `deploy.yaml`'s
         // `platform.driver_root` happens at compile-model time; this
         // pass only captures the verbatim author-written strings and
@@ -830,12 +826,12 @@ impl SCXMLParser {
         // document-order index.
         self.parse_sce_drivers(&root, &mut model, diag_label)?;
 
-        // Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-
-        // declarations.md` Phase A) — capture every top-level
+        // Capture every top-level
         // `<sce:session-role kind="..."/>` declaration on the SCXML
-        // root. The orchestrator (Phase B) reads `declared_session_
-        // roles` to drive the cross-doc listener-pair join, replacing
-        // the C10-α `Accepting.*` substate string-match. Phase A
+        // root. The orchestrator reads `declared_session_
+        // roles` to drive the cross-doc listener-pair join (it
+        // replaced an earlier `Accepting.*` substate string-match).
+        // This pass
         // surfaces parse-time `scxml/unknown-session-role-kind` (kind
         // outside the v1 vocabulary) and `scxml/duplicate-session-
         // role-declaration` (same kind declared twice on one doc).
@@ -844,7 +840,7 @@ impl SCXMLParser {
         // Parse states recursively
         self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
 
-        // watching-zenoh RFC §5.E B7-η' Atomic A — `<sce:on-sample>`
+        // watching-zenoh RFC §5.E — `<sce:on-sample>`
         // structural validators run immediately after the states pass
         // so the diagnostic surfaces before any downstream derivation
         // (feature detection, parallel-region computation, etc.) can
@@ -861,14 +857,14 @@ impl SCXMLParser {
         validate_on_sample_event_names(&model, diag_label)?;
         validate_on_sample_callback_paths(&model, diag_label)?;
 
-        // Axis-3 inversion Phase D migration-helper (RFC Q-A8 (c)) —
+        // Session-role naming guard —
         // an SCXML carrying any `Accepting` or `Accepting.*` state id
         // claims the canonical session-FSM accept-side state shape;
         // it must declare the role explicitly via
         // `<sce:session-role kind="accept-side"/>` or it is either a
-        // pre-Axis-3 migration miss or a name collision. The Phase D
-        // walker repurpose (formerly the substate-driven join in
-        // `resolve_listener_links`) lands here so the partial-claim
+        // missing role declaration or a name collision. The walker
+        // (formerly the substate-driven join in
+        // `resolve_listener_links`) lives here so the partial-claim
         // surfaces at parse time, independently of any deploy.yaml.
         validate_axis3_accept_side_state_naming(&model, diag_label)?;
 
@@ -922,7 +918,7 @@ impl SCXMLParser {
         // Parse initial_children
         self.parse_initial_children(&mut model);
 
-        // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2)
+        // EventSchema MCU native lowering
         // — resolve `<sce:import kind="event-schema">` siblings into the
         // `event_name → EventSchemaModel` map BEFORE the script-engine
         // analyzer runs, so a transition guard reading a typed
@@ -1424,9 +1420,9 @@ impl SCXMLParser {
                 }
             }
 
-            // watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a):
+            // watching-zenoh RFC §5.E:
             // `<sce:on-sample>` is valid inside `<state>` and `<parallel>` only.
-            // Atomic A collects the AST nodes here; a separate placement
+            // The AST nodes are collected here; a separate placement
             // validator (`validate_on_sample_placement`) walks the rest of
             // the document for stray nodes outside these two parents.
             collect_on_sample_blocks(&child, &mut state.on_sample_blocks);
@@ -1568,7 +1564,7 @@ impl SCXMLParser {
                 }
             }
 
-            // watching-zenoh RFC §5.E B7-η' Q-OnSample-2 (a):
+            // watching-zenoh RFC §5.E:
             // `<sce:on-sample>` valid inside `<parallel>` symmetric to
             // `<state>` above. The single helper keeps the two arms in
             // lockstep so a future placement-rule extension touches one
@@ -3236,7 +3232,7 @@ impl SCXMLParser {
         Ok(())
     }
 
-    /// Watching-zenoh RFC §5.2 Round F-α — collect every top-level
+    /// Collect every top-level
     /// `<sce:driver href="..."/>` element on the SCXML root. Each
     /// declaration is captured in document order with its source
     /// position so codegen can `#include` the resolved path into the
@@ -3250,7 +3246,7 @@ impl SCXMLParser {
     /// elements are ignored by design: the SCXML root content model
     /// is `xs:any namespace="##any" lax`, mirroring the W3C
     /// extension-element convention, so the parser walks only root
-    /// children (Q-Round-F-D6).
+    /// children.
     fn parse_sce_drivers(
         &self,
         root: &roxmltree::Node,
@@ -3297,12 +3293,11 @@ impl SCXMLParser {
         Ok(())
     }
 
-    /// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-
-    /// declarations.md` Phase A) — collect every top-level
+    /// Axis-3 inversion — collect every top-level
     /// `<sce:session-role kind="..."/>` element on the SCXML root.
     /// Each declaration nominates one
     /// [`crate::model::SessionRoleKind`] variant; the orchestrator
-    /// (Phase B `crate::resolve_listener_links`) joins these against
+    /// (`crate::resolve_listener_links`) joins these against
     /// deploy.yaml `LinkConfig.role` declarations.
     ///
     /// Parse-time guarantees (Q-A2 (b) + Q-A5 (a) locks):
@@ -3726,7 +3721,7 @@ fn collect_on_sample_blocks(parent: &roxmltree::Node, out: &mut Vec<crate::model
     }
 }
 
-/// Axis-3 inversion Phase D migration-helper (RFC Q-A8 (c) flip) —
+/// Axis-3 inversion migration-helper (RFC Q-A8 (c) flip) —
 /// fires `scxml/accept-side-states-without-role-declaration` when an
 /// SCXML carries any state-id matching the canonical session-FSM
 /// accept-side prefix (`Accepting` or `Accepting.*` per the trailing-
@@ -5534,8 +5529,7 @@ mod tests {
     /// sendidexpr. The both-empty shape is a parse-time hard error,
     /// emitted as `ValidationError::RequireEither` (wire code
     /// `validation/require-either` per W4 D4 fold). 5-backend cancel
-    /// templates rely on this guarantee — see
-    /// `claudedocs/rfc-c11-error-guards-lift.md` v2 Layer 4.
+    /// templates rely on this guarantee.
     #[test]
     fn cancel_without_sendid_or_sendidexpr_rejected() {
         use crate::forge::error::{ForgeError, ValidationError};
@@ -6721,7 +6715,7 @@ mod tests {
         }
     }
 
-    // ── RFC §W4 Stage D: ParseError cross-side drift tests ────────
+    // ── §wire-W4 Stage D: ParseError cross-side drift tests ────────
     //
     // Sister tests to W3's `cpp_xinclude_subtypes_match_rust_diagnostic_codes`
     // and `cpp_xinclude_subtype_code_returns_rust_wire_string` in
@@ -6740,7 +6734,7 @@ mod tests {
     /// declared in `sce/include/parsing/ParseError.h`. Also asserts
     /// the 3 reused-code leaves exist (they share `xml/parse` so they
     /// don't need a Rust XmlError variant — the wire-share is α-strict
-    /// design per RFC §W4 D2).
+    /// design per §wire-W4 D2).
     ///
     /// A commit on any one side that fails to update the other two is
     /// the drift this test catches.
@@ -6792,9 +6786,8 @@ mod tests {
         assert_eq!(
             found_refs, expected_cpp,
             "ParseError subtype drift: C++ header = {:?}, expected \
-             (α-strict 5 leaves: 2 NEW-code + 3 reused-code) = {:?}. \
-             Change both sides in the same commit — see RFC §W4 \
-             (claudedocs/rfc-sce-diagnostic-wire-unification.md).",
+             (5 leaves: 2 NEW-code + 3 reused-code) = {:?}. \
+             Change both sides in the same commit (§wire-W4).",
             found_refs, expected_cpp
         );
 
@@ -6812,7 +6805,7 @@ mod tests {
                  declared as a `serde(rename)` literal in \
                  sce-build/src/forge/diagnostic.rs. Keep the wire \
                  name, the Rust variant, and the C++ subtype in \
-                 sync — see RFC §W4.",
+                 sync — see §wire-W4.",
                 rust_code,
                 cpp_name
             );
@@ -6820,7 +6813,7 @@ mod tests {
     }
 
     /// Pin the wire-string return literal inside each C++
-    /// `Parse<Variant>` subtype's `code()` body. RFC §W4 makes the
+    /// `Parse<Variant>` subtype's `code()` body. §wire-W4 makes the
     /// 2 NEW-code leaves return their distinct `xml/*` strings while
     /// the 3 reused-code leaves all return `\"xml/parse\"` — both
     /// halves are pinned so a future rename on either side cannot

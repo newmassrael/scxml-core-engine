@@ -246,7 +246,7 @@ fn rust_base_cast(t: &SceType) -> &'static str {
         SceType::Float32 => "f32",
         SceType::Float64 => "f64",
         SceType::Bool | SceType::String | SceType::Bytes => "f64", /* unreachable for quantity */
-        // NL→IR Item C1 Path A: Enum-typed fields cannot carry a
+        // Enum-typed fields cannot carry a
         // physical-quantity annotation — the variant value is a
         // discrete wire byte, not a measured numeric. Unreachable
         // for any quantity codegen path; placeholder matches the
@@ -268,7 +268,7 @@ fn c_base_cast(t: &SceType) -> &'static str {
         SceType::Float32 => "float",
         SceType::Float64 => "double",
         SceType::Bool | SceType::String | SceType::Bytes => "double",
-        // NL→IR Item C1 Path A: see `rust_base_cast` — Enum is
+        // See `rust_base_cast` — Enum is
         // never quantity-annotated.
         SceType::Enum(_) => "double",
     }
@@ -287,7 +287,7 @@ fn kotlin_base_cast(t: &SceType) -> &'static str {
         SceType::Float32 => "toFloat()",
         SceType::Float64 => "toDouble()",
         SceType::Bool | SceType::String | SceType::Bytes => "toDouble()",
-        // NL→IR Item C1 Path A: see `rust_base_cast`.
+        // See `rust_base_cast`.
         SceType::Enum(_) => "toDouble()",
     }
 }
@@ -305,7 +305,7 @@ fn go_base_cast(t: &SceType) -> &'static str {
         SceType::Float32 => "float32",
         SceType::Float64 => "float64",
         SceType::Bool | SceType::String | SceType::Bytes => "float64",
-        // NL→IR Item C1 Path A: see `rust_base_cast`.
+        // See `rust_base_cast`.
         SceType::Enum(_) => "float64",
     }
 }

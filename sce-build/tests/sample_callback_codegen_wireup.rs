@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// watching-zenoh RFC §5.E B7-η' codegen wire-up integration tests.
+// `<sce:on-sample>` sample-delivery codegen wire-up integration tests
+// (sample lifecycle surface per watching-zenoh RFC §5.E).
 //
-// Each W1.N atomic in `claudedocs/rfc-b7-eta-prime-codegen-wireup.md`
-// adds one structural assertion to the rendered Rust output. W1.2
-// (this file's only test today) pins the per-link `deliver_link_X_sample`
-// trait + impl emission shape; W1.3-1.5 will add body-content
-// assertions in the same harness.
+// Pins the rendered sample-delivery surface: the per-link
+// `deliver_link_X_sample` trait + impl emission shape, the
+// active-state filter match arms, callback dispatch, the
+// always-raised event (Rust), and the C11 mirror.
 //
 // Pipeline: write SCXML to a tempdir → `compile_scxml_lang` runs
 // parse + analyze + render → assert structural fragments appear in the
@@ -26,7 +26,7 @@ use tempfile::tempdir;
 /// `parser::parse_file` still run (placement / uniqueness /
 /// event-name / callback-path); the fixture passes them. The
 /// orchestrator-aware entry point `compile_scxml_with_imports`
-/// (C2 outbox follow-up Atomic A) DOES build the registry and
+/// DOES build the registry and
 /// run cross-ref validation; consumers that need that surface
 /// switch to that entry point.
 const FIXTURE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -87,7 +87,7 @@ fn render_c11(scxml: &str) -> (String, String) {
 
 #[test]
 fn w1_2_emits_link_rx_trait_and_impl() {
-    // W1.2 contract: when any state has `<sce:on-sample link="X">`, the
+    // Contract: when any state has `<sce:on-sample link="X">`, the
     // Rust state_machine template emits the `<MachineName>LinkRx` trait
     // and its `impl … for Engine<...Policy>` block, with one
     // `deliver_link_<x>_sample` method per unique link name.
@@ -120,10 +120,11 @@ fn w1_2_emits_link_rx_trait_and_impl() {
 
 #[test]
 fn w1_3_emits_active_state_filter_match_arm() {
-    // W1.3 contract: the body iterates the engine's active configuration
+    // Contract: the body iterates the engine's active configuration
     // and dispatches a per-state match arm for every state whose
-    // `<sce:on-sample link="X">` matches this link. W1.4/1.5 fill the
-    // arm bodies; W1.3 just pins the structural surface.
+    // `<sce:on-sample link="X">` matches this link. The arm-body
+    // content (callback dispatch + event raise) is pinned by the
+    // tests below; this test just pins the structural surface.
     let code = render_rust(FIXTURE);
 
     assert!(
@@ -138,7 +139,8 @@ fn w1_3_emits_active_state_filter_match_arm() {
         code.contains("_ => {}"),
         "missing default match arm:\n{code}"
     );
-    syn::parse_file(&code).unwrap_or_else(|e| panic!("W1.3 body fails syn parse: {e}\n{code}"));
+    syn::parse_file(&code)
+        .unwrap_or_else(|e| panic!("match-arm body fails syn parse: {e}\n{code}"));
 }
 
 #[test]
@@ -179,12 +181,12 @@ fn w1_3_multi_state_same_link_emits_arms_per_state() {
 
 #[test]
 fn w1_4_emits_callback_dispatch_with_stripped_prefix() {
-    // W1.4 contract: when `<sce:on-sample callback="rust:...">`
+    // Contract: when `<sce:on-sample callback="rust:...">`
     // is present, the per-state match arm body emits
     // `<bare-rust-path>(&sample);` — the `rust:` language prefix
-    // is stripped (Q-Callback-2 v1) so rustc resolves the user's
-    // module path directly. Q-Callback-3's signature enforcement
-    // flows through rustc at the consumer crate's compile time;
+    // is stripped so rustc resolves the user's module path
+    // directly. Callback signature enforcement flows through
+    // rustc at the consumer crate's compile time;
     // this test pins the codegen surface only.
     const WITH_CALLBACK: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
@@ -218,14 +220,14 @@ fn w1_4_emits_callback_dispatch_with_stripped_prefix() {
         "language prefix leaked into call-site path:\n{code}"
     );
     syn::parse_file(&code)
-        .unwrap_or_else(|e| panic!("W1.4 callback emission fails syn parse: {e}\n{code}"));
+        .unwrap_or_else(|e| panic!("callback emission fails syn parse: {e}\n{code}"));
 }
 
 #[test]
 fn w1_4_no_callback_emits_no_call_site() {
     // Negative case: `<sce:on-sample link="X" event="Y">` without a
     // callback attribute must not emit any function-call line in the
-    // arm body — only the W1.5 event-raise placeholder remains.
+    // arm body — only the always-raised event remains.
     let code = render_rust(FIXTURE);
     assert!(
         !code.contains("(&sample);"),
@@ -235,7 +237,7 @@ fn w1_4_no_callback_emits_no_call_site() {
 
 #[test]
 fn w1_5_emits_event_raise_always() {
-    // W1.5 contract: per Q-Wire-3 lock, every per-state arm emits
+    // Contract: per the Q-Wire-3 lock, every per-state arm emits
     // `self.raise_external_by_name("<event>", "")` regardless of
     // whether a callback is present. Event-data is empty per
     // Q-Wire-4 (typed payload flows through callback path; event
@@ -288,22 +290,24 @@ fn w1_5_emits_event_raise_always() {
     );
 
     syn::parse_file(&with_cb_code)
-        .unwrap_or_else(|e| panic!("W1.5 emission fails syn parse: {e}\n{with_cb_code}"));
+        .unwrap_or_else(|e| panic!("event-raise emission fails syn parse: {e}\n{with_cb_code}"));
 }
 
-// ── W2: C11 mirror ──────────────────────────────────────────────
+// ── C11 mirror ──────────────────────────────────────────────────
 
 #[test]
 fn w2_c11_emits_per_link_deliver_function() {
-    // W2 contract: C11 1:1 mirror of W1.2-1.5. The header
+    // Contract: C11 1:1 mirror of the Rust sample-delivery
+    // surface pinned above. The header
     // declares one `<machine>_deliver_link_<x>_sample(sm, sample)`
     // per `<sce:on-sample link>` and gates the `<sce/sample.h>`
     // include on the same condition. The .c file emits the
     // definition with active-state filter (`_in_state` predicate)
     // + event raise via `_raise_external` + `event_with_meta_t`
-    // setup. Q-Wire-3 lock: event always raised. Callback path
-    // is Rust-only on Q-Callback-2 v1; the C11 backend ignores
-    // `<sce:on-sample callback="rust:...">` for now.
+    // setup. Q-Wire-3 lock: event always raised. The callback path
+    // is Rust-only; the C11 backend ignores
+    // `<sce:on-sample callback="rust:...">` (a `rust:`-prefixed
+    // path has no C11 lowering).
     let (header, source) = render_c11(FIXTURE);
 
     // Header

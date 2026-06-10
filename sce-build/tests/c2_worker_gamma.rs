@@ -340,8 +340,8 @@ topology:
 #[test]
 fn deploy_unaware_path_silent_skips_worker_scheduler_check() {
     // No deploy / target_machine — forge-side anchor silent-skips
-    // (Q-η5 (a) precedent). Worker compiles even though there's no
-    // deploy declaration.
+    // (shared silent-skip precedent). Worker compiles even though
+    // there's no deploy declaration.
     let ws = build_workspace();
     compile_worker(ws.path(), None, None, "rx_loop").expect("deploy-unaware path must silent-skip");
 }

@@ -496,7 +496,7 @@ fn assert_inline_mixed_structural(
             );
         }
         Language::C11 => {
-            // RFC §5.J.2 Phase F. Verifies idiomatic C11 emit shape that
+            // Verifies idiomatic C11 emit shape that
             // byte-comparison alone cannot catch (e.g. a missing `_st->`
             // prefix or wrong typedef shape would still match a stale
             // golden written from a buggy renderer).
@@ -549,7 +549,7 @@ fn assert_inline_mixed_structural(
     }
 }
 
-/// Structural assertions for `inline_codec.scxml` (Phase F-2). The codec
+/// Structural assertions for `inline_codec.scxml`. The codec
 /// inline kind emits a payload struct + (de)serialization pair — these
 /// idiomatic patterns differ enough across languages that byte-compare
 /// alone would miss e.g. a forgotten `companion object` in Kotlin or a
@@ -658,7 +658,7 @@ fn assert_inline_codec_structural(
     }
 }
 
-// ── Algorithm conformance (RFC §5.A, Phase A3) ────────────────
+// ── Algorithm conformance (RFC §5.A item A3) ──────────────────
 
 /// RFC §5.B B2-test-vector Cpp closure: the algorithm body itself
 /// stays byte-stable against its prior golden — the closure only
@@ -1006,7 +1006,7 @@ fn forge_codec_length_ref_dotted_basic_python_no_sidecar_until_closure() {
     );
 }
 
-// ── §5.F build-time const-fold (Phase A4-β — host interpreter) ──
+// ── §5.F build-time const-fold (host interpreter) ───────────────
 
 /// RFC §5.F α-residual contract: parser still produces the
 /// `<sce:fold>` IR shape that the host interpreter consumes in β.
@@ -1329,9 +1329,9 @@ fn forge_codec_vle_zint_u64() {
 
 // ── RFC §5.B B5-prep Zenoh transport-message body codecs ────
 // First reachable downstream consumers of B1-B4 primitives from
-// the watching-zenoh authoring path (RFC §7 Phase B sequence).
+// the watching-zenoh authoring path (RFC §7 B-track sequence).
 // Pure composition — no new IR / parser / template surface.
-// Validates that B-phase primitives compose for actual Zenoh
+// Validates that the B-track primitives compose for actual Zenoh
 // transport-message body shapes. Upstream parity:
 // `_z_close_encode` / `_z_frame_encode` in zenoh-pico
 // src/protocol/codec/transport.c. KeepAlive's empty body defers
@@ -1350,7 +1350,7 @@ fn forge_codec_zenoh_frame_cpp() {
 
 // ── RFC §5.B B5-ι cross-codec composition (Cpp) ───────────────
 // Cross-codec composition fixtures from the watching-zenoh authoring
-// path (RFC §7 Phase B). Pure composition of B1-B5 primitives — no
+// path (RFC §7 B-track). Pure composition of B1-B5 primitives — no
 // new IR / parser / template surface. Each fixture mirrors an upstream
 // zenoh-pico encoder; see the SCXML resource header for line refs.
 
@@ -1581,7 +1581,7 @@ fn forge_codec_until_eof_basic_cpp() {
     assert_standalone_forge("codec_until_eof_basic", "codec_until_eof_basic.h");
 }
 
-// ── RFC §5.B B5-μ repeat-with-present-if (Wire RFC Phase B X1) ─
+// ── RFC §5.B repeat-with-present-if ────────────────────────────
 // `codec_repeat_present_if_basic` is the LOCAL-scope primitive demo
 // of `<sce:repeat sce:present-if="<carrier>.<flag>"/>`. Mirrors B5-κ
 // Surface L's two-fixture trunk pattern (primitive + realistic
@@ -1611,7 +1611,7 @@ fn forge_codec_zenoh_hello_cpp() {
     assert_standalone_forge("codec_zenoh_hello", "codec_zenoh_hello.h");
 }
 
-// ── Wire RFC Phase B Y0a foundation: gated String + length-ref ─
+// ── Gated String + length-ref foundation ──────────────────────
 // Lifts the B5-ζ Surface H deferral on `sce:type="string"` +
 // `sce:present-if` (parser.rs:1583+ pre-Y0a) so zenoh-pico's
 // wireexpr (message.c:115-145 — VLE id + has_suffix-gated UTF-8
@@ -1636,13 +1636,13 @@ fn forge_codec_zenoh_wireexpr_cpp() {
 
 // ── RFC §5.B Y0c — single-codec embed primitive ─────────────────────
 // Closes the Y1 prerequisite gap surfaced before authoring Wire RFC
-// Phase B Y1: the codec DSL had no way to compose a single imported
+// `<sce:embed>` rationale: the codec DSL had no way to compose a single imported
 // codec as an inline field. Repeat / TLV-chain / variant arm all use
 // codecs as container element types; embed is the missing "single
 // occurrence, always present" composition primitive that mirrors
 // zenoh-pico's `_z_X_t` struct fields holding a sub-struct of another
 // typed codec (`_z_decl_kexpr_t._keyexpr` is the first reachable
-// consumer — Y1 ships 4 such consumers via this primitive).
+// consumer; four such consumers use this primitive).
 //
 // `codec_embed_basic` locks the wire-transparent emit shape across
 // 6 backends (`uint8 tag` + embedded `codec_zenoh_locator`). Y1's
@@ -1668,7 +1668,7 @@ fn forge_codec_nested_parent_cpp() {
     assert_standalone_forge("codec_nested_parent", "codec_nested_parent.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y1 — declare/undeclare family (4
+// ── RFC §5.B — declare/undeclare family (4
 // wireexpr-bearing decls + 1 trivial undecl). All compose Y0a's
 // codec_zenoh_wireexpr through Y0c embed grammar. The four
 // wireexpr-bearing decls (decl_keyexpr / decl_subscriber /
@@ -1711,7 +1711,7 @@ fn forge_codec_zenoh_undecl_kexpr_cpp() {
     assert_standalone_forge("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
+// ── RFC §5.B — TLV envelope foundation ────
 // `codec_zenoh_decl_ext_keyexpr_inner` + `codec_zenoh_decl_ext_keyexpr`
 // lock the two Y0b embed-attribute lifts (sce:length-from + sce:
 // present-if) as a primitive demo pair, with three undecl_*
@@ -1755,7 +1755,7 @@ fn forge_codec_zenoh_undecl_token_cpp() {
     assert_standalone_forge("codec_zenoh_undecl_token", "codec_zenoh_undecl_token.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y2 — _encode_ext envelope family ──
+// ── RFC §5.B — _encode_ext envelope family ──
 // `codec_zenoh_source_info` is the second realistic consumer of B5-κ
 // dotted-path length-field + B5-δ length-arith (after codec_zenoh_scout),
 // modelling `_z_source_info_encode/decode` (message.c:196-242). Its
@@ -1879,7 +1879,7 @@ fn forge_codec_tlv_chain_basic_python() {
     assert_standalone_forge_python("codec_tlv_chain_basic", "codec_tlv_chain_basic.py");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2a — tlv-chain-with-present-if
+// ── RFC §5.B — tlv-chain-with-present-if
 // `codec_tlv_chain_present_if_basic` is the minimal demo for the
 // `<sce:tlv-chain sce:present-if="P">` lift (mirrors codec_repeat_
 // present_if_basic for B5-μ). Single-bit local carrier gates the
@@ -1937,7 +1937,7 @@ fn forge_c11_codec_tlv_chain_present_if_basic() {
     );
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2a — zenoh-specific demo
+// ── RFC §5.B — zenoh-specific demo
 // `codec_zenoh_query` mirrors zenoh-pico `_z_query_encode/decode`
 // (message.c:394-505). Used as the request body variant arm for
 // Y_QUERY (atomic 2b). Y3 atomic 2a uses it as the first realistic
@@ -1976,7 +1976,7 @@ fn forge_c11_codec_zenoh_query() {
     assert_standalone_forge_c("codec_zenoh_query", "codec_zenoh_query.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
+// ── RFC §5.B — sub-codec atomic
 // `codec_zenoh_reply` mirrors zenoh-pico `_z_reply_encode/decode`
 // (message.c:507-543) at envelope-level wire fidelity. Response body
 // variant arm for Z_REPLY (atomic 2b consumer codec_zenoh_response).
@@ -2014,7 +2014,7 @@ fn forge_c11_codec_zenoh_reply() {
     assert_standalone_forge_c("codec_zenoh_reply", "codec_zenoh_reply.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
+// ── RFC §5.B — sub-codec atomic
 // `codec_zenoh_err` mirrors zenoh-pico `_z_err_encode/decode`
 // (message.c:545-595) at envelope-level wire fidelity. Response body
 // variant arm for Z_ERR. Encoding wire is the Q1(b) simplification
@@ -2051,7 +2051,7 @@ fn forge_c11_codec_zenoh_err() {
     assert_standalone_forge_c("codec_zenoh_err", "codec_zenoh_err.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
+// ── RFC §5.B — sub-codec atomic
 // `codec_zenoh_interest_body` mirrors zenoh-pico `_z_interest_encode/
 // decode` (interest.c:41-91) at envelope-level wire fidelity (not-is_final
 // case only — is_final gate lives in the outer envelope codec_zenoh_interest).
@@ -2089,7 +2089,7 @@ fn forge_c11_codec_zenoh_interest_body() {
     assert_standalone_forge_c("codec_zenoh_interest_body", "codec_zenoh_interest_body.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b — sub-codec atomic
+// ── RFC §5.B — sub-codec atomic
 // `codec_zenoh_declaration` mirrors zenoh-pico `_z_declaration_encode/
 // decode` (declarations.c:137-180) — 9-arm dispatcher on first-byte
 // MID 5-bit. Used by codec_zenoh_declare as the body embed after the
@@ -2127,7 +2127,7 @@ fn forge_c11_codec_zenoh_declaration() {
     assert_standalone_forge_c("codec_zenoh_declaration", "codec_zenoh_declaration.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii — sub-codec atomic
+// ── RFC §5.B — sub-codec atomic
 // `codec_zenoh_timestamp` mirrors zenoh-pico `_z_timestamp_encode/decode`
 // (message.c:86-112) verbatim: VLE u64 time + length-prefixed zid bytes
 // (max 16 per `ZENOH_ID_SIZE`). Foundational sub-codec for the T-gated
@@ -2165,7 +2165,7 @@ fn forge_c11_codec_zenoh_timestamp() {
     assert_standalone_forge_c("codec_zenoh_timestamp", "codec_zenoh_timestamp.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii-α — full upstream
+// ── RFC §5.B — full upstream
 // wire fidelity for `_z_encoding_encode/decode` (codec.c:356-381).
 // `codec_zenoh_encoding` is the second consumer of the VLE+flags
 // composition primitive (first was codec_ext_encoding_info — the
@@ -2210,7 +2210,7 @@ fn forge_c11_codec_zenoh_encoding() {
     assert_standalone_forge_c("codec_zenoh_encoding", "codec_zenoh_encoding.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii — sub-codec atomic
+// ── RFC §5.B — sub-codec atomic
 // `codec_zenoh_msg_put` mirrors zenoh-pico `_z_put_encode/decode`
 // (message.c:369-379) which delegates to `_z_push_body_encode/decode`
 // (lines 257-348). Request body variant arm for Z_PUT (MID 0x01).
@@ -2250,7 +2250,7 @@ fn forge_c11_codec_zenoh_msg_put() {
     assert_standalone_forge_c("codec_zenoh_msg_put", "codec_zenoh_msg_put.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii — sub-codec atomic
+// ── RFC §5.B — sub-codec atomic
 // `codec_zenoh_msg_del` mirrors zenoh-pico `_z_del_encode/decode`
 // (message.c:381-391) which delegates to `_z_push_body_encode/decode`
 // (lines 257-348, !_is_put branch). Request body variant arm for
@@ -2288,7 +2288,7 @@ fn forge_c11_codec_zenoh_msg_del() {
     assert_standalone_forge_c("codec_zenoh_msg_del", "codec_zenoh_msg_del.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iii — first realistic
+// ── RFC §5.B — first realistic
 // peek-byte primitive consumer with msg_put / msg_del / query body
 // arms (atomic 2b-i sub-codecs + atomic 2a sub-codec composing through
 // atomic 2b-ii peek-byte primitive). Mirrors zenoh-pico
@@ -2328,7 +2328,7 @@ fn forge_c11_codec_zenoh_request() {
     assert_standalone_forge_c("codec_zenoh_request", "codec_zenoh_request.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iv — minimal-shape consumer
+// ── RFC §5.B — minimal-shape consumer
 // `codec_zenoh_response_final` mirrors zenoh-pico
 // `_z_response_final_encode/decode` (network.c:368-386). Header is
 // MID 0x1a + Z@7 only (encoder writes Z=0 always; decoder accepts Z=1
@@ -2434,7 +2434,7 @@ fn forge_c11_codec_zenoh_network_envelope() {
     );
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iv — multi-arm own-field
+// ── RFC §5.B — multi-arm own-field
 // variant on header ENC bits. `codec_zenoh_oam` mirrors zenoh-pico
 // `_z_oam_encode/decode` (network.c:488-579). Header carries MID 0x1f
 // + ENC[5..7) 2-bit subfield + Z@7. Body variant on `header.enc`
@@ -2474,7 +2474,7 @@ fn forge_c11_codec_zenoh_oam() {
     assert_standalone_forge_c("codec_zenoh_oam", "codec_zenoh_oam.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iv — single-embed consumer
+// ── RFC §5.B — single-embed consumer
 // of the 9-arm codec_zenoh_declaration dispatcher. `codec_zenoh_declare`
 // mirrors zenoh-pico `_z_declare_encode/decode` (network.c:388-450).
 // Header carries MID 0x1e + I@5 (gates VLE u32 interest_id) + Z@7
@@ -2512,7 +2512,7 @@ fn forge_c11_codec_zenoh_declare() {
     assert_standalone_forge_c("codec_zenoh_declare", "codec_zenoh_declare.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y3 atomic 2b-iv — first realistic
+// ── RFC §5.B — first realistic
 // disjunction primitive consumer + parent-owns-id refactor pin.
 // `codec_zenoh_interest` mirrors zenoh-pico
 // `_z_n_interest_encode/decode` + `_z_interest_encode/decode`
@@ -2765,7 +2765,7 @@ fn forge_codec_string_with_tail_bit_size_rejects() {
     );
 }
 
-// RFC §5.B B5-ζ Surface H + Wire RFC Phase B Y0a: the v1 deferral
+// RFC §5.B string primitive: the earlier deferral
 // (`sce:type="string"` + `sce:present-if` rejected as "no consumer
 // yet") was lifted on 2026-05-03 when zenoh-pico's wireexpr surfaced
 // as the realistic consumer (gated UTF-8 suffix per
@@ -3264,7 +3264,7 @@ fn forge_codec_repeat_forward_count_rejects() {
 }
 
 /// RFC §5.B B5-μ co-gating contract — repeat-with-present-if (Wire
-/// RFC Phase B X1). When `<sce:repeat sce:count="X"
+/// repeat-with-present-if). When `<sce:repeat sce:count="X"
 /// sce:present-if="P"/>` is gated, the count source field `X` MUST
 /// also carry the IDENTICAL predicate `P`. Wire semantics: when the
 /// gate fires off, the count byte(s) are absent — the streaming
@@ -5244,7 +5244,7 @@ fn forge_kotlin_codec_zenoh_hello() {
     assert_standalone_forge_kotlin("codec_zenoh_hello", "CodecZenohHello.kt");
 }
 
-// Wire RFC Phase B Y0a — see cpp registrations above for context.
+// Gated-String + length-ref family — see cpp registrations above for context.
 #[test]
 fn forge_kotlin_codec_present_if_string() {
     assert_standalone_forge_kotlin("codec_present_if_string", "CodecPresentIfString.kt");
@@ -5295,7 +5295,7 @@ fn forge_kotlin_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_kotlin("codec_zenoh_undecl_kexpr", "CodecZenohUndeclKexpr.kt");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
+// ── RFC §5.B — TLV envelope foundation ────
 #[test]
 fn forge_kotlin_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_kotlin(
@@ -5758,7 +5758,7 @@ fn forge_rust_codec_zenoh_hello() {
     assert_standalone_forge_rust("codec_zenoh_hello", "codec_zenoh_hello.rs");
 }
 
-// Wire RFC Phase B Y0a — see cpp registrations above for context.
+// Gated-String + length-ref family — see cpp registrations above for context.
 #[test]
 fn forge_rust_codec_present_if_string() {
     assert_standalone_forge_rust("codec_present_if_string", "codec_present_if_string.rs");
@@ -5815,7 +5815,7 @@ fn forge_rust_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_rust("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.rs");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
+// ── RFC §5.B — TLV envelope foundation ────
 #[test]
 fn forge_rust_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_rust(
@@ -6269,7 +6269,7 @@ fn forge_go_codec_zenoh_hello() {
     assert_standalone_forge_go("codec_zenoh_hello", "codec_zenoh_hello.go");
 }
 
-// Wire RFC Phase B Y0a — see cpp registrations above for context.
+// Gated-String + length-ref family — see cpp registrations above for context.
 #[test]
 fn forge_go_codec_present_if_string() {
     assert_standalone_forge_go("codec_present_if_string", "codec_present_if_string.go");
@@ -6326,7 +6326,7 @@ fn forge_go_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_go("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.go");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
+// ── RFC §5.B — TLV envelope foundation ────
 #[test]
 fn forge_go_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_go(
@@ -6751,7 +6751,7 @@ fn forge_python_codec_zenoh_hello() {
     assert_standalone_forge_python("codec_zenoh_hello", "codec_zenoh_hello.py");
 }
 
-// Wire RFC Phase B Y0a — see cpp registrations above for context.
+// Gated-String + length-ref family — see cpp registrations above for context.
 #[test]
 fn forge_python_codec_present_if_string() {
     assert_standalone_forge_python("codec_present_if_string", "codec_present_if_string.py");
@@ -6808,7 +6808,7 @@ fn forge_python_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_python("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.py");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
+// ── RFC §5.B — TLV envelope foundation ────
 #[test]
 fn forge_python_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_python(
@@ -7192,7 +7192,7 @@ fn forge_c11_codec_zenoh_hello() {
     assert_standalone_forge_c("codec_zenoh_hello", "codec_zenoh_hello.c.h");
 }
 
-// Wire RFC Phase B Y0a — see cpp registrations above for context.
+// Gated-String + length-ref family — see cpp registrations above for context.
 #[test]
 fn forge_c11_codec_present_if_string() {
     assert_standalone_forge_c("codec_present_if_string", "codec_present_if_string.c.h");
@@ -7249,7 +7249,7 @@ fn forge_c11_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_c("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.c.h");
 }
 
-// ── RFC §5.B Wire RFC Phase B Y0b — TLV envelope foundation ────
+// ── RFC §5.B — TLV envelope foundation ────
 #[test]
 fn forge_c11_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_c(
@@ -7614,7 +7614,7 @@ fn forge_c11_timer_diag_scheduler() {
     assert_standalone_forge_c("timer_diag_scheduler", "timer_diag_scheduler.c.h");
 }
 
-// ── Algorithm (C11, RFC §5.A — Phase A5 closes the §5.J.4 matrix) ──
+// ── Algorithm (C11, RFC §5.A — item A5 closes the §5.J.4 matrix) ──
 
 #[test]
 fn forge_c11_algorithm_crc16() {
@@ -8220,7 +8220,7 @@ fn forge_inline_mixed_c11() {
     assert_inline_kinds_lang("inline_mixed", sce_build::generator::Language::C11);
 }
 
-// ── Inline codec conformance (Phase F-2) ───────────────────────
+// ── Inline codec conformance ───────────────────────────────────
 //
 // Separate fixture from inline_mixed because the codec DSL is the
 // only inline kind that emits both a payload struct and its
@@ -8399,7 +8399,7 @@ fn cpp_context_typedef_multi_mixed() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ── Phase 3: Interpolation conformance ──────────────────────
+// ── Interpolation conformance ──────────────────────
 // ══════════════════════════════════════════════════════════════
 
 #[test]
@@ -8453,7 +8453,7 @@ fn forge_interpolation_2d_bilinear_python() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ── Phase 3: Filter conformance ─────────────────────────────
+// ── Filter conformance ─────────────────────────────
 // ══════════════════════════════════════════════════════════════
 
 #[test]
@@ -8532,7 +8532,7 @@ fn forge_filter_debounce_python() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ── Phase 3: Observer conformance ───────────────────────────
+// ── Observer conformance ───────────────────────────
 // ══════════════════════════════════════════════════════════════
 
 #[test]
@@ -8561,7 +8561,7 @@ fn forge_observer_coolant_python() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// ── Phase 3: Timer conformance ──────────────────────────────
+// ── Timer conformance ──────────────────────────────
 // ══════════════════════════════════════════════════════════════
 
 #[test]
@@ -8738,9 +8738,9 @@ fn forge_go_crossfile_rejects_whitespace_in_module_prefix() {
 ///   - validator → lookup (stateful imports stateless)
 ///
 /// `languages` parameter lets per-test callers narrow the matrix when a
-/// backend has not landed the importing kind yet (e.g. C11 supports
-/// procedure/codec/validator imports but filter/observer arrive in
-/// Phase E — adding C11 to those rows would panic on `unimplemented!`).
+/// backend does not implement the importing kind (e.g. C11 supports
+/// procedure/codec/validator imports; filter/observer C11 import
+/// lowering is not implemented, so those rows omit C11).
 ///
 /// Each combination:
 ///   1. Reads the importing kind's SCXML with an <sce:import> reference
@@ -8788,9 +8788,9 @@ fn assert_crossfile_codegen_languages(
 }
 
 /// Cpp/Kotlin/Rust/Go/Python — every backend that supports the importing
-/// kind. C11 is added per-test below for kinds whose C11 codegen has
-/// landed (procedure/validator); filter/observer C11 paths arrive in
-/// Phase E and would panic on `unimplemented!` if listed here.
+/// kind. C11 is added per-test below for kinds whose C11 import
+/// lowering exists (procedure/validator); filter/observer rows omit
+/// C11 (no C11 import lowering for those kinds).
 const FIVE_BACKENDS: &[sce_build::generator::Language] = &[
     sce_build::generator::Language::Cpp,
     sce_build::generator::Language::Kotlin,
@@ -9344,19 +9344,14 @@ fn forge_variant_default_overlay_unknown_arm_rejects() {
 
 // ── RFC §5.B B5-ν — variant parent-tag dispatch (4 parser/validator tests) ─
 //
-// Phase A covers parser + validators + diagnostics. Codegen (Phase B)
-// is gated behind a typed `GenerateError::UnsupportedFeature` so
-// authors get a clear "infrastructure ready, codegen pending" signal
-// rather than broken output. Tests below exercise the Phase A surface;
-// the codegen guard's positive case is covered by
-// `forge_b5_nu_codegen_phase_b_guard_fires`.
+// Tests below exercise the parser + validator + diagnostic surface;
+// the positive codegen round-trip is covered by
+// `forge_b5_nu_round_trip_local_nonlocal` further down.
 
-// RFC §5.B B5-ν: Phase A's `forge_b5_nu_codegen_phase_b_guard_fires`
-// proved the parser+validator entry rejected unimplemented codegen
-// cleanly. Phase B drops the guard and replaces this assertion with a
-// positive round-trip test (`forge_b5_nu_round_trip_local_nonlocal`
-// below) that exercises the full encode → decode → encode chain on a
-// 2-arm parent-tag variant. The negative-path coverage now lives in
+// RFC §5.B parent-tag dispatch: the positive round-trip test
+// (`forge_b5_nu_round_trip_local_nonlocal`
+// below) exercises the full encode → decode → encode chain on a
+// 2-arm parent-tag variant. The negative-path coverage lives in
 // the four parse-time / cross-doc diagnostics:
 // `forge_b5_nu_parent_tag_without_rpf_rejects`,
 // `forge_b5_nu_parent_tag_flag_not_in_rpf_rejects`,
@@ -9443,11 +9438,11 @@ fn b5_nu_write_round_trip_fixture(
     (dir, parent_path)
 }
 
-/// B5-ν Phase B positive round-trip — a parent codec embeds a parent-tag-
+/// Parent-tag positive round-trip — a parent codec embeds a parent-tag-
 /// dispatched variant codec. Codegen succeeds for Rust; emitted code
 /// contains the `parent_flags`-driven decode dispatch and the encode-
 /// side `_derived_header` local that OR's the active arm's bit into
-/// the carrier byte. This exercises the full Phase B surface end-to-
+/// the carrier byte. This exercises the full dispatch surface end-to-
 /// end (variant_obj Parent branch + `b5_nu_derivation_block` +
 /// `inject_b5_nu_carrier_suffix`).
 #[test]
@@ -9462,7 +9457,7 @@ fn forge_b5_nu_round_trip_local_nonlocal_rust() {
         &dir,
         &sce_build::ForgeCompileOptions::default(),
     )
-    .expect("Phase B codegen must succeed for valid parent-tag variant");
+    .expect("codegen must succeed for valid parent-tag variant");
 
     // Parent codec's encode emits a `_derived_header` local before any
     // byte append, and the carrier emit ORs it into `self.header`.
@@ -9605,8 +9600,8 @@ fn b5_nu_inversion_write_round_trip_fixture() -> (std::path::PathBuf, std::path:
 /// validator and the new collector data-source path. Encode-side
 /// codegen output must be byte-identical to the legacy leaf-side form
 /// (parent's `_derived_header` local + match block over the variant's
-/// active arm) per the RFC's "same codegen output as B5-ν Phase B"
-/// promise.
+/// active arm) — the inversion path must emit the same codegen
+/// output as the leaf-side form.
 #[test]
 fn forge_b5_nu_inversion_round_trip_emits_derive_block() {
     let (dir, parent_path) = b5_nu_inversion_write_round_trip_fixture();
@@ -10067,15 +10062,15 @@ fn forge_b5_nu_inversion_dispatch_carrier_after_embed_rejects() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// RFC §5.B B5-ν consumer-parity (claudedocs/rfc-b5-nu-consumer-parity.md)
-// — three independent gaps surfaced by watching-zenoh R125c against
+// RFC §5.B dispatcher consumer-parity — three independent gaps
+// surfaced by a consumer against
 // pin `b719ee3e`. Tests below pin the textbook closures:
 //
 // * Gap 2 (`forge_b5_nu_consumer_parity_alias_neq_stem_rust`) —
 //   parent imports the dispatcher with `as="renamed_alias"` distinct
 //   from the dispatcher's stem; the encode-side match must reference
 //   the dispatcher's stem-derived variant enum, not the alias's
-//   PascalCase. The Phase B regression `forge_b5_nu_round_trip_local_
+//   PascalCase. The earlier regression `forge_b5_nu_round_trip_local_
 //   nonlocal_rust` happens to use `as == stem`, which masked this bug.
 //
 // * Gap 3 (`forge_b5_nu_consumer_parity_present_if_gated_rust`) —
@@ -10094,7 +10089,7 @@ fn forge_b5_nu_inversion_dispatch_carrier_after_embed_rejects() {
 /// RFC B5-ν consumer-parity Gap 2 — alias ≠ stem at the parent's
 /// import. The dispatcher's stem (`b5nu_consumer_disp`) drives the
 /// emitted variant enum type (`B5nuConsumerDispVariant`); the parent
-/// imports it under `as="renamed_alias"`. Regression: Phase B's
+/// imports it under `as="renamed_alias"`. Regression: the original
 /// `embed_type_pascal: filters::to_pascal_case(alias.clone())` would
 /// have emitted `RenamedAliasVariant::...` — failing to compile.
 #[test]
@@ -10196,7 +10191,7 @@ fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
     // RFC B5-ν dispatcher-self-gen Gap 6 — when the imported codec is
     // a B5-ν dispatcher, the `use` statement must brace-list both the
     // struct and the variant enum so the consumer's encode-match
-    // resolves at rustc-time. Phase B / atomic 11287248 emitted only
+    // resolves at rustc-time. The original emitter emitted only
     // the struct import.
     assert!(
         parent_rust.contains(
@@ -10229,7 +10224,7 @@ fn forge_b5_nu_consumer_parity_alias_neq_stem_rust() {
 /// with `sce:present-if`. Encode-side derivation wraps the match in
 /// `Option` handling; absent embed → derived carrier bit = 0
 /// (deterministic extension of derivation to the don't-care case).
-/// Regression: Phase B emitted `match &self.<f>.body { ... }`
+/// Regression: the original emitter produced `match &self.<f>.body { ... }`
 /// unconditionally — fails to compile when `<f>` is `Option<T>`.
 #[test]
 fn forge_b5_nu_consumer_parity_present_if_gated_rust() {
@@ -10327,7 +10322,7 @@ fn forge_b5_nu_consumer_parity_present_if_gated_rust() {
         "absent branch must contribute 0 to derived carrier bits \
          (textbook absent → 0 rule);\n{parent_rust}"
     );
-    // Defensive — Phase B's unconditional pattern must not appear.
+    // Defensive — the unconditional pattern must not appear.
     assert!(
         !parent_rust.contains("match &self.key.body {"),
         "emit must NOT use the unconditional `match &self.key.body` shape \
@@ -10341,7 +10336,7 @@ fn forge_b5_nu_consumer_parity_present_if_gated_rust() {
 /// declares `<sce:requires-parent-flags>` forwarding the carrier; an
 /// arm body that consults a sibling parent flag (other than the
 /// variant tag flag) resolves against the dispatcher's forwarding
-/// source. Regression: Phase B's `validate_cross_codec_parent_flags`
+/// source. Regression: the original `validate_cross_codec_parent_flags`
 /// would have errored with the legacy "no field named X" message.
 #[test]
 fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
@@ -10421,7 +10416,7 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
     )
     .expect("chain-forwarding source must resolve arm body's RPF");
 
-    // RFC Axis-1 inversion Phase D — the dispatcher's own generated
+    // Dispatcher self-gen — the dispatcher's own generated
     // decode/encode must thread `n` (the dispatcher's own flag-input
     // parameter, name resolved via `<sce:flag-bind source="N"/>`'s
     // bare-name chain-forwarder shape) to arm bodies, NOT a bare
@@ -10474,8 +10469,7 @@ fn forge_b5_nu_consumer_parity_chain_forwarding_resolves() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// RFC §5.B B5-ν dispatcher self-gen (claudedocs/rfc-b5-nu-dispatcher-
-// self-gen.md) — per-backend regression fixtures for the variant arm
+// RFC §5.B dispatcher self-gen — per-backend regression fixtures for the variant arm
 // dispatch substitution when the dispatcher resolves the flag carrier
 // via Forwarding (own `<sce:requires-parent-flags>`). Each fixture
 // reuses the same dispatcher + arm body fixture set and asserts the
@@ -12173,25 +12167,25 @@ fn forge_codec_length_field_rejects_forward_reference() {
     );
 }
 
-// ── RFC Axis-1 inversion Phase A — flag-input + flag-bind foundation ──
+// ── Flag inversion — flag-input + flag-bind foundation ────────────────
 //
-// Phase A adds the new `<sce:flag-inputs>` + `<sce:flag-bind>` syntax
+// `<sce:flag-inputs>` + `<sce:flag-bind>` add declarative binding syntax
 // alongside the legacy `<sce:requires-parent-flags>` + `parent.X`
-// predicate form (additive — coexists during Phase A). These tests
-// exercise parse + cross-doc validate on the new shape. Phase B
-// (codegen) and Phase C (fixture migration) land in later atomics.
+// predicate form (additive — both shapes coexist). These tests
+// exercise parse + cross-doc validate on the new shape; round-trip
+// codegen is covered further down.
 
-/// Helper: write a Phase-A inversion fixture pair to a fresh temp dir.
+/// Helper: write a flag-inversion fixture pair to a fresh temp dir.
 /// Parent codec declares a local `<sce:flags id="header">` carrier and
 /// imports a leaf codec via `<sce:flag-bind input="has_suffix"
 /// source="header.N"/>`. Leaf declares `<sce:flag-inputs>` with one
 /// 1-bit input `has_suffix`.
-fn axis1_phase_a_write_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
+fn flag_inversion_write_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let dir = std::env::temp_dir().join(format!("sce_axis1_phase_a_{pid}_{id}"));
+    let dir = std::env::temp_dir().join(format!("sce_flag_inversion_{pid}_{id}"));
     std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
     let parent = r#"<?xml version="1.0"?>
@@ -12229,12 +12223,12 @@ fn axis1_phase_a_write_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
     (dir, parent_path)
 }
 
-/// Phase A positive — leaf with `<sce:flag-inputs>` + parent with
-/// `<sce:flag-bind>` parses + validates cleanly. Codegen emit (Phase B)
+/// Positive — leaf with `<sce:flag-inputs>` + parent with
+/// `<sce:flag-bind>` parses + validates cleanly. Codegen emit
 /// is not yet wired; this test confirms the foundation only.
 #[test]
-fn axis1_phase_a_flag_input_binding_parses_and_validates() {
-    let (dir, parent_path) = axis1_phase_a_write_fixture();
+fn flag_inversion_binding_parses_and_validates() {
+    let (dir, parent_path) = flag_inversion_write_fixture();
 
     let content = std::fs::read_to_string(&parent_path).expect("read parent");
     let result = sce_build::compile_forge_with_imports(
@@ -12244,23 +12238,23 @@ fn axis1_phase_a_flag_input_binding_parses_and_validates() {
         &dir,
         &sce_build::ForgeCompileOptions::default(),
     );
-    // Phase A: parse + validators succeed; codegen for the new shape
+    // Parse + validators succeed; codegen for the new shape
     // isn't yet wired, but the existing codegen path emits a plain
     // embed (no axis-1 threading) since the leaf has no other axis-1
     // consumer surface besides the recorded `flag_inputs` field. The
-    // test asserts compile-completes — any error is a Phase A regression.
+    // test asserts compile-completes — any error is a regression.
     if let Err(e) = result {
-        panic!("Phase A axis-1 must parse + validate cleanly; got: {e:?}");
+        panic!("flag-inversion fixture must parse + validate cleanly; got: {e:?}");
     }
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Phase A negative — leaf declares `<sce:flag-input>` but parent's
+/// Negative — leaf declares `<sce:flag-input>` but parent's
 /// import has no `<sce:flag-bind>` for it. Fires
 /// `codec/flag-input-unbound`.
 #[test]
-fn axis1_phase_a_flag_input_unbound_rejects() {
+fn flag_inversion_input_unbound_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
 
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -12332,11 +12326,11 @@ fn axis1_phase_a_flag_input_unbound_rejects() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Phase A negative — parent's `<sce:flag-bind input="...">` targets
+/// Negative — parent's `<sce:flag-bind input="...">` targets
 /// an input the leaf does not declare. Fires
 /// `codec/flag-bind-input-not-declared`.
 #[test]
-fn axis1_phase_a_flag_bind_input_not_declared_rejects() {
+fn flag_inversion_bind_input_not_declared_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
 
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -12414,11 +12408,11 @@ fn axis1_phase_a_flag_bind_input_not_declared_rejects() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Phase A negative — parent's flag-bind source names a carrier flag
+/// Negative — parent's flag-bind source names a carrier flag
 /// that does not exist on the parent. Fires
 /// `codec/flag-bind-source-not-resolved`.
 #[test]
-fn axis1_phase_a_flag_bind_source_not_resolved_rejects() {
+fn flag_inversion_bind_source_not_resolved_rejects() {
     use sce_build::forge::error::{ForgeError, ValidationError};
 
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -12493,12 +12487,12 @@ fn axis1_phase_a_flag_bind_source_not_resolved_rejects() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Phase A positive — chain-forwarder pattern: parent declares its own
+/// Positive — chain-forwarder pattern: parent declares its own
 /// `<sce:flag-input>` and uses bare-name form on `<sce:flag-bind>` to
 /// forward it inward. Mirrors the legacy B5-γ chain forwarding shape
 /// translated into the inverted vocabulary.
 #[test]
-fn axis1_phase_a_chain_forwarder_bare_name_validates() {
+fn flag_inversion_chain_forwarder_bare_name_validates() {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -12549,13 +12543,13 @@ fn axis1_phase_a_chain_forwarder_bare_name_validates() {
         &sce_build::ForgeCompileOptions::default(),
     );
     if let Err(e) = result {
-        panic!("Phase A chain forwarder must parse + validate cleanly; got: {e:?}");
+        panic!("chain forwarder must parse + validate cleanly; got: {e:?}");
     }
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC Axis-1 Phase B — round-trip codegen with predicate consumption.
+/// Flag inversion — round-trip codegen with predicate consumption.
 /// Parent has `<sce:flag-bind input="has_suffix" source="header.N"/>`,
 /// leaf has `<sce:flag-input name="has_suffix" width="1"/>` AND a body
 /// field gated by `sce:present-if="has_suffix"`. Test asserts:
@@ -12565,12 +12559,12 @@ fn axis1_phase_a_chain_forwarder_bare_name_validates() {
 ///   3. Parent's embed call-site extracts `((header >> 5) & 0x1)` and
 ///      threads the resulting u8 to the leaf.
 ///   4. Leaf's present-if-gated field reads `(has_suffix & 0x01) != 0`.
-fn axis1_phase_b_write_consuming_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
+fn flag_inversion_write_consuming_fixture() -> (std::path::PathBuf, std::path::PathBuf) {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let dir = std::env::temp_dir().join(format!("sce_axis1_phase_b_{pid}_{id}"));
+    let dir = std::env::temp_dir().join(format!("sce_flag_inversion_consuming_{pid}_{id}"));
     std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
     let parent = r#"<?xml version="1.0"?>
@@ -12610,8 +12604,8 @@ fn axis1_phase_b_write_consuming_fixture() -> (std::path::PathBuf, std::path::Pa
 }
 
 #[test]
-fn axis1_phase_b_emits_typed_param_and_predicate_consumption() {
-    let (dir, parent_path) = axis1_phase_b_write_consuming_fixture();
+fn flag_inversion_emits_typed_param_and_predicate_consumption() {
+    let (dir, parent_path) = flag_inversion_write_consuming_fixture();
 
     let parent_content = std::fs::read_to_string(&parent_path).expect("read parent");
     let leaf_path = dir.join("codec_axis1_b_leaf.scxml");
@@ -12638,7 +12632,7 @@ fn axis1_phase_b_emits_typed_param_and_predicate_consumption() {
             &dir,
             &opts,
         )
-        .unwrap_or_else(|e| panic!("Phase B parent codegen failed on {lang:?}: {e:?}"));
+        .unwrap_or_else(|e| panic!("parent codegen failed on {lang:?}: {e:?}"));
         let _ = sce_build::compile_forge_with_imports(
             &leaf_content,
             sce_build::DocumentLabel::symmetric("codec_axis1_b_leaf"),
@@ -12646,7 +12640,7 @@ fn axis1_phase_b_emits_typed_param_and_predicate_consumption() {
             &dir,
             &opts,
         )
-        .unwrap_or_else(|e| panic!("Phase B leaf codegen failed on {lang:?}: {e:?}"));
+        .unwrap_or_else(|e| panic!("leaf codegen failed on {lang:?}: {e:?}"));
     }
 
     // Rust output assertions — signature + predicate + embed extract.
@@ -12704,10 +12698,10 @@ fn axis1_phase_b_emits_typed_param_and_predicate_consumption() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC Axis-1 inversion Phase D1 — variant arm flag-bind threading.
+/// Flag inversion — variant arm flag-bind threading.
 ///
-/// Phase B closed the direct-`<sce:embed>` flag-bind threading gap;
-/// Phase D1 closes the variant-arm-dispatcher gap. The dispatcher must
+/// Direct-`<sce:embed>` flag-bind threading is covered above; this
+/// covers the variant-arm-dispatcher gap. The dispatcher must
 /// extract the bound source bits from the parent's carrier and thread
 /// them to the arm body's `decode`/`encode` call — without this, an
 /// arm body that declares `<sce:flag-inputs>` is invoked via
@@ -12720,12 +12714,12 @@ fn axis1_phase_b_emits_typed_param_and_predicate_consumption() {
 /// `rustc_compile_codec_set` gate that proves the threaded code
 /// actually compiles cleanly under cargo + rustc + `deny(warnings)`.
 #[test]
-fn axis1_phase_d1_variant_arm_flag_bind_threading() {
+fn flag_inversion_variant_arm_flag_bind_threading() {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    let dir = std::env::temp_dir().join(format!("sce_axis1_phase_d1_{pid}_{id}"));
+    let dir = std::env::temp_dir().join(format!("sce_flag_inversion_variant_{pid}_{id}"));
     std::fs::create_dir_all(&dir).expect("mkdir fixture");
 
     // Parent envelope: 1-byte header with `mid:5 + S:1`. Variant
@@ -12804,7 +12798,7 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
             &dir,
             &opts,
         )
-        .unwrap_or_else(|e| panic!("Phase D1 parent codegen failed on {lang:?}: {e:?}"));
+        .unwrap_or_else(|e| panic!("variant-arm parent codegen failed on {lang:?}: {e:?}"));
     }
 
     // Rust emit-shape assertions on the dispatcher.
@@ -12842,7 +12836,7 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
 
     // End-to-end rustc-compile gate — substring assertions check shape;
     // this proves the dispatcher + arm bodies compose into a compilable
-    // crate (Phase D1 regression: without this gate the threaded code
+    // crate (regression: without this gate the threaded code
     // emit would shape-match goldens but fail at the leaf decode arity).
     rustc_compile_codec_set(
         &dir,
@@ -12851,14 +12845,14 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
             "codec_axis1_d1_with_input.scxml",
             "codec_axis1_d1_no_input.scxml",
         ],
-        "axis1_phase_d1",
+        "flag_inversion_variant",
     )
-    .expect("Phase D1 variant arm flag-bind threading must rustc-compile clean");
+    .expect("variant arm flag-bind threading must rustc-compile clean");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// RFC Axis-1 inversion + B5-ν inversion β shape — regression gate
+/// Flag-inversion + parent-tag dispatch — regression gate
 /// for the embed-site call-arg ORDER when the parent's
 /// `<sce:import>` of a dispatcher leaf carries BOTH
 /// `<sce:variant-dispatch>` AND `<sce:flag-bind>` directives.
@@ -12873,7 +12867,7 @@ fn axis1_phase_d1_variant_arm_flag_bind_threading() {
 /// silently selecting the wrong variant arm at decode and reading
 /// the wrong wire bytes.
 ///
-/// Phase D1's fixture (`axis1_phase_d1_variant_arm_flag_bind_threading`)
+/// The threading fixture (`flag_inversion_variant_arm_flag_bind_threading`)
 /// only exercises the DISPATCHER-side arm threading (dispatcher calling
 /// its own arm bodies). The parent-imports-a-dispatcher pattern with
 /// both directives on the same import was unexercised until this test,
@@ -12907,7 +12901,7 @@ fn axis1_inversion_embed_dispatcher_arg_order() {
     // dispatcher. Import carries BOTH variant-dispatch (on header.M)
     // and flag-bind (input N ← source header.N) — the (variant-dispatch
     // + flag-bind) tuple on a single import is the precise pattern
-    // missing from Phase D1's coverage.
+    // missing from the threading test's coverage.
     let parent = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

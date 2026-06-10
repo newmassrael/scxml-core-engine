@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // `<sce:extern>` whitelisted intrinsic registry — watching-zenoh RFC §5.I
-// (lines 1691-1924), Atomic A. Closed table that mirrors the spec's
+// (lines 1691-1924). Closed table that mirrors the spec's
 // concrete v1 whitelist (lines 1717-1750):
 //
 //   - Atomics, per-width × per-ordering — 90 entries
@@ -12,18 +12,17 @@
 //
 // 101 baseline symbols. Plugin-extension symbols (deploy.yaml
 // `extern_symbols.target_plugin: <path>`) are out of scope here —
-// Atomic B will compose the plugin file's additions on top of this
-// baseline. Q-Call-1 (a) lock: `pub const` Rust slice over YAML data,
+// the target-plugin loader composes the plugin file's additions on
+// top of this baseline. `pub const` Rust slice over YAML data,
 // mirroring the `ALL_DIAGNOSTIC_CODES` drift-guard pattern.
 //
-// Naming + signatures are spec-verbatim per
-// `feedback_spec_mirror_parity.md`; if a future spec edit renames a
+// Naming + signatures are spec-verbatim; if a future spec edit renames a
 // symbol or shifts a signature, the change lands here as a single
 // edit and downstream `<sce:extern>` rejection messages update with no
 // agent-paraphrase drift.
 
 /// Foreign function ABI a `<sce:extern>` declaration commits to.
-/// Atomic A admits only the two ABIs the spec example calls out
+/// The registry admits only the two ABIs the spec example calls out
 /// (line 1703: `abi="c"`); future axes (e.g. `system`) ride a schema
 /// extension, not a shape change here.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,17 +117,17 @@ pub struct Symbol {
     /// `<sce:extern sig="...">`. Any drift surfaces as
     /// `extern/signature-mismatch`.
     pub sig: &'static str,
-    /// Required ABI. Q-Call-3: per-symbol — atomics + fences + cache
+    /// Required ABI. Per-symbol — atomics + fences + cache
     /// maintenance + IRQ ride `Abi::C` in v1 because the underlying
     /// runtime crate (`sce_intrinsics_runtime`) exposes them through
     /// the C ABI for stable cross-language linkage on MCU targets.
     pub abi: Abi,
     /// Crate that provides the symbol implementation. Defaults to
     /// `sce_intrinsics_runtime` for the SCE-shipped baseline; plugin
-    /// extensions (Atomic B) override per-symbol.
+    /// extensions (target-plugin loader) override per-symbol.
     pub crate_name: &'static str,
-    /// Free-form tag describing the symbol's purpose (Q-Call-3
-    /// optional field). Surfaced in diagnostic messages for repair
+    /// Free-form tag describing the symbol's purpose (optional
+    /// field). Surfaced in diagnostic messages for repair
     /// guidance ("you tried to use an atomic intrinsic — did you mean
     /// `sce_atomic_load_acquire_u32`?").
     pub purpose: &'static str,
@@ -952,7 +951,7 @@ pub fn lookup_symbol(name: &str) -> Option<&'static Symbol> {
 /// author authoring of the cache trio in `<sce:extern>` declarations
 /// per spec lines 1222-1227 author-must-not, and (b) auto-inject the
 /// 3 entries into `ParsedForge.externs` when a buffer-
-/// pool with `cache-policy: maintain` is parsed so atomic C's sidecar
+/// pool with `cache-policy: maintain` is parsed so the `<sce:extern>` sidecar
 /// emit picks them up automatically.
 pub const CACHE_MAINTENANCE_TRIO: &[&str] = &[
     "sce_dcache_clean_by_addr",

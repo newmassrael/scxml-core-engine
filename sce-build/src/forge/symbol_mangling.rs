@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §5.O Atomic 1 — symbol mangling foundation.
+// Watching-zenoh RFC §5.O — symbol mangling.
 //
 // Spec lines 3055-3057 (`<machine>__<state_path>__<artifact>`) fix the
 // per-symbol identifier shape the sourcemap JSON keys off. The mangler
@@ -291,8 +291,7 @@ fn walk_action_block(
 
 /// Read the name of a `ForgeDocument` variant. Exhaustive match so a
 /// future kind addition surfaces here at compile time (textbook
-/// silently-broken-hook prevention per [[feedback-silently-broken-
-/// hooks]]).
+/// silently-broken-hook prevention).
 fn forge_doc_name(doc: &ForgeDocument) -> &str {
     match doc {
         ForgeDocument::Statechart(m) => &m.name,
@@ -312,12 +311,11 @@ fn forge_doc_name(doc: &ForgeDocument) -> &str {
         ForgeDocument::Worker(m) => &m.name,
         ForgeDocument::BoundedCollection(m) => &m.name,
         ForgeDocument::Enum(m) => &m.name,
-        // NL→IR Item C1 Path A: EventSchema follows the same name-
-        // from-model convention as every other forge kind. The
-        // schema document's symbol name drives import-table lookup
-        // and per-machine binding diagnostics; Atomic 4's payload-
-        // struct codegen reads it as the Pascal-cased struct
-        // identifier root.
+        // EventSchema follows the same name-from-model convention
+        // as every other forge kind. The schema document's symbol
+        // name drives import-table lookup and per-machine binding
+        // diagnostics; the payload-struct codegen reads it as the
+        // Pascal-cased struct identifier root.
         ForgeDocument::EventSchema(m) => &m.name,
     }
 }

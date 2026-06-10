@@ -76,11 +76,11 @@ pub enum ExprTarget {
     Rust,
     Go,
     Python,
-    /// C11 backend (RFC §5.J.2). Identifier emission is snake-case (matching
+    /// C11 backend. Identifier emission is snake-case (matching
     /// the C convention and Rust/Python's ident handling); coercion rules
     /// mirror C++ (implicit widening, decimal-integer-to-float `.0`
     /// promotion under push-down). The emitter is restricted to operators
-    /// the Phase-A transform fixtures exercise.
+    /// the transform fixtures exercise.
     C,
 }
 
@@ -517,7 +517,7 @@ pub(crate) enum ExprKind {
     /// design keeps the "this string is bytes" decision and its encoding
     /// (UTF-8) in a single place, so every backend renders byte-identical
     /// comparison constants instead of re-deriving the reinterpretation
-    /// per emitter. See `claudedocs/rfc-eventschema-bytes-guard.md` §3 B1.
+    /// per emitter.
     BytesLit {
         bytes: Vec<u8>,
     },
@@ -578,15 +578,14 @@ pub(crate) enum ExprKind {
     /// `src.toByteArray(Charsets.UTF_8)`. The decode-once-here design
     /// keeps the "this Str is passed as bytes" decision in a single place
     /// (`infer_types`) so emitters only render the resulting node — the
-    /// same shape as the [`BytesLit`] string→bytes literal rewrite. See
-    /// `claudedocs/rfc-c7-wildcard-keyexpr-expressibility.md` Q-W-5.
+    /// same shape as the [`BytesLit`] string→bytes literal rewrite.
     ///
     /// [`BytesLit`]: ExprKind::BytesLit
     BytesView {
         source: Box<TypedExpr>,
         /// The C11 length sibling expression (`entry.pattern_len`), resolved
         /// at projection time from the codec's `length_field` SSOT — never a
-        /// `<field>_len` guess (RFC §8 Smell A fix). Only the C11 emit
+        /// `<field>_len` guess. Only the C11 emit
         /// consumes it (a `char[N]` array carries no inherent length); every
         /// other backend reads the length from the string type itself
         /// (`.as_bytes()` / `.size()` / `len(...)`). `None` when the source
@@ -1743,7 +1742,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
             };
             match resolved {
                 Some((ret, params)) => {
-                    // RFC c7-wildcard W-project (Q-W-5 (a) lock): a `Str`
+                    // Wildcard-keyexpr Str-argument projection: a `Str`
                     // argument flowing into a `bytes` parameter is a
                     // bounded-string field used as bytes — project it to a
                     // borrowed `bytes` view so the call site emits each
@@ -2729,8 +2728,8 @@ fn rust_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `Vec<u8> == &[u8; N]` (and `== Vec<u8>`) compare length+content,
         // so the default `==`/`!=` Binary path needs no special-casing —
-        // only this constant rendering. ASCII-only (RFC §3 B2) so `b"…"`
-        // is valid. See `claudedocs/rfc-eventschema-bytes-guard.md` §3 B5.
+        // only this constant rendering. ASCII-only by contract so `b"…"`
+        // is valid.
         ExprKind::BytesLit { bytes } => format!("b\"{}\"", bytes_as_quoted_ascii(bytes)),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
@@ -3468,8 +3467,9 @@ fn python_binop(op: BinOp) -> &'static str {
 //   the parameter names emitted by `LangCtx::format_param` for
 //   `Language::C11`). Cpp leaves identifiers verbatim.
 // * Null literal becomes `NULL` (from `<stddef.h>`) instead of `nullptr`.
-// * No other differences are exercised by the Phase-A transform fixture
-//   set; broader operator and type coverage lands in subsequent phases.
+// * No other differences are exercised by the transform fixture
+//   set; broader operator and type coverage waits until a consumer
+//   needs it.
 
 fn emit_c(expr: &TypedExpr, expected: InferredType) -> String {
     // Push-down: arithmetic + Float expectation propagates into operands so
@@ -3561,7 +3561,7 @@ fn c_emit_node(expr: &TypedExpr) -> String {
                     format!("{ll} != {rl} || memcmp({lv}, {rv}, {cmp_len}) != 0")
                 };
             }
-            // RFC §5.J.2 V3 — string comparison lowering. C lacks operator
+            // String comparison lowering. C lacks operator
             // overloading; `a == b` on `const char *` is pointer equality, not
             // content equality. Lower any string-typed comparison (==, !=, <,
             // >, <=, >=) to `strcmp(a, b) <op> 0`, which is the lexicographic
@@ -3900,9 +3900,9 @@ mod tests {
 
     // ── W-project: Str-arg → borrowed bytes-view projection ─────
     // A `Str` argument flowing into a `bytes` parameter is projected to a
-    // borrowed view at the call site (Q-W-5). The C11 view's length must
+    // borrowed view at the call site. The C11 view's length must
     // come from the codec `length_field` SSOT registered in the TypeCtx
-    // (§8 Smell A), never a `<field>_len` guess.
+    // (length-field SSOT rule), never a `<field>_len` guess.
     fn projection_ctx() -> TypeCtx<'static> {
         let mut ctx = TypeCtx::new();
         ctx.project_str_args_as_bytes_view = true;
@@ -4642,7 +4642,7 @@ mod tests {
         assert_eq!(out, "retryCount_ + 1");
     }
 
-    // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2):
+    // EventSchema MCU native lowering:
     // the depth-3 `_event.data.<field>` access path is the exact shape
     // `event_schema_check::lower_typed_guard` feeds in — the field's
     // concrete type is registered under the full dotted key, the inner

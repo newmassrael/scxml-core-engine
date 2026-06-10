@@ -34,7 +34,7 @@ use super::model::ForgeDocument;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ForgePoolKind {
     /// `<scxml sce:kind="buffer-pool">` — fixed-slot RX/TX/stage pool
-    /// (§5.E B7-α/β/γ landed). Today the only pool kind a deploy.yaml
+    /// (§5.E). Today the only pool kind a deploy.yaml
     /// `stage_pool:` reference may resolve to.
     BufferPool,
 }

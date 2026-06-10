@@ -85,16 +85,16 @@ pub enum ForgeKind {
     Procedure,
     /// Range/plausibility/rate-of-change validation.
     Validator,
-    /// Signal filtering: moving average, low-pass, debounce (Phase 3).
+    /// Signal filtering: moving average, low-pass, debounce.
     Filter,
-    /// 1D/2D table interpolation (Phase 3).
+    /// 1D/2D table interpolation.
     Interpolation,
-    /// Periodic/delayed task timing (Phase 3).
+    /// Periodic/delayed task timing.
     Timer,
-    /// Threshold monitoring with hysteresis (Phase 3).
+    /// Threshold monitoring with hysteresis.
     Observer,
     /// Pure synchronous function with bounded loops and mutable locals
-    /// — watching-zenoh RFC §5.A (Phase A3). Free function emit on
+    /// — watching-zenoh RFC §5.A (item A3). Free function emit on
     /// every backend (`#![no_std]`-clean on Rust when no bytes param).
     Algorithm,
     /// Byte-stream link endpoint — watching-zenoh RFC §5.C. MCU-class
@@ -105,24 +105,24 @@ pub enum ForgeKind {
     Link,
     /// SRAM-placed, DMA-aligned slot table — watching-zenoh RFC §5.E.
     /// Second MCU-class kind (RFC §5.J.4): emits only on `(rust, *)`
-    /// and `(c11, bare_metal)`. B7-α ships the minimum slot table on
-    /// `(rust, std)` with `<sce:slot-count>` / `<sce:slot-size>` /
-    /// `<sce:section>` / `<sce:alignment>` / `<sce:dma-channel>` /
-    /// `<sce:cache-policy>` schema. The 7-state lifecycle FSM
-    /// (`free` / `cpu-mut` / `dma-armed-{tx,rx}` / `dma-busy-{tx,rx}` /
-    /// `cpu-ref`) defers to B7-γ; cache maintenance pinning defers to
-    /// B7-δ (gated on §5.I `<sce:call>` intrinsic registry).
+    /// and `(c11, bare_metal)`. The slot table carries the
+    /// `<sce:slot-count>` / `<sce:slot-size>` / `<sce:section>` /
+    /// `<sce:alignment>` / `<sce:dma-channel>` / `<sce:cache-policy>`
+    /// schema, the 7-state lifecycle FSM (`free` / `cpu-mut` /
+    /// `dma-armed-{tx,rx}` / `dma-busy-{tx,rx}` / `cpu-ref`), and
+    /// cache-maintenance pinning routed through the §5.I `<sce:call>`
+    /// intrinsic registry.
     BufferPool,
     /// Concurrent execution context driven by a `<sce:link-rx>` source —
     /// watching-zenoh RFC §5.D lines 858-913. Third MCU-class kind (RFC
     /// §5.J.4): emits only on `(rust, *)` (tokio::spawn on AP, cooperative-
     /// scheduler slot on MCU) and `(c11, bare_metal)` (cooperative-
-    /// scheduler slot, fixed ring-buffer inbox). C2-α ships the schema +
+    /// scheduler slot, fixed ring-buffer inbox). The schema carries a
     /// parse-time author guard for `worker/shared-mutable-state`; codegen
-    /// (Rust + C11 dual-emit using heapless::spsc / opaque sce_inbox_*
-    /// types) lands in C2-β alongside cross-resolution + ordering codes;
-    /// deploy-aware `MachineSchedulerConfig` + worker-count validation
-    /// lands in C2-γ.
+    /// is Rust + C11 dual-emit (heapless::spsc / opaque sce_inbox_*
+    /// types) with cross-resolution + ordering codes; deploy-aware
+    /// `MachineSchedulerConfig` + worker-count validation runs against
+    /// deploy.yaml.
     Worker,
     /// Typed container with build-time-declared capacity but runtime-varying
     /// occupancy — watching-zenoh RFC §5.L lines 2540-2655. zenoh-pico parity
@@ -131,42 +131,43 @@ pub enum ForgeKind {
     /// emitter table per §5.J.5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap
     /// struct / Cpp `std::array<T, N>` + `std::bitset<N>` / Kotlin
     /// `Array<T?>` + `BooleanArray` / Go fixed-array + mask / Python list +
-    /// bytearray mask). C6-α ships the schema + parse-time validators for
-    /// the two structure-only codes (`collection/ordering-sorted-requires-
+    /// bytearray mask). Parse-time validators cover the two
+    /// structure-only codes (`collection/ordering-sorted-requires-
     /// index-by` + `collection/overflow-policy-oldest-wins-requires-ordering-
     /// insertion`); cross-doc element-type resolution + index-by-field
-    /// verification + atomics-import check land in C6-β; deploy-time
-    /// capacity resolution + 6-backend codegen land in C6-γ.
+    /// verification + the atomics-import check run as cross-doc
+    /// validators; capacity resolves against deploy.yaml and all six
+    /// backends emit.
     BoundedCollection,
-    /// Closed set of named variants with 1:1 wire-key values — NL→IR
-    /// Mapping Roadmap Item C1 Path A. Distinct from [`Self::Lookup`]
+    /// Closed set of named variants with 1:1 wire-key values.
+    /// Distinct from [`Self::Lookup`]
     /// (many-to-one dispatch) by the bijectivity invariant: each
     /// variant's `value` is unique within the document, and the
     /// generated typed enum carries that wire byte verbatim. Surface
     /// form is a top-level `<scxml sce:kind="enum" sce:underlying-type="<int>">`
     /// document with one `<sce:variant name="…" value="…"/>` child per
     /// variant. Per-backend codegen lowers to `enum class : uint8_t`
-    /// / `#[repr(u8)] enum` / `IntEnum` / etc. (Atomic 2, deferred —
-    /// Atomic 1 is parse + IR only). Inline form (`<sce:enum>` as
-    /// child of `<scxml>`) defers per design RFC §8 F-ζ.
+    /// / `#[repr(u8)] enum` / `IntEnum` / etc. The inline form
+    /// (`<sce:enum>` as child of `<scxml>`) is not implemented until a
+    /// consumer needs it.
     Enum,
-    /// Typed contract for `_event.data` of a named SCXML event — NL→IR
-    /// Mapping Roadmap Item C1 Path A (18th kind). Maps an event name
+    /// Typed contract for `_event.data` of a named SCXML event (the
+    /// 18th forge kind). Maps an event name
     /// (`job.completed`, `task.failed`, …) to a list of typed `<data>`
     /// declarations so the receive-side typecheck can validate
     /// `_event.data.<field>` expressions in transition `cond` attributes
     /// at parse time. Send-side payload validation
     /// (`<send>/<param name="F">`) and mesh cross-machine validation
-    /// (DL-7') ride the same shape. Schemaless fallback (DL-9'): events
+    /// ride the same shape. Schemaless fallback: events
     /// without an imported EventSchema retain dynamic `_event.data`
     /// behavior. W3C built-in events (`error.*`, `done.invoke.*`,
     /// `done.state.*`) are explicitly excluded — declaring a schema for
     /// these raises `validation/event-schema-on-builtin-event`.
-    /// Per-backend payload struct codegen (Atomic 4) emits a typed
+    /// Per-backend payload struct codegen emits a typed
     /// record per backend that references imported Enum kinds by
     /// qualified name via `LangCtx::resolved_type`; the Enum kind owns
     /// its emitted type, so EventSchema never re-emits enum variants
-    /// (single source of truth per design RFC §3 DL-6').
+    /// (the Enum document is the single source of truth).
     EventSchema,
 }
 
@@ -254,9 +255,9 @@ impl ForgeKind {
             // wires to a downstream `sce_link_runtime_<os>` impl.
             Self::Link => true,
             // RFC §5.E: BufferPool emits a struct owning a fixed-size
-            // slot table (B7-α `(rust, std)` initial shape; B7-γ adds
-            // the 7-state lifecycle FSM with phantom-typed `Slot<state>`
-            // API + IR-level borrow check). Acquire/return surface lives
+            // slot table with the 7-state lifecycle FSM, phantom-typed
+            // `Slot<state>` API + IR-level borrow check.
+            // Acquire/return surface lives
             // on the struct, not as free functions.
             Self::BufferPool => true,
             // RFC §5.D: Worker emits a struct owning an SPSC inbox
@@ -272,14 +273,14 @@ impl ForgeKind {
             // The slot table, occupancy mask, and generation counters
             // are instance state of the generated struct.
             Self::BoundedCollection => true,
-            // NL→IR Item C1 Path A: Enum is a typed vocabulary
+            // Enum is a typed vocabulary
             // declaration — codegen emits a type definition
             // (`enum class` / `#[repr] enum` / `IntEnum` / etc.) not
             // a struct instance. No runtime state.
             Self::Enum => false,
-            // NL→IR Item C1 Path A: EventSchema is parse-time metadata
+            // EventSchema is parse-time metadata
             // — a typed contract for `_event.data` of a named event.
-            // Atomic 4 codegen emits a per-backend payload struct
+            // Codegen emits a per-backend payload struct
             // (`struct <Schema>Payload` etc.) that downstream consumers
             // construct or destructure at the `<send>/<param>` site;
             // the schema document itself carries no runtime instance.
@@ -314,9 +315,9 @@ impl ForgeKind {
             // downstream. Tier `None` is honest at the SCE level.
             Self::Link => RuntimeDep::None,
             // RFC §5.E: BufferPool ships a self-contained slot table
-            // on `(rust, std)` in B7-α — no runtime helper crate
-            // dependency. B7-γ's IR-level borrow check is codegen-time;
-            // B7-δ's cache maintenance pinning routes through §5.I
+            // — no runtime helper crate dependency. The IR-level
+            // borrow check is codegen-time; cache-maintenance pinning
+            // routes through §5.I
             // intrinsics, themselves contracts not runtime helpers.
             // SCE-side tier `None` matches Link's stance.
             Self::BufferPool => RuntimeDep::None,
@@ -334,10 +335,10 @@ impl ForgeKind {
             // (§6.2.6) is codegen-time, not a runtime helper. Tier
             // `None` matches BufferPool's stance.
             Self::BoundedCollection => RuntimeDep::None,
-            // NL→IR Item C1 Path A: Enum lowers to a pure type
+            // Enum lowers to a pure type
             // declaration per backend — no helper crate dependency.
             Self::Enum => RuntimeDep::None,
-            // NL→IR Item C1 Path A: EventSchema's Atomic 4 codegen
+            // EventSchema's codegen
             // emits a per-backend payload struct with primitive /
             // bool / string / bytes / typed-Enum fields. No SCE-side
             // runtime helper crate (the typed-Enum fields reference
@@ -401,8 +402,8 @@ impl std::fmt::Display for ForgeKind {
 // ── Cross-language type system ─────────────────────────────────
 
 /// Reference to an imported `sce:kind="enum"` document, carried as the
-/// payload of [`SceType::Enum`]. NL→IR Mapping Roadmap Item C1 Path A:
-/// fields may declare `sce:type="enum:<alias>"`, which parses into
+/// payload of [`SceType::Enum`].
+/// Fields may declare `sce:type="enum:<alias>"`, which parses into
 /// `SceType::Enum(EnumRef { alias: "<alias>".into() })`. The alias is
 /// resolved against the surrounding document's `<sce:import>` table by
 /// the cross-kind binding pass so the underlying integer type can be
@@ -442,15 +443,15 @@ pub enum SceType {
     String,
     Bytes,
     /// Enum-typed value drawn from an imported `sce:kind="enum"`
-    /// document — NL→IR Mapping Roadmap Item C1 Path A. Surface form
+    /// document. Surface form
     /// `sce:type="enum:<alias>"`. The lattice rule is:
     /// `Enum(E) ⊑ E.underlying_type` (e.g. `Enum(E) ⊑ Uint8` when E's
     /// `sce:underlying-type="uint8"`), and cross-type comparison
     /// `Enum(E) == 0x11` lowers to the underlying integer comparison
-    /// after cross-kind resolution. Per-backend codegen (Atomic 2)
+    /// after cross-kind resolution. Per-backend codegen
     /// emits language-native typed enums (`enum class : uint8_t`,
-    /// `#[repr(u8)] enum`, `IntEnum`, …). Atomic 1 scope: parse +
-    /// IR only — `is_unsigned()` / `int_bit_width()` / etc. return
+    /// `#[repr(u8)] enum`, `IntEnum`, …). At the IR level
+    /// `is_unsigned()` / `int_bit_width()` / etc. return
     /// `false` / `None` and callers that need the underlying type
     /// must resolve via the cross-kind binding pass first.
     #[serde(rename = "enum")]
@@ -459,7 +460,7 @@ pub enum SceType {
 
 impl SceType {
     pub fn from_attr(s: &str) -> Option<Self> {
-        // NL→IR Item C1 Path A: `sce:type="enum:<alias>"` parses to
+        // `sce:type="enum:<alias>"` parses to
         // `SceType::Enum(EnumRef { alias })`. The alias must be
         // non-empty; whitespace-only or empty payloads return None
         // here so the diagnostic surfaces as "unknown sce:type" rather
@@ -531,7 +532,7 @@ impl SceType {
         matches!(self, Self::Float32 | Self::Float64)
     }
 
-    /// Bit width for fixed-width integer types — used by RFC §5.B B1-γ
+    /// Bit width for fixed-width integer types — used by the RFC §5.B
     /// flags primitive to bound `<sce:flag bit="N"/>` against the carrier
     /// type's domain. Returns `None` for non-integer types (float / bool /
     /// string / bytes), where bit-positioned flags have no meaning.
@@ -581,7 +582,7 @@ pub struct ForgeField {
     /// ECMAScript expression (for computed/output fields).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expr: Option<String>,
-    /// NL→IR Mapping Roadmap Item 4 — physical-quantity annotation.
+    /// Physical-quantity annotation (`sce:quantity`).
     /// `Some({ scale, offset, unit })` when the field carries a
     /// `sce:quantity="…"` attribute. Drives type checking (units that
     /// disagree across an arithmetic operator are rejected) and codegen
@@ -592,7 +593,7 @@ pub struct ForgeField {
     /// Per-slot capacity for `bytes`-typed fields, declared via
     /// `sce:max-size="N"`. `None` ⇒ fall back to
     /// [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored for non-bytes
-    /// types. See `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.
+    /// types.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_size: Option<u32>,
 }
@@ -607,7 +608,7 @@ pub struct TransformModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
     pub outputs: Vec<ForgeField>,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="transform">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -672,7 +673,7 @@ pub struct LookupModel {
     pub output: ForgeField,
     pub entries: Vec<LookupEntry>,
     pub miss_policy: MissPolicy,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="lookup">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -713,7 +714,7 @@ impl LookupModel {
     }
 }
 
-// ── Enum kind (NL→IR Item C1 Path A) ──────────────────────────
+// ── Enum kind ──────────────────────────────────────────────────
 
 /// A single named variant in an `sce:kind="enum"` document. Each variant
 /// pairs a `name` (the source-level identifier authors reference as
@@ -741,8 +742,8 @@ pub struct EnumVariant {
     pub source_line: Option<u32>,
 }
 
-/// Enum: a closed set of named variants with 1:1 wire-key mapping —
-/// NL→IR Mapping Roadmap Item C1 Path A. Distinct from
+/// Enum: a closed set of named variants with 1:1 wire-key mapping.
+/// Distinct from
 /// [`LookupModel`] (many-to-one dispatch table) by the bijectivity
 /// invariant on `variants[i].value`. Surface form:
 ///
@@ -758,25 +759,24 @@ pub struct EnumVariant {
 /// </scxml>
 /// ```
 ///
-/// Per-backend codegen (Atomic 2, deferred) lowers to `enum class :
+/// Per-backend codegen lowers to `enum class :
 /// <int>`, `#[repr(<int>)] enum`, `IntEnum`, etc. — single source of
 /// truth on the Enum document; importers reference the emitted type
-/// by qualified name rather than re-emitting variants. Atomic 1
-/// scope: parse-time IR only.
+/// by qualified name rather than re-emitting variants.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct EnumModel {
     pub name: String,
     /// Underlying integer carrier — one of `uint8`/`uint16`/`uint32`/
-    /// `uint64`. α ships unsigned only per design RFC §8 F-ι (signed
-    /// defers until a consumer needs negative wire values). The
+    /// `uint64`. Unsigned only — signed underlying types are not
+    /// implemented until a consumer needs negative wire values. The
     /// parser rejects non-unsigned-integer `sce:underlying-type`
     /// values with `validation/enum-unsupported-underlying-type`.
     pub underlying_type: SceType,
     /// All variants in declaration order. Empty `variants` is
     /// rejected at parse time with `validation/enum-no-variants`.
     pub variants: Vec<EnumVariant>,
-    /// NL→IR Item C1 Path A follow-up F-κ — strict variant membership
+    /// Strict variant membership
     /// switch. When `true` (the default), integer literals compared
     /// against (receive-side) or assigned to (send-side) an
     /// `enum:<alias>`-typed field must be one of the values declared
@@ -787,33 +787,32 @@ pub struct EnumModel {
     /// legal. Width narrowing remains active regardless of this opt-
     /// out — only the membership check silent-skips when `false`.
     pub strict_variants: bool,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="enum">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
 }
 
-// ── EventSchema kind (NL→IR Item C1 Path A) ────────────────────
+// ── EventSchema kind ────────────────────────────────────────────
 
-/// Typed contract for the `_event.data` payload of a named SCXML event
-/// — NL→IR Mapping Roadmap Item C1 Path A, design RFC §2 DL-1' / DL-8'.
+/// Typed contract for the `_event.data` payload of a named SCXML event.
 /// Each schema names exactly one event (`job.completed`, `task.failed`,
 /// …) and declares the typed fields authors may read via
 /// `_event.data.<field>` in transition `cond` attributes and write via
 /// `<send>/<param>` payloads.
 ///
-/// Two surface forms produce identical models (DL-8' inline lowering):
+/// Two surface forms produce identical models (inline lowering):
 ///   * Top-level form (primary):
 ///     `<scxml sce:kind="event-schema" sce:event-name="job.completed">`
 ///     parsed via the regular `sce:kind` dispatch.
-///   * Inline form (sugar, deferred to F-ζ — out of scope for Atomic
-///     3/4): `<sce:event-schema event-name="job.completed">` as a
+///   * Inline form (sugar; not implemented until a consumer needs
+///     it): `<sce:event-schema event-name="job.completed">` as a
 ///     child of `<scxml>` — parsed and lowered to an anonymous
 ///     top-level `EventSchemaModel` so downstream IR consumers see a
 ///     single shape.
 ///
-/// Schemaless fallback (DL-9'): events without an imported EventSchema
+/// Schemaless fallback: events without an imported EventSchema
 /// retain the dynamic `_event.data` behavior (no diagnostic). W3C
 /// built-in events (`error.*`, `done.invoke.*`, `done.state.*`) are
 /// explicitly excluded — declaring a schema for these raises
@@ -848,7 +847,7 @@ pub struct EventSchemaModel {
     /// [`SceType::Enum`] referring to an imported `sce:kind="enum"`
     /// document.
     pub fields: Vec<ForgeField>,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="event-schema">` root element
     /// (or the synthesized location of the lowered inline form).
     /// Drives the per-kind body function's SCE-MAP marker. Same
@@ -880,7 +879,7 @@ impl EventSchemaModel {
     /// Returns true when `event_name` is reserved for the W3C SCXML
     /// platform (matches one of [`Self::BUILTIN_EVENT_PREFIXES`]).
     /// Used by the parse-time guard that emits
-    /// `validation/event-schema-on-builtin-event` (DL-9'). Exact match
+    /// `validation/event-schema-on-builtin-event`. Exact match
     /// against a prefix-stripped tail is unnecessary — any event whose
     /// name *begins* with a built-in prefix lives in that namespace,
     /// even if the platform has not yet raised the specific
@@ -902,7 +901,7 @@ pub struct ConditionModel {
     pub inputs: Vec<ForgeField>,
     /// ECMAScript expression that evaluates to boolean.
     pub expr: String,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="condition">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -919,7 +918,7 @@ pub struct ValidatorModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
     pub rules: ValidatorRules,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="validator">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -977,8 +976,7 @@ pub struct ProcedureSendAction {
     pub payload: Option<String>,
     /// Cap on the bytes the service handler may return as `_event.data`,
     /// declared via `sce:response-max-size="N"`. `None` ⇒ fall back to
-    /// [`crate::forge::limits::BYTES_DEFAULT_MAX`]. See
-    /// `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.
+    /// [`crate::forge::limits::BYTES_DEFAULT_MAX`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub response_max_size: Option<u32>,
 }
@@ -1079,8 +1077,7 @@ pub struct ProcedureHelper {
     /// Cap on the bytes the helper closure may return when `returns =
     /// bytes`, declared via `sce:returns-max-size="N"`. `None` ⇒ fall
     /// back to [`crate::forge::limits::BYTES_DEFAULT_MAX`]. Ignored
-    /// when `returns` is non-bytes. See
-    /// `claudedocs/rfc-forge-bytes-bounded.md` §3 B1.
+    /// when `returns` is non-bytes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub returns_max_size: Option<u32>,
 }
@@ -1104,7 +1101,7 @@ pub struct ProcedureModel {
     pub initial: String,
     /// All states in document order (regular + final).
     pub states: Vec<ProcedureState>,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="procedure">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1201,18 +1198,18 @@ pub enum TlvOverflowPolicy {
     Truncate,
 }
 
-/// RFC §5.B Y3 — TLV chain termination strategy. Names how the chain
+/// RFC §5.B — TLV chain termination strategy. Names how the chain
 /// decoder decides where the chain ends; pairs with the existing
 /// `max_depth` safety bound + `on_overflow` policy. v1 has two shapes:
 ///
-///   - [`TlvTerminateStrategy::ExhaustOrDepth`] (B3 trunk default): the
+///   - [`TlvTerminateStrategy::ExhaustOrDepth`] (trunk default): the
 ///     chain consumes entries until the cursor exhausts or `max_depth`
-///     is reached. Used by `codec_tlv_chain_basic` + (pre-Y3) the
+///     is reached. Used by `codec_tlv_chain_basic` + the
 ///     `codec_zenoh_ext_envelope` demo. Acceptable when nothing
 ///     follows the chain on the wire — the trailing cursor IS the
 ///     chain's tail.
 ///
-///   - [`TlvTerminateStrategy::EntryFlag`] (Y3): each entry's outer
+///   - [`TlvTerminateStrategy::EntryFlag`]: each entry's outer
 ///     header carries a "next-entry follows" boolean flag (zenoh-pico
 ///     `_Z_FLAG_Z_Z = 0x80` at bit 7 in every ext_msg header). The
 ///     chain decoder reads the flag *after* each entry and stops the
@@ -1236,7 +1233,7 @@ pub enum TlvTerminateStrategy {
     /// Trunk default: chain ends on cursor exhaustion or `max_depth`.
     #[default]
     ExhaustOrDepth,
-    /// Y3: chain ends when the last-decoded entry's named flag bit is
+    /// Chain ends when the last-decoded entry's named flag bit is
     /// clear. Forward-compat with multi-ext zenoh wire format.
     EntryFlag { flag_name: String },
 }
@@ -1281,8 +1278,8 @@ pub enum BitSize {
     TlvChain {
         max_depth: u32,
         on_overflow: TlvOverflowPolicy,
-        /// RFC §5.B Y3 — termination strategy. Defaults to
-        /// `ExhaustOrDepth` for backward-compat with B3 trunk fixtures
+        /// RFC §5.B — termination strategy. Defaults to
+        /// `ExhaustOrDepth` for backward-compat with trunk fixtures
         /// (cursor-exhaust + max_depth). `EntryFlag(flag_name)` reads
         /// the entry's named flag after each decode and terminates
         /// the loop when the flag is clear — required when something
@@ -1291,14 +1288,14 @@ pub enum BitSize {
         #[serde(skip_serializing_if = "is_exhaust_or_depth", default)]
         terminate_on: TlvTerminateStrategy,
     },
-    /// RFC §5.B Y0c — single imported-codec field embedded inline.
+    /// RFC §5.B embed primitive — single imported-codec field embedded inline.
     /// The host language emits a nested struct of the imported codec's
     /// type; the streaming codec calls the imported codec's
     /// decode/encode for this position. No wire-level boundary bytes
     /// (no length prefix, no tag) — the embedded codec's own field
     /// layout consumes/produces bytes directly. Imported codec is
     /// resolved via [`CodecField::embed_body_alias`] (mirrors
-    /// `repeat_body_alias`). RFC §5.B B5-γ parent-flag threading
+    /// `repeat_body_alias`). RFC §5.B parent-flag threading
     /// applies when the embedded codec declares
     /// `<sce:requires-parent-flags>`.
     ///
@@ -1309,23 +1306,23 @@ pub enum BitSize {
 }
 
 /// A single named bit-range on a `<sce:flags>` carrier field — RFC §5.B
-/// B1-γ + B5-α. `bit` is the LSB position within the carrier's natural
+/// flags primitive. `bit` is the LSB position within the carrier's natural
 /// integer width (0 = LSB), validated at parse time against the
 /// carrier's [`SceType::int_bit_width`]. `width` is the contiguous
-/// bit-range size (defaults to 1 for B1-γ single-bit shape; >1 for
-/// B5-α multi-bit accessors like Zenoh's `_z_n_qos_t._val.priority:3`).
+/// bit-range size (defaults to 1 for the single-bit shape; >1 for
+/// multi-bit accessors like Zenoh's `_z_n_qos_t._val.priority:3`).
 /// `bit + width <= carrier_int_bit_width` is parser-enforced; per-flag
 /// bit-ranges within the same carrier may not overlap.
 ///
 /// `value` is the optional wire-constant baked into the carrier's
-/// `Default::default()` (RFC variant-default-uniformity Atomic α).
+/// `Default::default()` (variant default-arm uniformity).
 /// Authors declare this on an inner codec's MID flag so the codec's
 /// default instance is wire-valid for its own dispatch tag — required
 /// for round-trip uniformity when the codec is referenced as the
 /// declared default arm of an outer `<sce:variant>`. The masked
 /// constant `(value & ((1 << width) - 1)) << bit` ORs into the
 /// carrier's Default. `None` ⇒ no constant, Default zero-fills the
-/// bit-range (back-compat with pre-Atomic-α goldens). Stored as
+/// bit-range (back-compat with goldens that predate the attribute). Stored as
 /// `u64` to fit any carrier width up to uint64.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -1334,21 +1331,21 @@ pub struct FlagDef {
     pub bit: u32,
     pub width: u32,
     /// Optional wire-constant — see field doc. Skipped from
-    /// serialization when `None` so pre-Atomic-α goldens
-    /// (which never carry this attribute) keep their on-disk shape.
+    /// serialization when `None` so goldens that predate this
+    /// attribute keep their on-disk shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<u64>,
 }
 
-/// RFC §5.B B1-δ + Axis-1 inversion present-if predicate scope —
+/// RFC §5.B present-if predicate scope —
 /// distinguishes the local form (carrier in same codec) from the
-/// Axis-1 inversion input form (bare name resolves to a declared
+/// flag-input form (bare name resolves to a declared
 /// `<sce:flag-input>`, passed as a positional typed parameter).
 #[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum PresentIfScope {
-    /// `<field_id>.<flag_name>` — B1-δ form. Carrier is a
+    /// `<field_id>.<flag_name>` — local form. Carrier is a
     /// flags-bearing sibling field declared earlier in the same
     /// codec; predicate reads `(self.<carrier> & mask) != 0`.
     ///
@@ -1358,7 +1355,7 @@ pub enum PresentIfScope {
     /// rehydrates to Local.
     #[default]
     Local,
-    /// `<name>` (bare, no dot) — Axis-1 inversion form. Resolves to a
+    /// `<name>` (bare, no dot) — flag-input form. Resolves to a
     /// declared `<sce:flag-input name="X">` on the codec itself; the
     /// input arrives as a typed positional parameter (`X: u8` for v1
     /// width=1). Predicate reads `(X & ((1<<width)-1)) != 0` against
@@ -1367,40 +1364,40 @@ pub enum PresentIfScope {
     Input,
 }
 
-/// RFC §5.B B1-δ + RFC Axis-1 + B5-λ present-if predicate — a single
+/// RFC §5.B present-if predicate — a single
 /// bit-test on either a flags-bearing sibling field declared earlier
-/// in the same codec (B1-δ Local scope) or a declared
-/// `<sce:flag-input>` on the codec itself (RFC Axis-1 Input scope).
+/// in the same codec (Local scope) or a declared
+/// `<sce:flag-input>` on the codec itself (Input scope).
 ///
 /// v1 grammar covers four forms:
 ///   - `<field_id>.<flag_name>` (Local positive) — predicate is true
 ///     iff the named flag bit on the local carrier is set.
-///   - `!<field_id>.<flag_name>` (Local negative, B5-λ) — predicate
+///   - `!<field_id>.<flag_name>` (Local negative) — predicate
 ///     is true iff the bit is clear. Required for Zenoh OpenSyn body
 ///     where cookie is present iff the `A` input is NOT set.
 ///   - `<name>` (Input positive) — true iff the named `<sce:flag-input>`
 ///     value is non-zero. Single-bit input (v1 width=1).
-///   - `!<name>` (Input negative, B5-λ) — true iff the input is zero.
-///   - `<a> || <b> [|| <c> ...]` (Disjunction, Y3 atomic 2b-ii) —
+///   - `!<name>` (Input negative) — true iff the input is zero.
+///   - `<a> || <b> [|| <c> ...]` (Disjunction) —
 ///     predicate is true iff ANY listed clause is true. Each clause
 ///     is itself one of the four forms above (each can independently
 ///     carry a leading `!`). Required for Zenoh interest where
 ///     `not is_final` is `header.CURRENT || header.FUTURE` —
 ///     `_Z_INTEREST_NOT_FINAL_MASK = (CURRENT | FUTURE)` per
-///     `interest.h:35`. Outer negation `!(a || b)` defers to a
-///     future RFC stage.
+///     `interest.h:35`. Outer negation `!(a || b)` is not
+///     implemented until a consumer needs it.
 ///
 /// `field_id` is empty when `scope = Input` (carrier is implicit —
 /// the codec's own `<sce:flag-input>` parameter).
 ///
 /// Conjunction (`flag1 && flag2`) and equality (`field == value`)
-/// remain deferred to later B-stages when a reachable consumer
+/// are not implemented until a reachable consumer
 /// surfaces.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct PresentIfPredicate {
     /// Predicate scope. Defaults to `Local`; serialized only for
-    /// non-Local scopes (`Input`) to keep pre-Axis-1 local-scope
+    /// non-Local scopes (`Input`) to keep the legacy local-scope
     /// JSON shape byte-stable.
     #[serde(default, skip_serializing_if = "is_local_scope")]
     pub scope: PresentIfScope,
@@ -1409,13 +1406,13 @@ pub struct PresentIfPredicate {
     /// parameter named by `flag_name`).
     pub field_id: String,
     pub flag_name: String,
-    /// B5-λ negation: when true, predicate fires when the named flag
-    /// bit is *clear* (not set). Defaults to false to preserve
-    /// pre-B5-λ JSON shape byte-stable across all existing codec
-    /// goldens (skip_serializing_if elides the field).
+    /// Negation: when true, predicate fires when the named flag
+    /// bit is *clear* (not set). Defaults to false to keep the
+    /// JSON shape of all existing codec
+    /// goldens byte-stable (skip_serializing_if elides the field).
     #[serde(skip_serializing_if = "is_false", default)]
     pub negate: bool,
-    /// RFC §5.B Y3 atomic 2b-ii disjunction tail — when `Some`, the
+    /// RFC §5.B disjunction tail — when `Some`, the
     /// composite predicate is `<self> || <or_with>` (i.e. the named
     /// flag tests on this struct OR'd with the recursive tail).
     /// `or_with` is itself a `PresentIfPredicate`, so chains of
@@ -1430,7 +1427,7 @@ fn is_local_scope(scope: &PresentIfScope) -> bool {
     matches!(scope, PresentIfScope::Local)
 }
 
-/// RFC Axis-1 inversion — a named flag-shaped input the codec receives
+/// Caller-supplied flag input — a named flag-shaped input the codec receives
 /// from its caller. Replaces the legacy `<sce:requires-parent-flags>`
 /// shape: leaf declares logical input names + bit widths only,
 /// with no claim about the parent's carrier name or bit position.
@@ -1459,7 +1456,7 @@ pub struct FlagInput {
     pub width: u32,
 }
 
-/// RFC Axis-1 inversion — a parent codec's binding of one of its own
+/// Parent-side flag binding — a parent codec's binding of one of its own
 /// flags to a leaf's declared flag-input. Lives on `<sce:import>` as a
 /// child element: `<sce:import src="..." as="..."><sce:flag-bind
 /// input="X" source="Y.Z"/></sce:import>`.
@@ -1486,7 +1483,7 @@ pub struct FlagBind {
     pub source: FlagBindSource,
 }
 
-/// RFC Axis-1 inversion — resolved binding source. Two variants per the
+/// Resolved flag-bind source. Two variants per the
 /// dotted-form rule documented on [`FlagBind`].
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
@@ -1520,7 +1517,7 @@ pub struct CodecField {
     /// Referenced field ID for LengthRef bit size.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length_field: Option<String>,
-    /// Named bits — RFC §5.B B1-γ flags primitive. Empty for plain
+    /// Named bits — RFC §5.B flags primitive. Empty for plain
     /// fields; populated when the field was authored as a `<sce:flags>`
     /// container with `<sce:flag name=... bit=N/>` children. Codegen
     /// emits per-flag get/set accessors after the encode/decode methods
@@ -1528,7 +1525,7 @@ pub struct CodecField {
     /// same bytes as a regular unsigned-int).
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub flags: Vec<FlagDef>,
-    /// RFC §5.B B1-δ present-if primitive. `Some(predicate)` when the
+    /// RFC §5.B present-if primitive. `Some(predicate)` when the
     /// field carries a `sce:present-if="<carrier>.<flag>"` attribute;
     /// the field's host-language type is wrapped as a per-language
     /// optional (`Option<T>` / `std::optional<T>` / `T?` / `*T` /
@@ -1567,20 +1564,20 @@ pub struct CodecField {
     /// language-level alignment assertions (`_Static_assert` / `const _:
     /// () = assert!`) on the literal offset for drift protection.
     /// MCU-class — codecs containing this attribute emit only on Rust +
-    /// C11. After B5-ε closures TLV chain is no longer MCU-only (Zenoh
+    /// C11. TLV chain is no longer MCU-only (Zenoh
     /// extension envelopes ship on server-class peers too); DMA align
     /// is the only remaining codec sub-feature gated to MCU backends.
     /// `None` when no alignment constraint.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dma_burst_align: Option<u32>,
-    /// RFC §5.B Y0c — embedded imported-codec alias for
+    /// RFC §5.B — embedded imported-codec alias for
     /// `BitSize::Embed` fields. `Some(alias)` only when bit_size is
     /// Embed; mirrors `repeat_body_alias` / `tlv_chain_body_alias`
     /// for the single-codec inline case. Resolved against
     /// `<sce:import>` aliases at codegen time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embed_body_alias: Option<String>,
-    /// RFC §5.B Y0b — `sce:length-from="<id>"` on a `BitSize::Embed`
+    /// RFC §5.B — `sce:length-from="<id>"` on a `BitSize::Embed`
     /// field bounds the embedded codec's decode-time cursor scope to
     /// the named sibling field's decoded value (a prior-position
     /// integer field — typically a VLE total-length prefix). The
@@ -1595,10 +1592,10 @@ pub struct CodecField {
     /// `_z_decl_ext_keyexpr_encode` (declarations.c:38-50) where the
     /// outer envelope's VLE total-length prefix bounds the inner
     /// `wireexpr`-shaped body (inner_header + VLE id + suffix-Tail).
-    /// `None` for the Y0c always-present always-cursor-direct shape.
+    /// `None` for the always-present always-cursor-direct embed shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embed_length_from: Option<String>,
-    /// RFC §5.B B5-δ Surface F — arithmetic offset on the
+    /// RFC §5.B — arithmetic offset on the
     /// `length-field` source value. Authored as `sce:length-arith="+1"`
     /// or `sce:length-arith="-1"` paired with `sce:bit-size="length-ref"` +
     /// `sce:length-field="..."`. Effective payload length is
@@ -1615,10 +1612,10 @@ pub struct CodecField {
     /// without a sibling reference is rejected at parse time. Author
     /// trust contract: payload length stays `len_sibling + arith` bytes
     /// across encode/decode round-trips (mirrors the variant tag/body
-    /// trust contract from B1-β).
+    /// trust contract of the variant primitive).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub length_arith: Option<i32>,
-    /// NL→IR Mapping Roadmap Item 4 — physical-quantity annotation on
+    /// Physical-quantity annotation on
     /// codec fields. ARXML COMPU-METHOD blocks map onto this layer:
     /// the raw wire-level integer carries a linear `physical = raw *
     /// scale + offset` conversion in a named unit. Codegen emits a
@@ -1671,7 +1668,7 @@ impl CodecField {
         matches!(self.bit_size, BitSize::TlvChain { .. })
     }
 
-    /// Whether this field is a Y0c single-codec embed (RFC §5.B Y0c).
+    /// Whether this field is a single-codec embed (RFC §5.B).
     /// The host language emits a nested struct of the imported codec's
     /// type; the streaming codec calls the imported codec's
     /// decode/encode for this position with no wire-level boundary.
@@ -1679,14 +1676,14 @@ impl CodecField {
         matches!(self.bit_size, BitSize::Embed)
     }
 
-    /// Whether this field carries a `<sce:flag>` set (RFC §5.B B1-γ).
-    /// Used by the present-if validator (B1-δ) to verify a predicate's
+    /// Whether this field carries a `<sce:flag>` set (RFC §5.B).
+    /// Used by the present-if validator to verify a predicate's
     /// LHS resolves to a flags-bearing carrier.
     pub fn is_flags_carrier(&self) -> bool {
         !self.flags.is_empty()
     }
 
-    /// Whether this field is a UTF-8 string (RFC §5.B B5-ζ Surface H).
+    /// Whether this field is a UTF-8 string (RFC §5.B).
     /// Wire shape mirrors a length-prefixed bytes field; the host-
     /// language type is `String` / `std::string` / `kotlin.String` /
     /// `string` / `str`. Decode validates UTF-8 and emits typed
@@ -1710,7 +1707,7 @@ impl CodecField {
 /// `body_alias` references an `<sce:import>` alias whose imported codec
 /// type provides the arm's body. RFC §5.B "Discriminated union":
 /// `<sce:arm value="0x01" type="SessionOpen"/>` where `SessionOpen` is
-/// an imported codec alias (B1-β v1 limits arm bodies to imported codec
+/// an imported codec alias (v1 limits arm bodies to imported codec
 /// kinds; primitive arm bodies and `<sce:default>` body inheritance
 /// arrive when their first reachable consumer ships).
 #[derive(Debug, Clone, Serialize)]
@@ -1722,8 +1719,8 @@ pub struct VariantArm {
     /// Import alias naming the body codec for this arm.
     pub body_alias: String,
     /// `default="true"` marker — declares this arm as the default
-    /// chosen by the outer codec's `Default::default()` (RFC
-    /// variant-default-uniformity Atomic α). Distinct from the
+    /// chosen by the outer codec's `Default::default()` (variant
+    /// default-arm uniformity). Distinct from the
     /// catch-all `<sce:default>` arm (`CodecVariant::default_arm`) —
     /// that one fires on decode for unknown tag values; this flag
     /// only picks which `<sce:arm>`'s body type becomes the
@@ -1731,12 +1728,12 @@ pub struct VariantArm {
     /// may set this (parser-enforced via
     /// `codec/variant-duplicate-default-arm`). `false` ⇒ not the
     /// default arm; serialized only when `true` to keep
-    /// pre-Atomic-α goldens byte-identical.
+    /// goldens that predate the attribute byte-identical.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_default: bool,
 }
 
-/// RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte dispatch shape on a
+/// RFC §5.B peek-byte — peek-byte dispatch shape on a
 /// `<sce:variant>`. When `Some` on `CodecVariant.peek_byte`, the tag
 /// reads the cursor's NEXT byte without advancing; the arm body codec
 /// then reads that same byte as its own header. Models Zenoh
@@ -1773,10 +1770,10 @@ pub struct PeekByteSpec {
     pub flags: Vec<FlagDef>,
 }
 
-/// RFC §5.B B5-ν — variant tag scope. Determines whether the tag
+/// RFC §5.B — variant tag scope. Determines whether the tag
 /// field reference is resolved within the codec itself (`Local` —
-/// B1-β / B5-β / peek-byte) or against the codec's
-/// `<sce:requires-parent-flags>` carrier (`Parent` — B5-ν).
+/// own-field / multi-bit-flag / peek-byte) or against the codec's
+/// `<sce:requires-parent-flags>` carrier (`Parent`).
 ///
 /// `Local` is the back-compat default and skips serialization so
 /// Discriminated-union suffix on a codec — RFC §5.B Codec DSL.
@@ -1793,23 +1790,23 @@ pub struct CodecVariant {
     /// `id` of the field whose decoded value (or named bit-range,
     /// see `tag_flag`) selects an arm. Must reference an unsigned-int
     /// field — enforced at parse time. `tag_field` resolves to a
-    /// field in the codec's own `fields` (B1-β / B5-β whole-field
+    /// field in the codec's own `fields` (whole-field
     /// or multi-bit-flag dispatch), or equals `peek_byte.id` when
     /// peek-byte mode is active.
     ///
-    /// `None` ⇒ RFC B5-ν inversion β shape (caller-tag): `<sce:variant>`
+    /// `None` ⇒ caller-tag shape: `<sce:variant>`
     /// element with no `tag=` attribute. The leaf has no own carrier
     /// field; the dispatch value is supplied by the caller as the
     /// `tag: u8` decode parameter. Encode signature unchanged
     /// (active arm comes from the language-level enum discriminant).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag_field: Option<String>,
-    /// RFC §5.B B5-β multi-bit-flag dispatch: when `Some(name)`, the
+    /// RFC §5.B multi-bit-flag dispatch: when `Some(name)`, the
     /// `tag_field` MUST be a `<sce:flags>`-bearing carrier and `name`
     /// names one of its `<sce:flag>` bit-ranges. The dispatch value is
     /// `(carrier >> bit) & ((1 << width) - 1)` — the bit-range's
     /// shifted-and-masked unsigned scalar. When `None`, the dispatch
-    /// reads the field's whole value (B1-β whole-field form).
+    /// reads the field's whole value (whole-field form).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tag_flag: Option<String>,
     /// Enumerated arms in document order.
@@ -1819,11 +1816,11 @@ pub struct CodecVariant {
     /// tag domain isn't fully covered by `arms`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_arm: Option<VariantArm>,
-    /// RFC §5.B Y3 atomic 2b-ii peek-byte — peek-byte mode dispatch
+    /// RFC §5.B peek-byte — peek-byte mode dispatch
     /// (Zenoh response/request body MID). `Some` ⇒ variant tag reads
     /// `peek_byte`'s next-byte view (carrier is the cursor's next
     /// byte without advancing); arm body codec reads same byte as
-    /// own header. `None` ⇒ B1-β own-field mode (back-compat:
+    /// own header. `None` ⇒ own-field mode (back-compat:
     /// existing variant goldens omit this field via
     /// skip_serializing_if).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1842,13 +1839,13 @@ pub struct CodecModel {
     pub input_length: Option<u32>,
     /// Ordered list of fields in the codec.
     pub fields: Vec<CodecField>,
-    /// Optional discriminated-union suffix — RFC §5.B variant primitive
-    /// (B1-β). When present the codec emits a sum type per language
+    /// Optional discriminated-union suffix — RFC §5.B variant primitive.
+    /// When present the codec emits a sum type per language
     /// (Rust enum, Kotlin sealed class, C11 tagged union, etc.) rather
     /// than a flat struct.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<CodecVariant>,
-    /// RFC Axis-1 inversion — declared flag-shaped inputs the codec
+    /// Declared flag-shaped inputs the codec
     /// receives from its caller. Empty when the codec needs no caller-
     /// supplied flags. Each [`FlagInput`] becomes a positional typed
     /// parameter on the generated `decode`/`encode` signatures (in
@@ -1858,18 +1855,19 @@ pub struct CodecModel {
     /// directive at import-site.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub flag_inputs: Vec<FlagInput>,
-    /// RFC §5.B B5-θ inline test vectors. Each row carries one wire
+    /// RFC §5.B inline test vectors. Each row carries one wire
     /// `hex` byte sequence + the expected decoded field-value tree.
     /// Generates a per-backend round-trip sidecar (`<fixture>_test.{rs,h}`)
     /// next to the codec header — symmetric with the algorithm
-    /// `<sce:test-vector>` machinery (RFC §5.B B2). Trunk lands on
-    /// Rust + C11 with plain (non-variant, non-TLV-chain, non-parent-
-    /// flags) codecs only; variant + recursive-variant + TLV-chain +
-    /// parent-flags codecs reject through the per-language gate in
-    /// `render_codec_test_vector_sidecar` until B5-θ closures land.
+    /// `<sce:test-vector>` machinery (RFC §5.B item B2). The sidecar
+    /// ships on Rust + C11 with plain (non-variant, non-TLV-chain,
+    /// non-parent-flags) codecs only; variant + recursive-variant +
+    /// TLV-chain + parent-flags codecs reject through the per-language
+    /// gate in `render_codec_test_vector_sidecar` — wider coverage is
+    /// not implemented until a consumer needs it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub test_vectors: Vec<CodecTestVector>,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="codec">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2046,7 +2044,7 @@ impl CodecModel {
     }
 
     /// Whether the codec has any present-if-gated field (RFC §5.B
-    /// B1-δ). Forces the streaming decode/encode path because a
+    /// present-if primitive). Forces the streaming decode/encode path because a
     /// gated field's start offset depends on the runtime predicate
     /// value, and per-language type wraps the field as an optional.
     pub fn has_present_if_fields(&self) -> bool {
@@ -2060,7 +2058,7 @@ impl CodecModel {
         self.fields.iter().any(|f| f.is_tlv_chain())
     }
 
-    /// Whether the codec has any single-codec embed field (RFC §5.B Y0c).
+    /// Whether the codec has any single-codec embed field (RFC §5.B).
     /// Forces the streaming decode/encode path (same machinery as
     /// repeat / TLV chain). The streaming codec calls the embedded
     /// codec's decode/encode with optional parent-flag threading.
@@ -2068,8 +2066,8 @@ impl CodecModel {
         self.fields.iter().any(|f| f.is_embed())
     }
 
-    /// Whether the codec has any UTF-8 string field (RFC §5.B B5-ζ
-    /// Surface H). Forces the streaming decode/encode path so the
+    /// Whether the codec has any UTF-8 string field (RFC §5.B).
+    /// Forces the streaming decode/encode path so the
     /// String dispatch in `present_if_decode_length_ref` /
     /// `present_if_encode_length_ref` always runs (any String field is
     /// guaranteed `BitSize::LengthRef` by parser validation; a String-
@@ -2098,9 +2096,9 @@ impl CodecModel {
     /// Codecs WITHOUT tail can stream-correctly advance only the
     /// bytes they actually decoded — used by RFC §5.B B3 to make
     /// length-ref entry codecs decode-iterable inside a TLV chain
-    /// (the B1-prep "consume entire cursor" path was the deferred
-    /// "first multi-frame consumer" the comment references; B3 is
-    /// that consumer).
+    /// (length-ref entry codecs used to consume the entire remaining
+    /// cursor; the TLV chain is the first multi-frame consumer that
+    /// required stream-correct advancement).
     pub fn has_tail_fields(&self) -> bool {
         self.fields
             .iter()
@@ -2114,20 +2112,20 @@ impl CodecModel {
     /// diagnostic (`codegen/mcu-class-kind-on-non-mcu-language`,
     /// repurposed at codec-content granularity).
     ///
-    /// B3-β: DMA alignment — the only sub-feature that genuinely needs
+    /// DMA alignment is the only sub-feature that genuinely needs
     /// MCU-class hardware (DMA controllers, fixed-offset wire layout
-    /// invariants tied to memory-mapped peripherals). TLV chain (B3-α)
+    /// invariants tied to memory-mapped peripherals). TLV chain
     /// was originally bundled here as a conservative scope choice; it
     /// is in fact server-class-relevant too (Zenoh extension envelopes
     /// land on zenoh-rs / zenoh-cpp / zenoh-kotlin server peers, not
-    /// just zenoh-pico MCU). B5-ε closures (cpp/kotlin/go/python TLV
-    /// chain emit) lifted that gating; only DMA align stays MCU-only.
+    /// just zenoh-pico MCU). The cpp/kotlin/go/python TLV-chain
+    /// emitters lifted that gating; only DMA align stays MCU-only.
     pub fn has_mcu_only_features(&self) -> bool {
         self.has_dma_aligned_fields()
     }
 }
 
-// ── Codec test vectors (RFC §5.B B5-θ) ────────────────────────
+// ── Codec test vectors (RFC §5.B) ──────────────────────────────
 
 /// One `<sce:test-vector hex="...">` row on a codec. Captures the
 /// wire-byte form (`hex`) and the expected decoded field-value tree
@@ -2138,7 +2136,7 @@ impl CodecModel {
 /// flat list of named fields. Variant / recursive-variant / TLV-chain
 /// expansions reuse the same `CodecTestVector` envelope and only add
 /// new arms to `DecodedValue` — keeps the parser + codegen surface
-/// uniform across B5-θ closures.
+/// uniform as coverage widens.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct CodecTestVector {
@@ -2153,9 +2151,8 @@ pub struct CodecTestVector {
 }
 
 /// Decoded value tree for a `<sce:test-vector>` row. Trunk only
-/// emits `Plain` (flat field list); variant / TLV-chain closures
-/// add `Variant` and `Chain` arms following the B1-β / B3-α
-/// trunk-then-closures cadence.
+/// emits `Plain` (flat field list); variant / TLV-chain coverage
+/// adds `Variant` and `Chain` arms additively.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "shape", rename_all = "kebab-case")]
@@ -2181,7 +2178,7 @@ pub struct DecodedField {
 /// at parse time from the matching codec field's `SceType`:
 /// integer types → `Uint` / `Int`, `Bool` → `Bool`, `Bytes` → `Bytes`,
 /// `String` → `String`. Float fields are not yet supported (no codec
-/// field uses them; closures land alongside the first consumer).
+/// field uses them; support lands alongside the first consumer).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type", content = "value", rename_all = "kebab-case")]
@@ -2196,7 +2193,7 @@ pub enum DecodedFieldValue {
     /// Byte sequence (parsed from the `hex=` attribute).
     Bytes(Vec<u8>),
     /// UTF-8 string (parsed from the `string=` attribute). Decode
-    /// validates UTF-8 invariant per B5-ζ codec contract; the
+    /// validates UTF-8 invariant per the codec string contract; the
     /// test-vector value is stored as canonical Rust `String`.
     String(String),
 }
@@ -2248,7 +2245,7 @@ pub struct FilterModel {
     /// Smoothing factor (0..1) for low-pass filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alpha: Option<f64>,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="filter">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2331,7 +2328,7 @@ pub struct InterpolationModel {
     pub axes: Vec<InterpolationAxis>,
     /// Table values (flat, row-major for 2D).
     pub values: Vec<f64>,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="interpolation">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2391,7 +2388,7 @@ pub struct TimerModel {
     /// Event name raised when the timer fires.
     /// `<sce:fire-event>...</sce:fire-event>` (required).
     pub fire_event: String,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="timer">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2432,7 +2429,7 @@ pub struct ObserverModel {
     /// When absent, the observer falls back to a file-local enum and cannot
     /// be composed with other observers (see SCE_FORGE.md §4.11).
     pub event_domain: Option<String>,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="observer">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2471,18 +2468,18 @@ pub struct ForgeImport {
     /// output stays byte-stable.
     #[serde(skip)]
     pub line: Option<u32>,
-    /// RFC §5.B variant-dispatch (B5-ν inversion) — when the importing
+    /// RFC §5.B variant-dispatch — when the importing
     /// parent codec declares `<sce:variant-dispatch flag="X.Y"/>` as a
     /// child of this `<sce:import>`, the imported variant codec's arm
     /// choice drives a bit value into the parent's named flag carrier
     /// at encode time. `None` for imports with no dispatch declaration
     /// (either the imported codec has no variant, or the parent author
-    /// selects the arm explicitly without wire-level dispatch — see
-    /// Q-D-3 in the inversion RFC). Cross-doc validator confirms the
+    /// selects the arm explicitly without wire-level
+    /// dispatch). Cross-doc validator confirms the
     /// named carrier + flag exist in the parent's own model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embed_dispatch: Option<EmbedDispatch>,
-    /// RFC Axis-1 inversion — parent-side bindings supplying values for
+    /// Parent-side bindings supplying values for
     /// the imported leaf codec's declared `<sce:flag-inputs>`. Each
     /// [`FlagBind`] names one leaf-side input and a source on the
     /// parent (either a local flags-carrier flag in dotted form, or
@@ -2495,7 +2492,7 @@ pub struct ForgeImport {
     pub flag_binds: Vec<FlagBind>,
 }
 
-/// RFC §5.B variant-dispatch (B5-ν inversion) — parent-side declaration
+/// RFC §5.B variant-dispatch — parent-side declaration
 /// of which of its own flags drives an imported variant codec's arm
 /// dispatch. Attached to a `ForgeImport` via the `<sce:variant-dispatch>`
 /// child of `<sce:import>`.
@@ -2620,14 +2617,14 @@ pub enum AlgorithmConstType {
     /// Scalar form (any `SceType`). Emitted as a language-native const.
     Scalar(SceType),
     /// Array form `array<T, N>` — emitted as a language-native static
-    /// array literal once §5.F const-fold lands. Length is the fixed
+    /// array literal via §5.F const-fold. Length is the fixed
     /// element count; element type is one of the scalar `SceType`s.
     Array { elem: SceType, len: u32 },
 }
 
 impl AlgorithmConstType {
     /// Element type of an array shape, or the scalar's own type. Used
-    /// by the host interpreter (Phase A4-β) to coerce yielded values
+    /// by the host interpreter to coerce yielded values
     /// before serializing the array literal, and by the §5.J.5 emitters
     /// to derive the per-language type name.
     pub fn elem_or_scalar(&self) -> &SceType {
@@ -2700,8 +2697,8 @@ pub struct FoldBody {
     /// Loop-variable name visible inside the fold body.
     pub iter_var: String,
     /// Element type — must match the array shape's `elem` and the
-    /// static type of `yield_expr` (validated by Phase A4-γ
-    /// diagnostic `algorithm/const-yield-type-mismatch`).
+    /// static type of `yield_expr` (validated by the
+    /// `algorithm/const-yield-type-mismatch` diagnostic).
     pub elem_type: SceType,
     /// Statements executed per iteration before `yield_expr`. Re-uses
     /// the algorithm-body statement vocabulary (Var / Assign / If /
@@ -2717,9 +2714,9 @@ pub struct FoldBody {
 /// Build-time const inside an algorithm body. RFC §5.A v1 admits the
 /// scalar literal form (`<sce:const name=... type=... init="..."/>`).
 /// The `<sce:const sce:compute-at="build">` form with an `<sce:fold>`
-/// body resolves through RFC §5.F build-time const-fold; the IR shape
-/// lands in Phase A4-α (parser + model), the host interpreter and
-/// per-language emit land in A4-β.
+/// body resolves through RFC §5.F build-time const-fold; the parser +
+/// model own the IR shape, and the host interpreter plus per-language
+/// emit lower it.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AlgorithmConst {
@@ -2774,9 +2771,8 @@ pub enum AlgorithmStmt {
     },
     /// `<sce:while cond="..." max-iter="N">...</sce:while>` — counted
     /// loop. `max_iter = None` is allowed only when the `cond`
-    /// expression bounds itself; on MCU targets unbounded loops fire
-    /// `algorithm/while-unbounded` (Phase B once deploy.yaml MCU
-    /// detection lands).
+    /// expression bounds itself; the MCU-side `algorithm/while-unbounded`
+    /// rejection is not implemented until a consumer needs it.
     While {
         cond: String,
         body: Vec<AlgorithmStmt>,
@@ -2800,7 +2796,8 @@ pub enum AlgorithmStmt {
     },
     /// `<sce:call target="other_algo" args="a, b"/>` — invoke another
     /// algorithm kind imported via `<sce:import>`. v1 forbids
-    /// recursion (`algorithm/call-cycle`).
+    /// recursion; the dedicated `algorithm/call-cycle` diagnostic is
+    /// not implemented until a consumer needs it.
     Call { target: String, args: Vec<String> },
 }
 
@@ -2816,11 +2813,12 @@ pub struct AlgorithmModel {
     /// RFC §5.B "Test vector": inline `<sce:test-vector hex value/>`
     /// reference oracles. Each entry generates a per-backend round-trip
     /// test that runs the algorithm on `hex` and asserts the return
-    /// value equals `value`. v1 supports algorithm kind only with
-    /// scalar return — multi-field codec test-vector defers to B5.
+    /// value equals `value`. This shape covers the algorithm kind with
+    /// scalar return; codec documents carry their own multi-field
+    /// `<sce:test-vector>` form (see [`CodecTestVector`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub test_vectors: Vec<TestVector>,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="algorithm">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2828,9 +2826,9 @@ pub struct AlgorithmModel {
 }
 
 /// RFC §5.B test-vector value literal. v1 covers the scalar types an
-/// algorithm signature can return; child-element form for multi-field
-/// codec results defers to B5 alongside the Zenoh msg-set authoring
-/// where the consumer signal first lands.
+/// algorithm signature can return; the child-element form for
+/// multi-field codec results lives on the codec kind (see
+/// [`DecodedValue`]).
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "type", content = "value")]
@@ -2871,7 +2869,7 @@ pub struct TestVector {
 
 /// `<sce:link-class>` enumeration — RFC §5.C "Link-class enumeration"
 /// table. Five strings shipped today; OS-specific classes (e.g.
-/// `unix_socket`, `qnx_msg`) land additively in later phases.
+/// `unix_socket`, `qnx_msg`) land additively when wired.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
@@ -2915,7 +2913,8 @@ impl LinkClass {
     ///
     /// Single source of truth for [`forge::validate`]'s η check.
     /// Future OS-specific classes (e.g. `unix_socket`, `qnx_msg`) land
-    /// additively as new enum rows alongside their phase opening.
+    /// additively as new enum rows when the corresponding OS support
+    /// is wired.
     pub fn admits_os(self, os: crate::mesh::deploy::OsKind) -> bool {
         use crate::mesh::deploy::OsKind;
         match self {
@@ -2965,8 +2964,8 @@ impl std::fmt::Display for LinkClass {
     }
 }
 
-/// `<sce:backpressure>` policy — RFC §5.C body. Three policies; B6-α
-/// surfaces all three at parse time but the rust template lowers them
+/// `<sce:backpressure>` policy — RFC §5.C body. All three policies
+/// parse, and the rust template lowers them
 /// uniformly (the policy threading into the runtime crate is an
 /// implementation concern of `sce-link-runtime`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -3033,14 +3032,12 @@ pub struct LinkModel {
     /// `<sce:link-class>` body text, parsed into the closed enum.
     pub class: LinkClass,
     /// `<sce:framer ref="...">` — the §5.B codec that decodes/encodes
-    /// wire bytes. B6-α makes this required; absence raises
+    /// wire bytes. Required; absence raises
     /// `link/framer-missing` (parser).
     pub framer: String,
-    /// `<sce:backpressure>` policy. Required in B6-α; absence is the
-    /// `link/backpressure-undeclared` diagnostic that B6-γ formalizes.
-    /// For B6-α we accept the missing-element case as default `drop`
-    /// (parser-side fallback) — the dedicated diagnostic ships with
-    /// B6-γ's reject fixture.
+    /// `<sce:backpressure>` policy. Required; absence raises the
+    /// `link/backpressure-undeclared` diagnostic at parse time so
+    /// authors declare `drop` / `block` / `signal-event` explicitly.
     pub backpressure: BackpressurePolicy,
     /// `<sce:events><sce:inbound .../></sce:events>` rows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -3049,31 +3046,31 @@ pub struct LinkModel {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outbound: Vec<LinkOutboundEvent>,
     /// `<sce:rx-pool ref="...">` — RX buffer-pool name (RFC §5.C body +
-    /// §5.E B7-α schema-only). Authors who want zero-copy RX path
+    /// §5.E). Authors who want zero-copy RX path
     /// declare a `<scxml sce:kind="buffer-pool" name="...">` document
-    /// and bind it here. B7-α schema-only: parser accepts the element,
-    /// emits the ref as a `pub const` on the generated wrapper. Cross-
-    /// resolution validator (`link/pool-slot-smaller-than-framer-max`)
-    /// defers to a later atomic that wires pool ↔ framer at
-    /// `compile_forge_with_imports`.
+    /// and bind it here. The parser accepts the element and
+    /// emits the ref as a `pub const` on the generated wrapper; the
+    /// cross-resolution validator
+    /// (`link/pool-slot-smaller-than-framer-max`) wires pool ↔ framer
+    /// at `compile_forge_with_imports`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rx_pool: Option<String>,
     /// `<sce:tx-pool ref="...">` — TX buffer-pool counterpart. Same
-    /// shape as `rx_pool`. Symmetric in B7-α; size validation defers
-    /// alongside the rx-pool case.
+    /// shape as `rx_pool`, including the slot-size cross-resolution
+    /// validation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tx_pool: Option<String>,
     /// `<sce:stage-pool ref="...">` — stage-copy destination pool.
     /// Single source of truth for `Sample::take()`'s copy target,
-    /// per watching-zenoh RFC §5.E (B7-η' Atomic A1: schema locality
+    /// per watching-zenoh RFC §5.E (schema locality
     /// belongs on the link kind, not on the deploy.yaml binding —
     /// rx_pool/tx_pool precedent). When a SCXML state declares
-    /// `<sce:on-sample link="X">`, the η' validator looks up link X
+    /// `<sce:on-sample link="X">`, the on-sample validator looks up link X
     /// in the [`super::cross_doc_registry::SceCrossDocRegistry`]; the link's
     /// `stage_pool` field decides whether `take()` is wired (resolves
     /// to a buffer-pool kind whose slots back the owned-copy
     /// destination) or whether `take()` will panic at runtime
-    /// (`PanicOnTakeHook` default — Q-η'-5). Absence is legal for
+    /// (`PanicOnTakeHook` default). Absence is legal for
     /// borrow-only callbacks that never call `take()`; presence + a
     /// missing on-sample subscriber is fine too (the field is link-
     /// declared, not on-sample-coupled). The SCXML-side enforcement
@@ -3084,8 +3081,8 @@ pub struct LinkModel {
     /// `<sce:accept-stage-copy-rate/>` — watching-zenoh RFC §5.K
     /// lines 2356-2361 + 2509-2511 per-link opt-out for the §5.M /
     /// ARCHITECTURE §9.3 stage-copy-rate gate. Presence of the
-    /// element (no body / no attribute parsing in C13-γ scope per
-    /// `[[feedback-no-versioning]]`) suppresses
+    /// element (presence-only: no body / no attribute
+    /// parsing) suppresses
     /// `reassembly/expected-fragmentation-rate-high` under
     /// `pool_defaults.stage_copy_policy: warn` and
     /// `pool/stage-copy-policy-error` under `error`. Under `forbid`
@@ -3093,10 +3090,10 @@ pub struct LinkModel {
     /// `pool/stage-copy-accept-rejected-under-forbid`.
     ///
     /// Default `false` so existing fixtures without the opt-out
-    /// preserve their C13-α-2 behavior verbatim.
+    /// preserve their prior behavior verbatim.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub accept_stage_copy_rate: bool,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="link">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3149,7 +3146,7 @@ impl LinkInstanceRole {
 }
 
 /// Watching-zenoh RFC §5.C lines 802-833 + §5.M lines 2782-2783
-/// (C10-α) — resolved link-instance produced by the orchestrator's
+/// — resolved link-instance produced by the orchestrator's
 /// listener-pair walker. For a non-listener `<sce:link>` the
 /// orchestrator emits a single `Listener`-role instance; for a
 /// listener (trust_class `session_arming` + machine SCXML carries
@@ -3157,15 +3154,15 @@ impl LinkInstanceRole {
 /// `Sibling` (post-handshake) instance keyed by the same source link
 /// name.
 ///
-/// **Consumers** (Q-C10-2 a — IR-level synthesis, codegen-time split):
+/// **Consumers** (IR-level synthesis, codegen-time split):
 /// - [`crate::mesh::deploy::validate_reassembly_cross_doc`] reads the
 ///   per-link Sibling presence flag to gate
-///   `reassembly/binding-on-unpaired-listener` (Q-C10-4 a).
+///   `reassembly/binding-on-unpaired-listener`.
 /// - The per-language `render_link_*` templates emit the Sibling half
 ///   under a distinct type-name suffix when the link is a listener;
 ///   the post-render substring self-check
-///   (`link/listener-link-not-paired-with-established-sibling`,
-///   Q-C10-3 a) fires when the suffix is missing.
+///   (`link/listener-link-not-paired-with-established-sibling`)
+///   fires when the suffix is missing.
 ///
 /// The inherited 6 fields are carried by VALUE rather than holding a
 /// reference to the source `LinkConfig` so the orchestrator's
@@ -3208,27 +3205,26 @@ pub struct ResolvedLinkInstance {
 
 /// `<sce:cache-policy>` enum — RFC §5.E lines 948-957. Three policies
 /// determine how codegen positions cache-maintenance ops on FSM edges:
-/// `maintain` emits clean/invalidate around DMA boundaries (B7-δ);
+/// `maintain` emits clean/invalidate around DMA boundaries;
 /// `non-cacheable` declares MPU non-cacheable region (deploy.yaml
 /// `attr: [non_cacheable]`); `none` targets without D-cache.
 ///
-/// B7-α parses the enum + carries it on `BufferPoolModel`. The cache-
-/// maintenance pinning that uses this field defers to B7-δ (gated on
-/// §5.I `<sce:call>` intrinsic registry).
+/// The parser carries the enum on `BufferPoolModel`; the cache-
+/// maintenance pinning that uses this field routes through the
+/// §5.I `<sce:call>` intrinsic registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "kebab-case")]
 pub enum CachePolicy {
     /// Codegen inserts `cache_clean` before DMA TX, `cache_invalidate`
-    /// after DMA RX (B7-δ). Pool MUST live in a `cacheable` region.
+    /// after DMA RX. Pool MUST live in a `cacheable` region.
     Maintain,
     /// Pool MUST live in a `non_cacheable` MPU region; no maintenance
     /// ops emitted. CPU access pays the uncached-load penalty.
     NonCacheable,
     /// Target has no D-cache (e.g. Cortex-M0/M3/M4). No maintenance
     /// ops, no MPU setup. `cache-policy: maintain` on a `has_dcache:
-    /// false` target raises `mem/cache-policy-unsupported-on-no-dcache-core`
-    /// (B7-δ family).
+    /// false` target raises `mem/cache-policy-unsupported-on-no-dcache-core`.
     None,
 }
 
@@ -3260,10 +3256,10 @@ impl std::fmt::Display for CachePolicy {
 /// fields (`max-fragments-per-message`, `reassembly-timeout-ms`,
 /// `per-peer-quota`) bundled on the `Reassembly` arm via the
 /// [`ReassemblyConfig`] payload. The `Default` arm covers the absence
-/// of `<sce:variant>` (regular RX/TX/stage pool) — semantically the
-/// pre-C9 behavior of `<scxml sce:kind="buffer-pool">`.
+/// of `<sce:variant>` (regular RX/TX/stage pool) — the plain
+/// buffer-pool behavior of `<scxml sce:kind="buffer-pool">`.
 ///
-/// **Why a sum type (Q-C9-1 a, RFC §3)**: the three reassembly-specific
+/// **Why a sum type**: the three reassembly-specific
 /// fields are cross-field-coupled — all three required when
 /// `variant=Reassembly`, all three forbidden when `variant=Default`.
 /// Lifting the discriminator + payload into a single enum makes that
@@ -3279,8 +3275,8 @@ impl std::fmt::Display for CachePolicy {
 /// inherits §5.E backend coverage — emits only on `(rust, *)` and
 /// `(c11, bare_metal)`. The existing
 /// `codegen/mcu-class-kind-on-non-mcu-language` diagnostic on the
-/// `ForgeKind::BufferPool` axis (Q-C9-6 a) gates non-MCU targets;
-/// C9-α does not introduce a new MCU-class diagnostic.
+/// `ForgeKind::BufferPool` axis gates non-MCU targets;
+/// no reassembly-specific MCU-class diagnostic exists.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "variant", rename_all = "kebab-case")]
@@ -3291,7 +3287,7 @@ pub enum BufferPoolVariant {
     Default,
     /// `<sce:variant>reassembly</sce:variant>` (RFC §5.M lines 2682,
     /// 2688-2690). Per-slot fragment-index bitmap + deadline + peer-id
-    /// emission (codegen contract deferred to C9-γ). Parse-time enforces
+    /// emission (codegen contract per RFC §5.M). Parse-time enforces
     /// the three sibling elements `<sce:max-fragments-per-message>`,
     /// `<sce:reassembly-timeout-ms>`, `<sce:per-peer-quota>` are all
     /// present (single-arm payload).
@@ -3301,33 +3297,33 @@ pub enum BufferPoolVariant {
 /// Reassembly-variant configuration — RFC §5.M lines 2682, 2688-2690.
 ///
 /// Bundles the three required fields a reassembly-variant buffer pool
-/// declares beyond the base §5.E shape. C9-α validates the shape at
+/// declares beyond the base §5.E shape. The shape is validated at
 /// parse time (all three required, all `> 0`); cross-doc invariants
-/// referencing `links.<name>.{mtu_bytes, expected_p99_bytes,
-/// domain_attrs.trust_class}` and the peer-table-capacity build-time
-/// invariant defer to C9-β co-landing with C13 §5.K `links:` block.
+/// reference `links.<name>.{mtu_bytes, expected_p99_bytes,
+/// domain_attrs.trust_class}` and enforce the peer-table-capacity
+/// build-time invariant against the §5.K `links:` block.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ReassemblyConfig {
     /// `<sce:max-fragments-per-message>` (RFC §5.M line 2688) — fragment-
     /// index bitmap width per slot; bounds the worst-case fragment count
-    /// per reassembled message. C9-α parse rejection: missing element
+    /// per reassembled message. Parse rejection: missing element
     /// (`mem/reassembly-pool-variant-missing-max-fragments`) or
     /// value == 0 (`<sce:max-fragments-per-message> body text: 0`
     /// generic `InvalidAttribute`).
     pub max_fragments_per_message: u32,
     /// `<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) — per-slot
-    /// deadline emitted at codegen time. C9-α parse rejection: missing
+    /// deadline emitted at codegen time. Parse rejection: missing
     /// element (`mem/reassembly-pool-variant-missing-timeout`) or
     /// value == 0 (generic `InvalidAttribute`).
     pub reassembly_timeout_ms: u32,
     /// `<sce:per-peer-quota>` (RFC §5.M lines 2690, 2841-2861) — caps
-    /// the in-flight reassembly slots a single peer may hold.
+    /// the in-flight reassembly slots a single peer may hold. The
     /// `peer_table.capacity × per-peer-quota ≥ slot_count` invariant
-    /// defers to C9-β where the `peer_table.capacity` source lands
-    /// (§5.K). C9-α parse rejection: missing element (we reuse the
+    /// is enforced build-time against the §5.K `peer_table.capacity`
+    /// source. Parse rejection: missing element (we reuse the
     /// generic `MissingElement` rather than minting a third
-    /// reassembly-specific code per [[feedback-no-versioning]] — the
+    /// reassembly-specific code — the
     /// two spec-named codes are reserved for the cases the spec
     /// explicitly names at line 2944-2945) or value == 0 (generic).
     pub per_peer_quota: u32,
@@ -3335,7 +3331,7 @@ pub struct ReassemblyConfig {
 
 /// Buffer-pool document — RFC §5.E SRAM-placed, DMA-aligned slot table.
 ///
-/// B7-α schema (per `<scxml sce:kind="buffer-pool">` body):
+/// Schema (per `<scxml sce:kind="buffer-pool">` body):
 /// - `<sce:slot-count>` (u32, > 0) — number of slots in the pool
 /// - `<sce:slot-size>` (u32, > 0) — bytes per slot
 /// - `<sce:section>` (string) — SRAM region name (matches deploy.yaml
@@ -3345,12 +3341,14 @@ pub struct ReassemblyConfig {
 /// - `<sce:alignment>` (u32, power of 2, > 0) — DMA alignment requirement
 /// - `<sce:dma-channel>` (string, optional) — DMA channel binding
 ///   (matches deploy.yaml `machines.<m>.memory.dma_channels` entry);
-///   `mem/dma-channel-collision` deferred to B7-γ
+///   the `mem/dma-channel-collision` cross-check is not implemented
+///   until a consumer needs it
 /// - `<sce:cache-policy>` ([`CachePolicy`]) — `maintain` /
-///   `non-cacheable` / `none`; cache-maintenance pinning defers to B7-δ
+///   `non-cacheable` / `none`; cache-maintenance pinning rides the
+///   lifecycle-FSM edges
 /// - `<sce:variant>` (optional, RFC §5.M line 2682) — `default` (no
-///   `<sce:variant>` element; semantic pre-C9 behavior) OR
-///   `reassembly` ([`ReassemblyConfig`] payload). C9-α.
+///   `<sce:variant>` element; plain buffer-pool behavior) OR
+///   `reassembly` ([`ReassemblyConfig`] payload).
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct BufferPoolModel {
@@ -3360,24 +3358,26 @@ pub struct BufferPoolModel {
     /// `<sce:slot-size>` — bytes per slot. Parser rejects 0.
     pub slot_size: u32,
     /// `<sce:section>` — SRAM region name. Validated against deploy.yaml
-    /// `memory.sram_regions` via [`compile_forge_with_deploy`] (B7-α).
+    /// `memory.sram_regions` via [`compile_forge_with_deploy`].
     pub section: String,
-    /// `<sce:alignment>` — DMA alignment. Parser rejects 0; power-of-2
-    /// check defers to B7-β linker fragment emission.
+    /// `<sce:alignment>` — DMA alignment. Parser rejects 0; the
+    /// power-of-2 check happens at linker-fragment emission.
     pub alignment: u32,
     /// `<sce:dma-channel>` — DMA channel name (optional). Empty when
-    /// the pool is purely CPU-managed. Cross-resolution defers to B7-γ.
+    /// the pool is purely CPU-managed. Cross-resolution against
+    /// deploy.yaml `dma_channels` is not implemented until a consumer
+    /// needs it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dma_channel: Option<String>,
     /// `<sce:cache-policy>` — `maintain` / `non-cacheable` / `none`.
     pub cache_policy: CachePolicy,
-    /// `<sce:variant>` discriminator (RFC §5.M line 2682; C9-α). The
-    /// `Default` arm covers the absence of `<sce:variant>` — pre-C9
+    /// `<sce:variant>` discriminator (RFC §5.M line 2682). The
+    /// `Default` arm covers the absence of `<sce:variant>` —
     /// regular RX/TX/stage pool behavior. `Reassembly` carries the
     /// three reassembly-specific fields (max-fragments-per-message,
     /// reassembly-timeout-ms, per-peer-quota).
     pub variant: BufferPoolVariant,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="buffer-pool">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3386,7 +3386,7 @@ pub struct BufferPoolModel {
 
 // ── Worker kind ────────────────────────────────────────────────
 
-/// SPSC inbox ordering choice (RFC §5.I lines 1752-1758, C2-β). Drives
+/// SPSC inbox ordering choice (RFC §5.I lines 1752-1758). Drives
 /// the atomic operations emitted on head/tail indices in both Rust and
 /// C11 codegen. `AcqRel` is the safe default (every push/pop pairs
 /// acquire+release on the index); `Relaxed` is the single-core
@@ -3417,16 +3417,16 @@ impl std::fmt::Display for InboxOrdering {
 }
 
 /// `<sce:inbox>` configuration — RFC §5.D line 894 + §5.I lines
-/// 1752-1758. SPSC ring-buffer inbox shape; per Q-C2-8 lock, the
+/// 1752-1758. SPSC ring-buffer inbox shape; the
 /// producer/consumer split is the type-level FSM
 /// (`heapless::spsc::{Producer,Consumer}` on Rust; opaque
 /// `sce_inbox_{producer,consumer}_t` family on C11). No separate FSM
 /// IR module — slot lifecycle is 2-state (free/in-use), degenerate
 /// compared to BufferPool's 7-state DMA lifecycle.
 ///
-/// C2-α schema: only `depth` attribute (spec verbatim). C2-β adds the
-/// `ordering` attribute as required (RFC §5.I lines 1757-1758 spec-
-/// verbatim per `feedback_spec_mirror_parity.md`; SCE's error-only
+/// The `depth` attribute is spec-verbatim; the
+/// `ordering` attribute is required (RFC §5.I lines 1757-1758 —
+/// SCE's error-only
 /// wire realizes the spec "warning, codegen defaults to acq/rel" as
 /// a required-when-worker-exists error so the author makes an
 /// explicit choice before codegen emits ambiguous atomic ops).
@@ -3457,10 +3457,10 @@ pub struct InboxConfig {
 /// (§6.2.6) verifies that the same insertion sequence produces the same
 /// iterator order on every backend.
 ///
-/// C6-α validates the XML attribute structure (exactly one of
-/// `source="deploy" key=...` or `const="..."`) at parse time; deploy-key
-/// resolution against `MachineDeployConfig.limits` lands in C6-γ behind
-/// `collection/capacity-unresolved`.
+/// The parser validates the XML attribute structure (exactly one of
+/// `source="deploy" key=...` or `const="..."`); deploy-key
+/// resolution against `MachineDeployConfig.limits` raises
+/// `collection/capacity-unresolved` when the key does not resolve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -3518,7 +3518,7 @@ pub enum ConcurrencyMode {
     /// `<sce:concurrency>multi-writer</sce:concurrency>` — multiple
     /// tasks may call mutating ops. Requires §5.I `<sce:call>` atomic
     /// intrinsics imported (validated cross-doc by
-    /// `collection/multi-writer-without-atomics` in C6-β).
+    /// `collection/multi-writer-without-atomics`).
     MultiWriter,
 }
 
@@ -3529,20 +3529,20 @@ pub enum ConcurrencyMode {
 /// subscription declare/undeclare + queryable + in-flight reassembly
 /// tables without a heap allocator.
 ///
-/// C6-α schema (per `<scxml sce:kind="bounded-collection">` body):
+/// Schema (per `<scxml sce:kind="bounded-collection">` body):
 /// - `<sce:element-type>NAME</sce:element-type>` (required, body text)
 ///   — references another forge kind by name (codec-kind struct or
-///   procedure-kind state record per spec line 2566-2567). C6-α stores
-///   as opaque `String`; cross-doc resolution against
+///   procedure-kind state record per spec line 2566-2567). Stored
+///   as opaque `String` at parse time; cross-doc resolution against
 ///   `SceCrossDocRegistry` (verifying the name resolves AND is a
-///   codec/procedure kind) lands in C6-β behind
+///   codec/procedure kind) raises
 ///   `collection/element-type-not-a-kind`.
 /// - `<sce:capacity .../>` (required, exactly one attribute form) — see
 ///   [`CapacitySource`] doc.
 /// - `<sce:index-by field="FIELD"/>` (optional) — enables `find_by_index`
-///   API per spec line 2615. C6-α stores the field name as
+///   API per spec line 2615. Stores the field name as
 ///   `Option<String>`; cross-doc verification that the field exists in
-///   the element-type struct lands in C6-β behind
+///   the element-type struct raises
 ///   `collection/index-by-field-missing`.
 /// - `<sce:on-overflow>POLICY</sce:on-overflow>` (optional, default
 ///   `diagnostic-event`) — see [`OverflowPolicy`].
@@ -3551,7 +3551,7 @@ pub enum ConcurrencyMode {
 /// - `<sce:concurrency>MODE</sce:concurrency>` (optional, default
 ///   `single-writer`) — see [`ConcurrencyMode`].
 ///
-/// Parse-time validators (C6-α):
+/// Parse-time validators:
 /// - `collection/ordering-sorted-requires-index-by` — if `ordering` is
 ///   `SortedByIndex`, `<sce:index-by>` must be present.
 /// - `collection/overflow-policy-oldest-wins-requires-ordering-insertion`
@@ -3562,13 +3562,14 @@ pub enum ConcurrencyMode {
 pub struct BoundedCollectionModel {
     pub name: String,
     /// `<sce:element-type>` body text — references another forge kind by
-    /// name. C6-α opaque `String`; cross-doc resolution in C6-β.
+    /// name. Opaque `String` at parse time; resolved cross-doc.
     pub element_type: String,
     /// `<sce:capacity .../>` — deploy-key or compile-time constant.
     pub capacity: CapacitySource,
     /// `<sce:index-by field="...">` — optional index field for
-    /// `find_by_index`. C6-α stores as opaque `Option<String>`; cross-doc
-    /// element-struct field verification in C6-β.
+    /// `find_by_index`. Opaque `Option<String>` at parse time; cross-doc
+    /// element-struct field verification raises
+    /// `collection/index-by-field-missing`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub index_by: Option<String>,
     /// `<sce:on-overflow>` — default `DiagnosticEvent` per spec line 2556.
@@ -3577,7 +3578,7 @@ pub struct BoundedCollectionModel {
     pub ordering: CollectionOrdering,
     /// `<sce:concurrency>` — default `SingleWriter` per spec line 2560.
     pub concurrency: ConcurrencyMode,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="bounded-collection">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3587,11 +3588,10 @@ pub struct BoundedCollectionModel {
 /// Worker document — RFC §5.D concurrent execution context driven
 /// by a `<sce:link-rx>` source.
 ///
-/// C2-α schema (per `<scxml sce:kind="worker">` body):
+/// Schema (per `<scxml sce:kind="worker">` body):
 /// - `<sce:link-rx ref="...">` (required) — `<scxml sce:kind="link">`
-///   document that drives this worker. Cross-resolution validator
-///   `worker/link-rx-ref-unknown` defers to C2-β (consumer-co-landed
-///   with codegen needing the resolved Link).
+///   document that drives this worker. Cross-resolution validator:
+///   `worker/link-rx-ref-unknown`.
 /// - `<sce:inbox depth="N"/>` (required) — SPSC ring-buffer inbox.
 ///   Producer/consumer pair drawn from `heapless::spsc::split()` on
 ///   Rust; opaque `sce_inbox_{producer,consumer}_t` on C11.
@@ -3600,20 +3600,20 @@ pub struct BoundedCollectionModel {
 ///   validators (`worker/outbox-ref-unknown` +
 ///   `worker/outbox-target-wrong-kind` +
 ///   `worker/outbox-target-suffix-invalid`) live in
-///   [`crate::validate_worker_outbox_references`] (C2 follow-up
-///   Atomic B). Parser keeps `outbox` as an opaque
+///   [`crate::validate_worker_outbox_references`].
+///   Parser keeps `outbox` as an opaque
 ///   `Option<String>`; semantic resolution against statechart +
 ///   worker recipients happens against the
 ///   [`crate::forge::cross_doc_registry::SceCrossDocRegistry`] in
 ///   the orchestrator pass.
 /// - `<sce:body>` (optional, usually empty per spec line 897) — SCXML
-///   actions. C2-α scans for `worker/shared-mutable-state` violations
+///   actions. The parser scans for `worker/shared-mutable-state` violations
 ///   (any `<sce:import kind="worker">` in the document, plus body
 ///   SCXML data-refs to foreign namespaces).
 ///
 /// MCU-class kind (RFC §5.J.4): Rust + C11 emitters only. cpp/kotlin/
-/// go/python rejection via existing `codegen/mcu-class-kind-on-non-
-/// mcu-language` family (lands in C2-β alongside codegen).
+/// go/python rejection via the existing `codegen/mcu-class-kind-on-non-
+/// mcu-language` family.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct WorkerModel {
@@ -3621,7 +3621,7 @@ pub struct WorkerModel {
     /// `<sce:link-rx ref="...">` — required driver source. Spec line
     /// 893 phrasing "drives this worker" → required. Empty-ref parse
     /// rejects; cross-ref resolution against `SceCrossDocRegistry`
-    /// defers to C2-β.
+    /// raises `worker/link-rx-ref-unknown`.
     pub link_rx: String,
     /// `<sce:inbox depth="N"/>` — required typed event queue.
     pub inbox: InboxConfig,
@@ -3630,7 +3630,7 @@ pub struct WorkerModel {
     /// machine via `<sce:link-rx>`-driven event mapping.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outbox: Option<String>,
-    /// Watching-zenoh RFC §5.O Atomic 0c: post-preprocessor source
+    /// Watching-zenoh RFC §5.O: post-preprocessor source
     /// position of the `<scxml sce:kind="worker">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3641,8 +3641,8 @@ pub struct WorkerModel {
 
 /// Top-level forge document — dispatched by `sce:kind` on `<scxml>` root.
 ///
-/// `Statechart(Box<SCXMLModel>)` is the W3C SCXML arm — added in the
-/// AST-export v1 second atomic to close the internal symmetry left
+/// `Statechart(Box<SCXMLModel>)` is the W3C SCXML arm — added with
+/// AST-export v1 to close the internal symmetry left
 /// open by the Forge-only first cut. The `Box` keeps the enum size
 /// bounded by the largest forge variant: `size_of::<SCXMLModel>() ==
 /// 816` bytes (measured at landing), while the largest forge model
@@ -3688,9 +3688,9 @@ pub enum ForgeDocument {
     BoundedCollection(BoundedCollectionModel),
     #[serde(rename = "enum")]
     Enum(EnumModel),
-    /// NL→IR Item C1 Path A: typed `_event.data` payload contract.
-    /// Parse-time metadata at Atomic 3 scope; Atomic 4 lands per-
-    /// backend payload struct codegen. See [`EventSchemaModel`].
+    /// Typed `_event.data` payload contract.
+    /// Parse-time metadata plus per-backend payload struct
+    /// codegen. See [`EventSchemaModel`].
     #[serde(rename = "event-schema")]
     EventSchema(EventSchemaModel),
 }
@@ -3782,9 +3782,9 @@ impl ForgeDocument {
             // RFC §5.C: trait surface owned by SCE's `sce-link-runtime`;
             // per-OS impls live downstream. SCE-side tier `None`.
             Self::Link(_) => RuntimeDep::None,
-            // RFC §5.E: B7-α self-contained slot table on `(rust, std)`
+            // RFC §5.E: self-contained slot table
             // — no SCE-side runtime helper crate. Cache maintenance ops
-            // (B7-δ) route through §5.I intrinsics; B7-α tier `None`.
+            // route through §5.I intrinsics; tier `None`.
             Self::BufferPool(_) => RuntimeDep::None,
             // RFC §5.D: heapless::spsc on Rust + bare ring-buffer on C11
             // with §5.I atomic intrinsics. No SCE-side runtime helper.
@@ -3795,11 +3795,11 @@ impl ForgeDocument {
             // No SCE-side runtime helper crate. Cross-backend parity is
             // codegen-time (§6.2.6).
             Self::BoundedCollection(_) => RuntimeDep::None,
-            // NL→IR Item C1 Path A: Enum is a pure type declaration —
+            // Enum is a pure type declaration —
             // codegen lowers to a backend-native typed enum without
             // any SCE-side runtime helper.
             Self::Enum(_) => RuntimeDep::None,
-            // NL→IR Item C1 Path A: EventSchema's Atomic 4 codegen
+            // EventSchema's codegen
             // emits a per-backend payload struct (typed fields only,
             // typed-Enum fields reference the Enum kind's emitted
             // type by qualified name). No SCE-side runtime helper —
@@ -3817,16 +3817,16 @@ pub struct ParsedForge {
     pub document: ForgeDocument,
     pub imports: Vec<ForgeImport>,
     /// `<sce:extern>` declarations parsed from the document root
-    /// (watching-zenoh RFC §5.I, Atomic A). Empty for documents that
+    /// (watching-zenoh RFC §5.I). Empty for documents that
     /// do not declare any externs. Each entry has already been
     /// validated against the §5.I baseline registry — wire-format
     /// rejection (4-code family `extern/symbol-not-in-whitelist` /
     /// `extern/abi-mismatch` / `extern/signature-mismatch` /
     /// `extern/ordering-unspecified`) raises during parsing, so a
     /// `ParsedForge` carrying any externs is guaranteed registry-clean.
-    /// Atomic A produces this list; downstream codegen consumption
-    /// (per-language `extern "..." {}` emission) lands with a future
-    /// atomic gated on a published `sce_intrinsics_runtime` crate.
+    /// The parser produces this list; downstream codegen consumes it
+    /// for per-language `extern "..." {}` emission (see
+    /// [`crate::forge::extern_emit`]).
     ///
     /// Wire shape: always emitted (even as `[]`) so consumers see a
     /// uniform schema. `imports` follows the same rule. Earlier
@@ -3839,7 +3839,7 @@ pub struct ParsedForge {
 
 /// One `<sce:extern>` declaration after parse-time validation has
 /// matched it against the §5.I baseline registry. Carried through
-/// `ParsedForge` so future codegen atomics can emit per-language
+/// `ParsedForge` so codegen can emit per-language
 /// `extern "C" { fn ... }` blocks without re-walking the XML.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]

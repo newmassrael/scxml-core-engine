@@ -1,4 +1,4 @@
-//! C3 Atomic B-β + B-γ2c integration tests — Rust no_std variant rejection.
+//! Rust no_std variant rejection integration tests.
 //!
 //! Watching-zenoh RFC §5.J.2 author-side gate: when
 //! `sce-codegen generate -l rust --no-std <doc>` is invoked, the
@@ -163,7 +163,7 @@ fn script_axis_fires_before_http_when_both_present() {
 }
 
 // ───────────────────────────────────────────────────────────────────
-// C3 Atomic B-γ2c: filesystem load axis
+// Filesystem load axis
 // ───────────────────────────────────────────────────────────────────
 
 const FSM_WITH_DATA_SRC: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -241,7 +241,7 @@ fn fsm_with_multiple_data_src_reports_all_sites() {
 }
 
 // ───────────────────────────────────────────────────────────────────
-// C3 Atomic B-γ2c: invoke axis
+// Invoke axis
 // ───────────────────────────────────────────────────────────────────
 
 const FSM_WITH_INVOKE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>

@@ -1,17 +1,19 @@
 //! End-to-end CLI contract test for `sce-codegen orchestrate --deploy`.
 //!
-//! Closes the textbook end-user surface for the C13 chain: the
+//! Closes the textbook end-user surface for deploy-aware
+//! orchestration: the
 //! orchestrator wiring `b501b18c` exposed `Option<&DeployConfig>` on
 //! the library entry point, but the CLI multi-doc subcommand
-//! (`Commands::Orchestrate`) had no flag to pass it. This atomic adds
-//! `--deploy=PATH` so end-users invoking the binary can fire
+//! (`Commands::Orchestrate`) had no flag to pass it. The
+//! `--deploy=PATH` flag lets end-users invoking the binary fire
 //! watching-zenoh RFC §5.K + §5.M cross-doc validators without
 //! library-level wrappers.
 //!
 //! Test matrix (mirrors the library-level `c13_*` tests in
 //! `scxml_cross_doc_orchestrator.rs` but at the CLI process boundary):
 //!   1. Without `--deploy`, behavior unchanged — orchestrator
-//!      silent-skips C13 validators (Q-η5 (a) precedent).
+//!      silent-skips the deploy cross-doc validators (shared
+//!      silent-skip discipline).
 //!   2. With `--deploy` that triggers `deploy/link-not-declared-in-deploy`,
 //!      the CLI exits non-zero and emits the diagnostic to stderr.
 //!   3. Deploy YAML parse failure routes through the same NDJSON wire

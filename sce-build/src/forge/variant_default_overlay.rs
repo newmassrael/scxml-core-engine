@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// RFC variant-default-overlay Atomic A — apply `deploy.yaml`
+// Variant-default overlay — apply `deploy.yaml`
 // `variant_defaults:` entries onto a parsed forge document.
 //
 // The wire-spec invariants of a codec (bit positions, MID values per
@@ -11,8 +11,8 @@
 // default a request to query (0x03), a zenoh router may default to push
 // (0x1d), and neither choice contradicts the wire spec.
 //
-// Pre-Atomic A this choice lived inside the SCXML as
-// `<sce:arm value="X" default="true"/>`. Atomic A splits it out into
+// Previously this choice lived only inside the SCXML as
+// `<sce:arm value="X" default="true"/>`. The overlay splits it out into
 // a deploy overlay so the SCXML stays pure wire-spec and consumers
 // pick their own default without forking the codec source.
 //
@@ -22,10 +22,10 @@
 //      `is_default` is set on the matched arm and cleared on every
 //      other arm (overrides any SCXML-side `default="true"`).
 //   2. Otherwise the SCXML's `<sce:arm default="true"/>` marker wins
-//      (legacy path — unchanged from RFC variant-default-uniformity
-//      Atomic α-γ).
+//      (legacy path — unchanged variant-default-uniformity
+//      behaviour).
 //   3. Otherwise the `codec/variant-no-default-arm` validator fires
-//      at the cross-doc gate (existing γ-3 contract).
+//      at the cross-doc gate (existing uniformity contract).
 //
 // Codec names listed in `variant_defaults` that do not match the
 // running document are skipped silently — the overlay describes the

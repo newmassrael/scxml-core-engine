@@ -1,25 +1,24 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// NL→IR Mapping Roadmap Item C1 Path A — EventSchema receive-side +
-// send-side typecheck + per-statechart schema visibility resolver.
+// EventSchema receive-side + send-side typecheck + per-statechart
+// schema visibility resolver.
 //
 // Resolves `_event.data.<field>` member-access expressions in transition
 // `cond` attributes against the [`EventSchemaModel`] declared for the
 // transition's `event`. Unknown fields surface as
 // `validation/cross-kind-field-not-found` (with did-you-mean candidates
 // drawn from the schema's declared field names). Type mismatches in
-// comparisons surface as `validation/cross-kind-type-mismatch` (reused
-// per Item 4 precedent — see `nl_to_ir_mapping_roadmap.md` Item 4 memo).
+// comparisons surface as `validation/cross-kind-type-mismatch` (reused — no new wire code).
 //
 // Send-side: walks every `<send event="X">` / `<raise event="X">`
 // executable-content action and verifies each `<param name="F"/>`
 // against the schema's declared field surface. Unknown field surfaces
 // `validation/event-payload-field-unknown` (FixCarriesCandidates over
 // the schema's declared field set); literal-type mismatch surfaces
-// `validation/cross-kind-type-mismatch` (reused per Item 4 precedent).
+// `validation/cross-kind-type-mismatch` (reused — no new wire code).
 //
-// Atomic 3 scope (design RFC §3 DL-4' / DL-5'):
+// Receive-side + send-side check scope:
 //   * Receive-side field-not-found rejection on every
 //     `_event.data.<unknown>` read.
 //   * Receive-side type-mismatch rejection on the immediate parent of
@@ -30,15 +29,15 @@
 //     `<send>` / `<raise>` (transitions, on_entry/on_exit, initial-
 //     transition + history-default, nested <if>/<foreach>).
 //
-// Atomic 5 scope (design RFC §2 DL-5'):
+// Width-narrowing scope:
 //   * Cross-doc Enum underlying-type width narrowing — integer
 //     literals compared against (receive-side) or assigned to
 //     (send-side) an enum-typed field are now narrowed against the
 //     enum's declared `underlying_type`. Overflows surface as
-//     `validation/cross-kind-type-mismatch` (reused per Item 4
-//     precedent — no new wire code).
+//     `validation/cross-kind-type-mismatch` (reused — no new
+//     wire code).
 //
-// F-κ scope (design RFC §8 follow-up — strict variant membership):
+// Strict-variant-membership scope:
 //   * After width narrowing accepts a literal, the membership layer
 //     verifies the value is one of the enum's declared
 //     `<sce:variant value="…"/>` set. Closed-set vocabularies (the
@@ -47,8 +46,8 @@
 //     (`sce:strict-variants="false"` on the enum's `<scxml>` root —
 //     e.g. UDS NRC, OEM-extensible response codes) silent-skip the
 //     membership check while still enforcing width narrowing.
-//   * Same `validation/cross-kind-type-mismatch` reuse (design lock
-//     #2 — 318 DiagnosticCodes unchanged across F-κ).
+//   * Same `validation/cross-kind-type-mismatch` reuse (no new
+//     wire code).
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
@@ -61,7 +60,7 @@ use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, ForgeKind, Sc
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Param, SCXMLModel, Transition};
 
-/// NL→IR Mapping Roadmap Item C1 Path A (DL-7' prerequisite) — resolve
+/// Per-statechart schema-visibility resolution — resolve
 /// a statechart's `<sce:import>` declarations into the per-statechart
 /// `event_name → EventSchemaModel` map consumed by the receive-side
 /// and send-side validators.
@@ -127,7 +126,7 @@ pub fn resolve_imported_event_schemas(
     resolved
 }
 
-/// NL→IR Item C1 Path A Atomic 5 (DL-5') — resolve the statechart's
+/// Width-narrowing support — resolve the statechart's
 /// `<sce:import kind="enum">` declarations into the per-statechart
 /// `alias → EnumModel` map consumed by the literal-width narrowing
 /// inside [`check_comparison_type`] and [`check_send_param`].
@@ -146,8 +145,9 @@ pub fn resolve_imported_event_schemas(
 /// `sce:type="enum:Result"` must independently declare an
 /// `<sce:import kind="enum" as="Result"/>` for the narrowing to fire;
 /// otherwise the alias is opaque from the statechart's view and the
-/// narrowing silent-skips (the underlying width was already opaque at
-/// Atomic 3, so silent-skip preserves the conservative-accept default).
+/// narrowing silent-skips (the underlying width was already opaque to
+/// the field check, so silent-skip preserves the conservative-accept
+/// default).
 ///
 /// Returns empty when the statechart declares no Enum imports — the
 /// non-narrowing baseline path remains zero-cost.
@@ -177,7 +177,7 @@ pub fn resolve_imported_enums(
     resolved
 }
 
-/// NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) — the
+/// EventSchema MCU native lowering — the
 /// single source of truth for "is this transition guard expressible
 /// without a runtime script engine".
 ///
@@ -235,12 +235,12 @@ pub fn lower_typed_guard(
 /// `bytes` fields ARE eligible: every backend carries the payload field
 /// natively (C11 as a no-alloc bounded buffer `uint8_t[CAP]; size_t
 /// _len`, the hosted backends as their owned byte-sequence type) and a
-/// `bytes` guard lowers to a byte-identical equality on all six (RFC
-/// `rfc-eventschema-bytes-guard.md` §3 B4/B5). Forms that have no
+/// `bytes` guard lowers to a byte-identical equality on all six.
+/// Forms that have no
 /// representable native lowering — an ordering operator or a
 /// non-printable-ASCII literal on a `bytes` operand — are kept off the
 /// native path by [`guard_is_native_lowerable`]'s per-guard
-/// representability check (RFC §3 B2/B3), not by excluding the schema:
+/// representability check, not by excluding the schema:
 /// a schema's other guards stay native.
 ///
 /// This is the single eligibility rule shared by the engine-need
@@ -545,7 +545,7 @@ pub fn check(
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     if imported_schemas.is_empty() {
-        // Schemaless fallback (DL-9'): no imported schemas means every
+        // Schemaless fallback: no imported schemas means every
         // event keeps the dynamic `_event.data` baseline. Skip the
         // walk entirely so a statechart that opts not to declare
         // schemas pays no validator cost.
@@ -572,7 +572,7 @@ fn check_transition(
     statechart_name: &str,
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
-    // Schemaless fallback (DL-9'): if the transition's event name
+    // Schemaless fallback: if the transition's event name
     // does not match any imported schema, leave the cond unvalidated.
     // The dynamic-payload baseline behavior of `_event.data` predates
     // EventSchema and remains the contract for un-schema'd events.
@@ -622,12 +622,12 @@ fn walk_for_event_data_refs(
         ExprKind::Member { object, property } => {
             if is_event_data_object(object) {
                 // `_event.data.<property>` — resolve `<property>` against
-                // the schema. Field-not-found is the primary Atomic 3
+                // the schema. Field-not-found is the primary
                 // receive-side diagnostic.
                 resolve_field(schema, property, transition, statechart_name, diag_label)?;
             }
             // Recurse into the object (covers nested patterns such as
-            // `_event.data.foo.bar` — Atomic 3 treats the outer
+            // `_event.data.foo.bar` — the check treats the outer
             // `_event.data.foo` as a field reference; deeper paths are
             // currently unverified because schema fields are flat
             // typed primitives, not nested records).
@@ -845,7 +845,7 @@ fn resolve_field(
         diag_label,
         ValidationError::CrossKindFieldNotFound {
             // The importing surface is the SCXML statechart consuming
-            // the schema. Atomic 3's first wiring routes the
+            // the schema. The receive-side wiring routes the
             // statechart's name as the importing-name; the alias
             // surfaces the authored token `_event.data` verbatim so
             // the user sees the exact site they wrote.
@@ -865,12 +865,12 @@ fn resolve_field(
 /// `_event.data.<field> === <literal>` (or reversed), compare
 /// `<literal>`'s lexically determinable type against `<field>`'s
 /// declared `sce_type`. Mismatches raise
-/// `validation/cross-kind-type-mismatch` (reused per Item 4 precedent).
+/// `validation/cross-kind-type-mismatch` (reused — no new wire code).
 ///
-/// Atomic 3 scope: literal vs primitive type. The other operand may
+/// Scope: literal vs primitive type. The other operand may
 /// also be an arbitrary expression (e.g. a variable reference), in
 /// which case the inferred type is not statically determinable from
-/// the local view; Atomic 3 skips the check in that case (the
+/// the local view; the check is skipped in that case (the
 /// existing typed-expression pipeline catches deeper mismatches at
 /// codegen).
 fn check_comparison_type(
@@ -921,8 +921,8 @@ fn check_comparison_type(
             },
         ));
     }
-    // F-κ strict variant membership — ordering invariant (design lock
-    // #3): runs only after the width narrowing layer above returned
+    // Strict variant membership — ordering invariant: it runs
+    // only after the width narrowing layer above returned
     // `None`. A literal that overflows the underlying carrier is the
     // more fundamental violation and must surface first; once the
     // value is known to fit, the membership check asks the orthogonal
@@ -1144,28 +1144,27 @@ fn literal_is_compatible_with(field_type: &SceType, literal_kind: LiteralKind) -
     }
 }
 
-/// Atomic 5 narrowing diagnostic payload returned by
+/// Width-narrowing diagnostic payload returned by
 /// [`enum_underlying_overflow`]. `expected` carries the canonical name
 /// of the enum's declared `underlying_type` (e.g. `"uint8"`), `actual`
 /// names the offending integer literal with its parsed value (e.g.
 /// `"integer literal 131071 (0x1FFFF) overflows uint8 underlying type of enum 'Result'"`).
 /// Keeping both halves text-only lets the existing
 /// `CrossKindTypeMismatch` variant carry the narrowing diagnostic
-/// without new wire codes (Item 4 reuse precedent — see
-/// `nl_to_ir_mapping_roadmap.md` Item 4 memo).
+/// without new wire codes.
 struct EnumUnderlyingOverflow {
     actual: String,
     expected: String,
 }
 
-/// NL→IR Item C1 Path A Atomic 5 (DL-5') — width narrowing layered
+/// Cross-doc Enum width narrowing — layered
 /// atop the category check in [`literal_is_compatible_with`]. Returns
 /// `Some` when:
 ///
 ///   * `field_type` is `SceType::Enum(EnumRef { alias })`,
 ///   * the statechart declared an `<sce:import kind="enum" as="alias">`
 ///     resolvable via `imported_enums` (silent-skip otherwise — the
-///     alias is opaque from the statechart's view and Atomic 3's
+///     alias is opaque from the statechart's view and the
 ///     conservative-accept default applies),
 ///   * `operand` is an integer literal parseable as a `u64` whose value
 ///     exceeds the enum's declared `underlying_type` max.
@@ -1224,26 +1223,24 @@ fn integer_literal_value(operand: &TypedExpr) -> Option<u64> {
     parse_int_literal_text(text)
 }
 
-/// F-κ diagnostic payload returned by [`enum_variant_not_declared`].
+/// Membership diagnostic payload returned by [`enum_variant_not_declared`].
 /// Shape mirrors [`EnumUnderlyingOverflow`] so the membership check
 /// can flow through the same `CrossKindTypeMismatch` reuse precedent
-/// without a new wire code (design lock #2 — 318 DiagnosticCodes
-/// unchanged across F-κ).
+/// without a new wire code.
 struct EnumVariantNotDeclared {
     actual: String,
     expected: String,
 }
 
-/// NL→IR Item C1 Path A follow-up F-κ — strict variant membership
-/// check layered atop [`enum_underlying_overflow`]. Returns `Some`
+/// Strict variant membership — check layered atop [`enum_underlying_overflow`]. Returns `Some`
 /// when:
 ///
 ///   * `field_type` is `SceType::Enum(EnumRef { alias })`,
 ///   * the statechart declared an `<sce:import kind="enum" as="alias">`
 ///     resolvable via `imported_enums` (silent-skip otherwise — same
 ///     conservative-accept default as the width narrowing layer),
-///   * the imported enum's `strict_variants` flag is `true` (design
-///     lock #1 — opt-out is owned by the declaring vocabulary),
+///   * the imported enum's `strict_variants` flag is `true` (opt-out
+///     is owned by the declaring vocabulary),
 ///   * `operand` is an integer literal whose parsed `u64` value is
 ///     not one of the values declared on the enum's `variants`.
 ///
@@ -1386,7 +1383,7 @@ fn located_on_transition(
     Located::new(ForgeError::Validation(Box::new(err)), diag_label, line, col)
 }
 
-/// Per-statechart send-side typecheck (DL-4').
+/// Per-statechart send-side typecheck.
 ///
 /// Walks every `<send event="X">` / `<raise event="X">` executable-
 /// content action reachable from the SCXML's state graph and verifies
@@ -1411,7 +1408,7 @@ fn located_on_transition(
 /// operands whose category is not syntactically determinable.
 ///
 /// Schemaless events (no imported schema for the send's event name)
-/// are skipped per the DL-9' fallback. Dynamic event names
+/// are skipped per the schemaless fallback. Dynamic event names
 /// (`<send eventexpr="…">` with no `event=` attribute) are also
 /// skipped — the validator cannot resolve a schema without a stable
 /// event name.
@@ -1425,7 +1422,7 @@ pub fn check_send_side(
     diag_label: &str,
 ) -> Result<(), Located<ForgeError>> {
     if imported_schemas.is_empty() {
-        // DL-9' fallback — no imported schemas means every event keeps
+        // Schemaless fallback — no imported schemas means every event keeps
         // the dynamic-payload baseline. Skip the walk entirely so
         // statecharts that opt not to declare schemas pay no
         // validator cost.
@@ -1546,7 +1543,7 @@ fn walk_actions(
 /// Per-`<send>` / `<raise>` validator. Returns `Ok(())` for any
 /// action that is not a send/raise, has no statically-resolvable
 /// event name, or whose event name does not resolve to an imported
-/// schema (DL-9' schemaless fallback).
+/// schema (schemaless fallback).
 fn check_send_action(
     action: &Action,
     imported_schemas: &BTreeMap<String, EventSchemaModel>,
@@ -1559,7 +1556,7 @@ fn check_send_action(
     }
     // Dynamic event name (`<send eventexpr="…">`) — the event the
     // payload will carry is not statically resolvable. Validator
-    // cannot pick a schema; skip per DL-9' fallback shape.
+    // cannot pick a schema; skip per the schemaless-fallback shape.
     if action.event.is_empty() {
         return Ok(());
     }
@@ -1579,7 +1576,7 @@ fn check_send_action(
     Ok(())
 }
 
-/// Per-`<param>` validator. Two failure modes per DL-4':
+/// Per-`<param>` validator. Two failure modes:
 ///
 /// * `<param name="F">` with `F` not on the schema —
 ///   [`ValidationError::EventPayloadFieldUnknown`] with the schema's
@@ -1662,7 +1659,7 @@ fn check_send_param(
             },
         ));
     }
-    // F-κ strict variant membership (send-side mirror of the receive-
+    // Strict variant membership (send-side mirror of the receive-
     // side check in `check_comparison_type`). Same ordering invariant:
     // runs after width narrowing so a value that overflows the
     // underlying carrier surfaces the overflow diagnostic rather than
@@ -1733,7 +1730,7 @@ mod tests {
     }
 
     /// Width-axis test helper — produces a single-variant enum with
-    /// `strict_variants = false` so the membership layer (F-κ)
+    /// `strict_variants = false` so the membership layer
     /// silent-skips. Name is explicit (`_open` suffix) so axis intent
     /// is visible at every call site: tests using this helper care
     /// about width narrowing only, not membership. The earlier
@@ -1743,7 +1740,7 @@ mod tests {
     /// as "production-default enum"; the `_open` suffix forces an
     /// explicit choice at the call site.
     ///
-    /// F-κ tests build their own models via
+    /// Membership tests build their own models via
     /// `enum_model_strict_with_variants` /
     /// `enum_model_open_with_variants` (declared below) when they
     /// need a richer variant set.
@@ -1792,7 +1789,7 @@ mod tests {
         assert!(run(s, "_event.data.status === 0").is_ok());
     }
 
-    // NL→IR Item C1 Path A (EventSchema MCU native lowering, step 2) —
+    // EventSchema MCU native lowering —
     // the shared SSOT lowering helper emits a native typed-payload
     // comparison (rename `_event.data` → bound payload var, `===` → `==`,
     // leaf field type adopted) and the engine-need verdict agrees.
@@ -1872,7 +1869,7 @@ mod tests {
         assert!(!guard_is_native_lowerable("_event.data.status === 0", &s));
     }
 
-    // RFC `rfc-eventschema-bytes-guard.md` §3 commit 6 — the gate is
+    // Bytes-guard contract — the gate is
     // flipped: a bytes field is payload-eligible (it carries natively as
     // a bounded buffer on C11 / owned byte sequence on the hosted
     // backends) and an equality guard against a printable-ASCII literal
@@ -1978,7 +1975,7 @@ mod tests {
         assert!(msg.contains("enum:Result"), "{msg}");
     }
 
-    // ─── RFC `rfc-eventschema-bytes-guard.md` §3 B2/B3 — bytes guards ──
+    // ─── Bytes guards (representability) ──
 
     // B3 baseline: equality against a printable-ASCII literal is the
     // one comparison shape a bytes payload permits.
@@ -2054,9 +2051,9 @@ mod tests {
         check(&scxml, &schemas, &enums, "diag").expect("empty map should pass trivially");
     }
 
-    // ─── Atomic 5: cross-doc Enum literal width narrowing ───────────
+    // ─── Cross-doc Enum literal width narrowing ───────────
     //
-    // All tests in this section use `enum_model_open` so the F-κ
+    // All tests in this section use `enum_model_open` so the
     // membership layer silent-skips and the assertions exercise the
     // width axis in isolation. Membership behavior has its own
     // dedicated test section further below.
@@ -2203,9 +2200,9 @@ mod tests {
         assert!(run_with_enums(s, "_event.data.status === 999999", enums).is_ok());
     }
 
-    // ─── F-κ: strict variant membership ─────────────────────────────
+    // ─── Strict variant membership ─────────────────────────────
 
-    /// F-κ membership-axis test helper: strict enum with author-supplied
+    /// Membership-axis test helper: strict enum with author-supplied
     /// declared variants. Use this when the test exercises membership
     /// behavior and needs the declared set to be a concrete, asserted
     /// surface (e.g. "value 7 is rejected because it's not declared
@@ -2231,7 +2228,7 @@ mod tests {
         }
     }
 
-    /// F-κ opt-out test helper: same as
+    /// Membership opt-out test helper: same as
     /// [`enum_model_strict_with_variants`] but with the opt-out flag
     /// flipped. Use this when the test exercises the opt-out branch
     /// (open-set vocabularies where undeclared values are legal).
@@ -2288,7 +2285,7 @@ mod tests {
                 &[("ok", 0), ("error", 1), ("timeout", 2)],
             ),
         );
-        // 7 fits uint8 width (passes Atomic 5) but is not declared.
+        // 7 fits uint8 width (passes width narrowing) but is not declared.
         let err = run_with_enums(s, "_event.data.status === 7", enums)
             .expect_err("7 must be rejected by F-κ membership check");
         let msg = format!("{err}");

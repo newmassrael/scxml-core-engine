@@ -222,12 +222,12 @@ impl InferredType {
             SceType::Bool => Self::Bool,
             SceType::String => Self::Str,
             SceType::Bytes => Self::Bytes,
-            // NL→IR Item C1 Path A: an enum-typed value's concrete
+            // An enum-typed value's concrete
             // integer width is determined by the imported enum
             // document's `sce:underlying-type` — cross-doc
             // information not visible at the model layer. Map to
             // `Unknown` so the inference layer takes the conservative
-            // "opaque" path; the cross-kind binding pass and Atomic 5
+            // "opaque" path; the cross-kind binding pass and the
             // literal-width narrowing resolve the imported enum and
             // perform explicit typecheck against the declared
             // underlying type, independent of this inference path.
@@ -555,11 +555,11 @@ pub struct TypeCtx<'a> {
     /// arithmetic widening cannot insert `.toInt()` at the index access
     /// (the index node has no parent-type signal otherwise).
     pub array_elems: HashMap<&'a str, InferredType>,
-    /// RFC c7-wildcard W-project: when `true`, [`infer_types`] projects a
+    /// Wildcard-keyexpr Str-argument projection: when `true`, [`infer_types`] projects a
     /// `Str` argument that flows into a `bytes` function parameter into a
     /// borrowed `bytes` view (an [`ExprKind::BytesView`] node), so a
     /// bounded-string element field (`entry.pattern`) lowers to each
-    /// backend's byte-view idiom at the call site (Q-W-5 (a) lock). Set
+    /// backend's byte-view idiom at the call site. Set
     /// only by the algorithm renderer — the projection's per-backend emit
     /// assumes the algorithm-kind string representation (a codec
     /// `&str` / `std::string` / `char[N]+_len` field), so leaving it

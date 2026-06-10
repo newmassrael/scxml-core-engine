@@ -1,15 +1,14 @@
 //! C7-foundation — `get_by_slot` method emit integration tests
 //! across all 6 BC backends.
 //!
-//! Per watching-zenoh RFC §5.L line 2642-2647 + RFC stub
-//! `claudedocs/rfc-c7-keyexpr-matching-algorithm.md` §3 Q-C7-2 (c)
-//! lock 2026-05-13: BC iteration from algorithm bodies lowers to an
-//! index loop using `len()` + a new slot-indexed read `get_by_slot
+//! Per watching-zenoh RFC §5.L lines 2642-2647: BC iteration from
+//! algorithm bodies lowers to an
+//! index loop using `len()` + a slot-indexed read `get_by_slot
 //! (slot) -> Option<&T>` (per-backend idiom). This file is the
-//! in-atomic consumer of the new method — without these tests the
-//! 6 template additions would be silently built-but-unconsumed per
-//! `[[feedback-silently-broken-hooks]]`. C7-lowering (atomic 2 of
-//! 3) will consume `get_by_slot` from the foreach-BC codegen path.
+//! direct consumer of the method emit — without these tests the
+//! 6 template additions would be silently built-but-unconsumed.
+//! The foreach-BC lowering (`c7_keyexpr_match.rs`) consumes
+//! `get_by_slot` from the codegen path.
 //!
 //! Test strategy mirrors γ2/γ3/γ4: emit-shape grep against the
 //! per-backend signature + boundary-check body. Per-backend method
@@ -285,9 +284,9 @@ fn c11_get_by_slot_signature_and_boundary_checks() {
 fn get_by_slot_emits_on_all_six_backends() {
     // Drift guard: every backend's BC emit must surface a
     // `get_by_slot` (or `GetBySlot` / `getBySlot`) method per the
-    // C7-foundation contract. A regression that drops the method
-    // on one backend would fail this guard before the C7-lowering
-    // atomic catches the missing dispatch target.
+    // foundation contract above. A regression that drops the method
+    // on one backend would fail this guard before the foreach-BC
+    // lowering tests catch the missing dispatch target.
     for lang in [
         Language::Rust,
         Language::Cpp,

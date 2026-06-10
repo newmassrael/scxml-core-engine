@@ -291,7 +291,7 @@ mod tests {
   </datamodel>
 </scxml>"#;
 
-    // ── sce:template / sce:use / sce:param grammar (RFC §6.5 Phase A).
+    // ── sce:template / sce:use / sce:param grammar.
     //    Normal build flow expands <sce:use> before XSD runs, so these
     //    cases exercise the schema declarations directly — useful for
     //    editor integrations and for catching missing `template=` on

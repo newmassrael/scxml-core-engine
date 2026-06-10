@@ -236,7 +236,7 @@ fn cache_none_emits_no_cache_calls() {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// Sidecar auto-inject pinning (Q-C5-4 (a) "same sidecar")
+// Sidecar auto-inject pinning ("same sidecar" lock)
 // ────────────────────────────────────────────────────────────────────
 
 #[test]

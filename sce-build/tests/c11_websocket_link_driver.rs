@@ -4,11 +4,12 @@
 //! watching-zenoh RFC §8 Q8 line 3747 names `websocket_tcp` as one
 //! of the six core-shipped drivers; §5.C row 4 (line 770) names the
 //! `websocket` link class with "TCP + WebSocket framing" semantics.
-//! Spec §7 line 3626 ("Serial + WebSocket link drivers") commits
-//! this to Phase C atomic #11. C11-serial landed via `4f1c8bfa`
-//! (2026-05-14); this follow-up closes the WebSocket sub-scope.
+//! Spec §7 item C11 ("Serial + WebSocket link drivers", line 3626)
+//! commits this driver. The serial sub-scope landed via `4f1c8bfa`
+//! (2026-05-14, see `c11_serial_link_driver.rs`); this file covers
+//! the WebSocket sub-scope.
 //!
-//! This atomic delivers SCE-side support: the `KNOWN_DRIVERS`
+//! SCE-side support pinned here: the `KNOWN_DRIVERS`
 //! baseline in [`sce_build::mesh::deploy::validate_links`] gains
 //! the `("websocket_tcp", 40)` entry. Floor `40` matches `lwip_tcp`
 //! — `websocket_tcp` runs over IPv4 + TCP and inherits that
@@ -17,12 +18,11 @@
 //! §5.B framer codec, not in the driver MTU floor — same layer
 //! split that lets `serial_uart` carry floor 0.
 //!
-//! Driver↔class cross-validator (e.g. rejecting `class=websocket` +
-//! `driver=lwip_tcp`) stays a separate sibling follow-up per the
-//! C11-serial parent RFC §5.2 + this RFC §5.1 — one-atomic-one-
-//! scope discipline. The cross-class pass-through is the pre-
-//! existing silently-broken hook that the sibling atomic will
-//! close on a 4×4 (4 drivers × 4 classes) matrix.
+//! The driver↔class cross-validator (e.g. rejecting
+//! `class=websocket` + `driver=lwip_tcp`) is a separate surface,
+//! covered by `c11_driver_class_cross_validator.rs` on a 4×4
+//! (4 drivers × 4 classes) matrix; this file pins only the
+//! allowlist entry.
 
 use sce_build::mesh::deploy::parse_deploy_str;
 use sce_build::mesh::error::DeployError;

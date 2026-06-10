@@ -2,7 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 //! SCE Forge — semantic validation pass for the bytes max-size
-//! contract introduced in `claudedocs/rfc-forge-bytes-bounded.md`.
+//! contract (`sce:max-size` / `sce:response-max-size` /
+//! `sce:returns-max-size` caps on bytes-typed slots).
 //!
 //! Runs after [`crate::forge::parser::parse_procedure`] has built a
 //! [`ProcedureModel`]; catches inconsistencies between two declared

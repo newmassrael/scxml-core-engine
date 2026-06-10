@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §5.O Atomic 1 — sourcemap JSON foundation.
+// Watching-zenoh RFC §5.O — sourcemap JSON emit.
 //
 // Each emitted backend artifact writes a companion `sce_sourcemap.json`
 // in its output directory. The schema (spec lines 3219-3243):
@@ -107,10 +107,9 @@ pub struct SourceSymbol {
     pub event: Option<String>,
     /// Worst-case execution-time hint in microseconds (per spec line
     /// 3232 `wcet_us`). Reserved for future profiler-fed values; the
-    /// foundation Atomic 1 emit never populates it (no profiler
-    /// consumer yet — per [[feedback-silently-broken-hooks]] we add
-    /// the field only when a producer exists, but the foundation IS
-    /// the producer here because addr2sce wants the read-path live).
+    /// sourcemap emit never populates it (no profiler consumer yet;
+    /// the field still ships because addr2sce wants the read-path
+    /// live).
     /// Set to `None` at emit time; downstream tooling can rewrite the
     /// JSON to inject WCET data without a schema bump.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -142,9 +141,8 @@ pub fn build(
                 line_range: [line, line],
                 kind: kind.to_string(),
                 event,
-                // Foundation emit: WCET field reserved for future
-                // profiler consumer; per [[feedback-silently-broken-
-                // hooks]] we omit it from the wire output until a
+                // WCET field reserved for a future profiler
+                // consumer; omitted from the wire output until a
                 // producer materialises. The field is present on the
                 // struct so consumers can read it without a schema
                 // bump.

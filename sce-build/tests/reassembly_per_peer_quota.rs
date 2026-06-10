@@ -1,18 +1,16 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Axis-2 declared-consumption Phase Z — watching-zenoh RFC §5.M lines
-// 2841-2861 invariant `peer_table.capacity × per_peer_quota >= slot_count`.
+// Reassembly per-peer-quota cross-doc validator — watching-zenoh RFC
+// §5.M lines 2841-2861 invariant
+// `peer_table.capacity × per_peer_quota >= slot_count`.
 //
-// Audit context: the 6-axis ownership-inversion program identified four
-// Axis-2 instances (#3 peek-byte arm reconciliation, #4 variant arm
-// wire-MID matching, #9 link binding, #10 reassembly quota). The first
-// three are already correctly designed via existing typed cross-doc
-// validators (CodecPeekByteFlagLayoutMismatch, CodecVariantArmMidMismatch +
-// CodecVariantArmInnerMidUndeclared, LinkNotDeclaredInDeploy +
-// LinkNotDeclaredInForge). The fourth — this validator — was a
-// placeholder in `forge/diagnostic.rs:1170` deferred to C9-β but never
-// landed. This file pins the full surface.
+// Sibling declared-vs-consumed invariants are enforced by existing
+// typed cross-doc validators (CodecPeekByteFlagLayoutMismatch,
+// CodecVariantArmMidMismatch + CodecVariantArmInnerMidUndeclared,
+// LinkNotDeclaredInDeploy + LinkNotDeclaredInForge). This file pins
+// the full surface of the reassembly-quota validator
+// (`reassembly/per-peer-quota-build-invariant-violated`).
 //
 // Three contracts:
 //
@@ -24,7 +22,7 @@
 //      every input echoed in the diagnostic payload so authors repair
 //      on the appropriate axis.
 //
-//   3. Silent-skip discipline (Q-η5 (a)) when peer_table is absent.
+//   3. Silent-skip discipline when peer_table is absent.
 //      The validator must not noise-up legacy deploys that haven't
 //      declared the session-arming hardening block; only authors who
 //      opted into peer_table.capacity get the invariant gate.

@@ -570,8 +570,7 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
 
 // Donedata drift context. The canonical
 // `donedata_local_invoke.scxml` fixture lives at
-// `integration_resources/donedata_local_invoke/` (RFC
-// `claudedocs/rfc-donedata-5-backend-layout.md` Q-8 SSoT migration);
+// `integration_resources/donedata_local_invoke/`;
 // all three committed-tree backends share that input root. The new
 // top-level dir is intentionally outside `resources/` — the W3C
 // `resources/<N>/` tree is a *separate* §6.2.6 input root, and

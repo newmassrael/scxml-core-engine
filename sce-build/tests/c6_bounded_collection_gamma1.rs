@@ -1,4 +1,4 @@
-//! C6-γ1 — Bounded-collection deploy-time capacity resolution.
+//! Bounded-collection deploy-time capacity resolution.
 //!
 //! Per watching-zenoh RFC §5.L lines 2583-2585 + 2649:
 //! `<sce:capacity source="deploy" key="machines.<m>.limits.<k>"/>`
@@ -8,7 +8,7 @@
 //! silent-skips on the single-file path (no deploy / no
 //! target_machine), on `<sce:capacity const="N"/>` (no deploy
 //! reference), and when the key's machine segment != target_machine
-//! per the Q-η5 (a) precedent.
+//! per the shared deploy-join silent-skip discipline.
 //!
 //! Test matrix (5 scenarios):
 //!  1. compile_const_silent_skips_on_deploy_path
@@ -107,15 +107,16 @@ fn assert_validator_passed(scxml: &str, deploy_yaml: &str, target_machine: Optio
                 sce_build::forge::error::GenerateError::InvalidConfig(msg)
                     if msg.contains("bounded-collection") && msg.contains("resolution missing") =>
                 {
-                    // γ2 render-time gate: γ1 validator passed (silent-
-                    // skipped per Q-η5 (a)) but the codegen layer has no
+                    // Render-time gate: the capacity validator passed
+                    // (silent-skipped per the deploy-join discipline)
+                    // but the codegen layer has no
                     // resolution to consume. The BC was designed for a
                     // different target machine OR no deploy was supplied,
-                    // so γ1 deliberately left the value unresolved. The
-                    // assertion target is "γ1 silently passed"; γ2's
-                    // resolution gap on these silent-skip paths is the
-                    // expected downstream consequence, not a validator
-                    // failure.
+                    // so the validator deliberately left the value
+                    // unresolved. The assertion target is "the validator
+                    // silently passed"; the render layer's resolution
+                    // gap on these silent-skip paths is the expected
+                    // downstream consequence, not a validator failure.
                 }
                 other => {
                     panic!("C6-γ1 validator must silent-pass; got unrelated error: {other:?}")
@@ -218,10 +219,11 @@ fn unresolved_limit_fires() {
 #[test]
 fn key_machine_segment_mismatch_silent_skips() {
     // Author writes key for `mcu_node` but compile is invoked with
-    // target_machine="other_node". Per Q-η5 (a) silent-skip
+    // target_machine="other_node". Per the shared silent-skip
     // precedent: the BC doc was designed for a different machine; the
     // deploy resolution should run only on the host machine's compile.
-    // Validator silent-passes; codegen reaches the γ2-deferred emit.
+    // Validator silent-passes; codegen reaches the render-time
+    // resolution gate.
     let scxml = bc_deploy_key_doc(
         "local_sub_table",
         "machines.mcu_node.limits.local_subscriptions",
@@ -275,10 +277,11 @@ fn compile_const_silent_skips_without_deploy() {
                 sce_build::forge::error::GenerateError::InvalidConfig(msg)
                     if msg.contains("bounded-collection") && msg.contains("resolution missing") =>
                 {
-                    // γ2 render-time gate: single-file deploy-aware path
+                    // Render-time gate: single-file deploy-aware path
                     // has no deploy.yaml, so the deploy-key cannot
-                    // resolve. γ1 validator silent-skipped per Q-η5 (a);
-                    // γ2 surfaces the resolution gap at codegen time.
+                    // resolve. The capacity validator silent-skipped;
+                    // codegen surfaces the resolution gap at render
+                    // time.
                 }
                 other => panic!(
                     "single-file path must silent-skip validator; got unrelated error: {other:?}"
