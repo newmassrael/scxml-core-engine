@@ -191,3 +191,9 @@ backend = "tree-sitter-rust"
 [verifies_catalog]
 path = "docs/spec/scxml/.atomic/verifies-catalog.json"
 severity = "reject"
+# R428 sha256 pin (epub_sha256 symmetry). The catalog is the authority input of
+# the R427 catalog-live confirmed rule, so it gets the same tamper/drift guard as
+# every other gate input: every load re-hashes the file and fails loudly on
+# mismatch. Re-pin on every legitimate regen — gen_verifies_catalog.py prints the
+# new hash (catalog<->metadata guarded by its --check, catalog<->pin guarded here).
+sha256 = "fd88796df0afd01c9febb650e8dd1a9ee62479ae797c7adc24ffc4f1d68c66c1"
