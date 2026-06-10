@@ -5,25 +5,25 @@
  * SCE Forge — byte-stream link contract (C11).
  *
  * Mirrors the Rust trait surface at `sce-link-runtime/src/lib.rs`
- * (watching-zenoh RFC §5.C, B6-α). For C11 the polymorphic surface
+ * (watching-zenoh RFC §5.C). For C11 the polymorphic surface
  * uses the canonical Linux-kernel "trait in C" pattern: a per-instance
  * `sce_forge_link_t` carrying a pointer to a shared `const
  * sce_forge_link_ops_t` vtable plus the driver's per-instance state.
  * The const ops table can live in flash/ROM on MCU targets — only
  * the `void *self` and ops pointer cost RAM per instance.
  *
- * B6-β scope is the contract surface only (this header) plus a
+ * This header ships the contract surface only, plus a
  * generated wrapper struct per `<scxml sce:kind="link">` declaration.
  * Real per-platform impls (`sce_link_runtime_lwip` /
  * `sce_link_runtime_tokio` / QNX) live downstream in watching-zenoh
  * and supply concrete `sce_forge_link_ops_t` tables.
  *
- * Borrowed-slice lifetime (RFC §5.C / B6-α Q2.5=2.5a):
+ * Borrowed-slice lifetime (RFC §5.C):
  *   The `data` pointer in `sce_forge_link_rx_frame_t` is owned by
  *   the impl and remains valid until the next call to `ops->rx`
  *   on the same instance. Callers must consume the bytes before
- *   the next poll. B7's pool-kind impl re-uses this contract by
- *   backing the slice with a slot reference instead of a `Vec`.
+ *   the next poll. Buffer-pool-backed impls re-use this contract
+ *   by backing the slice with a slot reference instead of a `Vec`.
  */
 
 #ifndef SCE_FORGE_LINK_H

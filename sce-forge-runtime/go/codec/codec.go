@@ -7,8 +7,9 @@
 // pins a per-language cursor + need-more-bytes contract on decode so
 // a truncated input never aborts.
 //
-// B1-prep ships PeekSlice / Advance / Remaining. Streaming readers
-// (ReadU8, ReadVLE*, ReadTag) land in B1-α/β with their first consumer.
+// The cursor ships PeekSlice / Advance / Remaining plus the ReadVLE*
+// readers. Other streaming readers (e.g. a dedicated ReadU8 / ReadTag)
+// are not provided until a consumer needs them.
 package codec
 
 import "errors"
@@ -17,7 +18,7 @@ import "errors"
 // buffer is shorter than the codec's declared minimum frame. Caller
 // should resume after appending more bytes.
 //
-// The B1-β variant primitive intentionally does NOT need a typed
+// The variant primitive intentionally does NOT need a typed
 // ErrUnknownVariantTag — RFC §5.B requires <sce:default> when arms
 // don't exhaust the tag domain (build-time
 // codec/variant-arm-unreachable otherwise), so the default arm catches
@@ -31,8 +32,8 @@ var ErrNeedMoreBytes = errors.New("sce/codec: need more bytes")
 var ErrVLEWidthOverflow = errors.New("sce/codec: vle width overflow")
 
 // ErrInvalidUTF8 is returned by Decode when a sce:type="string" field's
-// length-prefixed payload is not well-formed UTF-8 (RFC §5.B B5-ζ
-// Surface H). Forge-fail-fast contract — zenoh-pico itself aliases the
+// length-prefixed payload is not well-formed UTF-8 (RFC §5.B).
+// Forge-fail-fast contract — zenoh-pico itself aliases the
 // bytes without validating, but SCE-side codecs reject malformed text
 // early so downstream procedures never see a malformed string. Cpp +
 // Kotlin runtimes collapse this to their existing truncation sentinel
@@ -41,7 +42,7 @@ var ErrInvalidUTF8 = errors.New("sce/codec: invalid utf-8")
 
 // ErrTlvChainOverflow is returned by Decode when a `<sce:tlv-chain
 // on-overflow="reject">` field has residual cursor bytes after
-// `max_depth` entries have been consumed (RFC §5.B B3-α). Truncate
+// `max_depth` entries have been consumed (RFC §5.B). Truncate
 // policy silently drops the residual bytes and never raises this
 // sentinel; the on-overflow attribute is parser-mandatory so the codec
 // emit always picks one of the two policies. Cpp + Kotlin runtimes
@@ -50,7 +51,7 @@ var ErrInvalidUTF8 = errors.New("sce/codec: invalid utf-8")
 var ErrTlvChainOverflow = errors.New("sce/codec: tlv chain overflow")
 
 // ErrBufferOverflow is returned by Encode when a write would exceed
-// the destination sink's remaining capacity (RFC §5.B B1-α). Only
+// the destination sink's remaining capacity (RFC §5.B). Only
 // bounded sinks (BoundedSink wrapping a caller-owned `[]byte` +
 // fixed cap) can return this; the growable BytesSink (wrapping
 // `*[]byte`) is effectively infallible.

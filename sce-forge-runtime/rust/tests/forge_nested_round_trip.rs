@@ -3,7 +3,7 @@
 
 // Owned->borrowed projection round-trip for the FALLIBLE path.
 //
-// The B5-theta test-vector sidecar (`codec_*_test.rs`) rejects repeat /
+// The test-vector sidecar (`codec_*_test.rs`) rejects repeat /
 // tlv-chain / present-if codecs, so it can only round-trip the *infallible*
 // `as_borrowed` (scalar / bytes / string codecs). The `try_as_borrowed` path
 // — `try_project_bounded` over a bounded `heapless::Vec`, plus embed /

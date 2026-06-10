@@ -69,8 +69,8 @@ inline constexpr int kProcedureMaxIterations = 1000;
 ///
 /// `executeTransitionActions` returns `std::nullopt` for normal flow
 /// (transition completes and the loop advances to the target state).
-/// A non-empty return signals that an assign-time check (e.g.
-/// `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 bytes cap violation)
+/// A non-empty return signals that an assign-time check (e.g. a
+/// bytes cap violation)
 /// fired; the loop re-processes the *source* state with that event so
 /// the fixture's `<transition event="error.execution">` (or any other
 /// internal-event handler) can pick it up. If the source state has no

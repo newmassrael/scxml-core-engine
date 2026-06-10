@@ -70,8 +70,8 @@ type ProcedurePolicy interface {
 	// Returns (raised, ok). When ok is false, the transition completed
 	// normally and the loop advances to the target state. When ok is
 	// true, an assign-time check raised the internal event `raised`
-	// (e.g. RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 bytes
-	// cap violation); the loop re-pumps the source state with that
+	// (e.g. a bytes cap
+	// violation); the loop re-pumps the source state with that
 	// event so a fixture's `<transition event="error.execution">`
 	// picks it up.
 	ExecuteTransitionActions(source int, trIndex int) (raised int, ok bool)

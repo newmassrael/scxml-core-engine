@@ -11,15 +11,15 @@
  * resumes after additional bytes arrive (DMA boundary, fragmented
  * network read).
  *
- * Phase B1-prep ships the minimum API for fixed-width codec fixtures
- * (sce_forge_cursor_peek + advance + remaining). Encode-side
- * `sce_forge_writer_t` + SCE_FORGE_CODEC_BUFFER_OVERFLOW lands in B1-α:
+ * The read side provides the cursor primitives (sce_forge_cursor_peek
+ * + advance + remaining) plus the VLE readers. The encode side
+ * provides `sce_forge_writer_t` + SCE_FORGE_CODEC_BUFFER_OVERFLOW:
  * `sce_forge_writer_init_buf` wraps a caller-owned buffer + capacity,
  * raises BUFFER_OVERFLOW when a write would exceed the cap.
  *
- * C11 runtime intentionally has no heap-backed writer variant — `alloc`
- * is the inversion-1 contract boundary (MCU + AP targets share the
- * no-alloc primary). Callers needing dynamic sizing should
+ * C11 runtime intentionally has no heap-backed writer variant — the
+ * MCU + AP targets share the no-alloc primary contract. Callers
+ * needing dynamic sizing should
  * pre-reserve `{NAME}_MAX_ENCODED_BYTES` (per-codec macro) on the
  * stack or in a static arena and run `{name}_encode_to_buf` over it.
  */
@@ -35,7 +35,7 @@
 extern "C" {
 #endif
 
-/* Typed decode error. The B1-β variant primitive intentionally does
+/* Typed decode error. The variant primitive intentionally does
  * NOT need a typed UnknownVariantTag — RFC §5.B requires <sce:default>
  * when arms don't exhaust the tag domain (build-time
  * codec/variant-arm-unreachable otherwise), so the default arm catches
@@ -46,12 +46,12 @@ typedef enum {
     /* A vle_u<N> field's continuation chain implies a value wider than
      * the declared type. RFC §5.B `codec/vle-width-overflow`. */
     SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW = 2,
-    /* RFC §5.B B3 TLV chain primitive: the wire carried more entries
+    /* RFC §5.B TLV chain primitive: the wire carried more entries
      * than the codec author declared (max-depth=N exhausted while the
      * cursor still had bytes) AND the codec declared
      * on-overflow="reject". Truncate-mode codecs never raise this. */
     SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW = 3,
-    /* RFC §5.B B5-ζ Surface H string primitive: the byte slice declared
+    /* RFC §5.B string primitive: the byte slice declared
      * `sce:type="string"` was not well-formed UTF-8. Mirrors the typed
      * `CodecError::InvalidUtf8` (Rust / Go / Python) — the C11 enum
      * return is uniform across every codec so adding the variant does
@@ -59,7 +59,7 @@ typedef enum {
      * `std::optional<T>` / `T?` truncation sentinel because their
      * signatures are type-narrow). */
     SCE_FORGE_CODEC_INVALID_UTF8 = 4,
-    /* RFC §5.B B1-α encode-side counterpart to NEED_MORE_BYTES: the
+    /* RFC §5.B encode-side counterpart to NEED_MORE_BYTES: the
      * destination writer reported insufficient remaining capacity for
      * the next write. Only the bounded `sce_forge_writer_t`
      * (caller-owned buf + cap) can raise this; C11 has no heap-backed
@@ -188,11 +188,10 @@ static inline sce_forge_writer_t sce_forge_writer_init_buf(uint8_t *buf, size_t 
 }
 
 /* Bytes written by this writer instance since `init_buf`. Mirrors the
- * cpp `SceSink::position()` semantics — distinct from
- * `cap - remaining` so the same accessor lifts onto a future
- * heap-backed writer without contract change. Used by codec emit for
- * offset-aware writes (DMA-aligned field padding, length-prefix
- * back-patching). */
+ * cpp `SceSink::position()` semantics — defined as the write offset,
+ * not `cap - remaining`, so its meaning does not depend on the
+ * backing buffer's capacity. Used by codec emit for offset-aware
+ * writes (DMA-aligned field padding, length-prefix back-patching). */
 static inline size_t sce_forge_writer_position(const sce_forge_writer_t *w) {
     return w->pos;
 }
@@ -282,7 +281,7 @@ static inline sce_forge_codec_status_t sce_forge_writer_write_u64_be(
         if (_sce_fw_st != SCE_FORGE_CODEC_OK) return _sce_fw_st;       \
     } while (0)
 
-/* RFC §5.B B5-ζ Surface H — validate that `[p, p + n)` is a well-formed
+/* RFC §5.B string primitive — validate that `[p, p + n)` is a well-formed
  * UTF-8 byte sequence. Returns true for valid UTF-8 (including the
  * empty range), false on any malformed sequence. Mirrors the cpp
  * `is_valid_utf8` (sce-forge-runtime/cpp/include/sce/forge/codec.h)

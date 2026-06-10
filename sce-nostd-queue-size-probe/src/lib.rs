@@ -3,7 +3,7 @@
 
 //! Per-machine no_std event-queue-sizing gate (compile-time `size_of` assertion).
 //!
-//! RFC `claudedocs/rfc-nostd-per-machine-event-queue-sizing.md`. The sibling
+//! The sibling
 //! `machine` crate is a generated `--no-std` state machine from
 //! `sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml`, which
 //! declares `<scxml sce:capacity="2">` and contains no `<cancel>`. Codegen
@@ -65,8 +65,8 @@ const _: () = assert!(
         <= QUEUE_TYPE_BOUND,
     "StatePolicy::EventQueue for the <sce:capacity=\"2\"> machine exceeds its bound: the event \
      queue likely regressed to the depth-64 default (the per-machine type reverted to the bare \
-     form, or EventQueueManager<T, N> stopped honoring N). \
-     See claudedocs/rfc-nostd-per-machine-event-queue-sizing.md.",
+     form, or EventQueueManager<T, N> stopped honoring N). See the EventQueue associated type \
+     in sce-rust-runtime/src/policy.rs and sce-rust-runtime/src/helpers/event_queue.rs.",
 );
 
 /// Metadata lever. After eliding the five `_event.*` `SceString`s
@@ -79,7 +79,8 @@ const _: () = assert!(
     core::mem::size_of::<EventMetadata>() <= META_SIZE_BOUND,
     "no_std EventMetadata exceeds its size bound: a `_event.*` string field that should be \
      #[cfg(not(feature = \"no_std\"))] (data / sendid / origin / origintype / invokeid) was \
-     reintroduced into the queued metadata. See claudedocs/rfc-nostd-event-metadata-elision.md.",
+     reintroduced into the queued metadata. See the EventMetadata doc-comment in \
+     sce-rust-runtime/src/event.rs.",
 );
 
 /// Scheduler lever. Each `ScheduledEntry` elides two per-entry
@@ -114,5 +115,5 @@ const ENGINE_SANITY_BOUND: usize = 8 * 1024;
 const _: () = assert!(
     core::mem::size_of::<Engine<EventQueueCapacityProbePolicy>>() <= ENGINE_SANITY_BOUND,
     "Engine<EventQueueCapacityProbePolicy> exceeds its loose no_std sanity bound — some per-machine \
-     no_std footprint regressed. See claudedocs/rfc-nostd-per-machine-event-queue-sizing.md.",
+     no_std footprint regressed. See the per-lever bounds above for the precise gates.",
 );

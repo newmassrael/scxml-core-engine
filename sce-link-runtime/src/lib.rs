@@ -7,17 +7,16 @@
 // `sce_link_runtime_lwip` / `sce_link_runtime_tokio` /
 // `sce_link_runtime_qnx` shares a single rust type identity, which
 // is what makes polymorphic adapters and trait-evolution audits
-// possible. Per `claudedocs/rfc-b6-link-entry.md` §3 Q1 Candidate D.
+// possible.
 //
-// B6-α scope is the trait + `RxFrame` / `TxFrame` newtypes + an
+// This crate ships the trait + `RxFrame` / `TxFrame` newtypes + a
 // `LinkError` enum + a no-op `StubLink` for ctest. Real per-OS
 // impls (lwIP DMA-aligned slot acquisition, tokio's `tokio_udp`
 // driver, QNX's `dispatch_create()` reactor binding) live downstream
 // in watching-zenoh as separate crates that depend on this crate
-// for type identity. B7's buffer-pool kind (RFC §5.E) lifts the
+// for type identity. The buffer-pool kind (RFC §5.E) lifts the
 // borrowed-slice surface to slot-backed without a trait change —
-// see `RxFrame` / `TxFrame` doc-comments and `claudedocs/rfc-b6-link-entry.md`
-// §3 Q2.5 Shape 2.5a for the forward-compatibility argument.
+// see the `RxFrame` / `TxFrame` doc-comments.
 
 #![cfg_attr(not(test), no_std)]
 
@@ -29,10 +28,10 @@ use core::cell::Cell;
 
 /// Borrowed-slice frame received by an `impl Link::rx`. The lifetime
 /// is tied to the `&mut self` borrow held by the impl — callers must
-/// consume the frame before the next `rx()` call. B6-α impls back the
-/// slice with an internal `Vec<u8>` (or a fixed `[u8; N]` on `no_std`);
-/// B7's pool-kind impl backs it with a `PoolSlot<'_>` without changing
-/// the trait surface.
+/// consume the frame before the next `rx()` call. Stream-kind impls
+/// back the slice with an internal `Vec<u8>` (or a fixed `[u8; N]` on
+/// `no_std`); the buffer-pool kind backs it with a `PoolSlot<'_>`
+/// without changing the trait surface.
 #[derive(Debug, Clone, Copy)]
 pub struct RxFrame<'a> {
     /// Decoded bytes available for the consumer. The slice's backing
@@ -100,7 +99,7 @@ pub trait Link {
     /// Budget-aware tick hook (watching-zenoh RFC §5.N line 3050).
     /// The cooperative scheduler invokes `poll(deadline_us)` once per
     /// tick per link, with `deadline_us` capped to the deploy.yaml
-    /// `scheduler.per_link_budget_us` value the C10-β codegen pins as
+    /// `scheduler.per_link_budget_us` value the codegen pins as
     /// the per-machine `PER_LINK_BUDGET_US` constant.
     ///
     /// Implementations use the deadline to bound internal work —
@@ -122,25 +121,25 @@ pub trait Link {
     fn poll(&mut self, deadline_us: u32);
 }
 
-// === Sample API (B7-η' prerequisite) ============================================
+// === Sample API ==================================================================
 //
-// Sample machinery for the buffer-pool kind (watching-zenoh RFC §5.E,
-// `claudedocs/rfc-sce-link-runtime-sample-machinery.md`). Authored as a
-// single atomic per the post-2026-05-07-audit Q-Sample-1..8 lock-ins:
-//   - Q-Sample-1 (a) single SampleMeta trait, not split per-axis.
-//   - Q-Sample-2 (c) GAT-based borrow/owned (`type Borrowed<'pool>` + `type Owned`).
-//   - Q-Sample-3 (b) `take()` returns `M::Owned` via the GAT associated type.
-//   - Q-Sample-4 deferred (no optional accessors in v1; only universal
-//     `key_expr -> &str` belongs on the trait — Timestamp/attachments/
+// Sample machinery for the buffer-pool kind (watching-zenoh RFC §5.E).
+// Design decisions:
+//   - Single SampleMeta trait, not split per-axis.
+//   - GAT-based borrow/owned (`type Borrowed<'pool>` + `type Owned`).
+//   - `take()` returns `M::Owned` via the GAT associated type.
+//   - No optional accessors on the trait; only the universal
+//     `key_expr -> &str` belongs there — Timestamp/attachments/
 //     encoding are protocol-decoded types SCE has 0 knowledge of, so
-//     consumers expose them via inherent impls on their own Borrowed/Owned).
-//   - Q-Sample-5 (a) `Send + Sync` required on the trait (cross-thread
+//     consumers expose them via inherent impls on their own Borrowed/Owned.
+//   - `Send + Sync` required on the trait (cross-thread
 //     callback escape becomes runtime UB without compile-time bound).
-//   - Q-Sample-6 (a) separate `StageCopyHook` trait at link construction.
-//   - Q-Sample-7 (b) stage-copy first, drop guard last (race-free under Q-5).
-//     Deviates from upstream spec line 1268; flagged for upstream
-//     coordination at re-entry per RFC §7.
-//   - Q-Sample-8 (a) `SlotGuard` is `pub(crate)`; consumers never type it.
+//   - Separate `StageCopyHook` trait at link construction.
+//   - `take()` ordering: stage-copy first, drop guard last (race-free
+//     under cross-thread callback dispatch). Deviates from upstream
+//     spec line 1268; the deviation is documented for upstream
+//     coordination.
+//   - `SlotGuard` is constructed only by RX drivers; consumers never type it.
 
 /// Type bundle for a wire-protocol's per-sample metadata. Implementations
 /// are typically zero-sized tag types (`struct ZenohSampleMeta;`) that
@@ -150,7 +149,7 @@ pub trait Link {
 /// `Send + Sync` is mandatory: subscriber callbacks may run on a different
 /// task than the link's RX driver. Without the bound, cross-thread
 /// callback escape becomes a runtime bug class (`feedback_silently_broken_hooks.md`
-/// discipline applied to thread-safety). The `Sample::take()` Q-Sample-7 (b)
+/// discipline applied to thread-safety). The `Sample::take()`
 /// stage-copy-first ordering eliminates the race window the bound would
 /// otherwise open.
 pub trait SampleMeta: Send + Sync + Sized {
@@ -173,12 +172,12 @@ pub trait SampleMeta: Send + Sync + Sized {
 
     /// Construct the owned form from the borrowed view and the staged
     /// payload bytes. Called inside `Sample::take()` after the stage-copy
-    /// completes (Q-Sample-7 (b) ordering). Implementations consume the
+    /// completes (stage-copy-first ordering). Implementations consume the
     /// borrowed view and pair it with the owned payload `Vec`.
     fn into_owned(borrowed: Self::Borrowed<'_>, payload: Vec<u8>) -> Self::Owned;
 }
 
-/// Stage-pool copy hook supplied at link construction (Q-Sample-6 (a)).
+/// Stage-pool copy hook supplied at link construction.
 /// `Sample::take()` invokes `stage_copy` to produce an owned `Vec<u8>`
 /// from the borrowed slot bytes; the slot is then released. Implementations
 /// typically pull bytes from a pre-allocated stage pool to avoid allocator
@@ -215,7 +214,7 @@ impl StageCopyHook for PanicOnTakeHook {
 /// Field declaration order pins drop ordering for the borrow path:
 /// `payload` (no Drop), `meta` (consumer-defined Drop), `hook` (no Drop),
 /// `_guard` (returns slot). `take()` overrides this with explicit
-/// stage-copy-first ordering per Q-Sample-7 (b).
+/// stage-copy-first ordering.
 pub struct Sample<'pool, M: SampleMeta + 'pool> {
     payload: &'pool [u8],
     meta: M::Borrowed<'pool>,
@@ -251,7 +250,7 @@ impl<'pool, M: SampleMeta + 'pool> Sample<'pool, M> {
 
     /// Borrowed metadata view. Consumer-defined accessors (e.g.
     /// `sample.meta().timestamp()` for zenoh) live as inherent methods
-    /// on `M::Borrowed` — Q-Sample-4 deferred for v1.
+    /// on `M::Borrowed` — the trait itself only mandates `key_expr`.
     pub fn meta(&self) -> &M::Borrowed<'pool> {
         &self.meta
     }
@@ -263,7 +262,7 @@ impl<'pool, M: SampleMeta + 'pool> Sample<'pool, M> {
     }
 
     /// Upgrade to an owned form (`M::Owned`) that survives slot reuse.
-    /// Q-Sample-7 (b) ordering: stage-copy first (slot bytes still owned),
+    /// Ordering: stage-copy first (slot bytes still owned),
     /// then construct `M::Owned`, then drop the guard (returning the slot).
     /// Race-free under cross-thread callback dispatch — by the time the
     /// guard drops and the pool's RX task can re-arm the slot, the
@@ -275,7 +274,7 @@ impl<'pool, M: SampleMeta + 'pool> Sample<'pool, M> {
     /// (an API-timing contract: slot is released synchronously by the time
     /// `take()` returns) without pinning intra-method ordering. The
     /// alternative drop-guard-first ordering would open a textbook UB race
-    /// window under Q-Sample-5 (a) `Send + Sync` cross-thread callback
+    /// window under the `Send + Sync` cross-thread callback
     /// dispatch (callback + pool RX task `arm_rx` reuse + driver write into
     /// freed slot → stage-copy reads new bytes as original payload).
     pub fn take(self) -> M::Owned {
@@ -290,7 +289,7 @@ impl<'pool, M: SampleMeta + 'pool> Sample<'pool, M> {
     }
 }
 
-/// Per-slot return-sink guard (Q-Sample-8 (a) `pub(crate)`). The link's
+/// Per-slot return-sink guard. The link's
 /// pool registers a sink (a `&Cell<Option<usize>>`) when handing a slot
 /// to the consumer; `Drop` writes the slot index back so the next
 /// `arm_rx` reuses it.
@@ -330,7 +329,7 @@ impl<'pool> Drop for SlotGuard<'pool> {
 /// `Sample::take()`. Defaults to `PanicOnTakeHook` so links whose
 /// consumers never call `take()` work out of the box.
 ///
-/// Authored separately from the `Link` trait to keep the B6-α surface
+/// Authored separately from the `Link` trait to keep the trait surface
 /// untouched; per-OS impls (`sce_link_runtime_lwip::Link` etc.) accept
 /// a `&LinkConfig` at construction.
 pub struct LinkConfig {
@@ -353,9 +352,8 @@ impl Default for LinkConfig {
 /// Real impls (`sce_link_runtime_lwip::Link` etc.) live downstream
 /// in watching-zenoh.
 ///
-/// `std`-only because it uses `Vec` for the recorded TX log; the
-/// `no_std` ctest path uses a different backing buffer (out of B6-α
-/// scope — fixtures only exercise `std`).
+/// `std`-only because it uses `Vec` for the recorded TX log —
+/// fixtures only exercise `std`, so no `no_std` stub is provided.
 #[cfg(any(feature = "std", test))]
 extern crate std;
 
@@ -427,9 +425,8 @@ mod tests {
     // === Sample API tests ======================================================
     //
     // Stub `SampleMeta` impl exercising the full GAT machinery: borrow path,
-    // owned path, drop ordering, Send+Sync bounds. Mirrors the §7 re-entry
-    // trigger item 4 ("an in-tree stub `SampleMeta` proving the trait is
-    // implementable end-to-end").
+    // owned path, drop ordering, Send+Sync bounds. An in-tree stub
+    // `SampleMeta` proving the trait is implementable end-to-end.
 
     /// Tag type for the test sample protocol.
     struct TestMeta;
@@ -533,11 +530,11 @@ mod tests {
         assert_eq!(return_sink.get(), Some(3));
     }
 
-    /// Q-Sample-7 (b) ordering proof: stage_copy must run BEFORE the slot
+    /// Ordering proof: stage_copy must run BEFORE the slot
     /// guard drops. The hook records the counter value when invoked; the
-    /// guard's Drop records its own. If (a) drop-first ordering were in
+    /// guard's Drop records its own. If drop-guard-first ordering were in
     /// effect, the guard's recorded value would be 0 and the hook's 1.
-    /// Under (b) stage-copy-first, the hook's value is 0 and the guard's 1.
+    /// Under stage-copy-first, the hook's value is 0 and the guard's 1.
     #[test]
     fn sample_take_runs_stage_copy_before_guard_drop() {
         struct OrderingHook {
@@ -602,7 +599,7 @@ mod tests {
             slot_index: 11,
         };
 
-        // Q-Sample-7 (b) body: stage-copy first, then construct owned,
+        // take()-shaped body: stage-copy first, then construct owned,
         // then drop guard.
         let owned_payload = hook.stage_copy(&payload_buf);
         let _owned = TestMeta::into_owned(borrowed, owned_payload);
@@ -643,7 +640,7 @@ mod tests {
     }
 
     /// Compile-check: SampleMeta + Sample<'_, M> + StageCopyHook + LinkConfig
-    /// must be Send + Sync at the type level (Q-Sample-5 (a) bound enforced).
+    /// must be Send + Sync at the type level (the trait bounds enforced).
     #[test]
     fn sample_types_are_send_and_sync() {
         fn assert_send_sync<T: Send + Sync>() {}
@@ -653,6 +650,6 @@ mod tests {
         assert_send_sync::<PanicOnTakeHook>();
         // Sample itself isn't asserted Send/Sync because its &dyn StageCopyHook
         // field requires the trait object to be Send+Sync — the bound is on
-        // StageCopyHook (Q-Sample-5), and consumer-supplied impls inherit it.
+        // StageCopyHook, and consumer-supplied impls inherit it.
     }
 }

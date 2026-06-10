@@ -55,8 +55,8 @@ abstract class ProcedureStateMachine<S : Enum<S>, E : Enum<E>> {
             if (isFinal(current)) break
             val transition = processTransition(current, event) ?: break
             if (transition.third) {
-                // Assign-time check may raise an internal event (RFC
-                // claudedocs/rfc-forge-bytes-bounded.md §3 B4 bytes cap
+                // Assign-time check may raise an internal event (e.g.
+                // a bytes cap
                 // violation); re-process the source with it instead of
                 // advancing to the target. The fixture's
                 // <transition event="error.execution"> picks it up;
@@ -114,8 +114,7 @@ abstract class ProcedureStateMachine<S : Enum<S>, E : Enum<E>> {
      *
      * Returns null for normal flow; a non-null Event signals that an
      * assign-time check raised an internal event that the run loop
-     * re-pumps through processTransition. See RFC
-     * `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 for the bytes
+     * re-pumps through processTransition — e.g. the bytes
      * cap-violation case.
      */
     protected abstract fun executeTransitionActions(source: S, trIndex: Int): E?

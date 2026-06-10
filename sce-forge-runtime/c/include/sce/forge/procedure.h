@@ -10,14 +10,13 @@
  * language conformance suite can compare byte-equal dispatched payloads
  * for any given fixture.
  *
- * Memory policy (RFC §5.J.2 F1, see `sce-forge-runtime/c/CMakeLists.txt`):
+ * Memory policy (see `sce-forge-runtime/c/CMakeLists.txt`):
  *   - No heap. The bytes container is a stack-bounded fixed-size struct
  *     with capacity `SCE_FORGE_BYTES_DEFAULT_MAX` (= 256 today). All
  *     instances copy by value; helpers and handlers receive const
  *     pointers and write through out-parameters. The cap is the
  *     contract; per-slot caps from `sce:max-size` annotations apply at
- *     runtime as length checks via the `error.execution` raise path
- *     (RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4).
+ *     runtime as length checks via the `error.execution` raise path.
  *   - No threads, no I/O, no globals. All state lives in a state struct
  *     passed explicitly through `<snake>_execute(handler, helpers..., args)`.
  */

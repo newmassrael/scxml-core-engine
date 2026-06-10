@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 // Package integration anchors SCE Go integration-fixture state
-// machines (RFC `claudedocs/rfc-donedata-5-backend-layout.md` Q-1).
+// machines.
 //
 // Every `<stem>/*_sm.go` and `<stem>/*_test.go` under
 // `sce-go-tests/integration/<stem>/` is regenerated from a canonical

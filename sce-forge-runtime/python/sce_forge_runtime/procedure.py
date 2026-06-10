@@ -101,8 +101,8 @@ class ProcedureStateMachine(ABC):
                 break
             next_state, tr_index, has_assigns = transition
             if has_assigns:
-                # Assign-time check may raise an internal event (RFC
-                # ``claudedocs/rfc-forge-bytes-bounded.md`` §3 B4 bytes
+                # Assign-time check may raise an internal event (e.g.
+                # a bytes
                 # cap violation); re-pump the source state with it
                 # instead of advancing to ``next_state`` so a fixture's
                 # ``<transition event="error.execution">`` picks it up.
@@ -165,8 +165,7 @@ class ProcedureStateMachine(ABC):
 
         Returns ``None`` for normal flow (transition completes and the
         loop advances to the target state). Returning a non-None event
-        value signals that an assign-time check (e.g. RFC
-        ``claudedocs/rfc-forge-bytes-bounded.md`` §3 B4 bytes cap
+        value signals that an assign-time check (e.g. a bytes cap
         violation) raised an internal event; the loop re-processes the
         source state with that event.
         """
