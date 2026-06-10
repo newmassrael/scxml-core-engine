@@ -2,8 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 /**
- * SCE Kotlin integration fixture state machines (RFC
- * `claudedocs/rfc-donedata-5-backend-layout.md` Q-1).
+ * SCE Kotlin integration fixture state machines.
  *
  * Every `*Sm.kt` under `com.sce.integration.<stem>` is regenerated from
  * a canonical fixture at `integration_resources/<stem>/<stem>.scxml`

@@ -17,18 +17,16 @@
  *                              over a buffer the caller owns. Use for
  *                              read-only pure-function inputs — the
  *                              owned buffer would force a 256-byte copy
- *                              per call, which is unacceptable on the
- *                              once-per-row hot paths (keyexpr matching
- *                              over a bounded-collection, RFC
- *                              `claudedocs/rfc-c7-wildcard-keyexpr-
- *                              expressibility.md` §8 Smell 4).
+ *                              per call, which is unacceptable on
+ *                              once-per-row hot paths such as keyexpr
+ *                              matching over a bounded-collection.
  *
  * Borrowed-by-default for algorithm-kind `bytes`/`String` parameters:
  * a pure function reads its input, so it takes the view, never the
  * owned copy. The owned form is reserved for slots that genuinely
  * retain ownership.
  *
- * Memory policy (RFC §5.J.2 F1): no heap, no threads, no globals. The
+ * Memory policy: no heap, no threads, no globals. The
  * owned buffer's cap is the contract; the view borrows the caller's
  * lifetime (the view MUST NOT outlive the buffer it points at).
  */

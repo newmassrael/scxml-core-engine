@@ -7,11 +7,11 @@
 #   - No stateful global services (no heap, no threads, no I/O)
 #   - Header-only INTERFACE library (mirrors sce-forge-runtime/cpp shape)
 #
-# Phase A (RFC §5.J.2 §3): the Transform kind is pure inline — no
-# runtime headers required. The include/ tree is populated starting
-# from Phase B's lookup runtime onward; this skeleton exists now so
-# downstream consumers (e.g. watching-zenoh's MCU half) have a stable
-# import target before the lookup vertical slice lands.
+# The include/ tree carries the codec / procedure / link / bytes /
+# limits runtime headers consumed by generated C11 forge code; pure
+# inline kinds (e.g. Transform) need no runtime header. Downstream
+# consumers (e.g. watching-zenoh's MCU half) import this stable
+# target.
 
 cmake_minimum_required(VERSION 3.16)
 

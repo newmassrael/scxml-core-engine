@@ -9,11 +9,11 @@
 //! caller resumes after additional bytes arrive (DMA boundary,
 //! fragmented network read).
 //!
-//! Phase B1-prep ships the minimum API the existing fixed-width codec
-//! fixtures need: `peek_slice` (non-advancing), `advance` (post-success),
-//! `remaining`. Stream-style readers (`read_u8`, `read_vle_*`, `read_tag`,
-//! `skip_field`) land alongside their first consumer in B1-α/β/δ — VLE,
-//! variant, present-if respectively.
+//! The cursor ships `peek_slice` (non-advancing), `advance`
+//! (post-success), `remaining`, plus the `read_vle_*` stream-style
+//! readers. Other stream-style readers (e.g. a dedicated `read_u8`,
+//! `read_tag`, `skip_field`) are not provided until a consumer needs
+//! them.
 //!
 //! Encode-side sink + `BufferOverflow` is the symmetric write half of
 //! the cursor contract: `SceSink` is the object-safe trait that codec
@@ -27,7 +27,7 @@
 /// additive variants from breaking downstream `match` arms before
 /// SCE 1.0.
 ///
-/// The B1-β variant primitive intentionally does NOT need a typed
+/// The variant primitive intentionally does NOT need a typed
 /// `UnknownVariantTag` variant — RFC §5.B requires `<sce:default>` when
 /// arms don't exhaust the tag domain (`codec/variant-arm-unreachable`
 /// fires at build time otherwise), so the default arm catches every
@@ -43,7 +43,7 @@ pub enum CodecError {
     /// than the declared type. Either the wire is corrupt or the
     /// author chose a too-narrow type. RFC §5.B `codec/vle-width-overflow`.
     VleWidthOverflow,
-    /// RFC §5.B B3 TLV chain primitive: the wire carried more entries
+    /// RFC §5.B TLV chain primitive: the wire carried more entries
     /// than the codec author declared (`max-depth=N` exhausted while
     /// the cursor still had bytes) AND the codec declared
     /// `on-overflow="reject"`. Truncate-mode codecs never raise this
@@ -52,7 +52,7 @@ pub enum CodecError {
     /// rejected upfront by the codec-content MCU gate, RFC §5.B "MCU-
     /// only codec sub-features").
     TlvChainOverflow,
-    /// RFC §5.B B5-ζ Surface H: a `sce:type="string"` length-prefixed
+    /// RFC §5.B string primitive: a `sce:type="string"` length-prefixed
     /// field's payload bytes were not valid UTF-8. Forge-fail-fast
     /// contract — zenoh-pico itself aliases the bytes without
     /// validating, but SCE-side codecs reject malformed text early so
@@ -72,7 +72,7 @@ pub enum CodecError {
     /// driving a DMA bounce buffer will run on `SliceSink` and surface
     /// overflow as a typed error rather than aborting.
     BufferOverflow,
-    /// RFC §5.B B2 repeat / B3 TLV chain primitive: the wire carried
+    /// RFC §5.B repeat / TLV chain primitive: the wire carried
     /// more elements than the codec's declared `sce:max-count` bound
     /// (the fixed-capacity `heapless::Vec<Body, MAX_COUNT>` backing the
     /// list field is full). The no-alloc list representation stores
@@ -480,7 +480,7 @@ mod tests {
         assert_eq!(c.read_vle_u32(), Err(CodecError::NeedMoreBytes));
     }
 
-    // ── RFC §5.B B5-ζ Surface H — InvalidUtf8 variant exists and is
+    // ── RFC §5.B string primitive — InvalidUtf8 variant exists and is
     // distinct from the other CodecError variants. The actual UTF-8
     // validation lives at the codec emit site (`core::str::from_utf8`
     // in `present_if_decode_string_length_ref`); this assertion just

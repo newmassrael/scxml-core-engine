@@ -2108,7 +2108,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * Monotonic sequence counter for transition ordering.
      *
-     * KMP commonMain does not have System.nanoTime(). For Phase 1,
+     * KMP commonMain does not have System.nanoTime();
      * a monotonic counter is sufficient for transition ordering.
      * Platform-specific implementations can override with real timestamps.
      */

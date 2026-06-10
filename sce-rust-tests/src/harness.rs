@@ -113,7 +113,7 @@ where
 ///
 /// Each generated test appends itself via
 /// `#[linkme::distributed_slice(AOT_TESTS)] static REG: fn() -> TestResult = ...;`.
-/// The slice is walked by an end-to-end "run all" helper (Phase 5 CI integration).
+/// The slice is walked by the end-to-end `run_all_tests` helper.
 #[linkme::distributed_slice]
 pub static AOT_TESTS: [fn() -> TestResult] = [..];
 
@@ -264,7 +264,7 @@ fn urlencoding(s: &str) -> String {
 
 /// Run every registered AOT test sequentially. Returns `(passed, failed, timed_out)`.
 ///
-/// Phase 1: `AOT_TESTS` is empty, so this returns `(0, 0, 0)`. Phase 2+ populates it.
+/// Generated tests populate `AOT_TESTS`; with none registered this returns `(0, 0, 0)`.
 pub fn run_all_tests() -> (usize, usize, usize) {
     let mut passed = 0;
     let mut failed = 0;
