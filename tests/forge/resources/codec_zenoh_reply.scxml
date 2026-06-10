@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh REPLY envelope (RFC §5.B —
+<!-- SCE Forge conformance: Zenoh REPLY envelope (RFC §synth-5-B —
      sub-codec, response body variant arm).
 
      Mirrors zenoh-pico `_z_reply_encode` / `_z_reply_decode`

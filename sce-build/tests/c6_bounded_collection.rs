@@ -1,7 +1,7 @@
 //! Bounded-collection kind schema + parse + 2 parse-time
 //! structure validators.
 //!
-//! Per watching-zenoh RFC §5.L lines 2540-2655: the schema vertical
+//! Per watching-zenoh RFC §synth-5-L lines 2540-2655: the schema vertical
 //! slice covers `<sce:element-type>` + `<sce:capacity>` (deploy-key OR
 //! compile-const) + `<sce:index-by>` + `<sce:on-overflow>` +
 //! `<sce:ordering>` + `<sce:concurrency>`, and the two parse-time

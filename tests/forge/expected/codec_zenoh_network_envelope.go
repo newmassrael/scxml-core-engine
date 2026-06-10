@@ -19,14 +19,14 @@ import (
 
 // CodecZenohNetworkEnvelopeDefault bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
-// observed tag back onto the wire (RFC §5.B variant primitive).
+// observed tag back onto the wire (RFC §synth-5-B variant primitive).
 type CodecZenohNetworkEnvelopeDefault struct {
 	Tag uint8
 	Body codec_zenoh_oam.CodecZenohOam
 }
 
 // CodecZenohNetworkEnvelopeVariant is a discriminated-union body for the codec's
-// tag-field suffix (RFC §5.B variant primitive). Exactly one of
+// tag-field suffix (RFC §synth-5-B variant primitive). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecZenohNetworkEnvelopeVariant struct {
@@ -63,10 +63,10 @@ func NewCodecZenohNetworkEnvelope() *CodecZenohNetworkEnvelope {
 // DecodeCodecZenohNetworkEnvelope decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohNetworkEnvelope(cursor *codec.SceCursor) (*CodecZenohNetworkEnvelope, error) {
-	// RFC §5.B peek-byte / streaming-prefix:
+	// RFC §synth-5-B peek-byte / streaming-prefix:
 	// streaming prefix decode (variable-length fields supported via
 	// per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
 	// mode additionally peeks the cursor's next byte for variant tag
@@ -143,7 +143,7 @@ func DecodeCodecZenohNetworkEnvelope(cursor *codec.SceCursor) (*CodecZenohNetwor
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohNetworkEnvelope) Encode(w codec.SceSink) error {
-	// RFC §5.B peek-byte / streaming-prefix.
+	// RFC §synth-5-B peek-byte / streaming-prefix.
 	// Append the active arm body's encoded bytes via the same sink.
 	switch {
 	case s.Body.CodecZenohInterest != nil:

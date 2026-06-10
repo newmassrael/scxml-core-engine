@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# RFC §5.B codec test-vector sidecar (C11). Aggregates every
+{# RFC §synth-5-B codec test-vector sidecar (C11). Aggregates every
    `<sce:test-vector>` row into a single
    `static inline int test_vector_<fixture>(void)` that returns the
    row-failure count; the C11 conformance harness folds the return
@@ -17,7 +17,7 @@
      - string (char[N] + size_t len): memcmp + length compare (the
        wire field stores raw UTF-8 bytes — NOT NUL-terminated). #}
 
-/* SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B) */
+/* SCE Forge: Auto-generated codec test-vector sidecar (RFC §synth-5-B) */
 /* Companion to {{ name }}.h — do not edit; regenerate from the source SCXML. */
 
 #ifndef {{ guard }}

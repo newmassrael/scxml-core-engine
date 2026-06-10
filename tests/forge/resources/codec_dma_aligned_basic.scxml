@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: DMA alignment primitive (RFC §5.B B3).
+<!-- SCE Forge conformance: DMA alignment primitive (RFC §synth-5-B B3).
      uint8 msg_id at byte 0 + uint8 reserved at byte 1, followed by
      30 bytes of zero padding (codegen-emitted), then a tail-bytes
      `aligned_payload` field starting at byte 32 with
      sce:dma-burst-align="32".
 
-     MCU-class — emits only on Rust + C11 per RFC §5.J.4. Build-time
+     MCU-class — emits only on Rust + C11 per RFC §synth-5-J-4. Build-time
      validation enforces (a) byte_offset divisible by burst_align and
      (b) all preceding fields Fixed bit-size; codecs containing this
      attribute on cpp/kotlin/go/python typed-reject through the

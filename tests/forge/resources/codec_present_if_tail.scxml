@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: present-if + tail bytes (RFC §5.B present-if-gating).
+<!-- SCE Forge conformance: present-if + tail bytes (RFC §synth-5-B present-if-gating).
      Lifts the present-if v1 BitSize::Fixed-only restriction on present-if so
      a gated field can be a `tail` bytes payload. uint8 carrier `flags`
      exposes a single named bit `has_payload`; when set, the trailing

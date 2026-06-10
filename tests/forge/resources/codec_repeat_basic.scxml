@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: codec repeat primitive (RFC §5.B B2,
+<!-- SCE Forge conformance: codec repeat primitive (RFC §synth-5-B B2,
      length-field shape). One-byte uint8 `num_frags` count prefix is
      decoded first; the trailing `frags` field is a length-prefixed
      list of `codec_repeat_elem` elements, each carrying a uint16

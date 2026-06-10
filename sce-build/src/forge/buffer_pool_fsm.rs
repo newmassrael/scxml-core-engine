@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Forge: Buffer-pool slot-lifecycle FSM (watching-zenoh RFC §5.E
+// SCE Forge: Buffer-pool slot-lifecycle FSM (watching-zenoh RFC §synth-5-E
 // lines 1116-1180). Single source of truth for the canonical 7-state
 // FSM declared by the `buffer-pool` kind itself; consumed by the Rust
 // + C11 buffer-pool templates as the contract that pins their
 // phantom-typed (Rust) and tag-checked (C11) APIs to the same edge
 // set.
 //
-// Per spec §5.E line 1117-1118: "modeled as a fixed FSM, declared
+// Per spec §synth-5-E line 1117-1118: "modeled as a fixed FSM, declared
 // canonically by the kind itself (not authored per pool)" — the table
 // below is therefore a `const`, not a per-pool field. Future bus
 // masters (hardware crypto, compression IP, GPU/NPU DMA) will *add*
-// states under §5.E lines 1166-1180 ("FSM extension policy"); the
+// states under §synth-5-E lines 1166-1180 ("FSM extension policy"); the
 // existing seven states + eleven edges are stable across that
 // extension and the Rust phantom-type API is preserved.
 
-/// One of the seven slot ownership states. Spec §5.E lines 1129-1135.
+/// One of the seven slot ownership states. Spec §synth-5-E lines 1129-1135.
 ///
 /// Discriminant values are stable: the C11 backend emits these as
 /// `sce_slot_state_t` enum values for runtime tag checks, and the

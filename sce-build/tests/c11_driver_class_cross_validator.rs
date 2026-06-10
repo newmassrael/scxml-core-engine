@@ -2,8 +2,8 @@
 //! the forge `<sce:link-class>` value on a `<scxml sce:kind="link">`
 //! document matches the protocol class implemented by the
 //! deploy.yaml `driver:` allowlist entry. Each core driver
-//! implements exactly one class (per watching-zenoh RFC §5.C lines
-//! 765-771 + §8 Q8 line 3747); a mismatch is now hard error
+//! implements exactly one class (per watching-zenoh RFC §synth-5-C lines
+//! 765-771 + §synth-8 Q8 line 3747); a mismatch is now hard error
 //! (`deploy/link-driver-class-mismatch`) instead of silently
 //! producing a wrapper whose `LINK_CLASS` const disagrees with the
 //! bound driver impl.
@@ -234,7 +234,7 @@ fn consistent_class_driver_pair_passes() {
 
 /// Silent-skip — driver not in `KNOWN_DRIVERS` (target-plugin path).
 /// The validator must not fire on plugin drivers regardless of the
-/// declared class; class-checking for plugin drivers rides the §5.I
+/// declared class; class-checking for plugin drivers rides the §synth-5-I
 /// plugin contract.
 #[test]
 fn silent_skip_when_driver_not_in_known_allowlist() {

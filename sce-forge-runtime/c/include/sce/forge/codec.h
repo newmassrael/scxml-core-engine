@@ -6,7 +6,7 @@
  *
  * Mirrors the Rust reference at `sce-forge-runtime/rust/src/codec.rs`
  * and the C++ header at `sce-forge-runtime/cpp/include/sce/forge/codec.h`.
- * RFC §5.B L494-519 pins a per-language cursor + need-more-bytes
+ * RFC §synth-5-B L494-519 pins a per-language cursor + need-more-bytes
  * contract on decode so a truncated input never aborts — the caller
  * resumes after additional bytes arrive (DMA boundary, fragmented
  * network read).
@@ -36,7 +36,7 @@ extern "C" {
 #endif
 
 /* Typed decode error. The variant primitive intentionally does
- * NOT need a typed UnknownVariantTag — RFC §5.B requires <sce:default>
+ * NOT need a typed UnknownVariantTag — RFC §synth-5-B requires <sce:default>
  * when arms don't exhaust the tag domain (build-time
  * codec/variant-arm-unreachable otherwise), so the default arm catches
  * every unmatched tag at runtime. */
@@ -44,14 +44,14 @@ typedef enum {
     SCE_FORGE_CODEC_OK = 0,
     SCE_FORGE_CODEC_NEED_MORE_BYTES = 1,
     /* A vle_u<N> field's continuation chain implies a value wider than
-     * the declared type. RFC §5.B `codec/vle-width-overflow`. */
+     * the declared type. RFC §synth-5-B `codec/vle-width-overflow`. */
     SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW = 2,
-    /* RFC §5.B TLV chain primitive: the wire carried more entries
+    /* RFC §synth-5-B TLV chain primitive: the wire carried more entries
      * than the codec author declared (max-depth=N exhausted while the
      * cursor still had bytes) AND the codec declared
      * on-overflow="reject". Truncate-mode codecs never raise this. */
     SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW = 3,
-    /* RFC §5.B string primitive: the byte slice declared
+    /* RFC §synth-5-B string primitive: the byte slice declared
      * `sce:type="string"` was not well-formed UTF-8. Mirrors the typed
      * `CodecError::InvalidUtf8` (Rust / Go / Python) — the C11 enum
      * return is uniform across every codec so adding the variant does
@@ -59,7 +59,7 @@ typedef enum {
      * `std::optional<T>` / `T?` truncation sentinel because their
      * signatures are type-narrow). */
     SCE_FORGE_CODEC_INVALID_UTF8 = 4,
-    /* RFC §5.B encode-side counterpart to NEED_MORE_BYTES: the
+    /* RFC §synth-5-B encode-side counterpart to NEED_MORE_BYTES: the
      * destination writer reported insufficient remaining capacity for
      * the next write. Only the bounded `sce_forge_writer_t`
      * (caller-owned buf + cap) can raise this; C11 has no heap-backed
@@ -112,7 +112,7 @@ static inline bool sce_forge_cursor_advance(sce_forge_cursor_t *c, size_t n) {
 /* Read a base-128 variable-length encoded unsigned value of up to
  * `max_bits` payload width into *out. Each byte carries 7 data bits
  * in its low 7; bit 7 is the continuation flag. LSB-first byte order.
- * Mirrors the Zenoh ZInt wire format (RFC §5.B Appendix B).
+ * Mirrors the Zenoh ZInt wire format (RFC §synth-5-B Appendix B).
  *
  * Returns SCE_FORGE_CODEC_OK on success, SCE_FORGE_CODEC_NEED_MORE_BYTES
  * on truncation, SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW when the
@@ -281,7 +281,7 @@ static inline sce_forge_codec_status_t sce_forge_writer_write_u64_be(
         if (_sce_fw_st != SCE_FORGE_CODEC_OK) return _sce_fw_st;       \
     } while (0)
 
-/* RFC §5.B string primitive — validate that `[p, p + n)` is a well-formed
+/* RFC §synth-5-B string primitive — validate that `[p, p + n)` is a well-formed
  * UTF-8 byte sequence. Returns true for valid UTF-8 (including the
  * empty range), false on any malformed sequence. Mirrors the cpp
  * `is_valid_utf8` (sce-forge-runtime/cpp/include/sce/forge/codec.h)

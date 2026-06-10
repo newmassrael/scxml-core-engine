@@ -99,7 +99,7 @@ use sce_build::generator::{GeneratedOutput, Language};
 use sce_build::model::SCXMLModel;
 use sce_build::parser::SCXMLParser;
 
-/// Spec §6.2.6 drift-header context bundled at `cmd_*` entry and
+/// Spec §synth-6.2.6 drift-header context bundled at `cmd_*` entry and
 /// threaded to every file-emitting helper. Two parts —
 /// `source_hash` (sha256 over `**/*.scxml` under `input_root` +
 /// optional `deploy.yaml`) and `template_hash` (sha256 over
@@ -176,7 +176,7 @@ fn is_drift_eligible_path(path: &Path) -> bool {
     )
 }
 
-/// Returns `content` with the §6.2.6 header prepended (or refreshed
+/// Returns `content` with the §synth-6.2.6 header prepended (or refreshed
 /// if already present) when `path`'s extension is in the drift-
 /// eligible set; otherwise echoes the input.
 fn apply_drift_header(content: &str, path: &Path, ctx: &DriftContext) -> String {
@@ -188,7 +188,7 @@ fn apply_drift_header(content: &str, path: &Path, ctx: &DriftContext) -> String 
     }
 }
 
-/// Drift-aware analogue of [`write_or_exit`]. Prepends the §6.2.6
+/// Drift-aware analogue of [`write_or_exit`]. Prepends the §synth-6.2.6
 /// header for source-extension files (`.rs / .cpp / .h / .kt / .go /
 /// .py / .c`) before writing; non-source files are written verbatim.
 /// `sce-codegen verify` recomputes both hashes and rejects on
@@ -216,17 +216,17 @@ fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) 
     write_if_changed(path, &final_content)
 }
 
-/// Watching-zenoh RFC §5.O — emit the per-machine sourcemap
+/// Watching-zenoh RFC §synth-5-O — emit the per-machine sourcemap
 /// JSON alongside the generated SM source. The output is
 /// byte-identical across the 6 backends because:
 ///
 ///   - the symbol table is built from the SCXML model alone (no
 ///     backend-specific data),
-///   - hash values come from the same `DriftContext` the §6.2.6
+///   - hash values come from the same `DriftContext` the §synth-6.2.6
 ///     header consumes (delegation guarantee, not duplication), and
 ///   - JSON key ordering rides BTreeMap so iteration is deterministic.
 ///
-/// `sce_sourcemap.json` deliberately does NOT get the §6.2.6 header
+/// `sce_sourcemap.json` deliberately does NOT get the §synth-6.2.6 header
 /// because (a) JSON does not have a `//` comment syntax, and (b) the
 /// file's `source_hash` field IS the drift-detectable provenance.
 /// `sce-codegen verify` skips JSON in `is_drift_eligible_path`, so
@@ -563,7 +563,7 @@ enum Commands {
         /// legacy single-partition path.
         #[arg(long)]
         partition: Option<String>,
-        /// RFC §5.F build-time const-fold iteration budget.
+        /// RFC §synth-5-F build-time const-fold iteration budget.
         ///
         /// Caps the total iteration count across every `<sce:fold>`
         /// body in the document — every fold tick and every nested
@@ -574,7 +574,7 @@ enum Commands {
         /// tables, lower for tighter CI budgets.
         #[arg(long)]
         const_fold_budget: Option<u64>,
-        /// Watching-zenoh RFC §5.J.2: target the
+        /// Watching-zenoh RFC §synth-5-J-2: target the
         /// `sce-rust-runtime` no_std variant.
         ///
         /// Only meaningful with `-l rust`; ignored for other
@@ -602,7 +602,7 @@ enum Commands {
         /// sce-portable-emit-probe crate gates both directions.
         #[arg(long)]
         no_std: bool,
-        /// Override the directory used for the §6.2.6 `source-hash`
+        /// Override the directory used for the §synth-6.2.6 `source-hash`
         /// computation. Defaults to the SCXML file's parent
         /// directory (the typical `resources/<num>/` test layout
         /// where every input the codegen consumed lives next to the
@@ -663,7 +663,7 @@ enum Commands {
     },
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
-    /// (watching-zenoh RFC §5.D).
+    /// (watching-zenoh RFC §synth-5-D).
     /// Use this when the build has multiple SCXML/forge docs that
     /// reference each other across files (`<sce:on-sample link>`,
     /// `<sce:outbox ref>`); single-file `Generate` does not
@@ -684,11 +684,11 @@ enum Commands {
         #[arg(short, long)]
         output_dir: String,
         /// Optional path to deploy.yaml. When provided, the orchestrator
-        /// runs watching-zenoh RFC §5.K + §5.M cross-doc validators that
+        /// runs watching-zenoh RFC §synth-5-K + §synth-5-M cross-doc validators that
         /// otherwise silent-skip:
-        ///   - `validate_links_cross_doc` (§5.K)
-        ///   - `validate_links_burst_invariants` (§5.K [lines 2489-2500])
-        ///   - `validate_reassembly_cross_doc` (§5.M [lines 2946-2995])
+        ///   - `validate_links_cross_doc` (§synth-5-K)
+        ///   - `validate_links_burst_invariants` (§synth-5-K [lines 2489-2500])
+        ///   - `validate_reassembly_cross_doc` (§synth-5-M [lines 2946-2995])
         ///
         /// Omit to keep the multi-doc orchestrator deploy-unaware
         /// (matching every pre-existing call site's silent-skip
@@ -746,7 +746,7 @@ enum Commands {
     /// canonical fixtures under `integration_resources/<stem>/<stem>.scxml`.
     ///
     /// Parallel to `generate-w3c` but reads from
-    /// `integration_resources/` (separate §6.2.6 input-root from W3C
+    /// `integration_resources/` (separate §synth-6.2.6 input-root from W3C
     /// `resources/`) and emits into each backend's integration tree:
     ///   - Rust:    `sce-rust-tests/src/integration/<stem>/`            (committed)
     ///   - Kotlin:  `sce-kotlin-tests/src/main/kotlin/com/sce/integration/<stem>/` (committed)
@@ -855,7 +855,7 @@ enum Commands {
         /// default) emit every fixture in the manifest unchanged.
         #[arg(short, long)]
         language: Option<String>,
-        /// RFC §5.B B2-test-vector: restrict the listing to fixtures
+        /// RFC §synth-5-B B2-test-vector: restrict the listing to fixtures
         /// whose SCXML carries at least one `<sce:test-vector>` element
         /// (algorithm kind only — codec test vectors defer to B5). The
         /// cmake harness uses this to declare the per-fixture sidecar
@@ -871,7 +871,7 @@ enum Commands {
         resource_dir: Option<String>,
     },
 
-    /// Verify generated-source drift per spec §6.2.6.
+    /// Verify generated-source drift per spec §synth-6.2.6.
     ///
     /// Scans `out_dir` for emitted files (.rs / .cpp / .h / .kt / .go /
     /// .py / .c), reads each file's `// SCE-GENERATED` header,
@@ -902,7 +902,7 @@ enum Commands {
         cargo_lock: Option<String>,
     },
 
-    /// Watching-zenoh RFC §5.O — resolve a mangled symbol or
+    /// Watching-zenoh RFC §synth-5-O — resolve a mangled symbol or
     /// PC offset back to its originating SCXML coordinates.
     ///
     /// `--symbol <NAME>`  Look up a mangled `<machine>__<state_path>__
@@ -1096,7 +1096,7 @@ fn main() {
 
 // ── Subcommand: orchestrate ─────────────────────────────────────
 //
-// watching-zenoh RFC §5.D entry point —
+// watching-zenoh RFC §synth-5-D entry point —
 // the production-side consumer that closes the silent
 // hole on `validate_on_sample_link_references`. Authors that hold
 // multi-doc builds (cross-file `<sce:on-sample link>` references, or
@@ -1147,7 +1147,7 @@ fn cmd_orchestrate(
 
     // C13 orchestrator wiring (`b501b18c`): parse the optional
     // deploy.yaml into a `DeployConfig` so the multi-doc compile path
-    // can fire watching-zenoh RFC §5.K + §5.M cross-doc validators.
+    // can fire watching-zenoh RFC §synth-5-K + §synth-5-M cross-doc validators.
     // Errors during read/parse route through the same Located<ForgeError>
     // pipeline `compile_scxml_with_imports` uses — `ForgeError::Mesh`
     // wraps `MeshError::Deploy` so the wire JSON shape matches every
@@ -1202,7 +1202,7 @@ fn cmd_orchestrate(
         }
     }
 
-    // Spec §6.2.6 drift context — covers every output file written
+    // Spec §synth-6.2.6 drift context — covers every output file written
     // below with a `// SCE-GENERATED` header that `sce-codegen verify`
     // can recompute and gate on. `input_root` defaults to the parent
     // of the first SCXML path so a typical batch (all docs in one
@@ -1385,7 +1385,7 @@ fn cmd_generate(
         )
     });
 
-    // Spec §6.2.6 drift context — input root defaults to the SCXML
+    // Spec §synth-6.2.6 drift context — input root defaults to the SCXML
     // file's parent so the hash covers every `*.scxml` in that
     // directory (the common-case test layout under
     // `resources/<num>/`). The `--input-root` flag overrides the
@@ -1604,12 +1604,12 @@ fn cmd_generate(
         let out = Path::new(output_dir);
         let pascal = crate::filters::to_pascal_case(input_stem.to_string());
 
-        // §5.O traceability — every drift-headered file must carry an
+        // §synth-5-O traceability — every drift-headered file must carry an
         // `SCE-MAP:` marker, otherwise `validate_emitted_files_have_markers`
         // fires `traceability/meta-generated-source-line-marker-missing`
         // on the next codegen call in the same output dir. Rejection
         // stubs go through `write_drift_aware` (which prepends the
-        // §6.2.6 header), so they MUST include a marker line too. Use
+        // §synth-6.2.6 header), so they MUST include a marker line too. Use
         // the SCXML basename + line 1 — the document was rejected at
         // parse time, no finer location is available.
         let scxml_basename = Path::new(scxml_path)
@@ -1762,7 +1762,7 @@ fn cmd_generate(
         error_format.emit_and_exit(&located, "");
     }
 
-    // Watching-zenoh RFC §5.J.2: Rust no_std variant
+    // Watching-zenoh RFC §synth-5-J-2: Rust no_std variant
     // rejection. Only fires when `--no-std` is paired with `-l rust`
     // (the flag is a no-op for other language targets, mirroring how
     // `--go-module-prefix` is rust/kotlin-inert). Two axes:
@@ -2022,7 +2022,7 @@ fn cmd_generate(
             output_paths.push(file_path);
         }
 
-        // Watching-zenoh RFC §5.O — sourcemap JSON sidecar
+        // Watching-zenoh RFC §synth-5-O — sourcemap JSON sidecar
         // alongside the per-language SM output. The single-SCXML codegen
         // path writes one sourcemap per emit; cross-backend byte-identity
         // is preserved because the symbol table + hashes are language-
@@ -2182,8 +2182,8 @@ fn cmd_generate(
         );
     }
 
-    // §5.O ownership-boundary walker. Every
-    // SCE-emitted file (one carrying a §6.2.6 drift header) must
+    // §synth-5-O ownership-boundary walker. Every
+    // SCE-emitted file (one carrying a §synth-6.2.6 drift header) must
     // contain at least one `SCE-MAP:` marker per ARCHITECTURE.md
     // "Traceability Ownership Boundary". External meta-generator
     // output (no drift header) is silently out-of-scope. Fires
@@ -3181,7 +3181,7 @@ fn generate_w3c_unified(
         });
     }
 
-    // §5.O ownership-boundary walker. Mirrors
+    // §synth-5-O ownership-boundary walker. Mirrors
     // the cmd_generate hook: every drift-headered file under either
     // the SM output base or the per-test harness directory must
     // carry an `SCE-MAP:` marker. Non-drift-headered files (external
@@ -3249,8 +3249,8 @@ impl W3cBackend for RustBackend {
         // `state_machine.rs.jinja2` header comment); the parent mod.rs no
         // longer needs to redundantly wrap the declaration in `#[allow(...)]`.
         //
-        // §5.O traceability — `write_if_changed_drift_aware` prepends the
-        // §6.2.6 header, so the ownership-boundary walker requires this
+        // §synth-5-O traceability — `write_if_changed_drift_aware` prepends the
+        // §synth-6.2.6 header, so the ownership-boundary walker requires this
         // file to carry at least one `SCE-MAP:` marker line. The mod.rs
         // is the entry point for the test's generated module; point the
         // marker at the source SCXML so addr2sce traces back to it.
@@ -3280,7 +3280,7 @@ impl W3cBackend for RustBackend {
         // `prepend_or_replace_header` detects that banner and replaces
         // the 4-line block in place, so a plain string append below
         // the read content is safe — the headered output still has
-        // exactly one §6.2.6 header at the top.
+        // exactly one §synth-6.2.6 header at the top.
         let mod_file = test_mod_dir.join("mod.rs");
         if let Ok(existing) = fs::read_to_string(&mod_file) {
             if !existing.contains(&format!("mod {child_name}_sm;")) {
@@ -3368,8 +3368,8 @@ impl W3cBackend for RustBackend {
         if generated_ids.is_empty() {
             return;
         }
-        // §5.O traceability — `write_if_changed_drift_aware` prepends the
-        // §6.2.6 header, so the ownership-boundary walker requires a
+        // §synth-5-O traceability — `write_if_changed_drift_aware` prepends the
+        // §synth-6.2.6 header, so the ownership-boundary walker requires a
         // marker line. This aggregator mod.rs has no single source SCXML;
         // reference the first registered test as the index entry point
         // so addr2sce still maps back into the generated tree.
@@ -4319,7 +4319,7 @@ fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &st
     });
     let out_path = out_dir.join(sce_build::conformance::harness_filename(lang));
 
-    // Spec §6.2.6: input root for the conformance harness is the
+    // Spec §synth-6.2.6: input root for the conformance harness is the
     // sibling `resources/` of the manifest (mirrors
     // `cmd_list_fixtures`'s resolution), so the embedded source-hash
     // covers exactly the SCXML inputs the harness asserts against.
@@ -4363,7 +4363,7 @@ fn cmd_expand(scxml_path: &str) {
 
 // ── Subcommand: verify ─────────────────────────────────────────
 //
-// Spec §6.2.6 generated-source drift detection. Recomputes
+// Spec §synth-6.2.6 generated-source drift detection. Recomputes
 // `source-hash` + `template-hash` over the current source/template
 // state and compares each generated file's embedded header against
 // the recomputed values. First mismatch wins (deterministic ordering
@@ -4507,7 +4507,7 @@ fn collect_generated_files(out_dir: &Path) -> Vec<std::path::PathBuf> {
 
 /// Locate the SCE workspace root — the directory carrying
 /// `tools/codegen/templates/` + the workspace `Cargo.lock` that feed
-/// the §6.2.6 `template-hash`. Resolution priority (each layer must
+/// the §synth-6.2.6 `template-hash`. Resolution priority (each layer must
 /// validate the `tools/codegen/templates/` shape — paths failing the
 /// check fall through to the next layer rather than silently
 /// embedding the wrong root):
@@ -4608,7 +4608,7 @@ fn cmd_list_fixtures(
                 source: std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()),
             })
         });
-    // RFC §5.B B2-test-vector: enrich algorithm fixtures with their
+    // RFC §synth-5-B B2-test-vector: enrich algorithm fixtures with their
     // derived `has_test_vectors` flag so `--has-test-vectors` filtering
     // (used by cmake harnesses to enumerate per-fixture sidecar
     // OUTPUTs) reads off the fixture spec without re-scanning each
@@ -4655,7 +4655,7 @@ fn cmd_list_fixtures(
                 sce_build::conformance::FixtureSpec::Codec {
                     has_test_vectors, ..
                 } => {
-                    // RFC §5.B codec test-vector sidecar: Rust +
+                    // RFC §synth-5-B codec test-vector sidecar: Rust +
                     // C11 only. Force the flag false on the
                     // 4 gated backends so the cmake `--has-test-
                     // vectors` listing matches what `render_codec_
@@ -4699,7 +4699,7 @@ fn cmd_list_fixtures(
             })
         })
     });
-    // RFC §5.B B2-test-vector: when `--has-test-vectors` is passed,
+    // RFC §synth-5-B B2-test-vector: when `--has-test-vectors` is passed,
     // restrict the listing to algorithm fixtures whose SCXML carries at
     // least one `<sce:test-vector>` element. The cmake harness uses
     // this to declare the per-fixture sidecar header as an additional
@@ -4725,7 +4725,7 @@ fn cmd_list_fixtures(
         .fixtures
         .iter()
         .filter(|f| match lang_filter {
-            // RFC §5.J.4 single-source-of-truth gate: skip any fixture
+            // RFC §synth-5-J-4 single-source-of-truth gate: skip any fixture
             // whose product template hasn't shipped on the requested
             // language, or whose SCXML carries MCU-only features
             // (`<sce:dma-aligned>`) that the four non-MCU backends
@@ -4847,7 +4847,7 @@ impl TestInfo {
 
 // ── Subcommand: addr2sce ───────────────────────────────────────
 //
-// Watching-zenoh RFC §5.O. Reverse-lookup from a mangled
+// Watching-zenoh RFC §synth-5-O. Reverse-lookup from a mangled
 // symbol or PC address back to SCXML coordinates (file + state path +
 // line range).
 //

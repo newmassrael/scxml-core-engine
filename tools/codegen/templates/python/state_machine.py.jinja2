@@ -4,7 +4,7 @@
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_actions.py.jinja2' as actions %}
 
-{# Watching-zenoh RFC §5.O: SCE-MAP marker anchoring the
+{# Watching-zenoh RFC §synth-5-O: SCE-MAP marker anchoring the
    generated Python source to the `<scxml>` root element's position. #}
 {{ sce_map.source_marker(model.source_location, "python", module_level=true) }}
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh transport-layer Frame body (RFC §5.B
+<!-- SCE Forge conformance: Zenoh transport-layer Frame body (RFC §synth-5-B
      zenoh groundwork — first reachable downstream consumer of B1-B4 primitives
      from the watching-zenoh authoring path).
 
@@ -30,7 +30,7 @@
     <sce:field id="payload" sce:type="bytes"  sce:byte="1" sce:bit-size="tail"
                sce:max-size="65536"/>
   </datamodel>
-  <!-- RFC §5.B test-vector inline test vectors. Pinned VLE width boundaries
+  <!-- RFC §synth-5-B test-vector inline test vectors. Pinned VLE width boundaries
        (1-byte: sn=0/127, 2-byte: sn=128) + per-row tail-bytes payload
        to exercise the cursor-advance branch composition. Mirrors the
        4-case set in numerical_reference.json so the inline anchor and

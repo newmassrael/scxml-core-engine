@@ -7,7 +7,7 @@
 //! percent-encoding for `application/x-www-form-urlencoded` format used by
 //! the BasicHTTP Event I/O Processor.
 //!
-//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): whole-module gated to
+//! Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): whole-module gated to
 //! `!no_std` because the only intended consumer is the BasicHTTP Event I/O
 //! Processor, which is itself `!no_std`-gated (the
 //! `codegen/no-std-http-not-supported` validator rejects HTTP `<send>`

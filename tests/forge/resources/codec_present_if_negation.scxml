@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: present-if negation primitive (RFC §5.B present-if negation).
+<!-- SCE Forge conformance: present-if negation primitive (RFC §synth-5-B present-if negation).
      One-byte uint8 carrier "flags" exposes a single named bit "absent_seq"
      (bit 0). The trailing "seq" field is uint16 BE gated on
      sce:present-if="!flags.absent_seq" — predicate fires when the bit is

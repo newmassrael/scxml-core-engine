@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // Reassembly per-peer-quota cross-doc validator — watching-zenoh RFC
-// §5.M lines 2841-2861 invariant
+// §synth-5-M lines 2841-2861 invariant
 // `peer_table.capacity × per_peer_quota >= slot_count`.
 //
 // Sibling declared-vs-consumed invariants are enforced by existing

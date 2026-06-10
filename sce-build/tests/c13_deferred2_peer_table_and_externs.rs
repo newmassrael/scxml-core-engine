@@ -1,7 +1,7 @@
 //! C13 deferred-2 — peer_table invariant + stateless_accept extern
 //! allowlist validators.
 //!
-//! Per watching-zenoh RFC §5.K lines 2460-2462 + 2466-2469, this
+//! Per watching-zenoh RFC §synth-5-K lines 2460-2462 + 2466-2469, this
 //! file pins two spec codes:
 //!
 //!   1. `deploy/session-arming-quota-vs-peer-table-invariant-violated`
@@ -15,7 +15,7 @@
 //!
 //!   2. `deploy/stateless-accept-extern-not-whitelisted` (line
 //!      2466-2469) — `hmac_extern` / `rng_extern` symbol must
-//!      resolve against the §5.I baseline whitelist OR a loaded
+//!      resolve against the §synth-5-I baseline whitelist OR a loaded
 //!      `target_plugin` entry. Lives at the orchestrator level
 //!      where target-plugin loading converges with the baseline.
 
@@ -221,7 +221,7 @@ fn extern_yaml(hmac: &str, rng: &str) -> String {
 
 #[test]
 fn extern_in_baseline_accepts_under_empty_plugin_set() {
-    // §5.I baseline carries `sce_atomic_load_acquire_u32` etc. — those
+    // §synth-5-I baseline carries `sce_atomic_load_acquire_u32` etc. — those
     // are atomics, not hmac/csprng, but the allowlist check is name-
     // based: any baseline name resolves. Use an arbitrary baseline
     // entry to prove the baseline path is consulted.
@@ -287,7 +287,7 @@ fn extern_in_neither_fires_with_sorted_union_candidates() {
     assert_eq!(link_name, "udp_listener");
     assert_eq!(extern_name, "typo_hmac");
     assert_eq!(role, "hmac");
-    // The candidate list is the sorted union of §5.I baseline + the
+    // The candidate list is the sorted union of §synth-5-I baseline + the
     // single plugin entry — confirm the plugin entry shows up and the
     // list is sorted.
     assert!(

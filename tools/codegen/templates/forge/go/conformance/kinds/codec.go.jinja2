@@ -59,7 +59,7 @@
 			continue
 		}
 {% else %}
-		// RFC §5.B empty body — decode must succeed but there
+		// RFC §synth-5-B empty body — decode must succeed but there
 		// are no fields to assert against; the empty-bytes encode
 		// above already proves the round-trip.
 		if _, err := {{ f.name }}.Decode{{ f.name | to_pascal_case }}(&cursor); err != nil {

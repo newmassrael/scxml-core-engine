@@ -25,7 +25,7 @@ struct CodecZenohUndeclSubscriber {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
+    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecZenohUndeclSubscriber> decode(::SCE::Forge::SceCursor& cursor, std::uint8_t z) {
@@ -33,7 +33,7 @@ struct CodecZenohUndeclSubscriber {
         // `<sce:flag-input>` so codecs that haven't (yet) consumed an
         // input via `present-if` compile cleanly under -Wunused.
         (void)z;
-        // RFC §5.B present-if: per-field cursor advance.
+        // RFC §synth-5-B present-if: per-field cursor advance.
         // Gated fields hold std::optional<T>; gating extends to
         // Tail / LengthRef / Vle bit-sizes via dispatch inside
         // `present_if_decode_stmt`. Per-field `is_repeat` routes
@@ -67,7 +67,7 @@ struct CodecZenohUndeclSubscriber {
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w, std::uint8_t z) const noexcept {
         (void)z;
-        // RFC §5.B present-if encode: per-field byte
+        // RFC §synth-5-B present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // empty. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a

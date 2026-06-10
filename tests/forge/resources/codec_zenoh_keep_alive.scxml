@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: codec empty-body shape (RFC §5.B flags).
+<!-- SCE Forge conformance: codec empty-body shape (RFC §synth-5-B flags).
      The Zenoh transport-layer KeepAlive message has zero body bytes —
      the surrounding 1-byte transport-message header (MID + flags) is
      written by `_z_transport_message_encode` and the KeepAlive MID

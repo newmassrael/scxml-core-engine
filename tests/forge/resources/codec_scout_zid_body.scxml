@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Scout/Hello/Init zid length packing
-     (RFC §5.B length-ref).
+     (RFC §synth-5-B length-ref).
 
      Mirrors the upstream zenoh-pico Init/Scout/Hello message's `zid`
      field, where the wire stores `zid_len_m1 = actual_len - 1` to pack

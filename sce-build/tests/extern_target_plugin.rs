@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// watching-zenoh RFC §5.I `<sce:extern>` target-plugin extension —
+// watching-zenoh RFC §synth-5-I `<sce:extern>` target-plugin extension —
 // end-to-end fixtures. Each test exercises plugin loading
 // through a constructed `DeployConfig` + `compile_forge_with_deploy`,
 // asserting on the surfaced diagnostic axis:
@@ -168,7 +168,7 @@ symbols:
 fn reject_baseline_shadow_irrespective_of_signature_match() {
     // Locked semantics: even when the plugin's sig matches baseline
     // exactly, redefinition is disallowed (spec line 1852 trigger is
-    // "redefines", not "redefines incompatibly"). C5 (spec §5.E line
+    // "redefines", not "redefines incompatibly"). C5 (spec §synth-5-E line
     // 1548) makes the cache-maintenance trio FSM-driven and rejects
     // its author authoring at parse time before this check could
     // fire. Substitute `sce_atomic_load_acquire_u32` so the plugin

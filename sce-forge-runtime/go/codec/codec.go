@@ -3,7 +3,7 @@
 
 // Package codec ships the cursor + typed error contract for code
 // generated from sce:kind="codec" SCXML documents. Mirrors the Rust
-// reference at sce-forge-runtime/rust/src/codec.rs. RFC §5.B L494-519
+// reference at sce-forge-runtime/rust/src/codec.rs. RFC §synth-5-B L494-519
 // pins a per-language cursor + need-more-bytes contract on decode so
 // a truncated input never aborts.
 //
@@ -19,7 +19,7 @@ import "errors"
 // should resume after appending more bytes.
 //
 // The variant primitive intentionally does NOT need a typed
-// ErrUnknownVariantTag — RFC §5.B requires <sce:default> when arms
+// ErrUnknownVariantTag — RFC §synth-5-B requires <sce:default> when arms
 // don't exhaust the tag domain (build-time
 // codec/variant-arm-unreachable otherwise), so the default arm catches
 // every unmatched tag at runtime.
@@ -27,12 +27,12 @@ import "errors"
 var ErrNeedMoreBytes = errors.New("sce/codec: need more bytes")
 
 // ErrVLEWidthOverflow is returned when a vle_u<N> field's continuation
-// chain implies a value wider than the declared type. RFC §5.B
+// chain implies a value wider than the declared type. RFC §synth-5-B
 // `codec/vle-width-overflow`.
 var ErrVLEWidthOverflow = errors.New("sce/codec: vle width overflow")
 
 // ErrInvalidUTF8 is returned by Decode when a sce:type="string" field's
-// length-prefixed payload is not well-formed UTF-8 (RFC §5.B).
+// length-prefixed payload is not well-formed UTF-8 (RFC §synth-5-B).
 // Forge-fail-fast contract — zenoh-pico itself aliases the
 // bytes without validating, but SCE-side codecs reject malformed text
 // early so downstream procedures never see a malformed string. Cpp +
@@ -42,7 +42,7 @@ var ErrInvalidUTF8 = errors.New("sce/codec: invalid utf-8")
 
 // ErrTlvChainOverflow is returned by Decode when a `<sce:tlv-chain
 // on-overflow="reject">` field has residual cursor bytes after
-// `max_depth` entries have been consumed (RFC §5.B). Truncate
+// `max_depth` entries have been consumed (RFC §synth-5-B). Truncate
 // policy silently drops the residual bytes and never raises this
 // sentinel; the on-overflow attribute is parser-mandatory so the codec
 // emit always picks one of the two policies. Cpp + Kotlin runtimes
@@ -51,7 +51,7 @@ var ErrInvalidUTF8 = errors.New("sce/codec: invalid utf-8")
 var ErrTlvChainOverflow = errors.New("sce/codec: tlv chain overflow")
 
 // ErrBufferOverflow is returned by Encode when a write would exceed
-// the destination sink's remaining capacity (RFC §5.B). Only
+// the destination sink's remaining capacity (RFC §synth-5-B). Only
 // bounded sinks (BoundedSink wrapping a caller-owned `[]byte` +
 // fixed cap) can return this; the growable BytesSink (wrapping
 // `*[]byte`) is effectively infallible.
@@ -97,7 +97,7 @@ func (c *SceCursor) Advance(n int) error {
 
 // readVLEInner reads a base-128 variable-length encoded unsigned value
 // of up to maxBits payload width. LSB-first byte order; bit 7 is the
-// continuation flag. Mirrors Zenoh ZInt (RFC §5.B Appendix B).
+// continuation flag. Mirrors Zenoh ZInt (RFC §synth-5-B Appendix B).
 func (c *SceCursor) readVLEInner(maxBits uint32) (uint64, error) {
 	maxBytes := (maxBits + 6) / 7
 	var value uint64

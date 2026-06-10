@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -20,7 +20,7 @@ use sce_forge_runtime::codec::VecSink;
 use super::codec_variant_session_open::CodecVariantSessionOpen;
 use super::codec_variant_session_close::CodecVariantSessionClose;
 
-// RFC §5.B variant primitive: discriminated-union body for the
+// RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
@@ -70,9 +70,9 @@ impl CodecVariantDispatch {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519).
+    /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        // Decode fixed prefix (RFC §5.B variant primitive: fields
+        // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;
         let msg_id = raw[0];

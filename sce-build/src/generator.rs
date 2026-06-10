@@ -27,7 +27,7 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
 
 /// Target language for code generation.
 ///
-/// `C11` is the embedded MCU backend per watching-zenoh RFC §5.J.1.
+/// `C11` is the embedded MCU backend per watching-zenoh RFC §synth-5-J-1.
 /// Enum membership lets every dispatch site handle the C11 case
 /// explicitly rather than silently routing C11 through a more
 /// permissive arm.
@@ -252,7 +252,7 @@ fn reject_liveliness_without_handler(model: &SCXMLModel) -> Result<(), GenerateE
 
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
 ///
-/// `no_std` toggles the watching-zenoh RFC §5.J.2 codegen mode:
+/// `no_std` toggles the watching-zenoh RFC §synth-5-J-2 codegen mode:
 /// emits `#![no_std]` at the crate root and switches
 /// `parent_external_queue` + microstep `HashSet` to heapless variants.
 /// Default `false` keeps std-coupled output for the existing 200+ AOT
@@ -475,7 +475,7 @@ fn render_cpp(
 
 // ── C11 generator ────────────────────────────────────────────────
 //
-// RFC §5.J.1 — watching-zenoh consumer (MCU AOT backend). Mirrors the
+// RFC §synth-5-J-1 — watching-zenoh consumer (MCU AOT backend). Mirrors the
 // C++ pair-render shape (`generate_cpp` above) but emits a `.h` + `.c`
 // translation unit instead of `.h` + `.inl` because C11 has no in-class
 // definitions to hide behind a textual include.
@@ -537,8 +537,8 @@ fn render_c11(
         String::new()
     };
 
-    // EventSchema MCU native lowering (RFC §10.4
-    // step 5) — the C11 typed `_event.data` payload channel: a tagged
+    // EventSchema MCU native lowering — the C11 typed `_event.data`
+    // payload channel: a tagged
     // union `<name>_payload_t`, the per-transition native guard
     // (`sm->pending_payload.tag == … && (…)`), and the `type_name` used by
     // the `event_with_meta`/`pending_payload` fields and the

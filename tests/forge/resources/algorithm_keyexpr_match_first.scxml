@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  watching-zenoh RFC §5.A line 311 + §5.L line 2642-2647 (C7 keyexpr-
+  watching-zenoh RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7 keyexpr-
   fixture sub-atomic 3 of 3, 2026-05-13): outer algorithm — runtime
   KeyExpr matching reference exemplar. Iterates the bounded-collection
   `subs` (via the C7-foundation `get_by_slot` index-loop) and dispatches

@@ -20,13 +20,13 @@ data class CodecTlvChainBasic(
     var header_flags: UByte = 0.toUByte(),
     var extensions: MutableList<CodecTlvEntry> = mutableListOf()
 ) {
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
+        // RFC §synth-5-B B2 encode: fixed prefix appends byte-by-byte;
         // list fields iterate the host MutableList and write each
         // element's encode(w) through the same sink. Author keeps
         // count field == list length (trust contract).
@@ -51,9 +51,9 @@ data class CodecTlvChainBasic(
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
         fun decode(cursor: SceCursor): CodecTlvChainBasic? {
-            // RFC §5.B B2 repeat primitive: streaming decode mixes
+            // RFC §synth-5-B B2 repeat primitive: streaming decode mixes
             // plain fixed-width reads (per-field via the present-if
             // helper's non-gated arm) with `mutableListOf<T>().also { ... }`
             // loops that iterate the imported codec's `decode()`

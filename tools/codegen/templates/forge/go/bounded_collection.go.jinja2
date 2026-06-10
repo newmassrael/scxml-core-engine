@@ -8,7 +8,7 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 //
-// watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+// watching-zenoh RFC §synth-5-L bounded-collection — typed fixed-capacity
 // container per spec line 2579 emit shape: `[N]T` fixed array +
 // `[N]bool` occupancy mask + `[N]uint32` generation + `int count`.
 //
@@ -204,7 +204,7 @@ func (t *{{ pascal }}) Get(handle {{ pascal }}Handle) (*{{ element_qualified }},
 	return &t.slots[slot], true
 }
 
-// GetBySlot (RFC §5.L + C7 foundation): slot-indexed read without
+// GetBySlot (RFC §synth-5-L + C7 foundation): slot-indexed read without
 // Handle. Returns (nil, false) when slot >= Capacity OR when the
 // slot is unoccupied. No generation check (the use-after-remove
 // guard is for the Handle-based Get; slot-based access is for
@@ -223,7 +223,7 @@ func (t *{{ pascal }}) GetBySlot(slot uint32) (*{{ element_qualified }}, bool) {
 
 {% if has_index_by %}
 // FindByIndex (spec line 2615). Linear scan over occupied slots
-// (CAPACITY upper bound is compile-time constant → satisfies §5.A
+// (CAPACITY upper bound is compile-time constant → satisfies §synth-5-A
 // `max-iter` requirement when called from algorithm bodies). On
 // miss, returns (zero-value Handle, false).
 func (t *{{ pascal }}) FindByIndex(key {{ index_by_go_type }}) ({{ pascal }}Handle, bool) {

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh RESPONSE_FINAL envelope (RFC §5.B
-     RFC §5.B — minimal-shape consumer).
+<!-- SCE Forge conformance: Zenoh RESPONSE_FINAL envelope (RFC §synth-5-B
+     RFC §synth-5-B — minimal-shape consumer).
 
      Mirrors zenoh-pico `_z_response_final_encode` /
      `_z_response_final_decode` (src/protocol/codec/network.c:368-386)

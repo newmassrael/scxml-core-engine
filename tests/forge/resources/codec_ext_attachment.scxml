@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh ext_attachment body codec (RFC §5.B
+<!-- SCE Forge conformance: Zenoh ext_attachment body codec (RFC §synth-5-B
      B4 applied — wire-spec-subset.md §7.1 Attachment).
 
      Upstream zenoh-pico shape (attachment body is a `_z_bytes_t`

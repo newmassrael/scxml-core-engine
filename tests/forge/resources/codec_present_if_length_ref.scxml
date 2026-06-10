@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: present-if + length-ref bytes (RFC §5.B
+<!-- SCE Forge conformance: present-if + length-ref bytes (RFC §synth-5-B
      present-if-gating). uint8 carrier `flags` gates a `payload` payload whose
      length is read from the sibling `payload_size` field. When
      `has_payload` bit is clear, the author keeps `payload_size` at 0

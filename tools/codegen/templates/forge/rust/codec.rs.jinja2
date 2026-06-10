@@ -10,7 +10,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -21,7 +21,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "alloc")]
 use sce_forge_runtime::codec::VecSink;
 {% if has_repeat_fields or has_tlv_chain_fields %}
-// RFC §5.B B2/B3: bounded inline list storage for repeat / tlv-chain
+// RFC §synth-5-B B2/B3: bounded inline list storage for repeat / tlv-chain
 // fields — heap-free `heapless::Vec<T, N>` (re-exported by the runtime),
 // the Rust mirror of the C11 `T elems[MAX]; len` representation. Always
 // available (no `alloc` gate) so list-bearing codecs compile on the
@@ -35,7 +35,7 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 {% endfor %}
 {% endif %}
 {% if has_dma_aligned_fields -%}
-// RFC §5.B B3 DMA alignment primitive: structural drift detection.
+// RFC §synth-5-B B3 DMA alignment primitive: structural drift detection.
 // Build-time validation already guaranteed `byte_offset % burst_align
 // == 0` and that all preceding fields are Fixed bit-size. These
 // `const _: () = assert!` declarations catch any future hand-edit to
@@ -50,13 +50,13 @@ use sce_forge_runtime::heapless::Vec as HeaplessVec;
 #[allow(clippy::eq_op, clippy::assertions_on_constants)]
 const _: () = assert!(
     {{ field.byte_off }} % {{ field.dma_burst_align }} == 0,
-    "RFC §5.B B3: codec field '{{ field.id }}' offset must be {{ field.dma_burst_align }}-aligned"
+    "RFC §synth-5-B B3: codec field '{{ field.id }}' offset must be {{ field.dma_burst_align }}-aligned"
 );
 {% endif %}{% endfor %}
 {% endif %}
 
 {% if has_variant %}
-// RFC §5.B variant primitive: discriminated-union body for the
+// RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
@@ -155,10 +155,10 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519).
+    /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<{{ cursor_lifetime }}>{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) -> Result<Self, CodecError> {
 {% if has_parent_flags %}
-        // RFC §5.B: `parent_flags` is the parent codec's flags
+        // RFC §synth-5-B: `parent_flags` is the parent codec's flags
         // carrier value, threaded through by the variant arm dispatcher.
         // Body fields gated via `parent.<flag>` predicates read from
         // this parameter; suppress unused-variable warnings when no
@@ -181,7 +181,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         // `<sce:flag>` width upper bound.
 {% endif %}
 {% if has_no_fields %}
-        // RFC §5.B empty body — nothing to read; the surrounding
+        // RFC §synth-5-B empty body — nothing to read; the surrounding
         // header byte (and the wire-protocol layer that demuxes it)
         // already proved this codec was selected, so return the
         // default-constructed envelope without touching the cursor.
@@ -189,7 +189,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         Ok(Self {})
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-        // RFC §5.B peek-byte / streaming-prefix:
+        // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         // mode additionally peeks the cursor's next byte for the variant
@@ -212,7 +212,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endif %}
 {% else %}
 {% if fields %}
-        // Decode fixed prefix (RFC §5.B variant primitive: fields
+        // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice({{ min_bytes }})?;
 {% for field in fields %}
@@ -247,7 +247,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
             body,
         })
 {% elif has_present_if_fields %}
-        // RFC §5.B present-if primitive: streaming decode
+        // RFC §synth-5-B present-if primitive: streaming decode
         // advances the cursor per field. Gated fields wrap their
         // read inside an `if predicate { Some(...) } else { None }`
         // block computed at codegen time from the carrier field's
@@ -277,7 +277,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% elif has_vle_fields %}
         // Streaming codec: each field reads its own bytes from the
         // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
-        // a fixed window; cursor advances per-field. RFC §5.B B4:
+        // a fixed window; cursor advances per-field. RFC §synth-5-B B4:
         // per-field bit-size dispatch routes Fixed / LengthRef
         // siblings of VLE fields through `present_if_decode_stmt`
         // (predicate=None arms) — pure-VLE codecs stay byte-stable
@@ -300,7 +300,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endfor %}
         })
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        // RFC §5.B B2 repeat / B3 TLV chain primitives: streaming
+        // RFC §synth-5-B B2 repeat / B3 TLV chain primitives: streaming
         // decode mixes plain fixed-width reads (per-field via the
         // present-if helper's non-gated arm) with repeat loops that
         // iterate the imported codec's `decode()`. Repeat: bounded by
@@ -325,7 +325,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endfor %}
         })
 {% elif has_variable_fields %}
-        // Variable-length codec. RFC §5.B B3 stream-correct shape:
+        // Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
         // a codec without `<sce:field sce:bit-size="tail">` consumes
         // only `min_bytes + length_value` rather than the entire
         // cursor remaining. Codecs WITH a tail field still consume
@@ -412,7 +412,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endfor %}
 {% endif %}
 {% if has_flags %}
-    // RFC §5.B flags primitive: per-bit-range accessors over
+    // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as bool; multi-bit
     // (width>=2) reads as the smallest unsigned integer that fits the
     // range. Setters mask + shift on the way in so out-of-range
@@ -432,7 +432,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S{{ params_after_first_arg }}) -> Result<(), CodecError> {
 {% if has_parent_flags %}
-        // RFC §5.B: see `decode` — same parameter, same suppress.
+        // RFC §synth-5-B: see `decode` — same parameter, same suppress.
         let _ = parent_flags;
 {% endif %}
 {% if has_flag_inputs %}
@@ -441,14 +441,14 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {{ flag_input_unused_suppress }}
 {% endif %}
 {% if has_parent_tag_derivation %}
-        // RFC §5.B parent-tag carriers — derive carrier bits from each embedded
+        // RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
         // parent-tag variant's active arm before the carrier byte is
         // emitted. Each `_derived_<carrier>` local is OR'd into the
         // carrier's encode site (see `inject_parent_tag_carrier_suffix`).
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if has_no_fields %}
-        // RFC §5.B empty body — zero-byte payload (the surrounding
+        // RFC §synth-5-B empty body — zero-byte payload (the surrounding
         // wire-protocol header byte alone marks this codec on the wire).
         // Suppress the unused-sink warning explicitly so empty codecs
         // stay warning-clean under `warnings = "deny"`.
@@ -456,7 +456,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         Ok(())
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-        // RFC §5.B peek-byte / streaming-prefix:
+        // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix encode (per-field present_if/tlv-chain/embed/
         // repeat helpers). Peek-byte mode: the arm body's encode prepends
         // its own header byte (which the decoder peeked); no separate
@@ -499,7 +499,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         }
         Ok(())
 {% elif has_present_if_fields %}
-        // RFC §5.B present-if encode: every field appends
+        // RFC §synth-5-B present-if encode: every field appends
         // its bytes via a per-field block; gated fields skip the
         // append when the optional is None. Per-field `is_repeat` /
         // `is_tlv_chain` route Repeat / TLV chain fields to their
@@ -521,7 +521,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endfor %}
         Ok(())
 {% elif has_vle_fields %}
-        // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        // RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef / Tail siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
         // codecs stay byte-stable: the non-gated VLE arm there reuses
@@ -540,7 +540,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endfor %}
         Ok(())
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        // RFC §5.B B2 repeat / B3 TLV chain encode: fixed prefix
+        // RFC §synth-5-B B2 repeat / B3 TLV chain encode: fixed prefix
         // fields append byte-by-byte; list fields iterate the host-
         // language list and splice each element's encode() into the
         // parent buffer. Author keeps the count field (repeat) /
@@ -565,10 +565,10 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% for field in fields %}
 {% if field.is_variable %}
 {% if has_dma_aligned_fields %}
-        // RFC §5.B B3 DMA padding: zero-fill any gap between the
+        // RFC §synth-5-B B3 DMA padding: zero-fill any gap between the
         // current write position and this field's authored byte
         // offset (deterministic zeros on the wire so peers stay
-        // byte-compatible regardless of host allocator — RFC §5.B
+        // byte-compatible regardless of host allocator — RFC §synth-5-B
         // "wire layout, not host allocator").
         while w.position() < {{ field.byte_off }} {
             w.write_u8(0)?;
@@ -646,7 +646,7 @@ pub struct {{ struct_name }}Owned {
 {% endif %}
 #[allow(dead_code)]
 impl {{ struct_name }}Owned {
-    // RFC §5.B read-accessor parity with the borrowed view: pure
+    // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so alloc consumers read `{Codec}Owned` with the same API as
     // the borrowed view and never re-derive the SCE wire bit layout (SSOT).

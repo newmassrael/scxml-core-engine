@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Fragment body (RFC
-     §5.B — cross-codec composition fixture authoring the ~30
+     §synth-5-B — cross-codec composition fixture authoring the ~30
      zenoh messages end-to-end on B1-B5 primitives).
 
      Upstream zenoh-pico shape (`_z_fragment_encode` in
@@ -28,7 +28,7 @@
     <sce:field id="payload" sce:type="bytes"  sce:byte="1" sce:bit-size="tail"
                sce:max-size="65536"/>
   </datamodel>
-  <!-- RFC §5.B test-vector inline test vectors. Mirrors the codec_zenoh_frame
+  <!-- RFC §synth-5-B test-vector inline test vectors. Mirrors the codec_zenoh_frame
        4-case oracle (same VLE width boundaries on sn + tail-byte
        payload composition); fragment and frame share an identical
        body wire shape, differing only in the enclosing MID. -->

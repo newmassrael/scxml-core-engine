@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §5.O — sourcemap JSON emit.
+// Watching-zenoh RFC §synth-5-O — sourcemap JSON emit.
 //
 // Each emitted backend artifact writes a companion `sce_sourcemap.json`
 // in its output directory. The schema (spec lines 3219-3243):
 //
 //   {
 //     "version": 1,
-//     "source_hash":   "<hex sha256 — byte-equal to §6.2.6 header>",
-//     "template_hash": "<hex sha256 — byte-equal to §6.2.6 header>",
+//     "source_hash":   "<hex sha256 — byte-equal to §synth-6.2.6 header>",
+//     "template_hash": "<hex sha256 — byte-equal to §synth-6.2.6 header>",
 //     "symbols": {
 //       "<mangled-symbol>": {
 //         "scxml_file":       "<author-path>",
@@ -27,7 +27,7 @@
 // the symbol table is BTreeMap-sorted so iteration order is
 // deterministic, and `source_hash` delegates to
 // `forge::drift::compute_source_hash` so the value is provably equal
-// to the §6.2.6 header. The runtime-level reverse-lookup
+// to the §synth-6.2.6 header. The runtime-level reverse-lookup
 // (`sce-codegen addr2sce`) keys off this JSON.
 
 #[cfg(test)]
@@ -60,7 +60,7 @@ pub const SOURCEMAP_SCHEMA_STATUS: &str = "pre-release";
 /// `out/{language}/sce_sourcemap.json`.
 ///
 /// `source_hash` + `template_hash` are hex-encoded sha256 strings
-/// matching the §6.2.6 header values for the same artifact. Reused
+/// matching the §synth-6.2.6 header values for the same artifact. Reused
 /// from `forge::drift::DriftHashes::source_hex()` /
 /// `template_hex()` so a hash drift surfaces immediately.
 #[derive(Debug, Clone, Serialize)]
@@ -69,7 +69,7 @@ pub struct Sourcemap {
     pub source_hash: String,
     pub template_hash: String,
     /// BTreeMap → deterministic JSON key order across runs +
-    /// platforms. Per the §5.O byte-identity requirement: any
+    /// platforms. Per the §synth-5-O byte-identity requirement: any
     /// HashMap-style insertion order would surface as a backend-
     /// dependent diff.
     pub symbols: BTreeMap<String, SourceSymbol>,
@@ -118,7 +118,7 @@ pub struct SourceSymbol {
 
 /// Build a [`Sourcemap`] from a symbol-table + hash pair. The hash
 /// values come from the caller's `DriftContext` so the sourcemap and
-/// the §6.2.6 header share a single source of truth — see
+/// the §synth-6.2.6 header share a single source of truth — see
 /// `traceability/sourcemap-source-hash-mismatch` for the drift-check
 /// pre-emit guard that consumes both.
 pub fn build(
@@ -265,7 +265,7 @@ pub fn check_source_hash_matches(
 }
 
 /// Walks `out_dir` recursively and verifies that every SCE-emitted
-/// file (identified by a parseable §6.2.6 drift header — see
+/// file (identified by a parseable §synth-6.2.6 drift header — see
 /// `ARCHITECTURE.md` "Traceability Ownership Boundary") contains at
 /// least one `SCE-MAP:` marker line. Returns on the first violation
 /// so the diagnostic surfaces a single concrete file rather than a

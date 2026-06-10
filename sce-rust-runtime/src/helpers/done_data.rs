@@ -10,7 +10,7 @@
 //! provides the same JSON serialization utilities and delegates expression
 //! evaluation to the `IScriptEngine` trait from `crate::scripting`.
 //!
-//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): under `--features=no_std`:
+//! Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): under `--features=no_std`:
 //! - [`emit_content_literal`] stays available (the Rust AOT template
 //!   `entry_exit_actions.rs.jinja2` emits a call to it unconditionally for
 //!   `<content>literal</content>` donedata) but returns [`crate::SceString`]
@@ -65,7 +65,7 @@ pub fn emit_content_literal(literal: &str) -> SceString {
 ///
 /// JSON string like `{"Var1":"1","Var2":"hello"}`.
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` — delegates to
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` — delegates to
 /// [`event_data::escape_json_string`] which is itself whole-module gated.
 #[cfg(not(feature = "no_std"))]
 pub fn build_done_data_json(params: &[(&str, &str)]) -> String {
@@ -114,7 +114,7 @@ fn is_json_literal(value: &str) -> bool {
 
 /// W3C SCXML 5.5: Escape JSON string (delegates to event_data module).
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` — delegates to
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` — delegates to
 /// [`event_data::escape_json_string`] which is itself whole-module gated.
 #[cfg(not(feature = "no_std"))]
 pub fn escape_json_string(s: &str) -> String {

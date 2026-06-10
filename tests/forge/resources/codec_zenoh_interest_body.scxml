@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh INTEREST body (RFC §5.B —
+<!-- SCE Forge conformance: Zenoh INTEREST body (RFC §synth-5-B —
      sub-codec, interest envelope embeddee).
 
      Mirrors zenoh-pico `_z_interest_encode` / `_z_interest_decode`

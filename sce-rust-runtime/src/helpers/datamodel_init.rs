@@ -10,7 +10,7 @@
 //! port provides the initialization orchestration logic; actual script engine
 //! calls happen through the `IScriptEngine` trait from `crate::scripting`.
 //!
-//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): the no_std statechart variant
+//! Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): the no_std statechart variant
 //! has zero `alloc` dependency. Filesystem-coupled helpers (`Path`/`PathBuf`
 //! types, `std::env::current_exe`, `std::fs::read_to_string`) are gated to
 //! `cfg(not(feature = "no_std"))`. Author-side `<data src="...">` is rejected
@@ -42,7 +42,7 @@ pub fn is_function_expression(expr: &str) -> bool {
 ///
 /// Ports C++ `DataModelInitHelper::resolveExecutableBasePath`.
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `PathBuf` and
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because `PathBuf` and
 /// `std::env::current_exe` are alloc-coupled.
 #[cfg(not(feature = "no_std"))]
 pub fn resolve_executable_base_path(relative_path: &str) -> PathBuf {
@@ -71,7 +71,7 @@ pub fn is_xml_content(content: &str) -> bool {
 ///
 /// W3C SCXML 5.2.2: External source loading via `src` attribute.
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `Path`/`PathBuf` are
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because `Path`/`PathBuf` are
 /// alloc-coupled. Under `--no-std` the codegen-time validator rejects
 /// `<data src="...">` so this helper is never emitted into generated code.
 #[cfg(not(feature = "no_std"))]
@@ -99,7 +99,7 @@ pub fn resolve_src_path(src: &str, base_path: &str) -> PathBuf {
 ///
 /// Ports the evaluate-then-fallback pattern from C++ `DataModelInitHelper::initializeVariable`.
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because [`IScriptEngine`] is
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because [`IScriptEngine`] is
 /// part of `crate::scripting`, which is whole-module gated under `--no-std`
 /// (the `codegen/no-std-script-not-supported` validator rejects `<script>`
 /// up-front so this helper is unreachable from generated no_std code).
@@ -139,7 +139,7 @@ pub fn eval_or_set_string(
 /// 2. XML detected (starts with `<`) -> `set_variable_as_dom()`
 /// 3. Otherwise -> `evaluate_expression()` with whitespace-normalized string fallback
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` for the same reason as
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` for the same reason as
 /// [`eval_or_set_string`] — the [`IScriptEngine`] dependency.
 #[cfg(not(feature = "no_std"))]
 pub fn initialize_variable(
@@ -172,7 +172,7 @@ pub fn initialize_variable(
 ///
 /// Ports C++ `DataModelInitHelper::initializeVariableFromSrc`.
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `std::fs::read_to_string`
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because `std::fs::read_to_string`
 /// is OS-coupled and `PathBuf` is alloc-coupled. Under `--no-std` the codegen-time
 /// validator rejects `<data src="...">` so this helper is never emitted into
 /// generated code.
@@ -198,7 +198,7 @@ pub fn initialize_variable_from_src(
 ///
 /// Ports C++ `DataModelInitHelper::initializeVariableFromExpr`.
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` for the same reason as
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` for the same reason as
 /// [`eval_or_set_string`] — the [`IScriptEngine`] dependency.
 #[cfg(not(feature = "no_std"))]
 pub fn initialize_variable_from_expr(

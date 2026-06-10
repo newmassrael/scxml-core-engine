@@ -20,9 +20,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(sce_forge_numerical_conformance CXX)
 
-# RFC §7 A6: §5.A algorithm kind joins the cpp conformance harness. The
+# RFC §synth-7 A6: §synth-5-A algorithm kind joins the cpp conformance harness. The
 # A3 cpp algorithm template lowers `bytes` parameters to
-# `std::span<const std::uint8_t>` per RFC §5.J.5 (non-owning view, the
+# `std::span<const std::uint8_t>` per RFC §synth-5-J-5 (non-owning view, the
 # C++ idiom that avoids the "no STL containers" rule's intent of
 # forbidding owning collections in MCU-targeted emit). `std::span` is
 # C++20, so the harness bumps from C++17 → C++20 to compile the
@@ -100,7 +100,7 @@ endif()
 # (single semicolon-separated literal). The Rust binary already owns the
 # manifest schema, so cmake never has to touch JSON or shell out to python.
 #
-# RFC §5.B B2-test-vector: passing `--language cpp` activates the
+# RFC §synth-5-B B2-test-vector: passing `--language cpp` activates the
 # content-aware filter (`lang_supports_fixture`) so fixtures whose
 # SCXML carries `<sce:test-vector>` are dropped on backends that have
 # not yet shipped the sidecar emitter. Each closure widens the
@@ -120,7 +120,7 @@ if(NOT _manifest_rc EQUAL 0)
         "sce-codegen list-fixtures --language cpp failed for ${FIXTURE_MANIFEST}")
 endif()
 
-# RFC §5.B B2-test-vector: ask sce-codegen for the subset of C++
+# RFC §synth-5-B B2-test-vector: ask sce-codegen for the subset of C++
 # fixtures whose SCXML carries `<sce:test-vector>` rows. Each such
 # fixture emits `<fixture>_test.h` alongside `<fixture>.h`, so the
 # per-fixture custom_command must declare both as OUTPUT for cmake's

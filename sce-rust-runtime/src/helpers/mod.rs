@@ -48,7 +48,7 @@
 pub mod datamodel_init;
 pub mod done_data;
 pub mod entry_exit;
-// Watching-zenoh RFC §5.J.2: event-data JSON construction is alloc-coupled
+// Watching-zenoh RFC §synth-5-J-2: event-data JSON construction is alloc-coupled
 // (BTreeMap<String, Vec<String>> input, String output). No template emits
 // calls into this helper today, so the no_std codegen has no consumer — the
 // no_std variant lands with a heapless::String<N> output + &[(&str, &str)]
@@ -59,7 +59,7 @@ pub mod event_matching;
 pub mod event_queue;
 pub mod foreach;
 pub mod hierarchy;
-// Watching-zenoh RFC §5.J.2: invoke processing is alloc-coupled (Arc/Mutex/Vec/
+// Watching-zenoh RFC §synth-5-J-2: invoke processing is alloc-coupled (Arc/Mutex/Vec/
 // HashMap) and never reached under `--no-std` since the codegen-time validator
 // rejects `<invoke>` via `codegen/no-std-invoke-not-supported`.
 #[cfg(not(feature = "no_std"))]

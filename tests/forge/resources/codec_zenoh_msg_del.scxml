@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh DEL envelope (RFC §5.B —
+<!-- SCE Forge conformance: Zenoh DEL envelope (RFC §synth-5-B —
      sub-codec, request body variant arm
      for MID 0x02 = Z_DEL).
 

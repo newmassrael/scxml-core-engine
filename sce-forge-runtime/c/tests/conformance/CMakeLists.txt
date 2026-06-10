@@ -100,7 +100,7 @@ if(NOT _manifest_rc EQUAL 0)
         "${FIXTURE_MANIFEST}")
 endif()
 
-# RFC §5.B B2-test-vector: ask sce-codegen for the subset of C11
+# RFC §synth-5-B B2-test-vector: ask sce-codegen for the subset of C11
 # fixtures whose SCXML carries `<sce:test-vector>` rows. Each such
 # fixture emits `<fixture>_test.h` alongside `<fixture>.h`, so the
 # per-fixture custom_command must declare both as OUTPUT for cmake's
@@ -127,7 +127,7 @@ set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
 
 # Step 1: per-fixture product code generation. Each fixture's SCXML is
-# fed to sce-codegen --language c11 to produce a single header. RFC §5.B
+# fed to sce-codegen --language c11 to produce a single header. RFC §synth-5-B
 # B2-test-vector: fixtures whose SCXML carries `<sce:test-vector>` rows
 # emit a sibling `<fixture>_test.h` sidecar; the OUTPUT list is widened
 # so cmake's dependency tracker rebuilds the harness when either file

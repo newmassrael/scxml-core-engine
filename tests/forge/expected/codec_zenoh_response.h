@@ -22,7 +22,7 @@
 
 namespace SCE::Generated::CodecZenohResponse {
 
-// RFC §5.B variant primitive: discriminated-union body for the
+// RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. `std::variant` carries one of N arm bodies
 // (each an imported codec type); the optional Default arm is a small
 // struct that bundles the runtime tag value with the catch-all body.
@@ -58,11 +58,11 @@ struct CodecZenohResponse {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
+    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecZenohResponse> decode(::SCE::Forge::SceCursor& cursor) {
-        // RFC §5.B peek-byte / streaming-prefix:
+        // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         // mode additionally peeks the cursor's next byte for variant tag
@@ -150,7 +150,7 @@ struct CodecZenohResponse {
         };
     }
 
-    // RFC §5.B flags primitive: per-bit-range accessors.
+    // RFC §synth-5-B flags primitive: per-bit-range accessors.
     // Single-bit (width=1) reads as bool; multi-bit (width>=2) reads as
     // the smallest unsigned integer type that fits the range. Setters
     // mask + shift on the way in so out-of-range callers can't corrupt
@@ -222,7 +222,7 @@ struct CodecZenohResponse {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // RFC §5.B peek-byte / streaming-prefix:
+        // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
         // separate tag byte here. Streaming-prefix mode (own-field):

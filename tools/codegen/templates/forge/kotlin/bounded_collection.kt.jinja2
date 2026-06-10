@@ -8,7 +8,7 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 //
-// watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+// watching-zenoh RFC §synth-5-L bounded-collection — typed fixed-capacity
 // container whose occupancy varies at runtime. Spec line 2578 emit
 // shape: `Array<T?>(N)` storage + `BooleanArray(N)` occupancy +
 // `IntArray(N)` generation counter + `var len: Int`. The Handle is
@@ -35,7 +35,7 @@ import com.sce.generated.{{ element_snake }}.{{ element_pascal }}
 
 /// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
 /// is resolved from `machines.<m>.limits.<k>` at codegen time per
-/// RFC §5.L lines 2583-2585; for `const="N"` the value comes from
+/// RFC §synth-5-L lines 2583-2585; for `const="N"` the value comes from
 /// the SCXML.
 const val CAPACITY: Int = {{ capacity }}
 
@@ -87,7 +87,7 @@ sealed class {{ pascal }}InsertResult {
     object Err : {{ pascal }}InsertResult()
 }
 
-/// `{{ pascal }}` — RFC §5.L bounded-collection over element type
+/// `{{ pascal }}` — RFC §synth-5-L bounded-collection over element type
 /// `{{ element_pascal }}`. Capacity `{{ capacity }}`,
 /// `<sce:on-overflow>{{ on_overflow }}</sce:on-overflow>`,
 /// `<sce:ordering>{{ ordering }}</sce:ordering>`,
@@ -169,7 +169,7 @@ class {{ pascal }} : Iterable<{{ element_pascal }}> {
         return slots[slotIdx]
     }
 
-    /// Get-by-slot (RFC §5.L + C7 foundation): slot-indexed read
+    /// Get-by-slot (RFC §synth-5-L + C7 foundation): slot-indexed read
     /// without Handle. Returns `null` when `slot >= CAPACITY` OR
     /// when the slot is unoccupied. No generation check (the use-
     /// after-remove guard is for the Handle-based `get`; slot-based
@@ -186,7 +186,7 @@ class {{ pascal }} : Iterable<{{ element_pascal }}> {
 {% if has_index_by %}
     /// Find the first occupied slot whose `<sce:index-by field="{{ index_by_field }}"/>`
     /// equals `key` (spec line 2615). Linear scan bounded by
-    /// `CAPACITY` (build-time constant) — satisfies §5.A `max-iter`
+    /// `CAPACITY` (build-time constant) — satisfies §synth-5-A `max-iter`
     /// requirement when this method is called from algorithm
     /// bodies.
     fun findByIndex(key: {{ index_by_kotlin_type }}): {{ pascal }}Handle? {

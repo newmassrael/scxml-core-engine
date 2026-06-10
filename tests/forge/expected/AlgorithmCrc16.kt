@@ -4,9 +4,9 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 //
-// RFC §5.A: pure synchronous function with bounded loops. Free
+// RFC §synth-5-A: pure synchronous function with bounded loops. Free
 // function in package `com.sce.generated.algorithm_crc16`, no instance
-// state. `bytes` parameters lower to `ByteArray` (RFC §5.J.5 emitter
+// state. `bytes` parameters lower to `ByteArray` (RFC §synth-5-J-5 emitter
 // table). Iteration over `ByteArray` yields signed `Byte`, so the
 // foreach lowering inserts a `Byte → UByte` reinterpretation per
 // iteration to match the SCXML type-ctx contract that

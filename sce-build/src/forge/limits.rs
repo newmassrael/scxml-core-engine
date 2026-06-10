@@ -15,7 +15,7 @@
 /// `sce-forge-runtime/c/include/sce/forge/limits.h`.
 pub const BYTES_DEFAULT_MAX: u32 = 256;
 
-/// Default element-count cap for `<sce:repeat>` codec fields (RFC §5.B
+/// Default element-count cap for `<sce:repeat>` codec fields (RFC §synth-5-B
 /// B2) when the SCXML author has not declared a per-field
 /// `sce:max-count` annotation. Used by the encode-buffer sizing path
 /// (`max_count * imported_codec.max_frame_bytes()`); too-low caps

@@ -28,10 +28,10 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_length_ref_decode(sce_forge_cursor_t *cursor, codec_length_ref_t *out) {
-    /* Variable-length codec. RFC §5.B B3 stream-correct shape:
+    /* Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
      * a codec without `<sce:field sce:bit-size="tail">` consumes only
      * the bytes it actually decoded (`min_bytes + length_value`)
      * rather than the entire cursor remaining. Codecs WITH a tail
@@ -58,7 +58,7 @@ static inline sce_forge_codec_status_t codec_length_ref_decode(sce_forge_cursor_
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_LENGTH_REF_MAX_BYTES bytes and use

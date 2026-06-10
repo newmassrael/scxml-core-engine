@@ -13,7 +13,7 @@
 //! any external event. The engine's macrostep loop drains the internal queue
 //! first, then processes one external event, then re-drains the internal queue.
 //!
-//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): under `--features=no_std` the
+//! Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): under `--features=no_std` the
 //! backing store is a stack-allocated `heapless::Deque<T, N>`. The depth `N`
 //! is per-machine — the const generic parameter carries the
 //! `<scxml sce:capacity="N">` / deploy `default_event_queue_capacity` value

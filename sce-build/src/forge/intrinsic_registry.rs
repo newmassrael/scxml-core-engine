@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` whitelisted intrinsic registry — watching-zenoh RFC §5.I
+// `<sce:extern>` whitelisted intrinsic registry — watching-zenoh RFC §synth-5-I
 // (lines 1691-1924). Closed table that mirrors the spec's
 // concrete v1 whitelist (lines 1717-1750):
 //
@@ -1015,7 +1015,7 @@ mod tests {
 
     /// Spec-verbatim entry count. 90 atomic + 6 fence + 3 cache + 2
     /// IRQ = 101. Drift here = a future spec edit reshaped the
-    /// baseline; cross-check `BASELINE_SYMBOLS` against §5.I lines
+    /// baseline; cross-check `BASELINE_SYMBOLS` against §synth-5-I lines
     /// 1717-1750 before bumping the count.
     #[test]
     fn baseline_symbol_count_matches_spec() {

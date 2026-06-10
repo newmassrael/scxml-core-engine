@@ -21,7 +21,7 @@
 #define CODEC_ZENOH_OAM_MIN_BYTES 1
 #define CODEC_ZENOH_OAM_MAX_BYTES 46
 
-/* RFC §5.B variant primitive: tagged-union body for the codec's
+/* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
  * preserves the runtime tag value when the default arm fires; the inner
  * union holds one body slot per arm (per-arm fields keep the template
@@ -47,7 +47,7 @@ typedef struct {
 typedef struct {
     uint8_t header;
     uint16_t id;
-    /* RFC §5.B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 4, on-overflow=reject) */
+    /* RFC §synth-5-B B3 tlv-chain: fixed array of codec_zenoh_ext_entry_t entries (max-depth 4, on-overflow=reject) */
     codec_zenoh_ext_entry_t extensions[4];
     size_t  extensions_len;
     codec_zenoh_oam_variant_t body;
@@ -73,10 +73,10 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_oam_decode(sce_forge_cursor_t *cursor, codec_zenoh_oam_t *out) {
-    /* RFC §5.B peek-byte / streaming-prefix:
+    /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix decode (variable-length fields supported via
      * per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
      * mode additionally peeks the cursor's next byte for variant tag
@@ -135,14 +135,14 @@ static inline sce_forge_codec_status_t codec_zenoh_oam_decode(sce_forge_cursor_t
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_OAM_MAX_BYTES bytes and use
  * `codec_zenoh_oam_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_zenoh_oam_encode(const codec_zenoh_oam_t *self, sce_forge_writer_t *w) {
-    /* RFC §5.B peek-byte / streaming-prefix:
+    /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode
      * prepends its own header byte (which the decoder peeked); no
      * separate tag byte here. Streaming-prefix mode (own-field):
@@ -194,7 +194,7 @@ static inline sce_forge_codec_status_t codec_zenoh_oam_encode_to_buf(const codec
     return _st;
 }
 
-/* RFC §5.B flags primitive: per-bit-range accessors over
+/* RFC §synth-5-B flags primitive: per-bit-range accessors over
  * the carrier field. Single-bit (width=1) reads as bool; multi-bit
  * (width>=2) reads as the smallest unsigned C11 integer type that fits
  * (uint8_t / uint16_t / uint32_t / uint64_t). Setters mask + shift on

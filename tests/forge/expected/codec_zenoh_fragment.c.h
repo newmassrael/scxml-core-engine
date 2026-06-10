@@ -27,11 +27,11 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_fragment_decode(sce_forge_cursor_t *cursor, codec_zenoh_fragment_t *out) {
     /* Streaming codec: each field reads from cursor directly (VLE
-     * base-128 chain, 1..=ceil(N/7) bytes per field). RFC §5.B B4:
+     * base-128 chain, 1..=ceil(N/7) bytes per field). RFC §synth-5-B B4:
      * per-field bit-size dispatch routes Fixed / LengthRef siblings
      * of VLE fields through `present_if_decode_stmt` (predicate=None
      * arms — for VLE the helper emits the local-decl + `out->` assign
@@ -55,14 +55,14 @@ static inline sce_forge_codec_status_t codec_zenoh_fragment_decode(sce_forge_cur
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_FRAGMENT_MAX_BYTES bytes and use
  * `codec_zenoh_fragment_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_zenoh_fragment_encode(const codec_zenoh_fragment_t *self, sce_forge_writer_t *w) {
-    /* RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+    /* RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
      * LengthRef / Tail siblings of VLE fields through
      * `present_if_encode_block` (predicate=None arms). Pure-VLE
      * codecs stay byte-stable. */

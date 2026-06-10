@@ -4,8 +4,8 @@
 /* Runtime: none */
 /* Do not edit — regenerate from the source SCXML file. */
 /* */
-/* RFC §5.A: free function with bounded loops, no allocs, no I/O. */
-/* RFC §5.J.5 emitter table: `static T <snake>(...)` with `bytes` */
+/* RFC §synth-5-A: free function with bounded loops, no allocs, no I/O. */
+/* RFC §synth-5-J-5 emitter table: `static T <snake>(...)` with `bytes` */
 /* lowered to the borrowed `sce_forge_bytes_view_t` (zero-copy). */
 
 #ifndef SCE_FORGE_ALGORITHM_CONST_FOLD_SMOKE_H

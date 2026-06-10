@@ -1,7 +1,7 @@
 //! Fragment / reassembly buffer-pool variant schema + parse +
 //! 2 parse-time structure validators.
 //!
-//! Per watching-zenoh RFC §5.M lines 2676-2698 + 2944-2945: the
+//! Per watching-zenoh RFC §synth-5-M lines 2676-2698 + 2944-2945: the
 //! `<sce:variant>reassembly</sce:variant>` discriminator on a
 //! `<scxml sce:kind="buffer-pool">` document opens three required
 //! sibling elements:
@@ -26,7 +26,7 @@
 //! (the type-system mirror of the sum-type's "only-on-arm"
 //! invariant).
 //!
-//! Cross-doc validators referencing §5.K
+//! Cross-doc validators referencing §synth-5-K
 //! `links.<name>.{mtu_bytes, expected_p99_bytes, domain_attrs.trust_class}`
 //! (6-8 codes including `reassembly/max-fragments-insufficient-for-mtu` +
 //! `reassembly/untrusted-link-binding`) are covered by
@@ -38,7 +38,7 @@
 //! (`link/listener-link-not-paired-with-established-sibling` +
 //! `reassembly/binding-on-unpaired-listener`) are covered by
 //! `c10_alpha_listener_sibling_pair.rs`
-//! per spec line 2820-2824 (§5.C codegen contract).
+//! per spec line 2820-2824 (§synth-5-C codegen contract).
 
 use sce_build::forge::diagnostic::DiagnosticCode;
 use sce_build::forge::error::{ForgeError, Located, ValidationError};

@@ -28,7 +28,7 @@ mod fixtures {
 {% for f in fixtures %}
     pub mod {{ f.name }} {
         include!(concat!(env!("OUT_DIR"), "/{{ f.name }}.rs"));
-        {# RFC §5.B test-vector: pull the per-fixture sidecar
+        {# RFC §synth-5-B test-vector: pull the per-fixture sidecar
            into the same module so cargo test discovers each
            `<sce:test-vector>` row as a free `#[test]` reachable
            from the conformance test crate. The sidecar emits

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Negative fixture for the RFC §5.F wire code
+  Negative fixture for the RFC §synth-5-F wire code
   `algorithm/const-not-foldable`.
 
   The fold body references identifier `unbound_outer` which is not in

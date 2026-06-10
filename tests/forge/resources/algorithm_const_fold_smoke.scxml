@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Smoke fixture for the RFC §5.F build-time const-fold parser surface.
+  Smoke fixture for the RFC §synth-5-F build-time const-fold parser surface.
 
   Pins the parser surface for `<sce:const sce:compute-at="build">` with
   an `<sce:fold>` body, including:

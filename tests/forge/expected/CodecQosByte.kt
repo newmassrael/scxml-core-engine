@@ -18,7 +18,7 @@ import com.sce.forge.runtime.SceSink
 data class CodecQosByte(
     var qos: UByte = 0.toUByte()
 ) {
-    // RFC §5.B flags primitive: per-bit-range accessors over
+    // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
@@ -78,7 +78,7 @@ data class CodecQosByte(
         }
     }
 
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
@@ -102,7 +102,7 @@ data class CodecQosByte(
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
         fun decode(cursor: SceCursor): CodecQosByte? {
             val raw = cursor.peekSlice(1) ?: return null
             val qos = raw[0].toUByte()

@@ -6,7 +6,7 @@
 //! the library entry point, but the CLI multi-doc subcommand
 //! (`Commands::Orchestrate`) had no flag to pass it. The
 //! `--deploy=PATH` flag lets end-users invoking the binary fire
-//! watching-zenoh RFC §5.K + §5.M cross-doc validators without
+//! watching-zenoh RFC §synth-5-K + §synth-5-M cross-doc validators without
 //! library-level wrappers.
 //!
 //! Test matrix (mirrors the library-level `c13_*` tests in

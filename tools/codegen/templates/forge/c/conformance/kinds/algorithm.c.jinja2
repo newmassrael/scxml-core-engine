@@ -1,12 +1,12 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Algorithm kind (RFC §5.A) — single-output free function with bounded
+{# Algorithm kind (RFC §synth-5-A) — single-output free function with bounded
    loops. Cross-(Rust, C11) byte-equivalence acceptance gate: A6 promotes
    the A5 ad-hoc preview to a permanent ctest gate.
 
    Bytes args lower to the runtime's stack-bounded `sce_forge_bytes_t`
-   (RFC §5.J.2 F1, A5 `algorithm_param_type` C11+Bytes arm). Each case
+   (RFC §synth-5-J-2 F1, A5 `algorithm_param_type` C11+Bytes arm). Each case
    carries a fixed-cap `uint8_t input_arg<i>[256]` + `size_t input_arg<i>_len`
    pair on the case struct; we memcpy into a fresh `sce_forge_bytes_t`
    per case to make every invocation start from a clean buffer. Numeric

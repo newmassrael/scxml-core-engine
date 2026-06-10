@@ -22,11 +22,11 @@ struct CodecZenohDel {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
+    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecZenohDel> decode(::SCE::Forge::SceCursor& cursor) {
-        // RFC §5.B empty body — zero-byte payload, no cursor work.
+        // RFC §synth-5-B empty body — zero-byte payload, no cursor work.
         (void)cursor;
         return CodecZenohDel{};
     }
@@ -42,7 +42,7 @@ struct CodecZenohDel {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // RFC §5.B empty body — zero-byte payload (the surrounding
+        // RFC §synth-5-B empty body — zero-byte payload (the surrounding
         // wire-protocol header byte alone marks this codec on the wire).
         // Suppress the unused-sink warning explicitly so empty codecs
         // stay warning-clean.

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh query body codec — request body
-     variant arm "query" (RFC §5.B —
+     variant arm "query" (RFC §synth-5-B —
      zenoh-specific demo of the tlv-chain present-if lift).
 
      Mirrors zenoh-pico `_z_query_encode` / `_z_query_decode`

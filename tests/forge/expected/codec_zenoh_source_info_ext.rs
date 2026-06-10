@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -43,11 +43,11 @@ impl<'a> CodecZenohSourceInfoExt<'a> {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519).
+    /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
         // Streaming codec: each field reads its own bytes from the
         // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
-        // a fixed window; cursor advances per-field. RFC §5.B B4:
+        // a fixed window; cursor advances per-field. RFC §synth-5-B B4:
         // per-field bit-size dispatch routes Fixed / LengthRef
         // siblings of VLE fields through `present_if_decode_stmt`
         // (predicate=None arms) — pure-VLE codecs stay byte-stable
@@ -79,7 +79,7 @@ impl<'a> CodecZenohSourceInfoExt<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        // RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef / Tail siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
         // codecs stay byte-stable: the non-gated VLE arm there reuses

@@ -19,10 +19,10 @@ type CodecUntilEofBasic struct {
 // DecodeCodecUntilEofBasic decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecUntilEofBasic(cursor *codec.SceCursor) (*CodecUntilEofBasic, error) {
-	// RFC §5.B B2 repeat primitive: streaming decode mixes plain
+	// RFC §synth-5-B B2 repeat primitive: streaming decode mixes plain
 	// fixed-width reads (per-field via the present-if helper's
 	// non-gated arm) with `make([]T, 0, N)` + `append` loops that
 	// iterate the imported codec's `Decode<T>(cursor)` either
@@ -48,7 +48,7 @@ func DecodeCodecUntilEofBasic(cursor *codec.SceCursor) (*CodecUntilEofBasic, err
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecUntilEofBasic) Encode(w codec.SceSink) error {
-	// RFC §5.B B2 encode: list fields range over s.<Pascal> and
+	// RFC §synth-5-B B2 encode: list fields range over s.<Pascal> and
 	// write each element through the same sink.
 	for _i := range s.Msgs {
 		if err := s.Msgs[_i].Encode(w); err != nil {

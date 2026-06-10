@@ -1,7 +1,7 @@
 //! pool_defaults.stage_copy_policy promotion + opt-out
 //! rejection.
 //!
-//! Per watching-zenoh RFC §5.K lines 2350-2369 + 2504-2519: machine-
+//! Per watching-zenoh RFC §synth-5-K lines 2350-2369 + 2504-2519: machine-
 //! wide `pool_defaults.stage_copy_policy` (warn | error | forbid)
 //! drives the cross-doc `reassembly/expected-fragmentation-rate-high`
 //! warning's promotion to hard error (`error` / `forbid`) plus the

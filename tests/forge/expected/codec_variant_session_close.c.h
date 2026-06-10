@@ -23,7 +23,7 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_variant_session_close_decode(sce_forge_cursor_t *cursor, codec_variant_session_close_t *out) {
     const uint8_t *raw = sce_forge_cursor_peek(cursor, CODEC_VARIANT_SESSION_CLOSE_MIN_BYTES);
@@ -33,7 +33,7 @@ static inline sce_forge_codec_status_t codec_variant_session_close_decode(sce_fo
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_VARIANT_SESSION_CLOSE_MAX_BYTES bytes and use

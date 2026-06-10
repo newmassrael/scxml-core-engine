@@ -15,7 +15,7 @@ import conftest  # noqa: F401 — runs bootstrap() at import time
 
 # Loaded as a submodule of the synthetic conftest.CONFORMANCE_PACKAGE so its
 # own relative-import line resolves the way the Forge codegen expects.
-# RFC §5.B test vectors: switched from a single-name import to
+# RFC §synth-5-B test vectors: switched from a single-name import to
 # `import *` so per-fixture `<Pascal>TestVectors(unittest.TestCase)`
 # classes — re-exported from the harness module — flow through to
 # pytest discovery alongside `TestNumericalConformance`. The harness

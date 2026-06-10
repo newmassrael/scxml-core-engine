@@ -23,10 +23,10 @@ class CodecZenohDeclExtKeyexpr:
     def decode(cls, cursor: SceCursor) -> Optional[CodecZenohDeclExtKeyexpr]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
-        (RFC §5.B L494-519); on success the cursor advances past the
+        (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        # RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
         # LengthRef siblings of VLE fields through
         # `present_if_decode_stmt` (predicate=None arms). Pure-VLE
         # codecs stay byte-stable.
@@ -52,7 +52,7 @@ class CodecZenohDeclExtKeyexpr:
             inner=inner,
         )
 
-    # RFC §5.B flags primitive: per-bit-range accessors over
+    # RFC §synth-5-B flags primitive: per-bit-range accessors over
     # the carrier field. Single-bit (width=1) reads as bool; multi-bit
     # (width>=2) reads as ``int`` (Python ints are unbounded, so a single
     # ``int`` covers every result-type width). Setters mask + shift on
@@ -94,12 +94,12 @@ class CodecZenohDeclExtKeyexpr:
             self.outer_header = self.outer_header & (0xFF ^ 0x80)
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B encode-side primary: write ``self`` into the
+        """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B B4: per-field bit-size dispatch.
+        # RFC §synth-5-B B4: per-field bit-size dispatch.
         w.write_u8(self.outer_header & 0xFF)
         _vle = int(self.total_length)
         while _vle >= 0x80:

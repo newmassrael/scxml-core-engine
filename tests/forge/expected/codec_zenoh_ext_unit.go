@@ -17,10 +17,10 @@ type CodecZenohExtUnit struct {
 // DecodeCodecZenohExtUnit decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohExtUnit(cursor *codec.SceCursor) (*CodecZenohExtUnit, error) {
-	// RFC §5.B empty body — zero-byte payload, no cursor work.
+	// RFC §synth-5-B empty body — zero-byte payload, no cursor work.
 	_ = cursor
 	return &CodecZenohExtUnit{}, nil
 }
@@ -30,7 +30,7 @@ func DecodeCodecZenohExtUnit(cursor *codec.SceCursor) (*CodecZenohExtUnit, error
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohExtUnit) Encode(w codec.SceSink) error {
-	// RFC §5.B empty body — zero-byte payload.
+	// RFC §synth-5-B empty body — zero-byte payload.
 	_ = w
 	return nil
 }

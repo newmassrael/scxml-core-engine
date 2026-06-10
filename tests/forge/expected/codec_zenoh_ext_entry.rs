@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -21,7 +21,7 @@ use super::codec_zenoh_ext_unit::CodecZenohExtUnit;
 use super::codec_zenoh_ext_zint::CodecZenohExtZint;
 use super::codec_zenoh_ext_zbuf::CodecZenohExtZbuf;
 
-// RFC §5.B variant primitive: discriminated-union body for the
+// RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body.
@@ -72,9 +72,9 @@ impl<'a> CodecZenohExtEntry<'a> {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519).
+    /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
-        // Decode fixed prefix (RFC §5.B variant primitive: fields
+        // Decode fixed prefix (RFC §synth-5-B variant primitive: fields
         // sit before the variant suffix on the wire).
         let raw = cursor.peek_slice(1)?;
         let header = raw[0];
@@ -98,7 +98,7 @@ impl<'a> CodecZenohExtEntry<'a> {
         })
     }
 
-    // RFC §5.B flags primitive: per-bit-range accessors over
+    // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as bool; multi-bit
     // (width>=2) reads as the smallest unsigned integer that fits the
     // range. Setters mask + shift on the way in so out-of-range
@@ -226,7 +226,7 @@ pub struct CodecZenohExtEntryOwned {
 #[cfg(feature = "alloc")]
 #[allow(dead_code)]
 impl CodecZenohExtEntryOwned {
-    // RFC §5.B read-accessor parity with the borrowed view: pure
+    // RFC §synth-5-B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so alloc consumers read `{Codec}Owned` with the same API as
     // the borrowed view and never re-derive the SCE wire bit layout (SSOT).

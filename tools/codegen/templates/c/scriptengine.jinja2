@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# RFC §5.J.1 — C11 script-engine helpers (lua_State* direct, no abstraction).
+{# RFC §synth-5-J-1 — C11 script-engine helpers (lua_State* direct, no abstraction).
 
    The C++/Rust/Go/Kotlin backends route script execution through an
    IScriptEngine interface (ScriptEngineProvider in C++/Rust/Go,
@@ -201,7 +201,7 @@
                                Keys sorted to keep the wire form
                                deterministic so byte-equal output across
                                equal-content donedata payloads
-                               (committed-tree-sweep §6.2.6 contract).
+                               (committed-tree-sweep §synth-6.2.6 contract).
            Both parent and child SMs initialise this helper because
            `lua_init_engine` runs in every SM with `needs_script_engine`;
            the cross-SM bridge `lua_marshal_child_donedata` calls it on
@@ -355,7 +355,7 @@
         {% endif %}
         {% elif var.src %}
         /* W3C SCXML 5.2.2: <data id="{{ var.id }}" src="{{ var.src }}">.
-           C11 codegen-time file read (RFC §5.J.1 R3 zero-deps: no runtime
+           C11 codegen-time file read (RFC §synth-5-J-1 R3 zero-deps: no runtime
            fopen in sce-c-runtime). Mirrors cpp
            `DataModelInitHelper::initializeVariableFromSrc` (sce/src/common/
            DataModelInitHelper.cpp:159-181), which loads the file and

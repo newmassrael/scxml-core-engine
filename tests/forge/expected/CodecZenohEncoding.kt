@@ -20,7 +20,7 @@ data class CodecZenohEncoding(
     var schema_len: ULong? = null,
     var schema: String? = null
 ) {
-    // RFC §5.B flags primitive: per-bit-range accessors over
+    // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
@@ -36,13 +36,13 @@ data class CodecZenohEncoding(
         }
     }
 
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // RFC §5.B present-if encode: per-field byte
+        // RFC §synth-5-B present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a
@@ -85,9 +85,9 @@ data class CodecZenohEncoding(
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
         fun decode(cursor: SceCursor): CodecZenohEncoding? {
-            // RFC §5.B present-if primitive: streaming
+            // RFC §synth-5-B present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
             // Gating extends to Tail / LengthRef / Vle bit-sizes

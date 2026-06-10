@@ -1,5 +1,5 @@
 
-// Watching-zenoh RFC §5.O: SCE-MAP marker anchoring
+// Watching-zenoh RFC §synth-5-O: SCE-MAP marker anchoring
 // these method implementations to the `<scxml>` root position.
 // SCE-MAP: inline_codec.scxml:3
 

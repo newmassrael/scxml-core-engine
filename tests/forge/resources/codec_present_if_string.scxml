@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: present-if + length-ref STRING (RFC §5.B —
+<!-- SCE Forge conformance: present-if + length-ref STRING (RFC §synth-5-B —
      primitive demo). Mirrors codec_repeat_present_if_basic's
      two-fixture trunk pattern (primitive + realistic consumer); the
      realistic parent-scope consumer is `codec_zenoh_wireexpr`.

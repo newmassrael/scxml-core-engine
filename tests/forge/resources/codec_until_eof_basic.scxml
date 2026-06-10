@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: codec until-eof repeat primitive (RFC §5.B
+<!-- SCE Forge conformance: codec until-eof repeat primitive (RFC §synth-5-B
      B2, until-eof shape). The `msgs` field greedily consumes
      `codec_repeat_elem` elements until the cursor has no remaining
      bytes; a partial trailing element returns NeedMoreBytes (the

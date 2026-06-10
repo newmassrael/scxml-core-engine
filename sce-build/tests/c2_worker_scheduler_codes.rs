@@ -1,6 +1,6 @@
 //! Scheduler-capacity axis integration tests (4 spec-named
-//! codes + 1 renamed wire, watching-zenoh RFC §5.K lines 2423 / 2426 /
-//! 2428-9 / 2430-1 + RFC §5.D line 912).
+//! codes + 1 renamed wire, watching-zenoh RFC §synth-5-K lines 2423 / 2426 /
+//! 2428-9 / 2430-1 + RFC §synth-5-D line 912).
 //!
 //! Each test exercises one spec-named code with its co-landed
 //! consumer; the populator round-trip test pins the deploy.yaml
