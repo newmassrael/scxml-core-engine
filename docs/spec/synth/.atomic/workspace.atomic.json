@@ -1,0 +1,282 @@
+{
+  "sections": {
+    "synth-0": {
+      "title": "Reading guide",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-1": {
+      "title": "Motivation",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-1.1": {
+      "title": "Downstream project",
+      "parent_doc": "synth",
+      "parent_section": "synth-1",
+      "decision_status": "active"
+    },
+    "synth-1.2": {
+      "title": "Why SCE, not a direct rewrite",
+      "parent_doc": "synth",
+      "parent_section": "synth-1",
+      "decision_status": "active"
+    },
+    "synth-1.3": {
+      "title": "Why SCE cannot currently do this",
+      "parent_doc": "synth",
+      "parent_section": "synth-1",
+      "decision_status": "active"
+    },
+    "synth-10": {
+      "title": "Acknowledgments",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-2": {
+      "title": "Non-goals",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-2.1": {
+      "title": "Permanent non-goals",
+      "parent_doc": "synth",
+      "parent_section": "synth-2",
+      "decision_status": "active"
+    },
+    "synth-2.2": {
+      "title": "MVP deferrals (with migration paths)",
+      "parent_doc": "synth",
+      "parent_section": "synth-2",
+      "decision_status": "active"
+    },
+    "synth-3": {
+      "title": "Target end-state",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-4": {
+      "title": "Current SCE capability survey",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-5": {
+      "title": "Proposed extensions",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-5-A": {
+      "title": "New kind: `algorithm`",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-B": {
+      "title": "Codec DSL extensions",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-C": {
+      "title": "Byte-stream link model — `sce:kind=\"link\"`",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-D": {
+      "title": "Timer and worker primitives",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-E": {
+      "title": "Buffer pool and memory placement",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-F": {
+      "title": "Build-time evaluation",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-G": {
+      "title": "Parametric kinds (Phase 2)",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-H": {
+      "title": "Recursive and tree data kinds (Phase 2)",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-I": {
+      "title": "`sce:extern` — bounded escape hatch",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-J": {
+      "title": "Codegen backend coverage",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-J-1": {
+      "title": "New-kind emitter coverage on the existing C11 backend",
+      "parent_doc": "synth",
+      "parent_section": "synth-5-J",
+      "decision_status": "active"
+    },
+    "synth-5-J-2": {
+      "title": "Statechart Rust `no_std` variant",
+      "parent_doc": "synth",
+      "parent_section": "synth-5-J",
+      "decision_status": "active"
+    },
+    "synth-5-J-3": {
+      "title": "Backend coverage as a 3-tuple",
+      "parent_doc": "synth",
+      "parent_section": "synth-5-J",
+      "decision_status": "active"
+    },
+    "synth-5-J-4": {
+      "title": "Kind × language matrix (parity invariant)",
+      "parent_doc": "synth",
+      "parent_section": "synth-5-J",
+      "decision_status": "active"
+    },
+    "synth-5-J-5": {
+      "title": "Per-language emitter contracts (new generic-class kinds)",
+      "parent_doc": "synth",
+      "parent_section": "synth-5-J",
+      "decision_status": "active"
+    },
+    "synth-5-K": {
+      "title": "Deploy model extensions",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-L": {
+      "title": "New kind: `bounded-collection`",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-M": {
+      "title": "Fragment and reassembly kinds",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-N": {
+      "title": "Multi-link concurrency",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-5-O": {
+      "title": "Generated-source traceability",
+      "parent_doc": "synth",
+      "parent_section": "synth-5",
+      "decision_status": "active"
+    },
+    "synth-6": {
+      "title": "Cross-cutting concerns",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-6.1": {
+      "title": "Diagnostic contract",
+      "parent_doc": "synth",
+      "parent_section": "synth-6",
+      "decision_status": "active"
+    },
+    "synth-6.2": {
+      "title": "Testing requirements (new)",
+      "parent_doc": "synth",
+      "parent_section": "synth-6",
+      "decision_status": "active"
+    },
+    "synth-6.2.1": {
+      "title": "Cross-backend parity",
+      "parent_doc": "synth",
+      "parent_section": "synth-6.2",
+      "decision_status": "active"
+    },
+    "synth-6.2.2": {
+      "title": "Wire replay",
+      "parent_doc": "synth",
+      "parent_section": "synth-6.2",
+      "decision_status": "active"
+    },
+    "synth-6.2.3": {
+      "title": "Upstream interop (project-level, not SCE)",
+      "parent_doc": "synth",
+      "parent_section": "synth-6.2",
+      "decision_status": "active"
+    },
+    "synth-6.2.4": {
+      "title": "No-alloc guard (layered)",
+      "parent_doc": "synth",
+      "parent_section": "synth-6.2",
+      "decision_status": "active"
+    },
+    "synth-6.2.5": {
+      "title": "Adversarial fuzz harness",
+      "parent_doc": "synth",
+      "parent_section": "synth-6.2",
+      "decision_status": "active"
+    },
+    "synth-6.2.6": {
+      "title": "Generated source drift detection",
+      "parent_doc": "synth",
+      "parent_section": "synth-6.2",
+      "decision_status": "active"
+    },
+    "synth-6.3": {
+      "title": "Tooling",
+      "parent_doc": "synth",
+      "parent_section": "synth-6",
+      "decision_status": "active"
+    },
+    "synth-7": {
+      "title": "Phased rollout",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-8": {
+      "title": "Open questions",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-9": {
+      "title": "Impact summary",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-A": {
+      "title": "Worked example: CRC16-CCITT",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-B": {
+      "title": "Worked example: VLE ZInt u64",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    },
+    "synth-C": {
+      "title": "Honest scope of the end-state",
+      "parent_doc": "synth",
+      "decision_status": "active"
+    }
+  },
+  "changelog_entries": {},
+  "inventory_entries": {},
+  "confirmation_events": {},
+  "schema_version": 11
+}

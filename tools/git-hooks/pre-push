@@ -27,6 +27,11 @@
 #                                              (harness include-name mismatch)
 #   7.  Example codegen (doom / smart_light) — catches namespace /
 #                                              statechart-parser drift
+#   8.  Spec-citation ledgers                 — mirrors spec-citations.yml;
+#                                              catches §<ns>-<id> cites added
+#                                              without a ledger section/binding
+#                                              (the gap that turned main red
+#                                              after the doc-hygiene rounds)
 #
 # Note (2026-05-23): the cargo-fmt gate that used to live as Stage 0 here
 # moved to `pre-commit` so fmt drift fails at commit time, before the
@@ -77,7 +82,7 @@ trap cleanup EXIT
 # stages renumbered accordingly.
 
 # ── Stage 1: sce-codegen build (baseline) ─────────────────────────
-log_step "Stage 1/7 — cargo build sce-codegen --release"
+log_step "Stage 1/8 — cargo build sce-codegen --release"
 cargo build --bin sce-codegen --features cli --release -p sce-build \
     || fail_step "Stage 1 (sce-codegen build)"
 
@@ -90,7 +95,7 @@ cargo build --bin sce-codegen --features cli --release -p sce-build \
 # `cargo test --workspace` catches it eventually — but only after
 # ~30 s of compilation; this fast structural check fails in under a
 # second with a precise diff that points at the offending file.
-log_step "Stage 1b/7 — Rust mod.rs ↔ subdir drift check"
+log_step "Stage 1b/8 — Rust mod.rs ↔ subdir drift check"
 check_mod_tree() {
     local mod_file="$1"
     local parent_dir
@@ -155,7 +160,7 @@ done
 # present + no manifest written. Runs in ~1s, no toolchain beyond
 # clang-19 already required by Stage 4. Catches the silent-degrade
 # pattern's reintroduction before any developer pays the CI round-trip.
-log_step "Stage 1c/7 — emit_embed_manifest.sh fail-fast regression TC"
+log_step "Stage 1c/8 — emit_embed_manifest.sh fail-fast regression TC"
 bash scripts/test_emit_manifest_fail_fast.sh \
     || fail_step "Stage 1c (emit_embed_manifest fail-fast TC)"
 
@@ -168,7 +173,7 @@ bash scripts/test_emit_manifest_fail_fast.sh \
 # motivated this gate. Keep the default toolchain current
 # (`rustup update stable`) so this sees the same lints CI will. Runs
 # before the heavy test/build stages so a lint failure aborts fast.
-log_step "Stage 2/7 — cargo clippy --workspace --all-targets -- -D warnings"
+log_step "Stage 2/8 — cargo clippy --workspace --all-targets -- -D warnings"
 cargo clippy --workspace --all-targets -- -D warnings \
     || fail_step "Stage 2 (cargo clippy)"
 
@@ -184,7 +189,7 @@ cargo clippy --workspace --all-targets -- -D warnings \
 # sce-codegen build). `rustup target add` is idempotent — a no-op when
 # the target is already present, an auto-install otherwise — so the gate
 # always runs rather than silently skipping on a fresh checkout.
-log_step "Stage 2b/7 — no_std MCU build + clippy + probe (thumbv7em-none-eabihf)"
+log_step "Stage 2b/8 — no_std MCU build + clippy + probe (thumbv7em-none-eabihf)"
 rustup target add thumbv7em-none-eabihf >/dev/null 2>&1 || true
 cargo build -p sce-rust-runtime --no-default-features --features=no_std \
     --target=thumbv7em-none-eabihf \
@@ -234,7 +239,7 @@ cargo build --manifest-path sce-nostd-queue-size-probe/Cargo.toml \
 # the default-features docs yet breaks in the no_std docs, so the
 # std-only run cannot see that breakage class. All runtime doc links
 # are kept profile-stable (cfg-gated targets are plain code spans).
-log_step "Stage 2c/7 — cargo doc -p sce-rust-runtime (broken-link gate, both profiles)"
+log_step "Stage 2c/8 — cargo doc -p sce-rust-runtime (broken-link gate, both profiles)"
 RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
     || fail_step "Stage 2c (cargo doc broken intra-doc links, std)"
 RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
@@ -249,7 +254,7 @@ RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
 # fail-fast path; this covers the orthogonal DRIFT path (committed
 # manifest vs the current header surface) — the gap that let the
 # SetCurrentEventArgs surface change land stale.
-log_step "Stage 3/7 — verify_embed_manifest.sh (embed public-API drift)"
+log_step "Stage 3/8 — verify_embed_manifest.sh (embed public-API drift)"
 bash scripts/verify_embed_manifest.sh \
     || fail_step "Stage 3 (embed/MANIFEST.json drift)"
 
@@ -276,7 +281,7 @@ if ! kill -0 "${HTTP_SERVER_PID}" 2>/dev/null; then
 fi
 
 # ── Stage 2: Rust workspace tests ─────────────────────────────────
-log_step "Stage 4/7 — cargo test --workspace --release"
+log_step "Stage 4/8 — cargo test --workspace --release"
 cargo test --workspace --release \
     || fail_step "Stage 4 (cargo test --workspace)"
 
@@ -289,7 +294,7 @@ HTTP_SERVER_PID=""
 # generate.sh already runs `go build ./conformance/...` as a smoke check,
 # so a codegen drift that produces uncompilable Go (the package-alias bug
 # this hook was born to catch) surfaces right here.
-log_step "Stage 5/7 — Go forge conformance regenerate + go build"
+log_step "Stage 5/8 — Go forge conformance regenerate + go build"
 ( cd sce-forge-runtime/go/conformance && bash generate.sh ) \
     || fail_step "Stage 5 (Go forge conformance)"
 
@@ -297,7 +302,7 @@ log_step "Stage 5/7 — Go forge conformance regenerate + go build"
 # Uses a dedicated scratch build dir so it does not clobber a developer's
 # main build tree. The codegen dependency is passed explicitly via
 # -DSCE_CODEGEN so CMake cannot quietly pick up a stale binary.
-log_step "Stage 6/7 — C++ forge conformance build"
+log_step "Stage 6/8 — C++ forge conformance build"
 BUILD_DIR="$(mktemp -d)"
 cmake -S sce-forge-runtime/cpp/tests/conformance \
       -B "$BUILD_DIR" \
@@ -313,7 +318,7 @@ cmake --build "$BUILD_DIR" --parallel "$(nproc)" \
 # `urn:sce:extensions` → `http://sce.dev/ext` namespace migration) surface
 # well before link time. Run sce-codegen over each example SCXML in a
 # scratch output dir and abort push if any fail to produce artifacts.
-log_step "Stage 7/7 — Example SCXML codegen smoke"
+log_step "Stage 7/8 — Example SCXML codegen smoke"
 GEN_OUT="$(mktemp -d)"
 example_failures=0
 for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.scxml; do
@@ -327,4 +332,29 @@ for scxml in examples/doom_wasm/scxml/*.scxml examples/smart_light/smart_light.s
 done
 (( example_failures == 0 )) || fail_step "Stage 7 ($example_failures example(s) failed codegen)"
 
-printf '\npre-push: all 7 gates passed — push allowed.\n' >&2
+# ── Stage 8: Spec-citation ledgers (mirror spec-citations.yml) ────
+# Sub-second per workspace, measured 2026-06-10. This is the gate that
+# was missing when the doc-hygiene rounds added §mesh-13 / §wire-W*
+# cites without bindings and main went red post-push: the CI workflow
+# validates every workspace, the hook did not. Same commands, same
+# order; the migrate-citations form gates force every free-text cite
+# through the §-token channel the validator inspects.
+log_step "Stage 8/8 — spec-citation ledger validation (4 workspaces)"
+command -v mnemosyne-cli >/dev/null 2>&1 \
+    || fail_step "Stage 8 (mnemosyne-cli not on PATH — install per spec-citations.yml MNEMOSYNE_REV)"
+for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth; do
+    ( cd "$ws" \
+        && mnemosyne-cli validate-workspace >/dev/null \
+        && mnemosyne-cli validate-code-refs >/dev/null \
+        && mnemosyne-cli validate-verifies-linkage >/dev/null \
+        && mnemosyne-cli validate-content-drift >/dev/null ) \
+        || fail_step "Stage 8 (${ws} ledger validation)"
+done
+python3 tools/mnemosyne-adoption/migrate_citations.py --check \
+    --from-toml docs/spec/scxml/mnemosyne.toml >/dev/null \
+    || fail_step "Stage 8 (scxml citation-form gate)"
+python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace synth \
+    --from-toml docs/spec/synth/mnemosyne.toml >/dev/null \
+    || fail_step "Stage 8 (synth citation-form gate)"
+
+printf '\npre-push: all 8 gates passed — push allowed.\n' >&2

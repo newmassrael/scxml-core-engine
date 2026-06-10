@@ -1,0 +1,114 @@
+# Protocol-synthesis RFC spec-mirror workspace (Mnemosyne adoption, `synth`
+# namespace).
+#
+# This workspace mirrors an *external* SCE-facing design document: the RFC
+# "SCE Forge Extensions for Wire Protocol Synthesis", authored and revised in
+# the watching-zenoh repository (the consumer that commissioned the Forge
+# extension program). SCE vendors a revision-pinned snapshot at
+# docs/spec/synth/rfc-sce-protocol-synthesis.md — the committed, tracked,
+# human-readable carrier this ledger's sections are regenerated from by
+# tools/mnemosyne-adoption/synth_rfc_to_manifest.py via `import-sections`.
+# Unlike the scxml workspace there is no EPUB/excerpt projection: the snapshot
+# is plain markdown in-tree, so git itself is the tamper-evidence layer and
+# [workspace.spec_source] below carries the upstream provenance pin.
+#
+# The ledger exists so SCE code comments citing the RFC ("RFC §5.B",
+# "§6.2.6", "§5.J.2") resolve to a real section in the §synth-<id> form,
+# letting the set_equality_validator gate the enrolled modules. Section ids
+# follow the §-citation extractor's token rule (a dot survives only between
+# digits): 5.B -> synth-5-B, 5.J.2 -> synth-5-J-2, 6.2.6 -> synth-6.2.6 —
+# the same lettered-label hyphenation the scxml ledger uses (G.7 -> scxml-G-7).
+#
+# Rooted at the SCE repo root so cited/implemented code paths are canonical
+# (R386 anchor resolve); Section.implementations forbids `..` traversal, so
+# Path B binding needs the workspace root to be an ancestor of the documented
+# code. Ledger artifacts stay here via the repo-relative paths below.
+[workspace]
+root = "../../.."
+
+# Upstream provenance (the snapshot's source of authority). `revision` is the
+# watching-zenoh commit the snapshot was taken at; `fetched_sha256` hashes the
+# vendored markdown byte-for-byte. Re-pin on every deliberate snapshot bump:
+# copy the file at the new upstream commit, update revision/sha256/fetched_at,
+# regenerate the sections, and let validate-code-refs surface any cite the
+# upstream renumbering broke.
+[workspace.spec_source]
+url = "https://github.com/newmassrael/watching-zenoh/blob/main/docs/rfc-sce-protocol-synthesis.md"
+revision = "24cf572c745e62449f047ade0b2e5b10218bd346"
+fetched_sha256 = "17724ad0a5d4f8b441edb99426c9f9fa580cd5bf656d5daf4a3867fd235d6dbb"
+fetched_at = "2026-06-10"
+
+# Store is the sole SSOT (Mnemosyne R400 retired the markdown-doc render path);
+# the snapshot markdown above is the regen input and human-readable mirror,
+# not a parsed workspace doc.
+[atomic]
+sidecar_path = "docs/spec/synth/.atomic/workspace.atomic.json"
+
+[schema]
+changelog_titles = ["Revision History"]
+entry_id_prefix = "Rev "
+anchor_convention = "section_number"
+medium_name = "spec_mirror"
+
+# SCE's `(R<n>)` commit-subject labels are adoption-round counters, not
+# Mnemosyne changelog rounds, so the commit↔ledger drift gate (Mnemosyne
+# R293/R301) is advisory here rather than a hard reject (opt-out added in
+# Mnemosyne R377/R378), matching the other three workspaces.
+[commit_ledger]
+severity = "warn"
+
+# Code-citation defense (validate-code-refs). Paths are workspace-root
+# relative; this workspace lives three levels down (docs/spec/synth). The
+# free-text "RFC §5.B" cites were migrated to the §synth-<id> form by
+# tools/mnemosyne-adoption/migrate_citations.py --namespace synth.
+#
+#   section_namespace = "synth"  only §synth-<id> tokens are checked; §scxml-,
+#                                §mesh-, §wire- and still-bare §<n> cites in
+#                                the same files are skipped by the token
+#                                itself, so MIXED modules can be gated here
+#                                for their RFC cites while the other ledgers
+#                                gate theirs.
+#   severity_missing = "reject"  hallucination gate: a §synth-<id> with no
+#                                ledger section fails the run (the migrator
+#                                only emits ledger-present ids).
+#   severity_binding = "warn"    Path B (Section.implementations binding) is a
+#                                later curation round; advisory so unbacked
+#                                cites pass — the scxml R3 rollout pattern.
+#
+# Enrolled paths are the authored cite-bearing surfaces. Committed GENERATED
+# trees (tests/forge/expected, sce-rust-tests/src/generated) are deliberately
+# NOT enrolled: their cites are emitted by the enrolled templates, so gating
+# the templates gates them, and the §6.2.6 drift gate keeps the trees in
+# lockstep with the templates.
+[plugins.set_equality_validator]
+paths = [
+    "tools/codegen/templates",
+    "sce-build/src",
+    "sce-build/tests",
+    "sce-rust-runtime/src",
+    "sce-forge-runtime",
+    "sce-c-runtime/include",
+    "tests/forge/resources",
+    "scripts",
+    "schemas",
+]
+severity_missing = "reject"
+severity_binding = "warn"
+# Coverage stays advisory — a design-RFC mirror has motivation/non-goals/
+# rollout prose sections that legitimately carry no implements cite; the R385
+# split keeps binding honest without a per-section non-code carve-out.
+severity_coverage = "warn"
+comment_only = true
+section_namespace = "synth"
+
+# Path B symbol-binding resolvers (Mnemosyne R382), for the later curation
+# round: tree-sitter backends resolve (file, line) to the enclosing symbol for
+# the C++ and Rust enrolled surfaces. The symbol axis is opt-in per
+# Section.implementations entry that records a `symbol`.
+[plugins.symbol_resolver.cpp]
+transport = "in-process"
+backend = "tree-sitter-cpp"
+
+[plugins.symbol_resolver.rust]
+transport = "in-process"
+backend = "tree-sitter-rust"
