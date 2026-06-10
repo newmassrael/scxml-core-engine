@@ -16,8 +16,7 @@
 #
 # The generated tree lives under `sce-go-tests/integration/<stem>/`
 # rather than `sce-go-tests/<stem>/` so the W3C IRP and integration
-# trees stay disjoint at the directory level (RFC
-# `claudedocs/rfc-donedata-5-backend-layout.md` Q-1 + Q-1a).
+# trees stay disjoint at the directory level.
 #
 # Usage (from repo root):
 #   scripts/regen_donedata_local_invoke_go.sh

@@ -16,8 +16,8 @@
 # `sce-python-tests/generated/`) — CI runs this script before pytest
 # so the committed source tree never carries the SCE-GENERATED Python
 # files. The pybind11 channel test at `sce-python/tests/test_donedata_local_invoke.py`
-# stays untouched (RFC `claudedocs/rfc-donedata-5-backend-layout.md`
-# Q-4 dual-channel: pybind11 → C++ Interpreter + Python AOT codegen).
+# stays untouched (dual-channel: pybind11 → C++ Interpreter +
+# Python AOT codegen).
 #
 # Usage (from repo root):
 #   scripts/regen_donedata_local_invoke_python.sh

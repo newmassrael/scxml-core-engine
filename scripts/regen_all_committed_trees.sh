@@ -8,7 +8,7 @@
 #   1. W3C IRP committed trees (Rust + Kotlin)
 #   2. Integration committed trees (Rust + Kotlin + Go) via the
 #      new `generate-integration` CLI surface (RFC
-#      `claudedocs/rfc-donedata-5-backend-layout.md` Q-6 + Q-7).
+#      committed-tree refresh policy).
 #   3. Forge round-trip Go codec tree.
 #
 # Build-time backends (cpp / c11 / Python) are intentionally absent

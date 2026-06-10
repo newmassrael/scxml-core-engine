@@ -15,8 +15,7 @@
 #
 # The generated tree lives under `com/sce/integration/` instead of
 # `com/sce/generated/` so the W3C IRP and integration package roots
-# stay disjoint (RFC `claudedocs/rfc-donedata-5-backend-layout.md`
-# Q-1 + Q-1a). `--kotlin-package-prefix com.sce.integration` flips
+# stay disjoint. `--kotlin-package-prefix com.sce.integration` flips
 # the `package` header on every emitted file to match.
 #
 # Usage (from repo root):
