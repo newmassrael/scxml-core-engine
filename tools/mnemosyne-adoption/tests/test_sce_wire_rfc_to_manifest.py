@@ -30,7 +30,7 @@ sys.path.insert(0, str(TOOL_DIR))
 
 import sce_wire_rfc_to_manifest as conv  # noqa: E402
 
-WIRE_RFC = REPO_ROOT / "claudedocs" / "rfc-sce-diagnostic-wire-unification.md"
+WIRE_RFC = REPO_ROOT / "docs" / "sce-ledger" / "wire" / "rfc-sce-diagnostic-wire-unification.md"
 
 FRAGMENT = """\
 # RFC: Wire Contract
