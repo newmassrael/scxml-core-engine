@@ -420,7 +420,7 @@ pub fn transpile_lvalue(
 /// Parse an expression string into the typed AST without running
 /// type inference or any rename pass.
 ///
-/// Used by [`crate::forge::const_fold`] — the RFC §5.F build-time
+/// Used by [`crate::forge::const_fold`] — the RFC §synth-5-F build-time
 /// host interpreter walks the raw AST shape and evaluates leaves
 /// against typed `ConstValue` storage. The inference layer is
 /// irrelevant there because the evaluator carries `SceType`
@@ -1522,7 +1522,7 @@ fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
 /// `x.toDouble()`) is language-specific. Emitters keep their knowledge
 /// localized by consulting the tree's natural types.
 /// Decode a string literal's verbatim source `value` into its byte
-/// sequence for a `Bytes`-typed comparison (RFC §3 B2). Conservative:
+/// sequence for a `Bytes`-typed comparison (RFC §bytesguard-3 B2). Conservative:
 /// only printable ASCII (no backslash escape, no non-ASCII byte) is
 /// accepted — the byte sequence is then exactly `value.as_bytes()`,
 /// byte-identical on every backend with no target-compiler escape
@@ -1535,7 +1535,7 @@ fn flatten_member_path(expr: &TypedExpr) -> Option<String> {
 ///
 /// Exposed `pub(crate)` so the receive-side validator
 /// (`event_schema_check`) shares the exact same printable-ASCII
-/// admission rule (RFC §3 B2) instead of re-deriving it: a literal this
+/// admission rule (RFC §bytesguard-3 B2) instead of re-deriving it: a literal this
 /// helper declines is rejected at validation time with a clear
 /// diagnostic rather than slipping through to an ambiguous byte
 /// constant at codegen.
@@ -1555,7 +1555,7 @@ pub(crate) fn decode_bytes_literal(value: &str) -> Option<Vec<u8>> {
 /// retype it `Bytes`. No-op for every other shape (including a string
 /// literal whose content [`decode_bytes_literal`] declines). This is the
 /// single site that performs the string→bytes reinterpretation; emitters
-/// only render the resulting `BytesLit`. See RFC §3 B1.
+/// only render the resulting `BytesLit`. See RFC §bytesguard-3 B1.
 fn reinterpret_string_as_bytes(lit_node: &mut TypedExpr, other: &TypedExpr) {
     if !matches!(other.ty, InferredType::Bytes) {
         return;
@@ -1623,7 +1623,7 @@ pub(crate) fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
         ExprKind::Binary { op, left, right } => {
             infer_types(left, ctx);
             infer_types(right, ctx);
-            // Bytes reinterpretation (RFC §3 B1): a string literal compared
+            // Bytes reinterpretation (RFC §bytesguard-3 B1): a string literal compared
             // against a `Bytes`-typed operand denotes the literal's bytes,
             // not a target-language string. Rewrite the `StringLit` child
             // into a `BytesLit` carrying the decoded bytes so every emitter
@@ -2069,7 +2069,7 @@ fn cpp_emit_node(expr: &TypedExpr) -> String {
         // `std::vector<uint8_t>` has `operator==`, so the default
         // `==`/`!=` path compares length+content directly against this
         // value-constructed temporary. No byte-string literal in C++, so
-        // a hex initializer list. RFC §3 B5.
+        // a hex initializer list. RFC §bytesguard-3 B5.
         ExprKind::BytesLit { bytes } => {
             format!("std::vector<uint8_t>{{{}}}", bytes_as_hex_list(bytes))
         }
@@ -2344,7 +2344,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // `"ack".toByteArray()` is byte-identical to the ASCII literal
         // (UTF-8 default). Used as the `contentEquals` argument in the
-        // bytes-equality Binary branch below. RFC §3 B5.
+        // bytes-equality Binary branch below. RFC §bytesguard-3 B5.
         ExprKind::BytesLit { bytes } => {
             format!("\"{}\".toByteArray()", bytes_as_quoted_ascii(bytes))
         }
@@ -2355,7 +2355,7 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
         ExprKind::Binary { op, left, right } => {
             // Bytes equality: Kotlin `==` on `ByteArray` is reference
             // equality, so content comparison must use `contentEquals`.
-            // RFC §3 B3/B5 — only `===`/`!==` reach here for bytes.
+            // RFC §bytesguard-3 B3/B5 — only `===`/`!==` reach here for bytes.
             if matches!(op, BinOp::StrictEq | BinOp::StrictNeq)
                 && (matches!(left.ty, InferredType::Bytes)
                     || matches!(right.ty, InferredType::Bytes))
@@ -3027,7 +3027,7 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // Standalone fallback only — the bytes-equality Binary branch
         // renders operands itself (as `string(x)` / a string literal) so
-        // it needs no `bytes` import. RFC §3 B5.
+        // it needs no `bytes` import. RFC §bytesguard-3 B5.
         ExprKind::BytesLit { bytes } => format!("[]byte{{{}}}", bytes_as_hex_list(bytes)),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "nil".to_string(),
@@ -3037,7 +3037,7 @@ fn go_emit_node(expr: &TypedExpr) -> Result<String, ExprError> {
             // Bytes equality: Go forbids `==` on `[]byte` slices. Compare
             // via `string(slice)` conversion (no `bytes` import needed);
             // a `BytesLit` operand renders directly as a Go string literal.
-            // RFC §3 B3/B5 — only `===`/`!==` reach here for bytes.
+            // RFC §bytesguard-3 B3/B5 — only `===`/`!==` reach here for bytes.
             if matches!(op, BinOp::StrictEq | BinOp::StrictNeq)
                 && (matches!(left.ty, InferredType::Bytes)
                     || matches!(right.ty, InferredType::Bytes))
@@ -3295,7 +3295,7 @@ fn python_emit_node(expr: &TypedExpr) -> String {
         // `bytes == bytes` compares content, so the default `==`/`!=`
         // path needs no special-casing — only this constant rendering.
         // A `b"…"` literal (double-quoted so a `'` byte needs no escape).
-        // RFC §3 B5.
+        // RFC §bytesguard-3 B5.
         ExprKind::BytesLit { bytes } => format!("b\"{}\"", bytes_as_quoted_ascii(bytes)),
         ExprKind::BoolLit(b) => if *b { "True" } else { "False" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
@@ -3520,7 +3520,7 @@ fn c_emit_node(expr: &TypedExpr) -> String {
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
         // Standalone fallback — the bytes-equality Binary branch renders
         // the literal and its byte count itself (a `bytes` value has no
-        // length without its `_len` sibling). RFC §3 B5.
+        // length without its `_len` sibling). RFC §bytesguard-3 B5.
         ExprKind::BytesLit { bytes } => format!("\"{}\"", bytes_as_quoted_ascii(bytes)),
         ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         ExprKind::NullLit => "NULL".to_string(),
@@ -3534,7 +3534,7 @@ fn c_emit_node(expr: &TypedExpr) -> String {
             // plus `memcmp` over the asserted-equal byte count. A literal
             // operand fixes the count; the validator template's <string.h>
             // include (already added for the strcmp lowering below) also
-            // covers memcmp. RFC §3 B3/B5 — only `===`/`!==` reach here.
+            // covers memcmp. RFC §bytesguard-3 B3/B5 — only `===`/`!==` reach here.
             if matches!(op, BinOp::StrictEq | BinOp::StrictNeq)
                 && (matches!(left.ty, InferredType::Bytes)
                     || matches!(right.ty, InferredType::Bytes))
@@ -4013,7 +4013,7 @@ mod tests {
         assert_eq!(out, "ev.elapsed_ms");
     }
 
-    // ── Bytes equality (RFC §3 B1/B5) ───────────────────────────
+    // ── Bytes equality (RFC §bytesguard-3 B1/B5) ───────────────────────────
     // A string literal compared against a `Bytes`-typed operand is
     // reinterpreted as a byte sequence (`BytesLit`) and lowered to each
     // backend's content-equality primitive. The decoded bytes are
@@ -4082,7 +4082,7 @@ mod tests {
         );
     }
 
-    // A non-ASCII / escape-bearing literal is NOT reinterpreted (RFC §3
+    // A non-ASCII / escape-bearing literal is NOT reinterpreted (RFC §bytesguard-3
     // B2): the node stays a `StringLit`, so the comparison does not lower
     // to a byte constant. The receive-side validator rejects it later;
     // here we only assert the reinterpretation declined.

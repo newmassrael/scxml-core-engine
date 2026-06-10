@@ -85,10 +85,14 @@ DEFAULT_WIRE_LEDGER = os.path.join(
 DEFAULT_SYNTH_LEDGER = os.path.join(
     REPO_ROOT, "docs", "spec", "synth", ".atomic", "workspace.atomic.json"
 )
+DEFAULT_BYTESGUARD_LEDGER = os.path.join(
+    REPO_ROOT, "docs", "sce-ledger", "bytesguard", ".atomic", "workspace.atomic.json"
+)
 _NS_DEFAULT_LEDGER = {
     "mesh": DEFAULT_MESH_LEDGER,
     "wire": DEFAULT_WIRE_LEDGER,
     "synth": DEFAULT_SYNTH_LEDGER,
+    "bytesguard": DEFAULT_BYTESGUARD_LEDGER,
 }
 
 # A citation label: a numeric path (digits + dotted digits) or a lettered
@@ -129,6 +133,16 @@ WIRE_LABEL_RE = r"W[0-9]+(?:\.[0-9]+)?"
 SYNTH_LABEL_RE = r"[0-9]+(?:\.(?:[0-9]+|[A-Z]))*"
 SYNTH_DOC_MARKER_RE = re.compile(r"(?i)\bwatching-zenoh[ \t]+RFC[ \t]*§?[ \t]*$")
 
+# The bytesguard namespace (EventSchema bytes-guard RFC, docs/sce-ledger/
+# bytesguard) has purely numeric labels (1, 1.3, 3, 3.1, 6) — every one
+# collides with sibling-ledger numbers AND with the other internal documents
+# that share the bare "RFC §<n>" convention, so a bytesguard cite is claimed
+# ONLY under its document-naming marker ("rfc-eventschema-bytes-guard.md §3",
+# backtick-quoted or bare). Unmarked sightings are reported; the reviewer
+# resolves confirmed ones to the §bytesguard-<n> form directly.
+BYTESGUARD_LABEL_RE = r"[0-9]+(?:\.[0-9]+)*"
+BYTESGUARD_DOC_MARKER_RE = re.compile(r"bytes-guard\.md`?[ \t]*$")
+
 # An external-standard marker that DIRECTLY precedes the sigil (anchored to the
 # end of the line-so-far) names a non-mesh citation the bare-sigil migrator must
 # not claim:
@@ -165,12 +179,43 @@ KNOWN_EXTS = SLASH_EXTS | HASH_EXTS | WHOLE_TEXT_EXTS
 
 def comment_mask(text, nested):
     """Return a bytearray-like list of booleans, True where text[i] is inside a
-    line or block comment (and not inside a string/char literal)."""
+    line or block comment (and not inside a string/char literal).
+
+    Rust-aware when `nested` is set (the .rs dispatch): raw strings
+    (`r"..."`, `r#"..."#`, `br##"..."##`) terminate only at the matching
+    `"#...#` run — a plain-quote state machine flips parity on a raw-string
+    body containing an odd number of `"` and silently mis-masks everything
+    after it (found on forge/diagnostic.rs, 316 raw strings; comment cites
+    downstream were skipped). A `'` is a char literal only when it closes
+    within the next few chars (`'x'`, `'\\n'`, `'\\u{...}'`); otherwise it is
+    a lifetime (`&'a str`, `'static`) and must not open a string-like state."""
     mask = [False] * len(text)
     i, n = 0, len(text)
-    NORMAL, STR, CHR, LINE, BLOCK = range(5)
+    NORMAL, STR, LINE, BLOCK = range(4)
     state = NORMAL
     depth = 0
+
+    def char_literal_end(start):
+        """Index one past a char literal opening at text[start] == \"'\", or
+        None if this quote is a lifetime, not a char literal."""
+        j = start + 1
+        if j >= n:
+            return None
+        if text[j] == "\\":
+            j += 2
+            if j < n and text[j - 1] == "u" and text[j] == "{":
+                close = text.find("}", j)
+                if close == -1:
+                    return None
+                j = close + 1
+        elif text[j] == "'":
+            return None  # '' is not a char literal
+        else:
+            j += 1
+        if j < n and text[j] == "'":
+            return j + 1
+        return None
+
     while i < n:
         c = text[i]
         nxt = text[i + 1] if i + 1 < n else ""
@@ -186,23 +231,55 @@ def comment_mask(text, nested):
                 mask[i] = mask[i + 1] = True
                 i += 2
                 continue
-            if c == '"':
+            # Rust raw / byte-raw strings: r"..."  r#"..."#  br##"..."##.
+            # The body is opaque (no escapes); it ends at `"` + the same
+            # number of `#` as the opener.
+            if nested and c in "rb":
+                j = i
+                if text[j] == "b" and j + 1 < n and text[j + 1] == "r":
+                    j += 1
+                if text[j] == "r":
+                    k = j + 1
+                    hashes = 0
+                    while k < n and text[k] == "#":
+                        hashes += 1
+                        k += 1
+                    if k < n and text[k] == '"':
+                        closer = '"' + "#" * hashes
+                        end = text.find(closer, k + 1)
+                        i = n if end == -1 else end + len(closer)
+                        continue
+            if c == '"' or (nested and c == "b" and nxt == '"'):
+                if c == "b":
+                    i += 1  # the opening quote of a byte string
                 state = STR
-            elif c == "'":
-                state = CHR
+                i += 1
+                continue
+            if c == "'":
+                if nested:
+                    end = char_literal_end(i)
+                    i = end if end is not None else i + 1
+                    continue
+                # Non-Rust C family: treat as a char literal with escapes.
+                j = i + 1
+                while j < n:
+                    if text[j] == "\\":
+                        j += 2
+                        continue
+                    if text[j] == "'":
+                        j += 1
+                        break
+                    if text[j] == "\n":
+                        break  # unterminated; bail at line end
+                    j += 1
+                i = j
+                continue
             i += 1
         elif state == STR:
             if c == "\\":
                 i += 2
                 continue
             if c == '"':
-                state = NORMAL
-            i += 1
-        elif state == CHR:
-            if c == "\\":
-                i += 2
-                continue
-            if c == "'":
                 state = NORMAL
             i += 1
         elif state == LINE:
@@ -412,6 +489,7 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
     label_re = {
         "wire": WIRE_LABEL_RE,
         "synth": SYNTH_LABEL_RE,
+        "bytesguard": BYTESGUARD_LABEL_RE,
     }.get(namespace, MESH_LABEL_RE)
     chain = label_re + r"(?:/" + label_re + r")*"
     pattern = re.compile(r"§[ \t]*(?P<barechain>" + chain + r")")
@@ -468,13 +546,18 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
         # the protocol-synthesis RFC explicitly, so a numeric label under it
         # is claimable. Ledger membership still gates either way.
         synth_doc_marked = namespace == "synth" and SYNTH_DOC_MARKER_RE.search(line_prefix)
+        bguard_doc_marked = namespace == "bytesguard" and BYTESGUARD_DOC_MARKER_RE.search(
+            line_prefix
+        )
         reasons = []
         for lbl, sid in zip(labels, ids):
             leaf = _leaf(lbl, namespace)
             lettered = namespace == "synth" and any(ch.isupper() for ch in lbl)
             if sid not in target_ids:
                 reasons.append((lbl, sid, f"id not in {namespace} ledger (non-section)"))
-            elif namespace == "synth" and not lettered and not synth_doc_marked:
+            elif (namespace == "synth" and not lettered and not synth_doc_marked) or (
+                namespace == "bytesguard" and not bguard_doc_marked
+            ):
                 reasons.append(
                     (
                         lbl,
@@ -482,7 +565,7 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
                         "numeric label without document-naming marker; manual review",
                     )
                 )
-            elif not synth_doc_marked and any(
+            elif not synth_doc_marked and not bguard_doc_marked and any(
                 (ns + "-" + leaf) in exclude_ids for ns in ("scxml", "mesh")
             ):
                 reasons.append((lbl, sid, "ambiguous: also a sibling-ledger section; manual review"))
@@ -557,10 +640,11 @@ def main(argv=None):
     ap.add_argument(
         "--namespace",
         default="scxml",
-        choices=["scxml", "mesh", "wire", "synth"],
+        choices=["scxml", "mesh", "wire", "synth", "bytesguard"],
         help="scxml: W3C-marked cites (default); mesh: bare §<n> SCE_MESH.md "
         "cites; wire: bare §W<n> Wire RFC wave cites; synth: protocol-"
-        'synthesis RFC cites ("RFC §5.B" marked + bare §5.J.2 / §6.2.6)',
+        'synthesis RFC cites ("RFC §5.B" marked + bare §5.J.2 / §6.2.6); '
+        "bytesguard: rfc-eventschema-bytes-guard.md-marked cites",
     )
     ap.add_argument(
         "--ledger",

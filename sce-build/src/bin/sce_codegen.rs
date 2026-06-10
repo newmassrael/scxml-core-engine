@@ -384,7 +384,7 @@ struct RejectedDocument {
 /// * `needs_script_engine` — whether the compiled machine needs a
 ///   runtime script engine.
 /// * `rejected` — present only when the document was rejected by a
-///   W3C-spec rule (e.g. W3C SCXML 5.8) and stub files were written
+///   W3C-spec rule (e.g. §scxml-5.8) and stub files were written
 ///   in its place. Absence means clean generation.
 #[derive(Serialize)]
 struct GenerateManifest<'a> {
@@ -441,7 +441,7 @@ fn emit_generate_manifest(report: &GenerateReport) {
 struct Cli {
     /// Override the SCE workspace root. The workspace root is the
     /// directory carrying `tools/codegen/templates/` and the
-    /// `Cargo.lock` that feed the §6.2.6 `template-hash`. Resolution
+    /// `Cargo.lock` that feed the §synth-6.2.6 `template-hash`. Resolution
     /// priority: this flag → `SCE_WORKSPACE_ROOT` env var →
     /// `CARGO_MANIFEST_DIR/..` (compile-time, used for vendored
     /// builds where cwd lives in the consumer workspace) → walk up
@@ -2880,7 +2880,7 @@ fn generate_w3c_unified(
         return;
     }
 
-    // Spec §6.2.6 drift context — input root is the W3C resources
+    // Spec §synth-6.2.6 drift context — input root is the W3C resources
     // tree; one hash pair covers every emitted parent SM + child SM
     // + test harness across all 202 tests in this invocation.
     let drift_ctx = DriftContext::compute(resources_dir, None);
@@ -2929,7 +2929,7 @@ fn generate_w3c_unified(
             Ok(mut model) => {
                 analyzer::analyze(&mut model, scxml_str);
 
-                // W3C SCXML 5.8: document_rejected models have initial->pass already
+                // §scxml-5.8: document_rejected models have initial->pass already
                 // redirected by the parser, so they CAN be generated. Only skip
                 // truly dynamic models.
                 if analyzer::can_generate_static(&model).is_err() && !model.document_rejected {
@@ -2971,12 +2971,12 @@ fn generate_w3c_unified(
                         // Post-write hook (e.g. Rust writes initial mod.rs)
                         backend.post_write_parent(test_id, &test_mod_dir, input_stem, &drift_ctx);
 
-                        // Watching-zenoh RFC §5.O — sourcemap
+                        // Watching-zenoh RFC §synth-5-O — sourcemap
                         // JSON sidecar. Byte-identical across backends
                         // for the same SCXML input.
                         emit_sourcemap_for_machine(&model, &test_mod_dir, &drift_ctx);
 
-                        // W3C SCXML 6.4: Generate hybrid SCXML stubs + child state machines
+                        // §scxml-6.4: Generate hybrid SCXML stubs + child state machines
                         // (only for backends that use per-test subdirs; C++ handles children via CMake)
                         if backend.uses_per_test_subdirs() {
                             generate_hybrid_child_scxmls(&model, &test_mod_dir);

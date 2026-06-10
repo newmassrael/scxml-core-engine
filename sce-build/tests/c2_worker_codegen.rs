@@ -256,7 +256,7 @@ fn happy_worker_c11_emits_header_and_impl_sibling() {
         "try_pop prototype missing:\n{header}"
     );
     // Source shape — acq_rel selects acquire/release variants of the
-    // §5.I baseline atomic family.
+    // §synth-5-I baseline atomic family.
     assert!(
         source.contains("sce_atomic_load_acquire_u32"),
         "acquire load missing in .c:\n{source}"

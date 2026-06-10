@@ -96,7 +96,7 @@ pub const STATES: [SlotState; 7] = [
     SlotState::CpuRef,
 ];
 
-/// Cache-maintenance annotation on a transition edge. Spec §5.E
+/// Cache-maintenance annotation on a transition edge. Spec §synth-5-E
 /// lines 1182-1228. The IR carries this annotation; per-edge
 /// emission has no consumer — the shipped cache-maintenance emit
 /// (item C5) gates on the pool-level `cache-policy: maintain` flag
@@ -119,7 +119,7 @@ pub enum CacheOp {
     CleanOnNextHandOff,
 }
 
-/// One legal edge of the slot-lifecycle FSM. Spec §5.E lines 1141-1156.
+/// One legal edge of the slot-lifecycle FSM. Spec §synth-5-E lines 1141-1156.
 #[derive(Debug, Clone, Copy)]
 pub struct Transition {
     /// Source state.
@@ -139,7 +139,7 @@ pub struct Transition {
     pub author_callable: bool,
 }
 
-/// The eleven legal transitions, verbatim from spec §5.E lines
+/// The eleven legal transitions, verbatim from spec §synth-5-E lines
 /// 1141-1156. Every emitted slot operation maps to one entry; the
 /// FSM is total per spec line 1159 ("every emitted operation that
 /// touches a slot maps to a transition").

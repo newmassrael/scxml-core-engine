@@ -386,7 +386,7 @@ fn format_float_lit(
 // Internal: scope, eval values, statement / expression walker
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// Lexical scope of a fold-body iteration. RFC §5.F declares the
+/// Lexical scope of a fold-body iteration. RFC §synth-5-F declares the
 /// scope is per-iteration ("running `body` against a fresh local
 /// scope per iteration") so each fold tick gets a brand-new
 /// [`Scope`]; nested while/foreach bodies inherit the outer scope by

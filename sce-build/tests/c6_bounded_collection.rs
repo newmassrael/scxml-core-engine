@@ -203,7 +203,7 @@ fn capacity_no_source_rejects() {
 }
 
 /// Spec-named diagnostic #1 — `collection/ordering-sorted-requires-
-/// index-by` (RFC §5.L line 2559): `<sce:ordering>sorted-by(index-by)
+/// index-by` (RFC §synth-5-L line 2559): `<sce:ordering>sorted-by(index-by)
 /// </sce:ordering>` declared without an `<sce:index-by>` element.
 #[test]
 fn ordering_sorted_without_index_by_fires_spec_code() {
@@ -237,7 +237,7 @@ fn ordering_sorted_without_index_by_fires_spec_code() {
 }
 
 /// Spec-named diagnostic #2 — `collection/overflow-policy-oldest-wins-
-/// requires-ordering-insertion` (RFC §5.L line 2655): `oldest-wins`
+/// requires-ordering-insertion` (RFC §synth-5-L line 2655): `oldest-wins`
 /// overflow paired with `sorted-by(index-by)` ordering — the explicit
 /// anti-pattern (no temporal "oldest" defined when iteration order is
 /// comparator-derived).

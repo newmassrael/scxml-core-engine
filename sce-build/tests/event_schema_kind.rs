@@ -228,7 +228,7 @@ fn negative_type_mismatch_rejects_with_typed_diagnostic() {
 }
 
 // ─── Positive: bytes-field schema + by-value equality guard ───
-//     RFC rfc-eventschema-bytes-guard.md §3 — the gate is flipped, so a
+//     RFC rfc-eventschema-bytes-guard.md §bytesguard-3 — the gate is flipped, so a
 //     bytes field is payload-eligible and an equality guard against a
 //     printable-ASCII literal compiles (lowers natively on all six).
 
@@ -245,7 +245,7 @@ fn positive_bytes_event_schema_compiles() {
         .expect("orchestrator should accept bytes schema + equality guard");
 }
 
-// ─── Negative: ordering operator on a bytes operand (RFC §3 B3) ───
+// ─── Negative: ordering operator on a bytes operand (RFC §bytesguard-3 B3) ───
 
 #[test]
 fn negative_bytes_ordering_rejects_with_typed_diagnostic() {
@@ -274,7 +274,7 @@ fn negative_bytes_ordering_rejects_with_typed_diagnostic() {
     }
 }
 
-// ─── Negative: non-printable-ASCII literal vs bytes field (RFC §3 B2) ─
+// ─── Negative: non-printable-ASCII literal vs bytes field (RFC §bytesguard-3 B2) ─
 
 #[test]
 fn negative_bytes_non_ascii_literal_rejects() {

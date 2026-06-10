@@ -107,7 +107,7 @@ fn buffer_pool_explicit_default_variant_parses() {
 /// sum-type `Reassembly(ReassemblyConfig { ... })` arm carries the
 /// three field values verbatim from the parsed XML body text.
 ///
-/// Verbatim spec example values come from RFC §5.M lines 2683-2691.
+/// Verbatim spec example values come from RFC §synth-5-M lines 2683-2691.
 #[test]
 fn buffer_pool_reassembly_variant_full_schema_parses() {
     let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -139,7 +139,7 @@ fn buffer_pool_reassembly_variant_full_schema_parses() {
     }
 }
 
-/// Spec-named code #1: RFC §5.M line 2944 —
+/// Spec-named code #1: RFC §synth-5-M line 2944 —
 /// `<sce:variant>reassembly</sce:variant>` declared without
 /// `<sce:max-fragments-per-message>` raises
 /// `mem/reassembly-pool-variant-missing-max-fragments`.
@@ -170,7 +170,7 @@ fn reassembly_variant_missing_max_fragments_fires_spec_code() {
     assert_eq!(pool_name, "rx_reassembly_pool");
 }
 
-/// Spec-named code #2: RFC §5.M line 2945 —
+/// Spec-named code #2: RFC §synth-5-M line 2945 —
 /// `<sce:variant>reassembly</sce:variant>` declared without
 /// `<sce:reassembly-timeout-ms>` raises
 /// `mem/reassembly-pool-variant-missing-timeout`.
@@ -271,8 +271,8 @@ fn default_variant_with_reassembly_sibling_rejects() {
 
 /// Closed-enum gate: `<sce:variant>unknown</sce:variant>` body text
 /// outside the `{default, reassembly}` set rejects via
-/// `InvalidAttribute`. Spec §5.M line 2682 fixes the only currently-
-/// defined variant value; future spec extensions (per §5.E "FSM
+/// `InvalidAttribute`. Spec §synth-5-M line 2682 fixes the only currently-
+/// defined variant value; future spec extensions (per §synth-5-E "FSM
 /// extension policy") will add new values additively.
 #[test]
 fn variant_unknown_body_text_rejects() {

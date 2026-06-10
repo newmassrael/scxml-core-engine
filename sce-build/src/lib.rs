@@ -745,7 +745,7 @@ pub fn compile_forge_from_string(
         )
     })?;
 
-    // Watching-zenoh RFC §5.O — forge IR provenance pre-emit
+    // Watching-zenoh RFC §synth-5-O — forge IR provenance pre-emit
     // guard. Mirrors the SCXML-side `validate_emission_provenance`
     // placement (compile_model* in this same file). The walker fires
     // `traceability/scxml-line-range-missing` when a per-kind body
@@ -767,11 +767,11 @@ pub fn compile_forge_from_string(
 }
 
 /// Forge codegen entry that consumes deploy.yaml machine context for
-/// validate-time OS-axis checks — RFC §5.C.
+/// validate-time OS-axis checks — RFC §synth-5-C.
 ///
 /// Layered on top of [`compile_forge_from_string`]: parses, then runs
 /// per-kind deploy-aware validators, then generates. Today the only
-/// validator wired here is the §5.C link-class × `platform.os` matrix
+/// validator wired here is the §synth-5-C link-class × `platform.os` matrix
 /// ([`forge::model::LinkClass::admits_os`]); further forge kinds opt
 /// into deploy-aware validation by adding their own arms here without
 /// affecting this entry's signature.
@@ -797,10 +797,10 @@ pub fn compile_forge_with_deploy(
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::{Located, ValidationError};
 
-    // watching-zenoh RFC §5.I — load target plugin from
+    // watching-zenoh RFC §synth-5-I — load target plugin from
     // deploy.yaml `extern_symbols.target_plugin: <path>` (a
     // path-pointed YAML). Plugin entries extend
-    // the §5.I baseline registry; baseline-shadowing surfaces as
+    // the §synth-5-I baseline registry; baseline-shadowing surfaces as
     // `extern/target-plugin-symbol-conflict` (spec line 1852 verbatim).
     // Absent deploy or absent extern_symbols ⇒ baseline-only registry,
     // matching the plugin-free baseline semantics.
@@ -810,7 +810,7 @@ pub fn compile_forge_with_deploy(
     };
 
     // C13 deferred-2: stateless_accept extern allowlist (watching-zenoh
-    // RFC §5.K line 2466-2469). Single-doc path runs the same
+    // RFC §synth-5-K line 2466-2469). Single-doc path runs the same
     // allowlist check the orchestrator runs, against the same composed
     // (baseline ∪ plugin_symbols) registry. Failure short-circuits
     // before parse so callers that hit `compile_forge_with_deploy`
@@ -2761,7 +2761,7 @@ fn language_wire_name(lang: generator::Language) -> &'static str {
     }
 }
 
-/// Recursively resolve a codec's full encode-buffer max bytes — RFC §5.B.
+/// Recursively resolve a codec's full encode-buffer max bytes — RFC §synth-5-B.
 /// Mirrors the parent generator's `m.max_frame_bytes() + body_max`
 /// formula (see `forge::generator` `render_codec` max-bytes computation),
 /// but applies it transitively so a parent codec that imports a
@@ -6456,7 +6456,7 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C: link kind happy path. A
+    /// Watching-zenoh RFC §synth-5-C: link kind happy path. A
     /// well-formed `<sce:kind="link">` document with udp class +
     /// framer ref + minimal events → Rust generator emits a
     /// `<Pascal><L: Link>` wrapper struct that routes RX/TX through
@@ -6571,8 +6571,8 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C: `<sce:link-class>` body text
-    /// outside the closed enum (RFC §5.C lines 765-771 — `udp` /
+    /// Watching-zenoh RFC §synth-5-C: `<sce:link-class>` body text
+    /// outside the closed enum (RFC §synth-5-C lines 765-771 — `udp` /
     /// `tcp` / `serial` / `websocket` / `raw_eth`) is caught by the
     /// XSD `linkClassType` enumeration in the default pipeline,
     /// surfacing as `xml/schema-validation` to the author. The
@@ -6622,7 +6622,7 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C: `<sce:backpressure>` element is
+    /// Watching-zenoh RFC §synth-5-C: `<sce:backpressure>` element is
     /// required on every link kind. Earlier behaviour tolerated the missing
     /// element by parser-side defaulting to `drop`; now the
     /// absence is a hard error (`link/backpressure-undeclared`) so
@@ -6670,9 +6670,9 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C: `<sce:link-class>` must be admitted by
+    /// Watching-zenoh RFC §synth-5-C: `<sce:link-class>` must be admitted by
     /// the deploy-resolved `platform.os`. The strict-literal matrix at
-    /// [`forge::model::LinkClass::admits_os`] mirrors RFC §5.C lines 765-771
+    /// [`forge::model::LinkClass::admits_os`] mirrors RFC §synth-5-C lines 765-771
     /// — `serial` admits `bare_metal` only. Compiling an `udp_scout`-style
     /// link with `<sce:link-class>serial</sce:link-class>` against a
     /// `platform: { class: ap, os: linux }` machine raises
@@ -6768,7 +6768,7 @@ topology:
         }
     }
 
-    /// Watching-zenoh RFC §5.C / §5.J.4: link is the first
+    /// Watching-zenoh RFC §synth-5-C / §synth-5-J-4: link is the first
     /// `KindClass::McuClass` kind. Authoring against cpp/kotlin/go/
     /// python raises `codegen/mcu-class-kind-on-non-mcu-language` via
     /// the existing A6 gate at `codegen_matrix::check`. Asserting on
@@ -6811,7 +6811,7 @@ topology:
         }
     }
 
-    /// Watching-zenoh RFC §5.C: link kind c11 happy path. Same
+    /// Watching-zenoh RFC §synth-5-C: link kind c11 happy path. Same
     /// fixture as the rust happy test → C11 generator emits a header
     /// composing a `sce_forge_link_t` driver via the canonical Linux-
     /// kernel separate-vtable shape (`const sce_forge_link_ops_t *ops` +
@@ -8744,7 +8744,7 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E / §5.J.4: buffer-pool is the second
+    /// Watching-zenoh RFC §synth-5-E / §synth-5-J-4: buffer-pool is the second
     /// `KindClass::McuClass` kind (after Link). Authoring against
     /// cpp/kotlin/go/python raises `codegen/mcu-class-kind-on-non-mcu-language`
     /// via the existing MCU-class kind gate. C11 succeeds — the
@@ -8806,7 +8806,7 @@ topology:
         assert_eq!(out.files.len(), 2, "c11 emits header + linker fragment",);
     }
 
-    /// Watching-zenoh RFC §5.E: section-placement validation.
+    /// Watching-zenoh RFC §synth-5-E: section-placement validation.
     /// `<sce:section>` body must resolve against the deploy-resolved
     /// machine's `memory.sram_regions` map. Compiling a buffer-pool
     /// with `<sce:section>nonexistent</sce:section>` against a machine
@@ -8901,7 +8901,7 @@ topology:
         assert_eq!(no_deploy_out.files.len(), 1);
     }
 
-    /// Watching-zenoh RFC §5.E: positive case for section-placement
+    /// Watching-zenoh RFC §synth-5-E: positive case for section-placement
     /// validation.
     /// A pool with `<sce:section>sram1</sce:section>` against a machine
     /// declaring `sram1` in `memory.sram_regions` passes validation and
@@ -8957,7 +8957,7 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E negative coverage. The XSD at
+    /// Watching-zenoh RFC §synth-5-E negative coverage. The XSD at
     /// `schemas/sce-forge-ext.xsd` constrains `<sce:cache-policy>` to
     /// the closed enumeration AND `<sce:slot-count>` / `<sce:slot-size>`
     /// / `<sce:alignment>` to `xs:positiveInteger` — so bogus body text
@@ -9044,9 +9044,9 @@ topology:
         );
     }
 
-    // ── §5.E buffer-pool kind c11 parity + linker fragment ─────
+    // ── §synth-5-E buffer-pool kind c11 parity + linker fragment ─────
 
-    /// Watching-zenoh RFC §5.E: c11 parity for the rust slot
+    /// Watching-zenoh RFC §synth-5-E: c11 parity for the rust slot
     /// table. Compiling a well-formed buffer-pool to
     /// `Language::C11` emits a header that places the storage table
     /// in `__attribute__((section(".sram1_<name>"), aligned(32)))` and
@@ -9128,7 +9128,7 @@ topology:
             "storage shape must be [SLOT_COUNT][SLOT_SIZE]; full header:\n{header}",
         );
         // γ: STATE_COUNT / TRANSITION_COUNT macros mirror the
-        // forge::buffer_pool_fsm IR module (7 + 11 per §5.E lines
+        // forge::buffer_pool_fsm IR module (7 + 11 per §synth-5-E lines
         // 1129-1135 / 1141-1156).
         assert!(
             header.contains("#define RX_POOL_SRAM1_STATE_COUNT ((size_t)7)"),
@@ -9139,7 +9139,7 @@ topology:
             "TRANSITION_COUNT macro must mirror forge::buffer_pool_fsm::TRANSITION_COUNT; full header:\n{header}",
         );
         // ε: the seven-state FSM enum + tag-checked handle struct
-        // (spec §5.E lines 1129-1135 / 1239-1242) now live in
+        // (spec §synth-5-E lines 1129-1135 / 1239-1242) now live in
         // `<sce/sample.h>` (sce-c-runtime Tier 1 INTERFACE). The
         // per-pool emit pulls them in transitively so downstream code
         // compiling against just `<pool>.h` still sees the canonical
@@ -9313,7 +9313,7 @@ int main(void) {
             // same suppression neutralises the `SCE_CONSUMABLE`
             // whole-struct attribute on `sce_sample_t` from
             // `<sce/sample.h>` — the typestate family is silently-
-            // inert on host gcc per §5.E lines 1444-1453.
+            // inert on host gcc per §synth-5-E lines 1444-1453.
             .arg("-D__attribute__(x)=")
             .arg("-I")
             .arg(&tmp)
@@ -9348,7 +9348,7 @@ int main(void) {
         );
     }
 
-    /// Watching-zenoh RFC §5.E: region-size check on
+    /// Watching-zenoh RFC §synth-5-E: region-size check on
     /// [`compile_forge_with_deploy`]. After section validation passes
     /// (the prerequisite gate), the storage footprint must fit the
     /// resolved region's `size`. A pool declaring `slot_count=32` ×
@@ -9424,7 +9424,7 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E positive path: a pool whose
+    /// Watching-zenoh RFC §synth-5-E positive path: a pool whose
     /// storage footprint fits the resolved region size passes
     /// validation under [`compile_forge_with_deploy`] and produces
     /// the same (.h, .ld) pair as the deploy-unaware c11 entry.
@@ -9473,11 +9473,11 @@ topology:
         assert_eq!(out.files.len(), 2, "c11 emits header + linker fragment");
     }
 
-    /// Watching-zenoh RFC §5.E codegen-invariant force-fixture (linker
+    /// Watching-zenoh RFC §synth-5-E codegen-invariant force-fixture (linker
     /// padding sentinel).
     /// The `mem/inter-pool-padding-not-emitted` self-check inspects
     /// the rendered linker fragment for the `. = ALIGN(N);` sentinel
-    /// (§5.E lines 1059-1064). In normal use the template always
+    /// (§synth-5-E lines 1059-1064). In normal use the template always
     /// emits the sentinel — the diagnostic exists to catch a future
     /// template edit that drops it. This force-fixture drives the
     /// invariant check directly with a synthesized broken fragment
@@ -9526,7 +9526,7 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E codegen-invariant force-fixture
+    /// Watching-zenoh RFC §synth-5-E codegen-invariant force-fixture
     /// (sample.h include guard).
     /// The `pool/sample-typestate-attributes-disabled` self-check
     /// guards the `#include <sce/sample.h>` directive in
@@ -9613,7 +9613,7 @@ topology:
         None
     }
 
-    /// Watching-zenoh RFC §5.E: Clang `-Wconsumed`
+    /// Watching-zenoh RFC §synth-5-E: Clang `-Wconsumed`
     /// `-Wthread-safety` rejects three Layer 1 typestate misuse
     /// patterns against the runtime header
     /// `sce-c-runtime/include/sce/sample.h`:
@@ -9757,7 +9757,7 @@ int main(void) {
         }
     }
 
-    /// Watching-zenoh RFC §5.E: the silently-inert axis.
+    /// Watching-zenoh RFC §synth-5-E: the silently-inert axis.
     /// On non-Clang toolchains the Layer 1 attribute family (per
     /// `<sce/sample.h>`) expands to empty per spec lines 1444-1453;
     /// the emitted pool header + transitively pulled-in sample.h must
@@ -9880,9 +9880,9 @@ int main(void) { (void)0; return 0; }
         );
     }
 
-    // ── §5.C / §5.E link-side pool-ref schema ──────────────────
+    // ── §synth-5-C / §synth-5-E link-side pool-ref schema ──────────────────
 
-    /// Watching-zenoh RFC §5.C body + §5.E schema-only: a link
+    /// Watching-zenoh RFC §synth-5-C body + §synth-5-E schema-only: a link
     /// document with `<sce:rx-pool ref="..."/>` / `<sce:tx-pool ref="..."/>`
     /// children parses successfully and emits the pool refs as
     /// `pub const RX_POOL` / `pub const TX_POOL` on the wrapper struct.
@@ -9943,7 +9943,7 @@ int main(void) { (void)0; return 0; }
         );
     }
 
-    /// watching-zenoh RFC §5.E stage-pool gate: link-side
+    /// watching-zenoh RFC §synth-5-E stage-pool gate: link-side
     /// `<sce:stage-pool ref="X"/>` lowers to a `STAGE_POOL` const on
     /// the Rust side and a `_LINK_STAGE_POOL` macro on the C11 side,
     /// mirroring the `<sce:rx-pool>` / `<sce:tx-pool>` precedent. The
@@ -10014,7 +10014,7 @@ int main(void) { (void)0; return 0; }
         );
     }
 
-    /// RFC §5.C cross-resolution fixtures. Three sibling files in
+    /// RFC §synth-5-C cross-resolution fixtures. Three sibling files in
     /// a tempdir — link.scxml + scout_frame_codec.scxml + a buffer-pool —
     /// drive `compile_forge_with_imports` through enrichment so the
     /// link's `<sce:rx-pool>` / `<sce:tx-pool>` ref can be cross-checked

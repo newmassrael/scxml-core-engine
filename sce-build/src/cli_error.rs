@@ -82,7 +82,7 @@ pub enum CliError {
     #[error("No <scxml> tag found in {path}")]
     NoScxmlTag { path: String },
 
-    /// Spec §6.2.6 generated-source drift: the embedded `source-hash`
+    /// Spec §synth-6.2.6 generated-source drift: the embedded `source-hash`
     /// or `template-hash` in a generated file no longer matches the
     /// recomputed value over the current source + template state.
     /// `axis` carries `"source"` or `"template"` to disambiguate which

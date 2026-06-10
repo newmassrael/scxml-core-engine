@@ -1842,7 +1842,7 @@ fn c11_event_token(event: &str) -> String {
 /// `sce:max-size`, else `BYTES_DEFAULT_MAX`. The inject seam copies the
 /// struct by value, so the buffer is owned and survives the event queue;
 /// the native guard reads `<id>` and `<id>_len` (see the C bytes-equality
-/// lowering in [`crate::forge::expr`]). RFC §3 B4. Every other field type
+/// lowering in [`crate::forge::expr`]). RFC §bytesguard-3 B4. Every other field type
 /// is a self-contained scalar via [`LangCtx::resolved_type`].
 fn c11_payload_field_decl(l: &LangCtx, f: &ForgeField) -> String {
     if matches!(f.sce_type, SceType::Bytes) {
@@ -3055,7 +3055,7 @@ fn render_codec(
     imports: &[ImportContext],
     lang: crate::generator::Language,
 ) -> Result<String, ForgeError> {
-    // RFC §5.B "MCU-only codec sub-features" — codec-content-level MCU
+    // RFC §synth-5-B "MCU-only codec sub-features" — codec-content-level MCU
     // classification. After the all-backend closures only DMA alignment (item B3)
     // genuinely needs MCU-class hardware (memory-mapped peripherals,
     // DMA controllers, fixed-offset wire-layout invariants). TLV chain
@@ -3091,7 +3091,7 @@ fn render_codec(
         }
     }
 
-    // RFC §5.B `sce:type="string"` closure: all six backends (Rust / Cpp /
+    // RFC §synth-5-B `sce:type="string"` closure: all six backends (Rust / Cpp /
     // Kotlin / Go / Python / C11) emit `sce:type="string"` codec
     // fields. The C11 closure shape is `char[N] + size_t len`
     // (parallel to the bytes pair) with `sce_forge_is_valid_utf8`
@@ -3101,14 +3101,14 @@ fn render_codec(
     // string_length_ref` C11 arms and `c/codec.h.jinja2`'s
     // `field.is_string` branch.
 
-    // RFC §5.B cross-codec parent-flags layout validation.
+    // RFC §synth-5-B cross-codec parent-flags layout validation.
     // When THIS codec (the parent) has a `<sce:variant>` whose arm
     // bodies declare `<sce:requires-parent-flags carrier="X">`, the
     // parent must have a `<sce:flags id="X">` carrier of uint8 with
     // each declared flag name+bit matching exactly. Mismatch surfaces
     // as `codec/parent-flag-mismatch`. Body codecs without variant
     if let Some(v) = &m.variant {
-        // RFC §5.B Peek-byte cross-codec
+        // RFC §synth-5-B Peek-byte cross-codec
         // contract — the peeked byte == arm body's own first wire
         // byte, so the peek-byte's flag layout must agree (by name
         // + bit + width) with every arm body codec's first
@@ -3156,7 +3156,7 @@ fn render_codec(
     // migrates off the legacy forms.
     validate_cross_codec_flag_bind(m, imports)?;
 
-    // RFC §5.B parent-flags closures complete: all six backends (Rust / Cpp /
+    // RFC §synth-5-B parent-flags closures complete: all six backends (Rust / Cpp /
     // Kotlin / Go / C11 / Python) emit codec parent-flags dependency.
     // The historical gate sat here until each per-language closure
     // landed; this final closure (Python) deletes the gate entirely.
@@ -3168,17 +3168,17 @@ fn render_codec(
     let l = LangCtx::new(lang);
     let type_key = l.codec_type_key();
 
-    // RFC §5.B variant primitive (closures complete): all six
+    // RFC §synth-5-B variant primitive (closures complete): all six
     // backends now emit variant codecs. The historical gate sat here
     // until each per-language closure landed; the final closure
     // (Python) deletes the gate entirely.
 
-    // RFC §5.B present-if primitive (closures complete): all six
+    // RFC §synth-5-B present-if primitive (closures complete): all six
     // backends now emit gated decode/encode. The historical gate sat
     // here until each per-language closure landed; Python (the final
     // closure) deletes the gate entirely.
 
-    // RFC §5.B item B2: the v1 BitSize::Fixed-only constraint on
+    // RFC §synth-5-B item B2: the v1 BitSize::Fixed-only constraint on
     // present-if is lifted. Gated fields can now combine present-if
     // with Tail / LengthRef / Vle bit-sizes; the streaming helper
     // dispatches on bit_size and emits the appropriate per-language
@@ -3189,7 +3189,7 @@ fn render_codec(
     // present_if predicate so the combination is impossible by
     // construction.
 
-    // RFC §5.B B2 repeat primitive (closures complete): all six
+    // RFC §synth-5-B B2 repeat primitive (closures complete): all six
     // backends now emit repeat codecs. The historical gate sat here
     // until each per-language closure landed; Python (the final
     // closure) deletes the gate entirely.
@@ -3198,7 +3198,7 @@ fn render_codec(
     let has_present_if_fields = m.has_present_if_fields();
     let has_repeat_fields = m.has_repeat_fields();
 
-    // RFC §5.B parent-tag carriers — compute derivations BEFORE the field-meta
+    // RFC §synth-5-B parent-tag carriers — compute derivations BEFORE the field-meta
     // builder so per-field encode blocks can append the `| _derived_<carrier>`
     // suffix at the carrier field. The locals block lives in the codec
     // emit ctx (rendered at `encode()` entry); the suffix lives per-
@@ -3231,7 +3231,7 @@ fn render_codec(
             );
             obj.insert("is_variable".into(), serde_json::Value::Bool(f.is_variable_length()));
             obj.insert("is_vle".into(), serde_json::Value::Bool(f.is_vle()));
-            // RFC §5.B string fields — C11 codec.h.jinja2 switches the
+            // RFC §synth-5-B string fields — C11 codec.h.jinja2 switches the
             // member storage shape from `uint8_t[N] + size_t len`
             // (Bytes) to `char[N] + size_t len` (String) when this
             // flag is set. The cpp/rust/kotlin/go/python codec
@@ -3263,7 +3263,7 @@ fn render_codec(
                 serde_json::Value::Bool(f.is_tlv_chain()),
             );
             obj.insert("is_embed".into(), serde_json::Value::Bool(f.is_embed()));
-            // RFC §5.B B3 DMA alignment: surface burst_align so the
+            // RFC §synth-5-B B3 DMA alignment: surface burst_align so the
             // template can emit a per-field language-level alignment
             // assertion (Rust `const _: () = assert!`, C11
             // `_Static_assert`) on the literal byte offset. Build-time
@@ -3297,7 +3297,7 @@ fn render_codec(
                         .into(),
                     );
                 } else if matches!(&f.bit_size, BitSize::Repeat { .. }) {
-                    // RFC §5.B B2 repeat primitive — populate the per-
+                    // RFC §synth-5-B B2 repeat primitive — populate the per-
                     // field decode/encode pre-rendered statements plus
                     // the host-language list type override (Vec<T> /
                     // std::vector<T>) wrapping the imported codec body.
@@ -3324,7 +3324,7 @@ fn render_codec(
                     obj.insert("repeat_body_type".into(), body_type.clone().into());
                     obj.insert("repeat_body_decoder".into(), body_decoder.clone().into());
                     obj.insert("repeat_body_encoder".into(), body_encoder.clone().into());
-                    // RFC §5.B — repeat-with-present-if wrap.
+                    // RFC §synth-5-B — repeat-with-present-if wrap.
                     // When the repeat carries `sce:present-if`, the
                     // host-language list type wraps in the same shape
                     // item B2 established for tail/length-ref present-if:
@@ -3335,7 +3335,7 @@ fn render_codec(
                     // the C-side `_len`). Predicate=None codecs keep the
                     // bare list type for back-compat with item B2 goldens.
                     let bare = match lang {
-                        // RFC §5.B B2: no-alloc bounded inline list — Rust
+                        // RFC §synth-5-B B2: no-alloc bounded inline list — Rust
                         // mirrors the C11 `T elems[MAX]; len` shape via
                         // `heapless::Vec<T, MAX_COUNT>` (re-exported as
                         // `HeaplessVec`). Heap-free, so list-bearing codecs
@@ -3424,7 +3424,7 @@ fn render_codec(
                     // default value for every property; the trunk's
                     // `0.toUByte()` family default would miscompile
                     // against `MutableList<T>`. `mutableListOf()` is
-                    // type-inferred from the field type. RFC §5.B gated repeat:
+                    // type-inferred from the field type. RFC §synth-5-B gated repeat:
                     // gated repeat wraps to `MutableList<T>?` so
                     // the data-class default flips to `null`. Python's
                     // dataclass default flips from
@@ -3441,7 +3441,7 @@ fn render_codec(
                         obj.insert("kt_default".into(), kt_default.into());
                     }
                 } else if let BitSize::TlvChain { max_depth, on_overflow, terminate_on } = &f.bit_size {
-                    // RFC §5.B B3 TLV chain primitive — populate the
+                    // RFC §synth-5-B B3 TLV chain primitive — populate the
                     // per-field decode/encode statements + host-language
                     // list type. Reuses the repeat machinery for body
                     // type / decoder / encoder resolution (entry codec
@@ -3480,7 +3480,7 @@ fn render_codec(
                     obj.insert("tlv_chain_body_type".into(), body_type.clone().into());
                     obj.insert("tlv_chain_body_decoder".into(), body_decoder.clone().into());
                     obj.insert("tlv_chain_body_encoder".into(), body_encoder.clone().into());
-                    // RFC §5.B gated tlv-chain — `<sce:tlv-chain
+                    // RFC §synth-5-B gated tlv-chain — `<sce:tlv-chain
                     // sce:present-if>` host-type wrap. Mirrors the
                     // repeat-with-present-if wrap pattern:
                     // when the chain is gated, the host-language list
@@ -3489,7 +3489,7 @@ fn render_codec(
                     // as-truth — `_len = 0` signals absent).
                     let gated = f.present_if.is_some();
                     let wrapped = match (lang, gated) {
-                        // RFC §5.B B3: no-alloc bounded inline TLV chain —
+                        // RFC §synth-5-B B3: no-alloc bounded inline TLV chain —
                         // `heapless::Vec<Entry, MAX_DEPTH>` (re-exported as
                         // `HeaplessVec`), the Rust mirror of the C11
                         // fixed-buffer + len shape. The chain bound is
@@ -3500,7 +3500,7 @@ fn render_codec(
                         (crate::generator::Language::Rust, true) => {
                             format!("Option<HeaplessVec<{body_type}{body_lt}, {max_depth}>>")
                         }
-                        // RFC §5.B all-backend closures: cpp/kotlin/go/python emit
+                        // RFC §synth-5-B all-backend closures: cpp/kotlin/go/python emit
                         // TLV chain via the host-language list shape — Zenoh
                         // ext envelopes ship on zenoh-rs / zenoh-cpp / zenoh-
                         // kotlin server peers too, not just zenoh-pico MCU,
@@ -3567,7 +3567,7 @@ fn render_codec(
                         obj.insert("kt_default".into(), kt_default.into());
                     }
                 } else if matches!(f.bit_size, BitSize::Embed) {
-                    // RFC §5.B — single-codec embed primitive.
+                    // RFC §synth-5-B — single-codec embed primitive.
                     // The host-language type is the imported codec's
                     // struct directly (no list wrapping); the
                     // streaming codec calls `<body>::decode(cursor)` /
@@ -3689,7 +3689,7 @@ fn render_codec(
                     if matches!(f.bit_size, BitSize::LengthRef) {
                         if let Some(lf) = &f.length_field {
                             obj.insert("length_field".into(), l.codec_field_id(lf).into());
-                            // RFC §5.B `sce:length-arith` + dotted-path `sce:length-field`:
+                            // RFC §synth-5-B `sce:length-arith` + dotted-path `sce:length-field`:
                             // positional-decode `_n` expression honoring
                             // `length-arith` and dotted-path subfield
                             // extracts. C11 template reads this verbatim
@@ -3780,7 +3780,7 @@ fn render_codec(
                 if !skip_default_overwrite {
                     obj.insert("kt_default".into(), kotlin_default(&f.sce_type).into());
                 }
-                // RFC §5.B flags primitive on Kotlin: bitwise ops on
+                // RFC §synth-5-B flags primitive on Kotlin: bitwise ops on
                 // UByte/UShort/UInt/ULong are awkward (no UByte literal,
                 // mask must round-trip through a wider signed type). The
                 // template widens via `.toInt()` (UByte/UShort) or
@@ -3808,7 +3808,7 @@ fn render_codec(
                 // factory=list)` — a bare `[]` shared across instances
                 // would alias mutably through the dataclass primary
                 // constructor. Plain (non-list) fields keep the
-                // carrier-typed default. RFC §5.B: a gated repeat
+                // carrier-typed default. RFC §synth-5-B: a gated repeat
                 // field's `Optional[List[T]]` storage flips to `None`
                 // default (the field is None when the gate fires off).
                 let py_default = if (f.is_repeat() || f.is_tlv_chain()) && f.present_if.is_none() {
@@ -3824,7 +3824,7 @@ fn render_codec(
                     python_default(&f.sce_type).to_string()
                 };
                 obj.insert("default_value".into(), py_default.into());
-                // RFC §5.B flags primitive on Python: ints are
+                // RFC §synth-5-B flags primitive on Python: ints are
                 // unbounded, so `& ~mask` would yield a negative value.
                 // The carrier's natural width gives a hex saturation
                 // mask (`0xFF` / `0xFFFF` / ...) the setter ANDs into the
@@ -3839,7 +3839,7 @@ fn render_codec(
                 };
                 obj.insert("py_carrier_max".into(), py_carrier_max.into());
             }
-            // RFC §5.B flags primitive: pre-render per-flag accessor
+            // RFC §synth-5-B flags primitive: pre-render per-flag accessor
             // context. Each flag carries a language-specific accessor name,
             // setter name, and the precomputed bitmask literal.
             obj.insert("has_flags".into(), (!f.flags.is_empty()).into());
@@ -3959,7 +3959,7 @@ fn render_codec(
                 obj.insert("c_flag_default_literal".into(), c_literal.into());
             }
 
-            // RFC §5.B present-if primitive: when the codec has
+            // RFC §synth-5-B present-if primitive: when the codec has
             // any gated field every field renders via the streaming
             // path so cursor advances are sequential. Per-field we
             // carry both the streaming decode statement and the
@@ -3969,7 +3969,7 @@ fn render_codec(
             // `Option<T>` / `std::optional<T>` so the struct field
             // can carry the absent state.
             //
-            // RFC §5.B B2 repeat primitive shares the same per-field
+            // RFC §synth-5-B B2 repeat primitive shares the same per-field
             // streaming infrastructure: when `has_repeat_fields` the
             // template iterates per-field and dispatches via
             // `is_repeat` to the repeat-specific stmt vs. the
@@ -3998,7 +3998,7 @@ fn render_codec(
                     m.default_endian,
                     lang,
                 );
-                // RFC §5.B parent-tag carriers — inject `| _derived_<carrier>`
+                // RFC §synth-5-B parent-tag carriers — inject `| _derived_<carrier>`
                 // into the single-byte carrier emit so the derived bits
                 // land in the outgoing stream. Carrier is uint8 per v1
                 // rpf lock-in (single-byte field), so the substitution
@@ -4007,7 +4007,7 @@ fn render_codec(
                     encode_block = inject_parent_tag_carrier_suffix(&encode_block, &f.id, suffix, lang);
                 }
                 obj.insert("present_if_encode_block".into(), encode_block.into());
-                // RFC §5.B — Repeat-with-present-if fields wrap
+                // RFC §synth-5-B — Repeat-with-present-if fields wrap
                 // their imported-codec list type in the dedicated
                 // `is_repeat` branch above (Option<Vec<T>> /
                 // std::optional<vector> / etc.). The generic per-field
@@ -4137,7 +4137,7 @@ fn render_codec(
 
     let encode_exprs = generate_encode_exprs(&m.fields, m.default_endian, lang);
 
-    // RFC §5.B parent-tag carriers — locals block; `parent_tag_derivations` was
+    // RFC §synth-5-B parent-tag carriers — locals block; `parent_tag_derivations` was
     // computed at the top of `compile_codec` so it could feed the
     // field-meta builder's per-field encode-block suffix injection.
     // The block now threads `m` + `imports` so the C11 emitter can
@@ -4176,7 +4176,7 @@ fn render_codec(
 
     let mut ctx = l.base_context(&m.name);
     ctx.insert("fields".into(), serde_json::json!(fields));
-    // RFC §5.B flags primitive: codec-level rollup so the template
+    // RFC §synth-5-B flags primitive: codec-level rollup so the template
     // can short-circuit the accessor block when no field has flags. The
     // snake-cased struct name doubles as the C11 accessor prefix
     // (`<snake>_<flag_name>` / `<snake>_set_<flag_name>`).
@@ -4200,7 +4200,7 @@ fn render_codec(
     // `quantity_accessor` payload populated in the field-render loop.
     let has_quantity = m.fields.iter().any(|f| f.quantity.is_some());
     ctx.insert("has_quantity".into(), has_quantity.into());
-    // RFC §5.B: zero-field codecs (Zenoh KeepAlive et al.) skip
+    // RFC §synth-5-B: zero-field codecs (Zenoh KeepAlive et al.) skip
     // every cursor / encode-buffer touch; templates branch on
     // `has_no_fields` to emit a trivial encode/decode that round-trips
     // an empty body. `min_bytes` is 0 in this case but using a
@@ -4224,7 +4224,7 @@ fn render_codec(
         );
     }
     ctx.insert("min_bytes".into(), m.min_frame_bytes().into());
-    // RFC §5.B variant primitive (item B1): the parent codec's worst-case
+    // RFC §synth-5-B variant primitive (item B1): the parent codec's worst-case
     // encoded size is `prefix + max(arm_body_max)` because exactly one
     // arm fires per frame. Without this adjustment the C11 emit would
     // size its `bytes[MAX]` array to fit only the prefix, silently
@@ -4248,7 +4248,7 @@ fn render_codec(
             .unwrap_or(0);
         m.max_frame_bytes() + body_max
     } else {
-        // RFC §5.B B2 repeat primitive: each repeat field contributes
+        // RFC §synth-5-B B2 repeat primitive: each repeat field contributes
         // `max_count * imported_codec.max_frame_bytes()` to the parent's
         // encode-buffer worst case. `model::CodecModel::max_frame_bytes`
         // accounts for the field's *direct* bytes but skips the body
@@ -4269,7 +4269,7 @@ fn render_codec(
                 Some(body_max.saturating_mul(count))
             })
             .sum();
-        // RFC §5.B B3 TLV chain primitive: each tlv-chain field
+        // RFC §synth-5-B B3 TLV chain primitive: each tlv-chain field
         // contributes `max_depth * imported_codec.max_frame_bytes()`
         // — same shape as repeat but bounded by `max_depth` instead
         // of `max_count`. `max_depth` is parser-mandatory (the
@@ -4422,7 +4422,7 @@ fn render_codec(
     );
     ctx.insert("has_caller_tag".into(), has_caller_tag.into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
-    // RFC §5.B parent-tag carriers — per-codec derivation locals block.
+    // RFC §synth-5-B parent-tag carriers — per-codec derivation locals block.
     // Templates render `{{ parent_tag_derivation_block }}` immediately
     // inside `encode()` so the locals are in scope before any field
     // emits its bytes. Empty string when the codec has no parent-tag
@@ -4431,7 +4431,7 @@ fn render_codec(
         "parent_tag_derivation_block".into(),
         parent_tag_derivation_block_str.into(),
     );
-    // RFC §5.B parent-tag carriers — flag the codec as a parent-tag encode parent so
+    // RFC §synth-5-B parent-tag carriers — flag the codec as a parent-tag encode parent so
     // templates can branch (e.g., emit a deterministic blank line
     // after the locals block when present). Useful for templates that
     // would otherwise eat the leading whitespace when the locals are
@@ -4441,13 +4441,13 @@ fn render_codec(
         (!parent_tag_derivations.is_empty()).into(),
     );
 
-    // RFC §5.B variant primitive (item B1 trunk): build per-arm rendering
+    // RFC §synth-5-B variant primitive (item B1 trunk): build per-arm rendering
     // context. Each arm's `body_alias` resolves against the codec's
     // `<sce:import>` table → ImportContext gives us the per-language
     // qualified type name. Tag-type literal suffix (e.g. `0x01u8`) is
     // language-derived so the match pattern type-checks without coercion.
     //
-    // RFC §5.B multi-bit-flag dispatch (`<sce:variant
+    // RFC §synth-5-B multi-bit-flag dispatch (`<sce:variant
     // tag="<carrier>.<flag>"/>`): when `v.tag_flag` is set the
     // *effective* tag type is the smallest unsigned that holds the
     // named flag's `width` bits — the dispatch reads
@@ -4459,7 +4459,7 @@ fn render_codec(
         // from `<sce:peek-byte>` instead of a real codec field.
         // `carrier_type` is fixed at uint8 (peek width is single-byte
         // v1); `flag_def` is the named flag in `peek_byte.flags`.
-        // RFC §5.B parent-tag dispatch: parent-scope variants resolve the carrier
+        // RFC §synth-5-B parent-tag dispatch: parent-scope variants resolve the carrier
         // through `<sce:requires-parent-flags>` instead of `m.fields`;
         // `carrier_type` is uint8 (rpf carrier v1 lock-in), the flag
         // def comes from `rpf.flags`.
@@ -4829,7 +4829,7 @@ fn render_codec(
         // `dispatch_tag_param_decl` ctx) and the dispatch reads the
         // parameter directly without shift/mask.
         variant_obj.insert("caller_tag".into(), caller_tag.into());
-        // RFC §5.B multi-bit-flag dispatch: `tag_match_expr` / `tag_store_expr` factor the
+        // RFC §synth-5-B multi-bit-flag dispatch: `tag_match_expr` / `tag_store_expr` factor the
         // dispatch and default-arm-tag-storage expressions out of the
         // 6 templates so the same template body emits both whole-field
         // and multi-bit-flag dispatch shapes. Whole-field values match
@@ -4843,7 +4843,7 @@ fn render_codec(
         // `let _peek = cursor.peek_slice(1)?[0];` (per-language idiom)
         // before the dispatch when `variant.peek_byte` is set.
         let peek_mode = v.peek_byte.is_some();
-        // RFC §5.B parent-tag carriers: parent-scope variants read the carrier
+        // RFC §synth-5-B parent-tag carriers: parent-scope variants read the carrier
         // from the codec's `parent_flags` parameter (already threaded
         // by parent-flags at all 6 backends). Identifier varies per language:
         // snake_case `parent_flags` for Rust/Cpp/C11/Python, camelCase
@@ -5109,7 +5109,7 @@ fn render_codec(
     // Decode = out-param shape (`bool fn(raw, len, *out)`); encode = return-by-value shape (
     // `<name>_encoded_t { bytes[MAX]; len }`). MAX = MIN + Σ(max_size of
     // variable-length fields), resolved through `BYTES_DEFAULT_MAX` when
-    // `sce:max-size` is absent (RFC §3 B2).
+    // `sce:max-size` is absent (RFC §bytesguard-3 B2).
     if matches!(lang, crate::generator::Language::C11) {
         let snake = filters::to_snake_case(m.name.clone());
         let upper = to_upper_snake(&m.name);
@@ -5120,7 +5120,7 @@ fn render_codec(
         );
         ctx.insert("c_decode_func".into(), format!("{snake}_decode").into());
         ctx.insert("c_encode_func".into(), format!("{snake}_encode").into());
-        // RFC §5.B item B1: heap-free convenience facade name —
+        // RFC §synth-5-B item B1: heap-free convenience facade name —
         // `{snake}_encode_to_buf(self, buf, cap, *out_len)` initialises a
         // writer over the caller-owned buffer and forwards into the
         // writer-based primary `{snake}_encode`.
@@ -7752,7 +7752,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
     }
 }
 
-/// RFC §5.B — gated repeat encode. Mirrors
+/// RFC §synth-5-B — gated repeat encode. Mirrors
 /// the item B2 tail/length-ref present-if encode shape: 5 backends test
 /// the wrapped storage form (Option::is_some / has_value / ?.let /
 /// `is not None` / Go nil-slice) — author owns the carrier-flag-vs-
@@ -7902,7 +7902,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
     } = ctx;
     let id_owned = codec_field_local_name(&field.id, lang);
     let id = id_owned.as_str();
-    // RFC §5.B — entry-flag termination accessor, per-language. The
+    // RFC §synth-5-B — entry-flag termination accessor, per-language. The
     // body codec's flags-bearing carrier (typically the entry's outer
     // header byte) exposes a per-flag accessor whose name mirrors
     // `build_flag_ctx`'s `name_acc` rule (snake/pascal/camel by
@@ -7928,7 +7928,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
         // the entry to a temporary, reads the flag accessor BEFORE the
         // push (push moves the value), and breaks the loop when clear.
         Language::Rust => {
-            // RFC §5.B — overflow_check applies only when
+            // RFC §synth-5-B — overflow_check applies only when
             // termination is exhaust-or-depth (the chain consumes the
             // codec's remaining wire). With entry-flag termination the
             // chain is followed by other fields whose bytes would
@@ -8194,7 +8194,7 @@ fn tlv_chain_streaming_decode_stmt(ctx: TlvChainDecode<'_>) -> String {
     }
 }
 
-/// RFC §5.B B3 TLV chain primitive — pre-rendered streaming encode
+/// RFC §synth-5-B B3 TLV chain primitive — pre-rendered streaming encode
 /// block for one tlv-chain field. Walks the host-language list and
 /// appends each element's encoded bytes onto the parent's `r` buffer.
 /// Encode does not enforce `max_depth` — the contract is "encoder
@@ -8278,7 +8278,7 @@ struct TlvChainDecodeGated<'a> {
     lang: crate::generator::Language,
 }
 
-/// RFC §5.B gated tlv-chain decode. Wraps the body of
+/// RFC §synth-5-B gated tlv-chain decode. Wraps the body of
 /// `tlv_chain_streaming_decode_stmt` in a per-language presence test
 /// computed from the field's `present_if` predicate, mirroring the gated repeat's
 /// `repeat_streaming_decode_stmt_gated`. Required by zenoh network
@@ -8559,7 +8559,7 @@ fn tlv_chain_streaming_decode_stmt_gated(ctx: TlvChainDecodeGated<'_>) -> String
     }
 }
 
-/// RFC §5.B gated tlv-chain encode block. Wraps the
+/// RFC §synth-5-B gated tlv-chain encode block. Wraps the
 /// chain walk in a per-language presence test on the optional, mirroring
 /// the gated repeat encode shape. Plain (non-gated) chains use
 /// `tlv_chain_streaming_encode_block` which trusts the host list to
@@ -8634,7 +8634,7 @@ fn tlv_chain_streaming_encode_block_gated(
     }
 }
 
-/// RFC §5.B flags primitive — render the per-flag accessor
+/// RFC §synth-5-B flags primitive — render the per-flag accessor
 /// context for one carrier field. Each entry carries the language-
 /// specific accessor / setter names alongside two precomputed bitmask
 /// literals:
@@ -11459,7 +11459,7 @@ fn present_if_test_literal(
     lang: crate::generator::Language,
 ) -> String {
     use crate::generator::Language;
-    // RFC §5.B present-if disjunction chain (`a.X || b.Y || ...`)
+    // RFC §synth-5-B present-if disjunction chain (`a.X || b.Y || ...`)
     // — emit each clause's single-bit test recursively, joined by the
     // per-language logical-OR token. Python uses the keyword `or`; all
     // other 5 backends use `||` (Rust/Cpp/Kotlin/Go/C11). Each clause
@@ -13459,23 +13459,23 @@ pub fn generate_rust_with_imports_and_externs(
         ForgeDocument::Algorithm(m) => {
             render_algorithm(&env, m, imports, crate::generator::Language::Rust, options)?
         }
-        // RFC §5.C: byte-stream link emit. The template wires the
-        // §5.B framer into RX/TX paths and routes the result through
+        // RFC §synth-5-C: byte-stream link emit. The template wires the
+        // §synth-5-B framer into RX/TX paths and routes the result through
         // the `Link` trait owned by `sce-link-runtime`. item C10 listener-pair threads
         // the orchestrator-resolved listener-pair flag so the Sibling
         // EstablishedSession half emits when this link is a listener.
         ForgeDocument::Link(m) => render_link_rust(&env, m, imports, options)?,
-        // RFC §5.E: DMA-aligned slot table emit. Item B7 ships the
+        // RFC §synth-5-E: DMA-aligned slot table emit. Item B7 ships the
         // minimum slot table on `(rust, std)` — fixed-size array of
         // `[u8; SLOT_SIZE]`, bitmap freelist, acquire/return surface.
         // The phantom-typed `Slot<state>` API rides the canonical
         // 7-state lifecycle FSM declared in `buffer_pool_fsm.rs`.
         ForgeDocument::BufferPool(m) => render_buffer_pool_rust(&env, m, imports, options)?,
-        // RFC §5.D Worker item C2: SPSC inbox ring buffer + Producer/
+        // RFC §synth-5-D Worker item C2: SPSC inbox ring buffer + Producer/
         // Consumer split. Ordering choice from `<sce:inbox ordering>`
         // pins the atomic Op selection.
         ForgeDocument::Worker(m) => render_worker_rust(&env, m, imports)?,
-        // RFC §5.L item C6: emits the slot-table + Handle + ops
+        // RFC §synth-5-L item C6: emits the slot-table + Handle + ops
         // contract on the Rust backend. Capacity and `<sce:index-by>`
         // resolutions ride `options.bounded_collection_resolutions`
         // populated upstream by the orchestrator
@@ -13494,7 +13494,7 @@ pub fn generate_rust_with_imports_and_externs(
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
     let mut files = vec![(filename, code)];
-    // RFC §5.B item B2 test-vector: sidecar `<fixture>_test.rs` emits
+    // RFC §synth-5-B item B2 test-vector: sidecar `<fixture>_test.rs` emits
     // alongside the algorithm header when `<sce:test-vector>` rows
     // are declared. The Rust conformance harness includes the
     // sidecar via a second `include!()` inside the per-fixture
@@ -13514,7 +13514,7 @@ pub fn generate_rust_with_imports_and_externs(
             files.push(sidecar);
         }
     }
-    // RFC §5.I — `<sce:extern>` sidecar (Rust shape).
+    // RFC §synth-5-I — `<sce:extern>` sidecar (Rust shape).
     if let Some(sidecar) = render_externs_sidecar(
         &env,
         doc.name(),
@@ -13530,7 +13530,7 @@ pub fn generate_rust_with_imports_and_externs(
 }
 
 /// Render a `<sce:kind="link">` document for the Rust backend
-/// (watching-zenoh RFC §5.C, item B6). The template wires the §5.B
+/// (watching-zenoh RFC §synth-5-C, item B6). The template wires the §synth-5-B
 /// `<sce:framer ref>` codec into RX (decode) and TX (encode) paths
 /// and exposes a constructor that the consumer threads through to a
 /// downstream `sce_link_runtime_<os>` `impl Link`. SCE owns the trait
@@ -13668,7 +13668,7 @@ pub fn render_machine_link_bus_rust(
 }
 
 /// Item C10 per-machine cooperative scheduler on the Rust (MCU `no_std`)
-/// backend (watching-zenoh RFC §5.N lines 3050-3055).
+/// backend (watching-zenoh RFC §synth-5-N lines 3050-3055).
 /// Emits the per-machine `tick()` function + round-robin
 /// `LINK_ORDER` constants. The orchestrator pipeline path pushes the
 /// rendered output as `{machine}_scheduler.rs`.
@@ -13818,13 +13818,13 @@ pub fn render_machine_scheduler_c(
 }
 
 /// Render a `<sce:kind="buffer-pool">` document for the Rust backend
-/// (watching-zenoh RFC §5.E, items B7 + C5). Emits a struct owning a
+/// (watching-zenoh RFC §synth-5-E, items B7 + C5). Emits a struct owning a
 /// fixed-size `[[u8; SLOT_SIZE]; SLOT_COUNT]` slot table + per-slot
-/// state array. C5 wires §5.I cache-maintenance intrinsics into the
+/// state array. C5 wires §synth-5-I cache-maintenance intrinsics into the
 /// FSM lifecycle edges per spec lines 1182-1197: cache-clean before
 /// TX hand-off (`link_arm_tx`) and pre-arm cache-invalidate on RX
 /// arming (`link_arm_rx`, gated on `platform.has_speculative_prefetch`
-/// per RFC §5.E lines 1189-1198 + 1199-1212).
+/// per RFC §synth-5-E lines 1189-1198 + 1199-1212).
 fn render_buffer_pool_rust(
     env: &minijinja::Environment<'_>,
     m: &BufferPoolModel,
@@ -14225,7 +14225,7 @@ fn render_bounded_collection_cpp(
 }
 
 /// Render a `<sce:kind="bounded-collection">` document for the
-/// Kotlin backend (watching-zenoh RFC §5.L, item C6). Emits
+/// Kotlin backend (watching-zenoh RFC §synth-5-L, item C6). Emits
 /// `Array<T?>(N)` + `BooleanArray(N)` occupancy + `IntArray(N)`
 /// generation per spec line 2578. Handle is `@JvmInline value class
 /// <Pascal>Handle(val raw: UInt)` (zero-allocation at runtime,
@@ -14602,8 +14602,8 @@ fn render_link_c(
     Ok(rendered)
 }
 
-/// Item C10 codegen self-check for the §5.C listener-pair Sibling
-/// emission invariant on the C11 backend (RFC §5.C lines 849-856).
+/// Item C10 codegen self-check for the §synth-5-C listener-pair Sibling
+/// emission invariant on the C11 backend (RFC §synth-5-C lines 849-856).
 /// The C11 template emits `} {snake_name}_established_session_t;`
 /// inside the `{% if is_listener_with_sibling %}` block. If the
 /// rendered output is missing that exact typedef suffix, fire
@@ -14633,7 +14633,7 @@ fn check_listener_sibling_emitted_c(
 }
 
 /// Render the `.h` header for a `<sce:kind="worker">` document on the
-/// C11 backend (watching-zenoh RFC §5.D, item C2). Declares the opaque
+/// C11 backend (watching-zenoh RFC §synth-5-D, item C2). Declares the opaque
 /// `_inbox_producer_t` / `_inbox_consumer_t` family + thin function
 /// prototypes. The `.c` sibling carries the ring-buffer storage and
 /// impl bodies (`render_worker_c_impl`) — both files emit in a single
@@ -14708,13 +14708,13 @@ fn render_worker_c_impl(
 }
 
 /// Render a `<sce:kind="buffer-pool">` document for the C11 backend
-/// (watching-zenoh RFC §5.E, items B7 + C5). Mirrors `render_buffer_pool_rust`
+/// (watching-zenoh RFC §synth-5-E, items B7 + C5). Mirrors `render_buffer_pool_rust`
 /// but emits a header that places the slot storage table in the
 /// section declared by `<sce:section>` via `__attribute__((section,
 /// aligned))`. The sidecar linker fragment that pairs with this
 /// header is rendered separately via [`render_buffer_pool_linker_fragment`]
 /// and pushed onto `GeneratedOutput.files` by the dispatcher.
-/// C5 wires §5.I cache-maintenance intrinsic calls into the FSM
+/// C5 wires §synth-5-I cache-maintenance intrinsic calls into the FSM
 /// edges per spec lines 1182-1197 with the same gating semantics as
 /// the Rust template.
 fn render_buffer_pool_c(
@@ -14846,7 +14846,7 @@ fn render_buffer_pool_linker_fragment(
     Ok((filename, body))
 }
 
-/// Codegen self-check for the §5.E inter-pool padding invariant
+/// Codegen self-check for the §synth-5-E inter-pool padding invariant
 /// (lines 1059-1064). The buffer-pool linker fragment must carry an
 /// explicit `. = ALIGN(<n>);` sentinel after the SECTIONS{} body so
 /// the post-pool boundary stays alignment-pinned even if a downstream
@@ -14876,7 +14876,7 @@ fn check_inter_pool_padding_invariant(
 
 /// Map SceType to Go type name (SCE_FORGE.md Section 3.3).
 ///
-/// Lifted to `pub(crate)` so the §5.L bounded-collection's Go
+/// Lifted to `pub(crate)` so the §synth-5-L bounded-collection's Go
 /// `FindByIndex` emit can convert the abstract `index_by_field_sce_type`
 /// from `BoundedCollectionResolution` into a Go type string. Same pattern
 /// as `cpp_type` / `kotlin_type` / `rust_type` / `c_type` (per-backend type-resolver precedent).
@@ -14983,14 +14983,14 @@ pub fn generate_go_with_imports(
         ForgeDocument::Algorithm(m) => {
             render_algorithm(&env, m, imports, crate::generator::Language::Go, options)?
         }
-        // RFC §5.C / §5.J.4: rejected upstream by codegen_matrix::check.
+        // RFC §synth-5-C / §synth-5-J-4: rejected upstream by codegen_matrix::check.
         ForgeDocument::Link(_) => {
             unreachable!("ForgeDocument::Link rejected by codegen_matrix::check on go")
         }
         ForgeDocument::BufferPool(_) => {
             unreachable!("ForgeDocument::BufferPool rejected by codegen_matrix::check on go")
         }
-        // RFC §5.D / §5.J.4: rejected upstream by codegen_matrix::check.
+        // RFC §synth-5-D / §synth-5-J-4: rejected upstream by codegen_matrix::check.
         ForgeDocument::Worker(_) => {
             unreachable!("ForgeDocument::Worker rejected by codegen_matrix::check on go")
         }
@@ -15007,7 +15007,7 @@ pub fn generate_go_with_imports(
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
     let mut files = vec![(filename, code)];
-    // RFC §5.B item B2 test-vector: sidecar `<snake>_test.go` emits
+    // RFC §synth-5-B item B2 test-vector: sidecar `<snake>_test.go` emits
     // alongside the algorithm `.go` into the same per-fixture
     // package directory whenever `<sce:test-vector>` rows are
     // declared. Go's per-directory test discovery picks up
@@ -15141,14 +15141,14 @@ pub fn generate_python_with_imports(
             crate::generator::Language::Python,
             options,
         )?,
-        // RFC §5.C / §5.J.4: rejected upstream by codegen_matrix::check.
+        // RFC §synth-5-C / §synth-5-J-4: rejected upstream by codegen_matrix::check.
         ForgeDocument::Link(_) => {
             unreachable!("ForgeDocument::Link rejected by codegen_matrix::check on python")
         }
         ForgeDocument::BufferPool(_) => {
             unreachable!("ForgeDocument::BufferPool rejected by codegen_matrix::check on python")
         }
-        // RFC §5.D / §5.J.4: rejected upstream by codegen_matrix::check.
+        // RFC §synth-5-D / §synth-5-J-4: rejected upstream by codegen_matrix::check.
         ForgeDocument::Worker(_) => {
             unreachable!("ForgeDocument::Worker rejected by codegen_matrix::check on python")
         }
@@ -15167,7 +15167,7 @@ pub fn generate_python_with_imports(
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
     let mut files = vec![(filename, code)];
-    // RFC §5.B item B2 test-vector: sidecar `<snake>_test.py` emits
+    // RFC §synth-5-B item B2 test-vector: sidecar `<snake>_test.py` emits
     // alongside the algorithm `.py` into the conformance_generated
     // dir whenever `<sce:test-vector>` rows are declared. The
     // harness module re-exports the sidecar's `<Pascal>TestVectors`
@@ -22062,7 +22062,7 @@ mod tests {
     use super::*;
     use crate::forge::model::{ForgeKind, SceType};
 
-    // ── EventSchema C11 payload field declaration (RFC §3 B4) ──
+    // ── EventSchema C11 payload field declaration (RFC §bytesguard-3 B4) ──
 
     #[test]
     fn c11_payload_field_decl_bytes_uses_bounded_buffer() {

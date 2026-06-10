@@ -289,7 +289,7 @@ topology:
 // CLI flag, wired through `cmd_generate`). When set, the Rust template
 // emits `#![no_std]` at the crate root and elides the
 // `parent_external_queue` field whose `Arc<Mutex<...>>` type is
-// alloc-coupled (per Watching-zenoh RFC §5.J.2 lines 1989-1994 —
+// alloc-coupled (per Watching-zenoh RFC §synth-5-J-2 lines 1989-1994 —
 // "no path from generated no_std code into alloc::*"). Owned
 // collection TYPES, however, are profile-neutral: both modes name the
 // runtime's profile-resolving aliases (SceBytes / SceString /

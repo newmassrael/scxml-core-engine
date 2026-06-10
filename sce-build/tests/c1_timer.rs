@@ -123,7 +123,7 @@ fn duration_missing_unit_rejected() {
     }
 }
 
-// ─── Happy compile: full §5.D lifecycle ───────────────────────────────
+// ─── Happy compile: full §synth-5-D lifecycle ───────────────────────────────
 
 #[test]
 fn full_lifecycle_emits_rust_struct_with_reset_and_cancel() {

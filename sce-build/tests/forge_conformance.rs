@@ -2965,8 +2965,8 @@ fn forge_codec_tlv_chain_missing_depth_rejects() {
     );
 }
 
-/// RFC §5.B B3: v1 rejects `on-overflow="diagnostic-event"` until the
-/// §5.A diagnostic-event runtime infrastructure ships a reachable
+/// RFC §synth-5-B B3: v1 rejects `on-overflow="diagnostic-event"` until the
+/// §synth-5-A diagnostic-event runtime infrastructure ships a reachable
 /// consumer. `reject` and `truncate` are the v1 accept-set; anything
 /// else surfaces the generic `validation/invalid-attribute`.
 #[test]
@@ -3115,7 +3115,7 @@ fn forge_codec_dma_misaligned_byte_rejects() {
     );
 }
 
-/// RFC §5.B B3 line 558-583 "fixed-offset positions only — no VLE-
+/// RFC §synth-5-B B3 line 558-583 "fixed-offset positions only — no VLE-
 /// following alignment": a `sce:dma-burst-align` field after any
 /// variable-length predecessor (vle here) rejects with the same
 /// diagnostic. The reason names the offending predecessor + its
@@ -3168,7 +3168,7 @@ fn forge_codec_dma_after_vle_rejects() {
     );
 }
 
-/// RFC §5.B B3: non-power-of-2 burst-align value (3, 5, ...) rejects
+/// RFC §synth-5-B B3: non-power-of-2 burst-align value (3, 5, ...) rejects
 /// with the generic `validation/invalid-attribute` slot — the repair
 /// is text-level (pick a power of 2). v0: 0 also rejects (alignment
 /// to a 0-byte boundary is meaningless).
@@ -3360,7 +3360,7 @@ fn forge_codec_repeat_present_if_count_predicate_mismatch_rejects() {
     );
 }
 
-// ── RFC §5.B dotted-path length-field parser-validation rejects ──
+// ── RFC §synth-5-B dotted-path length-field parser-validation rejects ──
 //
 // Mirrors present-if's reject coverage (forward-reference,
 // non-flags-bearing carrier, missing flag, single-bit flag rejected
@@ -3500,7 +3500,7 @@ fn forge_codec_length_field_dotted_non_flags_carrier_rejects() {
     );
 }
 
-// ── RFC §5.B B4 applied codec shapes (Cpp) ───────────────────
+// ── RFC §synth-5-B B4 applied codec shapes (Cpp) ───────────────────
 // Three Zenoh wire-extension shapes built from existing B1/B2
 // primitives — no new IR/parser/codegen surface. See
 // `tests/forge/resources/codec_ext_*.scxml` for upstream zenoh-pico
@@ -3521,7 +3521,7 @@ fn forge_codec_ext_encoding_info_cpp() {
     assert_standalone_forge("codec_ext_encoding_info", "codec_ext_encoding_info.h");
 }
 
-// ── RFC §5.B test-vector primitive (B2-test-vector prep) ─────
+// ── RFC §synth-5-B test-vector primitive (B2-test-vector prep) ─────
 // `<sce:test-vector hex value/>` parses into AlgorithmModel.test_vectors
 // for sce:kind="algorithm" only. Multi-field codec test vectors defer
 // to B5 alongside the Zenoh msg-set authoring; v1 rejects test-vector
@@ -3532,7 +3532,7 @@ fn forge_codec_ext_encoding_info_cpp() {
 // generic validation/invalid-attribute slot.
 
 /// Positive: an algorithm with a single `<sce:test-vector>` parses
-/// cleanly into the IR. Verifies the canonical RFC §5.B example
+/// cleanly into the IR. Verifies the canonical RFC §synth-5-B example
 /// (CRC16-CCITT-FALSE: "123456789" → 0x29B1) round-trips through the
 /// hex decoder and the integer literal parser, and that the source
 /// line of the element is preserved for future per-backend test
@@ -3807,7 +3807,7 @@ fn forge_test_vector_invalid_value_rejects() {
     );
 }
 
-// ── RFC §5.B variant primitive (trunk) ──────────────────
+// ── RFC §synth-5-B variant primitive (trunk) ──────────────────
 // `codec_variant_dispatch` imports two arm-body codecs and exposes
 // the discriminated-union shape across Rust + Cpp. Sub-codecs ship
 // their own goldens so the syn / cpp parser gates compile each
@@ -3834,7 +3834,7 @@ fn forge_codec_variant_dispatch_cpp() {
     assert_standalone_forge("codec_variant_dispatch", "codec_variant_dispatch.h");
 }
 
-/// RFC §5.B multi-bit-flag variant dispatch (Cpp): `<sce:variant
+/// RFC §synth-5-B multi-bit-flag variant dispatch (Cpp): `<sce:variant
 /// tag="header.mid">` extracts the 5-bit MID slice from a uint8 flags
 /// carrier and dispatches into KeepAlive (empty body) / Close (uint8
 /// reason) / Default arms — mirrors zenoh-pico's transport-message
@@ -3845,7 +3845,7 @@ fn forge_codec_transport_envelope_cpp() {
     assert_standalone_forge("codec_transport_envelope", "codec_transport_envelope.h");
 }
 
-/// RFC §5.B parent-flags trunk (Cpp): body codec with `<sce:requires-parent-flags
+/// RFC §synth-5-B parent-flags trunk (Cpp): body codec with `<sce:requires-parent-flags
 /// carrier="header"><sce:flag name="S" bit="6"/></sce:requires-parent-flags>`
 /// emits decode/encode signatures that take a `std::uint8_t parent_flags`
 /// parameter. Body fields gated by `sce:present-if="parent.S"` read the
@@ -3856,7 +3856,7 @@ fn forge_codec_init_syn_body_cpp() {
     assert_standalone_forge("codec_init_syn_body", "codec_init_syn_body.h");
 }
 
-/// RFC §5.B parent-flags trunk (Cpp): variant parent codec whose arm body
+/// RFC §synth-5-B parent-flags trunk (Cpp): variant parent codec whose arm body
 /// declares `<sce:requires-parent-flags carrier="header">` — the
 /// dispatch threads the parent's `header` flags-carrier value into
 /// the body's `decode(cursor, header)` / `encode(header)` calls.
@@ -3868,7 +3868,7 @@ fn forge_codec_init_syn_envelope_cpp() {
     assert_standalone_forge("codec_init_syn_envelope", "codec_init_syn_envelope.h");
 }
 
-/// RFC §5.B (Cpp): Init body cookie codec exercising
+/// RFC §synth-5-B (Cpp): Init body cookie codec exercising
 /// VLE-length-ref bit-size on the length sibling AND a gated length
 /// sibling (cookie_size + cookie both gated by `parent.A`). The decode
 /// helper unwraps the std::optional<uint16_t> sibling inside the gated
@@ -3881,7 +3881,7 @@ fn forge_codec_init_cookie_body_cpp() {
     assert_standalone_forge("codec_init_cookie_body", "codec_init_cookie_body.h");
 }
 
-/// RFC §5.B length-arith (Cpp): Scout/Hello/Init zid codec exercising
+/// RFC §synth-5-B length-arith (Cpp): Scout/Hello/Init zid codec exercising
 /// arithmetic offset on the length sibling. Author writes
 /// `sce:length-arith="+1"` paired with `sce:length-field="zid_len_m1"`;
 /// decode reads `_n = sibling_value + 1` bytes. Mirrors zenoh-pico's
@@ -3891,7 +3891,7 @@ fn forge_codec_scout_zid_body_cpp() {
     assert_standalone_forge("codec_scout_zid_body", "codec_scout_zid_body.h");
 }
 
-/// RFC §5.B: `codec/variant-arm-unreachable` build-time check —
+/// RFC §synth-5-B: `codec/variant-arm-unreachable` build-time check —
 /// a `<sce:variant>` over a uint8 tag with two arms and no
 /// `<sce:default>` leaves 254 tag values uncovered, so the parser
 /// must reject with the typed diagnostic naming the codec, the tag,
@@ -4853,7 +4853,7 @@ fn forge_codec_variant_dotted_tag_carrier_not_flags_rejects() {
     );
 }
 
-/// RFC §5.B multi-bit-flag dispatch: the named flag must exist
+/// RFC §synth-5-B multi-bit-flag dispatch: the named flag must exist
 /// on the carrier. Typo'd or undeclared flag names reject with
 /// `validation/invalid-attribute`, naming the available flags so
 /// the author sees the right repair.
@@ -4905,7 +4905,7 @@ fn forge_codec_variant_dotted_tag_unknown_flag_rejects() {
     );
 }
 
-/// RFC §5.B multi-bit-flag dispatch: when the named bit-range
+/// RFC §synth-5-B multi-bit-flag dispatch: when the named bit-range
 /// has small width (e.g. width=1 → domain {0,1}), the arm-domain
 /// validator computes domain = `1 << width` and the
 /// `codec/variant-arm-unreachable` diagnostic still surfaces if
@@ -5065,7 +5065,7 @@ fn forge_kotlin_codec_vle_zint_u64() {
     assert_standalone_forge_kotlin("codec_vle_zint_u64", "CodecVleZintU64.kt");
 }
 
-// ── RFC §5.B item B5 Zenoh transport-message body codecs (Kotlin) ─
+// ── RFC §synth-5-B item B5 Zenoh transport-message body codecs (Kotlin) ─
 
 #[test]
 fn forge_kotlin_codec_zenoh_close() {
@@ -5077,7 +5077,7 @@ fn forge_kotlin_codec_zenoh_frame() {
     assert_standalone_forge_kotlin("codec_zenoh_frame", "CodecZenohFrame.kt");
 }
 
-// ── RFC §5.B cross-codec composition (Kotlin) ───────────
+// ── RFC §synth-5-B cross-codec composition (Kotlin) ───────────
 
 #[test]
 fn forge_kotlin_codec_zenoh_open_body() {
@@ -5104,7 +5104,7 @@ fn forge_kotlin_codec_zenoh_decl_final() {
     assert_standalone_forge_kotlin("codec_zenoh_decl_final", "CodecZenohDeclFinal.kt");
 }
 
-// ── RFC §5.B dotted-path length-field (Kotlin) ──
+// ── RFC §synth-5-B dotted-path length-field (Kotlin) ──
 
 #[test]
 fn forge_kotlin_codec_length_ref_dotted_basic() {
@@ -5119,7 +5119,7 @@ fn forge_kotlin_codec_zenoh_scout() {
     assert_standalone_forge_kotlin("codec_zenoh_scout", "CodecZenohScout.kt");
 }
 
-// ── RFC §5.B multi-bit + empty-codec (Kotlin) ───────────
+// ── RFC §synth-5-B multi-bit + empty-codec (Kotlin) ───────────
 
 #[test]
 fn forge_kotlin_codec_qos_byte() {
@@ -5131,14 +5131,14 @@ fn forge_kotlin_codec_zenoh_keep_alive() {
     assert_standalone_forge_kotlin("codec_zenoh_keep_alive", "CodecZenohKeepAlive.kt");
 }
 
-// ── RFC §5.B flags primitive (Kotlin) ───────────────────
+// ── RFC §synth-5-B flags primitive (Kotlin) ───────────────────
 
 #[test]
 fn forge_kotlin_codec_flags_basic() {
     assert_standalone_forge_kotlin("codec_flags_basic", "CodecFlagsBasic.kt");
 }
 
-// ── RFC §5.B variant primitive (Kotlin closure) ────────
+// ── RFC §synth-5-B variant primitive (Kotlin closure) ────────
 
 #[test]
 fn forge_kotlin_codec_variant_session_open() {
@@ -5160,21 +5160,21 @@ fn forge_kotlin_codec_transport_envelope() {
     assert_standalone_forge_kotlin("codec_transport_envelope", "CodecTransportEnvelope.kt");
 }
 
-// ── RFC §5.B present-if primitive (Kotlin) ─────────────
+// ── RFC §synth-5-B present-if primitive (Kotlin) ─────────────
 
 #[test]
 fn forge_kotlin_codec_present_if_basic() {
     assert_standalone_forge_kotlin("codec_present_if_basic", "CodecPresentIfBasic.kt");
 }
 
-// ── RFC §5.B present-if negation primitive (Kotlin) ────
+// ── RFC §synth-5-B present-if negation primitive (Kotlin) ────
 
 #[test]
 fn forge_kotlin_codec_present_if_negation() {
     assert_standalone_forge_kotlin("codec_present_if_negation", "CodecPresentIfNegation.kt");
 }
 
-// ── RFC §5.B present-if disjunction primitive (Kotlin) ──
+// ── RFC §synth-5-B present-if disjunction primitive (Kotlin) ──
 
 #[test]
 fn forge_kotlin_codec_present_if_disjunction() {
@@ -5184,7 +5184,7 @@ fn forge_kotlin_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B peek-byte primitive (Kotlin) ──
+// ── RFC §synth-5-B peek-byte primitive (Kotlin) ──
 
 #[test]
 fn forge_kotlin_codec_peek_arm_a() {
@@ -5206,7 +5206,7 @@ fn forge_kotlin_codec_zenoh_response() {
     assert_standalone_forge_kotlin("codec_zenoh_response", "CodecZenohResponse.kt");
 }
 
-// ── RFC §5.B present-if + variable-length (Kotlin) ─────
+// ── RFC §synth-5-B present-if + variable-length (Kotlin) ─────
 
 #[test]
 fn forge_kotlin_codec_present_if_tail() {
@@ -5223,7 +5223,7 @@ fn forge_kotlin_codec_present_if_vle() {
     assert_standalone_forge_kotlin("codec_present_if_vle", "CodecPresentIfVle.kt");
 }
 
-// ── RFC §5.B B2 repeat primitive (Kotlin, closure) ──────────
+// ── RFC §synth-5-B B2 repeat primitive (Kotlin, closure) ──────────
 
 #[test]
 fn forge_kotlin_codec_repeat_elem() {
@@ -5299,7 +5299,7 @@ fn forge_kotlin_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_kotlin("codec_zenoh_undecl_kexpr", "CodecZenohUndeclKexpr.kt");
 }
 
-// ── RFC §5.B — TLV envelope foundation ────
+// ── RFC §synth-5-B — TLV envelope foundation ────
 #[test]
 fn forge_kotlin_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_kotlin(
@@ -5357,7 +5357,7 @@ fn forge_kotlin_codec_until_eof_basic() {
     assert_standalone_forge_kotlin("codec_until_eof_basic", "CodecUntilEofBasic.kt");
 }
 
-// ── RFC §5.B B4 applied codec shapes (Kotlin) ───────────────
+// ── RFC §synth-5-B B4 applied codec shapes (Kotlin) ───────────────
 
 #[test]
 fn forge_kotlin_codec_ext_timestamp() {
@@ -5374,9 +5374,9 @@ fn forge_kotlin_codec_ext_encoding_info() {
     assert_standalone_forge_kotlin("codec_ext_encoding_info", "CodecExtEncodingInfo.kt");
 }
 
-// ── Algorithm (Kotlin, RFC §5.A — post-A6 matrix follow-up) ─
+// ── Algorithm (Kotlin, RFC §synth-5-A — post-A6 matrix follow-up) ─
 
-/// RFC §5.B B2-test-vector Kotlin closure: the algorithm body
+/// RFC §synth-5-B B2-test-vector Kotlin closure: the algorithm body
 /// itself is byte-stable against its prior golden — the closure
 /// only adds a sidecar emission, so the primary algorithm output
 /// stays identical to the pre-test-vector form.
@@ -5385,7 +5385,7 @@ fn forge_kotlin_algorithm_crc16() {
     assert_standalone_forge_kotlin("algorithm_crc16", "AlgorithmCrc16.kt");
 }
 
-/// RFC §5.B B2-test-vector Kotlin closure: pin the per-fixture
+/// RFC §synth-5-B B2-test-vector Kotlin closure: pin the per-fixture
 /// sidecar (`<Pascal>TestVectors.kt`) emitted next to the
 /// algorithm `.kt`. The Kotlin/JVM test runner discovers the
 /// `@Test`-annotated class via the `jvmTest` source set wired in
@@ -5415,14 +5415,14 @@ fn forge_kotlin_algorithm_const_fold_smoke() {
 // ── Rust conformance tests ───────────────────────────────────
 // ══════════════════════════════════════════════════════════════
 
-// ── Algorithm (Rust, RFC §5.A) ───────────────────────────────
+// ── Algorithm (Rust, RFC §synth-5-A) ───────────────────────────────
 
 #[test]
 fn forge_rust_algorithm_crc16() {
     assert_standalone_forge_rust("algorithm_crc16", "algorithm_crc16.rs");
 }
 
-/// RFC §5.B B2-test-vector trunk: pin the Rust sidecar emit so the
+/// RFC §synth-5-B B2-test-vector trunk: pin the Rust sidecar emit so the
 /// canonical `<sce:test-vector hex="313233343536373839" value="0x29B1"/>`
 /// row round-trips through cargo test. The sidecar is the second
 /// entry in the codegen output (the algorithm header stays byte-stable
@@ -5436,7 +5436,7 @@ fn forge_rust_algorithm_crc16_test_vector_sidecar() {
     );
 }
 
-/// RFC §5.B B2-test-vector trunk: pin the C11 sidecar emit. Mirrors
+/// RFC §synth-5-B B2-test-vector trunk: pin the C11 sidecar emit. Mirrors
 /// the Rust sidecar test above; the lone test-vector row aggregates
 /// into a `static inline int test_vector_algorithm_crc16(void)`
 /// helper that the conformance harness folds into `g_failures`.
@@ -5449,7 +5449,7 @@ fn forge_c11_algorithm_crc16_test_vector_sidecar() {
     );
 }
 
-/// RFC §5.B B2-test-vector v1 enforces a single `bytes` parameter on
+/// RFC §synth-5-B B2-test-vector v1 enforces a single `bytes` parameter on
 /// the algorithm signature so the hex bytes lower unambiguously. A
 /// non-bytes parameter shape rejects with the typed
 /// `generate/unsupported-feature` until B5 widens the binding rules.
@@ -5593,7 +5593,7 @@ fn forge_rust_codec_length_ref() {
     assert_standalone_forge_rust("codec_length_ref", "codec_length_ref.rs");
 }
 
-// ── RFC §5.B item B5 Zenoh transport-message body codecs (Rust) ──
+// ── RFC §synth-5-B item B5 Zenoh transport-message body codecs (Rust) ──
 
 #[test]
 fn forge_rust_codec_zenoh_close() {
@@ -5605,7 +5605,7 @@ fn forge_rust_codec_zenoh_frame() {
     assert_standalone_forge_rust("codec_zenoh_frame", "codec_zenoh_frame.rs");
 }
 
-// ── RFC §5.B cross-codec composition (Rust) ─────────────
+// ── RFC §synth-5-B cross-codec composition (Rust) ─────────────
 
 #[test]
 fn forge_rust_codec_zenoh_open_body() {
@@ -5632,7 +5632,7 @@ fn forge_rust_codec_zenoh_decl_final() {
     assert_standalone_forge_rust("codec_zenoh_decl_final", "codec_zenoh_decl_final.rs");
 }
 
-// ── RFC §5.B dotted-path length-field (Rust) ────
+// ── RFC §synth-5-B dotted-path length-field (Rust) ────
 
 #[test]
 fn forge_rust_codec_length_ref_dotted_basic() {
@@ -5647,7 +5647,7 @@ fn forge_rust_codec_zenoh_scout() {
     assert_standalone_forge_rust("codec_zenoh_scout", "codec_zenoh_scout.rs");
 }
 
-// ── RFC §5.B multi-bit + empty-codec (Rust) ─────────────
+// ── RFC §synth-5-B multi-bit + empty-codec (Rust) ─────────────
 
 #[test]
 fn forge_rust_codec_qos_byte() {
@@ -5659,28 +5659,28 @@ fn forge_rust_codec_zenoh_keep_alive() {
     assert_standalone_forge_rust("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.rs");
 }
 
-// ── RFC §5.B flags primitive (Rust) ─────────────────────
+// ── RFC §synth-5-B flags primitive (Rust) ─────────────────────
 
 #[test]
 fn forge_rust_codec_flags_basic() {
     assert_standalone_forge_rust("codec_flags_basic", "codec_flags_basic.rs");
 }
 
-// ── RFC §5.B present-if primitive (Rust) ───────────────
+// ── RFC §synth-5-B present-if primitive (Rust) ───────────────
 
 #[test]
 fn forge_rust_codec_present_if_basic() {
     assert_standalone_forge_rust("codec_present_if_basic", "codec_present_if_basic.rs");
 }
 
-// ── RFC §5.B present-if negation primitive (Rust) ──────
+// ── RFC §synth-5-B present-if negation primitive (Rust) ──────
 
 #[test]
 fn forge_rust_codec_present_if_negation() {
     assert_standalone_forge_rust("codec_present_if_negation", "codec_present_if_negation.rs");
 }
 
-// ── RFC §5.B present-if disjunction primitive (Rust) ──
+// ── RFC §synth-5-B present-if disjunction primitive (Rust) ──
 
 #[test]
 fn forge_rust_codec_present_if_disjunction() {
@@ -5690,7 +5690,7 @@ fn forge_rust_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B peek-byte primitive (Rust) ──
+// ── RFC §synth-5-B peek-byte primitive (Rust) ──
 
 #[test]
 fn forge_rust_codec_peek_arm_a() {
@@ -5712,7 +5712,7 @@ fn forge_rust_codec_zenoh_response() {
     assert_standalone_forge_rust("codec_zenoh_response", "codec_zenoh_response.rs");
 }
 
-// ── RFC §5.B present-if + variable-length (Rust) ───────
+// ── RFC §synth-5-B present-if + variable-length (Rust) ───────
 
 #[test]
 fn forge_rust_codec_present_if_tail() {
@@ -5732,7 +5732,7 @@ fn forge_rust_codec_present_if_vle() {
     assert_standalone_forge_rust("codec_present_if_vle", "codec_present_if_vle.rs");
 }
 
-// ── RFC §5.B B2 repeat primitive (Rust, trunk) ──────────────
+// ── RFC §synth-5-B B2 repeat primitive (Rust, trunk) ──────────────
 
 #[test]
 fn forge_rust_codec_repeat_elem() {
@@ -5819,7 +5819,7 @@ fn forge_rust_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_rust("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.rs");
 }
 
-// ── RFC §5.B — TLV envelope foundation ────
+// ── RFC §synth-5-B — TLV envelope foundation ────
 #[test]
 fn forge_rust_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_rust(
@@ -5875,7 +5875,7 @@ fn forge_rust_codec_zenoh_timestamp_ext() {
     assert_standalone_forge_rust("codec_zenoh_timestamp_ext", "codec_zenoh_timestamp_ext.rs");
 }
 
-// ── RFC §5.B B4 applied codec shapes (Rust) ─────────────────
+// ── RFC §synth-5-B B4 applied codec shapes (Rust) ─────────────────
 
 #[test]
 fn forge_rust_codec_ext_timestamp() {
@@ -5892,7 +5892,7 @@ fn forge_rust_codec_ext_encoding_info() {
     assert_standalone_forge_rust("codec_ext_encoding_info", "codec_ext_encoding_info.rs");
 }
 
-// ── RFC §5.B variant primitive (Rust trunk) ────────────
+// ── RFC §synth-5-B variant primitive (Rust trunk) ────────────
 
 #[test]
 fn forge_rust_codec_variant_session_open() {
@@ -5920,7 +5920,7 @@ fn forge_rust_codec_transport_envelope() {
     assert_standalone_forge_rust("codec_transport_envelope", "codec_transport_envelope.rs");
 }
 
-/// RFC §5.B parent-flags trunk (Rust): body codec with parent-flags dependency.
+/// RFC §synth-5-B parent-flags trunk (Rust): body codec with parent-flags dependency.
 /// Decode/encode signatures gain a `parent_flags: u8` parameter; body
 /// fields gated via `parent.<flag>` predicates emit
 /// `(parent_flags & 0x40) != 0` style bit-tests. Mirrors
@@ -5930,7 +5930,7 @@ fn forge_rust_codec_init_syn_body() {
     assert_standalone_forge_rust("codec_init_syn_body", "codec_init_syn_body.rs");
 }
 
-/// RFC §5.B parent-flags trunk (Rust): variant parent threading carrier value.
+/// RFC §synth-5-B parent-flags trunk (Rust): variant parent threading carrier value.
 /// Each arm dispatches `Body::decode(cursor, header)` for arm bodies
 /// declaring `<sce:requires-parent-flags carrier="header">`; encode
 /// passes `body.encode(header)` symmetrically. Cross-codec validator
@@ -5941,7 +5941,7 @@ fn forge_rust_codec_init_syn_envelope() {
     assert_standalone_forge_rust("codec_init_syn_envelope", "codec_init_syn_envelope.rs");
 }
 
-/// RFC §5.B gated VLE length-sibling (Rust): Init body cookie codec.
+/// RFC §synth-5-B gated VLE length-sibling (Rust): Init body cookie codec.
 /// `cookie_size` is `Option<u16>` (gated VLE u16); `cookie` is
 /// `Option<Vec<u8>>` (gated length-ref bytes). Helper emits
 /// `cookie_size.unwrap() as usize` inside the predicate's true-branch.
@@ -5950,7 +5950,7 @@ fn forge_rust_codec_init_cookie_body() {
     assert_standalone_forge_rust("codec_init_cookie_body", "codec_init_cookie_body.rs");
 }
 
-/// RFC §5.B length-arith (Rust): Scout/Hello/Init zid codec.
+/// RFC §synth-5-B length-arith (Rust): Scout/Hello/Init zid codec.
 /// `length-arith="+1"` lifts the byte count by one above the sibling's
 /// value: helper emits `(zid_len_m1 as usize).wrapping_add(1)` for
 /// decode; encode trusts `zid.len()` as the source of truth (author
@@ -6076,7 +6076,7 @@ fn forge_go_codec_vle_zint_u64() {
     assert_standalone_forge_go("codec_vle_zint_u64", "codec_vle_zint_u64.go");
 }
 
-// ── RFC §5.B item B5 Zenoh transport-message body codecs (Go) ────
+// ── RFC §synth-5-B item B5 Zenoh transport-message body codecs (Go) ────
 
 #[test]
 fn forge_go_codec_zenoh_close() {
@@ -6088,7 +6088,7 @@ fn forge_go_codec_zenoh_frame() {
     assert_standalone_forge_go("codec_zenoh_frame", "codec_zenoh_frame.go");
 }
 
-// ── RFC §5.B cross-codec composition (Go) ───────────────
+// ── RFC §synth-5-B cross-codec composition (Go) ───────────────
 
 #[test]
 fn forge_go_codec_zenoh_open_body() {
@@ -6115,7 +6115,7 @@ fn forge_go_codec_zenoh_decl_final() {
     assert_standalone_forge_go("codec_zenoh_decl_final", "codec_zenoh_decl_final.go");
 }
 
-// ── RFC §5.B dotted-path length-field (Go) ──────
+// ── RFC §synth-5-B dotted-path length-field (Go) ──────
 
 #[test]
 fn forge_go_codec_length_ref_dotted_basic() {
@@ -6130,7 +6130,7 @@ fn forge_go_codec_zenoh_scout() {
     assert_standalone_forge_go("codec_zenoh_scout", "codec_zenoh_scout.go");
 }
 
-// ── RFC §5.B multi-bit + empty-codec (Go) ───────────────
+// ── RFC §synth-5-B multi-bit + empty-codec (Go) ───────────────
 
 #[test]
 fn forge_go_codec_qos_byte() {
@@ -6142,14 +6142,14 @@ fn forge_go_codec_zenoh_keep_alive() {
     assert_standalone_forge_go("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.go");
 }
 
-// ── RFC §5.B flags primitive (Go) ───────────────────────
+// ── RFC §synth-5-B flags primitive (Go) ───────────────────────
 
 #[test]
 fn forge_go_codec_flags_basic() {
     assert_standalone_forge_go("codec_flags_basic", "codec_flags_basic.go");
 }
 
-// ── RFC §5.B variant primitive (Go closure) ────────────
+// ── RFC §synth-5-B variant primitive (Go closure) ────────────
 
 #[test]
 fn forge_go_codec_variant_session_open() {
@@ -6177,21 +6177,21 @@ fn forge_go_codec_transport_envelope() {
     assert_standalone_forge_go("codec_transport_envelope", "codec_transport_envelope.go");
 }
 
-// ── RFC §5.B present-if primitive (Go) ─────────────────
+// ── RFC §synth-5-B present-if primitive (Go) ─────────────────
 
 #[test]
 fn forge_go_codec_present_if_basic() {
     assert_standalone_forge_go("codec_present_if_basic", "codec_present_if_basic.go");
 }
 
-// ── RFC §5.B present-if negation primitive (Go) ────────
+// ── RFC §synth-5-B present-if negation primitive (Go) ────────
 
 #[test]
 fn forge_go_codec_present_if_negation() {
     assert_standalone_forge_go("codec_present_if_negation", "codec_present_if_negation.go");
 }
 
-// ── RFC §5.B present-if disjunction primitive (Go) ──
+// ── RFC §synth-5-B present-if disjunction primitive (Go) ──
 
 #[test]
 fn forge_go_codec_present_if_disjunction() {
@@ -6201,7 +6201,7 @@ fn forge_go_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B peek-byte primitive (Go) ──
+// ── RFC §synth-5-B peek-byte primitive (Go) ──
 
 #[test]
 fn forge_go_codec_peek_arm_a() {
@@ -6223,7 +6223,7 @@ fn forge_go_codec_zenoh_response() {
     assert_standalone_forge_go("codec_zenoh_response", "codec_zenoh_response.go");
 }
 
-// ── RFC §5.B present-if + variable-length (Go) ─────────
+// ── RFC §synth-5-B present-if + variable-length (Go) ─────────
 
 #[test]
 fn forge_go_codec_present_if_tail() {
@@ -6243,7 +6243,7 @@ fn forge_go_codec_present_if_vle() {
     assert_standalone_forge_go("codec_present_if_vle", "codec_present_if_vle.go");
 }
 
-// ── RFC §5.B B2 repeat primitive (Go, closure) ──────────────
+// ── RFC §synth-5-B B2 repeat primitive (Go, closure) ──────────────
 
 #[test]
 fn forge_go_codec_repeat_elem() {
@@ -6330,7 +6330,7 @@ fn forge_go_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_go("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.go");
 }
 
-// ── RFC §5.B — TLV envelope foundation ────
+// ── RFC §synth-5-B — TLV envelope foundation ────
 #[test]
 fn forge_go_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_go(
@@ -6386,7 +6386,7 @@ fn forge_go_codec_zenoh_timestamp_ext() {
     assert_standalone_forge_go("codec_zenoh_timestamp_ext", "codec_zenoh_timestamp_ext.go");
 }
 
-// ── RFC §5.B B4 applied codec shapes (Go) ───────────────────
+// ── RFC §synth-5-B B4 applied codec shapes (Go) ───────────────────
 
 #[test]
 fn forge_go_codec_ext_timestamp() {
@@ -6403,9 +6403,9 @@ fn forge_go_codec_ext_encoding_info() {
     assert_standalone_forge_go("codec_ext_encoding_info", "codec_ext_encoding_info.go");
 }
 
-// ── Algorithm (Go, RFC §5.A — post-A6 matrix follow-up) ────
+// ── Algorithm (Go, RFC §synth-5-A — post-A6 matrix follow-up) ────
 
-/// RFC §5.B B2-test-vector Go closure: the algorithm body itself
+/// RFC §synth-5-B B2-test-vector Go closure: the algorithm body itself
 /// stays byte-stable against its prior golden — the closure only
 /// adds a sidecar emission, so the primary algorithm output stays
 /// identical to the pre-test-vector form.
@@ -6414,7 +6414,7 @@ fn forge_go_algorithm_crc16() {
     assert_standalone_forge_go("algorithm_crc16", "algorithm_crc16.go");
 }
 
-/// RFC §5.B B2-test-vector Go closure: pin the per-fixture sidecar
+/// RFC §synth-5-B B2-test-vector Go closure: pin the per-fixture sidecar
 /// (`<snake>_test.go`) emitted next to the algorithm `.go` in the
 /// per-fixture package directory. Go's per-directory test
 /// discovery picks up `*_test.go` automatically; the existing
@@ -6558,7 +6558,7 @@ fn forge_python_codec_vle_zint_u64() {
     assert_standalone_forge_python("codec_vle_zint_u64", "codec_vle_zint_u64.py");
 }
 
-// ── RFC §5.B item B5 Zenoh transport-message body codecs (Python) ─
+// ── RFC §synth-5-B item B5 Zenoh transport-message body codecs (Python) ─
 
 #[test]
 fn forge_python_codec_zenoh_close() {
@@ -6570,7 +6570,7 @@ fn forge_python_codec_zenoh_frame() {
     assert_standalone_forge_python("codec_zenoh_frame", "codec_zenoh_frame.py");
 }
 
-// ── RFC §5.B cross-codec composition (Python) ───────────
+// ── RFC §synth-5-B cross-codec composition (Python) ───────────
 
 #[test]
 fn forge_python_codec_zenoh_open_body() {
@@ -6597,7 +6597,7 @@ fn forge_python_codec_zenoh_decl_final() {
     assert_standalone_forge_python("codec_zenoh_decl_final", "codec_zenoh_decl_final.py");
 }
 
-// ── RFC §5.B dotted-path length-field (Python) ──
+// ── RFC §synth-5-B dotted-path length-field (Python) ──
 
 #[test]
 fn forge_python_codec_length_ref_dotted_basic() {
@@ -6612,7 +6612,7 @@ fn forge_python_codec_zenoh_scout() {
     assert_standalone_forge_python("codec_zenoh_scout", "codec_zenoh_scout.py");
 }
 
-// ── RFC §5.B multi-bit + empty-codec (Python) ───────────
+// ── RFC §synth-5-B multi-bit + empty-codec (Python) ───────────
 
 #[test]
 fn forge_python_codec_qos_byte() {
@@ -6624,14 +6624,14 @@ fn forge_python_codec_zenoh_keep_alive() {
     assert_standalone_forge_python("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.py");
 }
 
-// ── RFC §5.B flags primitive (Python) ───────────────────
+// ── RFC §synth-5-B flags primitive (Python) ───────────────────
 
 #[test]
 fn forge_python_codec_flags_basic() {
     assert_standalone_forge_python("codec_flags_basic", "codec_flags_basic.py");
 }
 
-// ── RFC §5.B variant primitive (Python closure) ────────
+// ── RFC §synth-5-B variant primitive (Python closure) ────────
 
 #[test]
 fn forge_python_codec_variant_session_open() {
@@ -6659,21 +6659,21 @@ fn forge_python_codec_transport_envelope() {
     assert_standalone_forge_python("codec_transport_envelope", "codec_transport_envelope.py");
 }
 
-// ── RFC §5.B present-if primitive (Python) ─────────────
+// ── RFC §synth-5-B present-if primitive (Python) ─────────────
 
 #[test]
 fn forge_python_codec_present_if_basic() {
     assert_standalone_forge_python("codec_present_if_basic", "codec_present_if_basic.py");
 }
 
-// ── RFC §5.B present-if negation primitive (Python) ────
+// ── RFC §synth-5-B present-if negation primitive (Python) ────
 
 #[test]
 fn forge_python_codec_present_if_negation() {
     assert_standalone_forge_python("codec_present_if_negation", "codec_present_if_negation.py");
 }
 
-// ── RFC §5.B present-if disjunction primitive (Python) ──
+// ── RFC §synth-5-B present-if disjunction primitive (Python) ──
 
 #[test]
 fn forge_python_codec_present_if_disjunction() {
@@ -6683,7 +6683,7 @@ fn forge_python_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B peek-byte primitive (Python) ──
+// ── RFC §synth-5-B peek-byte primitive (Python) ──
 
 #[test]
 fn forge_python_codec_peek_arm_a() {
@@ -6705,7 +6705,7 @@ fn forge_python_codec_zenoh_response() {
     assert_standalone_forge_python("codec_zenoh_response", "codec_zenoh_response.py");
 }
 
-// ── RFC §5.B present-if + variable-length (Python) ─────
+// ── RFC §synth-5-B present-if + variable-length (Python) ─────
 
 #[test]
 fn forge_python_codec_present_if_tail() {
@@ -6725,7 +6725,7 @@ fn forge_python_codec_present_if_vle() {
     assert_standalone_forge_python("codec_present_if_vle", "codec_present_if_vle.py");
 }
 
-// ── RFC §5.B B2 repeat primitive (Python, final closure) ────
+// ── RFC §synth-5-B B2 repeat primitive (Python, final closure) ────
 
 #[test]
 fn forge_python_codec_repeat_elem() {
@@ -6812,7 +6812,7 @@ fn forge_python_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_python("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.py");
 }
 
-// ── RFC §5.B — TLV envelope foundation ────
+// ── RFC §synth-5-B — TLV envelope foundation ────
 #[test]
 fn forge_python_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_python(
@@ -6868,7 +6868,7 @@ fn forge_python_codec_zenoh_timestamp_ext() {
     assert_standalone_forge_python("codec_zenoh_timestamp_ext", "codec_zenoh_timestamp_ext.py");
 }
 
-// ── RFC §5.B B4 applied codec shapes (Python) ───────────────
+// ── RFC §synth-5-B B4 applied codec shapes (Python) ───────────────
 
 #[test]
 fn forge_python_codec_ext_timestamp() {
@@ -6885,9 +6885,9 @@ fn forge_python_codec_ext_encoding_info() {
     assert_standalone_forge_python("codec_ext_encoding_info", "codec_ext_encoding_info.py");
 }
 
-// ── Algorithm (Python, RFC §5.A — post-A6 matrix follow-up) ─
+// ── Algorithm (Python, RFC §synth-5-A — post-A6 matrix follow-up) ─
 
-/// RFC §5.B B2-test-vector Python closure (final): the algorithm
+/// RFC §synth-5-B B2-test-vector Python closure (final): the algorithm
 /// body itself stays byte-stable against its prior golden — the
 /// closure only adds a sidecar emission, so the primary algorithm
 /// output stays identical to the pre-test-vector form.
@@ -6896,7 +6896,7 @@ fn forge_python_algorithm_crc16() {
     assert_standalone_forge_python("algorithm_crc16", "algorithm_crc16.py");
 }
 
-/// RFC §5.B B2-test-vector Python closure (final): pin the
+/// RFC §synth-5-B B2-test-vector Python closure (final): pin the
 /// per-fixture sidecar (`<snake>_test.py`) emitted next to the
 /// algorithm `.py` in the conformance_generated dir. The harness
 /// module re-exports the `<Pascal>TestVectors(unittest.TestCase)`
@@ -6970,7 +6970,7 @@ fn forge_c11_codec_vle_zint_u64() {
     assert_standalone_forge_c("codec_vle_zint_u64", "codec_vle_zint_u64.c.h");
 }
 
-// ── RFC §5.B item B5 Zenoh transport-message body codecs (C11) ───
+// ── RFC §synth-5-B item B5 Zenoh transport-message body codecs (C11) ───
 
 #[test]
 fn forge_c11_codec_zenoh_close() {
@@ -6982,7 +6982,7 @@ fn forge_c11_codec_zenoh_frame() {
     assert_standalone_forge_c("codec_zenoh_frame", "codec_zenoh_frame.c.h");
 }
 
-// ── RFC §5.B cross-codec composition (C11) ──────────────
+// ── RFC §synth-5-B cross-codec composition (C11) ──────────────
 
 #[test]
 fn forge_c11_codec_zenoh_open_body() {
@@ -7009,7 +7009,7 @@ fn forge_c11_codec_zenoh_decl_final() {
     assert_standalone_forge_c("codec_zenoh_decl_final", "codec_zenoh_decl_final.c.h");
 }
 
-// ── RFC §5.B dotted-path length-field (C11) ─────
+// ── RFC §synth-5-B dotted-path length-field (C11) ─────
 
 #[test]
 fn forge_c11_codec_length_ref_dotted_basic() {
@@ -7024,14 +7024,14 @@ fn forge_c11_codec_zenoh_scout() {
     assert_standalone_forge_c("codec_zenoh_scout", "codec_zenoh_scout.c.h");
 }
 
-// ── RFC §5.B string primitive (C11) ───────────
+// ── RFC §synth-5-B string primitive (C11) ───────────
 
 #[test]
 fn forge_c11_codec_zenoh_locator() {
     assert_standalone_forge_c("codec_zenoh_locator", "codec_zenoh_locator.c.h");
 }
 
-// ── RFC §5.B recursive variant body (C11) ─────
+// ── RFC §synth-5-B recursive variant body (C11) ─────
 
 #[test]
 fn forge_c11_codec_zenoh_put() {
@@ -7053,7 +7053,7 @@ fn forge_c11_codec_zenoh_push() {
     assert_standalone_forge_c("codec_zenoh_push", "codec_zenoh_push.c.h");
 }
 
-// ── RFC §5.B multi-bit + empty-codec (C11) ──────────────
+// ── RFC §synth-5-B multi-bit + empty-codec (C11) ──────────────
 
 #[test]
 fn forge_c11_codec_qos_byte() {
@@ -7065,14 +7065,14 @@ fn forge_c11_codec_zenoh_keep_alive() {
     assert_standalone_forge_c("codec_zenoh_keep_alive", "codec_zenoh_keep_alive.c.h");
 }
 
-// ── RFC §5.B flags primitive (C11) ──────────────────────
+// ── RFC §synth-5-B flags primitive (C11) ──────────────────────
 
 #[test]
 fn forge_c11_codec_flags_basic() {
     assert_standalone_forge_c("codec_flags_basic", "codec_flags_basic.c.h");
 }
 
-// ── RFC §5.B variant primitive (C11 closure) ───────────
+// ── RFC §synth-5-B variant primitive (C11 closure) ───────────
 
 #[test]
 fn forge_c11_codec_variant_session_open() {
@@ -7100,21 +7100,21 @@ fn forge_c11_codec_transport_envelope() {
     assert_standalone_forge_c("codec_transport_envelope", "codec_transport_envelope.c.h");
 }
 
-// ── RFC §5.B present-if primitive (C11) ────────────────
+// ── RFC §synth-5-B present-if primitive (C11) ────────────────
 
 #[test]
 fn forge_c11_codec_present_if_basic() {
     assert_standalone_forge_c("codec_present_if_basic", "codec_present_if_basic.c.h");
 }
 
-// ── RFC §5.B present-if negation primitive (C11) ───────
+// ── RFC §synth-5-B present-if negation primitive (C11) ───────
 
 #[test]
 fn forge_c11_codec_present_if_negation() {
     assert_standalone_forge_c("codec_present_if_negation", "codec_present_if_negation.c.h");
 }
 
-// ── RFC §5.B present-if disjunction primitive (C11) ──
+// ── RFC §synth-5-B present-if disjunction primitive (C11) ──
 
 #[test]
 fn forge_c11_codec_present_if_disjunction() {
@@ -7124,7 +7124,7 @@ fn forge_c11_codec_present_if_disjunction() {
     );
 }
 
-// ── RFC §5.B peek-byte primitive (C11) ──
+// ── RFC §synth-5-B peek-byte primitive (C11) ──
 
 #[test]
 fn forge_c11_codec_peek_arm_a() {
@@ -7146,7 +7146,7 @@ fn forge_c11_codec_zenoh_response() {
     assert_standalone_forge_c("codec_zenoh_response", "codec_zenoh_response.c.h");
 }
 
-// ── RFC §5.B present-if + variable-length (C11) ────────
+// ── RFC §synth-5-B present-if + variable-length (C11) ────────
 
 #[test]
 fn forge_c11_codec_present_if_tail() {
@@ -7166,7 +7166,7 @@ fn forge_c11_codec_present_if_vle() {
     assert_standalone_forge_c("codec_present_if_vle", "codec_present_if_vle.c.h");
 }
 
-// ── RFC §5.B B2 repeat primitive (C11, closure) ─────────────
+// ── RFC §synth-5-B B2 repeat primitive (C11, closure) ─────────────
 
 #[test]
 fn forge_c11_codec_repeat_elem() {
@@ -7253,7 +7253,7 @@ fn forge_c11_codec_zenoh_undecl_kexpr() {
     assert_standalone_forge_c("codec_zenoh_undecl_kexpr", "codec_zenoh_undecl_kexpr.c.h");
 }
 
-// ── RFC §5.B — TLV envelope foundation ────
+// ── RFC §synth-5-B — TLV envelope foundation ────
 #[test]
 fn forge_c11_codec_zenoh_decl_ext_keyexpr_inner() {
     assert_standalone_forge_c(
@@ -7309,7 +7309,7 @@ fn forge_c11_codec_zenoh_timestamp_ext() {
     assert_standalone_forge_c("codec_zenoh_timestamp_ext", "codec_zenoh_timestamp_ext.c.h");
 }
 
-// ── RFC §5.B B3 TLV chain primitive (C11, trunk) ────────────
+// ── RFC §synth-5-B B3 TLV chain primitive (C11, trunk) ────────────
 // `codec_tlv_chain_basic` declares a uint8 header_flags then a TLV
 // chain bounded at max-depth=8 with on-overflow="reject". Each entry
 // is `codec_tlv_entry` (id+len+value, RFC line 488). MCU-class —
@@ -7329,7 +7329,7 @@ fn forge_c11_codec_tlv_chain_basic() {
     assert_standalone_forge_c("codec_tlv_chain_basic", "codec_tlv_chain_basic.c.h");
 }
 
-// ── RFC §5.B — TLV chain entry body keyed by carrier bits ─
+// ── RFC §synth-5-B — TLV chain entry body keyed by carrier bits ─
 // `codec_zenoh_ext_envelope` carries a `<sce:tlv-chain>` of
 // variant-bodied `codec_zenoh_ext_entry` entries. C11 trunk pins:
 //   - the envelope's MAX_BYTES = `1 + max_depth * entry_max` (345 =
@@ -7368,7 +7368,7 @@ fn forge_c11_codec_zenoh_ext_envelope() {
     assert_standalone_forge_c("codec_zenoh_ext_envelope", "codec_zenoh_ext_envelope.c.h");
 }
 
-// ── RFC §5.B B3 DMA alignment primitive (C11, trunk) ────────
+// ── RFC §synth-5-B B3 DMA alignment primitive (C11, trunk) ────────
 // `codec_dma_aligned_basic` declares msg_id + reserved at bytes 0-1
 // then a tail-bytes aligned_payload at byte 32 with
 // sce:dma-burst-align="32". Codegen emits a `_Static_assert` on the
@@ -7382,7 +7382,7 @@ fn forge_c11_codec_dma_aligned_basic() {
     assert_standalone_forge_c("codec_dma_aligned_basic", "codec_dma_aligned_basic.c.h");
 }
 
-// ── RFC §5.B B4 applied codec shapes (C11) ──────────────────
+// ── RFC §synth-5-B B4 applied codec shapes (C11) ──────────────────
 
 #[test]
 fn forge_c11_codec_ext_timestamp() {
@@ -7618,7 +7618,7 @@ fn forge_c11_timer_diag_scheduler() {
     assert_standalone_forge_c("timer_diag_scheduler", "timer_diag_scheduler.c.h");
 }
 
-// ── Algorithm (C11, RFC §5.A — item A5 closes the §5.J.4 matrix) ──
+// ── Algorithm (C11, RFC §synth-5-A — item A5 closes the §synth-5-J-4 matrix) ──
 
 #[test]
 fn forge_c11_algorithm_crc16() {
@@ -9083,7 +9083,7 @@ fn forge_codec_length_arith_without_length_field_rejects() {
     );
 }
 
-/// RFC §5.B length-arith validation: arithmetic offset must be ±1.
+/// RFC §synth-5-B length-arith validation: arithmetic offset must be ±1.
 /// v1 grammar restricts the value (parser rejects 0 and `|x|>1`);
 /// widening defers to a reachable consumer.
 #[test]
@@ -10065,7 +10065,7 @@ fn forge_parent_tag_inversion_dispatch_carrier_after_embed_rejects() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// RFC §5.B dispatcher consumer-parity — three independent gaps
+// RFC §synth-5-B dispatcher consumer-parity — three independent gaps
 // surfaced by a consumer against
 // pin `b719ee3e`. Tests below pin the textbook closures:
 //
@@ -10597,7 +10597,7 @@ fn parent_tag_id_to_pascal(id: &str) -> String {
         .collect()
 }
 
-/// RFC §5.B dispatcher self-gen — rustc-compile harness.
+/// RFC §synth-5-B dispatcher self-gen — rustc-compile harness.
 /// Compile every SCXML in `scxml_filenames` to Rust via
 /// `compile_forge_with_imports`, write the emitted `.rs` files into a
 /// standalone temp Cargo project that depends on the workspace's

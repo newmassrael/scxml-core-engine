@@ -137,7 +137,7 @@ fn reject_mesh_rpc_in_unsupported_lang(
     )))
 }
 
-// W3C SCXML G.7 `<sce:action>`: native host-trait dispatch is currently
+// §scxml-G-7 `<sce:action>`: native host-trait dispatch is currently
 // lowered only by the Rust backend. The other backends refuse the construct
 // here with an explicit `generate/unsupported-feature` diagnostic rather than
 // failing on a missing per-language action template (which would surface as an
@@ -1148,7 +1148,7 @@ fn load_template_strings(
 
 /// Recursively load all .jinja2 templates from a directory.
 ///
-/// Watching-zenoh RFC §5.O (generated-source traceability) — also loads the workspace-
+/// Watching-zenoh RFC §synth-5-O (generated-source traceability) — also loads the workspace-
 /// shared `_macros/` directory (one level up from the per-backend
 /// template root) so cross-backend shared macros like
 /// `_macros/sce_map_marker.jinja2` are visible to every language
@@ -1443,7 +1443,7 @@ mod tests {
 
     // ── Language enum / FromStr drift guards ────────────────────
     //
-    // RFC §5.J.1 (watching-zenoh consumer, M1 foundation): the C11 enum
+    // RFC §synth-5-J-1 (watching-zenoh consumer, M1 foundation): the C11 enum
     // variant was added without a working emitter. These tests pin the
     // boundary contract so future edits cannot silently drop "c11"/"c"
     // recognition (which would silently route C11 callers to
@@ -1526,7 +1526,7 @@ mod tests {
         }
     }
 
-    // W3C SCXML G.7 `<sce:action>` lowers natively only on the Rust backend.
+    // §scxml-G-7 `<sce:action>` lowers natively only on the Rust backend.
     // Every other backend MUST refuse the construct with a clear
     // `generate/unsupported-feature` diagnostic — silently dropping the effect
     // (or crashing on a missing per-language action template) is exactly the

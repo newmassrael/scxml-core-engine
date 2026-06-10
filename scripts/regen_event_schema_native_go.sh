@@ -42,7 +42,7 @@ if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build
 fi
 
-# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §6) lowers to a Go
+# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §bytesguard-6) lowers to a Go
 # `string(p.pending….raw) == "ack"` guard (slice `==` is illegal in Go, so
 # the conversion is the whole point). Its machine name differs, so the
 # generated `package statechart_bytes` lives in its OWN directory (Go allows

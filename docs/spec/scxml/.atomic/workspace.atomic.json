@@ -1143,6 +1143,10 @@
           "file": "tests/w3c/aot_tests/Test576.h",
           "symbol": "Test576",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5774,6 +5778,10 @@
           "file": "sce/include/common/SendHelper.h",
           "symbol": "SendHelper",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
