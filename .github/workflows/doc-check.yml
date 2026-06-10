@@ -8,11 +8,14 @@ name: Rust doc check
 # clean `cargo doc` keeps the public-API docs link-correct, the doc analog of
 # clippy-check.yml / fmt-check.yml.
 #
-# Scope: sce-rust-runtime only — the crate whose docs were repaired. Docs are
-# validated under DEFAULT features (the docs.rs / superset config that includes
-# every `!no_std` module + http-send + invoke + scripting). The no_std subset
-# config intentionally drops the `!no_std` modules, so cross-feature links there
-# are expected-absent and are not gated.
+# Scope: sce-rust-runtime only — the crate whose docs were repaired. Both
+# feature profiles are validated: DEFAULT features (the docs.rs / superset
+# config that includes every `!no_std` module + http-send + invoke + scripting)
+# AND the no_std subset (--no-default-features --features no_std). A doc link
+# that crosses a `#[cfg]` boundary resolves in the superset docs yet breaks in
+# the subset docs, so a default-only run cannot see that breakage class; all
+# runtime doc links are kept profile-stable (cfg-gated targets are plain code
+# spans).
 
 on:
   push:
@@ -51,3 +54,6 @@ jobs:
 
     - name: cargo doc -p sce-rust-runtime --no-deps
       run: cargo doc -p sce-rust-runtime --no-deps
+
+    - name: cargo doc -p sce-rust-runtime --no-deps (no_std profile)
+      run: cargo doc -p sce-rust-runtime --no-deps --no-default-features --features no_std

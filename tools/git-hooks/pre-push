@@ -228,14 +228,18 @@ cargo build --manifest-path sce-nostd-queue-size-probe/Cargo.toml \
 
 # ── Stage 2c: cargo doc broken-link gate (mirror doc-check.yml) ────
 # sce-rust-runtime opts into the workspace `[lints]` broken-intra-doc-
-# links=deny policy, but nothing ran `cargo doc`, so broken intra-doc
-# links rotted in undetected. This is the missing enforcement point.
-# Default features (the docs.rs superset config); the no_std subset drops
-# the `!no_std` modules so its cross-feature links are expected-absent and
-# are not gated.
-log_step "Stage 2c/7 — cargo doc -p sce-rust-runtime (broken-link gate)"
+# links=deny policy, but that policy only bites when something runs
+# `cargo doc`. Both feature profiles are gated: a doc link that crosses
+# a `#[cfg]` boundary (e.g. into a `!no_std`-gated module) resolves in
+# the default-features docs yet breaks in the no_std docs, so the
+# std-only run cannot see that breakage class. All runtime doc links
+# are kept profile-stable (cfg-gated targets are plain code spans).
+log_step "Stage 2c/7 — cargo doc -p sce-rust-runtime (broken-link gate, both profiles)"
 RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
-    || fail_step "Stage 2c (cargo doc broken intra-doc links)"
+    || fail_step "Stage 2c (cargo doc broken intra-doc links, std)"
+RUSTDOCFLAGS="-D warnings" cargo doc -p sce-rust-runtime --no-deps \
+    --no-default-features --features no_std \
+    || fail_step "Stage 2c (cargo doc broken intra-doc links, no_std)"
 
 # ── Stage 3: embed/MANIFEST.json drift (mirror verify_embed_manifest) ─
 # embed/MANIFEST.json is the tracked snapshot of the embeddable public
