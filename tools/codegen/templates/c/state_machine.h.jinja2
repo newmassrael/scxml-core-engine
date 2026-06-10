@@ -29,7 +29,7 @@
 #include "sce/types.h"
 
 {% if model.on_sample_links %}
-/* watching-zenoh RFC §5.E B7-η' codegen wire-up. `sce_sample_t`
+/* watching-zenoh RFC §5.E sample-callback codegen wire-up. `sce_sample_t`
    borrow type + `sce_sub_callback_t` typedef live in the runtime
    header; the per-link `_deliver_link_<X>_sample` declarations
    below take a `const sce_sample_t *sample` borrow. */
@@ -275,7 +275,7 @@ typedef struct {{ model.name }}_policy {
 
 {% if inline_kind_code %}
 /* ── SCE Forge: Inline kind declarations ──────────────────────────── */
-{# RFC §5.J.2 Phase F: free-standing emit (typedef enums + `static
+{# Free-standing emit (typedef enums + `static
    inline` functions). C11 has no nested types — both lookup enum
    typedefs and transform/condition/codec functions live at file
    scope, prefixed with the policy name to avoid identifier
@@ -489,7 +489,7 @@ bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm);
 bool {{ model.name }}_is_final_state({{ model.name }}_state_t s);
 
 {% if model.on_sample_links %}
-/* watching-zenoh RFC §5.E B7-η' codegen wire-up — per-link Sample
+/* watching-zenoh RFC §5.E sample-callback codegen wire-up — per-link Sample
    delivery surface. Host's link RX path (zenoh-pico subscriber,
    custom_tcp dispatch loop, …) calls the matching function for
    every Sample arriving on the named link. The body iterates the

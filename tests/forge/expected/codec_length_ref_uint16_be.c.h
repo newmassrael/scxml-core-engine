@@ -35,7 +35,7 @@ static inline sce_forge_codec_status_t codec_length_ref_uint16_be_decode(sce_for
      * rather than the entire cursor remaining. Codecs WITH a tail
      * field still consume to end (tail's definition forces it). The
      * prior "consume entire cursor" behaviour deferred to "the first
-     * multi-frame consumer" — TLV chain (B3-α) is that consumer, so
+     * multi-frame consumer" — the TLV chain is that consumer, so
      * length-ref entry codecs now decode-iterably from a shared
      * cursor without each entry eating the next entry's bytes. */
     size_t _frame_len = sce_forge_cursor_remaining(cursor);
@@ -55,7 +55,7 @@ static inline sce_forge_codec_status_t codec_length_ref_uint16_be_decode(sce_for
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_LENGTH_REF_UINT16_BE_MAX_BYTES bytes and use

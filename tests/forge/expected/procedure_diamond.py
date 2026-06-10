@@ -106,8 +106,7 @@ class ProcedureDiamond(ProcedureStateMachine):
         self, source: int, tr_index: int
     ) -> Optional[int]:
         # Returns None for normal flow; non-None signals that an
-        # assign-time check (RFC `claudedocs/rfc-forge-bytes-bounded.md`
-        # §3 B4 bytes cap violation) raised an internal event that the
+        # assign-time bytes-cap check raised an internal event that the
         # shared run_to_completion loop re-pumps through
         # _process_transition.
         return None

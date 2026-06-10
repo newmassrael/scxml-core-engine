@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 5a09e42c25802542323ee6ba619e99fa06cbb069803a587e654a24ce7bdffdbe
-// template-hash: 66bc1c3694f90e60100c842d2a53cd8c05682260c1809ba387d157940d7d6e1d
-// generated-at: 1780836428
+// source-hash: 9ffa89e83988cec88d8cbd0e24ec1c25726aced2de1a82197e932bbb2d905974
+// template-hash: 2c4f76809986b4347703e89a8e901379e8391f815371b53c5a7eecbe187e1cf5
+// generated-at: 1781084365
 // SCE-MAP: codec_variant_default_marker.scxml:30
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -18,14 +18,14 @@ import (
 
 // CodecVariantDefaultMarkerDefault bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
-// observed tag back onto the wire (RFC §5.B variant primitive B1-β).
+// observed tag back onto the wire (RFC §5.B variant primitive).
 type CodecVariantDefaultMarkerDefault struct {
 	Tag uint8
 	Body codec_default_marker_arm_b.CodecDefaultMarkerArmB
 }
 
 // CodecVariantDefaultMarkerVariant is a discriminated-union body for the codec's
-// tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
+// tag-field suffix (RFC §5.B variant primitive). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecVariantDefaultMarkerVariant struct {

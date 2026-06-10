@@ -14,7 +14,7 @@ from typing import Optional
 
 @dataclass
 class CodecZenohExtUnit:
-    # RFC §5.B B5-α empty body — Python @dataclass tolerates zero
+    # RFC §5.B empty body — Python @dataclass tolerates zero
     # fields; `pass` keeps the class body syntactically non-empty so
     # methods below attach correctly.
     pass
@@ -26,17 +26,17 @@ class CodecZenohExtUnit:
         (RFC §5.B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+        # RFC §5.B empty body — zero-byte payload, no cursor work.
         _ = cursor
         return cls()
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        """RFC §5.B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B B5-α empty body — zero-byte payload.
+        # RFC §5.B empty body — zero-byte payload.
         _ = w
         return
 

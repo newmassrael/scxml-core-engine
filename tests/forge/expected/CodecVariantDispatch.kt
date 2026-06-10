@@ -13,7 +13,7 @@ import com.sce.forge.runtime.SceSink
 import com.sce.generated.codec_variant_session_open.*
 import com.sce.generated.codec_variant_session_close.*
 
-// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// RFC §5.B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
@@ -38,7 +38,7 @@ data class CodecVariantDispatch(
     // codec's `<sce:flag value=>`-baked default fields above.
     var body: CodecVariantDispatchVariant = CodecVariantDispatchVariant.CodecVariantSessionClose(com.sce.generated.codec_variant_session_close.CodecVariantSessionClose())
 ) {
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
@@ -74,7 +74,7 @@ data class CodecVariantDispatch(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecVariantDispatch? {
-            // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+            // Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
             val raw = cursor.peekSlice(1) ?: return null
             val msg_id = raw[0].toUByte()
             if (!cursor.advance(1)) return null

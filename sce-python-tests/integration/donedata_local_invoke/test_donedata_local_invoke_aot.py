@@ -9,8 +9,7 @@ test exercises ``<donedata>`` on the invoked child's top-level
 on the parent. The pybind11 channel test at
 ``sce-python/tests/test_donedata_local_invoke.py`` covers the same
 contract via the C++ Interpreter; both production channels are
-verified independently (RFC ``claudedocs/rfc-donedata-5-backend-layout.md``
-Q-4).
+verified independently.
 
 Fixture: ``integration_resources/donedata_local_invoke/donedata_local_invoke.scxml``.
 

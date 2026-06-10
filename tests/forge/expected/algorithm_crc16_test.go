@@ -5,12 +5,12 @@ package algorithm_crc16
 
 import "testing"
 
-func TestVectorAlgorithmCrc16L46(t *testing.T) {
+func TestVectorAlgorithmCrc16L47(t *testing.T) {
     actual := AlgorithmCrc16([]byte{0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39})
     expected := uint16(0x29b1)
     if actual != expected {
         t.Errorf(
-            "<sce:test-vector> at SCXML L46: AlgorithmCrc16(<313233343536373839>) = %v, want %v",
+            "<sce:test-vector> at SCXML L47: AlgorithmCrc16(<313233343536373839>) = %v, want %v",
             actual, expected)
     }
 }

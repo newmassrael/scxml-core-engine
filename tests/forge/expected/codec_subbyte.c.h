@@ -37,7 +37,7 @@ static inline sce_forge_codec_status_t codec_subbyte_decode(sce_forge_cursor_t *
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_SUBBYTE_MAX_BYTES bytes and use

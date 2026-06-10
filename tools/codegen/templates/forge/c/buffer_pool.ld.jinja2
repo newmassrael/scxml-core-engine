@@ -25,7 +25,7 @@ SECTIONS {
   /* Inter-pool sentinel — explicit alignment so the post-pool
    * boundary survives master-script INCLUDE re-ordering. The
    * `mem/inter-pool-padding-not-emitted` codegen self-check
-   * inspects this artifact. Axis-5 reverse-linkage: the validator
+   * inspects this artifact. Reverse-linkage: the validator
    * reads the marker below instead of grepping for the literal
    * `. = ALIGN(` token. */
   /* SCE-EMIT: kind=mem.inter-pool-padding */

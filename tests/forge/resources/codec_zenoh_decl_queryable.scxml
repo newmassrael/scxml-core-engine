@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh declare-queryable body (RFC §5.B
-     Wire RFC Phase B Y1). Adds an optional queryable_info ext on top
+<!-- SCE Forge conformance: Zenoh declare-queryable body (RFC §5.B)
+     . Adds an optional queryable_info ext on top
      of the decl_subscriber/decl_token shape.
 
      Mirrors zenoh-pico `_z_decl_queryable_encode` (src/protocol/codec/

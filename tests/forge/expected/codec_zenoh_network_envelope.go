@@ -19,14 +19,14 @@ import (
 
 // CodecZenohNetworkEnvelopeDefault bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
-// observed tag back onto the wire (RFC §5.B variant primitive B1-β).
+// observed tag back onto the wire (RFC §5.B variant primitive).
 type CodecZenohNetworkEnvelopeDefault struct {
 	Tag uint8
 	Body codec_zenoh_oam.CodecZenohOam
 }
 
 // CodecZenohNetworkEnvelopeVariant is a discriminated-union body for the codec's
-// tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
+// tag-field suffix (RFC §5.B variant primitive). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecZenohNetworkEnvelopeVariant struct {

@@ -36,15 +36,15 @@ typedef struct {
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_join_decode(sce_forge_cursor_t *cursor, codec_zenoh_join_t *out, uint8_t s) {
-    /* RFC Axis-1 inversion: defensive (void) suppress per declared
+    /* Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
      * `<sce:flag-input>` so codecs that haven't consumed an input via
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)s;
-    /* RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+    /* RFC §5.B present-if primitive: streaming decode
      * advances the cursor per field. C11 has no nullable wrapper so
      * the gated field's storage stays as plain `T` (with `_len = 0`
      * for absent bytes payloads); the carrier's flag bit is the
-     * source of truth for presence. B2-β extends gating to Tail /
+     * source of truth for presence. Gating extends to Tail /
      * LengthRef / Vle bit-sizes via dispatch inside the helper.
      * Per-field `is_repeat` / `is_tlv_chain` route to dedicated
      * helpers. Branch fires before has_vle_fields so a codec mixing
@@ -107,16 +107,16 @@ static inline sce_forge_codec_status_t codec_zenoh_join_decode(sce_forge_cursor_
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_JOIN_MAX_BYTES bytes and use
  * `codec_zenoh_join_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_zenoh_join_encode(const codec_zenoh_join_t *self, sce_forge_writer_t *w, uint8_t s) {
-    /* RFC Axis-1 inversion: see decode — same suppress per input. */
+    /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)s;
-    /* RFC §5.B B1-δ + B2-β present-if encode: per-field byte append.
+    /* RFC §5.B present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
      * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
      * helpers. Branch fires before has_vle_fields so a codec mixing
@@ -176,7 +176,7 @@ static inline sce_forge_codec_status_t codec_zenoh_join_encode_to_buf(const code
     return _st;
 }
 
-/* RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+/* RFC §5.B flags primitive: per-bit-range accessors over
  * the carrier field. Single-bit (width=1) reads as bool; multi-bit
  * (width>=2) reads as the smallest unsigned C11 integer type that fits
  * (uint8_t / uint16_t / uint32_t / uint64_t). Setters mask + shift on

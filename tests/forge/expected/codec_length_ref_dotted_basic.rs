@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B B1-α: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -49,7 +49,7 @@ impl<'a> CodecLengthRefDottedBasic<'a> {
         // cursor remaining. Codecs WITH a tail field still consume
         // to end (tail's definition forces it). The prior
         // "consume entire cursor" behaviour deferred to "the first
-        // multi-frame consumer" — TLV chain (B3-α) is that consumer,
+        // multi-frame consumer" — the TLV chain is that consumer,
         // so length-ref entry codecs now decode-iterably from a
         // shared cursor without each entry eating the next entry's
         // bytes.
@@ -81,7 +81,7 @@ impl<'a> CodecLengthRefDottedBasic<'a> {
         Ok(value)
     }
 
-    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // RFC §5.B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as bool; multi-bit
     // (width>=2) reads as the smallest unsigned integer that fits the
     // range. Setters mask + shift on the way in so out-of-range
@@ -164,7 +164,7 @@ pub struct CodecLengthRefDottedBasicOwned {
 
 #[allow(dead_code)]
 impl CodecLengthRefDottedBasicOwned {
-    // RFC §5.B B1-γ + B5-α read-accessor parity with the borrowed view: pure
+    // RFC §5.B read-accessor parity with the borrowed view: pure
     // bit getters over the copied carrier (rkyv Archived↔native getter
     // parity), so alloc consumers read `{Codec}Owned` with the same API as
     // the borrowed view and never re-derive the SCE wire bit layout (SSOT).

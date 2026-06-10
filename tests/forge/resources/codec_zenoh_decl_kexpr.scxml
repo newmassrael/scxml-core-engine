@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh declare-keyexpr body (RFC §5.B Wire RFC
-     Phase B Y1). First wireexpr-bearing declare body — composes Y0a
+<!-- SCE Forge conformance: Zenoh declare-keyexpr body (RFC §5.B)
+     . First wireexpr-bearing declare body — composes Y0a
      wireexpr through Y0c embed grammar with B5-γ Parent-scope parent-
      flag threading (Case B: pass-through `parent_flags`).
 

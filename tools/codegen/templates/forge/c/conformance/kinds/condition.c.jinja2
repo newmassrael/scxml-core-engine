@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Condition kind — pure boolean predicate; pre-baked oracle (RFC §5.J.2 F7). #}
+{# Condition kind — pure boolean predicate; pre-baked oracle. #}
 static void test_{{ f.name }}(void) {
     static const struct {
 {% for arg_ty in f.args %}

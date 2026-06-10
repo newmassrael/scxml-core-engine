@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh declare-subscriber body (RFC §5.B
-     Wire RFC Phase B Y1).
+<!-- SCE Forge conformance: Zenoh declare-subscriber body (RFC §5.B)
+     .
 
      Mirrors zenoh-pico `_z_decl_subscriber_encode` (src/protocol/codec/
      declarations.c lines 81-85) which delegates to

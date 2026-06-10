@@ -42,7 +42,7 @@ func DecodeCodecLengthRefDottedBasic(cursor *codec.SceCursor) (*CodecLengthRefDo
 	return value, nil
 }
 
-// RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+// RFC §5.B flags primitive: per-bit-range accessors over
 // the carrier field. Single-bit (width=1) reads as bool; multi-bit
 // (width>=2) reads as the smallest unsigned int type that fits. Setters
 // mask + shift on the way in so out-of-range callers can't corrupt

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh INTEREST envelope (RFC §5.B Wire RFC
-     Phase B Y3 atomic 2b-iv — first realistic disjunction primitive
+<!-- SCE Forge conformance: Zenoh INTEREST envelope (RFC §5.B —
+     first realistic disjunction primitive
      consumer + parent-owns-id refactor pin).
 
      Mirrors zenoh-pico `_z_n_interest_encode` /

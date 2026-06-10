@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Hello body — final
-     remaining Batch 1 fixture for B5-ι (Wire RFC Phase B Batch 1).
-     First REALISTIC parent-scope consumer of B5-μ
-     `<sce:repeat sce:present-if="parent.<flag>"/>` (Wire RFC Phase B
-     X1). Pairs with `codec_repeat_present_if_basic` (the local-scope
+     remaining fixture of the zenoh-pico transport parity batch.
+     First REALISTIC parent-scope consumer of
+     `<sce:repeat sce:present-if="parent.<flag>"/>`
+     (RFC §5.B). Pairs with `codec_repeat_present_if_basic` (the local-scope
      primitive demo).
 
      Mirrors zenoh-pico `_z_hello_encode` (src/protocol/codec/message.c

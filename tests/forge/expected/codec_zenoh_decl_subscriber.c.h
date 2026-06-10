@@ -19,7 +19,7 @@
 
 typedef struct {
     uint32_t id;
-    /* RFC §5.B Y0c embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
+    /* RFC §5.B embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
     codec_zenoh_wireexpr_t wireexpr;
 } codec_zenoh_decl_subscriber_t;
 
@@ -29,7 +29,7 @@ typedef struct {
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_decode(sce_forge_cursor_t *cursor, codec_zenoh_decl_subscriber_t *out, uint8_t n) {
-    /* RFC Axis-1 inversion: defensive (void) suppress per declared
+    /* Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
      * `<sce:flag-input>` so codecs that haven't consumed an input via
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)n;
@@ -53,14 +53,14 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_decode(sce_fo
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_DECL_SUBSCRIBER_MAX_BYTES bytes and use
  * `codec_zenoh_decl_subscriber_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_zenoh_decl_subscriber_encode(const codec_zenoh_decl_subscriber_t *self, sce_forge_writer_t *w, uint8_t n) {
-    /* RFC Axis-1 inversion: see decode — same suppress per input. */
+    /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)n;
     /* RFC §5.B B4: per-field bit-size dispatch routes Fixed /
      * LengthRef / Tail siblings of VLE fields through

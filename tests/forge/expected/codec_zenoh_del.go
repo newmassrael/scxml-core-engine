@@ -20,7 +20,7 @@ type CodecZenohDel struct {
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohDel(cursor *codec.SceCursor) (*CodecZenohDel, error) {
-	// RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+	// RFC §5.B empty body — zero-byte payload, no cursor work.
 	_ = cursor
 	return &CodecZenohDel{}, nil
 }
@@ -30,7 +30,7 @@ func DecodeCodecZenohDel(cursor *codec.SceCursor) (*CodecZenohDel, error) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohDel) Encode(w codec.SceSink) error {
-	// RFC §5.B B5-α empty body — zero-byte payload.
+	// RFC §5.B empty body — zero-byte payload.
 	_ = w
 	return nil
 }

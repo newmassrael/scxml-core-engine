@@ -17,7 +17,7 @@
 #define CODEC_ZENOH_EXT_UNIT_MAX_BYTES 0
 
 typedef struct {
-    /* RFC §5.B B5-α empty body — C11 §6.7.2.1 requires a struct to
+    /* RFC §5.B empty body — C11 §6.7.2.1 requires a struct to
      * declare at least one member; this placeholder is never on the
      * wire (encoder writes 0 bytes regardless of its value). */
     char _reserved;
@@ -29,7 +29,7 @@ typedef struct {
  * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_ext_unit_decode(sce_forge_cursor_t *cursor, codec_zenoh_ext_unit_t *out) {
-    /* RFC §5.B B5-α empty body — zero-byte payload, no cursor work.
+    /* RFC §5.B empty body — zero-byte payload, no cursor work.
      * The placeholder member is initialised to 0 to keep callers out
      * of UB territory if they ever inspect it. */
     (void)cursor;
@@ -37,14 +37,14 @@ static inline sce_forge_codec_status_t codec_zenoh_ext_unit_decode(sce_forge_cur
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B B1-α encode-side primary: write `*self` into the caller-
+/* RFC §5.B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_EXT_UNIT_MAX_BYTES bytes and use
  * `codec_zenoh_ext_unit_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_zenoh_ext_unit_encode(const codec_zenoh_ext_unit_t *self, sce_forge_writer_t *w) {
-    /* RFC §5.B B5-α empty body — zero-byte payload. */
+    /* RFC §5.B empty body — zero-byte payload. */
     (void)self;
     (void)w;
     return SCE_FORGE_CODEC_OK;

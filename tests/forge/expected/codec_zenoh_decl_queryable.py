@@ -27,7 +27,7 @@ class CodecZenohDeclQueryable:
         (RFC §5.B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B B1-δ + B2-β present-if primitive: streaming decode
+        # RFC §5.B present-if primitive: streaming decode
         # advances the cursor per field. Per-field statements live
         # inside one outer `try:` block so the first peek/advance
         # failure unwinds to a single `except NeedMoreBytes`. Per-
@@ -61,12 +61,12 @@ class CodecZenohDeclQueryable:
         )
 
     def encode(self, w: SceSink, n: int, z: int) -> None:
-        """RFC §5.B B1-α encode-side primary: write ``self`` into the
+        """RFC §5.B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B B1-δ + B2-β present-if encode.
+        # RFC §5.B present-if encode.
         _vle = int(self.id)
         while _vle >= 0x80:
             w.write_u8((_vle & 0x7F) | 0x80)

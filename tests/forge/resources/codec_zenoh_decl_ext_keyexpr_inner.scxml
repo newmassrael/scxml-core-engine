@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh decl_ext_keyexpr inner body codec
-     (RFC §5.B Y0b — Wire RFC Phase B Y0b foundation). The "inner
+     (RFC §5.B). The "inner
      cursor" body codec consumed by codec_zenoh_decl_ext_keyexpr's
      length-bound embed: outer envelope strips the VLE total_length
      prefix and hands a bounded sub-cursor to this codec, mirroring

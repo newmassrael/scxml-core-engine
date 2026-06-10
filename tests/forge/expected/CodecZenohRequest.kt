@@ -16,7 +16,7 @@ import com.sce.generated.codec_zenoh_msg_put.*
 import com.sce.generated.codec_zenoh_msg_del.*
 import com.sce.generated.codec_zenoh_query.*
 
-// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// RFC §5.B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
@@ -45,7 +45,7 @@ data class CodecZenohRequest(
     // codec's `<sce:flag value=>`-baked default fields above.
     var body: CodecZenohRequestVariant = CodecZenohRequestVariant.CodecZenohMsgPut(com.sce.generated.codec_zenoh_msg_put.CodecZenohMsgPut())
 ) {
-    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+    // RFC §5.B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
@@ -93,7 +93,7 @@ data class CodecZenohRequest(
         }
     }
 
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable

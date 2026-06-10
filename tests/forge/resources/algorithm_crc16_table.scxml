@@ -2,7 +2,7 @@
 <!--
   CRC16-CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflect, no xor-out)
   in the **table form** — RFC §5.F build-time const-fold acceptance
-  fixture for Phase A4-β.
+  fixture.
 
   The 256-entry `array<u16, 256>` table is computed at code-generation
   time by the host interpreter (`forge::const_fold::evaluate_fold`)

@@ -20,14 +20,14 @@ data class CodecZenohUndeclQueryable(
     var id: UInt = 0u,
     var ext_keyexpr: CodecZenohDeclExtKeyexpr? = null
 ) {
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     @Suppress("UNUSED_PARAMETER")
     fun encode(w: SceSink, Z: UByte): CodecError? {
-        // RFC §5.B B1-δ + B2-β present-if encode: per-field byte
+        // RFC §5.B present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a
@@ -63,10 +63,10 @@ data class CodecZenohUndeclQueryable(
         /// (RFC §5.B L494-519).
         @Suppress("UNUSED_PARAMETER")
         fun decode(cursor: SceCursor, Z: UByte): CodecZenohUndeclQueryable? {
-            // RFC §5.B B1-δ + B2-β present-if primitive: streaming
+            // RFC §5.B present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
-            // B2-β extends gating to Tail / LengthRef / Vle bit-sizes
+            // Gating extends to Tail / LengthRef / Vle bit-sizes
             // via dispatch inside `present_if_decode_stmt`. Per-field
             // `is_repeat` routes Repeat fields to the dedicated
             // helper. Branch fires before has_vle_fields so a codec

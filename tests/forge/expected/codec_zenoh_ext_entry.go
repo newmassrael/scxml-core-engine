@@ -15,14 +15,14 @@ import (
 
 // CodecZenohExtEntryDefault bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
-// observed tag back onto the wire (RFC §5.B variant primitive B1-β).
+// observed tag back onto the wire (RFC §5.B variant primitive).
 type CodecZenohExtEntryDefault struct {
 	Tag uint8
 	Body codec_zenoh_ext_unit.CodecZenohExtUnit
 }
 
 // CodecZenohExtEntryVariant is a discriminated-union body for the codec's
-// tag-field suffix (RFC §5.B variant primitive B1-β). Exactly one of
+// tag-field suffix (RFC §5.B variant primitive). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecZenohExtEntryVariant struct {
@@ -59,7 +59,7 @@ func NewCodecZenohExtEntry() *CodecZenohExtEntry {
 // is shorter than the declared minimum frame (RFC §5.B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohExtEntry(cursor *codec.SceCursor) (*CodecZenohExtEntry, error) {
-	// Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+	// Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
 	raw, err := cursor.PeekSlice(1)
 	if err != nil {
 		return nil, err
@@ -107,7 +107,7 @@ func DecodeCodecZenohExtEntry(cursor *codec.SceCursor) (*CodecZenohExtEntry, err
 	}, nil
 }
 
-// RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors over
+// RFC §5.B flags primitive: per-bit-range accessors over
 // the carrier field. Single-bit (width=1) reads as bool; multi-bit
 // (width>=2) reads as the smallest unsigned int type that fits. Setters
 // mask + shift on the way in so out-of-range callers can't corrupt

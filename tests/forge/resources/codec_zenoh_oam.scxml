@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh OAM envelope (RFC §5.B Wire RFC
-     Phase B Y3 atomic 2b-iv — multi-arm own-field variant on header
+<!-- SCE Forge conformance: Zenoh OAM envelope (RFC §5.B —
+     multi-arm own-field variant on header
      ENC bits).
 
      Mirrors zenoh-pico `_z_oam_encode` / `_z_oam_decode`

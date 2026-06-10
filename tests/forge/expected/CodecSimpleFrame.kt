@@ -20,7 +20,7 @@ data class CodecSimpleFrame(
     var length: UByte = 0.toUByte(),
     var payload: UShort = 0.toUShort()
 ) {
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable

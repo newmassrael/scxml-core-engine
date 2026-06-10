@@ -1,4 +1,4 @@
-// SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B B5-θ)
+// SCE Forge: Auto-generated codec test-vector sidecar (RFC §5.B)
 // Companion to codec_length_ref_uint32_le.rs — do not edit; regenerate from the source SCXML.
 
 #[test]

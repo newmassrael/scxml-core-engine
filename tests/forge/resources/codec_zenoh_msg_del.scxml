@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh DEL envelope (RFC §5.B Wire RFC
-     Phase B Y3 atomic 2b-iii — sub-codec, request body variant arm
+<!-- SCE Forge conformance: Zenoh DEL envelope (RFC §5.B —
+     sub-codec, request body variant arm
      for MID 0x02 = Z_DEL).
 
      Mirrors zenoh-pico `_z_del_encode` / `_z_del_decode`

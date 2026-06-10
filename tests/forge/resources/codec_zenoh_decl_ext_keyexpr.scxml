@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh decl_ext_keyexpr outer envelope (RFC
-     §5.B Y0b — Wire RFC Phase B Y0b foundation, the load-bearing
+<!-- SCE Forge conformance: Zenoh decl_ext_keyexpr outer envelope (RFC §5.B —
+     the load-bearing
      primitive demo for Y0b's two embed-attribute lifts).
 
      Mirrors `_z_decl_ext_keyexpr_encode` (declarations.c:38-50)

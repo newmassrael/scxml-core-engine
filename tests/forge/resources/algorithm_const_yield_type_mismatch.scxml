@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Negative fixture for RFC §5.F Phase A4-γ wire code
+  Negative fixture for the RFC §5.F wire code
   `algorithm/const-yield-type-mismatch`.
 
   The fold declares `elem-type="uint16"` (an integer) but its

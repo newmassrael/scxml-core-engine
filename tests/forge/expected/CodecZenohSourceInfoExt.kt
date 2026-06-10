@@ -20,7 +20,7 @@ data class CodecZenohSourceInfoExt(
     var ext_size: ULong = 0uL,
     var info: CodecZenohSourceInfo = CodecZenohSourceInfo()
 ) {
-    /// RFC §5.B B1-α encode-side primary: write `self` into the
+    /// RFC §5.B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable

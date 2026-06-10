@@ -27,7 +27,7 @@
 
 namespace SCE::Generated::CodecZenohDeclaration {
 
-// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// RFC §5.B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. `std::variant` carries one of N arm bodies
 // (each an imported codec type); the optional Default arm is a small
 // struct that bundles the runtime tag value with the catch-all body.
@@ -69,7 +69,7 @@ struct CodecZenohDeclaration {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecZenohDeclaration> decode(::SCE::Forge::SceCursor& cursor) {
-        // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+        // Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
         uint8_t header = raw[0];
@@ -147,7 +147,7 @@ struct CodecZenohDeclaration {
         };
     }
 
-    // RFC §5.B B1-γ + B5-α flags primitive: per-bit-range accessors.
+    // RFC §5.B flags primitive: per-bit-range accessors.
     // Single-bit (width=1) reads as bool; multi-bit (width>=2) reads as
     // the smallest unsigned integer type that fits the range. Setters
     // mask + shift on the way in so out-of-range callers can't corrupt

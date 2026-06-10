@@ -20,7 +20,7 @@
 
 namespace SCE::Generated::CodecVariantDispatch {
 
-// RFC §5.B variant primitive (B1-β): discriminated-union body for the
+// RFC §5.B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. `std::variant` carries one of N arm bodies
 // (each an imported codec type); the optional Default arm is a small
 // struct that bundles the runtime tag value with the catch-all body.
@@ -55,7 +55,7 @@ struct CodecVariantDispatch {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecVariantDispatch> decode(::SCE::Forge::SceCursor& cursor) {
-        // Decode fixed prefix (RFC §5.B variant B1-β: fields before tag suffix).
+        // Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
         const std::uint8_t* raw = cursor.peek_slice(1);
         if (raw == nullptr) return std::nullopt;
         uint8_t msg_id = raw[0];

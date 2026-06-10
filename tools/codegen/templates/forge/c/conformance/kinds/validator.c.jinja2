@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Validator kind — pre-baked oracle. RFC §5.J.2 V2c: stateless validators
+{# Validator kind — pre-baked oracle. Stateless validators
    call the free function `<name>_validate(args...)`; stateful ones init a
    state struct once per fixture and pass `&state` to advance prev fields
    across cases. The result struct is `<name>_result_t` with `bool valid`
