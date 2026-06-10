@@ -8,9 +8,9 @@
 //     Running ──Stop──▶ Stopped
 //     Running ──End──▶ Done (final)
 //
-// This is the Phase 1 acceptance gate #1: if Engine + StatePolicy can be
-// implemented by hand for a trivial SM and drive transitions correctly, the
-// trait shape is viable for template-driven generation.
+// Smoke test: if Engine + StatePolicy can be implemented by hand for a
+// trivial SM and drive transitions correctly, the trait shape is viable for
+// template-driven generation. Pins that baseline.
 
 use sce_rust_runtime::{Engine, StatePolicy};
 

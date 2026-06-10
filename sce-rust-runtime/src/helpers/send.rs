@@ -5,8 +5,11 @@
 //!
 //! Partial port of `sce/include/common/SendHelper.h`. Only the parts needed for
 //! static-target send actions are ported here (target validation, routing
-//! classification, send ID generation). The full 21.8K SendHelper with
-//! parent/child invoke routing and HTTP form encoding is deferred to Phase 3/4.
+//! classification, send ID generation) — the pure subset every profile needs.
+//! The C++ SendHelper's remaining responsibilities live in their own
+//! `!no_std`-gated modules: parent/child invoke routing in
+//! `helpers::invoke_processing`, HTTP form encoding in `helpers::url_encoding`
+//! and the `http` module.
 //!
 //! All validation functions are pure (no side effects, no state).
 
