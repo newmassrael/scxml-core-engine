@@ -14,20 +14,23 @@ section granularity is the authoritative granularity; the catalog binds at it an
 no finer (the "binding granularity <= SSOT granularity" rule this episode
 established).
 
-Contract emitted (Mnemosyne generic catalog contract):
+Contract emitted (Mnemosyne `verifies-catalog/v1`, deserialized by
+mnemosyne-validate::verifies_linkage::VerifiesCatalog — field name `section_ids`
+is load-bearing, `symbol` optional, extra keys ignored):
     {
-      "version": 1,
+      "format": "verifies-catalog/v1",
       "entries": [
         {"file": "tests/w3c/aot_tests/Test387.h", "symbol": "Test387",
-         "sections": ["scxml-3.10"]},
+         "section_ids": ["scxml-3.10"]},
         ...
       ]
     }
 
-A binding (file, symbol -> section) is catalog-valid iff `section` is one of the
-listed sections for that (file, symbol). Section-granular: a test targeting
-specnum 6.4 lists "scxml-6.4"; sub-section bindings (6.4.1 ...) are intentionally
-NOT catalog-valid, since the metadata does not assert sub-section precision.
+A binding (file, symbol -> section) is catalog-valid iff `section` is EXACTLY one
+of the listed section_ids for that (file, symbol). Section-granular: a test
+targeting specnum 6.4 lists "scxml-6.4"; a sub-section binding (6.4.1 ...) is the
+`FinerThanDeclared` granularity lint, since the metadata does not assert
+sub-section precision.
 
 Deterministic and standard-library only.
 """
@@ -74,7 +77,7 @@ def build_entries(repo_root: str):
         entries.append({
             "file": header,
             "symbol": f"Test{tid}",
-            "sections": [specnum_to_section(specnum.strip())],
+            "section_ids": [specnum_to_section(specnum.strip())],
         })
     entries.sort(key=lambda e: int(e["symbol"][4:]))
     return entries, skipped
@@ -90,7 +93,7 @@ def main():
     args = ap.parse_args()
 
     entries, skipped = build_entries(args.repo_root)
-    catalog = {"version": 1, "entries": entries}
+    catalog = {"format": "verifies-catalog/v1", "entries": entries}
     rendered = json.dumps(catalog, indent=2, ensure_ascii=False) + "\n"
 
     if args.check:
