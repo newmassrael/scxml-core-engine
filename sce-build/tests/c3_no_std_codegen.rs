@@ -1,6 +1,6 @@
 //! Rust no_std variant rejection integration tests.
 //!
-//! Watching-zenoh RFC §5.J.2 author-side gate: when
+//! Watching-zenoh RFC §synth-5-J-2 author-side gate: when
 //! `sce-codegen generate -l rust --no-std <doc>` is invoked, the
 //! SCXML document must not exercise constructs that require a
 //! std-coupled runtime. Four axes are checked in order:

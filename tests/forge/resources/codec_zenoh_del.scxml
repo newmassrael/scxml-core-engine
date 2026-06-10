@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: stripped-down Zenoh DEL body leaf (RFC §5.B
+<!-- SCE Forge conformance: stripped-down Zenoh DEL body leaf (RFC §synth-5-B
      recursive variant body). Used as the DEL-arm
      body inside the inner variant codec_zenoh_push_body. Empty body —
      the inner variant's header byte (carrying the DEL MID) marks the

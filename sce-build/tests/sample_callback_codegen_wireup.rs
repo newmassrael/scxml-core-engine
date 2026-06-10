@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // `<sce:on-sample>` sample-delivery codegen wire-up integration tests
-// (sample lifecycle surface per watching-zenoh RFC §5.E).
+// (sample lifecycle surface per watching-zenoh RFC §synth-5-E).
 //
 // Pins the rendered sample-delivery surface: the per-link
 // `deliver_link_X_sample` trait + impl emission shape, the

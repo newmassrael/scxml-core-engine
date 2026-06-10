@@ -28,19 +28,19 @@
 #define {{ c_min_bytes_macro }} {{ min_bytes }}
 #define {{ c_max_bytes_macro }} {{ max_bytes }}
 {% if has_dma_aligned_fields -%}
-/* RFC §5.B B3 DMA alignment primitive: structural drift detection.
+/* RFC §synth-5-B B3 DMA alignment primitive: structural drift detection.
  * Build-time validation already guaranteed `byte_offset % burst_align
  * == 0` and that all preceding fields are Fixed bit-size. These
  * `_Static_assert` declarations catch any future hand-edit to the
  * byte_offset that would break the wire-layout invariant. */
 {% for field in fields %}{% if field.dma_burst_align -%}
 _Static_assert({{ field.byte_off }} % {{ field.dma_burst_align }} == 0,
-               "RFC §5.B B3: codec field '{{ field.id }}' offset must be {{ field.dma_burst_align }}-aligned");
+               "RFC §synth-5-B B3: codec field '{{ field.id }}' offset must be {{ field.dma_burst_align }}-aligned");
 {% endif %}{% endfor %}
 {% endif %}
 
 {% if has_variant %}
-/* RFC §5.B variant primitive: tagged-union body for the codec's
+/* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
  * preserves the runtime tag value when the default arm fires; the inner
  * union holds one body slot per arm (per-arm fields keep the template
@@ -70,29 +70,29 @@ typedef struct {
 {% endif %}
 typedef struct {
 {% if has_no_fields %}
-    /* RFC §5.B empty body — C11 §6.7.2.1 requires a struct to
+    /* RFC §synth-5-B empty body — C11 §6.7.2.1 requires a struct to
      * declare at least one member; this placeholder is never on the
      * wire (encoder writes 0 bytes regardless of its value). */
     char _reserved;
 {% else %}
 {% for field in fields %}
 {% if field.is_repeat %}
-    /* RFC §5.B B2 repeat: fixed array of {{ field.repeat_body_type }} elements (max {{ field.max_count }}) */
+    /* RFC §synth-5-B B2 repeat: fixed array of {{ field.repeat_body_type }} elements (max {{ field.max_count }}) */
     {{ field.repeat_body_type }} {{ field.id }}[{{ field.max_count }}];
 {% if field.c_emit_len_member %}
     size_t  {{ field.id }}_len;
 {% endif %}
 {% elif field.is_tlv_chain %}
-    /* RFC §5.B B3 tlv-chain: fixed array of {{ field.tlv_chain_body_type }} entries (max-depth {{ field.max_depth }}, on-overflow={{ field.on_overflow }}) */
+    /* RFC §synth-5-B B3 tlv-chain: fixed array of {{ field.tlv_chain_body_type }} entries (max-depth {{ field.max_depth }}, on-overflow={{ field.on_overflow }}) */
     {{ field.tlv_chain_body_type }} {{ field.id }}[{{ field.max_depth }}];
 {% if field.c_emit_len_member %}
     size_t  {{ field.id }}_len;
 {% endif %}
 {% elif field.is_embed %}
-    /* RFC §5.B embed: nested {{ field.embed_body_type }} struct (no length prefix on the wire) */
+    /* RFC §synth-5-B embed: nested {{ field.embed_body_type }} struct (no length prefix on the wire) */
     {{ field.embed_body_type }} {{ field.id }};
 {% elif field.is_string %}
-    /* RFC §5.B sce:type="string" payload (sce:max-size="{{ field.max_size }}").
+    /* RFC §synth-5-B sce:type="string" payload (sce:max-size="{{ field.max_size }}").
      * `char[N] + size_t len` parallels the bytes pair (uint8_t[N] + len)
      * but the host-language type signals UTF-8 text storage; the C
      * string is NOT NUL-terminated — payloads of exactly `max_size`
@@ -149,11 +149,11 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *cursor, {{ c_struct_typedef }} *out{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) {
 {% if has_parent_flags %}
-    /* RFC §5.B: `parent_flags` is the parent codec's flags
+    /* RFC §synth-5-B: `parent_flags` is the parent codec's flags
      * carrier value, threaded by the variant arm dispatcher. Body
      * fields gated via `parent.<flag>` predicates read from this
      * parameter; defensive `(void)parent_flags` suppresses the
@@ -174,7 +174,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
      * at uint8_t — matches parent's `<sce:flag>` width upper bound). */
 {% endif %}
 {% if has_no_fields %}
-    /* RFC §5.B empty body — zero-byte payload, no cursor work.
+    /* RFC §synth-5-B empty body — zero-byte payload, no cursor work.
      * The placeholder member is initialised to 0 to keep callers out
      * of UB territory if they ever inspect it. */
     (void)cursor;
@@ -182,7 +182,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     return SCE_FORGE_CODEC_OK;
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-    /* RFC §5.B peek-byte / streaming-prefix:
+    /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix decode (variable-length fields supported via
      * per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
      * mode additionally peeks the cursor's next byte for variant tag
@@ -203,7 +203,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endif %}
 {% else %}
 {% if fields %}
-    /* Decode fixed prefix (RFC §5.B variant: fields before tag suffix). */
+    /* Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix). */
     const uint8_t *raw = sce_forge_cursor_peek(cursor, {{ c_min_bytes_macro }});
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
 {% for field in fields %}
@@ -239,7 +239,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     }
     return SCE_FORGE_CODEC_OK;
 {% elif has_present_if_fields %}
-    /* RFC §5.B present-if primitive: streaming decode
+    /* RFC §synth-5-B present-if primitive: streaming decode
      * advances the cursor per field. C11 has no nullable wrapper so
      * the gated field's storage stays as plain `T` (with `_len = 0`
      * for absent bytes payloads); the carrier's flag bit is the
@@ -262,7 +262,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
     return SCE_FORGE_CODEC_OK;
 {% elif has_vle_fields %}
     /* Streaming codec: each field reads from cursor directly (VLE
-     * base-128 chain, 1..=ceil(N/7) bytes per field). RFC §5.B B4:
+     * base-128 chain, 1..=ceil(N/7) bytes per field). RFC §synth-5-B B4:
      * per-field bit-size dispatch routes Fixed / LengthRef siblings
      * of VLE fields through `present_if_decode_stmt` (predicate=None
      * arms — for VLE the helper emits the local-decl + `out->` assign
@@ -281,7 +281,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields %}
-    /* RFC §5.B B2 repeat / B3 TLV chain primitives: streaming decode
+    /* RFC §synth-5-B B2 repeat / B3 TLV chain primitives: streaming decode
      * mixes plain fixed-width reads with bounded-iteration loops over
      * imported codec entries. Repeat: bounded by `out-><len_field>`
      * (length-field) or until cursor exhaustion (until-eof); MAX_COUNT
@@ -301,7 +301,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
 {% elif has_variable_fields %}
-    /* Variable-length codec. RFC §5.B B3 stream-correct shape:
+    /* Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
      * a codec without `<sce:field sce:bit-size="tail">` consumes only
      * the bytes it actually decoded (`min_bytes + length_value`)
      * rather than the entire cursor remaining. Codecs WITH a tail
@@ -330,7 +330,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
         memcpy(out->{{ field.id }}, raw + {{ field.byte_off }}, _n);
         out->{{ field.id }}_len = _n;
     }
-{% else %}{# length-ref — RFC §5.B: length_n_expr folds
+{% else %}{# length-ref — RFC §synth-5-B: length_n_expr folds
             in `sce:length-arith` (defaults to bare `(size_t)out->...`
             when arith=0 to keep historical goldens byte-stable). #}
     {
@@ -360,7 +360,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
 {% endif %}
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve {{ c_max_bytes_macro }} bytes and use
@@ -368,7 +368,7 @@ static inline sce_forge_codec_status_t {{ c_decode_func }}(sce_forge_cursor_t *c
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typedef }} *self, sce_forge_writer_t *w{{ params_after_first_arg }}) {
 {% if has_parent_flags %}
-    /* RFC §5.B: see decode — same parameter, same suppress. */
+    /* RFC §synth-5-B: see decode — same parameter, same suppress. */
     (void)parent_flags;
 {% endif %}
 {% if has_flag_inputs %}
@@ -376,20 +376,20 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {{ flag_input_unused_suppress }}
 {% endif %}
 {% if has_parent_tag_derivation %}
-    /* RFC §5.B parent-tag carriers — derive carrier bits from each embedded
+    /* RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
      * parent-tag variant's active arm before the carrier byte is
      * emitted. Each `_derived_<carrier>` local is OR'd into the
      * carrier's encode site. */
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if has_no_fields %}
-    /* RFC §5.B empty body — zero-byte payload. */
+    /* RFC §synth-5-B empty body — zero-byte payload. */
     (void)self;
     (void)w;
     return SCE_FORGE_CODEC_OK;
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-    /* RFC §5.B peek-byte / streaming-prefix:
+    /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode
      * prepends its own header byte (which the decoder peeked); no
      * separate tag byte here. Streaming-prefix mode (own-field):
@@ -430,7 +430,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
     }
     return SCE_FORGE_CODEC_OK;
 {% elif has_present_if_fields %}
-    /* RFC §5.B present-if encode: per-field byte append.
+    /* RFC §synth-5-B present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
      * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
      * helpers. Branch fires before has_vle_fields so a codec mixing
@@ -448,7 +448,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
 {% elif has_vle_fields %}
-    /* RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+    /* RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
      * LengthRef / Tail siblings of VLE fields through
      * `present_if_encode_block` (predicate=None arms). Pure-VLE
      * codecs stay byte-stable. */
@@ -465,7 +465,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
 {% endfor %}
     return SCE_FORGE_CODEC_OK;
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields %}
-    /* RFC §5.B B2 / B3 encode: fixed prefix appends byte-by-byte;
+    /* RFC §synth-5-B B2 / B3 encode: fixed prefix appends byte-by-byte;
      * list fields walk an in-place writer loop. Author keeps count
      * field (repeat) / `<id>_len` ≤ max_depth (tlv-chain) consistent
      * with the in-struct entry count (trust contract). */
@@ -483,7 +483,7 @@ static inline sce_forge_codec_status_t {{ c_encode_func }}(const {{ c_struct_typ
     return SCE_FORGE_CODEC_OK;
 {% else %}
 {% if has_dma_aligned_fields %}
-    /* RFC §5.B B3 DMA padding: zero-fill the gap between the current
+    /* RFC §synth-5-B B3 DMA padding: zero-fill the gap between the current
      * writer position and any aligned field's authored byte_offset
      * (deterministic zeros on the wire so peers stay byte-compatible
      * regardless of host allocator). */
@@ -545,7 +545,7 @@ static inline void {{ c_struct_snake }}_{{ field.quantity_accessor.setter_name }
 {% endfor %}
 {% endif %}
 {% if has_flags %}
-/* RFC §5.B flags primitive: per-bit-range accessors over
+/* RFC §synth-5-B flags primitive: per-bit-range accessors over
  * the carrier field. Single-bit (width=1) reads as bool; multi-bit
  * (width>=2) reads as the smallest unsigned C11 integer type that fits
  * (uint8_t / uint16_t / uint32_t / uint64_t). Setters mask + shift on

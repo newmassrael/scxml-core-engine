@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-// RFC §5.B: the round-trip uses `encode_to_vec`, the heap-backed
+// RFC §synth-5-B: the round-trip uses `encode_to_vec`, the heap-backed
 // convenience facade gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). Without `alloc` the generated
 // codecs include the gated `VecSink` import (also alloc-only), so the

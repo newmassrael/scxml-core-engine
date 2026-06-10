@@ -1,6 +1,6 @@
 //! Bounded-collection cross-doc resolution integration tests.
 //!
-//! Per watching-zenoh RFC §5.L lines 2566-2567 + 2615 + 2560-2562:
+//! Per watching-zenoh RFC §synth-5-L lines 2566-2567 + 2615 + 2560-2562:
 //! three failure axes against the build's forge-doc set, exercised
 //! through the `compile_scxml_with_imports` orchestrator (the validator
 //! cannot be exercised through `compile_forge_with_imports` because

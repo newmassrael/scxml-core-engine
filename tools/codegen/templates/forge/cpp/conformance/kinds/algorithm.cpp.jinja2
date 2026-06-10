@@ -1,12 +1,12 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Algorithm kind (RFC §5.A) — single-output free function. C++ harness
+{# Algorithm kind (RFC §synth-5-A) — single-output free function. C++ harness
    parity for the §A6 cross-(Rust, C11) byte-equivalence acceptance gate;
    cpp shipped at A3 alongside Rust, so the conformance fragment closes
    with rust+c11 in the same A6 commit.
 
-   Bytes args lower to `std::span<const std::uint8_t>` per RFC §5.J.5
+   Bytes args lower to `std::span<const std::uint8_t>` per RFC §synth-5-J-5
    (algorithm_param_type cpp arm); the oracle JSON delivers each `bytes`
    argument as a JSON array of integers, materialised here into a
    `std::vector<std::uint8_t>` so a `std::span` can borrow into it. #}

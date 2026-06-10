@@ -1,12 +1,12 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Algorithm kind (RFC §5.A) — single-output free function. Cross-language
+{# Algorithm kind (RFC §synth-5-A) — single-output free function. Cross-language
    byte-equivalence acceptance gate (RFC §A6); Python shipped post-A6
-   alongside its byte-golden + matrix flip, closing §5.J.4 to all six
+   alongside its byte-golden + matrix flip, closing §synth-5-J-4 to all six
    backends.
 
-   `bytes` args lower to Python's `bytes` (RFC §5.J.5). Numeric scalar
+   `bytes` args lower to Python's `bytes` (RFC §synth-5-J-5). Numeric scalar
    args route through Python's dynamic typing, so the JSON values are
    passed through directly. The oracle delivers `bytes` arguments as a
    JSON array of integers, which we convert via `bytes(...)`. #}

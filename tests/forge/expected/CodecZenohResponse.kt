@@ -14,7 +14,7 @@ import com.sce.generated.codec_zenoh_ext_entry.*
 import com.sce.generated.codec_zenoh_reply.*
 import com.sce.generated.codec_zenoh_err.*
 
-// RFC §5.B variant primitive: discriminated-union body for the
+// RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
@@ -44,7 +44,7 @@ data class CodecZenohResponse(
     // codec's `<sce:flag value=>`-baked default fields above.
     var body: CodecZenohResponseVariant = CodecZenohResponseVariant.CodecZenohReply(com.sce.generated.codec_zenoh_reply.CodecZenohReply())
 ) {
-    // RFC §5.B flags primitive: per-bit-range accessors over
+    // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
@@ -92,13 +92,13 @@ data class CodecZenohResponse(
         }
     }
 
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // RFC §5.B peek-byte / streaming-prefix:
+        // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
         // separate tag byte here. Streaming-prefix mode (own-field):
@@ -162,9 +162,9 @@ data class CodecZenohResponse(
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
         fun decode(cursor: SceCursor): CodecZenohResponse? {
-            // RFC §5.B peek-byte / streaming-
+            // RFC §synth-5-B peek-byte / streaming-
             // prefix: streaming prefix decode (variable-length fields
             // supported via per-field present_if/tlv-chain/embed/repeat
             // helpers). Peek-byte mode additionally peeks the cursor's

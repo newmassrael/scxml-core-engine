@@ -22,7 +22,7 @@ use std::path::PathBuf;
 /// wrong — identity, expected/actual values, stage — and remain
 /// orthogonal to position.
 ///
-/// Watching-zenoh RFC §5.O: also reused as the per-IR-node
+/// Watching-zenoh RFC §synth-5-O: also reused as the per-IR-node
 /// provenance record. Every emission-eligible node carries an
 /// `Option<SourceLocation>` so codegen templates can emit per-backend
 /// SCE-MAP markers (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`)
@@ -501,14 +501,14 @@ pub enum ValidationError {
     #[error("{procedure}: {detail}")]
     BytesMaxSizeViolation { procedure: String, detail: String },
 
-    /// RFC §5.A: a local `<sce:var>` or `<sce:foreach item>` reuses
+    /// RFC §synth-5-A: a local `<sce:var>` or `<sce:foreach item>` reuses
     /// the name of a parameter (or another local) inside the same
     /// algorithm body. Read/write access becomes ambiguous in v1, so
     /// the parser rejects the reuse before lowering.
     #[error("algorithm: identifier '{name}' shadows {what}")]
     AlgorithmLocalShadowsParam { name: String, what: String },
 
-    /// RFC §5.A: `<sce:assign target=...>` writes to an l-value the
+    /// RFC §synth-5-A: `<sce:assign target=...>` writes to an l-value the
     /// algorithm body cannot mutate. v1 forbids assigning to a
     /// parameter (parameters are read-only) and to the foreach loop
     /// variable. `target` is the offending l-value text;
@@ -516,7 +516,7 @@ pub enum ValidationError {
     #[error("<sce:assign target=\"{target}\">: {restriction}")]
     AlgorithmLvalueUnsupported { target: String, restriction: String },
 
-    /// RFC §5.A: an algorithm declares a non-void `<sce:return type>`
+    /// RFC §synth-5-A: an algorithm declares a non-void `<sce:return type>`
     /// in the signature but the body contains no terminal
     /// `<sce:return expr>` along every code path. v1 detects only the
     /// trivial case (last statement is not a return); flow-sensitive
@@ -526,7 +526,7 @@ pub enum ValidationError {
     )]
     AlgorithmReturnMissing,
 
-    /// RFC §5.A + §5.L line 2642-2647 (item C7 lowering): `<sce:foreach
+    /// RFC §synth-5-A + §synth-5-L line 2642-2647 (item C7 lowering): `<sce:foreach
     /// in="X">` where X resolves to neither (a) an algorithm signature
     /// param of type `bytes` nor (b) an `<sce:import
     /// kind="bounded-collection" as="X">` alias. Codegen-time check,
@@ -539,7 +539,7 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// RFC §5.A line 311 + §5.L line 2642-2647 (item C7 lowering): `<sce:call
+    /// RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (item C7 lowering): `<sce:call
     /// target="alias.method">` where `alias` does not match any
     /// `<sce:import as="...">` declared in the enclosing algorithm doc.
     /// `candidates` is the sorted list of declared import aliases.
@@ -550,7 +550,7 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// RFC §5.A line 311 + §5.L line 2611-2618 (item C7 lowering): dotted
+    /// RFC §synth-5-A line 311 + §synth-5-L line 2611-2618 (item C7 lowering): dotted
     /// call's alias resolves but `method` is not in the kind's
     /// public-method set. For bounded-collection imports the closed
     /// callable set is `{find_by_index, get, get_by_slot, len,
@@ -567,15 +567,15 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// RFC §5.A line 333 (algorithms are pure: no heap allocation, no
-    /// closures, no exceptions/panics) + §5.L line 2611 (BC mutation
+    /// RFC §synth-5-A line 333 (algorithms are pure: no heap allocation, no
+    /// closures, no exceptions/panics) + §synth-5-L line 2611 (BC mutation
     /// API is `insert`/`remove`). Algorithm-body dispatch into a BC
     /// alias is read-only; `<sce:call target="bc_alias.insert">` or
     /// `bc_alias.remove` violates the purity contract.
     #[error("algorithm: <sce:call target=\"{target}\">: mutating bounded-collection method '{method}' is forbidden from algorithm body (algorithms are pure per RFC §5.A)")]
     AlgorithmBcMutationForbidden { target: String, method: String },
 
-    /// RFC §5.A v1 + §5.L line 2642-2647 (item C7 lowering): `<sce:foreach
+    /// RFC §synth-5-A v1 + §synth-5-L line 2642-2647 (item C7 lowering): `<sce:foreach
     /// in="<bc-alias>">` body declares a `<sce:var name="..."
     /// type="uint8">` — the legacy bytes-iteration pattern where the
     /// loop item is a `u8`. BC iteration carries the element-type, not
@@ -583,12 +583,12 @@ pub enum ValidationError {
     #[error("algorithm: <sce:foreach in=\"{src}\"> over bounded-collection: body's <sce:var name=\"{var_name}\" type=\"uint8\"> uses the bytes-iteration pattern but '{src}' is a bounded-collection (item carries element-type)")]
     AlgorithmForeachSourceBcWithBytesItemType { src: String, var_name: String },
 
-    /// RFC §5.A line 311 (item C7 lowering): dotted `<sce:call
+    /// RFC §synth-5-A line 311 (item C7 lowering): dotted `<sce:call
     /// target="alias.method">` argument count does not match the
     /// imported callable's signature arity. For algorithm imports the
     /// expected arity comes from the imported `<sce:signature>`'s
     /// `<sce:param>` count. BC methods have fixed arities (1-2 per
-    /// §5.L), validated by the same path.
+    /// §synth-5-L), validated by the same path.
     #[error("algorithm: <sce:call target=\"{target}\">: argument count {actual} does not match callable's arity {expected}")]
     AlgorithmCallArgCountMismatch {
         target: String,
@@ -596,7 +596,7 @@ pub enum ValidationError {
         expected: usize,
     },
 
-    /// RFC §5.B variant primitive: the variant's enumerated
+    /// RFC §synth-5-B variant primitive: the variant's enumerated
     /// arms don't cover the tag field's value domain AND no
     /// `<sce:default>` arm catches the unenumerated values. At least
     /// one tag value would reach the runtime decoder with no matching
@@ -628,7 +628,7 @@ pub enum ValidationError {
     /// to silently pick one. Author resolves by removing the
     /// `default="true"` from all but the intended arm. Distinct
     /// from `<sce:default>` (catch-all for unknown tag values),
-    /// which the parser still permits at most once per RFC §5.B.
+    /// which the parser still permits at most once per RFC §synth-5-B.
     #[error(
         "codec '{codec}': <sce:variant> declares more than one <sce:arm default=\"true\"/> \
          (first arm value={first_arm_value:#x}, second arm value={second_arm_value:#x}) — \
@@ -1010,7 +1010,7 @@ pub enum ValidationError {
         embedded_index: usize,
     },
 
-    /// RFC §5.B present-if primitive (item B1): the predicate on a
+    /// RFC §synth-5-B present-if primitive (item B1): the predicate on a
     /// `sce:present-if` attribute references a field that is **not**
     /// declared earlier in the same codec — either declared later
     /// (a forward reference, which would require a runtime peek the
@@ -1027,7 +1027,7 @@ pub enum ValidationError {
         refers_to: String,
     },
 
-    /// RFC §5.B repeat primitive (B2): the `sce:count` reference on a
+    /// RFC §synth-5-B repeat primitive (B2): the `sce:count` reference on a
     /// `<sce:repeat>` element points to a field that is **not**
     /// declared earlier in the same codec — either declared later (a
     /// forward reference the streaming decoder cannot resolve) or never
@@ -1043,7 +1043,7 @@ pub enum ValidationError {
         refers_to: String,
     },
 
-    /// RFC §5.B test-vector primitive: a `<sce:test-vector>` element
+    /// RFC §synth-5-B test-vector primitive: a `<sce:test-vector>` element
     /// appears under a `sce:kind` other than `algorithm` or
     /// `codec`. Other kinds (transform / lookup / validator
     /// / etc.) cannot host a hex-bytes round-trip oracle in v1 —
@@ -1061,7 +1061,7 @@ pub enum ValidationError {
         kind: ForgeKind,
     },
 
-    /// RFC §5.B B3 TLV chain primitive: `<sce:tlv-chain>` declared
+    /// RFC §synth-5-B B3 TLV chain primitive: `<sce:tlv-chain>` declared
     /// without `max-depth`. The attribute is mandatory because the chain
     /// is MCU-class — the runtime decoder needs a build-time bound to
     /// size its working set and to enforce the iterative-only contract
@@ -1074,7 +1074,7 @@ pub enum ValidationError {
     )]
     CodecTlvChainDepthUnspecified { codec: String, field: String },
 
-    /// RFC §5.B B3 DMA alignment primitive: a field with
+    /// RFC §synth-5-B B3 DMA alignment primitive: a field with
     /// `sce:dma-burst-align="N"` cannot be honored at build time —
     /// either its authored `sce:byte` is not divisible by `N`, or one
     /// of its preceding fields is variable-length (vle / length-ref /
@@ -1093,7 +1093,7 @@ pub enum ValidationError {
         reason: String,
     },
 
-    /// RFC §5.B peek-byte cross-codec contract — a
+    /// RFC §synth-5-B peek-byte cross-codec contract — a
     /// parent variant declares `<sce:peek-byte id="X"><sce:flag name=
     /// "F" bit="B" width="W"/></sce:peek-byte>` and an arm body codec
     /// declares its first `<sce:flags>` field with a `<sce:flag>` of
@@ -1109,9 +1109,9 @@ pub enum ValidationError {
         reason: String,
     },
 
-    /// RFC §5.C byte-stream link endpoint: `<sce:framer ref="..."/>`
+    /// RFC §synth-5-C byte-stream link endpoint: `<sce:framer ref="..."/>`
     /// is required on `sce:kind="link"` declarations. Without a framer
-    /// reference, the codegen cannot wire the §5.B codec into the RX/TX
+    /// reference, the codegen cannot wire the §synth-5-B codec into the RX/TX
     /// path, so the parser rejects the document at authoring time. The
     /// repair is structural — add a `<sce:framer ref="<codec_name>"/>`
     /// child whose `ref` matches a `sce:kind="codec"` document imported
@@ -1124,8 +1124,8 @@ pub enum ValidationError {
         name: String,
     },
 
-    /// RFC §5.C negative coverage: `<sce:link-class>` body text is
-    /// not in the closed enumeration (RFC §5.C lines 765-771 — `udp` /
+    /// RFC §synth-5-C negative coverage: `<sce:link-class>` body text is
+    /// not in the closed enumeration (RFC §synth-5-C lines 765-771 — `udp` /
     /// `tcp` / `serial` / `websocket` / `raw_eth`). Promotes the
     /// generic `validation/invalid-attribute` to a
     /// dedicated link-kind code so downstream agents can pattern-match
@@ -1141,7 +1141,7 @@ pub enum ValidationError {
         value: String,
     },
 
-    /// RFC §5.C negative coverage: `<sce:backpressure>` element
+    /// RFC §synth-5-C negative coverage: `<sce:backpressure>` element
     /// is required on `sce:kind="link"` declarations — the policy is
     /// load-bearing for the runtime crate's RX queue behavior under
     /// load. The parser used to tolerate the missing element by
@@ -1156,11 +1156,11 @@ pub enum ValidationError {
         name: String,
     },
 
-    /// RFC §5.C OS-axis negative coverage: the declared
+    /// RFC §synth-5-C OS-axis negative coverage: the declared
     /// `<sce:link-class>` cannot run on the deploy-resolved
-    /// `platform.os`. RFC §5.C lines 838 names this code; the
+    /// `platform.os`. RFC §synth-5-C lines 838 names this code; the
     /// admissibility matrix lives in [`LinkClass::admits_os`] mirroring
-    /// the table at RFC §5.C lines 765-771 strict-literal:
+    /// the table at RFC §synth-5-C lines 765-771 strict-literal:
     /// `udp` / `tcp` admit `bare_metal | linux | qnx`; `serial` /
     /// `websocket` / `raw_eth` admit `bare_metal` only. Anything off
     /// the table fires this diagnostic. The `candidates` axis is the
@@ -1183,12 +1183,12 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// RFC §5.C cross-resolution: the `<sce:rx-pool>` or
+    /// RFC §synth-5-C cross-resolution: the `<sce:rx-pool>` or
     /// `<sce:tx-pool>` reference resolves to a buffer-pool whose
     /// `<sce:slot-size>` is smaller than the framer codec's
     /// recursive worst-case encoded byte count. The TX path
     /// `event extract -> framer.encode() -> pool slot -> driver.send()`
-    /// (RFC §5.C lines 786-789) cannot honor zero-copy when the slot
+    /// (RFC §synth-5-C lines 786-789) cannot honor zero-copy when the slot
     /// cannot hold a full encoded frame; the link would silently
     /// stage-copy on every TX, defeating the whole point of pinning
     /// pool to framer in the schema. Fires only via
@@ -1201,8 +1201,8 @@ pub enum ValidationError {
     /// No `candidates` axis — the repair is to raise `<sce:slot-size>`
     /// on the bound pool or shrink the codec's worst-case body, both
     /// author choices; emitted as `Fix::None`.
-    /// RFC §5.C lines 793-794 spec anchor (rx-pool/tx-pool inherit the
-    /// §5.E pool model on both sides of the byte-stream).
+    /// RFC §synth-5-C lines 793-794 spec anchor (rx-pool/tx-pool inherit the
+    /// §synth-5-E pool model on both sides of the byte-stream).
     ///
     /// [`ImportContext`]: crate::forge::generator::ImportContext
     /// [`compile_forge_with_imports`]: crate::compile_forge_with_imports
@@ -1225,11 +1225,11 @@ pub enum ValidationError {
         /// Recursive worst-case encoded byte count of the resolved
         /// codec (matches `ImportContext::codec_max_bytes`, which
         /// already folds variant arm bodies / repeat / TLV chain
-        /// per RFC §5.B).
+        /// per RFC §synth-5-B).
         framer_max_bytes: u32,
     },
 
-    /// RFC §5.E buffer-pool placement validation: the declared
+    /// RFC §synth-5-E buffer-pool placement validation: the declared
     /// `<sce:section>` is not in the resolved machine's
     /// `memory.sram_regions` map. Fires only via
     /// [`compile_forge_with_deploy`] when both `deploy` and
@@ -1238,7 +1238,7 @@ pub enum ValidationError {
     /// list of region names the resolved machine declares — drives
     /// `Fix::ReplaceOneOf` so the author can either rename the pool's
     /// `<sce:section>` body or extend deploy.yaml `memory.sram_regions`.
-    /// RFC §5.E lines 1000-1023 + 1537 spec anchor.
+    /// RFC §synth-5-E lines 1000-1023 + 1537 spec anchor.
     #[error(
         "buffer-pool '{name}': section `{section}` is not declared in deploy.yaml `machines.{machine}.memory.sram_regions` — extend the memory map or rename the pool's <sce:section> body to one of {candidates:?}"
     )]
@@ -1253,7 +1253,7 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// RFC §5.E buffer-pool size validation: the pool's storage
+    /// RFC §synth-5-E buffer-pool size validation: the pool's storage
     /// footprint (`slot_count × slot_size`) does not fit inside the
     /// resolved SRAM region's `size` field. Fires only via
     /// [`compile_forge_with_deploy`] when section validation already
@@ -1262,7 +1262,7 @@ pub enum ValidationError {
     /// gate). No `candidates` axis — the repair is to raise the
     /// region size in deploy.yaml or shrink `slot_count`/`slot_size`;
     /// emitted as `Fix::None` because both axes are author choices.
-    /// RFC §5.E lines 1031-1086 spec anchor (linker-fragment-side
+    /// RFC §synth-5-E lines 1031-1086 spec anchor (linker-fragment-side
     /// SECTIONS{} entry constrains the same byte budget).
     #[error(
         "buffer-pool '{name}': storage footprint {bytes_required} bytes ({slot_count} × {slot_size}) does not fit in deploy.yaml `machines.{machine}.memory.sram_regions.{section}` of size {region_size} bytes — raise the region size or shrink slot-count/slot-size"
@@ -1284,14 +1284,14 @@ pub enum ValidationError {
         region_size: u64,
     },
 
-    /// RFC §5.E codegen self-check: the rendered linker fragment
+    /// RFC §synth-5-E codegen self-check: the rendered linker fragment
     /// is missing the explicit `. = ALIGN(<n>);` inter-pool sentinel
-    /// (§5.E lines 1059-1064). This is a codegen invariant violation,
+    /// (§synth-5-E lines 1059-1064). This is a codegen invariant violation,
     /// not an authoring mistake — fires only when the template itself
     /// drops the sentinel. The artifact is what makes the inter-pool
     /// boundary diff-visible (any PR that drops it shows up in the
     /// linker fragment) and what protects the post-pool boundary from
-    /// master-script INCLUDE re-ordering. RFC §5.E lines 1059-1064 +
+    /// master-script INCLUDE re-ordering. RFC §synth-5-E lines 1059-1064 +
     /// 1537 spec anchor.
     #[error(
         "buffer-pool '{name}': linker fragment is missing the inter-pool `. = ALIGN(N);` sentinel — codegen invariant violation per RFC §5.E lines 1059-1064; report at https://github.com/newmassrael/scxml-core-engine/issues"
@@ -1301,7 +1301,7 @@ pub enum ValidationError {
         name: String,
     },
 
-    /// watching-zenoh RFC §5.E C5 cache-maintenance validation
+    /// watching-zenoh RFC §synth-5-E C5 cache-maintenance validation
     /// (spec line 1544): pool `alignment` is smaller than the resolved
     /// target's `platform.dcache_line_size` while `cache-policy:
     /// maintain` is in effect. The cache-line alignment violation
@@ -1312,8 +1312,8 @@ pub enum ValidationError {
     /// Fires only via [`compile_forge_with_deploy`] after section
     /// validation passes (silent-skip when deploy.yaml is
     /// unavailable). Author resolution: raise `<sce:alignment>` to at
-    /// least the platform's `dcache_line_size`. RFC §5.E line 1544 +
-    /// §5.I line 1742-1744 spec anchor.
+    /// least the platform's `dcache_line_size`. RFC §synth-5-E line 1544 +
+    /// §synth-5-I line 1742-1744 spec anchor.
     #[error(
         "buffer-pool '{name}': alignment {pool_alignment} is smaller than target platform's `dcache_line_size` {dcache_line_size} on machine '{machine}' under `cache-policy: maintain`. Partial-line cache_invalidate_by_addr corrupts adjacent slot data on the start side. Raise <sce:alignment> to at least {dcache_line_size}."
     )]
@@ -1328,7 +1328,7 @@ pub enum ValidationError {
         dcache_line_size: u32,
     },
 
-    /// watching-zenoh RFC §5.E C5 cache-maintenance validation
+    /// watching-zenoh RFC §synth-5-E C5 cache-maintenance validation
     /// (spec line 1545): `<sce:slot-size>` is not a whole-number
     /// multiple of `platform.dcache_line_size` while `cache-policy:
     /// maintain` is in effect. Each slot must occupy a whole number
@@ -1339,7 +1339,7 @@ pub enum ValidationError {
     /// (silent-skip when deploy.yaml is unavailable). Author
     /// resolution: round `slot_size` up to the next cache-line
     /// multiple and continue using the original logical size from
-    /// within each slot. RFC §5.E line 1545 + §5.I line 1742-1744
+    /// within each slot. RFC §synth-5-E line 1545 + §synth-5-I line 1742-1744
     /// spec anchor.
     #[error(
         "buffer-pool '{name}': slot-size {slot_size} is not a whole-number multiple of target platform's `dcache_line_size` {dcache_line_size} on machine '{machine}' (remainder {remainder}) under `cache-policy: maintain`. The boundary cache line is shared with the adjacent slot — cache_invalidate_by_addr after RX would corrupt it. Round slot-size up to {next_multiple} (next cache-line multiple)."
@@ -1359,7 +1359,7 @@ pub enum ValidationError {
         next_multiple: u32,
     },
 
-    /// watching-zenoh RFC §5.E C5 cache-maintenance validation
+    /// watching-zenoh RFC §synth-5-E C5 cache-maintenance validation
     /// (spec line 1543): pool declares `cache-policy: maintain` or
     /// `cache-policy: non-cacheable` while the resolved target
     /// platform has `has_dcache: false`. The maintenance call sites
@@ -1368,7 +1368,7 @@ pub enum ValidationError {
     /// only via [`compile_forge_with_deploy`] after section
     /// validation passes (silent-skip when deploy.yaml is
     /// unavailable). Author resolution: switch the pool to
-    /// `cache-policy: none`. RFC §5.E line 1543 spec anchor.
+    /// `cache-policy: none`. RFC §synth-5-E line 1543 spec anchor.
     #[error(
         "buffer-pool '{name}': `cache-policy: {declared_policy}` declared on machine '{machine}' which has `platform.has_dcache: false`. Cache maintenance is meaningless on a core without a data cache. Switch to `cache-policy: none`."
     )]
@@ -1382,7 +1382,7 @@ pub enum ValidationError {
         declared_policy: String,
     },
 
-    /// watching-zenoh RFC §5.E C5 cache-maintenance + §5.I author-
+    /// watching-zenoh RFC §synth-5-E C5 cache-maintenance + §synth-5-I author-
     /// guard (spec line 1548): an `<sce:extern>` declaration in the
     /// build attempts to author one of the cache-maintenance trio
     /// (`sce_dcache_clean_by_addr`, `sce_dcache_invalidate_by_addr`,
@@ -1395,7 +1395,7 @@ pub enum ValidationError {
     /// prevents. Fires at parse time, before the whitelist
     /// validator. Author resolution: remove the offending
     /// `<sce:extern>`; the buffer-pool kind handles cache calls
-    /// automatically when `cache-policy: maintain`. RFC §5.E line
+    /// automatically when `cache-policy: maintain`. RFC §synth-5-E line
     /// 1548 + lines 1222-1227 spec anchor.
     #[error(
         "<sce:extern name=\"{attempted_symbol}\">: cache-maintenance intrinsics are FSM-driven and authored automatically by the buffer-pool kind under `cache-policy: maintain` (RFC §5.E lines 1222-1227). Author <sce:extern> for the cache trio is forbidden — remove the declaration; codegen emits the calls on lifecycle edges."
@@ -1405,20 +1405,20 @@ pub enum ValidationError {
         attempted_symbol: String,
     },
 
-    /// watching-zenoh RFC §5.E C5 cache-maintenance config-
+    /// watching-zenoh RFC §synth-5-E C5 cache-maintenance config-
     /// completeness diagnostic (spec line 1553): a target machine
     /// declares `platform.has_dcache: true` without setting
     /// `platform.has_speculative_prefetch`. Codegen cannot decide
     /// whether to emit the `free → dma-armed-rx` pre-arm cache-
     /// invalidate edge — silently emitting it on M0/M3/M4 wastes
     /// cycles, silently omitting it on M7+/A-class cores leads to
-    /// documented packet corruption (RFC §5.E lines 1199-1212).
+    /// documented packet corruption (RFC §synth-5-E lines 1199-1212).
     /// Fires only via [`compile_forge_with_deploy`] when at least
     /// one buffer-pool with `cache-policy: maintain` exists in the
     /// build (silent skip when no maintain-policy pool is reachable
     /// — the field has no consumer to require it). Author
     /// resolution: declare `has_speculative_prefetch` per the SoC
-    /// datasheet (M7+/A-class = true, M3/M4 = false). RFC §5.E
+    /// datasheet (M7+/A-class = true, M3/M4 = false). RFC §synth-5-E
     /// line 1553 spec anchor.
     #[error(
         "machine '{machine}': `platform.has_dcache: true` is set but `platform.has_speculative_prefetch` is not. Buffer-pool '{pool_name}' uses `cache-policy: maintain` and codegen cannot decide whether to emit the pre-DMA-RX invalidate edge. Declare `has_speculative_prefetch` per the SoC datasheet (M7+/A-class = true, M3/M4 = false)."
@@ -1434,7 +1434,7 @@ pub enum ValidationError {
         pool_name: String,
     },
 
-    /// watching-zenoh RFC §5.E C5 cache-maintenance codegen self-
+    /// watching-zenoh RFC §synth-5-E C5 cache-maintenance codegen self-
     /// check (spec line 1552): `cache-policy: maintain` +
     /// `platform.has_speculative_prefetch: true` resolved, but the
     /// rendered buffer-pool template did not emit a
@@ -1446,7 +1446,7 @@ pub enum ValidationError {
     /// silently corrupt RX data on M7+ cores. Authors cannot fix
     /// this from the SCXML side; the prose links to the issue
     /// tracker so a regression report finds the right team. RFC
-    /// §5.E line 1552 spec anchor.
+    /// §synth-5-E line 1552 spec anchor.
     #[error(
         "buffer-pool '{name}': generated source for backend `{backend}` is missing the `sce_dcache_invalidate_by_addr` call on the `free → dma-armed-rx` edge despite `cache-policy: maintain` + `platform.has_speculative_prefetch: true` — codegen invariant violation per RFC §5.E lines 1186-1198 + 1552; report at https://github.com/newmassrael/scxml-core-engine/issues"
     )]
@@ -1459,7 +1459,7 @@ pub enum ValidationError {
         backend: String,
     },
 
-    /// RFC §5.E codegen self-check: the rendered C11 buffer-pool
+    /// RFC §synth-5-E codegen self-check: the rendered C11 buffer-pool
     /// header is missing the `#include <sce/sample.h>` directive. The
     /// generated pool header surfaces the runtime Sample API
     /// (typestate-tracked `sce_sample_t` + Layer 1 attribute family) by
@@ -1468,7 +1468,7 @@ pub enum ValidationError {
     /// silently lose Layer 1 typestate coverage even on Clang ≥ 9
     /// because the macro family is unreachable. The diagnostic fires
     /// only when the template itself drops the include — it is a
-    /// codegen invariant, not an authoring mistake. RFC §5.E lines
+    /// codegen invariant, not an authoring mistake. RFC §synth-5-E lines
     /// 1276-1346 + 1520-1525 spec anchors.
     #[error(
         "buffer-pool '{name}': generated C11 header is missing the `#include <sce/sample.h>` directive — Layer 1 typestate attributes will be unavailable on consumer builds, codegen invariant violation per RFC §5.E lines 1276-1346; report at https://github.com/newmassrael/scxml-core-engine/issues"
@@ -1478,7 +1478,7 @@ pub enum ValidationError {
         name: String,
     },
 
-    /// watching-zenoh RFC §5.E: a `<sce:on-sample>`
+    /// watching-zenoh RFC §synth-5-E: a `<sce:on-sample>`
     /// element appears outside a `<state>` or `<parallel>` parent.
     /// The parser-AST extension means the validator can
     /// see the actual parent at parse time and quote the offending
@@ -1499,7 +1499,7 @@ pub enum ValidationError {
         actual_parent: String,
     },
 
-    /// watching-zenoh RFC §5.E: two or more
+    /// watching-zenoh RFC §synth-5-E: two or more
     /// `<sce:on-sample>` blocks in the same state declare the same
     /// `link=`. Multiple blocks per state are explicitly allowed
     /// (fan-in across links) but each link must appear at most once
@@ -1514,7 +1514,7 @@ pub enum ValidationError {
         link: String,
     },
 
-    /// watching-zenoh RFC §5.E: a `<sce:on-sample>`
+    /// watching-zenoh RFC §synth-5-E: a `<sce:on-sample>`
     /// declares an `event=` whose name collides with a built-in W3C
     /// SCXML event prefix (`error.*`, `done.*`). The §scxml-5.10
     /// internal event family carries fixed semantics — letting an
@@ -1530,7 +1530,7 @@ pub enum ValidationError {
         reserved_prefix: String,
     },
 
-    /// watching-zenoh RFC §5.E cross-ref:
+    /// watching-zenoh RFC §synth-5-E cross-ref:
     /// a `<sce:on-sample link="X">` reference points at a name that
     /// no `.forge` file in the build declares as a link kind. The
     /// `Fix::ReplaceOneOf` candidate list is sourced from the
@@ -1553,7 +1553,7 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// watching-zenoh RFC §5.E cross-ref:
+    /// watching-zenoh RFC §synth-5-E cross-ref:
     /// a `<sce:on-sample link="X">` reference resolves to a forge
     /// artifact that exists but is not a link kind. Today only link
     /// kind documents satisfy the on-sample subscriber contract;
@@ -1587,7 +1587,7 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// watching-zenoh RFC §5.E application-layer
+    /// watching-zenoh RFC §synth-5-E application-layer
     /// ownership diagnostic (spec lines 1513-1515): a state declares
     /// `<sce:on-sample link="X">` and link `X` is registered, but the
     /// link's forge document does not declare a `<sce:stage-pool>`
@@ -1623,7 +1623,7 @@ pub enum ValidationError {
         candidates: Vec<String>,
     },
 
-    /// watching-zenoh RFC §5.E application-layer
+    /// watching-zenoh RFC §synth-5-E application-layer
     /// ownership diagnostic (spec lines 1516-1519): an
     /// `<sce:on-sample callback="rust:crate::path::fn">` attribute
     /// carries an authoring path that fails the Rust
@@ -1663,9 +1663,9 @@ pub enum ValidationError {
         reason: CallbackPathReason,
     },
 
-    /// watching-zenoh RFC §5.I `<sce:extern>` whitelist rejection
+    /// watching-zenoh RFC §synth-5-I `<sce:extern>` whitelist rejection
     /// (spec line 1847): `<sce:extern name="...">` references a
-    /// symbol absent from the §5.I baseline registry. `candidates`
+    /// symbol absent from the §synth-5-I baseline registry. `candidates`
     /// rides `Fix::ReplaceOneOf` so authors see closest-match
     /// suggestions without paging through 101 baseline entries.
     /// Parse-time rejection; closed-set membership
@@ -1687,7 +1687,7 @@ pub enum ValidationError {
         candidates_list: String,
     },
 
-    /// watching-zenoh RFC §5.I `<sce:extern abi="...">` mismatch
+    /// watching-zenoh RFC §synth-5-I `<sce:extern abi="...">` mismatch
     /// (spec line 1848): the authored ABI does not match the
     /// registry entry's canonical ABI. Closed two-element repair set
     /// `[c, rust]` rides `Fix::ReplaceOneOf`.
@@ -1703,7 +1703,7 @@ pub enum ValidationError {
         actual: String,
     },
 
-    /// watching-zenoh RFC §5.I `<sce:extern sig="...">` mismatch
+    /// watching-zenoh RFC §synth-5-I `<sce:extern sig="...">` mismatch
     /// (spec line 1849): the authored signature does not byte-match
     /// the registry entry's canonical signature. `Fix::Replace`
     /// carries the canonical sig.
@@ -1719,7 +1719,7 @@ pub enum ValidationError {
         actual: String,
     },
 
-    /// watching-zenoh RFC §5.I atomic-family ordering-suffix omission
+    /// watching-zenoh RFC §synth-5-I atomic-family ordering-suffix omission
     /// (spec line 1850): the authored `name` is an atomic-family base
     /// (`sce_atomic_load`, `sce_atomic_cas_weak`, …) without the
     /// required `_<ordering>_<width>` suffix. `Fix::ReplaceOneOf`
@@ -1739,10 +1739,10 @@ pub enum ValidationError {
         candidates_list: String,
     },
 
-    /// watching-zenoh RFC §5.I target-plugin baseline-shadowing
+    /// watching-zenoh RFC §synth-5-I target-plugin baseline-shadowing
     /// (spec line 1852 verbatim): a target plugin YAML
     /// (`extern_symbols.target_plugin: <path>`) declares a `name` that
-    /// already appears in the §5.I baseline registry.
+    /// already appears in the §synth-5-I baseline registry.
     /// Additive-composition rule: plugins extend, never override; a
     /// platform-specific impl plugs in via the registry entry's
     /// `crate` field on a differently-named symbol. Repair is
@@ -1760,7 +1760,7 @@ pub enum ValidationError {
         plugin_path: String,
     },
 
-    /// watching-zenoh RFC §5.D line 911 — worker kind cannot reach
+    /// watching-zenoh RFC §synth-5-D line 911 — worker kind cannot reach
     /// other workers' state through any path other than its own inbox.
     /// Two static recognition layers are implemented: layer 1 rejects
     /// `<sce:import kind="worker">` siblings inside a worker document
@@ -1769,7 +1769,7 @@ pub enum ValidationError {
     /// prefix names a foreign owner (not the worker's own name, not
     /// `_event` / `_data` / `_name` / `_iolocation`, not the declared
     /// `<sce:outbox ref="...">` target). Layer 3 — `<sce:extern>`
-    /// non-inbox symbol use in the body — couples to the §5.I
+    /// non-inbox symbol use in the body — couples to the §synth-5-I
     /// intrinsic-registry composition and is not implemented until a
     /// consumer needs it; spec line 911 phrasing "any non-inbox
     /// access" covers all three layers together.
@@ -1777,7 +1777,7 @@ pub enum ValidationError {
     /// Fires at parse time; the
     /// per-instance payload carries which layer detected the
     /// violation so the diagnostic message can name the exact path-
-    /// syntax mistake. RFC §5.D line 911 spec anchor.
+    /// syntax mistake. RFC §synth-5-D line 911 spec anchor.
     #[error(
         "worker '{worker_name}': {reason}. \
          Workers must communicate with other workers only through their \
@@ -1795,7 +1795,7 @@ pub enum ValidationError {
         reason: WorkerSharedStateReason,
     },
 
-    /// watching-zenoh RFC §5.D cross-resolution. The worker's
+    /// watching-zenoh RFC §synth-5-D cross-resolution. The worker's
     /// `<sce:link-rx ref="X">` names `X` that does not resolve to a
     /// `<sce:import as="X" kind="link">` declaration on this worker
     /// document. `validate_link_pool_framer_resolution` precedent: a
@@ -1828,7 +1828,7 @@ pub enum ValidationError {
         candidates_list: String,
     },
 
-    /// watching-zenoh RFC §5.I line 1757-1758 — `<sce:inbox>` declared
+    /// watching-zenoh RFC §synth-5-I line 1757-1758 — `<sce:inbox>` declared
     /// without an `ordering` attribute. Spec phrasing labels this a
     /// "warning, codegen defaults to acquire/release"; SCE's error-only
     /// wire surface (no severity dimension yet) realizes the warning as
@@ -1848,7 +1848,7 @@ pub enum ValidationError {
         worker_name: String,
     },
 
-    /// watching-zenoh RFC §5.I line 1755-1756 — `<sce:inbox
+    /// watching-zenoh RFC §synth-5-I line 1755-1756 — `<sce:inbox
     /// ordering="relaxed">` declared on a worker whose producer and
     /// consumer halves resolve to different cores via deploy.placement.
     /// Per spec, `relaxed` on cross-core shared state is "insufficient";
@@ -1874,7 +1874,7 @@ pub enum ValidationError {
         consumer_core: u32,
     },
 
-    /// watching-zenoh RFC §5.D line 912
+    /// watching-zenoh RFC §synth-5-D line 912
     /// (`worker/scheduler-unsupported`) — a Worker doc reached
     /// [`crate::compile_forge_with_deploy`] but the resolved target
     /// machine does not list it under `machines.<m>.workers`. The
@@ -1883,7 +1883,7 @@ pub enum ValidationError {
     /// worker the scheduler cannot account for. The deploy-side anchor
     /// for the slot-count sum check is
     /// [`crate::mesh::error::DeployError::SchedulerIncompatibleWithWorkerCount`]
-    /// (spec §5.K line 2423); the forge-side anchor here fires on the
+    /// (spec §synth-5-K line 2423); the forge-side anchor here fires on the
     /// per-doc miss.
     #[error(
         "worker '{worker_name}': not declared in deploy.yaml under \
@@ -1901,7 +1901,7 @@ pub enum ValidationError {
         machine: String,
     },
 
-    /// watching-zenoh RFC §5.D worker-outbox cross-resolution —
+    /// watching-zenoh RFC §synth-5-D worker-outbox cross-resolution —
     /// `<sce:outbox ref="X">`
     /// names an owner segment (`X.split('.').next()`) that does not
     /// resolve to a recorded statechart or worker doc in the build's
@@ -1948,7 +1948,7 @@ pub enum ValidationError {
         candidates_list: String,
     },
 
-    /// watching-zenoh RFC §5.D worker-outbox cross-resolution —
+    /// watching-zenoh RFC §synth-5-D worker-outbox cross-resolution —
     /// `<sce:outbox ref="X">`
     /// names an owner that *does* resolve in the cross-doc registry but
     /// to a kind incompatible with the outbox contract (today: link
@@ -1989,7 +1989,7 @@ pub enum ValidationError {
         candidates_list: String,
     },
 
-    /// watching-zenoh RFC §5.D worker-outbox cross-resolution —
+    /// watching-zenoh RFC §synth-5-D worker-outbox cross-resolution —
     /// `<sce:outbox ref="X">`
     /// declares a suffix !=  `inbox`, violating the
     /// strict-suffix rule. Spec line 895 example writes
@@ -2029,7 +2029,7 @@ pub enum ValidationError {
         suffix: String,
     },
 
-    /// watching-zenoh RFC §5.D line 909
+    /// watching-zenoh RFC §synth-5-D line 909
     /// (`timer/period-below-tick-rate`) — `<sce:period>` declared
     /// shorter than `scheduler.tick_period_us`. The cooperative
     /// scheduler cannot dispatch a timer faster than its tick rate.
@@ -2056,7 +2056,7 @@ pub enum ValidationError {
         tick_period_us: u32,
     },
 
-    /// watching-zenoh RFC §5.L line 2559
+    /// watching-zenoh RFC §synth-5-L line 2559
     /// (`collection/ordering-sorted-requires-index-by`) — a
     /// `<sce:ordering>sorted-by(index-by)</sce:ordering>` declaration
     /// without an accompanying `<sce:index-by field="..."/>` element.
@@ -2073,7 +2073,7 @@ pub enum ValidationError {
         collection_name: String,
     },
 
-    /// watching-zenoh RFC §5.L line 2655
+    /// watching-zenoh RFC §synth-5-L line 2655
     /// (`collection/overflow-policy-oldest-wins-requires-ordering-insertion`)
     /// — `<sce:on-overflow>oldest-wins</sce:on-overflow>` declared
     /// together with `<sce:ordering>sorted-by(index-by)</sce:ordering>`.
@@ -2092,7 +2092,7 @@ pub enum ValidationError {
         collection_name: String,
     },
 
-    /// watching-zenoh RFC §5.M line 2944
+    /// watching-zenoh RFC §synth-5-M line 2944
     /// (`mem/reassembly-pool-variant-missing-max-fragments`) —
     /// `<sce:variant>reassembly</sce:variant>` declared on a buffer-pool
     /// without an accompanying `<sce:max-fragments-per-message>` sibling.
@@ -2109,7 +2109,7 @@ pub enum ValidationError {
         pool_name: String,
     },
 
-    /// watching-zenoh RFC §5.M line 2945
+    /// watching-zenoh RFC §synth-5-M line 2945
     /// (`mem/reassembly-pool-variant-missing-timeout`) —
     /// `<sce:variant>reassembly</sce:variant>` declared on a buffer-pool
     /// without an accompanying `<sce:reassembly-timeout-ms>` sibling.
@@ -2127,7 +2127,7 @@ pub enum ValidationError {
         pool_name: String,
     },
 
-    /// watching-zenoh RFC §5.M line 2946
+    /// watching-zenoh RFC §synth-5-M line 2946
     /// (`mem/reassembly-slot-size-below-declared-mtu`) — an `<sce:rx-pool
     /// ref>` binding resolved to a buffer-pool whose `<sce:slot-size>`
     /// is smaller than the bound link's `mtu_bytes`. The slot cannot
@@ -2153,7 +2153,7 @@ pub enum ValidationError {
         link_name: String,
     },
 
-    /// watching-zenoh RFC §5.M line 2947-2949
+    /// watching-zenoh RFC §synth-5-M line 2947-2949
     /// (`reassembly/max-fragments-insufficient-for-mtu`) — reassembly-
     /// variant pool's `<sce:slot-size>` cannot hold the worst-case
     /// reassembled message implied by `<sce:max-fragments-per-message>`
@@ -2175,7 +2175,7 @@ pub enum ValidationError {
         link_name: String,
     },
 
-    /// watching-zenoh RFC §5.M line 2950-2952
+    /// watching-zenoh RFC §synth-5-M line 2950-2952
     /// (`reassembly/expected-fragmentation-rate-high`) — the bound
     /// link's `expected_p99_bytes` exceeds the regular RX pool's
     /// `<sce:slot-size>` such that more than 25% of inbound traffic
@@ -2200,7 +2200,7 @@ pub enum ValidationError {
         link_name: String,
     },
 
-    /// watching-zenoh RFC §5.M line 2964-2969
+    /// watching-zenoh RFC §synth-5-M line 2964-2969
     /// (`reassembly/untrusted-link-binding`) — reassembly-variant
     /// pool bound to a link with `trust_class: untrusted` or
     /// `session_arming`. Hard error: fragmentation on these links
@@ -2219,7 +2219,7 @@ pub enum ValidationError {
         link_name: String,
     },
 
-    /// watching-zenoh RFC §5.M line 2970-2975
+    /// watching-zenoh RFC §synth-5-M line 2970-2975
     /// (`reassembly/trust-class-missing-on-fragmenting-link`) —
     /// reassembly-variant pool bound to a link whose `domain_attrs`
     /// block is absent entirely. Build cannot
@@ -2235,7 +2235,7 @@ pub enum ValidationError {
         link_name: String,
     },
 
-    /// watching-zenoh RFC §5.M line 2995-2999
+    /// watching-zenoh RFC §synth-5-M line 2995-2999
     /// (`reassembly/stage-copy-wcet-exceeds-slot-budget`) — the
     /// implicit memcpy in the stage-copy path alone blows the
     /// cooperative slot. Formula verbatim: `expected_p99_bytes ×
@@ -2258,7 +2258,7 @@ pub enum ValidationError {
         stage_copy_wcet_us: u32,
     },
 
-    /// watching-zenoh RFC §5.M line 2976-2981 verbatim
+    /// watching-zenoh RFC §synth-5-M line 2976-2981 verbatim
     /// (`reassembly/peer-id-not-zid-on-established-session`) — internal
     /// codegen invariant: per-peer quota check on an
     /// `established_session` link must use ZID (handshake-derived) as
@@ -2286,11 +2286,11 @@ pub enum ValidationError {
     )]
     ReassemblyPeerIdNotZidOnEstablishedSession { pool_name: String, language: String },
 
-    /// watching-zenoh RFC §5.C lines 849-856 verbatim
+    /// watching-zenoh RFC §synth-5-C lines 849-856 verbatim
     /// (`link/listener-link-not-paired-with-established-sibling`) —
     /// codegen self-check that every `session_arming` listener
     /// instance has emitted its `established_session` sibling per the
-    /// "Listener-link sibling emission" contract above (RFC §5.C
+    /// "Listener-link sibling emission" contract above (RFC §synth-5-C
     /// lines 799-833). Hard error. Template regression guard,
     /// unreachable in well-formed codegen; it exists to ensure the
     /// listener emission template cannot silently regress to single-
@@ -2317,12 +2317,12 @@ pub enum ValidationError {
     )]
     LinkListenerLinkNotPairedWithEstablishedSibling { link_name: String, language: String },
 
-    /// watching-zenoh RFC §5.M lines 2982-2994 verbatim
+    /// watching-zenoh RFC §synth-5-M lines 2982-2994 verbatim
     /// (`reassembly/binding-on-unpaired-listener`) — a reassembly-
     /// pool binding has resolved to a `session_arming` link instance
     /// whose paired `established_session` sibling does not exist.
     /// Hard error. In well-formed codegen this is unreachable (the
-    /// listener-link sibling emission contract in §5.C guarantees
+    /// listener-link sibling emission contract in §synth-5-C guarantees
     /// pairing); the diagnostic guards SCXML that explicitly targets
     /// the `session_arming` half (bypassing the auto-resolution) and
     /// any future schema evolution that introduces non-listener
@@ -2330,7 +2330,7 @@ pub enum ValidationError {
     /// `reassembly/untrusted-link-binding` (which now fires
     /// only on Untrusted bindings) and from
     /// `link/listener-link-not-paired-with-established-sibling`
-    /// (which is the §5.C-side codegen self-check).
+    /// (which is the §synth-5-C link-side codegen self-check).
     ///
     /// Wired inside
     /// [`crate::mesh::deploy::validate_reassembly_cross_doc`]:
@@ -2358,7 +2358,7 @@ pub enum ValidationError {
         link_name: String,
     },
 
-    /// watching-zenoh RFC §5.N line 3062 verbatim
+    /// watching-zenoh RFC §synth-5-N line 3062 verbatim
     /// (`link/inbound-event-queue-unsized`) — cross-doc
     /// orchestrator-level check. A `<sce:link>` declares
     /// `<sce:inbound event="X"/>` rows but no FSM event-queue
@@ -2388,9 +2388,9 @@ pub enum ValidationError {
         inbound_event_count: u32,
     },
 
-    /// watching-zenoh RFC §5.K line 2504-2511 verbatim
+    /// watching-zenoh RFC §synth-5-K line 2504-2511 verbatim
     /// (`pool/stage-copy-policy-error`). `pool_defaults.stage_copy_policy:
-    /// error` (or `forbid`) AND the §5.M / ARCHITECTURE §9.3
+    /// error` (or `forbid`) AND the §synth-5-M / ARCHITECTURE §9.3
     /// stage-copy-rate gate fires; the warning is promoted to hard
     /// error. Deploy-aware consumer of
     /// `MachineConfig::resolved_stage_copy_policy`.
@@ -2408,7 +2408,7 @@ pub enum ValidationError {
         policy: String,
     },
 
-    /// watching-zenoh RFC §5.K line 2512-2516 verbatim
+    /// watching-zenoh RFC §synth-5-K line 2512-2516 verbatim
     /// (`pool/stage-copy-accept-rejected-under-forbid`).
     /// `pool_defaults.stage_copy_policy: forbid` AND the link source
     /// carries `<sce:accept-stage-copy-rate>`. The opt-out itself is
@@ -2422,10 +2422,10 @@ pub enum ValidationError {
     )]
     PoolStageCopyAcceptRejectedUnderForbid { machine: String, link_name: String },
 
-    /// watching-zenoh RFC §5.L lines 2566-2567 +  2650
+    /// watching-zenoh RFC §synth-5-L lines 2566-2567 +  2650
     /// (`collection/element-type-not-a-kind`) — `<sce:element-type>NAME`
     /// body text does not resolve in the build's forge-doc registry to
-    /// a codec-kind struct (§5.B) or procedure-kind state record. The
+    /// a codec-kind struct (§synth-5-B) or procedure-kind state record. The
     /// parser stores the body text as an opaque `String`; the
     /// cross-doc pass consumes the
     /// orchestrator-assembled element-type candidate map
@@ -2463,7 +2463,7 @@ pub enum ValidationError {
         candidates_list: String,
     },
 
-    /// watching-zenoh RFC §5.L line 2615 + 2651
+    /// watching-zenoh RFC §synth-5-L line 2615 + 2651
     /// (`collection/index-by-field-missing`) — `<sce:index-by field="X"/>`
     /// names a field that does not exist on the resolved element-type
     /// struct. Fires only when [`Self::CollectionElementTypeNotAKind`]
@@ -2504,10 +2504,10 @@ pub enum ValidationError {
         candidates_list: String,
     },
 
-    /// watching-zenoh RFC §5.L lines 2560-2562 + 2652
+    /// watching-zenoh RFC §synth-5-L lines 2560-2562 + 2652
     /// (`collection/multi-writer-without-atomics`) —
     /// `<sce:concurrency>multi-writer</sce:concurrency>` declared on a
-    /// bounded-collection without any §5.I atomic intrinsic having been
+    /// bounded-collection without any §synth-5-I atomic intrinsic having been
     /// imported via `<sce:extern>` anywhere in the build. The spec
     /// fixes multi-writer to "acquire/release atomics on head/tail",
     /// so the build's `<sce:extern>` trust-surface must acknowledge
@@ -2517,13 +2517,13 @@ pub enum ValidationError {
     /// [`crate::compile_scxml_with_imports`] aggregates every parsed
     /// forge doc's `externs` into a single slice; the
     /// validator scans for any entry whose registry-resolved purpose
-    /// starts with `"atomic-"` (the §5.I baseline registry
+    /// starts with `"atomic-"` (the §synth-5-I baseline registry
     /// tags atomic-load / atomic-store / atomic-cas-* / atomic-fetch-*
     /// uniformly via the [`crate::forge::intrinsic_registry::Symbol::purpose`]
     /// field). At least one such declaration anywhere in the build
     /// allows multi-writer; zero declarations fires this code.
     ///
-    /// No closed candidate set — the §5.I baseline registry's atomic
+    /// No closed candidate set — the §synth-5-I baseline registry's atomic
     /// family is too large (≥101 spans load/store/cas/fetch ×
     /// 5 widths × multiple orderings) for a useful
     /// `Fix::ReplaceOneOf`; author judgment chooses the right ordering +
@@ -2539,7 +2539,7 @@ pub enum ValidationError {
         collection_name: String,
     },
 
-    /// watching-zenoh RFC §5.L lines 2583-2585 + 2649
+    /// watching-zenoh RFC §synth-5-L lines 2583-2585 + 2649
     /// (`collection/capacity-unresolved`) — `<sce:capacity source="deploy"
     /// key="machines.<machine>.limits.<limit>"/>` names a deploy-key
     /// whose `<limit>` segment is not declared under
@@ -2587,7 +2587,7 @@ pub enum ValidationError {
         candidates_list: String,
     },
 
-    /// Watching-zenoh RFC §5.O — IR provenance pre-emit
+    /// Watching-zenoh RFC §synth-5-O — IR provenance pre-emit
     /// guard. Fires when a node eligible for SCE-MAP marker emission
     /// reaches the codegen pre-emit walker with `source_location:
     /// None`. Codegen-internal invariant: authors never see this
@@ -2660,7 +2660,7 @@ pub enum ValidationError {
     /// drift against the §6.2.6 header `source-hash`. Codegen-
     /// invariant: every emitted `sce_sourcemap.json`'s
     /// `source_hash` field MUST be byte-equal to the
-    /// `source-hash` value in the per-file §6.2.6 drift header.
+    /// `source-hash` value in the per-file §synth-6.2.6 drift header.
     /// Mismatch indicates the sourcemap was written from a stale
     /// snapshot or a manual edit; `sce-codegen addr2sce` rejects
     /// the sourcemap until the values match. No author repair —
@@ -2677,7 +2677,7 @@ pub enum ValidationError {
         header_hash: String,
     },
 
-    /// Watching-zenoh RFC §5.O — Rust SCE-MAP marker
+    /// Watching-zenoh RFC §synth-5-O — Rust SCE-MAP marker
     /// preservation guard. Fires from `sce-codegen
     /// addr2sce` when a rustdoc JSON dump for the generated crate
     /// contains no `#[doc = "SCE-MAP: ..."]` attribute on a function
@@ -2699,9 +2699,9 @@ pub enum ValidationError {
         profile: String,
     },
 
-    /// Watching-zenoh RFC §5.O — codegen-internal
+    /// Watching-zenoh RFC §synth-5-O — codegen-internal
     /// traceability invariant: every SCE-emitted file (one carrying a
-    /// `// SCE-GENERATED` drift header per §6.2.6) MUST contain at
+    /// `// SCE-GENERATED` drift header per §synth-6.2.6) MUST contain at
     /// least one `SCE-MAP:` marker line. The two artefacts ship
     /// together — the templates that populate the markers are the
     /// same ones the sourcemap JSON fingerprints —
@@ -2938,7 +2938,7 @@ pub enum ValidationError {
     },
 
     /// Reassembly declared-consumption invariant (watching-zenoh RFC
-    /// §5.M lines 2841-2861):
+    /// §synth-5-M lines 2841-2861):
     /// the build-time invariant
     /// `peer_table.capacity × per_peer_quota >= slot_count` is
     /// violated for a reassembly-variant buffer-pool bound to a
@@ -3312,7 +3312,7 @@ pub enum ValidationError {
     },
 }
 
-/// watching-zenoh RFC §5.E callback-path failure
+/// watching-zenoh RFC §synth-5-E callback-path failure
 /// classification. Attached to
 /// [`ValidationError::PoolSampleCallbackSignatureNonBorrow`] so the
 /// per-instance message names the exact path-syntax mistake; the
@@ -3353,7 +3353,7 @@ pub enum CallbackPathReason {
     },
 }
 
-/// watching-zenoh RFC §5.D line 911 — worker shared-mutable-state
+/// watching-zenoh RFC §synth-5-D line 911 — worker shared-mutable-state
 /// failure classification. Attached to
 /// [`ValidationError::WorkerSharedMutableState`] so the outer code
 /// stays spec-verbatim (`worker/shared-mutable-state`)
@@ -3362,7 +3362,7 @@ pub enum CallbackPathReason {
 ///
 /// Layers 1 + 2 are implemented; layer 3 (hardening
 /// against `<sce:extern>` non-inbox symbol use in worker bodies)
-/// couples to the §5.I intrinsic-registry composition and is not
+/// couples to the §synth-5-I intrinsic-registry composition and is not
 /// implemented until a consumer needs it.
 /// Each future layer extends this enum with additional variants
 /// without changing the outer code.
@@ -3525,7 +3525,7 @@ pub enum GenerateError {
     #[error("feature unsupported in this language: {0}")]
     UnsupportedFeature(String),
 
-    /// Watching-zenoh RFC §5.J.4: an MCU-class kind (link / worker /
+    /// Watching-zenoh RFC §synth-5-J-4: an MCU-class kind (link / worker /
     /// buffer-pool / reassembly, or an MCU-only codec sub-feature)
     /// was authored against a language target outside `(rust, c11)`.
     /// MCU-class kinds bottom out on the rust/c11 substrate only;
@@ -3538,7 +3538,7 @@ pub enum GenerateError {
     )]
     CodegenMcuClassKindOnNonMcuLanguage { kind: String, language: String },
 
-    /// Watching-zenoh RFC §5.J.5: a generic-class kind expected to
+    /// Watching-zenoh RFC §synth-5-J-5: a generic-class kind expected to
     /// emit on every backend per the parity matrix is missing its
     /// per-kind Jinja2 template for the requested language. Template
     /// absence is an SCE bug, not a downstream concern. Producer:
@@ -3567,7 +3567,7 @@ pub enum GenerateError {
     )]
     McuSectionAttributeOnNonMcuTarget { backend: String },
 
-    /// Watching-zenoh RFC §5.J.2 (item C3): the SCXML document
+    /// Watching-zenoh RFC §synth-5-J-2 (item C3): the SCXML document
     /// is generated with `sce-codegen generate -l rust --no-std` but
     /// contains a `<script>` element. The `sce-rust-runtime`
     /// `no_std` Cargo feature is mutually exclusive with the
@@ -3586,7 +3586,7 @@ pub enum GenerateError {
     )]
     CodegenNoStdScriptNotSupported { document: String, locations: String },
 
-    /// Watching-zenoh RFC §5.J.2 (item C3): the SCXML document
+    /// Watching-zenoh RFC §synth-5-J-2 (item C3): the SCXML document
     /// is generated with `sce-codegen generate -l rust --no-std` but
     /// contains a §scxml-C-2 `<send>` that targets
     /// `BasicHTTPEventProcessor` (either by explicit `type=` or by
@@ -3604,7 +3604,7 @@ pub enum GenerateError {
     )]
     CodegenNoStdHttpNotSupported { document: String, locations: String },
 
-    /// Watching-zenoh RFC §5.J.2 (item C3): the SCXML document is
+    /// Watching-zenoh RFC §synth-5-J-2 (item C3): the SCXML document is
     /// generated with `sce-codegen generate -l rust --no-std` but contains a
     /// `<data src="...">` element. External-file loading requires
     /// `std::fs::read_to_string` plus `PathBuf` / `std::env::current_exe`,
@@ -3620,7 +3620,7 @@ pub enum GenerateError {
     )]
     CodegenNoStdFsLoadNotSupported { document: String, locations: String },
 
-    /// Watching-zenoh RFC §5.J.2 (item C3): the SCXML document is
+    /// Watching-zenoh RFC §synth-5-J-2 (item C3): the SCXML document is
     /// generated with `sce-codegen generate -l rust --no-std` but contains a
     /// `<invoke>` element. SCXML invoke binds child-session lifecycle to the
     /// parent statechart through `Arc<Mutex<Vec<…>>>` queues plus a
@@ -3636,9 +3636,9 @@ pub enum GenerateError {
     )]
     CodegenNoStdInvokeNotSupported { document: String, locations: String },
 
-    /// RFC §5.F: a `<sce:fold>` body or a `<sce:const init=...>` scalar
+    /// RFC §synth-5-F: a `<sce:fold>` body or a `<sce:const init=...>` scalar
     /// expression cannot be reduced to a build-time value. The host
-    /// interpreter rejects every construct outside the §5.F substrate
+    /// interpreter rejects every construct outside the §synth-5-F substrate
     /// (member access, function calls, runtime-only identifiers, string
     /// or null literals, malformed numeric literals, …) under this
     /// single wire code; `detail` quotes the specific clause that
@@ -3655,7 +3655,7 @@ pub enum GenerateError {
         detail: String,
     },
 
-    /// RFC §5.F bound 1: total iteration count across the body of a
+    /// RFC §synth-5-F bound 1: total iteration count across the body of a
     /// single `<sce:fold>` (or its nested while/foreach loops) exceeded
     /// the configured budget. Default is
     /// [`crate::forge::const_fold::Budget::DEFAULT_MAX_ITERS`]
@@ -3675,7 +3675,7 @@ pub enum GenerateError {
         budget: u64,
     },
 
-    /// RFC §5.F: the value yielded by a `<sce:fold>` body (or the init
+    /// RFC §synth-5-F: the value yielded by a `<sce:fold>` body (or the init
     /// expression of a scalar `<sce:const>`) cannot be coerced to the
     /// declared element / scalar type. `expected` is the declared slot
     /// type; `actual` is a short tag describing the produced value's

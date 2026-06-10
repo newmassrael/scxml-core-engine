@@ -5,7 +5,7 @@
  * SCE Forge — byte-stream link contract (C11).
  *
  * Mirrors the Rust trait surface at `sce-link-runtime/src/lib.rs`
- * (watching-zenoh RFC §5.C). For C11 the polymorphic surface
+ * (watching-zenoh RFC §synth-5-C). For C11 the polymorphic surface
  * uses the canonical Linux-kernel "trait in C" pattern: a per-instance
  * `sce_forge_link_t` carrying a pointer to a shared `const
  * sce_forge_link_ops_t` vtable plus the driver's per-instance state.
@@ -18,7 +18,7 @@
  * `sce_link_runtime_tokio` / QNX) live downstream in watching-zenoh
  * and supply concrete `sce_forge_link_ops_t` tables.
  *
- * Borrowed-slice lifetime (RFC §5.C):
+ * Borrowed-slice lifetime (RFC §synth-5-C):
  *   The `data` pointer in `sce_forge_link_rx_frame_t` is owned by
  *   the impl and remains valid until the next call to `ops->rx`
  *   on the same instance. Callers must consume the bytes before
@@ -79,7 +79,7 @@ typedef bool (*sce_forge_link_rx_fn)(void *self, sce_forge_link_rx_frame_t *out)
  * it), `block` blocks until the driver accepts the frame. */
 typedef sce_forge_link_status_t (*sce_forge_link_tx_fn)(void *self, sce_forge_link_tx_frame_t frame);
 
-/* Budget-aware tick hook (watching-zenoh RFC §5.N line 3050).
+/* Budget-aware tick hook (watching-zenoh RFC §synth-5-N line 3050).
  * The cooperative scheduler invokes `poll(self, deadline_us)` once
  * per tick per link, with `deadline_us` capped to the deploy.yaml
  * `scheduler.per_link_budget_us` value the scheduler codegen (item C10) pins as
@@ -94,7 +94,7 @@ typedef sce_forge_link_status_t (*sce_forge_link_tx_fn)(void *self, sce_forge_li
  * to a function that returns immediately. */
 typedef void (*sce_forge_link_poll_fn)(void *self, uint32_t deadline_us);
 
-/* Shared, const-qualifiable vtable. Per RFC §5.J.1 + the watching-
+/* Shared, const-qualifiable vtable. Per RFC §synth-5-J-1 + the watching-
  * zenoh MCU consumer, this lives in `.rodata` (flash/ROM on MCU)
  * so per-instance RAM cost is just `sizeof(void *) + sizeof(void *)`. */
 typedef struct {

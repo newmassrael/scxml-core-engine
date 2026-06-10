@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: peek-byte primitive demo arm body A (RFC §5.B
+<!-- SCE Forge conformance: peek-byte primitive demo arm body A (RFC §synth-5-B
      atomic 2b-ii peek-byte). Mirrors a Zenoh-style arm-body shape — the
      first wire byte is a `<sce:flags>` header that names the dispatch
      bit (`kind` at bit 0) the parent variant peeks. Body payload is a

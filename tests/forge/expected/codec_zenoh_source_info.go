@@ -21,13 +21,13 @@ type CodecZenohSourceInfo struct {
 // DecodeCodecZenohSourceInfo decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohSourceInfo(cursor *codec.SceCursor) (*CodecZenohSourceInfo, error) {
 	// Streaming codec: each field reads from cursor directly
 	// (VLE base-128 chain). Local var name reuses the Go-PascalCase
 	// `field.id` — the struct literal's `Foo: Foo` is unambiguous
-	// because the package owns both names. RFC §5.B B4: per-field
+	// because the package owns both names. RFC §synth-5-B B4: per-field
 	// bit-size dispatch routes Fixed / LengthRef siblings of VLE
 	// fields through `present_if_decode_stmt` (predicate=None arms).
 	// Pure-VLE codecs stay byte-stable.
@@ -66,7 +66,7 @@ func DecodeCodecZenohSourceInfo(cursor *codec.SceCursor) (*CodecZenohSourceInfo,
 	}, nil
 }
 
-// RFC §5.B flags primitive: per-bit-range accessors over
+// RFC §synth-5-B flags primitive: per-bit-range accessors over
 // the carrier field. Single-bit (width=1) reads as bool; multi-bit
 // (width>=2) reads as the smallest unsigned int type that fits. Setters
 // mask + shift on the way in so out-of-range callers can't corrupt
@@ -87,7 +87,7 @@ func (s *CodecZenohSourceInfo) SetZidlenM1(v uint8) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohSourceInfo) Encode(w codec.SceSink) error {
-	// RFC §5.B B4: per-field bit-size dispatch.
+	// RFC §synth-5-B B4: per-field bit-size dispatch.
 	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
 		return err
 	}

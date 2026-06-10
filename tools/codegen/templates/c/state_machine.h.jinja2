@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# RFC §5.J.1 — C11 statechart header (paired with state_machine.c.jinja2).
+{# RFC §synth-5-J-1 — C11 statechart header (paired with state_machine.c.jinja2).
    Mirrors the C++ state_machine.jinja2 structure with C11 idioms:
      - namespace SCE::Generated::{name}  →  prefix `{name}_` on every symbol
      - enum class State                  →  enum {name}_state_e + UPPER_SNAKE constants
@@ -12,7 +12,7 @@
 
 {% include 'license_header.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
-{# Watching-zenoh RFC §5.O: SCE-MAP marker anchoring the
+{# Watching-zenoh RFC §synth-5-O: SCE-MAP marker anchoring the
    generated C11 header. Module-level form is a comment, not the
    `#line` directive — `#line` in a header would propagate into
    every including translation unit's diagnostics. #}
@@ -29,7 +29,7 @@
 #include "sce/types.h"
 
 {% if model.on_sample_links %}
-/* watching-zenoh RFC §5.E sample-callback codegen wire-up. `sce_sample_t`
+/* watching-zenoh RFC §synth-5-E sample-callback codegen wire-up. `sce_sample_t`
    borrow type + `sce_sub_callback_t` typedef live in the runtime
    header; the per-link `_deliver_link_<X>_sample` declarations
    below take a `const sce_sample_t *sample` borrow. */
@@ -62,7 +62,7 @@
 {% endif %}
 
 {% if model.needs_script_engine %}
-/* RFC §5.J.1: C11 backend embeds Lua 5.4 directly (no abstraction layer).
+/* RFC §synth-5-J-1: C11 backend embeds Lua 5.4 directly (no abstraction layer).
    The state machine struct owns the lua_State* lifecycle — opened by
    _init, closed by _destroy. ECMAScript datamodel expressions are
    transpiled to Lua at codegen time via the to_lua_expr/guard filters
@@ -443,7 +443,7 @@ void {{ model.name }}_raise_external({{ model.name }}_t *sm,
                                      const {{ model.name }}_event_with_meta_t *evt);
 
 {% if event_payload_active %}
-/* NL→IR Item C1 Path A (RFC §10.4 step 5): per-event typed-payload inject
+/* NL→IR Item C1 Path A: per-event typed-payload inject
    seam. One entry per EventSchema-imported event whose guard lowered
    natively — each binds the event name, the payload tag, and the union
    member in a single call so the name↔type pairing cannot be constructed
@@ -489,7 +489,7 @@ bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm);
 bool {{ model.name }}_is_final_state({{ model.name }}_state_t s);
 
 {% if model.on_sample_links %}
-/* watching-zenoh RFC §5.E sample-callback codegen wire-up — per-link Sample
+/* watching-zenoh RFC §synth-5-E sample-callback codegen wire-up — per-link Sample
    delivery surface. Host's link RX path (zenoh-pico subscriber,
    custom_tcp dispatch loop, …) calls the matching function for
    every Sample arriving on the named link. The body iterates the

@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: f835a323a3abc9cebc80341e1840b22b95739a2efa1726ad2c440477eff36482
-// generated-at: 1781089257
+// template-hash: aa3f7478a78abf9bf22f51a549ae822f834be956298adbc33316f195f470808d
+// generated-at: 1781099318
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -113,26 +113,26 @@ pub struct Test411Policy {
     last_transition_source_state: Test411State,
     // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
     //
-    // Watching-zenoh RFC §5.J.2: type is the runtime crate's
+    // Watching-zenoh RFC §synth-5-J-2: type is the runtime crate's
     // [`StateChain`] alias — `Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
     // under no_std. The std alias preserves the existing ABI; the no_std alias keeps
     // the generated code allocator-free.
     active_states: ::sce_rust_runtime::helpers::hierarchy::StateChain<Test411State>,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
-    // Watching-zenoh RFC §5.J.2: gated to !no_std. Under `--no-std` both the
+    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
     // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
     // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
     // session identity is ever tracked and the alloc-coupled `String` is omitted.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
-    // `--no-std` (Watching-zenoh RFC §5.J.2) the SCXML `<invoke>` element
+    // `--no-std` (Watching-zenoh RFC §synth-5-J-2) the SCXML `<invoke>` element
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
     // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
-    // Watching-zenoh RFC §5.J.2: gated to !no_std — `<invoke>` is codegen-rejected
+    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std — `<invoke>` is codegen-rejected
     // under no_std, so a machine is never instantiated as a child and this
     // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
@@ -175,7 +175,7 @@ impl Default for Test411Policy {
 impl StatePolicy for Test411Policy {
     type State = Test411State;
     type Event = Test411Event;
-    // EventSchema MCU native-lowering RFC §10.2: `()` = schemaless (dynamic
+    // EventSchema native lowering: `()` = schemaless (dynamic
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = ();
@@ -297,7 +297,7 @@ impl StatePolicy for Test411Policy {
 
     // W3C SCXML 3.6: Get initial children of a compound state
     //
-    // Watching-zenoh RFC §5.J.2: return type is the runtime crate's
+    // Watching-zenoh RFC §synth-5-J-2: return type is the runtime crate's
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
@@ -348,7 +348,7 @@ impl StatePolicy for Test411Policy {
         self.last_transition_source_state = state;
     }
 
-    // Watching-zenoh RFC §5.J.2: trait default in `sce-rust-runtime::policy`
+    // Watching-zenoh RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
     // returns `StateChain<Self::State>`; this override matches that signature
     // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
     // both resolve correctly.
@@ -370,7 +370,7 @@ impl StatePolicy for Test411Policy {
     ) {
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
         //
-        // Watching-zenoh RFC §5.J.2: `push_chain` is the runtime crate's
+        // Watching-zenoh RFC §synth-5-J-2: `push_chain` is the runtime crate's
         // cfg-branched push wrapper — `Vec::push` under std, `heapless::Vec::push`
         // with the depth-guard `.expect()` under no_std. Lets template-emitted code
         // share the same call shape with `Engine::get_active_states`.

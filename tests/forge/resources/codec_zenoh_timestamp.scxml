@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh timestamp body (RFC §5.B —
+<!-- SCE Forge conformance: Zenoh timestamp body (RFC §synth-5-B —
      sub-codec, foundational embed for the
      T-gated timestamp slot inside codec_zenoh_msg_put / msg_del).
 

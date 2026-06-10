@@ -3,7 +3,7 @@
 //! Rust codegen template `pub const EVENT_QUEUE_CAPACITY`
 //! emission + `.cargo/config.toml` thumbv7em target registration.
 //!
-//! Watching-zenoh RFC §5.J.2 + §5.L. The per-document capacity
+//! Watching-zenoh RFC §synth-5-J-2 + §synth-5-L. The per-document capacity
 //! flows: parser reads `<scxml sce:capacity>`
 //! → SCXMLModel.event_queue_capacity → (optional fallback from
 //! deploy.yaml) → Rust template emits `pub const EVENT_QUEUE_CAPACITY`

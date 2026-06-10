@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: outer variant whose arm body is itself a
-     variant (RFC §5.B "recursive variant body").
+     variant (RFC §synth-5-B "recursive variant body").
      This is the canonical demonstrator: codec_zenoh_push is
      a variant codec, and one of its arm bodies — codec_zenoh_push_body
      — is itself a variant codec. The per-language emit must therefore

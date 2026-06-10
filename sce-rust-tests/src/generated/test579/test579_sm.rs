@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: f835a323a3abc9cebc80341e1840b22b95739a2efa1726ad2c440477eff36482
-// generated-at: 1781089257
+// template-hash: aa3f7478a78abf9bf22f51a549ae822f834be956298adbc33316f195f470808d
+// generated-at: 1781099318
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -120,7 +120,7 @@ pub struct Test579Policy {
     next_event_is_external: bool,
     // W3C SCXML 5.10: Event name for _event.name binding
     //
-    // Watching-zenoh RFC §5.J.2: typed as the runtime crate's [`SceString`]
+    // Watching-zenoh RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
     // alias — `String` under std (unchanged ABI), `heapless::String<MAX_EVENT_STRING_LEN>`
     // under no_std — so the emitted field is allocator-free on MCU targets.
     pending_event_name: ::sce_rust_runtime::SceString,
@@ -139,14 +139,14 @@ pub struct Test579Policy {
     pending_event_invokeid: ::sce_rust_runtime::SceString,
     // W3C SCXML 3.11: History state sh1 (shallow)
     //
-    // Watching-zenoh RFC §5.J.2: the recorded configuration is a
+    // Watching-zenoh RFC §synth-5-J-2: the recorded configuration is a
     // [`StateChain`] alias (`Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
     // under no_std), mirroring `active_states`. Recorded history is always a
     // subset of the active configuration, so it cannot exceed the depth bound.
     history_sh1: Option<::sce_rust_runtime::helpers::hierarchy::StateChain<Test579State>>,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
-    // Watching-zenoh RFC §5.J.2: gated to !no_std. Under `--no-std` both the
+    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
     // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
     // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
     // session identity is ever tracked and the alloc-coupled `String` is omitted.
@@ -158,12 +158,12 @@ pub struct Test579Policy {
     script_engine_initialized: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
-    // `--no-std` (Watching-zenoh RFC §5.J.2) the SCXML `<invoke>` element
+    // `--no-std` (Watching-zenoh RFC §synth-5-J-2) the SCXML `<invoke>` element
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
     // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
-    // Watching-zenoh RFC §5.J.2: gated to !no_std — `<invoke>` is codegen-rejected
+    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std — `<invoke>` is codegen-rejected
     // under no_std, so a machine is never instantiated as a child and this
     // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
@@ -347,7 +347,7 @@ impl Test579Policy {
 impl StatePolicy for Test579Policy {
     type State = Test579State;
     type Event = Test579Event;
-    // EventSchema MCU native-lowering RFC §10.2: `()` = schemaless (dynamic
+    // EventSchema native lowering: `()` = schemaless (dynamic
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = ();
@@ -481,7 +481,7 @@ impl StatePolicy for Test579Policy {
 
     // W3C SCXML 3.6: Get initial children of a compound state
     //
-    // Watching-zenoh RFC §5.J.2: return type is the runtime crate's
+    // Watching-zenoh RFC §synth-5-J-2: return type is the runtime crate's
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
@@ -642,7 +642,7 @@ impl StatePolicy for Test579Policy {
         // W3C SCXML 3.11: Record history before exiting compound states
         if state == Test579State::S0 {
             // W3C SCXML 3.11: Shallow history - record direct children only.
-            // Watching-zenoh RFC §5.J.2: [`StateChain`] alias (heapless under no_std).
+            // Watching-zenoh RFC §synth-5-J-2: [`StateChain`] alias (heapless under no_std).
             let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> =
                 pre_transition_active
                     .iter()

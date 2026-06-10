@@ -3,7 +3,7 @@
 
 // sce_forge_runtime — codec cursor + typed error contract (Kotlin).
 //
-// Mirrors `sce-forge-runtime/rust/src/codec.rs`. RFC §5.B L494-519 pins
+// Mirrors `sce-forge-runtime/rust/src/codec.rs`. RFC §synth-5-B L494-519 pins
 // the per-language cursor + null-on-truncation contract on decode so a
 // truncated input never aborts.
 //
@@ -14,7 +14,7 @@
 package com.sce.forge.runtime
 
 /// Typed decode error. The variant primitive intentionally does
-/// NOT need a typed UnknownVariantTag — RFC §5.B requires
+/// NOT need a typed UnknownVariantTag — RFC §synth-5-B requires
 /// `<sce:default>` when arms don't exhaust the tag domain (build-time
 /// codec/variant-arm-unreachable otherwise), so the default arm
 /// catches every unmatched tag at runtime.
@@ -30,9 +30,9 @@ package com.sce.forge.runtime
 sealed class CodecError {
     object NeedMoreBytes : CodecError()
     /// A `vle_u<N>` field's continuation chain implies a value wider
-    /// than the declared type. RFC §5.B `codec/vle-width-overflow`.
+    /// than the declared type. RFC §synth-5-B `codec/vle-width-overflow`.
     object VleWidthOverflow : CodecError()
-    /// RFC §5.B encode-side counterpart to NeedMoreBytes: the
+    /// RFC §synth-5-B encode-side counterpart to NeedMoreBytes: the
     /// destination sink reported insufficient remaining capacity for
     /// the next write. Only the bounded [ByteArraySink] can raise
     /// this; the growable [MutableListSink] is effectively infallible.
@@ -63,7 +63,7 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
     /// Read a base-128 variable-length encoded unsigned value of up to
     /// `maxBits` payload width. LSB-first byte order; bit 7 is the
     /// continuation flag. Mirrors the Zenoh ZInt wire format
-    /// (RFC §5.B Appendix B).
+    /// (RFC §synth-5-B Appendix B).
     ///
     /// Returns the decoded value as `Long` (Kotlin lacks unsigned long
     /// in the common API surface — caller casts to ULong as needed).

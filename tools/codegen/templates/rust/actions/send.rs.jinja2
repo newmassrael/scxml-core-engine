@@ -425,7 +425,7 @@
     // W3C SCXML 6.2/6.4.5: Send to parent state machine via #_parent
 {% if action.event %}
 {% if no_std %}
-    // Watching-zenoh RFC §5.J.2: no_std codegen-rejects `<invoke>`, so a machine
+    // Watching-zenoh RFC §synth-5-J-2: no_std codegen-rejects `<invoke>`, so a machine
     // is never instantiated as a child and has no parent engine queue (the
     // `parent_external_queue` field is elided). A #_parent send therefore always
     // takes the parent-absent branch: error.communication.

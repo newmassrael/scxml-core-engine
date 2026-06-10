@@ -252,7 +252,7 @@ fn normalize_ws(text: String) -> String {
 
 /// §scxml-5.2.2: read external data file referenced by `<data src="...">`.
 ///
-/// C11 codegen-time read (RFC §5.J.1 zero-deps rule: no runtime
+/// C11 codegen-time read (RFC §synth-5-J-1 zero-deps rule: no runtime
 /// fopen in sce-c-runtime). Mirrors cpp `FileLoadingHelper::loadExternalScript` +
 /// `DataModelInitHelper::initializeVariableFromSrc` by inlining the file
 /// content into the generated C source as a string literal. The downstream
@@ -456,7 +456,7 @@ fn filter_slice_from(s: String, n: usize) -> String {
     s.chars().skip(n).collect()
 }
 
-/// watching-zenoh RFC §5.E sample-callback lowering — strip the
+/// watching-zenoh RFC §synth-5-E sample-callback lowering — strip the
 /// language prefix from `<sce:on-sample callback="...">` to produce
 /// the bare path the codegen emits at the call site. Today only
 /// `rust:` is valid; the validator
@@ -645,7 +645,7 @@ fn escape_cpp(text: String) -> String {
 // ── C11 filters ─────────────────────────────────────────────────
 
 /// Register all C11-specific filters on the minijinja environment.
-/// RFC §5.J.1 (watching-zenoh consumer / MCU AOT backend).
+/// RFC §synth-5-J-1 (watching-zenoh consumer / MCU AOT backend).
 ///
 /// `escape_c` shares the C++/Rust escape rule set (backslash, double
 /// quote, newline, carriage return, tab); C11 string literals follow
@@ -667,7 +667,7 @@ pub fn register_c11_filters(env: &mut minijinja::Environment) {
     env.add_filter("split", filter_split);
     env.add_filter("slice_from", filter_slice_from);
     env.add_filter("extern_callback_path", filter_extern_callback_path);
-    // watching-zenoh RFC §5.E per-link delivery codegen: per-link function names
+    // watching-zenoh RFC §synth-5-E per-link delivery codegen: per-link function names
     // (`<machine>_deliver_link_<X>_sample`) snake-case the link
     // name to keep the C identifier stable when the SCXML link
     // attribute uses kebab-case or mixedCase.

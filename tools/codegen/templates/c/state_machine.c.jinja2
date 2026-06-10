@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# RFC §5.J.1 — C11 statechart implementation (paired with state_machine.h.jinja2).
+{# RFC §synth-5-J-1 — C11 statechart implementation (paired with state_machine.h.jinja2).
    The C++ codegen splits its output across `_sm.h` (Policy struct + SM
    class shell) and `_sm.inl` (Policy method bodies, textually included
    from inside the struct). C11 has no in-class definitions, so the
@@ -13,7 +13,7 @@
 {%- import 'c/scriptengine.jinja2' as se %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
-{# Watching-zenoh RFC §5.O: SCE-MAP marker anchoring the
+{# Watching-zenoh RFC §synth-5-O: SCE-MAP marker anchoring the
    generated C11 implementation. Module-level form is a comment per
    the same rationale as the header — per-function emission switches
    to `#line`, where the redirect scope is local. #}
@@ -70,7 +70,7 @@
 {% if model.needs_dom_helper %}
 /* W3C SCXML B.2: XML DOM helper (sce-c-runtime/include/sce/lua_dom_binding.h).
    cpp `LuaDOMBinding` 1:1 algorithmic mirror in pure C — pugixml is
-   C++-only and would break the C11 zero-dependency contract (RFC §5.J.1). Lives in the
+   C++-only and would break the C11 zero-dependency contract (RFC §synth-5-J-1). Lives in the
    `sce_c_scripting` tier (Lua-bound), built atop the freestanding-C
    `sce_c_base` DOM parser. See ARCHITECTURE.md §"C11 backend layering". */
 #include <sce/lua_dom_binding.h>
@@ -161,7 +161,7 @@ static {{ model.name }}_event_t SCE_SM_FN {{ model.name }}_event_from_name(const
 }
 {% endif %}
 
-{# RFC §5.J.1: recursive action emitter. Mirrors the C++ tree's
+{# RFC §synth-5-J-1: recursive action emitter. Mirrors the C++ tree's
    `actions/<type>.jinja2` include dispatch but inlines every variant in
    one local macro so the C11 backend stays a two-template tree (header
    + source) until a second consumer fixture justifies splitting. The
@@ -1921,7 +1921,7 @@ static void SCE_SM_FN enter_state_recursive({{ model.name }}_t *sm, {{ model.nam
    block, and the enclosing switch case calls the next helper in
    sequence. Single-block fixtures retain the same observable behavior
    (function ends after the one helper call). #}
-{# Watching-zenoh RFC §5.O — per-state on_entry / on_exit
+{# Watching-zenoh RFC §synth-5-O — per-state on_entry / on_exit
    block helpers each get a `#line N "file"` directive pointing at the
    <state> element they lower from. The next directive (next helper or
    the dispatcher below) resets the redirect, so the scope stays
@@ -2690,7 +2690,7 @@ static bool SCE_SM_FN try_match_in_state({{ model.name }}_t *sm,
                     {{ emit_transition_body(trans) }}
                 }
             {% elif native_payload_guard_expr %}
-                /* W3C SCXML 3.13 + NL→IR Item C1 Path A (RFC §10.4 step 5):
+                /* W3C SCXML 3.13 + NL→IR Item C1 Path A:
                    cond="{{ trans.cond | escape_c }}" reads a typed
                    `_event.data.<field>` of an EventSchema-imported event —
                    lowered to a native tagged-union comparison (no script
@@ -2987,7 +2987,7 @@ SCE_SM_FN void {{ model.name }}_raise_external({{ model.name }}_t *sm,
 }
 
 {% if event_payload_active %}
-/* NL→IR Item C1 Path A (RFC §10.4 step 5): per-event typed-payload inject
+/* NL→IR Item C1 Path A: per-event typed-payload inject
    entries (see the header decls for the watching-zenoh ownership
    boundary). Each binds the event enum + payload tag + union member in
    one site, so the name↔type pairing is impossible to construct
@@ -3889,7 +3889,7 @@ SCE_SM_FN bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm) 
 }
 {% if model.on_sample_links %}
 
-/* ── watching-zenoh RFC §5.E sample-callback codegen wire-up ────────────────── */
+/* ── watching-zenoh RFC §synth-5-E sample-callback codegen wire-up ────────────────── */
 {# Per-link Sample delivery surface, C11 mirror of the Rust
    `<MachineName>LinkRx::deliver_link_<X>_sample` method on
    `Engine<...Policy>`. Each function:

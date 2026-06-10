@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2ce787851bfd7d827a1b4bdac3cef96251774343aaef3194d8c8364157a45dff
-// template-hash: f835a323a3abc9cebc80341e1840b22b95739a2efa1726ad2c440477eff36482
-// generated-at: 1781089333
+// source-hash: 822e788c38b7acdc97a11fe595343aa99284cd8e9fa403bc505dc3b7a1ac360f
+// template-hash: aa3f7478a78abf9bf22f51a549ae822f834be956298adbc33316f195f470808d
+// generated-at: 1781099397
 // SCE-MAP: codec_variant_default_marker.scxml:30
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -18,14 +18,14 @@ import (
 
 // CodecVariantDefaultMarkerDefault bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
-// observed tag back onto the wire (RFC §5.B variant primitive).
+// observed tag back onto the wire (RFC §synth-5-B variant primitive).
 type CodecVariantDefaultMarkerDefault struct {
 	Tag uint8
 	Body codec_default_marker_arm_b.CodecDefaultMarkerArmB
 }
 
 // CodecVariantDefaultMarkerVariant is a discriminated-union body for the codec's
-// tag-field suffix (RFC §5.B variant primitive). Exactly one of
+// tag-field suffix (RFC §synth-5-B variant primitive). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecVariantDefaultMarkerVariant struct {
@@ -57,10 +57,10 @@ func NewCodecVariantDefaultMarker() *CodecVariantDefaultMarker {
 // DecodeCodecVariantDefaultMarker decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecVariantDefaultMarker(cursor *codec.SceCursor) (*CodecVariantDefaultMarker, error) {
-	// RFC §5.B peek-byte / streaming-prefix:
+	// RFC §synth-5-B peek-byte / streaming-prefix:
 	// streaming prefix decode (variable-length fields supported via
 	// per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
 	// mode additionally peeks the cursor's next byte for variant tag
@@ -107,7 +107,7 @@ func DecodeCodecVariantDefaultMarker(cursor *codec.SceCursor) (*CodecVariantDefa
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecVariantDefaultMarker) Encode(w codec.SceSink) error {
-	// RFC §5.B peek-byte / streaming-prefix.
+	// RFC §synth-5-B peek-byte / streaming-prefix.
 	// Append the active arm body's encoded bytes via the same sink.
 	switch {
 	case s.Body.CodecDefaultMarkerArmA != nil:

@@ -8,7 +8,7 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 //
-// watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+// watching-zenoh RFC §synth-5-L bounded-collection — typed fixed-capacity
 // container whose occupancy varies at runtime. Spec line 2576-2577
 // emit shape: `std::array<T, N>` storage + `std::bitset<N>` occupancy
 // + `uint32_t generation[N]` array + `uint32_t count`. A
@@ -21,7 +21,7 @@
 //
 // Handle (spec lines 2621-2622): POD struct over `uint32_t` carrying
 // slot index (low 16 bits) + generation counter (high 16 bits).
-// ABI-parity with the C11 backend (§5.J.5 cross-backend invariant).
+// ABI-parity with the C11 backend (§synth-5-J-5 cross-backend invariant).
 
 #pragma once
 #ifndef {{ guard }}
@@ -41,7 +41,7 @@ using {{ element_pascal }}Type = ::SCE::Generated::{{ element_pascal }}::{{ elem
 
 /// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
 /// is resolved from `machines.<m>.limits.<k>` at codegen time per
-/// RFC §5.L lines 2583-2585; for `const="N"` the value comes from
+/// RFC §synth-5-L lines 2583-2585; for `const="N"` the value comes from
 /// the SCXML.
 inline constexpr std::size_t CAPACITY = {{ capacity }};
 
@@ -111,7 +111,7 @@ struct {{ pascal }}InsertResult {
     constexpr bool is_err() const noexcept { return !ok; }
 };
 
-/// `{{ pascal }}` — RFC §5.L bounded-collection over element type
+/// `{{ pascal }}` — RFC §synth-5-L bounded-collection over element type
 /// `{{ element_pascal }}`. Capacity `{{ capacity }}`,
 /// `<sce:on-overflow>{{ on_overflow }}</sce:on-overflow>`,
 /// `<sce:ordering>{{ ordering }}</sce:ordering>`,
@@ -204,7 +204,7 @@ public:
         return slots_[slot];
     }
 
-    /// Get-by-slot (RFC §5.L + C7 foundation): slot-indexed read
+    /// Get-by-slot (RFC §synth-5-L + C7 foundation): slot-indexed read
     /// without Handle. Returns `std::nullopt` when `slot >= CAPACITY`
     /// OR when the slot is unoccupied. No generation check (the
     /// use-after-remove guard is for the Handle-based `get`; slot-
@@ -221,7 +221,7 @@ public:
 {% if has_index_by %}
     /// Find the first occupied slot whose `<sce:index-by field="{{ index_by_field }}"/>`
     /// equals `key` (spec line 2615). Linear scan bounded by
-    /// `CAPACITY` (build-time constant) — satisfies §5.A `max-iter`
+    /// `CAPACITY` (build-time constant) — satisfies §synth-5-A `max-iter`
     /// requirement when this method is called from algorithm
     /// bodies.
     std::optional<{{ pascal }}Handle> find_by_index(const {{ index_by_cpp_type }}& key) const {

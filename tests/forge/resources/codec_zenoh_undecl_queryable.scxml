@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh undecl_queryable body (RFC §5.B
-     — RFC §5.B consumer). Wire-identical to
+<!-- SCE Forge conformance: Zenoh undecl_queryable body (RFC §synth-5-B
+     — RFC §synth-5-B consumer). Wire-identical to
      codec_zenoh_undecl_subscriber (zenoh-pico's `_z_undecl_encode`
      dispatcher takes the per-MID header byte as a parameter and
      emits the same VLE id + parent.Z-gated ext_keyexpr layout

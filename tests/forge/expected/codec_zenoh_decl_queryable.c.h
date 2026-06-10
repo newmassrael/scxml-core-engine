@@ -19,7 +19,7 @@
 
 typedef struct {
     uint32_t id;
-    /* RFC §5.B embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
+    /* RFC §synth-5-B embed: nested codec_zenoh_wireexpr_t struct (no length prefix on the wire) */
     codec_zenoh_wireexpr_t wireexpr;
     uint8_t ext_type;
     uint64_t ext_value;
@@ -28,7 +28,7 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_forge_cursor_t *cursor, codec_zenoh_decl_queryable_t *out, uint8_t n, uint8_t z) {
     /* Declared-but-unconsumed flag inputs: defensive (void) suppress per declared
@@ -36,7 +36,7 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
      * `present-if` yet compile cleanly under -Wunused-parameter. */
     (void)n;
     (void)z;
-    /* RFC §5.B present-if primitive: streaming decode
+    /* RFC §synth-5-B present-if primitive: streaming decode
      * advances the cursor per field. C11 has no nullable wrapper so
      * the gated field's storage stays as plain `T` (with `_len = 0`
      * for absent bytes payloads); the carrier's flag bit is the
@@ -76,7 +76,7 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_decode(sce_for
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_ZENOH_DECL_QUERYABLE_MAX_BYTES bytes and use
@@ -86,7 +86,7 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode(const c
     /* Declared-but-unconsumed flag inputs: see decode — same suppress per input. */
     (void)n;
     (void)z;
-    /* RFC §5.B present-if encode: per-field byte append.
+    /* RFC §synth-5-B present-if encode: per-field byte append.
      * Gated fields skip the append when the carrier's flag bit is
      * clear. Per-field `is_repeat` / `is_tlv_chain` route to dedicated
      * helpers. Branch fires before has_vle_fields so a codec mixing

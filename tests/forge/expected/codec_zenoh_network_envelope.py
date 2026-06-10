@@ -21,7 +21,7 @@ from typing import Optional
 
 @dataclass
 class CodecZenohNetworkEnvelopeVariant:
-    """RFC §5.B variant primitive: discriminated-union body for
+    """RFC §synth-5-B variant primitive: discriminated-union body for
     the codec's tag-field suffix. ``kind`` selects the active arm; the
     matching ``Optional`` field carries the decoded body. ``default_tag``
     preserves the runtime tag value when the default arm fires so encode
@@ -53,10 +53,10 @@ class CodecZenohNetworkEnvelope:
     def decode(cls, cursor: SceCursor) -> Optional[CodecZenohNetworkEnvelope]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
-        (RFC §5.B L494-519); on success the cursor advances past the
+        (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §5.B peek-byte / streaming-prefix:
+        # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix decode (variable-length fields supported via
         # per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         # mode additionally peeks the cursor's next byte for variant tag
@@ -124,12 +124,12 @@ class CodecZenohNetworkEnvelope:
         )
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B encode-side primary: write ``self`` into the
+        """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §5.B peek-byte / streaming-prefix:
+        # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix encode.
         # Append the active arm body's encoded bytes via the same sink.
         if self.body.kind == "CodecZenohInterest":

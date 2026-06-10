@@ -4,9 +4,9 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 //
-// RFC §5.A: pure synchronous function with bounded loops. Free
+// RFC §synth-5-A: pure synchronous function with bounded loops. Free
 // function in package `algorithm_const_fold_smoke`, no instance state. `bytes`
-// parameters lower to `[]byte` (RFC §5.J.5 emitter table).
+// parameters lower to `[]byte` (RFC §synth-5-J-5 emitter table).
 
 package algorithm_const_fold_smoke
 

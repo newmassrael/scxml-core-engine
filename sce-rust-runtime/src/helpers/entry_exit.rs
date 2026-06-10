@@ -11,7 +11,7 @@
 //! error isolation is provided by lambda scope (return stops one block only).
 //! In Rust, we use `&mut [Box<dyn FnMut()>]` or closures for the same effect.
 //!
-//! Watching-zenoh RFC §5.J.2 (lines 1989-1994): the `Box<dyn FnMut()>` block
+//! Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): the `Box<dyn FnMut()>` block
 //! variants (`execute_entry_blocks` / `execute_exit_blocks`, `!no_std`-gated) require
 //! `alloc` and are gated to `!no_std`. The pure-closure variants
 //! ([`execute_entry_closures`] / [`execute_exit_closures`]) take
@@ -29,7 +29,7 @@ use crate::sce_log_debug;
 ///
 /// Ports C++ `EntryExitHelper<StatePolicy, Engine>::executeEntryBlocks`.
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `Box<dyn FnMut()>`
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because `Box<dyn FnMut()>`
 /// requires `alloc`. The closure-slice variant
 /// [`execute_entry_closures`] is the no_std-compatible alternative.
 #[cfg(not(feature = "no_std"))]
@@ -67,7 +67,7 @@ pub fn execute_entry_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
 ///
 /// Ports C++ `EntryExitHelper<StatePolicy, Engine>::executeExitBlocks`.
 ///
-/// Watching-zenoh RFC §5.J.2: gated to `!no_std` because `Box<dyn FnMut()>`
+/// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because `Box<dyn FnMut()>`
 /// requires `alloc`. The closure-slice variant
 /// [`execute_exit_closures`] is the no_std-compatible alternative.
 #[cfg(not(feature = "no_std"))]

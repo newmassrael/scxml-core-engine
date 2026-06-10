@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! B9 §6.2.6 generated-source drift detection — end-to-end fixture.
+//! B9 §synth-6.2.6 generated-source drift detection — end-to-end fixture.
 //!
 //! Pairs the library helper [`sce_build::apply_drift_headers_to_output`]
 //! with the `sce-codegen verify` subcommand:
@@ -63,7 +63,7 @@ impl VerifyFixture {
     }
 
     /// Synthetic codegen — emits a one-file `GeneratedOutput` then
-    /// invokes the library helper to prepend the §6.2.6 header. Body
+    /// invokes the library helper to prepend the §synth-6.2.6 header. Body
     /// content is intentionally simple Rust so a future reader can
     /// recognise the test is purely about the header/verify contract.
     fn generate_headered_rust(&self, hashes: &DriftHashes, generated_at: u64) {
@@ -573,7 +573,7 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
 // `integration_resources/donedata_local_invoke/`;
 // all three committed-tree backends share that input root. The new
 // top-level dir is intentionally outside `resources/` — the W3C
-// `resources/<N>/` tree is a *separate* §6.2.6 input root, and
+// `resources/<N>/` tree is a *separate* §synth-6.2.6 input root, and
 // `compute_source_hash` recurses through the input root, so nesting
 // integration under `resources/` would fold the integration fixture
 // into the W3C source-hash domain. Distinct drift contexts demand
@@ -582,7 +582,7 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
 //
 // Python is intentionally skipped: `sce-python/tests/` runs the
 // pybind11 → C++ Interpreter channel, so no donedata SM is codegen'd
-// for Python — there is no committed §6.2.6 header to verify.
+// for Python — there is no committed §synth-6.2.6 header to verify.
 
 #[test]
 fn verify_passes_on_real_committed_rust_donedata_tree() {
@@ -661,7 +661,7 @@ fn verify_passes_on_real_committed_go_donedata_tree() {
 // are emitted via `sce-forge-runtime/go/round_trip/generate.sh` to
 // `sce-forge-runtime/go/round_trip/generated/`. The Go runtime test
 // `default_round_trip_test.go` includes them at build time. This
-// context was discovered after the §6.2.6 sweep audit found the
+// context was discovered after the §synth-6.2.6 sweep audit found the
 // previous run of generate.sh had been on the pre-writer-encode template
 // tree — committed Encode() returned `[]byte` while the current
 // template emits `Encode(SceSink) error` + a `EncodeToBytes() []byte`

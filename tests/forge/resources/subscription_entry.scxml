@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  watching-zenoh RFC §5.A line 311 + §5.L line 2642-2647 (C7-lowering
+  watching-zenoh RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7-lowering
   2026-05-13): minimal element-type codec consumed by
   `local_sub_table.scxml` (bounded-collection) and indirectly by
   `algorithm_bc_iter_minimal.scxml` (algorithm-over-BC iter). Single

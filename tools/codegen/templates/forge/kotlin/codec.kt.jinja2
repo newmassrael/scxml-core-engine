@@ -21,7 +21,7 @@ import com.sce.forge.runtime.SceSink
 {% endfor %}
 
 {% if has_variant %}
-// RFC §5.B variant primitive: discriminated-union body for the
+// RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. Each arm wraps an imported codec's decoded
 // value; the optional Default arm preserves the runtime tag value
 // alongside its catch-all body. Arm body types are referenced by FQN
@@ -38,7 +38,7 @@ sealed class {{ struct_name }}Variant {
 
 {% endif %}
 {% if has_no_fields %}
-// RFC §5.B empty body — Kotlin's `data class` requires at least
+// RFC §synth-5-B empty body — Kotlin's `data class` requires at least
 // one primary-ctor parameter, so empty-body codecs (e.g. Zenoh
 // KeepAlive) emit as a plain class with a no-arg constructor.
 class {{ struct_name }} {
@@ -96,7 +96,7 @@ data class {{ struct_name }}(
 {% endfor %}
 {% endif %}
 {% if has_flags %}
-    // RFC §5.B flags primitive: per-bit-range accessors over
+    // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
@@ -134,7 +134,7 @@ data class {{ struct_name }}(
 {% endif %}
 {% endfor %}
 {% endif %}
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
@@ -144,18 +144,18 @@ data class {{ struct_name }}(
 {% endif %}
     fun encode(w: SceSink{{ params_after_first_arg }}): CodecError? {
 {% if has_parent_tag_derivation %}
-        // RFC §5.B parent-tag carriers — derive carrier bits from each embedded
+        // RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
         // parent-tag variant's active arm before the carrier byte is
         // emitted. Each `_derived<Carrier>` val is OR'd into the
         // carrier's encode site.
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if has_no_fields %}
-        // RFC §5.B empty body — zero-byte payload.
+        // RFC §synth-5-B empty body — zero-byte payload.
         return null
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-        // RFC §5.B peek-byte / streaming-prefix:
+        // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
         // separate tag byte here. Streaming-prefix mode (own-field):
@@ -192,7 +192,7 @@ data class {{ struct_name }}(
         }
         return null
 {% elif has_present_if_fields %}
-        // RFC §5.B present-if encode: per-field byte
+        // RFC §synth-5-B present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // null. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a
@@ -210,7 +210,7 @@ data class {{ struct_name }}(
 {% endfor %}
         return null
 {% elif has_vle_fields %}
-        // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        // RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
         // codecs stay byte-stable.
@@ -227,7 +227,7 @@ data class {{ struct_name }}(
 {% endfor %}
         return null
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
+        // RFC §synth-5-B B2 encode: fixed prefix appends byte-by-byte;
         // list fields iterate the host MutableList and write each
         // element's encode(w) through the same sink. Author keeps
         // count field == list length (trust contract).
@@ -275,17 +275,17 @@ data class {{ struct_name }}(
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
 {% if has_parent_flags or has_caller_tag or has_flag_inputs %}
         @Suppress("UNUSED_PARAMETER")
 {% endif %}
         fun decode(cursor: SceCursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}): {{ struct_name }}? {
 {% if has_no_fields %}
-            // RFC §5.B empty body — zero-byte payload, no cursor work.
+            // RFC §synth-5-B empty body — zero-byte payload, no cursor work.
             return {{ struct_name }}()
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-            // RFC §5.B peek-byte / streaming-
+            // RFC §synth-5-B peek-byte / streaming-
             // prefix: streaming prefix decode (variable-length fields
             // supported via per-field present_if/tlv-chain/embed/repeat
             // helpers). Peek-byte mode additionally peeks the cursor's
@@ -307,7 +307,7 @@ data class {{ struct_name }}(
 {% endif %}
 {% else %}
 {% if fields %}
-            // Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
+            // Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
             val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
 {% for field in fields %}
             val {{ field.id }} = {{ field.decode_expr }}
@@ -343,7 +343,7 @@ data class {{ struct_name }}(
                 body = body
             )
 {% elif has_present_if_fields %}
-            // RFC §5.B present-if primitive: streaming
+            // RFC §synth-5-B present-if primitive: streaming
             // decode advances the cursor per field. Gated fields wrap
             // their read inside an `if predicate ... else null` block.
             // Gating extends to Tail / LengthRef / Vle bit-sizes
@@ -369,7 +369,7 @@ data class {{ struct_name }}(
             )
 {% elif has_vle_fields %}
             // Streaming codec: each field reads from cursor directly
-            // (VLE base-128 chain). RFC §5.B B4: per-field bit-size
+            // (VLE base-128 chain). RFC §synth-5-B B4: per-field bit-size
             // dispatch routes Fixed / LengthRef siblings of VLE fields
             // through `present_if_decode_stmt` (predicate=None arms).
             // Pure-VLE codecs stay byte-stable.
@@ -390,7 +390,7 @@ data class {{ struct_name }}(
 {% endfor %}
             )
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-            // RFC §5.B B2 repeat primitive: streaming decode mixes
+            // RFC §synth-5-B B2 repeat primitive: streaming decode mixes
             // plain fixed-width reads (per-field via the present-if
             // helper's non-gated arm) with `mutableListOf<T>().also { ... }`
             // loops that iterate the imported codec's `decode()`

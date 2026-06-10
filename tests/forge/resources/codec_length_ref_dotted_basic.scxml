@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: length-field dotted-path primitive (RFC §5.B
+<!-- SCE Forge conformance: length-field dotted-path primitive (RFC §synth-5-B
      dotted-path). Author writes
      `sce:length-field="<carrier>.<flag>"` to source the byte count of
      a length-ref payload from a multi-bit flag subfield inside a
@@ -35,7 +35,7 @@
     <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="length-ref"
                sce:length-field="carrier.payload_len" sce:max-size="15"/>
   </datamodel>
-  <!-- RFC §5.B test-vector inline test vectors. Pinned at boundary widths
+  <!-- RFC §synth-5-B test-vector inline test vectors. Pinned at boundary widths
        (0-byte, mid-range, 4-bit max) to exercise the shift+mask
        extraction across the full subfield range. -->
   <sce:test-vector hex="00">

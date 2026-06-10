@@ -1,4 +1,4 @@
-//! Cross-doc orchestrator integration tests — watching-zenoh RFC §5.D
+//! Cross-doc orchestrator integration tests — watching-zenoh RFC §synth-5-D
 //! worker/outbox cross-doc surface.
 //!
 //! The distinguishing value pinned here: production wire-up of

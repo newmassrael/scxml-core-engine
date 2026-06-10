@@ -19,17 +19,17 @@
 
 typedef struct {
     uint8_t tag;
-    /* RFC §5.B embed: nested codec_zenoh_locator_t struct (no length prefix on the wire) */
+    /* RFC §synth-5-B embed: nested codec_zenoh_locator_t struct (no length prefix on the wire) */
     codec_zenoh_locator_t locator;
 } codec_embed_basic_t;
 
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_embed_basic_decode(sce_forge_cursor_t *cursor, codec_embed_basic_t *out) {
-    /* RFC §5.B B2 repeat / B3 TLV chain primitives: streaming decode
+    /* RFC §synth-5-B B2 repeat / B3 TLV chain primitives: streaming decode
      * mixes plain fixed-width reads with bounded-iteration loops over
      * imported codec entries. Repeat: bounded by `out-><len_field>`
      * (length-field) or until cursor exhaustion (until-eof); MAX_COUNT
@@ -49,14 +49,14 @@ static inline sce_forge_codec_status_t codec_embed_basic_decode(sce_forge_cursor
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_EMBED_BASIC_MAX_BYTES bytes and use
  * `codec_embed_basic_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_embed_basic_encode(const codec_embed_basic_t *self, sce_forge_writer_t *w) {
-    /* RFC §5.B B2 / B3 encode: fixed prefix appends byte-by-byte;
+    /* RFC §synth-5-B B2 / B3 encode: fixed prefix appends byte-by-byte;
      * list fields walk an in-place writer loop. Author keeps count
      * field (repeat) / `<id>_len` ≤ max_depth (tlv-chain) consistent
      * with the in-struct entry count (trust contract). */

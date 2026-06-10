@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// watching-zenoh RFC §5.E lines 1276-1346 — application-facing Sample
+// watching-zenoh RFC §synth-5-E lines 1276-1346 — application-facing Sample
 // API + Layer 1 Clang typestate + capability-attribute family. Lives
 // in the C11 backend's Tier 1 INTERFACE (sce_c_runtime per
 // `c11_4tier_layering.md`) so generated code, downstream consumer
@@ -133,7 +133,7 @@ extern "C" {
 // or timestamp semantics. Downstream consumers (zenoh-pico, DDS, MQTT)
 // provide the struct body and typedef their concrete shape against the
 // same tag. The borrow form in `sce_sample_t` is therefore a pointer
-// to an opaque type — the by-value spec form (RFC §5.E line 1313) is
+// to an opaque type — the by-value spec form (RFC §synth-5-E line 1313) is
 // achievable by consumers that supply a complete struct body before
 // including this header, but the pointer form is the canonical SCE-
 // side API surface.
@@ -206,7 +206,7 @@ typedef struct SCE_CONSUMABLE {
     sce_slot_handle_t    _slot;
 } sce_sample_t;
 
-// ── 3 function declarations (RFC §5.E lines 1318-1334) ───────────
+// ── 3 function declarations (RFC §synth-5-E lines 1318-1334) ───────────
 
 /// Borrow accessor — returns a pointer to the sample's payload bytes.
 /// Valid only while the sample is unconsumed. Calling after

@@ -1,7 +1,7 @@
 //! C7 keyexpr-fixture — reference exemplar parity test across all 6
 //! backends.
 //!
-//! Per watching-zenoh RFC §5.A line 311 + §5.L lines 2642-2647.
+//! Per watching-zenoh RFC §synth-5-A line 311 + §synth-5-L lines 2642-2647.
 //! Ships two fixtures in `tests/forge/resources/`:
 //!
 //! - `algorithm_keyexpr_intersect_exact.scxml` — inner algorithm,
@@ -11,7 +11,7 @@
 //!   dispatches `km(entry.callback_id, target)` via expression-form
 //!   qualified-call rename. Returns first matching slot index.
 //!
-//! Drives §6.2.6 cross-language byte-equivalence parity test
+//! Drives §synth-6.2.6 cross-language byte-equivalence parity test
 //! extension — every backend's emit must surface both the foreach-BC
 //! index-loop (already validated in `c7_keyexpr_match.rs` against
 //! the minimal exemplar) AND the cross-algorithm dispatch substituted
@@ -288,7 +288,7 @@ fn c11_keyexpr_match_first_emits_foreach_bc_and_cross_algo_dispatch() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// ── §6.2.6 cross-backend parity drift guard ────────────────────
+// ── §synth-6.2.6 cross-backend parity drift guard ────────────────────
 // ═══════════════════════════════════════════════════════════════
 
 #[test]

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh source_info ext envelope (RFC §5.B Y2 —
+<!-- SCE Forge conformance: Zenoh source_info ext envelope (RFC §synth-5-B Y2 —
      length-bound embed of the codec_zenoh_source_info body).
 
      Mirrors zenoh-pico `_z_source_info_encode_ext` (message.c:243-254)

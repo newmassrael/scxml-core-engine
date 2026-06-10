@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: inner variant — Zenoh push-body envelope
-     (RFC §5.B recursive variant body, "recursive variant body"). This codec
+     (RFC §synth-5-B recursive variant body, "recursive variant body"). This codec
      is itself a variant (header MID dispatches PUT vs DEL), AND it is
      used as an arm body of the outer variant codec_zenoh_push — so
      when the outer codec emits its per-language sum-type, that

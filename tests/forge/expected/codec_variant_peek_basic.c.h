@@ -18,7 +18,7 @@
 #define CODEC_VARIANT_PEEK_BASIC_MIN_BYTES 0
 #define CODEC_VARIANT_PEEK_BASIC_MAX_BYTES 3
 
-/* RFC §5.B variant primitive: tagged-union body for the codec's
+/* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
  * preserves the runtime tag value when the default arm fires; the inner
  * union holds one body slot per arm (per-arm fields keep the template
@@ -60,10 +60,10 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_variant_peek_basic_decode(sce_forge_cursor_t *cursor, codec_variant_peek_basic_t *out) {
-    /* RFC §5.B peek-byte / streaming-prefix:
+    /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix decode (variable-length fields supported via
      * per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
      * mode additionally peeks the cursor's next byte for variant tag
@@ -96,14 +96,14 @@ static inline sce_forge_codec_status_t codec_variant_peek_basic_decode(sce_forge
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_VARIANT_PEEK_BASIC_MAX_BYTES bytes and use
  * `codec_variant_peek_basic_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_variant_peek_basic_encode(const codec_variant_peek_basic_t *self, sce_forge_writer_t *w) {
-    /* RFC §5.B peek-byte / streaming-prefix:
+    /* RFC §synth-5-B peek-byte / streaming-prefix:
      * streaming prefix encode. Peek-byte mode: arm body's encode
      * prepends its own header byte (which the decoder peeked); no
      * separate tag byte here. Streaming-prefix mode (own-field):

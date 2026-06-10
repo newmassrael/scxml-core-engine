@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: codec kind — single VLE u64 field (Zenoh ZInt).
-     RFC §5.B Appendix B canonical worked example. Each cursor read
+     RFC §synth-5-B Appendix B canonical worked example. Each cursor read
      consumes 1..=10 bytes per the base-128 continuation chain. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

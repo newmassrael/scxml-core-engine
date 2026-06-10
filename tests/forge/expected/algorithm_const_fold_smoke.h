@@ -4,9 +4,9 @@
 // Runtime: none
 // Do not edit — regenerate from the source SCXML file.
 //
-// RFC §5.A: free function in `namespace SCE::Generated::<Name>`. No
+// RFC §synth-5-A: free function in `namespace SCE::Generated::<Name>`. No
 // STL containers, no exceptions. `bytes` lowers to `std::span<const
-// std::uint8_t>` (RFC §5.J.5 emitter table).
+// std::uint8_t>` (RFC §synth-5-J-5 emitter table).
 
 #pragma once
 #ifndef SCE_FORGE_ALGORITHM_CONST_FOLD_SMOKE_H

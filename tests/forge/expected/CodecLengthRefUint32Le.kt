@@ -19,7 +19,7 @@ data class CodecLengthRefUint32Le(
     var payload_len: UInt = 0u,
     var payload: ByteArray = byteArrayOf()
 ) {
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
@@ -47,7 +47,7 @@ data class CodecLengthRefUint32Le(
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
         fun decode(cursor: SceCursor): CodecLengthRefUint32Le? {
             val frameLen = cursor.remaining()
             if (frameLen < 4) return null

@@ -199,7 +199,7 @@ fn compile_model(scxml_path: &str) -> Result<ParsedSCXML, CompileError> {
     // the exhaustiveness walk so structural intent-gap diagnostics fire ahead
     // of the per-transition guard heuristic.
     scxml_guard_analysis::validate(&model, scxml_path)?;
-    // Watching-zenoh RFC §5.O — IR provenance pre-emit
+    // Watching-zenoh RFC §synth-5-O — IR provenance pre-emit
     // guard. Runs *after* the analyzer (so synthesised IR additions
     // are visible) and *before* `resolve_source_path` populates the
     // template-visible source path (so a `None` cannot leak through
@@ -239,7 +239,7 @@ fn compile_model_from_string(
     scxml_exhaustiveness::validate(&model, scxml_name)?;
     // Guard analysis.
     scxml_guard_analysis::validate(&model, scxml_name)?;
-    // Watching-zenoh RFC §5.O — IR provenance pre-emit
+    // Watching-zenoh RFC §synth-5-O — IR provenance pre-emit
     // guard. WASM / parse_string callers share the same invariant
     // as the file-based entry point above; both routes converge on
     // `compile_model*` so the gate has a single placement.
@@ -261,7 +261,7 @@ fn guard_static_generatable(model: &SCXMLModel, source_name: &str) -> Result<(),
     analyzer::can_generate_static(model).map_err(|err| Located::new(err, source_name, None, None))
 }
 
-/// Prepend the spec §6.2.6 `// SCE-GENERATED` header to every file in
+/// Prepend the spec §synth-6.2.6 `// SCE-GENERATED` header to every file in
 /// `output`. The comment prefix is picked per-file based on extension
 /// (`.py` → `#`, everything else → `//`).
 ///
@@ -702,7 +702,7 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
         generator::Language::Kotlin => "kotlin",
         generator::Language::Go => "go",
         generator::Language::Python => "python",
-        // RFC §5.J.1: C11 statechart templates live at
+        // RFC §synth-5-J-1: C11 statechart templates live at
         // `<root>/c/state_machine.{h,c}.jinja2`, but every backend
         // shares `license_header.jinja2` at the root. Returning the
         // root (matching the C++ arm) lets `load_templates` walk both
@@ -862,7 +862,7 @@ pub fn compile_forge_with_deploy(
         )?;
     }
 
-    // Watching-zenoh RFC §5.O — forge IR provenance pre-emit
+    // Watching-zenoh RFC §synth-5-O — forge IR provenance pre-emit
     // guard. Runs before deploy-aware validators so the wire payload
     // anchors at the same `location.file` an η rejection would.
     forge::provenance::validate_forge_emission_provenance(&doc, label.diagnostic_label)?;
@@ -904,7 +904,7 @@ pub fn compile_forge_with_deploy(
                     }
                 }
             }
-            // RFC §5.E buffer-pool placement validation.
+            // RFC §synth-5-E buffer-pool placement validation.
             // Validates `<sce:section>` body
             // resolves against `machine.memory.sram_regions`. Skips
             // silently when the machine has no `memory` block.
@@ -912,7 +912,7 @@ pub fn compile_forge_with_deploy(
             // declared region names (sorted) — drives `Fix::ReplaceOneOf`
             // so authors can pick a legal section or extend deploy.yaml.
             //
-            // RFC §5.E layered size check — once the section has
+            // RFC §synth-5-E layered size check — once the section has
             // resolved, verify the storage footprint (`slot_count ×
             // slot_size`) fits the resolved region's `size`. Section
             // resolution is the prerequisite: it makes no sense to
@@ -958,14 +958,14 @@ pub fn compile_forge_with_deploy(
                     }
                 }
 
-                // ── C5 cache-policy validators (RFC §5.E lines 1543-1545 + 1553) ──
+                // ── C5 cache-policy validators (RFC §synth-5-E lines 1543-1545 + 1553) ──
                 //
                 // Four deploy-aware diagnostics keyed off `platform.has_dcache`
                 // / `platform.dcache_line_size` / `platform.has_speculative_prefetch`
                 // and the pool's `cache_policy`. Absent-input silent-skip when
                 // the platform block is missing fields (the deploy.yaml-side
                 // codes `deploy/has-dcache-missing` + `deploy/dcache-line-size-missing`
-                // sit in §5.K / C13 scope — not C5's reach). One exception:
+                // sit in §synth-5-K / C13 scope — not C5's reach). One exception:
                 // `pool/speculative-prefetch-flag-missing` fires even when
                 // the field is unset, because the pool's `cache-policy:
                 // maintain` makes the field a per-pool requirement, not a
@@ -1000,7 +1000,7 @@ pub fn compile_forge_with_deploy(
                         //     and (3) slot_size vs dcache_line_size (spec
                         //     line 1545) — both fire only when the deploy
                         //     declares `dcache_line_size`. A
-                        //     missing field skips silently (it's a §5.K
+                        //     missing field skips silently (it's a §synth-5-K
                         //     completeness rule).
                         if let Some(line_size) = platform.dcache_line_size {
                             if pool.alignment < line_size {
@@ -1064,7 +1064,7 @@ pub fn compile_forge_with_deploy(
         }
     }
 
-    // Forge-side anchor for spec §5.D line 912
+    // Forge-side anchor for spec §synth-5-D line 912
     // (`worker/scheduler-unsupported`). When a Worker doc compiles
     // against a resolved target machine, the machine MUST list it in
     // `machines.<m>.workers` so the cooperative scheduler can budget
@@ -1095,7 +1095,7 @@ pub fn compile_forge_with_deploy(
         }
     }
 
-    // C1: forge-side anchor for spec §5.D line 909
+    // C1: forge-side anchor for spec §synth-5-D line 909
     // (`timer/period-below-tick-rate`). When a Timer doc compiles
     // against a resolved cooperative-scheduler machine, the timer's
     // `<sce:period>` MUST be >= `scheduler.tick_period_us` so the
@@ -1137,7 +1137,7 @@ pub fn compile_forge_with_deploy(
 
         // ── Bounded-collection deploy-time capacity resolution ──
         //
-        // RFC §5.L lines 2583-2585: `<sce:capacity source="deploy"
+        // RFC §synth-5-L lines 2583-2585: `<sce:capacity source="deploy"
         // key="machines.<m>.limits.<k>"/>` resolves at codegen time to
         // a per-language compile-time constant from the named limit
         // under `machines.<m>.limits:` in deploy.yaml. Fires
@@ -1316,7 +1316,7 @@ pub fn compile_forge_with_deploy(
 
     let template_base = find_template_base();
 
-    // RFC §5.I — `<sce:extern>` rejected on
+    // RFC §synth-5-I — `<sce:extern>` rejected on
     // non-MCU backends. Mirrors the gate in
     // [`compile_forge_with_imports`]; the deploy-aware path catches
     // the rejection one stage later (after potential plugin loading)
@@ -1516,14 +1516,14 @@ pub struct ForgeCompileOptions {
     /// module, so `resolve_imports` hard-errors when imports are present
     /// for `Language::Go` but this field is `None` — no silent fallback.
     pub go_module_prefix: Option<String>,
-    /// RFC §5.F build-time const-fold iteration budget. When set, caps
+    /// RFC §synth-5-F build-time const-fold iteration budget. When set, caps
     /// the total iteration count across every `<sce:fold>` body in the
     /// document. `None` = use the SSoT default
     /// ([`forge::const_fold::Budget::DEFAULT_MAX_ITERS`] = 1_000_000),
     /// matching the RFC's "default 1M" wording. The CLI surfaces this
     /// as `--const-fold-budget=N` on the `generate` subcommand.
     pub const_fold_budget: Option<u64>,
-    /// RFC §5.E C5 cache-maintenance platform info. Populated by
+    /// RFC §synth-5-E C5 cache-maintenance platform info. Populated by
     /// [`compile_forge_with_deploy`] from the resolved
     /// [`mesh::deploy::PlatformConfig`]; left `None` by deploy-unaware
     /// callers (`compile_forge_with_imports`, `sce_codegen` CLI, in-
@@ -1534,7 +1534,7 @@ pub struct ForgeCompileOptions {
     /// validators ensure the field is always `Some` when at least one
     /// `cache-policy: maintain` pool exists.
     pub cache_platform: Option<CachePlatformInfo>,
-    /// RFC §5.D + §5.I worker inbox cross-core placement map.
+    /// RFC §synth-5-D + §synth-5-I worker inbox cross-core placement map.
     /// Populated by [`compile_forge_with_deploy`] from the resolved
     /// deploy.yaml `machines.<m>.workers.<w>.placement` block;
     /// left `None` by
@@ -1546,7 +1546,7 @@ pub struct ForgeCompileOptions {
     /// validator scans the slice for any entry whose producer/consumer
     /// cores differ and whose worker doc declared `ordering="relaxed"`.
     pub worker_placement: Option<Vec<WorkerPlacement>>,
-    /// RFC §5.L bounded-collection codegen-time resolutions, keyed
+    /// RFC §synth-5-L bounded-collection codegen-time resolutions, keyed
     /// by `BoundedCollectionModel.name`. Populated by the two upstream
     /// pipelines that have the information the BC template needs:
     ///
@@ -1568,7 +1568,7 @@ pub struct ForgeCompileOptions {
     /// the codegen boundary rather than silently emitting placeholders.
     pub bounded_collection_resolutions:
         Option<std::collections::HashMap<String, BoundedCollectionResolution>>,
-    /// watching-zenoh RFC §5.C lines 802-833 + §5.M lines 2771-2828
+    /// watching-zenoh RFC §synth-5-C lines 802-833 + §synth-5-M lines 2771-2828
     /// (item C10) — sorted set of `<sce:link>` doc names whose
     /// orchestrator-resolved (deploy `domain_attrs.trust_class:
     /// session_arming` × machine source SCXML `Accepting.*`
@@ -1609,7 +1609,7 @@ pub struct ForgeCompileOptions {
     pub element_type_field_schemas: Option<std::collections::HashMap<String, ElementFieldSchema>>,
 }
 
-/// RFC §5.D + §5.I cross-core worker placement entry. Populated
+/// RFC §synth-5-D + §synth-5-I cross-core worker placement entry. Populated
 /// from deploy.yaml's `machines.<m>.workers.<w>.placement.{producer_core,
 /// consumer_core}` block at [`compile_forge_with_deploy`] time and
 /// threaded to the inbox-ordering validator via
@@ -1631,7 +1631,7 @@ pub struct WorkerPlacement {
     pub consumer_core: u32,
 }
 
-/// RFC §5.E C5 cache-maintenance codegen-relevant platform invariants.
+/// RFC §synth-5-E C5 cache-maintenance codegen-relevant platform invariants.
 /// Aggregated from [`mesh::deploy::PlatformConfig`] at
 /// [`compile_forge_with_deploy`] time and threaded to the buffer-pool
 /// generator via [`ForgeCompileOptions::cache_platform`].
@@ -1639,7 +1639,7 @@ pub struct WorkerPlacement {
 pub struct CachePlatformInfo {
     /// `true` for cores with speculative load / hardware prefetcher
     /// (Cortex-M7+, Cortex-A series). Drives the `free → dma-armed-rx`
-    /// pre-arm cache-invalidate edge per spec §5.E lines 1189-1198 +
+    /// pre-arm cache-invalidate edge per spec §synth-5-E lines 1189-1198 +
     /// 1199-1212. Validation in `compile_forge_with_deploy` enforces
     /// the field is set when `has_dcache=true` AND at least one
     /// `cache-policy: maintain` pool exists; missing config raises
@@ -1647,7 +1647,7 @@ pub struct CachePlatformInfo {
     pub has_speculative_prefetch: bool,
 }
 
-/// RFC §5.L codegen-time resolution bundle for a single
+/// RFC §synth-5-L codegen-time resolution bundle for a single
 /// bounded-collection document. Both fields are populated upstream
 /// — the BC render layer simply reads what it needs and raises
 /// `InvalidConfig` when a declared schema feature has no resolution.
@@ -1743,7 +1743,7 @@ pub fn compile_forge_from_parsed(
 ) -> Result<generator::GeneratedOutput, forge::error::Located<forge::error::ForgeError>> {
     use forge::error::Located;
 
-    // Watching-zenoh RFC §5.O — forge IR provenance pre-emit
+    // Watching-zenoh RFC §synth-5-O — forge IR provenance pre-emit
     // guard. Runs before import resolution + cross-doc validators so a
     // missing-provenance regression in any parser site surfaces with
     // its own diagnostic instead of cascading into a downstream
@@ -1787,7 +1787,7 @@ pub fn compile_forge_from_parsed(
     // walker can trust that imported alias references resolve.
     forge::quantity_check::check(parsed, label.diagnostic_label)?;
 
-    // RFC §5.C link-side cross-resolution. Runs after enrichment
+    // RFC §synth-5-C link-side cross-resolution. Runs after enrichment
     // populates `ImportContext::codec_max_bytes` (framer side) and
     // `ImportContext::buffer_pool_slot_size` (pool side); both axes
     // need to be present on the same `import_ctx` slice for the
@@ -1797,7 +1797,7 @@ pub fn compile_forge_from_parsed(
     // emit (or a silently-stage-copying TX path).
     validate_link_pool_framer_resolution(&parsed.document, &import_ctx, label.diagnostic_label)?;
 
-    // RFC §5.D worker cross-resolution. Per-doc resolution of
+    // RFC §synth-5-D worker cross-resolution. Per-doc resolution of
     // `<sce:link-rx ref>` against kind=link imports and `<sce:outbox
     // ref>` against kind=statechart imports. Silent-skip on non-
     // Worker docs. An earlier `ForgeWorkerRegistry` design was dropped
@@ -1806,7 +1806,7 @@ pub fn compile_forge_from_parsed(
     // path.
     validate_worker_cross_refs(&parsed.document, &parsed.imports, label.diagnostic_label)?;
 
-    // RFC §5.I codegen-invariant for cross-core SPSC ordering.
+    // RFC §synth-5-I codegen-invariant for cross-core SPSC ordering.
     // Silent-skip when `options.worker_placement` is `None` (deploy-
     // unaware path); fires when the worker's declared `ordering=
     // "relaxed"` coexists with a placement entry pinning producer +
@@ -1817,7 +1817,7 @@ pub fn compile_forge_from_parsed(
         label.diagnostic_label,
     )?;
 
-    // RFC §5.I — `<sce:extern>` rejected on non-MCU
+    // RFC §synth-5-I — `<sce:extern>` rejected on non-MCU
     // backends (Kotlin/Go/Python). The wire-format diagnostic reuses
     // the existing `codegen/mcu-class-kind-on-non-mcu-language` family
     // per spec prose ("rejected via codegen/mcu-class-kind-on-non-
@@ -1890,7 +1890,7 @@ pub fn compile_forge_from_parsed(
     Ok(output)
 }
 
-/// Multi-doc compile entry point — watching-zenoh RFC §5.D worker
+/// Multi-doc compile entry point — watching-zenoh RFC §synth-5-D worker
 /// outbox cross-resolution orchestrator (decisions locked 2026-05-12).
 ///
 /// Walks every input doc (SCXML statechart + forge artifact files),
@@ -2074,7 +2074,7 @@ pub fn compile_scxml_with_imports(
         // exist somewhere in the build", so the union across all
         // forge docs is the relevant surface; per-doc isolation would
         // force authors to redeclare atomics in every BC doc, which
-        // contradicts the §5.I trust-surface design.
+        // contradicts the §synth-5-I trust-surface design.
         all_externs.extend(parsed.externs.iter().cloned());
 
         // Capture per-kind for downstream cross-doc validators. The
@@ -2267,7 +2267,7 @@ pub fn compile_scxml_with_imports(
     // Runs after pass-1 captures all parsed forge docs (so
     // `element_type_candidates` + `all_externs` are
     // populated) and after worker outbox so cross-doc validators run
-    // in spec-section order (§5.D outbox before §5.L bounded-
+    // in spec-section order (§synth-5-D outbox before §synth-5-L bounded-
     // collection). Independent of SCXML statechart registration — the
     // surface is forge→forge entirely (codec/procedure element
     // types + atomic-purpose `<sce:extern>` declarations), so it
@@ -2284,13 +2284,13 @@ pub fn compile_scxml_with_imports(
     //
     // When `deploy`
     // is `Some`, three validators fire in spec-section walk order:
-    //   1. `validate_links_cross_doc` (§5.K) — every forge
+    //   1. `validate_links_cross_doc` (§synth-5-K) — every forge
     //      `<sce:link name=X>` must have a `deploy.machines.<n>.links.X`
     //      counterpart, and vice versa.
-    //   2. `validate_links_burst_invariants` (§5.K lines 2489-2500) —
+    //   2. `validate_links_burst_invariants` (§synth-5-K lines 2489-2500) —
     //      RX pool drain capacity vs declared `burst_pps` per the
     //      cooperative tick window.
-    //   3. `validate_reassembly_cross_doc` (§5.M lines 2946-2995) —
+    //   3. `validate_reassembly_cross_doc` (§synth-5-M lines 2946-2995) —
     //      slot_size vs mtu, reassembly fragment count, trust class,
     //      stage-copy WCET.
     //
@@ -2396,8 +2396,8 @@ pub fn compile_scxml_with_imports(
         .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
         // C13 deferred-2: stateless_accept hmac_extern / rng_extern
-        // allowlist (watching-zenoh RFC §5.K line 2466-2469). The
-        // sorted union of §5.I baseline + target_plugin-loaded symbols
+        // allowlist (watching-zenoh RFC §synth-5-K line 2466-2469). The
+        // sorted union of §synth-5-I baseline + target_plugin-loaded symbols
         // is the closed candidate set. The orchestrator path loads
         // plugin_symbols here (mirroring `compile_forge_with_deploy`'s
         // single-doc loader) so the validator sees the same registry
@@ -2429,9 +2429,9 @@ pub fn compile_scxml_with_imports(
         .map_err(mesh::error::MeshError::from)
         .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
-        // ── link/inbound-event-queue-unsized (§5.N) ──
+        // ── link/inbound-event-queue-unsized (§synth-5-N) ──
         //
-        // Watching-zenoh RFC §5.N line 3062 verbatim — for every link
+        // Watching-zenoh RFC §synth-5-N line 3062 verbatim — for every link
         // carrying `<sce:inbound>` events, the build must observe an
         // event-queue capacity binding from one of two sources:
         // SCXML per-instance `sce:capacity="N"` on the
@@ -2685,9 +2685,9 @@ pub fn compile_scxml_with_imports(
         outputs.push((basename.to_string(), out));
     }
 
-    // ── Per-machine concurrency artifacts (§5.N) ──
+    // ── Per-machine concurrency artifacts (§synth-5-N) ──
     //
-    // Watching-zenoh RFC §5.N lines 3041-3055. Iterate
+    // Watching-zenoh RFC §synth-5-N lines 3041-3055. Iterate
     // `deploy.machines` and emit per-machine AP `LinkBus` + MCU
     // round-robin scheduler artifacts alongside the per-doc outputs
     // above. The emit fires only on Rust + C11 and
@@ -3165,7 +3165,7 @@ fn validate_and_enrich_imports(
                 ctx.namespace = id.namespace;
                 ctx.member_type = id.member_type;
             }
-            // RFC §5.B variant primitive + recursive max-bytes enrichment:
+            // RFC §synth-5-B variant primitive + recursive max-bytes enrichment:
             // codec imports carry their *full recursive* max_frame_bytes
             // forward so the parent codec's variant emit / TLV chain
             // emit / repeat emit can size its encoded buffer to fit the
@@ -3224,7 +3224,7 @@ fn validate_and_enrich_imports(
                 // `<sce:flag-bind>` directives. Empty when the leaf
                 // declares no flag-inputs.
                 ctx.codec_flag_inputs = cm.flag_inputs.clone();
-                // RFC §5.B peek-byte: capture the
+                // RFC §synth-5-B peek-byte: capture the
                 // imported body codec's FIRST `<sce:flags>`-bearing
                 // field at byte_offset=0 so the parent variant's
                 // peek-byte cross-codec validator can confirm the
@@ -3303,7 +3303,7 @@ fn validate_and_enrich_imports(
                     }
                 }
             }
-            // RFC §5.C cross-resolution: the link kind's
+            // RFC §synth-5-C cross-resolution: the link kind's
             // `<sce:rx-pool>` / `<sce:tx-pool>` cross-validator
             // (`validate_link_pool_framer_resolution`) needs the
             // imported pool's slot capacity at resolve time. Captured
@@ -3314,7 +3314,7 @@ fn validate_and_enrich_imports(
             if let forge::model::ForgeDocument::BufferPool(pm) = &doc {
                 ctx.buffer_pool_slot_size = Some(pm.slot_size);
             }
-            // RFC §5.A line 311 + §5.L line 2642-2647 (C7-lowering
+            // RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7-lowering
             // 2026-05-13): bounded-collection imports carry their
             // element-type snake form forward so the algorithm-over-BC
             // iter emit can name the codec's `<element_snake>_t`
@@ -3390,7 +3390,7 @@ fn validate_and_enrich_imports(
     Ok(())
 }
 
-/// RFC §5.C cross-resolution: validate that every `<sce:rx-pool>`
+/// RFC §synth-5-C cross-resolution: validate that every `<sce:rx-pool>`
 /// / `<sce:tx-pool>` reference on a link kind binds to a buffer-pool
 /// whose `<sce:slot-size>` is >= the framer codec's recursive
 /// worst-case encoded byte count.
@@ -3481,7 +3481,7 @@ fn validate_link_pool_framer_resolution(
     Ok(())
 }
 
-/// RFC §5.D worker cross-resolution. Mirrors
+/// RFC §synth-5-D worker cross-resolution. Mirrors
 /// `validate_link_pool_framer_resolution` shape — operates on a single
 /// parsed worker doc and resolves its `<sce:link-rx ref>` +
 /// `<sce:outbox ref>` against `parsed.imports`.
@@ -3489,7 +3489,7 @@ fn validate_link_pool_framer_resolution(
 /// An earlier design (2026-05-10) specified a separate
 /// `ForgeWorkerRegistry`; preflight (2026-05-11) surfaced that
 /// the registry would carry zero production population today (worker
-/// docs cannot import other workers per the §5.D layering, and the spec
+/// docs cannot import other workers per the §synth-5-D layering, and the spec
 /// example's outbox ref targets a state machine, not another worker).
 /// The textbook narrowing resolves cross-
 /// refs directly against `parsed.imports` filtered by kind:
@@ -3556,7 +3556,7 @@ fn validate_worker_cross_refs(
     Ok(())
 }
 
-/// watching-zenoh RFC §5.D worker-outbox cross-resolution
+/// watching-zenoh RFC §synth-5-D worker-outbox cross-resolution
 /// (decisions locked 2026-05-12). SCXML-side `<sce:outbox ref="<owner>.<suffix>">`
 /// cross-resolution against the build's
 /// [`forge::cross_doc_registry::SceCrossDocRegistry`]. Three failure
@@ -3578,7 +3578,7 @@ fn validate_worker_cross_refs(
 /// the author hit, so the repair sequence is bounded.
 ///
 /// Workers without `<sce:outbox>` silent-skip (it is optional per
-/// RFC §5.D worker schema). Empty registry + worker-with-outbox is
+/// RFC §synth-5-D worker schema). Empty registry + worker-with-outbox is
 /// a legitimate caller bug (orchestrator should populate the
 /// registry before invoking the validator) — surfaces as
 /// `worker/outbox-ref-unknown` with `candidates` = empty Vec, which
@@ -3686,7 +3686,7 @@ fn validate_worker_outbox_references(
     Ok(())
 }
 
-/// watching-zenoh RFC §5.L — parse a
+/// watching-zenoh RFC §synth-5-L — parse a
 /// `<sce:capacity source="deploy" key>` body into its
 /// `(machine_segment, limit_name)` components, matching the
 /// `machines.<machine>.limits.<limit>` shape from spec line 2570 +
@@ -3715,12 +3715,12 @@ fn parse_bounded_collection_deploy_key(key: &str) -> Option<(&str, &str)> {
     Some((machine_segment, limit_name))
 }
 
-/// watching-zenoh RFC §5.L — look up `field` on the
+/// watching-zenoh RFC §synth-5-L — look up `field` on the
 /// resolved element-type [`forge::model::ForgeDocument`] and return
 /// the abstract [`forge::model::SceType`] of that field. Each
 /// backend's render fn converts the abstract type to its language-
 /// specific string at codegen time via the existing `rust_type` /
-/// watching-zenoh RFC §5.C line 806 — `Accepting.*` substate
+/// watching-zenoh RFC §synth-5-C line 806 — `Accepting.*` substate
 /// presence walk over an `SCXMLModel`. The session-FSM canonical state
 /// shape (`docs/session-fsm.md` §2.6, §2.7) names the accept-side
 /// states `Accepting`, `Accepting.AwaitingInitSyn`,
@@ -4010,7 +4010,7 @@ fn extract_bounded_collection_index_field_sce_type(
     }
 }
 
-/// watching-zenoh RFC §5.L C6 Atomic β (Q1 user direction
+/// watching-zenoh RFC §synth-5-L C6 Atomic β (Q1 user direction
 /// 2026-05-13: separate forge-doc map for codec/procedure
 /// element-type candidates; Q2 user direction: build-wide cross-doc
 /// scan for atomic intrinsic imports). Three failure axes per spec
@@ -4029,7 +4029,7 @@ fn extract_bounded_collection_index_field_sce_type(
 /// * `collection/multi-writer-without-atomics` — `<sce:concurrency>`
 ///   declared as `multi-writer` while the build's aggregated
 ///   `externs` slice contains no entry whose registry-
-///   resolved purpose starts with `\"atomic-\"`. The §5.I
+///   resolved purpose starts with `\"atomic-\"`. The §synth-5-I
 ///   baseline registry tags `atomic-load` / `atomic-store` /
 ///   `atomic-cas-*` / `atomic-fetch-*` uniformly via the
 ///   [`forge::intrinsic_registry::Symbol::purpose`] field, so a single
@@ -4073,14 +4073,14 @@ fn validate_bounded_collection_cross_refs(
     element_type_names.sort();
 
     // Pre-compute the build-wide atomic-import surface answer once —
-    // every BC checks against the same global slice. The §5.I
+    // every BC checks against the same global slice. The §synth-5-I
     // baseline registry tags load/store/cas-weak/cas-strong/fetch
     // uniformly via `purpose: "atomic-<op>"`, so a single prefix scan
     // covers the entire family. Symbols absent from the baseline
     // registry (would-be plugin extensions) are silently skipped — a
     // plugin author who wires an atomic-family symbol still benefits
     // from declaring the appropriate purpose tag at registry merge
-    // time per the §5.I plugin loader contract.
+    // time per the §synth-5-I plugin loader contract.
     let build_has_atomic_import = externs.iter().any(|decl| {
         forge::intrinsic_registry::lookup_symbol(&decl.name)
             .is_some_and(|sym| sym.purpose.starts_with("atomic-"))
@@ -4169,7 +4169,7 @@ fn validate_bounded_collection_cross_refs(
     Ok(())
 }
 
-/// RFC §5.I lines 1755-1756 — codegen-invariant guard for SPSC
+/// RFC §synth-5-I lines 1755-1756 — codegen-invariant guard for SPSC
 /// inbox ordering vs cross-core placement. Silent-skip when
 /// `ForgeCompileOptions.worker_placement` is `None`
 /// (deploy-unaware path doesn't know cross-core
@@ -4263,7 +4263,7 @@ fn discover_stateless_signature(
             // treat parameters as empty (opaque) and return Float64.
             (Vec::new(), Some(SceType::Float64))
         }
-        // RFC §5.A Algorithm: a stateless free function whose signature is
+        // RFC §synth-5-A Algorithm: a stateless free function whose signature is
         // the declared `<sce:signature>` (params in positional order, an
         // optional return). Capturing it here lets `infer_types` resolve the
         // param/return types of a cross-algorithm dispatch (`eq(a, b)`), which
@@ -4339,7 +4339,7 @@ fn discover_stateful_member_fields(
             }
         }
         ForgeDocument::Timer(_) => {}
-        // RFC §5.C: Link is stateful (owns an `impl Link` driver) but
+        // RFC §synth-5-C: Link is stateful (owns an `impl Link` driver) but
         // exposes no SCXML-expression-visible typed fields — the rx /
         // tx surface is method-only, and no consumer
         // calls them from authored expressions. Empty Vec keeps the
@@ -4347,21 +4347,21 @@ fn discover_stateful_member_fields(
         // consumer-gated and would add the method discovery to
         // `discover_stateful_member_methods`, not field discovery.
         ForgeDocument::Link(_) => {}
-        // RFC §5.E: BufferPool is stateful (owns slot table + freelist)
+        // RFC §synth-5-E: BufferPool is stateful (owns slot table + freelist)
         // but exposes no SCXML-expression-visible typed fields
         // — acquire/release/slot/slot_mut/free_count are method-only.
         // Member discovery defers to the first authored consumer that
         // calls them via `<sce:call alias="..."/>` (analogous to Link's
         // method-only stance).
         ForgeDocument::BufferPool(_) => {}
-        // RFC §5.D: Worker owns SPSC inbox state but exposes no
+        // RFC §synth-5-D: Worker owns SPSC inbox state but exposes no
         // SCXML-expression-visible typed fields — inbox
         // producer/consumer pair, optional outbox, link-rx binding
         // are all instance state but only addressable through methods
         // emitted at codegen time. Member discovery defers to
         // the first authored `<sce:call alias="..."/>` consumer.
         ForgeDocument::Worker(_) => {}
-        // RFC §5.L: BoundedCollection owns the slot table, occupancy
+        // RFC §synth-5-L: BoundedCollection owns the slot table, occupancy
         // mask, generation counters as instance state but exposes no
         // SCXML-expression-visible typed fields — the
         // insert/remove/get/iter/len/capacity API is method-only per
@@ -4369,7 +4369,7 @@ fn discover_stateful_member_fields(
         // discovery defers to the first authored `<sce:call>` consumer.
         ForgeDocument::BoundedCollection(_) => {}
         // Stateless kinds handled via stateless_signature path.
-        // Algorithm (RFC §5.A) is a stateless free function; no member
+        // Algorithm (RFC §synth-5-A) is a stateless free function; no member
         // fields exposed to user expressions.
         ForgeDocument::Transform(_)
         | ForgeDocument::Condition(_)
@@ -4431,8 +4431,8 @@ fn discover_stateful_member_methods(
         // - Procedure: execute(handler, args) → ProcedureRunResult
         // - Observer:  update(args) → ()
         // - Timer:     fire() → ()
-        // - Link (RFC §5.C): rx() → Option<RxFrame>, tx(TxFrame) → Result<(), LinkError>
-        // - Worker (RFC §5.D): inbox.try_push(T) → bool, inbox.try_pop() → Option<T>
+        // - Link (RFC §synth-5-C): rx() → Option<RxFrame>, tx(TxFrame) → Result<(), LinkError>
+        // - Worker (RFC §synth-5-D): inbox.try_push(T) → bool, inbox.try_pop() → Option<T>
         //   (the worker codegen emits the producer/consumer split; method names
         //   firm up alongside the template's `Producer<T,N>`/`Consumer<T,N>`
         //   API surface).
@@ -4443,7 +4443,7 @@ fn discover_stateful_member_methods(
         | ForgeDocument::Link(_)
         | ForgeDocument::BufferPool(_)
         | ForgeDocument::Worker(_)
-        // RFC §5.L BoundedCollection: methods insert/remove/get/
+        // RFC §synth-5-L BoundedCollection: methods insert/remove/get/
         // find_by_index/iter/len/capacity per spec lines 2609-2619 are
         // emitted by the bounded-collection codegen. Until the first
         // `<sce:call alias.insert(...)>` consumer surfaces, member
@@ -4452,7 +4452,7 @@ fn discover_stateful_member_methods(
         // Stateless kinds: caller filters via `is_stateful` before reaching
         // here. Listed so the match stays exhaustive — adding a new
         // ForgeDocument variant forces a decision at this site.
-        // Algorithm (RFC §5.A) is a free function with no instance methods.
+        // Algorithm (RFC §synth-5-A) is a free function with no instance methods.
         ForgeDocument::Transform(_)
         | ForgeDocument::Condition(_)
         | ForgeDocument::Lookup(_)
@@ -4525,7 +4525,7 @@ fn discover_primary_function(
         // Stateful kinds (Codec, Validator, Procedure, Filter, Observer, Timer, Link)
         // use member access, not free function calls. They are handled by the
         // member rename mechanism in procedure and validator render functions.
-        // Link (RFC §5.C) is stateful (owns its `impl Link` driver) — it has
+        // Link (RFC §synth-5-C) is stateful (owns its `impl Link` driver) — it has
         // no callsite-visible primary function name.
         forge::model::ForgeDocument::Codec(_)
         | forge::model::ForgeDocument::Validator(_)
@@ -4536,7 +4536,7 @@ fn discover_primary_function(
         | forge::model::ForgeDocument::Link(_)
         | forge::model::ForgeDocument::BufferPool(_)
         | forge::model::ForgeDocument::Worker(_)
-        // RFC §5.L: stateful — uses member access via insert/remove
+        // RFC §synth-5-L: stateful — uses member access via insert/remove
         // etc. (spec lines 2609-2619). No callsite-visible primary
         // free function name.
         | forge::model::ForgeDocument::BoundedCollection(_)
@@ -4552,9 +4552,9 @@ fn discover_primary_function(
         // is dispatched implicitly by event-name match, not by alias
         // function call).
         | forge::model::ForgeDocument::EventSchema(_) => None,
-        // RFC §5.A Algorithm: free function whose name is the
+        // RFC §synth-5-A Algorithm: free function whose name is the
         // SCXML-author-declared `name=` attribute, lowered to each
-        // language's idiomatic identifier per RFC §5.J.5. The
+        // language's idiomatic identifier per RFC §synth-5-J-5. The
         // cross-file consumer of `<sce:call target="algo_name"/>`
         // resolves through this name.
         forge::model::ForgeDocument::Algorithm(m) => {
@@ -4599,7 +4599,7 @@ fn build_qualified_call(
         generator::Language::Python => format!("{namespace}.{func_name}"),
         // C has no namespace mechanism — convention prefixes the module
         // name onto every exported function so cross-file imports never
-        // collide. RFC §5.J.1 standardises on `<module>_<func>` to mirror
+        // collide. RFC §synth-5-J-1 standardises on `<module>_<func>` to mirror
         // POSIX / lwIP / FreeRTOS style. Routed through the W1 SSOT
         // `forge_c11_flat` so the definition sites and this callsite flatten
         // identically (`namespace` is already snake — the op is idempotent).
@@ -5582,7 +5582,7 @@ pub fn inject_server_model_mutations(
     ))
 }
 
-/// Watching-zenoh RFC §5.J.2 + §5.L (item C3): apply the deploy.yaml
+/// Watching-zenoh RFC §synth-5-J-2 + §synth-5-L (item C3): apply the deploy.yaml
 /// `machines.<m>.scheduler.default_event_queue_capacity` fallback
 /// to a model whose per-instance `<scxml sce:capacity="N">` is
 /// absent.
@@ -6053,7 +6053,7 @@ pub enum Pipeline {
 /// See [`Pipeline`] for the full routing table and the rationale behind
 /// each case. This predicate is the single source of truth for routing
 /// — the CLI dispatches on it, and any future embedding API must too.
-/// Watching-zenoh RFC §5.J.2 (item C3): reject SCXML constructs
+/// Watching-zenoh RFC §synth-5-J-2 (item C3): reject SCXML constructs
 /// that are incompatible with the `sce-rust-runtime` no_std variant.
 ///
 /// Caller invokes this only when `sce-codegen generate -l rust --no-std`
@@ -6104,7 +6104,7 @@ pub fn validate_no_std_compatibility(
         .unwrap_or("unknown")
         .to_string();
 
-    // Watching-zenoh RFC §5.J.2 lines 1989-1994: the
+    // Watching-zenoh RFC §synth-5-J-2 lines 1989-1994: the
     // no_std variant has zero alloc dependency. Filesystem-coupled
     // helpers in `sce-rust-runtime/src/helpers/datamodel_init.rs` are
     // gated to `!no_std`; reject `<data src="...">` up-front so the
@@ -6145,7 +6145,7 @@ pub fn validate_no_std_compatibility(
         .into());
     }
 
-    // Watching-zenoh RFC §5.J.2: invoke processing in
+    // Watching-zenoh RFC §synth-5-J-2: invoke processing in
     // `sce-rust-runtime/src/helpers/invoke_processing.rs` is
     // whole-module gated to `!no_std` because `Arc<Mutex<Vec<…>>>` +
     // `HashMap` are alloc-coupled. `model.invokes` is the aggregated
@@ -6308,7 +6308,7 @@ mod tests {
         );
     }
 
-    // ── C11 backend foundation (RFC §5.J.1, M1) ─────────────────
+    // ── C11 backend foundation (RFC §synth-5-J-1, M1) ─────────────────
     //
     // M2 (this commit) replaces the M1 InvalidConfig boundary with a
     // working emitter for the minimum vertical slice (test355 — flat,
@@ -6530,11 +6530,11 @@ mod tests {
         );
     }
 
-    /// Watching-zenoh RFC §5.C: link kind reject — missing
+    /// Watching-zenoh RFC §synth-5-C: link kind reject — missing
     /// `<sce:framer ref>` raises the dedicated `link/framer-missing`
     /// diagnostic at parse time, not at codegen. Pairs with the
     /// happy-path test above to verify the framer requirement is
-    /// load-bearing (RFC §5.C "Codegen contract" — RX/TX paths thread
+    /// load-bearing (RFC §synth-5-C "Codegen contract" — RX/TX paths thread
     /// through `framer.decode()` / `framer.encode()`).
     #[test]
     fn link_no_framer_rejects_via_link_framer_missing() {
@@ -8572,13 +8572,13 @@ topology:
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    // ── §5.E buffer-pool kind ─────────────────────────────────
+    // ── §synth-5-E buffer-pool kind ─────────────────────────────────
 
-    /// Watching-zenoh RFC §5.E: buffer-pool kind happy path.
+    /// Watching-zenoh RFC §synth-5-E: buffer-pool kind happy path.
     /// A well-formed `<sce:kind="buffer-pool">` document → Rust
     /// generator emits a `<Pascal>` struct owning a `[[u8; SLOT_SIZE];
     /// SLOT_COUNT]` storage table + per-slot `slot_states` array +
-    /// phantom-typed `Slot<S>` API per spec §5.E lines 1232-1237 +
+    /// phantom-typed `Slot<S>` API per spec §synth-5-E lines 1232-1237 +
     /// SECTION / ALIGNMENT / CACHE_POLICY constants. Asserts the
     /// load-bearing tokens so codegen drift fails the build.
     #[test]
@@ -8628,7 +8628,7 @@ topology:
             "CACHE_POLICY constant must round-trip the policy enum; full source:\n{body}",
         );
         // γ: STATE_COUNT / TRANSITION_COUNT mirror
-        // forge::buffer_pool_fsm constants (7 + 11 per §5.E lines
+        // forge::buffer_pool_fsm constants (7 + 11 per §synth-5-E lines
         // 1129-1135 / 1141-1156). Drift between the IR table and
         // the emitted constants would mean the generator and
         // template disagree on the FSM contract.
@@ -8683,7 +8683,7 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E: the emitted Rust buffer-pool
+    /// Watching-zenoh RFC §synth-5-E: the emitted Rust buffer-pool
     /// module must compile end-to-end as a real Rust source file —
     /// byte assertions alone do not prove the phantom-typed `Slot<S>`
     /// API is well-formed (per `feedback_byte_goldens_not_compile.md`).
@@ -9157,7 +9157,7 @@ topology:
             header.contains("static sce_slot_state_t rx_pool_sram1_slot_states["),
             "γ replaces the β `in_use[]` bitmap with a slot_states array; full header:\n{header}",
         );
-        // γ: tag-checked author API per spec §5.E lines 1232-1242.
+        // γ: tag-checked author API per spec §synth-5-E lines 1232-1242.
         assert!(
             header.contains("static inline sce_slot_handle_t rx_pool_sram1_pool_acquire_for_encode(void)"),
             "must emit pool_acquire_for_encode tag-checked surface (spec §5.E line 1233); full header:\n{header}",
@@ -9179,7 +9179,7 @@ topology:
             "must emit tag-checked pool_return (spec §5.E line 1234); full header:\n{header}",
         );
 
-        // Linker fragment — RFC §5.E lines 1031-1086 contract.
+        // Linker fragment — RFC §synth-5-E lines 1031-1086 contract.
         assert!(
             ld.contains(".sram1_rx_pool_sram1 (NOLOAD) : ALIGN(32)"),
             "SECTIONS entry must carry explicit ALIGN(N) per §5.E lines 1031-1086; full ld:\n{ld}",
@@ -9198,7 +9198,7 @@ topology:
         );
     }
 
-    /// Watching-zenoh RFC §5.E: the emitted C11 buffer-pool
+    /// Watching-zenoh RFC §synth-5-E: the emitted C11 buffer-pool
     /// header must compile end-to-end as a real C source — byte
     /// assertions alone do not prove the tag-checked handle API is
     /// well-formed (per `feedback_byte_goldens_not_compile.md`).
@@ -9260,7 +9260,7 @@ topology:
 /* C5: cache-policy: maintain emits sce_dcache_*_by_addr calls in
  * link_arm_tx + link_arm_rx. Provide host-side no-op stubs so the
  * gcc link finds the symbols. On bare-metal targets these come from
- * sce_intrinsics_runtime per spec §5.I lines 1707-1711. */
+ * sce_intrinsics_runtime per spec §synth-5-I lines 1707-1711. */
 void sce_dcache_clean_by_addr(const void *start, size_t len) {
     (void)start; (void)len;
 }

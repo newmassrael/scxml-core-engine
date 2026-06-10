@@ -27,7 +27,7 @@
 
 {% for f in fixtures %}
 #include "{{ f.name }}.h"
-{# RFC §5.B test-vector: per-fixture sidecar header carries
+{# RFC §synth-5-B test-vector: per-fixture sidecar header carries
    `static inline int test_vector_<fixture>()` returning the
    row-failure count. Folded into `g_failures` from main(); the
    header guard prevents double-include if the sidecar is reached

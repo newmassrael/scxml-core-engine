@@ -25,11 +25,11 @@ struct CodecZenohExtEnvelope {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
+    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecZenohExtEnvelope> decode(::SCE::Forge::SceCursor& cursor) {
-        // RFC §5.B B2 repeat (trunk): per-field cursor advance. Fixed
+        // RFC §synth-5-B B2 repeat (trunk): per-field cursor advance. Fixed
         // prefix fields read via the present-if helper's non-gated
         // branch; repeat fields run a count-driven or until-eof loop
         // over the imported codec's decode(). Element NeedMoreBytes
@@ -68,7 +68,7 @@ struct CodecZenohExtEnvelope {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
+        // RFC §synth-5-B B2 encode: fixed prefix appends byte-by-byte;
         // repeat fields iterate the host vector and splice each
         // element's encode() into the parent buffer. Author keeps
         // count field == list length (trust contract).

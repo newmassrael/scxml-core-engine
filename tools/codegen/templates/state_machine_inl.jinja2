@@ -20,7 +20,7 @@
     - Utility methods (utility_methods.jinja2)
 #}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
-    // Watching-zenoh RFC §5.O: SCE-MAP marker anchoring
+    // Watching-zenoh RFC §synth-5-O: SCE-MAP marker anchoring
     // these method implementations to the `<scxml>` root position.
     {{ sce_map.source_marker(model.source_location, "cpp", module_level=true) }}
 

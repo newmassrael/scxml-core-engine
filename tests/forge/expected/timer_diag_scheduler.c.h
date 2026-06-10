@@ -1,7 +1,7 @@
 // SCE-MAP: timer_diag_scheduler:1
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer") */
-/* Shape: watching-zenoh RFC §5.D line 880-886 — single timer per
+/* Shape: watching-zenoh RFC §synth-5-D line 880-886 — single timer per
  * doc with event-driven reset / state-exit cancel / fire event. */
 /* Runtime: sce_forge_runtime::hal */
 /* Do not edit — regenerate from the source SCXML file. */
@@ -28,7 +28,7 @@ typedef struct timer_diag_scheduler_itimer {
     void (*cancel)(struct timer_diag_scheduler_itimer *self);
 } timer_diag_scheduler_itimer_t;
 
-/* Handler — user-supplied fire callback. The §5.D single-timer shape
+/* Handler — user-supplied fire callback. The §synth-5-D single-timer shape
  * has one fire-event per doc, so the handler struct carries a single
  * function pointer (NULL-checked at trampoline time). */
 typedef struct {

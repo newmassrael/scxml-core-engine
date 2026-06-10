@@ -1,6 +1,6 @@
 //! Fragment / reassembly buffer-pool variant codegen surface.
 //!
-//! Per watching-zenoh RFC §5.M lines 2680-2698 (variant schema) +
+//! Per watching-zenoh RFC §synth-5-M lines 2680-2698 (variant schema) +
 //! 2864-2876 (fragment FSM consumer) + 2976-2981 (codegen self-check
 //! anchor) + 2659-2664 (backend coverage). `8c6b4e1e` shipped the
 //! `BufferPoolVariant::Reassembly(ReassemblyConfig)` schema + 2
@@ -11,7 +11,7 @@
 //! (fragment-index bitmap + deadline + ZID peer-id) the author-level
 //! Fragment FSM (`docs/reassembly-fsm.md` §2) consumes.
 //!
-//! Backend coverage per RFC §5.M lines 2659-2664 — emits only on
+//! Backend coverage per RFC §synth-5-M lines 2659-2664 — emits only on
 //! `(rust, *)` + `(c11, bare_metal)`. Non-MCU backends inherit
 //! `codegen/mcu-class-kind-on-non-mcu-language` rejection from the
 //! existing `ForgeKind::BufferPool` axis.

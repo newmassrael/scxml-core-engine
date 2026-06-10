@@ -1,13 +1,13 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Algorithm kind (RFC §5.A) — single-output free function. Cross-(Rust,
+{# Algorithm kind (RFC §synth-5-A) — single-output free function. Cross-(Rust,
    C11) byte-equivalence acceptance gate (RFC §A6). The Rust algorithm
    template emits `pub fn <name>(<param>: &[u8], ...) -> T`, so bytes
    args bind to a `Vec<u8>` from the oracle and pass `&arg<i>` at the
    call site; numeric args bind to their native Rust scalar.
 
-   Single-output only — RFC §5.A defines algorithms as one-return-value
+   Single-output only — RFC §synth-5-A defines algorithms as one-return-value
    bodies. Compound outputs would require structuring the return type,
    which is Transform's territory. #}
 {% if f.output.compare == "tolerance" %}

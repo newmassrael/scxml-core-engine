@@ -12,13 +12,13 @@
 // facing schema (forge link / buffer-pool / worker; SCXML statechart),
 // but consumers need to validate cross-document references at build
 // time. Before this module's predecessor (`ForgeLinkRegistry`,
-// shipped with the §5.E sample-callback work), no cross-schema
+// shipped with the §synth-5-E sample-callback work), no cross-schema
 // reference index existed —
 // SCXML validators could only consult one parsed doc at a time.
 //
-// Spec anchors. Watching-zenoh RFC §5.E sample-callback work
+// Spec anchors. Watching-zenoh RFC §synth-5-E sample-callback work
 // introduced the `<sce:on-sample link="X">` cross-reference
-// (link-kind axis). The RFC §5.D worker outbox surface extends the
+// (link-kind axis). The RFC §synth-5-D worker outbox surface extends the
 // same registry to cover statechart + worker recipient kinds for
 // `<sce:outbox ref>` resolution — single registry, cross-kind
 // queries from one structure.
@@ -41,16 +41,16 @@ use super::model::ForgeDocument;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScxmlDocKind {
     /// `<scxml sce:kind="link">` — byte-stream link endpoint
-    /// (§5.C). Today the only kind a SCXML
+    /// (§synth-5-C). Today the only kind a SCXML
     /// `<sce:on-sample link="X">` reference may resolve to.
     Link,
     /// `<scxml>` — W3C SCXML statechart (no `sce:kind` attribute, or
     /// `sce:kind="statechart"` explicit). Outbox refs (`<sce:outbox
-    /// ref="owner.inbox">`) may resolve to this kind per RFC §5.D
+    /// ref="owner.inbox">`) may resolve to this kind per RFC §synth-5-D
     /// line 895 example.
     Statechart,
     /// `<scxml sce:kind="worker">` — C2 worker doc. Outbox refs may
-    /// resolve to this kind too per RFC §5.D line 911 ("any non-inbox
+    /// resolve to this kind too per RFC §synth-5-D line 911 ("any non-inbox
     /// access" by negation admits inbox access regardless of owner
     /// kind).
     Worker,

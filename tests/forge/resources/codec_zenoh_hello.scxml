@@ -3,7 +3,7 @@
      remaining fixture of the zenoh-pico transport parity batch.
      First REALISTIC parent-scope consumer of
      `<sce:repeat sce:present-if="parent.<flag>"/>`
-     (RFC §5.B). Pairs with `codec_repeat_present_if_basic` (the local-scope
+     (RFC §synth-5-B). Pairs with `codec_repeat_present_if_basic` (the local-scope
      primitive demo).
 
      Mirrors zenoh-pico `_z_hello_encode` (src/protocol/codec/message.c

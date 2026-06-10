@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! Generated-source drift detection per spec §6.2.6
+//! Generated-source drift detection per spec §synth-6.2.6
 //! (`watching-zenoh/docs/rfc-sce-protocol-synthesis.md` lines 3496-3519).
 //!
 //! Every emitted file carries a 4-line header:
@@ -45,7 +45,7 @@ use std::path::{Path, PathBuf};
 pub const HEADER_BANNER: &str = "SCE-GENERATED \u{2014} DO NOT EDIT";
 
 /// Pair of digests computed from the source + template state. Both are
-/// embedded as hex strings in every generated file's §6.2.6 header.
+/// embedded as hex strings in every generated file's §synth-6.2.6 header.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DriftHashes {
     pub source_hash: [u8; 32],
@@ -77,7 +77,7 @@ pub enum DriftHashError {
     },
 }
 
-/// Source-set rule (§6.2.6): walks `input_root` recursively for `**/*.scxml`, hashes
+/// Source-set rule (§synth-6.2.6): walks `input_root` recursively for `**/*.scxml`, hashes
 /// each file's raw bytes, and folds the sorted `(rel_path, file_hash)`
 /// pairs through a final BTreeMap digest. If `deploy_yaml` is provided,
 /// its raw bytes are included under the canonical key `"deploy.yaml"`.
@@ -99,7 +99,7 @@ pub fn compute_source_hash(
     Ok(hash_btreemap(&entries))
 }
 
-/// Template-hash rule (§6.2.6): walks `template_root` recursively for every file
+/// Template-hash rule (§synth-6.2.6): walks `template_root` recursively for every file
 /// (no extension filter — `.jinja2` + `.json` + `.md` + everything else
 /// in the template tree contributes), hashes raw bytes, then folds
 /// `Cargo.lock` into the same BTreeMap as the binary-identity surrogate.
@@ -135,7 +135,7 @@ pub fn now_utc_seconds() -> u64 {
         .unwrap_or(0)
 }
 
-/// Renders the 4-line §6.2.6 header. `comment_prefix` is `//` for
+/// Renders the 4-line §synth-6.2.6 header. `comment_prefix` is `//` for
 /// Rust/Cpp/C11/Kotlin/Go and `#` for Python. Caller prepends the result
 /// at the very top of each emitted file.
 ///
@@ -212,7 +212,7 @@ pub struct EmbeddedHashes {
     pub template_hash_hex: String,
 }
 
-/// Parses the §6.2.6 header out of a generated file's content. Accepts
+/// Parses the §synth-6.2.6 header out of a generated file's content. Accepts
 /// either `//` or `#` comment prefix. Tolerant of leading shebang line
 /// or BOM (skips first line up to 2 if needed).
 pub fn parse_embedded_hashes(content: &str) -> Option<EmbeddedHashes> {

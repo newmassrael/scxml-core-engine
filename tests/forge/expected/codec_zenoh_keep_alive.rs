@@ -6,7 +6,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
-// RFC §5.B: `VecSink` and the heap-backed `encode_to_vec` facade
+// RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
@@ -39,9 +39,9 @@ impl CodecZenohKeepAlive {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519).
+    /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        // RFC §5.B empty body — nothing to read; the surrounding
+        // RFC §synth-5-B empty body — nothing to read; the surrounding
         // header byte (and the wire-protocol layer that demuxes it)
         // already proved this codec was selected, so return the
         // default-constructed envelope without touching the cursor.
@@ -60,7 +60,7 @@ impl CodecZenohKeepAlive {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // RFC §5.B empty body — zero-byte payload (the surrounding
+        // RFC §synth-5-B empty body — zero-byte payload (the surrounding
         // wire-protocol header byte alone marks this codec on the wire).
         // Suppress the unused-sink warning explicitly so empty codecs
         // stay warning-clean under `warnings = "deny"`.

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh declare-queryable body (RFC §5.B)
+<!-- SCE Forge conformance: Zenoh declare-queryable body (RFC §synth-5-B)
      . Adds an optional queryable_info ext on top
      of the decl_subscriber/decl_token shape.
 

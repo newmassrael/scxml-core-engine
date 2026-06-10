@@ -482,7 +482,7 @@ pub enum DeployError {
 
     /// A `binding.stage_pool: <name>` reference points at a forge pool
     /// that no `.forge` file in the build declares (watching-zenoh RFC
-    /// §5.E). The wire form keys on the missing name so duplicate
+    /// §synth-5-E). The wire form keys on the missing name so duplicate
     /// references coalesce in the diagnostic stream;
     /// [`Fix::ReplaceOneOf`] carries the registry's declared
     /// buffer-pool names, sorted for determinism. An empty
@@ -504,7 +504,7 @@ pub enum DeployError {
 
     /// A `binding.stage_pool: <name>` reference resolves to a forge
     /// artifact that exists but is not a buffer-pool kind
-    /// (watching-zenoh RFC §5.E). Today only buffer-pool kind
+    /// (watching-zenoh RFC §synth-5-E). Today only buffer-pool kind
     /// satisfies the `Sample::take()` slot contract; algorithm /
     /// codec / link kinds cannot back a stage copy because they have
     /// no slot table. The repair is to point the reference at one of
@@ -525,7 +525,7 @@ pub enum DeployError {
 
     /// A `binding.stage_pool` field was declared on a binding whose
     /// transport has no buffer-pool RX staging surface (watching-zenoh
-    /// RFC §5.E). Today only RX paths
+    /// RFC §synth-5-E). Today only RX paths
     /// integrated with the forge buffer-pool kind support
     /// `Sample::take()`; mesh RPC transports (`zenoh`, `someip`,
     /// `shm`, `local`, `dds`, `custom_tcp`) route logical events
@@ -1169,10 +1169,10 @@ pub enum DeployError {
 
     /// A machine declared `platform.class` and `platform.os` that are
     /// not mutually admissible per [`crate::mesh::deploy::PlatformClass::admits_os`]
-    /// (SCE Mesh §14, watching-zenoh RFC §5.K). `class: mcu` admits only
+    /// (SCE Mesh §14, watching-zenoh RFC §synth-5-K). `class: mcu` admits only
     /// `bare_metal` / `rtos`; `class: ap` admits only the general-purpose
     /// OS values. Rejected at parse time so a contradictory pairing
-    /// cannot reach the codegen-matrix walker (RFC §5.J.4 / §5.J.5).
+    /// cannot reach the codegen-matrix walker (RFC §synth-5-J-4 / §synth-5-J-5).
     #[error(
         "machine '{machine}': platform.class '{class}' is not compatible with \
              platform.os '{os}'. SCE Mesh §14 (RFC §5.K) admits 'mcu' with \
@@ -1188,7 +1188,7 @@ pub enum DeployError {
     },
 
     /// A machine declared `scheduler.kind: cooperative` without
-    /// `scheduler.worker_stack_budget` (watching-zenoh RFC §5.K line
+    /// `scheduler.worker_stack_budget` (watching-zenoh RFC §synth-5-K line
     /// 2426 `deploy/worker-stack-budget-missing`). The cooperative
     /// worker drives `<send>` queue draining inside a fixed stack
     /// frame; without an authored bound, codegen has no static budget
@@ -1206,10 +1206,10 @@ pub enum DeployError {
     SchedulerCooperativeMissingStackBudget { machine: String },
 
     /// A machine declared `scheduler.kind: cooperative` without
-    /// `scheduler.worker_slot_budget_us` (watching-zenoh RFC §5.K line
+    /// `scheduler.worker_slot_budget_us` (watching-zenoh RFC §synth-5-K line
     /// 2428-2429 `deploy/worker-slot-budget-missing`). The cooperative
     /// scheduler hosts each worker for at most this many microseconds
-    /// per tick slot; without an authored ceiling, the §5.B aggregate
+    /// per tick slot; without an authored ceiling, the §synth-5-B aggregate
     /// WCET check has no budget to compare against and the slot-count
     /// derivation (per [`super::deploy::validate_machine_scheduler_worker_capacity`])
     /// cannot run. Rejected at parse time.
@@ -1225,10 +1225,10 @@ pub enum DeployError {
     SchedulerCooperativeMissingSlotBudget { machine: String },
 
     /// A machine declared `scheduler.kind: cooperative` without
-    /// `scheduler.keepalive_jitter_budget_us` (watching-zenoh RFC §5.K
+    /// `scheduler.keepalive_jitter_budget_us` (watching-zenoh RFC §synth-5-K
     /// line 2430-2431 `deploy/keepalive-jitter-budget-missing`). The
     /// sum of worst-case slot budgets in one tick window MUST fit inside
-    /// this bound, so the consumer check (§5.B aggregate WCET) needs
+    /// this bound, so the consumer check (§synth-5-B aggregate WCET) needs
     /// the ceiling to enforce keepalive emission jitter limits.
     /// Rejected at parse time.
     #[error(
@@ -1244,11 +1244,11 @@ pub enum DeployError {
 
     /// A machine declared more workers (entries under `machines.<m>.workers`)
     /// than the cooperative scheduler can host in one tick window
-    /// (watching-zenoh RFC §5.K line 2423
+    /// (watching-zenoh RFC §synth-5-K line 2423
     /// `deploy/scheduler-incompatible-with-worker-count`). The
     /// derived ceiling is `floor(tick_period_us / worker_slot_budget_us)`;
     /// `workers.len()` exceeds this. The forge-side anchor for the same
-    /// failure mode is `worker/scheduler-unsupported` (spec §5.D line
+    /// failure mode is `worker/scheduler-unsupported` (spec §synth-5-D line
     /// 912), raised during [`crate::compile_forge_with_deploy`] for
     /// the specific Worker doc that overflowed the budget.
     #[error(
@@ -1272,7 +1272,7 @@ pub enum DeployError {
 
     /// A machine declared more Timer docs under `machines.<m>.timers`
     /// than `scheduler.timer_wheel_depth` can accommodate
-    /// (watching-zenoh RFC §5.D line 910 `timer/slot-overflow`).
+    /// (watching-zenoh RFC §synth-5-D line 910 `timer/slot-overflow`).
     /// The MCU static timer wheel is sized at compile time; each
     /// timer slot is one wheel cell.
     #[error(
@@ -1291,13 +1291,13 @@ pub enum DeployError {
         wheel_depth: u32,
     },
 
-    // ── §5.K `links:` block parse-time + cross-doc validators
-    //    (watching-zenoh RFC §5.K lines 2232-2540). 9 codes total: 7
+    // ── §synth-5-K `links:` block parse-time + cross-doc validators
+    //    (watching-zenoh RFC §synth-5-K lines 2232-2540). 9 codes total: 7
     //    spec-named (lines 2421, 2440-2503) + 2 cross-doc. The
     //    anti-flood family follows further below in this enum; the
-    //    §5.M reassembly cross-doc codes live on
+    //    §synth-5-M reassembly cross-doc codes live on
     //    `crate::forge::error::ValidationError`. ──
-    /// Watching-zenoh RFC §5.K line 2421
+    /// Watching-zenoh RFC §synth-5-K line 2421
     /// (`deploy/link-driver-unknown`). `machines.<n>.links.<name>.driver`
     /// names a driver that is not in the known-driver baseline
     /// (currently `{lwip_udp, lwip_tcp}`) AND not declared as a forge
@@ -1330,12 +1330,12 @@ pub enum DeployError {
         candidates_list: String,
     },
 
-    /// Watching-zenoh RFC §5.K line 2440-2442
+    /// Watching-zenoh RFC §synth-5-K line 2440-2442
     /// (`deploy/link-mtu-missing-on-fragmenting-link`). A link with
     /// `domain_attrs.trust_class: established_session` (the only trust
-    /// class permitted to carry Fragment traffic per RFC §5.M line
+    /// class permitted to carry Fragment traffic per RFC §synth-5-M line
     /// 2731) declares no `mtu_bytes`. The build cannot size reassembly
-    /// pool slots per the §5.M `reassembly/max-fragments-insufficient-
+    /// pool slots per the §synth-5-M `reassembly/max-fragments-insufficient-
     /// for-mtu` consumer.
     ///
     /// **Under-approximation note**: the parse-time check uses the
@@ -1343,7 +1343,7 @@ pub enum DeployError {
     /// bound link" — precise reassembly-pool-bound detection happens in
     /// the cross-doc step (`validate_reassembly_cross_doc`). Authors
     /// who declare an `established_session` link without `mtu_bytes`
-    /// see this earlier than the §5.M reassembly consumer.
+    /// see this earlier than the §synth-5-M reassembly consumer.
     #[error(
         "machine '{machine}': link '{link_name}' declares \
              `domain_attrs.trust_class: established_session` but \
@@ -1357,7 +1357,7 @@ pub enum DeployError {
     )]
     LinkMtuMissingOnFragmentingLink { machine: String, link_name: String },
 
-    /// Watching-zenoh RFC §5.K line 2443-2445
+    /// Watching-zenoh RFC §synth-5-K line 2443-2445
     /// (`deploy/link-mtu-below-driver-floor`). `mtu_bytes` declared
     /// smaller than the driver's minimum payload; the driver default
     /// would override silently. Baseline driver floors:
@@ -1382,7 +1382,7 @@ pub enum DeployError {
         driver_floor: u32,
     },
 
-    /// Watching-zenoh RFC §5.C lines 765-771 + §8 Q8 line 3747 —
+    /// Watching-zenoh RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 3747 —
     /// the forge `<sce:link-class>` value declared on the link doc
     /// does not match the protocol class implied by the deploy.yaml
     /// `driver:` allowlist entry. Each core driver implements
@@ -1409,11 +1409,11 @@ pub enum DeployError {
     )]
     LinkDriverClassMismatch(Box<LinkDriverClassMismatchPayload>),
 
-    /// Watching-zenoh RFC §5.K line 2446-2448
+    /// Watching-zenoh RFC §synth-5-K line 2446-2448
     /// (`deploy/link-expected-p99-exceeds-mtu`).
     /// `expected_p99_bytes > mtu_bytes`; the p99 message would always
     /// fragment. The structural warning fires at parse-time
-    /// regardless of pool binding — the §5.M reassembly consumer
+    /// regardless of pool binding — the §synth-5-M reassembly consumer
     /// (`reassembly/expected-fragmentation-rate-high`) refines this
     /// in the reassembly-pool-bound-to-link cross-doc step
     /// (`validate_reassembly_cross_doc`).
@@ -1434,7 +1434,7 @@ pub enum DeployError {
         mtu_bytes: u32,
     },
 
-    /// Watching-zenoh RFC §5.K line 2489-2495
+    /// Watching-zenoh RFC §synth-5-K line 2489-2495
     /// (`deploy/link-burst-absorption-insufficient`). `burst_pps × 1s`
     /// of worst-case inbound exceeds the RX pool's drain rate within
     /// one cooperative tick window. Cross-doc consumer of
@@ -1467,7 +1467,7 @@ pub enum DeployError {
         drain_per_second: u32,
     },
 
-    /// Watching-zenoh RFC §5.K line 2496-2500
+    /// Watching-zenoh RFC §synth-5-K line 2496-2500
     /// (`deploy/link-rx-dispatch-worker-tick-on-high-burst`).
     /// `rx_dispatch: worker_tick` declared but one tick window of
     /// arrivals overruns the RX pool: `burst_pps × tick_period_us /
@@ -1498,7 +1498,7 @@ pub enum DeployError {
         arrivals_per_tick: u32,
     },
 
-    /// Watching-zenoh RFC §5.K line 2501-2503
+    /// Watching-zenoh RFC §synth-5-K line 2501-2503
     /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
     /// `rx_dispatch` is `IsrToPool` but `burst_pps` is not declared.
     /// ISR fast-path requires the rate to size descriptor ring +
@@ -1518,7 +1518,7 @@ pub enum DeployError {
     )]
     LinkBurstPpsMissingOnIsrDispatch { machine: String, link_name: String },
 
-    /// Cross-doc link validator pair (§5.K). A forge
+    /// Cross-doc link validator pair (§synth-5-K). A forge
     /// `<scxml sce:kind="link" name="X">` document was declared in the
     /// build's cross-doc registry but no `machines.<n>.links.<X>`
     /// entry exists in deploy.yaml. The forge-side link declares its
@@ -1544,7 +1544,7 @@ pub enum DeployError {
         candidates_list: String,
     },
 
-    /// Cross-doc link validator pair (§5.K). A
+    /// Cross-doc link validator pair (§synth-5-K). A
     /// `deploy.yaml::machines.<n>.links.<X>` entry exists but no
     /// forge `<sce:link name="X">` was declared/imported in the
     /// build. The deploy entry has no wire framer / codec pairing —
@@ -1567,7 +1567,7 @@ pub enum DeployError {
         candidates_list: String,
     },
 
-    /// Watching-zenoh RFC §5.K line 2517-2519 verbatim
+    /// Watching-zenoh RFC §synth-5-K line 2517-2519 verbatim
     /// (`deploy/stage-copy-policy-unknown`).
     /// `pool_defaults.stage_copy_policy` declared with a value other
     /// than `warn` / `error` / `forbid`. Parse-time typo guard;
@@ -1586,7 +1586,7 @@ pub enum DeployError {
         candidates_list: String,
     },
 
-    /// Watching-zenoh RFC §5.K line 2449-2451 verbatim
+    /// Watching-zenoh RFC §synth-5-K line 2449-2451 verbatim
     /// (`deploy/session-arming-quota-missing`). Link declares
     /// `trust_class: session_arming` but no `session_arming_quota`.
     /// Hard error.
@@ -1601,7 +1601,7 @@ pub enum DeployError {
     )]
     SessionArmingQuotaMissing { machine: String, link_name: String },
 
-    /// Watching-zenoh RFC §5.K line 2452-2453 verbatim
+    /// Watching-zenoh RFC §synth-5-K line 2452-2453 verbatim
     /// (`deploy/accept-rate-config-missing`). `trust_class:
     /// session_arming` link missing `accept_rate_per_sec` or
     /// `accept_rate_burst`.
@@ -1622,7 +1622,7 @@ pub enum DeployError {
         missing_fields: String,
     },
 
-    /// Watching-zenoh RFC §5.K line 2454-2459 verbatim
+    /// Watching-zenoh RFC §synth-5-K line 2454-2459 verbatim
     /// (`deploy/session-arming-fields-on-non-arming-link`). Anti-
     /// flood / stateless_accept fields declared on a `trust_class:
     /// untrusted` or `established_session` link where `Accepting.*`
@@ -1645,7 +1645,7 @@ pub enum DeployError {
         offending_fields: String,
     },
 
-    /// Watching-zenoh RFC §5.K line 2463-2465 verbatim
+    /// Watching-zenoh RFC §synth-5-K line 2463-2465 verbatim
     /// (`deploy/stateless-accept-required-on-untrusted-source`).
     /// Link with `domain_attrs.untrusted_source: true` but no
     /// `stateless_accept` block.
@@ -1663,7 +1663,7 @@ pub enum DeployError {
     )]
     StatelessAcceptRequiredOnUntrustedSource { machine: String, link_name: String },
 
-    /// Watching-zenoh RFC §5.K line 2470-2473 verbatim
+    /// Watching-zenoh RFC §synth-5-K line 2470-2473 verbatim
     /// (`deploy/stateless-accept-key-rotation-shorter-than-lifetime`).
     /// `key_rotation_s × 1000 ≤ 2 × cookie_lifetime_ms`.
     #[error(
@@ -1686,7 +1686,7 @@ pub enum DeployError {
         lifetime_doubled: u64,
     },
 
-    /// Watching-zenoh RFC §5.K line 2460-2462 verbatim
+    /// Watching-zenoh RFC §synth-5-K line 2460-2462 verbatim
     /// (`deploy/session-arming-quota-vs-peer-table-invariant-violated`).
     /// `session_arming_quota × max_handshake_time_s > peer_table.capacity`.
     /// A slow legitimate handshake can be evicted under attack.
@@ -1712,7 +1712,7 @@ pub enum DeployError {
         product: u64,
     },
 
-    /// Watching-zenoh RFC §5.K line 2466-2469 verbatim
+    /// Watching-zenoh RFC §synth-5-K line 2466-2469 verbatim
     /// (`deploy/stateless-accept-extern-not-whitelisted`). `hmac_extern`
     /// or `rng_extern` symbol not present in `sce_intrinsics_runtime`
     /// core whitelist AND not declared in any loaded `target_plugin`.
@@ -1738,7 +1738,7 @@ pub enum DeployError {
         candidates: Vec<String>,
     },
 
-    /// Watching-zenoh RFC §5.N line 3060 verbatim
+    /// Watching-zenoh RFC §synth-5-N line 3060 verbatim
     /// (`link/concurrent-count-exceeds-scheduler-slots`). MCU-only:
     /// the cooperative scheduler's per-tick slot ceiling is
     /// `floor(tick_period_us / per_link_budget_us)` (mirroring
@@ -1759,7 +1759,7 @@ pub enum DeployError {
         per_link_budget_us: u32,
     },
 
-    /// Watching-zenoh RFC §5.N line 3061 verbatim
+    /// Watching-zenoh RFC §synth-5-N line 3061 verbatim
     /// (`link/per-link-budget-exceeds-tick-period`). The per-link
     /// budget must fit inside one cooperative tick:
     /// `per_link_budget_us > tick_period_us` (single-
@@ -3162,7 +3162,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             ],
         },
 
-        // ── §5.K `links:` block (RFC §5.K lines 2232-2540) ──
+        // ── §synth-5-K `links:` block (RFC §synth-5-K lines 2232-2540) ──
         DeployError::LinkDriverUnknown {
             machine,
             link_name,
@@ -3483,7 +3483,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 extern_name.clone(),
             ],
         },
-        // ── §5.N concurrent-count-exceeds-scheduler-slots ──
+        // ── §synth-5-N concurrent-count-exceeds-scheduler-slots ──
         DeployError::LinkConcurrentCountExceedsSchedulerSlots {
             machine,
             link_count,
@@ -3508,7 +3508,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 per_link_budget_us.to_string(),
             ],
         },
-        // ── §5.N per-link-budget-exceeds-tick-period ──
+        // ── §synth-5-N per-link-budget-exceeds-tick-period ──
         DeployError::LinkPerLinkBudgetExceedsTickPeriod {
             machine,
             per_link_budget_us,

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: TLV chain primitive (RFC §5.B B3).
+<!-- SCE Forge conformance: TLV chain primitive (RFC §synth-5-B B3).
      Bounded extension list — uint8 `header_flags` byte first, then
      a TLV chain bounded at 8 entries with on-overflow="reject".
      Each entry is a `codec_tlv_entry` (id+len+value).
 
-     MCU-class — emits only on Rust + C11 per RFC §5.J.4 matrix
+     MCU-class — emits only on Rust + C11 per RFC §synth-5-J-4 matrix
      (the codec contains MCU-only sub-features, so cpp/kotlin/go/python
      are rejected at codegen with codegen/mcu-class-kind-on-non-mcu-language).
 

@@ -7,7 +7,7 @@
 // Runtime: self-contained on (rust, std) — no SCE-side helper crate.
 // Do not edit — regenerate from the source SCXML file.
 //
-// watching-zenoh RFC §5.E DMA-aligned slot table with the seven-state
+// watching-zenoh RFC §synth-5-E DMA-aligned slot table with the seven-state
 // lifecycle FSM (free/cpu-mut/dma-armed-{tx,rx}/dma-busy-{tx,rx}/
 // cpu-ref) and phantom-typed `Slot<S>` author API per spec lines
 // 1116-1180 + 1232-1237. The eleven legal transitions are pinned in
@@ -64,9 +64,9 @@ pub const CACHE_POLICY: &'static str = "{{ cache_policy }}";
 {%- if cache_maintain %}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// C5 cache-maintenance externs (spec §5.I lines 1736-1740). The
+// C5 cache-maintenance externs (spec §synth-5-I lines 1736-1740). The
 // implementations live in `sce_intrinsics_runtime` (or a target
-// plugin's vendor crate per RFC §5.I lines 1760-1787). Forward
+// plugin's vendor crate per RFC §synth-5-I lines 1760-1787). Forward
 // declarations also appear in the sidecar `{{ snake_name }}_externs.rs`
 // for deploy-review transparency; both forward declarations are
 // legal and unify at link time because the symbols are identical.
@@ -82,39 +82,39 @@ unsafe extern "C" {
 
 /// Number of declared lifecycle states. Mirrors
 /// `forge::buffer_pool_fsm::STATE_COUNT` — the seven states from
-/// spec §5.E lines 1129-1135.
+/// spec §synth-5-E lines 1129-1135.
 pub const STATE_COUNT: usize = 7;
 
 /// Number of declared lifecycle transitions. Mirrors
 /// `forge::buffer_pool_fsm::TRANSITION_COUNT` — the eleven legal
-/// edges from spec §5.E lines 1141-1156.
+/// edges from spec §synth-5-E lines 1141-1156.
 pub const TRANSITION_COUNT: usize = 11;
 {%- if variant_reassembly %}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Reassembly variant per-slot state (RFC §5.M lines 2680-2698
-// + 2864-2876). The reassembly variant of §5.E (`<sce:variant>reassembly`)
+// Reassembly variant per-slot state (RFC §synth-5-M lines 2680-2698
+// + 2864-2876). The reassembly variant of §synth-5-E (`<sce:variant>reassembly`)
 // extends the slot table with three additional per-slot fields the
-// author-level Fragment FSM (RFC §5.M lines 2864-2876, lives in
+// author-level Fragment FSM (RFC §synth-5-M lines 2864-2876, lives in
 // downstream SCXML statechart) consumes:
 //   - `bitmap: [u32; FRAGMENT_BITMAP_WORDS]` — fragment-index bitmap
 //     marking each received fragment; bitmap width derived from
-//     `<sce:max-fragments-per-message>` (RFC §5.M line 2688 +
+//     `<sce:max-fragments-per-message>` (RFC §synth-5-M line 2688 +
 //     2694-2698).
 //   - `deadline: u64` — per-slot reassembly deadline in raw ticks /
-//     ms; `<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) drives
+//     ms; `<sce:reassembly-timeout-ms>` (RFC §synth-5-M line 2689) drives
 //     the timer the FSM's `Receiving → TimedOut` edge consumes
 //     (`docs/reassembly-fsm.md` §2.4.5).
-//   - `peer_id: PeerId` — handshake-derived ZID (RFC §5.M lines
+//   - `peer_id: PeerId` — handshake-derived ZID (RFC §synth-5-M lines
 //     2700-2738). Reassembly is forbidden on non-`established_session`
 //     links by the cross-doc validator
 //     `reassembly/untrusted-link-binding`, so the peer-id is always
 //     the 16-byte ZID — never the spoofable wire source address.
 //     The `reassembly/peer-id-not-zid-on-established-session`
 //     codegen self-check enforces this template invariant per RFC
-//     §5.M lines 2976-2981.
+//     §synth-5-M lines 2976-2981.
 //
-// Quota enforcement (RFC §5.M lines 2848-2856) lives in the author
+// Quota enforcement (RFC §synth-5-M lines 2848-2856) lives in the author
 // SCXML algorithm (`<scxml sce:kind="algorithm">`) that walks the
 // slot table at `Fragment.First` arrival — it is intentionally NOT
 // emitted from the pool template (O(slot_count) bounded loop fits
@@ -129,26 +129,26 @@ pub const TRANSITION_COUNT: usize = 11;
 /// runtime metadata layer relies on.
 pub const FRAGMENT_BITMAP_WORDS: usize = ({{ max_fragments_per_message }} + 31) / 32;
 
-/// `<sce:max-fragments-per-message>` (RFC §5.M line 2688) — the
+/// `<sce:max-fragments-per-message>` (RFC §synth-5-M line 2688) — the
 /// closed cap a reassembled message's fragment count cannot exceed
 /// (worst-case message must complete within the bitmap width).
 pub const MAX_FRAGMENTS_PER_MESSAGE: u32 = {{ max_fragments_per_message }};
 
-/// `<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) — per-slot
+/// `<sce:reassembly-timeout-ms>` (RFC §synth-5-M line 2689) — per-slot
 /// deadline value in milliseconds, written into `ReassemblySlot.deadline`
 /// at `Fragment.First` arrival.
 pub const REASSEMBLY_TIMEOUT_MS: u32 = {{ reassembly_timeout_ms }};
 
-/// `<sce:per-peer-quota>` (RFC §5.M lines 2690, 2841-2861) — caps
+/// `<sce:per-peer-quota>` (RFC §synth-5-M lines 2690, 2841-2861) — caps
 /// the in-flight reassembly slots a single peer (keyed by ZID) may
 /// hold. Consumed by the SCXML-side per-peer quota algorithm; this
 /// constant exposes the configured cap so the algorithm doesn't have
 /// to round-trip through the deploy.yaml.
 pub const PER_PEER_QUOTA: u32 = {{ per_peer_quota }};
 
-/// Handshake-derived peer identifier — 16-byte Zenoh ZID (RFC §5.M
+/// Handshake-derived peer identifier — 16-byte Zenoh ZID (RFC §synth-5-M
 /// lines 2708-2714). The `reassembly/peer-id-not-zid-on-established-
-/// session` codegen self-check (RFC §5.M lines 2976-2981) enforces
+/// session` codegen self-check (RFC §synth-5-M lines 2976-2981) enforces
 /// that this declaration emits the `[u8; 16]` byte-array shape on
 /// every reassembly-variant pool — wire-source typedefs would silently
 /// inherit UDP source-IP spoofing exposure. Reverse-linkage:
@@ -157,19 +157,19 @@ pub const PER_PEER_QUOTA: u32 = {{ per_peer_quota }};
 // SCE-EMIT: kind=reassembly.peer-id-zid
 pub type PeerId = [u8; 16];
 
-/// Per-slot reassembly state — RFC §5.M lines 2680-2698. Author SCXML
+/// Per-slot reassembly state — RFC §synth-5-M lines 2680-2698. Author SCXML
 /// FSM bodies (`docs/reassembly-fsm.md`) reach into `bitmap` and
 /// `deadline` directly; `peer_id` is matched on `Fragment.Continue`
 /// / `Final` to bind continuation fragments to the originating ZID.
 #[repr(C)]
 pub struct ReassemblySlot {
     /// Fragment-index bitmap. Bit `i` (LSB-first across words) marks
-    /// fragment index `i` as received. RFC §5.M line 2696.
+    /// fragment index `i` as received. RFC §synth-5-M line 2696.
     pub bitmap: [u32; FRAGMENT_BITMAP_WORDS],
-    /// Per-slot reassembly deadline (raw ms ticks). RFC §5.M line
+    /// Per-slot reassembly deadline (raw ms ticks). RFC §synth-5-M line
     /// 2689 + 2697.
     pub deadline: u64,
-    /// Originating peer ZID. RFC §5.M lines 2697-2714.
+    /// Originating peer ZID. RFC §synth-5-M lines 2697-2714.
     pub peer_id: PeerId,
 }
 
@@ -179,15 +179,15 @@ pub struct ReassemblySlot {
 // author FSM and the cross-language tracing path observe.
 const _: () = assert!(
     core::mem::size_of::<u32>() == 4,
-    "fragment-index bitmap word is fixed to u32 (4 bytes) per RFC §5.M line 2696",
+    "fragment-index bitmap word is fixed to u32 (4 bytes) per RFC §synth-5-M line 2696",
 );
 const _: () = assert!(
     core::mem::size_of::<u64>() == 8,
-    "reassembly slot deadline is fixed to u64 (8 bytes) per RFC §5.M line 2697",
+    "reassembly slot deadline is fixed to u64 (8 bytes) per RFC §synth-5-M line 2697",
 );
 const _: () = assert!(
     core::mem::size_of::<PeerId>() == 16,
-    "reassembly slot peer-id is fixed to 16-byte ZID per RFC §5.M lines 2708-2714",
+    "reassembly slot peer-id is fixed to 16-byte ZID per RFC §synth-5-M lines 2708-2714",
 );
 {%- endif %}
 
@@ -247,7 +247,7 @@ pub struct DmaArmedRx;
 /// Silently dropping a `Slot<CpuMut>` or `Slot<CpuRef>` leaks the
 /// underlying slot — the `#[must_use]` attribute makes rustc warn
 /// when this happens at the lexical level.
-#[must_use = "Slot must be returned via pool_return or handed off via link_arm_tx; dropping silently leaks the slot per §5.E lines 1162-1164"]
+#[must_use = "Slot must be returned via pool_return or handed off via link_arm_tx; dropping silently leaks the slot per §synth-5-E lines 1162-1164"]
 pub struct Slot<S> {
     idx: usize,
     _state: PhantomData<fn() -> S>,
@@ -269,7 +269,7 @@ impl<S> Slot<S> {
 /// Generated buffer-pool. Each slot's lifecycle state is tracked in
 /// `slot_states[]`; the phantom-typed `Slot<S>` API guarantees that
 /// at compile time, author code can only invoke the FSM transitions
-/// declared in spec §5.E lines 1141-1156. Calling, e.g.,
+/// declared in spec §synth-5-E lines 1141-1156. Calling, e.g.,
 /// `pool_return` on a `Slot<DmaArmedRx>` is a type error caught by
 /// rustc rather than a runtime check.
 pub struct {{ pascal_name }} {
@@ -295,7 +295,7 @@ impl {{ pascal_name }} {
         }
     }
 
-    /// Acquire a free slot for CPU-side encoding. Spec §5.E line
+    /// Acquire a free slot for CPU-side encoding. Spec §synth-5-E line
     /// 1141: `free → cpu-mut`. Returns `None` when every slot is in
     /// use, preserving the α-era full-pool semantics.
     pub fn pool_acquire_for_encode(&mut self) -> Option<Slot<CpuMut>> {
@@ -308,7 +308,7 @@ impl {{ pascal_name }} {
         None
     }
 
-    /// Arm a free slot for peripheral RX. Spec §5.E line 1146:
+    /// Arm a free slot for peripheral RX. Spec §synth-5-E line 1146:
     /// `free → dma-armed-rx`. C5: pre-arm
     /// `sce_dcache_invalidate_by_addr` is emitted here when
     /// `cache-policy: maintain && platform.has_speculative_prefetch`
@@ -316,7 +316,7 @@ impl {{ pascal_name }} {
     /// prefetcher / speculative load may have populated for this
     /// slot region while it sat on the freelist. Without the
     /// pre-arm invalidate, those stale lines would shadow DMA
-    /// writes even after the post-RX invalidate (RFC §5.E lines
+    /// writes even after the post-RX invalidate (RFC §synth-5-E lines
     /// 1199-1212).
     pub fn link_arm_rx(&mut self) -> Option<Slot<DmaArmedRx>> {
         for (i, st) in self.slot_states.iter_mut().enumerate() {
@@ -356,7 +356,7 @@ impl {{ pascal_name }} {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 impl Slot<CpuMut> {
-    /// Hand the slot off to the link's TX path. Spec §5.E line 1142:
+    /// Hand the slot off to the link's TX path. Spec §synth-5-E line 1142:
     /// `cpu-mut → dma-armed-tx`. Consumes the handle — the slot
     /// progresses through `DmaArmedTx → DmaBusyTx → Free` via DMA
     /// controller and TX-complete IRQ; author code cannot observe
@@ -377,7 +377,7 @@ impl Slot<CpuMut> {
         pool.slot_states[self.idx] = SlotState::DmaArmedTx;
     }
 
-    /// Return the slot to the freelist. Spec §5.E line 1155:
+    /// Return the slot to the freelist. Spec §synth-5-E line 1155:
     /// `cpu-mut → free` ("abort encode" error path) and the
     /// `cpu-mut|cpu-ref → free` author-visible API on lines
     /// 1232-1237. Consumes the handle.
@@ -405,7 +405,7 @@ impl Slot<CpuMut> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 impl Slot<CpuRef> {
-    /// Return the slot to the freelist. Spec §5.E line 1152:
+    /// Return the slot to the freelist. Spec §synth-5-E line 1152:
     /// `cpu-ref → free` ("handler complete; pool_return(slot)").
     /// Consumes the handle.
     pub fn pool_return(self, pool: &mut {{ pascal_name }}) {

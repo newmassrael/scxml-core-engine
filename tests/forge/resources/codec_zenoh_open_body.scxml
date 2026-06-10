@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Open body, unified
-     OpenSyn + OpenAck shape (RFC §5.B cross-codec composition with present-if negation negation
+     OpenSyn + OpenAck shape (RFC §synth-5-B cross-codec composition with present-if negation negation
      grammar landed in the prior atomic commit).
 
      Mirrors zenoh-pico `_z_open_encode` (src/protocol/codec/transport.c

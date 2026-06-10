@@ -66,7 +66,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-// Watching-zenoh RFC §5.J.2 (C3 Atomic B-β): cfg-assert the
+// Watching-zenoh RFC §synth-5-J-2 (C3 Atomic B-β): cfg-assert the
 // incompatible feature combinations at compile time. The `no_std`
 // feature is mutually exclusive with `http-send` (tokio/reqwest are
 // std-coupled) and with both script-engine features (Lua and QuickJS
@@ -83,7 +83,7 @@ compile_error!(
      your SCXML), or drop `no_std`. Watching-zenoh RFC §5.J.2 line 1983."
 );
 
-// ── Bounded-collection type aliases (watching-zenoh RFC §5.J.2) ──────
+// ── Bounded-collection type aliases (watching-zenoh RFC §synth-5-J-2) ──────
 //
 // Under `--features=no_std` the runtime crate is `#![no_std]` with **no
 // `alloc` dependency** per spec line 1989-1994 ("zero `alloc`
@@ -93,12 +93,12 @@ compile_error!(
 // bytes. `SceString` is `std::string::String` under the default std
 // build (unchanged API) and `heapless::String<MAX_EVENT_STRING_LEN>`
 // under `--features=no_std` (stack-allocated, `Result`-returning
-// `push_str`). 256 is the v1 cap, sized to fit RFC §5.D telemetry-event
+// `push_str`). 256 is the v1 cap, sized to fit RFC §synth-5-D telemetry-event
 // payloads + an origin URI without truncation; per-document tunable via
 // `<scxml sce:event-string-capacity="N">` is deferred until a consumer
 // surfaces a documented overflow.
 //
-// Pattern mirrors the §5.D event-queue capacity (`EVENT_QUEUE_CAPACITY`
+// Pattern mirrors the §synth-5-D event-queue capacity (`EVENT_QUEUE_CAPACITY`
 // emitted from codegen via `<sce:capacity>` per B-γ1) plus B-γ2b's
 // microstep-dedup cap (`heapless::FnvIndexSet<_, 64>` reasoned
 // constant). When the no_std consumer signals a per-document
@@ -472,7 +472,7 @@ pub mod helpers;
 pub mod http;
 /// W3C SCXML 6.4 invoke lifecycle helpers.
 ///
-/// Watching-zenoh RFC §5.J.2: whole-module gated to `!no_std`. `<invoke>` is
+/// Watching-zenoh RFC §synth-5-J-2: whole-module gated to `!no_std`. `<invoke>` is
 /// rejected upstream at codegen time via `codegen/no-std-invoke-not-supported`
 /// (B-γ2c `591979e5`), so the lifecycle helpers (PendingInvoke / ChildSession
 /// / defer_invoke / cancel_invokes_for_state / execute_pending_invokes /
@@ -481,7 +481,7 @@ pub mod http;
 #[cfg(not(feature = "no_std"))]
 pub mod invoke;
 pub mod policy;
-/// Per-machine scheduled-send-id storage policy (watching-zenoh RFC §5.J.2).
+/// Per-machine scheduled-send-id storage policy (watching-zenoh RFC §synth-5-J-2).
 pub mod sched_send_id;
 /// ECMAScript engine abstraction.
 ///

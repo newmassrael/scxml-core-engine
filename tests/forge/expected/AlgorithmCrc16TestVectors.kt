@@ -1,4 +1,4 @@
-// SCE Forge: Auto-generated test-vector sidecar (RFC §5.B B2)
+// SCE Forge: Auto-generated test-vector sidecar (RFC §synth-5-B B2)
 // Companion to AlgorithmCrc16.kt — do not edit; regenerate from the source SCXML.
 
 package com.sce.generated.algorithm_crc16

@@ -44,7 +44,7 @@
       <xs:enumeration value="lookup"/>
       <xs:enumeration value="condition"/>
       <xs:enumeration value="codec"/>
-      <!-- peek-byte mode dispatch (RFC §5.B) -->
+      <!-- peek-byte mode dispatch (RFC §synth-5-B) -->
       <xs:enumeration value="procedure"/>
       <xs:enumeration value="validator"/>
       <!-- Signal-processing kinds -->
@@ -52,15 +52,15 @@
       <xs:enumeration value="interpolation"/>
       <xs:enumeration value="timer"/>
       <xs:enumeration value="observer"/>
-      <!-- watching-zenoh RFC §5.A (item A3) -->
+      <!-- watching-zenoh RFC §synth-5-A (item A3) -->
       <xs:enumeration value="algorithm"/>
-      <!-- watching-zenoh RFC §5.C (item B6, MCU-class) -->
+      <!-- watching-zenoh RFC §synth-5-C (item B6, MCU-class) -->
       <xs:enumeration value="link"/>
-      <!-- watching-zenoh RFC §5.E (item B7, MCU-class) -->
+      <!-- watching-zenoh RFC §synth-5-E (item B7, MCU-class) -->
       <xs:enumeration value="buffer-pool"/>
-      <!-- watching-zenoh RFC §5.D (item C2, MCU-class) -->
+      <!-- watching-zenoh RFC §synth-5-D (item C2, MCU-class) -->
       <xs:enumeration value="worker"/>
-      <!-- watching-zenoh RFC §5.L (item C6, Generic-class) -->
+      <!-- watching-zenoh RFC §synth-5-L (item C6, Generic-class) -->
       <xs:enumeration value="bounded-collection"/>
       <!-- NL→IR Item C1 Path A — Closed set of named variants with
            1:1 wire-key values. Distinct from `lookup` by the
@@ -134,7 +134,7 @@
 
   <!-- Codec field bit-size: fixed integer, "tail", "length-ref", or "vle".
        "vle" pairs with sce:type ∈ {uint16, uint32, uint64} and selects
-       the base-128 variable-length encoding (RFC §5.B App. B). -->
+       the base-128 variable-length encoding (RFC §synth-5-B App. B). -->
   <xs:simpleType name="bitSizeType">
     <xs:union>
       <xs:simpleType>
@@ -276,7 +276,7 @@
   <xs:attribute name="length" type="xs:nonNegativeInteger"/>
   <xs:attribute name="length-field" type="xs:string"/>
 
-  <!-- RFC §5.B present-if primitive (sce:present-if attribute).
+  <!-- RFC §synth-5-B present-if primitive (sce:present-if attribute).
        Predicate grammar v1: exactly `<field_id>.<flag_name>` — the
        referenced field must be a `<sce:flags>` carrier declared
        earlier in the same codec. Field shape (string typed at the XSD
@@ -285,10 +285,10 @@
          - non-flags carrier or unknown flag → validation/invalid-attribute -->
   <xs:attribute name="present-if" type="xs:string"/>
 
-  <!-- RFC §5.B B3 DMA alignment primitive (sce:dma-burst-align attribute).
+  <!-- RFC §synth-5-B B3 DMA alignment primitive (sce:dma-burst-align attribute).
        Constrains the field's start offset within the encoded buffer to
        an N-byte boundary (typical N: 16, 32, 64). MCU-class — codecs
-       containing this attribute emit only on Rust + C11 per the §5.J.4
+       containing this attribute emit only on Rust + C11 per the §synth-5-J-4
        matrix. The XSD type is positiveInteger; semantic checks land in
        sce-build (`parse_codec_field_from_node` rejects non-power-of-2
        N, `validate_codec_dma_alignment` rejects misaligned `sce:byte`
@@ -296,7 +296,7 @@
        `codec/dma-alignment-unsatisfiable`). -->
   <xs:attribute name="dma-burst-align" type="xs:positiveInteger"/>
 
-  <!-- RFC §5.B length-arith primitive (sce:length-arith attribute).
+  <!-- RFC §synth-5-B length-arith primitive (sce:length-arith attribute).
        Arithmetic offset on the length-field source value. Effective
        payload length is `sibling_value + length_arith` bytes.
        Authored as `sce:length-arith="+1"` or `sce:length-arith="-1"`
@@ -307,7 +307,7 @@
        (zid_len_m1 = actual_len - 1, decode reconstructs actual_len). -->
   <xs:attribute name="length-arith" type="xs:integer"/>
 
-  <!-- RFC §5.B — `sce:length-from="<sibling_field_id>"` on
+  <!-- RFC §synth-5-B — `sce:length-from="<sibling_field_id>"` on
        `<sce:embed>`. Bounds the embedded codec's decode-time cursor
        scope to the named earlier integer field's value. Mirrors
        zenoh-pico declarations.c:206 `_z_slice_as_zbuf` inner-cursor
@@ -317,7 +317,7 @@
        / non-integer references. -->
   <xs:attribute name="length-from" type="xs:string"/>
 
-  <!-- RFC §5.B B2 repeat primitive: <sce:repeat>-internal attributes
+  <!-- RFC §synth-5-B B2 repeat primitive: <sce:repeat>-internal attributes
        (count / until-eof / max-count / type / id) live unqualified
        inside the <sce:repeat> element complexType — same convention
        as <sce:arm value/type> and <sce:flag name/bit> where attrs
@@ -372,7 +372,7 @@
 
   <!-- Section 5.F: build-time const-fold trigger. Declared globally so
        it carries the `sce:` prefix in instance documents (matching the
-       RFC §5.F worked example: `<sce:const sce:compute-at="build">`).
+       RFC §synth-5-F worked example: `<sce:const sce:compute-at="build">`).
        Local `compute-at` declarations on individual elements would land
        unprefixed under the schema's `attributeFormDefault="unqualified"`
        and conflict with the parser's `sce_attr` lookup. -->
@@ -478,7 +478,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- §5.I `<sce:extern>` whitelisted intrinsic registry.
+  <!-- §synth-5-I `<sce:extern>` whitelisted intrinsic registry.
        Bounded escape hatch for platform-specific intrinsics
        (atomic CAS / fences / cache maintenance / IRQ control).
        The `name` is closed-set checked at parse time against the
@@ -534,7 +534,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B variant primitive
+       RFC §synth-5-B variant primitive
 
        Discriminated-union suffix on a codec. The `<sce:variant>` element
        sits under <datamodel> alongside <sce:field> declarations; its
@@ -571,12 +571,12 @@
 
   <!-- `<sce:variant>` serves three distinct purposes by host kind:
 
-       1. **Codec discriminated-union suffix (RFC §5.B)**
+       1. **Codec discriminated-union suffix (RFC §synth-5-B)**
           Inside `<datamodel>` of `<scxml sce:kind="codec">` — carries
           `tag` attribute + `<sce:peek-byte>` / `<sce:arm>` /
           `<sce:default>` children. Parser `parse_codec_variant`
           enforces `tag` presence + arm shape.
-       2. **Buffer-pool variant discriminator (RFC §5.M)**
+       2. **Buffer-pool variant discriminator (RFC §synth-5-M)**
           Top-level child of `<scxml sce:kind="buffer-pool">` — carries
           plain text content `reassembly` (or `default`). Parser
           `parse_buffer_pool` enforces the closed enum + the three
@@ -597,7 +597,7 @@
   <xs:element name="variant">
     <xs:complexType mixed="true">
       <xs:sequence>
-        <!-- RFC §5.B peek-byte mode:
+        <!-- RFC §synth-5-B peek-byte mode:
              singleton `<sce:peek-byte>` child opts the variant into
              dispatch on the cursor's NEXT byte (read without
              advancing) instead of an own-codec field. Every arm
@@ -631,7 +631,7 @@
       <!-- Tag field id (codec context only) — must reference a sibling
            <sce:field>/<data> with an unsigned-int sce:type. Parser
            `parse_codec_variant` enforces presence + resolution. Item C9
-           (RFC §5.M) relaxes the XSD requirement to `optional` so the
+           (RFC §synth-5-M) relaxes the XSD requirement to `optional` so the
            buffer-pool reassembly variant (text content `reassembly`,
            no `tag`) passes; `parse_buffer_pool` enforces the closed
            enum value. -->
@@ -647,7 +647,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B flags primitive
+       RFC §synth-5-B flags primitive
 
        Named-bit-range accessor container over an unsigned-int carrier
        field. The `<sce:flags>` element occupies the same wire bytes as
@@ -705,7 +705,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B B2 repeat primitive — `<sce:repeat>` element
+       RFC §synth-5-B B2 repeat primitive — `<sce:repeat>` element
 
        List-of-imported-codec field. Sits under <datamodel> alongside
        <sce:field> / <sce:flags> declarations; carries an imported
@@ -744,7 +744,7 @@
       <xs:attribute name="count" type="xs:string"/>
       <xs:attribute name="until-eof" type="xs:boolean"/>
       <xs:attribute name="max-count" type="xs:nonNegativeInteger"/>
-      <!-- RFC §5.B: present-if on the
+      <!-- RFC §synth-5-B: present-if on the
            entire repeat block. When set, the count field MUST also
            carry the IDENTICAL `sce:present-if` predicate (co-gating
            contract enforced by `validate_codec_repeat_present_if_co_
@@ -757,7 +757,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       TLV chain — RFC §5.B B3 "TLV chain"
+       TLV chain — RFC §synth-5-B B3 "TLV chain"
 
        Bounded extension list, each entry has id+len+body shape (the
        entry shape lives inside the imported entry codec, not enforced
@@ -771,7 +771,7 @@
                         on-overflow="reject"/>
 
        MCU-class — codecs containing this element emit only on
-       `(rust, *)` and `(c11, bare_metal)` per the §5.J.4 matrix; on
+       `(rust, *)` and `(c11, bare_metal)` per the §synth-5-J-4 matrix; on
        `{cpp, kotlin, go, python}` the codec is rejected with
        `codegen/mcu-class-kind-on-non-mcu-language` (the existing
        kind-class diagnostic, repurposed at codec-content granularity).
@@ -780,7 +780,7 @@
        MCU targets"); missing → typed
        `codec/tlv-chain-depth-unspecified`. `on-overflow` defaults to
        `reject`; `truncate` is the silent-drop opt-in. v1 rejects
-       `diagnostic-event` (defers to a later B-stage when §5.A
+       `diagnostic-event` (defers to a later B-stage when §synth-5-A
        diagnostic-event runtime infrastructure ships).
 
        Diagnostics:
@@ -792,7 +792,7 @@
              codegen/mcu-class-kind-on-non-mcu-language
        ═══════════════════════════════════════════════════════════════ -->
 
-  <!-- RFC §5.B — `<sce:tlv-chain>` termination strategies. The
+  <!-- RFC §synth-5-B — `<sce:tlv-chain>` termination strategies. The
        default `exhaust-or-depth` ends the chain on cursor-exhaust +
        max-depth (used when nothing follows the chain on the wire).
        `entry-flag` reads a named flag on each decoded entry's flags
@@ -825,7 +825,7 @@
            where `count` / `until-eof` mutex is parser-enforced. -->
       <xs:attribute name="max-depth" type="xs:positiveInteger"/>
       <xs:attribute name="on-overflow" type="xs:string"/>
-      <!-- RFC §5.B — termination strategy + flag-name attribute.
+      <!-- RFC §synth-5-B — termination strategy + flag-name attribute.
            Default `exhaust-or-depth` ends on cursor-exhaust +
            max-depth (the item B3 tlv-chain shape). `entry-flag` reads `entry-flag-name`
            on each decoded entry's flags carrier and stops the chain
@@ -834,7 +834,7 @@
            presence when terminate-on="entry-flag". -->
       <xs:attribute name="terminate-on" type="sce:tlvTerminateOnType"/>
       <xs:attribute name="entry-flag-name" type="xs:string"/>
-      <!-- RFC §5.B — `<sce:tlv-chain sce:present-if="P">`
+      <!-- RFC §synth-5-B — `<sce:tlv-chain sce:present-if="P">`
            gates the entire chain on a flag predicate (mirrors the
            repeat-with-present-if lift). When the predicate is
            false the chain field is absent from the wire; the
@@ -849,7 +849,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.B — single-codec embed primitive
+       RFC §synth-5-B — single-codec embed primitive
 
        Embeds an imported codec inline at the named byte position.
        The embedded codec's own decode/encode methods consume/produce
@@ -901,10 +901,10 @@
            `<sce:arm type=...>` shape. -->
       <xs:attribute name="type" type="xs:NCName" use="required"/>
       <xs:attribute ref="sce:byte" use="required"/>
-      <!-- RFC §5.B — optional present-if predicate gating the
+      <!-- RFC §synth-5-B — optional present-if predicate gating the
            embed. Same grammar as `<sce:field sce:present-if>`. -->
       <xs:attribute ref="sce:present-if"/>
-      <!-- RFC §5.B — optional `sce:length-from="<id>"` bounds
+      <!-- RFC §synth-5-B — optional `sce:length-from="<id>"` bounds
            the embedded codec's decode-time cursor scope to the named
            sibling integer field's value. Author-trust on encode
            (sibling value must match emitted byte count). -->
@@ -913,7 +913,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       Test vector — RFC §5.B "Test vector" (B2-test-vector)
+       Test vector — RFC §synth-5-B "Test vector" (B2-test-vector)
 
        Inline reference oracle declared as a top-level child of an
        algorithm <scxml> root:
@@ -958,7 +958,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- RFC §5.B codec test-vector field assignment. Shape:
+  <!-- RFC §synth-5-B codec test-vector field assignment. Shape:
        `<sce:decoded field="..." (value|hex|string)="..."/>`.
        Variant / TLV-chain / repeat sibling element names
        (`<sce:decoded-variant>`, `<sce:decoded-chain>`,
@@ -1040,7 +1040,7 @@
 
   <!-- Parameter declaration. Two roles:
        * Inside <sce:template>: name + (required | default), per RFC §3.1.
-       * Inside <sce:signature> (algorithm kind, RFC §5.A): name + type.
+       * Inside <sce:signature> (algorithm kind, RFC §synth-5-A): name + type.
        The parser distinguishes by enclosing element; the schema permits
        both shapes via separate optional attributes. -->
   <xs:element name="param">
@@ -1048,13 +1048,13 @@
       <xs:attribute name="name" type="sce:paramNameType" use="required"/>
       <xs:attribute name="required" type="xs:boolean"/>
       <xs:attribute name="default" type="xs:string"/>
-      <!-- RFC §5.A signature param: by-value scalar or by-reference bytes. -->
+      <!-- RFC §synth-5-A signature param: by-value scalar or by-reference bytes. -->
       <xs:attribute name="type" type="sce:sceType"/>
     </xs:complexType>
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       Algorithm kind body (watching-zenoh RFC §5.A item A3)
+       Algorithm kind body (watching-zenoh RFC §synth-5-A item A3)
 
        Pure synchronous functions with bounded loops and mutable
        locals. Body statements are <sce:var>/<sce:assign>/<sce:if>/
@@ -1151,14 +1151,14 @@
   </xs:element>
 
   <!--
-    Build-time const (RFC §5.A scalar form, RFC §5.F build-time fold form).
+    Build-time const (RFC §synth-5-A scalar form, RFC §synth-5-F build-time fold form).
 
     Two shapes accepted by `forge::parser::parse_algorithm_const`:
 
-      Scalar (RFC §5.A v1):
+      Scalar (RFC §synth-5-A v1):
         <sce:const name="N" type="uint16" init="0xFFFF"/>
 
-      Build-time array (RFC §5.F):
+      Build-time array (RFC §synth-5-F):
         <sce:const name="TABLE" type="array<u16, 256>" sce:compute-at="build">
           <sce:fold range="0..256" as="i" elem-type="u16">
             ...statements...
@@ -1187,7 +1187,7 @@
   </xs:element>
 
   <!--
-    RFC §5.F build-time fold body. `range="START..END"` is exclusive
+    RFC §synth-5-F build-time fold body. `range="START..END"` is exclusive
     upper-bound; `as` names the loop variable; `elem-type` is the
     yielded element's scalar type. The terminal `<sce:yield>` carries
     the per-iteration expression.
@@ -1204,7 +1204,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- RFC §5.F: terminal element of an `<sce:fold>` body. -->
+  <!-- RFC §synth-5-F: terminal element of an `<sce:fold>` body. -->
   <xs:element name="yield">
     <xs:complexType>
       <xs:attribute name="expr" type="xs:string" use="required"/>
@@ -1219,7 +1219,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.C (item B6, MCU-class): byte-stream link
+    watching-zenoh RFC §synth-5-C (item B6, MCU-class): byte-stream link
     endpoint declared via `<scxml sce:kind="link">`. This surface is
     the minimum vertical slice that exercises the rust codegen path:
     `<sce:link-class>` enum body + `<sce:framer ref="..."/>` (required) +
@@ -1227,7 +1227,7 @@
     `<sce:tx-pool>` defer to B7's buffer-pool kind.
   -->
 
-  <!-- RFC §5.C link-class enumeration. Five strings shipped today;
+  <!-- RFC §synth-5-C link-class enumeration. Five strings shipped today;
        OS-specific classes (e.g. `unix_socket`, `qnx_msg`) land
        additively in later phases. -->
   <xs:simpleType name="linkClassType">
@@ -1240,7 +1240,7 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- RFC §5.C backpressure policy. -->
+  <!-- RFC §synth-5-C backpressure policy. -->
   <xs:simpleType name="backpressureType">
     <xs:restriction base="xs:string">
       <xs:enumeration value="drop"/>
@@ -1297,7 +1297,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.E: link-side `<sce:rx-pool>`
+    watching-zenoh RFC §synth-5-E: link-side `<sce:rx-pool>`
     / `<sce:tx-pool>` reference a `<scxml sce:kind="buffer-pool">`
     sibling document by name. The cross-resolution validator
     (`link/pool-slot-smaller-than-framer-max`) wires pool ↔ framer
@@ -1316,7 +1316,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.E sample-callback surface: link-side `<sce:stage-pool>`
+    watching-zenoh RFC §synth-5-E sample-callback surface: link-side `<sce:stage-pool>`
     references a `<scxml sce:kind="buffer-pool">` sibling document by
     name. Single source of truth for `Sample::take()`'s stage-copy
     destination, co-located with `<sce:rx-pool>` / `<sce:tx-pool>` on
@@ -1332,7 +1332,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.E (item B7, MCU-class): SRAM-placed,
+    watching-zenoh RFC §synth-5-E (item B7, MCU-class): SRAM-placed,
     DMA-aligned slot table declared via `<scxml sce:kind="buffer-pool">`.
     The schema here is the minimum vertical slice; the 7-state
     lifecycle FSM and cache-maintenance pinning are realised by the
@@ -1340,7 +1340,7 @@
     the per-backend buffer_pool templates).
   -->
 
-  <!-- RFC §5.E lines 948-957 cache-policy enumeration. -->
+  <!-- RFC §synth-5-E lines 948-957 cache-policy enumeration. -->
   <xs:simpleType name="cachePolicyType">
     <xs:restriction base="xs:string">
       <xs:enumeration value="maintain"/>
@@ -1398,7 +1398,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       RFC §5.M reassembly-variant buffer-pool fields (item C9)
+       RFC §synth-5-M reassembly-variant buffer-pool fields (item C9)
 
        Three sibling elements required when
        `<sce:variant>reassembly</sce:variant>` is declared on a
@@ -1406,7 +1406,7 @@
        enforcement (`parse_buffer_pool` rejects missing or zero values)
        via `mem/reassembly-pool-variant-missing-max-fragments` +
        `mem/reassembly-pool-variant-missing-timeout` codes. Cross-doc
-       validators that read `<sce:per-peer-quota>` against §5.K's
+       validators that read `<sce:per-peer-quota>` against §synth-5-K's
        `peer_table.capacity` (build-time invariant
        `peer_table.capacity × per-peer-quota ≥ slot_count`) run at
        deploy time (`sce-build/src/mesh/deploy.rs`).
@@ -1436,7 +1436,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §5.D (item C2, MCU-class): Worker kind declared
+    watching-zenoh RFC §synth-5-D (item C2, MCU-class): Worker kind declared
     via `<scxml sce:kind="worker">`. The schema vertical slice covers
     the four worker body elements:
       - <sce:link-rx ref="..."/>  required driving link kind reference
@@ -1456,7 +1456,7 @@
   <xs:element name="inbox">
     <xs:complexType>
       <xs:attribute name="depth" type="xs:positiveInteger" use="required"/>
-      <!-- watching-zenoh RFC §5.I lines 1752-1758: SPSC inbox
+      <!-- watching-zenoh RFC §synth-5-I lines 1752-1758: SPSC inbox
            ordering choice. Spec phrasing labels missing-ordering a
            "warning"; SCE's error-only wire realizes the warning as a
            required-when-worker-exists error (parse-time
@@ -1486,7 +1486,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- watching-zenoh RFC §5.E sample-callback: SCXML state-level
+  <!-- watching-zenoh RFC §synth-5-E sample-callback: SCXML state-level
        subscriber declaration. Lifts the spec line 1269 callback
        contract ("the subscriber callback receives `&Sample<'_>`")
        into a state-scoped `<sce:on-sample link="X" event="E"/>`

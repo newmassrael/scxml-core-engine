@@ -1,4 +1,4 @@
-/* SCE Forge: Auto-generated test-vector sidecar (RFC §5.B B2) */
+/* SCE Forge: Auto-generated test-vector sidecar (RFC §synth-5-B B2) */
 /* Companion to algorithm_crc16.h — do not edit; regenerate from the source SCXML. */
 
 #ifndef SCE_FORGE_ALGORITHM_CRC16_TEST_H

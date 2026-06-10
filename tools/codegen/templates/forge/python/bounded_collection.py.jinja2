@@ -8,7 +8,7 @@
 # Runtime: {{ runtime_dep }}
 # Do not edit — regenerate from the source SCXML file.
 #
-# watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+# watching-zenoh RFC §synth-5-L bounded-collection — typed fixed-capacity
 # container per spec lines 2580-2581 emit shape: `list` of length N
 # initialized to None + `bytearray(N)` mask + `int count`.
 #
@@ -95,7 +95,7 @@ class {{ pascal }}Handle:
 
 
 class {{ pascal }}:
-    """RFC §5.L bounded-collection over element type `{{ element_pascal }}`.
+    """RFC §synth-5-L bounded-collection over element type `{{ element_pascal }}`.
 
     Capacity ``{{ capacity }}``, on-overflow ``{{ on_overflow }}``,
     ordering ``{{ ordering }}``, concurrency ``{{ concurrency }}``.
@@ -206,7 +206,7 @@ class {{ pascal }}:
         return self._slots[slot]
 
     def get_by_slot(self, slot: int) -> Optional[{{ element_pascal }}]:
-        """Slot-indexed read without Handle (RFC §5.L + C7 foundation).
+        """Slot-indexed read without Handle (RFC §synth-5-L + C7 foundation).
 
         Returns ``None`` when ``slot >= CAPACITY`` OR when the slot
         is unoccupied. No generation check (the use-after-remove
@@ -227,7 +227,7 @@ class {{ pascal }}:
         """Find the first occupied slot whose ``{{ index_by_field_snake }}`` equals ``key`` (spec line 2615).
 
         Linear scan bounded by CAPACITY (build-time constant) →
-        satisfies §5.A ``max-iter`` requirement when this method is
+        satisfies §synth-5-A ``max-iter`` requirement when this method is
         called from algorithm bodies. Returns ``None`` on miss.
         """
         for slot in range(CAPACITY):

@@ -1,6 +1,6 @@
 //! Listener-link sibling-pair + its 2 diagnostic codes.
 //!
-//! Per watching-zenoh RFC §5.C lines 802-833 + 849-856 + §5.M lines
+//! Per watching-zenoh RFC §synth-5-C lines 802-833 + 849-856 + §synth-5-M lines
 //! 2771-2828 + 2982-2994: a `<sce:link>` whose deploy-resolved
 //! `domain_attrs.trust_class: session_arming` × machine source SCXML
 //! `Accepting.*` substate-present pair makes it a listener; codegen
@@ -17,7 +17,7 @@
 //!      `reassembly/binding-on-unpaired-listener`, Untrusted still
 //!      fires `reassembly/untrusted-link-binding`)
 //!   4. Sibling inherits 6 fields + does NOT inherit 5 hardening
-//!      fields per RFC §5.C lines 814-820
+//!      fields per RFC §synth-5-C lines 814-820
 //!   5. Codegen post-render self-check
 //!      `link/listener-link-not-paired-with-established-sibling`
 //!      via force-fixture (drop the Sibling block from the rendered
@@ -237,14 +237,14 @@ fn resolve_listener_links_silent_skips_established_session_link() {
 // corpus (`c13_alpha2_reassembly_cross_doc.rs`) per the
 // established sibling-test placement.
 
-// ── Sibling inheritance contract (RFC §5.C lines 814-820) ──────
+// ── Sibling inheritance contract (RFC §synth-5-C lines 814-820) ──────
 
 #[test]
 fn resolved_link_instance_sibling_inherits_six_fields_via_role() {
     // The IR type carries the role enum + the 6 inherited fields by
     // VALUE. The Sibling role inherits the same 6 fields the Listener
     // carries; the hardening fields are NOT modeled on
-    // ResolvedLinkInstance at all (RFC §5.C lines 816-820 — the
+    // ResolvedLinkInstance at all (RFC §synth-5-C lines 816-820 — the
     // synthesized Sibling never sees session_arming_quota /
     // accept_rate_* / accepting_inactivity_timeout_ms /
     // stateless_accept).

@@ -15,7 +15,7 @@ from typing import Optional
 
 @dataclass
 class CodecZenohPushVariant:
-    """RFC §5.B variant primitive: discriminated-union body for
+    """RFC §synth-5-B variant primitive: discriminated-union body for
     the codec's tag-field suffix. ``kind`` selects the active arm; the
     matching ``Optional`` field carries the decoded body. ``default_tag``
     preserves the runtime tag value when the default arm fires so encode
@@ -42,10 +42,10 @@ class CodecZenohPush:
     def decode(cls, cursor: SceCursor) -> Optional[CodecZenohPush]:
         """Decode the next frame from ``cursor``. Returns ``None`` when
         the cursor's tail is shorter than the declared minimum frame
-        (RFC §5.B L494-519); on success the cursor advances past the
+        (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
+        # Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
         try:
             raw = cursor.peek_slice(1)
         except NeedMoreBytes:
@@ -78,7 +78,7 @@ class CodecZenohPush:
             body=body,
         )
 
-    # RFC §5.B flags primitive: per-bit-range accessors over
+    # RFC §synth-5-B flags primitive: per-bit-range accessors over
     # the carrier field. Single-bit (width=1) reads as bool; multi-bit
     # (width>=2) reads as ``int`` (Python ints are unbounded, so a single
     # ``int`` covers every result-type width). Setters mask + shift on
@@ -102,7 +102,7 @@ class CodecZenohPush:
         self.header = ((self.header & (0xFF ^ _shifted_mask)) | _val) & 0xFF
 
     def encode(self, w: SceSink) -> None:
-        """RFC §5.B encode-side primary: write ``self`` into the
+        """RFC §synth-5-B encode-side primary: write ``self`` into the
         caller-owned ``w`` sink. Returns ``None`` on success; raises
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.

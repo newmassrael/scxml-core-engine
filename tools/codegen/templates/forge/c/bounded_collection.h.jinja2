@@ -8,7 +8,7 @@
 /* Runtime: {{ runtime_dep }} */
 /* Do not edit — regenerate from the source SCXML file. */
 /*
- * watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+ * watching-zenoh RFC §synth-5-L bounded-collection — typed fixed-capacity
  * container whose occupancy varies at runtime. Spec lines 2573-2575
  * verbatim emit shape:
  *   struct { T slots[N]; uint32_t generation[N];
@@ -255,7 +255,7 @@ static inline const {{ element_snake }}_t *{{ snake }}_get(
     return &self->slots[slot];
 }
 
-/* Get-by-slot (RFC §5.L + C7 foundation): slot-indexed read without
+/* Get-by-slot (RFC §synth-5-L + C7 foundation): slot-indexed read without
  * Handle. Returns NULL when `slot >= CAPACITY` OR when the slot is
  * unoccupied. No generation check (the use-after-remove guard is for
  * the Handle-based `_get`; slot-based access is for iteration paths
@@ -273,7 +273,7 @@ static inline const {{ element_snake }}_t *{{ snake }}_get_by_slot(
 
 {% if has_index_by %}
 /* Find-by-index (spec line 2615). Linear scan over occupied slots
- * (CAPACITY upper bound is build-time constant → satisfies §5.A
+ * (CAPACITY upper bound is build-time constant → satisfies §synth-5-A
  * `max-iter` requirement when called from algorithm bodies). On
  * miss, returns `{ok=false, handle.raw=0}`. */
 static inline {{ snake }}_insert_result_t {{ snake }}_find_by_index(

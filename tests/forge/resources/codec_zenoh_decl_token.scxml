@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh declare-token body (RFC §5.B)
+<!-- SCE Forge conformance: Zenoh declare-token body (RFC §synth-5-B)
      . Liveliness-token declaration.
 
      Mirrors zenoh-pico `_z_decl_token_encode` (src/protocol/codec/

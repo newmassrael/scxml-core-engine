@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: 2ce787851bfd7d827a1b4bdac3cef96251774343aaef3194d8c8364157a45dff
-// template-hash: f835a323a3abc9cebc80341e1840b22b95739a2efa1726ad2c440477eff36482
-// generated-at: 1781089333
+// source-hash: 822e788c38b7acdc97a11fe595343aa99284cd8e9fa403bc505dc3b7a1ac360f
+// template-hash: aa3f7478a78abf9bf22f51a549ae822f834be956298adbc33316f195f470808d
+// generated-at: 1781099397
 // SCE-MAP: codec_default_marker_arm_a.scxml:16
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
@@ -36,7 +36,7 @@ func NewCodecDefaultMarkerArmA() *CodecDefaultMarkerArmA {
 // DecodeCodecDefaultMarkerArmA decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecDefaultMarkerArmA(cursor *codec.SceCursor) (*CodecDefaultMarkerArmA, error) {
 	raw, err := cursor.PeekSlice(2)
@@ -55,7 +55,7 @@ func DecodeCodecDefaultMarkerArmA(cursor *codec.SceCursor) (*CodecDefaultMarkerA
 	return value, nil
 }
 
-// RFC §5.B flags primitive: per-bit-range accessors over
+// RFC §synth-5-B flags primitive: per-bit-range accessors over
 // the carrier field. Single-bit (width=1) reads as bool; multi-bit
 // (width>=2) reads as the smallest unsigned int type that fits. Setters
 // mask + shift on the way in so out-of-range callers can't corrupt

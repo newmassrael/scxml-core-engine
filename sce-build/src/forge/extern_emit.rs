@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` per-language emit — watching-zenoh RFC §5.I.
+// `<sce:extern>` per-language emit — watching-zenoh RFC §synth-5-I.
 //
 // 3-language scope (Rust + C11 + Cpp); Kotlin/Go/Python
 // reject `<sce:extern>` via the existing
@@ -20,7 +20,7 @@
 // (registry source of truth). Rust emit is verbatim with positional
 // parameter names (`p0, p1, ...`) since the registry stores type-only
 // signatures; C11/Cpp emit translates Rust types to C types via the
-// closed map below — every type form present in the §5.I 101-symbol
+// closed map below — every type form present in the §synth-5-I 101-symbol
 // baseline is enumerated, so an unknown form is a hard error
 // (`UnknownType`) rather than a silent passthrough.
 //
@@ -68,7 +68,7 @@ pub enum SigParseError {
 }
 
 /// Parse a Rust-style signature into [`ParsedSignature`]. The grammar
-/// recognised here is a strict subset matching the §5.I baseline +
+/// recognised here is a strict subset matching the §synth-5-I baseline +
 /// target plugin entries:
 ///
 ///   sig         = "(" param_list? ")" return_clause?
@@ -130,7 +130,7 @@ pub fn parse_signature(sig: &str) -> Result<ParsedSignature, SigParseError> {
 }
 
 /// Translate one Rust-style type to its C/Cpp equivalent. Closed set
-/// covers every type present in the §5.I 101-symbol baseline:
+/// covers every type present in the §synth-5-I 101-symbol baseline:
 ///
 /// - Pointer forms: `*const T` → `const C(T)*` ; `*mut T` → `C(T)*`
 /// - Integer widths: `u8`/`u16`/`u32`/`u64` → `uint8_t`/`uint16_t`/

@@ -21,7 +21,7 @@ data class CodecZenohDeclExtKeyexpr(
     var total_length: ULong = 0uL,
     var inner: CodecZenohDeclExtKeyexprInner = CodecZenohDeclExtKeyexprInner()
 ) {
-    // RFC §5.B flags primitive: per-bit-range accessors over
+    // RFC §synth-5-B flags primitive: per-bit-range accessors over
     // the carrier field. Single-bit (width=1) reads as Boolean; multi-
     // bit (width>=2) reads as the smallest unsigned Kotlin type that
     // fits (UByte / UShort / UInt / ULong). UByte/UShort widen through
@@ -71,13 +71,13 @@ data class CodecZenohDeclExtKeyexpr(
         }
     }
 
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        // RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
         // codecs stay byte-stable.
@@ -108,10 +108,10 @@ data class CodecZenohDeclExtKeyexpr(
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
         fun decode(cursor: SceCursor): CodecZenohDeclExtKeyexpr? {
             // Streaming codec: each field reads from cursor directly
-            // (VLE base-128 chain). RFC §5.B B4: per-field bit-size
+            // (VLE base-128 chain). RFC §synth-5-B B4: per-field bit-size
             // dispatch routes Fixed / LengthRef siblings of VLE fields
             // through `present_if_decode_stmt` (predicate=None arms).
             // Pure-VLE codecs stay byte-stable.

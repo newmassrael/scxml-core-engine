@@ -1,6 +1,6 @@
 //! Anti-flood + stateless_accept parse-time validators.
 //!
-//! Per watching-zenoh RFC §5.K lines 2272-2349 + 2449-2473:
+//! Per watching-zenoh RFC §synth-5-K lines 2272-2349 + 2449-2473:
 //! `trust_class: session_arming` listener links require the
 //! anti-flood quota + per-source token-bucket rate-limit; links
 //! with `domain_attrs.untrusted_source: true` additionally require

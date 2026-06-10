@@ -620,8 +620,8 @@ int main() {
     );
 }
 
-// NL→IR Item C1 Path A (EventSchema MCU native lowering, RFC §10.4 step
-// 5) — C11 parity for `statechart_native_lowering_emits_engine_free_typed_guard`.
+// NL→IR Item C1 Path A (EventSchema MCU native lowering) — C11 parity
+// for `statechart_native_lowering_emits_engine_free_typed_guard`.
 // The C11 backend must lower the typed `_event.data.elapsed_ms` guard to a
 // native tagged-union comparison: a `<name>_payload_t` union, a
 // `pending_payload` copy in the pop loop, a `raise_external_typed` inject

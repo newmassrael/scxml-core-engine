@@ -153,7 +153,7 @@ class TestDefaultRoundTrip(unittest.TestCase):
             "decode → encode must produce byte-equal output (round-trip stability)",
         )
 
-        # RFC §5.B writer-direct path: BytearraySink-backed encode
+        # RFC §synth-5-B writer-direct path: BytearraySink-backed encode
         # must produce bytes equal to the facade output.
         dst = bytearray()
         result = decoded.encode(BytearraySink(dst))

@@ -18,7 +18,7 @@
 #define CODEC_VARIANT_DISPATCH_MIN_BYTES 1
 #define CODEC_VARIANT_DISPATCH_MAX_BYTES 3
 
-/* RFC §5.B variant primitive: tagged-union body for the codec's
+/* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
  * preserves the runtime tag value when the default arm fires; the inner
  * union holds one body slot per arm (per-arm fields keep the template
@@ -63,10 +63,10 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_variant_dispatch_decode(sce_forge_cursor_t *cursor, codec_variant_dispatch_t *out) {
-    /* Decode fixed prefix (RFC §5.B variant: fields before tag suffix). */
+    /* Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix). */
     const uint8_t *raw = sce_forge_cursor_peek(cursor, CODEC_VARIANT_DISPATCH_MIN_BYTES);
     if (raw == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
     out->msg_id = raw[0];
@@ -97,7 +97,7 @@ static inline sce_forge_codec_status_t codec_variant_dispatch_decode(sce_forge_c
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_VARIANT_DISPATCH_MAX_BYTES bytes and use

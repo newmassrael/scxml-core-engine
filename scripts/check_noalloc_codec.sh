@@ -13,7 +13,7 @@
 # codec crate failing `--no-default-features`).
 #
 # Scope: scalar codecs (Tail / LengthRef byte views) AND list-bearing
-# codecs (RFC §5.B B2 repeat / B3 tlv-chain). The latter are now heap-
+# codecs (RFC §synth-5-B B2 repeat / B3 tlv-chain). The latter are now heap-
 # free via `heapless::Vec<Body<'a>, MAX>` bounded inline storage (the
 # Rust mirror of the C11 `T elems[MAX]; len` shape), so they compile
 # under `no_std` without `alloc` too — list elements decode into fixed
@@ -44,7 +44,7 @@ CODECS=(
     codec_length_ref_uint16_le
     codec_length_ref_uint16_be
     codec_length_ref_uint32_le
-    # List-bearing codecs (RFC §5.B B2 repeat / B3 tlv-chain) — no-alloc
+    # List-bearing codecs (RFC §synth-5-B B2 repeat / B3 tlv-chain) — no-alloc
     # via heapless::Vec bounded inline storage. Each pulls its element
     # codec as a sibling module (the golden's `use super::<elem>`).
     codec_repeat_elem

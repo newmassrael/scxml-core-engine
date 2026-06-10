@@ -11,17 +11,17 @@ import com.sce.forge.runtime.MutableListSink
 import com.sce.forge.runtime.SceCursor
 import com.sce.forge.runtime.SceSink
 
-// RFC §5.B empty body — Kotlin's `data class` requires at least
+// RFC §synth-5-B empty body — Kotlin's `data class` requires at least
 // one primary-ctor parameter, so empty-body codecs (e.g. Zenoh
 // KeepAlive) emit as a plain class with a no-arg constructor.
 class CodecZenohKeepAlive {
-    /// RFC §5.B encode-side primary: write `self` into the
+    /// RFC §synth-5-B encode-side primary: write `self` into the
     /// caller-owned `w` sink. Returns `null` on success;
     /// `CodecError.BufferOverflow` from a bounded sink when the
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // RFC §5.B empty body — zero-byte payload.
+        // RFC §synth-5-B empty body — zero-byte payload.
         return null
     }
 
@@ -39,9 +39,9 @@ class CodecZenohKeepAlive {
         /// Decode the next frame from `cursor`. On success the cursor
         /// advances past the consumed bytes; returns `null` when the
         /// cursor's tail is shorter than the declared minimum frame
-        /// (RFC §5.B L494-519).
+        /// (RFC §synth-5-B L494-519).
         fun decode(cursor: SceCursor): CodecZenohKeepAlive? {
-            // RFC §5.B empty body — zero-byte payload, no cursor work.
+            // RFC §synth-5-B empty body — zero-byte payload, no cursor work.
             return CodecZenohKeepAlive()
         }
     }

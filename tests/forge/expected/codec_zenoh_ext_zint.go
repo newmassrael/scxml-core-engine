@@ -18,13 +18,13 @@ type CodecZenohExtZint struct {
 // DecodeCodecZenohExtZint decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohExtZint(cursor *codec.SceCursor) (*CodecZenohExtZint, error) {
 	// Streaming codec: each field reads from cursor directly
 	// (VLE base-128 chain). Local var name reuses the Go-PascalCase
 	// `field.id` — the struct literal's `Foo: Foo` is unambiguous
-	// because the package owns both names. RFC §5.B B4: per-field
+	// because the package owns both names. RFC §synth-5-B B4: per-field
 	// bit-size dispatch routes Fixed / LengthRef siblings of VLE
 	// fields through `present_if_decode_stmt` (predicate=None arms).
 	// Pure-VLE codecs stay byte-stable.
@@ -40,7 +40,7 @@ func DecodeCodecZenohExtZint(cursor *codec.SceCursor) (*CodecZenohExtZint, error
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecZenohExtZint) Encode(w codec.SceSink) error {
-	// RFC §5.B B4: per-field bit-size dispatch.
+	// RFC §synth-5-B B4: per-field bit-size dispatch.
 	{
 		_vle := uint64(s.Value)
 		for _vle >= 0x80 {

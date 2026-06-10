@@ -19,7 +19,7 @@
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
     // Entry Actions (W3C SCXML 3.8)
-    {# Watching-zenoh RFC §5.O — function-scope SCE-MAP marker
+    {# Watching-zenoh RFC §synth-5-O — function-scope SCE-MAP marker
        above the `onEntry` / `onExit` overrides. Kotlin's macro form is
        a plain `// SCE-MAP:` comment — non-syntactic, no compile cost. #}
     {{ sce_map.source_marker(model.source_location, "kotlin") }}

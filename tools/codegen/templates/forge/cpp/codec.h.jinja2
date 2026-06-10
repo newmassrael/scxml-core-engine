@@ -33,7 +33,7 @@
 namespace SCE::Generated::{{ namespace }} {
 
 {% if has_variant %}
-// RFC §5.B variant primitive: discriminated-union body for the
+// RFC §synth-5-B variant primitive: discriminated-union body for the
 // codec's tag-field suffix. `std::variant` carries one of N arm bodies
 // (each an imported codec type); the optional Default arm is a small
 // struct that bundles the runtime tag value with the catch-all body.
@@ -78,12 +78,12 @@ struct {{ struct_name }} {
     /// Decode the next frame from `cursor`. On success the cursor
     /// advances past the consumed bytes; on `NeedMoreBytes` the cursor
     /// is left untouched so the caller can resume after appending more
-    /// bytes (RFC §5.B L494-519). Returns `std::nullopt` on the
+    /// bytes (RFC §synth-5-B L494-519). Returns `std::nullopt` on the
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<{{ struct_name }}> decode(::SCE::Forge::SceCursor& cursor{{ params_after_first_arg }}{{ dispatch_tag_param_decl }}) {
 {% if has_parent_flags %}
-        // RFC §5.B: `parent_flags` is the parent codec's flags
+        // RFC §synth-5-B: `parent_flags` is the parent codec's flags
         // carrier value, threaded by the variant arm dispatcher.
         // Defensive (void) suppress for codecs that declare
         // `<sce:requires-parent-flags>` but don't yet wire any
@@ -102,12 +102,12 @@ struct {{ struct_name }} {
         // extracted by the parent codec from its flag carrier.
 {% endif %}
 {% if has_no_fields %}
-        // RFC §5.B empty body — zero-byte payload, no cursor work.
+        // RFC §synth-5-B empty body — zero-byte payload, no cursor work.
         (void)cursor;
         return {{ struct_name }}{};
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-        // RFC §5.B peek-byte / streaming-prefix:
+        // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         // mode additionally peeks the cursor's next byte for variant tag
@@ -129,7 +129,7 @@ struct {{ struct_name }} {
 {% endif %}
 {% else %}
 {% if fields %}
-        // Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
+        // Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
         const std::uint8_t* raw = cursor.peek_slice({{ min_bytes }});
         if (raw == nullptr) return std::nullopt;
 {% for field in fields %}
@@ -171,7 +171,7 @@ struct {{ struct_name }} {
             .body = body,
         };
 {% elif has_present_if_fields %}
-        // RFC §5.B present-if: per-field cursor advance.
+        // RFC §synth-5-B present-if: per-field cursor advance.
         // Gated fields hold std::optional<T>; gating extends to
         // Tail / LengthRef / Vle bit-sizes via dispatch inside
         // `present_if_decode_stmt`. Per-field `is_repeat` routes
@@ -196,7 +196,7 @@ struct {{ struct_name }} {
         };
 {% elif has_vle_fields %}
         // Streaming codec: each field reads from the cursor directly
-        // (VLE base-128 chain, 1..=ceil(N/7) bytes per field). RFC §5.B
+        // (VLE base-128 chain, 1..=ceil(N/7) bytes per field). RFC §synth-5-B
         // B4: per-field bit-size dispatch routes Fixed / LengthRef
         // siblings of VLE fields through `present_if_decode_stmt`
         // (predicate=None arms) — pure-VLE codecs stay byte-stable
@@ -219,7 +219,7 @@ struct {{ struct_name }} {
 {% endfor %}
         };
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        // RFC §5.B B2 repeat (trunk): per-field cursor advance. Fixed
+        // RFC §synth-5-B B2 repeat (trunk): per-field cursor advance. Fixed
         // prefix fields read via the present-if helper's non-gated
         // branch; repeat fields run a count-driven or until-eof loop
         // over the imported codec's decode(). Element NeedMoreBytes
@@ -295,7 +295,7 @@ struct {{ struct_name }} {
 {% endfor %}
 {% endif %}
 {% if has_flags %}
-    // RFC §5.B flags primitive: per-bit-range accessors.
+    // RFC §synth-5-B flags primitive: per-bit-range accessors.
     // Single-bit (width=1) reads as bool; multi-bit (width>=2) reads as
     // the smallest unsigned integer type that fits the range. Setters
     // mask + shift on the way in so out-of-range callers can't corrupt
@@ -360,14 +360,14 @@ struct {{ struct_name }} {
 {{ flag_input_unused_suppress }}
 {% endif %}
 {% if has_parent_tag_derivation %}
-        // RFC §5.B parent-tag carriers — derive carrier bits from each embedded
+        // RFC §synth-5-B parent-tag carriers — derive carrier bits from each embedded
         // parent-tag variant's active arm before the carrier byte is
         // emitted. Each `_derived_<carrier>` local is OR'd into the
         // carrier's encode site.
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if has_no_fields %}
-        // RFC §5.B empty body — zero-byte payload (the surrounding
+        // RFC §synth-5-B empty body — zero-byte payload (the surrounding
         // wire-protocol header byte alone marks this codec on the wire).
         // Suppress the unused-sink warning explicitly so empty codecs
         // stay warning-clean.
@@ -375,7 +375,7 @@ struct {{ struct_name }} {
         return std::nullopt;
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-        // RFC §5.B peek-byte / streaming-prefix:
+        // RFC §synth-5-B peek-byte / streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
         // separate tag byte here. Streaming-prefix mode (own-field):
@@ -411,7 +411,7 @@ struct {{ struct_name }} {
 {% endif %}
         return std::nullopt;
 {% elif has_present_if_fields %}
-        // RFC §5.B present-if encode: per-field byte
+        // RFC §synth-5-B present-if encode: per-field byte
         // append. Gated fields skip the append when the optional is
         // empty. Per-field `is_repeat` routes Repeat fields to the
         // dedicated helper. Branch fires before has_vle_fields so a
@@ -429,7 +429,7 @@ struct {{ struct_name }} {
 {% endfor %}
         return std::nullopt;
 {% elif has_vle_fields %}
-        // RFC §5.B B4: per-field bit-size dispatch routes Fixed /
+        // RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
         // LengthRef siblings of VLE fields through
         // `present_if_encode_block` (predicate=None arms). Pure-VLE
         // codecs stay byte-stable because the non-gated VLE arm there
@@ -448,7 +448,7 @@ struct {{ struct_name }} {
 {% endfor %}
         return std::nullopt;
 {% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        // RFC §5.B B2 encode: fixed prefix appends byte-by-byte;
+        // RFC §synth-5-B B2 encode: fixed prefix appends byte-by-byte;
         // repeat fields iterate the host vector and splice each
         // element's encode() into the parent buffer. Author keeps
         // count field == list length (trust contract).
@@ -471,10 +471,10 @@ struct {{ struct_name }} {
 {% for field in fields %}
 {% if field.is_variable %}
 {% if has_dma_aligned_fields %}
-        // RFC §5.B B3 DMA padding: zero-fill any gap between the
+        // RFC §synth-5-B B3 DMA padding: zero-fill any gap between the
         // current write position and this field's authored byte
         // offset (deterministic zeros on the wire so peers stay
-        // byte-compatible regardless of host allocator — RFC §5.B
+        // byte-compatible regardless of host allocator — RFC §synth-5-B
         // "wire layout, not host allocator").
         while (w.position() < {{ field.byte_off }}) {
             if (auto _e = w.write_u8(0); _e) return _e;

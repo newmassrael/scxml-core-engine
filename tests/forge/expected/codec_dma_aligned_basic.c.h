@@ -16,13 +16,13 @@
 
 #define CODEC_DMA_ALIGNED_BASIC_MIN_BYTES 2
 #define CODEC_DMA_ALIGNED_BASIC_MAX_BYTES 66
-/* RFC §5.B B3 DMA alignment primitive: structural drift detection.
+/* RFC §synth-5-B B3 DMA alignment primitive: structural drift detection.
  * Build-time validation already guaranteed `byte_offset % burst_align
  * == 0` and that all preceding fields are Fixed bit-size. These
  * `_Static_assert` declarations catch any future hand-edit to the
  * byte_offset that would break the wire-layout invariant. */
 _Static_assert(32 % 32 == 0,
-               "RFC §5.B B3: codec field 'aligned_payload' offset must be 32-aligned");
+               "RFC §synth-5-B B3: codec field 'aligned_payload' offset must be 32-aligned");
 
 typedef struct {
     uint8_t msg_id;
@@ -35,10 +35,10 @@ typedef struct {
 /* Decode the next frame from `cursor`. Returns SCE_FORGE_CODEC_OK on
  * success and advances `cursor`; returns SCE_FORGE_CODEC_NEED_MORE_BYTES
  * (without advancing) when the cursor's tail is shorter than the
- * declared minimum frame (RFC §5.B L494-519). VLE codecs may also
+ * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_dma_aligned_basic_decode(sce_forge_cursor_t *cursor, codec_dma_aligned_basic_t *out) {
-    /* Variable-length codec. RFC §5.B B3 stream-correct shape:
+    /* Variable-length codec. RFC §synth-5-B B3 stream-correct shape:
      * a codec without `<sce:field sce:bit-size="tail">` consumes only
      * the bytes it actually decoded (`min_bytes + length_value`)
      * rather than the entire cursor remaining. Codecs WITH a tail
@@ -66,14 +66,14 @@ static inline sce_forge_codec_status_t codec_dma_aligned_basic_decode(sce_forge_
     return SCE_FORGE_CODEC_OK;
 }
 
-/* RFC §5.B encode-side primary: write `*self` into the caller-
+/* RFC §synth-5-B encode-side primary: write `*self` into the caller-
  * owned `*w` writer. Returns SCE_FORGE_CODEC_OK on success;
  * SCE_FORGE_CODEC_BUFFER_OVERFLOW when the writer ran out of capacity.
  * Callers either pre-reserve CODEC_DMA_ALIGNED_BASIC_MAX_BYTES bytes and use
  * `codec_dma_aligned_basic_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_dma_aligned_basic_encode(const codec_dma_aligned_basic_t *self, sce_forge_writer_t *w) {
-    /* RFC §5.B B3 DMA padding: zero-fill the gap between the current
+    /* RFC §synth-5-B B3 DMA padding: zero-fill the gap between the current
      * writer position and any aligned field's authored byte_offset
      * (deterministic zeros on the wire so peers stay byte-compatible
      * regardless of host allocator). */

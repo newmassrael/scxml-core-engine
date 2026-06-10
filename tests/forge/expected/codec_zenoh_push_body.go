@@ -14,14 +14,14 @@ import (
 
 // CodecZenohPushBodyDefault bundles the runtime
 // tag value with the catch-all body so encode can round-trip the
-// observed tag back onto the wire (RFC §5.B variant primitive).
+// observed tag back onto the wire (RFC §synth-5-B variant primitive).
 type CodecZenohPushBodyDefault struct {
 	Tag uint8
 	Body codec_zenoh_put.CodecZenohPut
 }
 
 // CodecZenohPushBodyVariant is a discriminated-union body for the codec's
-// tag-field suffix (RFC §5.B variant primitive). Exactly one of
+// tag-field suffix (RFC §synth-5-B variant primitive). Exactly one of
 // the pointer fields is non-nil at a time; the active arm is the one
 // that matches the current tag value.
 type CodecZenohPushBodyVariant struct {
@@ -54,10 +54,10 @@ func NewCodecZenohPushBody() *CodecZenohPushBody {
 // DecodeCodecZenohPushBody decodes the next frame from cursor.
 // On success the cursor advances past the consumed bytes; returns
 // `codec.ErrNeedMoreBytes` (without advancing) when the cursor's tail
-// is shorter than the declared minimum frame (RFC §5.B L494-519).
+// is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecZenohPushBody(cursor *codec.SceCursor) (*CodecZenohPushBody, error) {
-	// Decode fixed prefix (RFC §5.B variant: fields before tag suffix).
+	// Decode fixed prefix (RFC §synth-5-B variant: fields before tag suffix).
 	raw, err := cursor.PeekSlice(1)
 	if err != nil {
 		return nil, err
@@ -99,7 +99,7 @@ func DecodeCodecZenohPushBody(cursor *codec.SceCursor) (*CodecZenohPushBody, err
 	}, nil
 }
 
-// RFC §5.B flags primitive: per-bit-range accessors over
+// RFC §synth-5-B flags primitive: per-bit-range accessors over
 // the carrier field. Single-bit (width=1) reads as bool; multi-bit
 // (width>=2) reads as the smallest unsigned int type that fits. Setters
 // mask + shift on the way in so out-of-range callers can't corrupt

@@ -3,7 +3,7 @@
 
 //! Codec cursor + typed error contract for `sce:kind="codec"` decode bodies.
 //!
-//! RFC `watching-zenoh/docs/rfc-sce-protocol-synthesis.md` §5.B L494-519
+//! RFC `watching-zenoh/docs/rfc-sce-protocol-synthesis.md` §synth-5-B L494-519
 //! pins a per-language cursor + Result/Option shape on decode so a
 //! truncated input never aborts — it returns `NeedMoreBytes` and the
 //! caller resumes after additional bytes arrive (DMA boundary,
@@ -28,7 +28,7 @@
 /// SCE 1.0.
 ///
 /// The variant primitive intentionally does NOT need a typed
-/// `UnknownVariantTag` variant — RFC §5.B requires `<sce:default>` when
+/// `UnknownVariantTag` variant — RFC §synth-5-B requires `<sce:default>` when
 /// arms don't exhaust the tag domain (`codec/variant-arm-unreachable`
 /// fires at build time otherwise), so the default arm catches every
 /// unmatched tag at runtime.
@@ -41,18 +41,18 @@ pub enum CodecError {
     NeedMoreBytes,
     /// A `vle_u<N>` field's continuation chain implies a value wider
     /// than the declared type. Either the wire is corrupt or the
-    /// author chose a too-narrow type. RFC §5.B `codec/vle-width-overflow`.
+    /// author chose a too-narrow type. RFC §synth-5-B `codec/vle-width-overflow`.
     VleWidthOverflow,
-    /// RFC §5.B TLV chain primitive: the wire carried more entries
+    /// RFC §synth-5-B TLV chain primitive: the wire carried more entries
     /// than the codec author declared (`max-depth=N` exhausted while
     /// the cursor still had bytes) AND the codec declared
     /// `on-overflow="reject"`. Truncate-mode codecs never raise this
     /// — they silently drop the post-cap bytes. MCU-class symbol; the
     /// other 4 backends never construct it (their codec emit is
-    /// rejected upfront by the codec-content MCU gate, RFC §5.B "MCU-
+    /// rejected upfront by the codec-content MCU gate, RFC §synth-5-B "MCU-
     /// only codec sub-features").
     TlvChainOverflow,
-    /// RFC §5.B string primitive: a `sce:type="string"` length-prefixed
+    /// RFC §synth-5-B string primitive: a `sce:type="string"` length-prefixed
     /// field's payload bytes were not valid UTF-8. Forge-fail-fast
     /// contract — zenoh-pico itself aliases the bytes without
     /// validating, but SCE-side codecs reject malformed text early so
@@ -72,7 +72,7 @@ pub enum CodecError {
     /// driving a DMA bounce buffer will run on `SliceSink` and surface
     /// overflow as a typed error rather than aborting.
     BufferOverflow,
-    /// RFC §5.B repeat / TLV chain primitive: the wire carried
+    /// RFC §synth-5-B repeat / TLV chain primitive: the wire carried
     /// more elements than the codec's declared `sce:max-count` bound
     /// (the fixed-capacity `heapless::Vec<Body, MAX_COUNT>` backing the
     /// list field is full). The no-alloc list representation stores
@@ -167,7 +167,7 @@ impl<'a> SceCursor<'a> {
     /// low 7; bit 7 is the continuation flag (1 = more bytes follow).
     /// LSB-first byte order — the first byte's payload occupies the
     /// low 7 bits of the result. Mirrors the Zenoh ZInt wire format
-    /// (RFC §5.B Appendix B).
+    /// (RFC §synth-5-B Appendix B).
     ///
     /// Returns `VleWidthOverflow` when the continuation chain implies
     /// a value wider than `max_bits` (either the wire is corrupt or
@@ -480,7 +480,7 @@ mod tests {
         assert_eq!(c.read_vle_u32(), Err(CodecError::NeedMoreBytes));
     }
 
-    // ── RFC §5.B string primitive — InvalidUtf8 variant exists and is
+    // ── RFC §synth-5-B string primitive — InvalidUtf8 variant exists and is
     // distinct from the other CodecError variants. The actual UTF-8
     // validation lives at the codec emit site (`core::str::from_utf8`
     // in `present_if_decode_string_length_ref`); this assertion just

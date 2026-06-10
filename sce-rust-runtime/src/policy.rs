@@ -67,7 +67,7 @@ pub trait StatePolicy: Sized + 'static {
     /// Event enum type generated per SCXML document (W3C SCXML 3.12).
     type Event: Copy + Eq + Hash + Debug + 'static;
 
-    /// Typed event payload (EventSchema MCU native-lowering RFC §10.2).
+    /// Typed event payload for EventSchema native lowering.
     ///
     /// `()` for schemaless documents — the dynamic `_event.data` baseline keeps
     /// riding in [`EventMetadata::data`](crate::EventMetadata) as before. For a
@@ -393,7 +393,7 @@ pub trait StatePolicy: Sized + 'static {
     }
 
     /// Copy the typed payload of the event being dispatched into the policy
-    /// (EventSchema MCU native-lowering RFC §10.2).
+    /// (EventSchema native lowering).
     ///
     /// The runtime calls this at dispatch — alongside
     /// [`populate_event_metadata`](StatePolicy::populate_event_metadata) — for
@@ -408,7 +408,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when `HAS_ACTIVE_STATES` is `true`.
     ///
-    /// Watching-zenoh RFC §5.J.2: return type matches the cfg-conditional
+    /// Watching-zenoh RFC §synth-5-J-2: return type matches the cfg-conditional
     /// [`StateChain`] alias — see [`get_initial_children`](Self::get_initial_children)
     /// above for the std/no_std mapping rationale. The default no-op returns
     /// an empty chain.

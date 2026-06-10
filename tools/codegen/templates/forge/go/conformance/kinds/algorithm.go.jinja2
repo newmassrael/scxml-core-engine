@@ -1,11 +1,11 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# Algorithm kind (RFC §5.A) — single-output free function. Cross-language
+{# Algorithm kind (RFC §synth-5-A) — single-output free function. Cross-language
    byte-equivalence acceptance gate (RFC §A6); Go shipped post-A6 alongside
    its byte-golden + matrix flip.
 
-   Bytes args lower to `[]byte` per RFC §5.J.5 (algorithm_param_type Go arm
+   Bytes args lower to `[]byte` per RFC §synth-5-J-5 (algorithm_param_type Go arm
    via the LangCtx::param_type fallback). Go's encoding/json treats `[]byte`
    as a base64-encoded string rather than a JSON array of integers, so the
    oracle's `[10, 20, 30]` array shape unmarshals through `[]int` first and

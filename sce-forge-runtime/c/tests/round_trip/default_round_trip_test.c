@@ -9,7 +9,7 @@
  * the `<UPPER>_DEFAULT_INIT` designated-initializer macro contract
  * end-to-end.
  *
- * RFC §5.B: encode is writer-based — the test exercises both
+ * RFC §synth-5-B: encode is writer-based — the test exercises both
  * the heap-free `_encode_to_buf` convenience facade and the primary
  * `_encode(self, w)` over a caller-owned `sce_forge_writer_t`. A
  * deliberately-undersized `SpanSink`-equivalent buffer surfaces the
@@ -97,7 +97,7 @@ int main(void) {
     EXPECT(memcmp(re_encoded_bytes, encoded_bytes, encoded_len) == 0,
            "re-encoded bytes must match original byte-for-byte");
 
-    /* RFC §5.B writer-direct path: same bytes via a caller-owned
+    /* RFC §synth-5-B writer-direct path: same bytes via a caller-owned
      * writer over a stack buffer. */
     {
         uint8_t direct_bytes[CODEC_VARIANT_DEFAULT_MARKER_MAX_BYTES];

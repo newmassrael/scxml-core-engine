@@ -8,7 +8,7 @@
 // Runtime: {{ runtime_dep }}
 // Do not edit — regenerate from the source SCXML file.
 //
-// watching-zenoh RFC §5.L bounded-collection — typed fixed-capacity
+// watching-zenoh RFC §synth-5-L bounded-collection — typed fixed-capacity
 // container whose occupancy varies at runtime. Backing storage:
 //   - std:    `Vec<Option<T>>` capped at CAPACITY (spec line 2571).
 //   - no_std: `heapless::Vec<Option<T>, CAPACITY>` (spec line 2571).
@@ -35,7 +35,7 @@ use super::{{ element_snake }}::{{ element_stored }};
 
 /// Slot capacity (`<sce:capacity>`). For `source="deploy"` the value
 /// is resolved from `machines.<m>.limits.<k>` at codegen time per
-/// RFC §5.L lines 2583-2585; for `const="N"` the value comes
+/// RFC §synth-5-L lines 2583-2585; for `const="N"` the value comes
 /// straight from the SCXML.
 pub const CAPACITY: usize = {{ capacity }};
 
@@ -96,7 +96,7 @@ type {{ pascal }}Backing = ::std::vec::Vec<Option<{{ element_stored }}>>;
 #[cfg(feature = "no_std")]
 type {{ pascal }}Backing = ::heapless::Vec<Option<{{ element_stored }}>, CAPACITY>;
 
-/// `{{ pascal }}` — RFC §5.L bounded-collection over element type
+/// `{{ pascal }}` — RFC §synth-5-L bounded-collection over element type
 /// `{{ element_pascal }}`. Capacity `{{ capacity }}`,
 /// `<sce:on-overflow>{{ on_overflow }}</sce:on-overflow>`,
 /// `<sce:ordering>{{ ordering }}</sce:ordering>`,
@@ -265,7 +265,7 @@ impl {{ pascal }} {
         self.slots[slot].as_ref()
     }
 
-    /// Get-by-slot (RFC §5.L + C7 foundation): slot-indexed read
+    /// Get-by-slot (RFC §synth-5-L + C7 foundation): slot-indexed read
     /// without Handle. Returns `None` when `slot >= CAPACITY` OR
     /// when the slot is unoccupied. No generation check (the use-
     /// after-remove guard is for the Handle-based `get`; slot-based
@@ -286,7 +286,7 @@ impl {{ pascal }} {
 {% if has_index_by %}
     /// Find the first occupied slot whose `<sce:index-by field="{{ index_by_field }}"/>`
     /// equals `key` (spec line 2615). Linear scan bounded by
-    /// `CAPACITY` (build-time constant) — satisfies §5.A `max-iter`
+    /// `CAPACITY` (build-time constant) — satisfies §synth-5-A `max-iter`
     /// requirement when this method is called from algorithm
     /// bodies.
     pub fn find_by_index(&self, key: &{{ index_by_rust_type }}) -> Option<{{ pascal }}Handle> {

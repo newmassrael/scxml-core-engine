@@ -72,12 +72,12 @@ pub struct DeployConfig {
     /// absent key means "permissive".
     #[serde(default)]
     pub distributability: Option<DistributabilityMode>,
-    /// watching-zenoh RFC §5.I lines 1761-1764 — target-plugin path
+    /// watching-zenoh RFC §synth-5-I lines 1761-1764 — target-plugin path
     /// pointer for `<sce:extern>` whitelist extension: a path-pointed
     /// YAML file (loaded via
     /// [`crate::forge::target_plugin::parse_target_plugin_yaml`]),
     /// single plugin per deploy. Plugin entries
-    /// extend the §5.I baseline registry; baseline-shadowing
+    /// extend the §synth-5-I baseline registry; baseline-shadowing
     /// surfaces as `extern/target-plugin-symbol-conflict` at plugin
     /// load time.
     ///
@@ -128,7 +128,7 @@ pub struct DeployConfig {
 #[serde(deny_unknown_fields)]
 pub struct ExternSymbolsConfig {
     /// Path (deploy-relative or absolute) to the target plugin YAML
-    /// file extending the §5.I whitelist. Spec line 1761-1762
+    /// file extending the §synth-5-I whitelist. Spec line 1761-1762
     /// verbatim: `extern_symbols.target_plugin: <path>`.
     pub target_plugin: Option<PathBuf>,
 }
@@ -399,11 +399,11 @@ pub struct PartitionInvokeRef {
 }
 
 /// Per-machine platform classification (SCE Mesh §14, watching-zenoh
-/// RFC §5.K). The class axis chooses between MCU-class targets (small,
+/// RFC §synth-5-K). The class axis chooses between MCU-class targets (small,
 /// bare-metal / RTOS, no general-purpose OS) and AP-class targets
 /// (Linux/QNX/macOS/FreeBSD/Windows). The class gates downstream
 /// codegen-matrix decisions (e.g. only `class: mcu` admits the C11
-/// backend's MCU-only kinds — see RFC §5.J.4 / §5.J.5).
+/// backend's MCU-only kinds — see RFC §synth-5-J-4 / §synth-5-J-5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PlatformClass {
@@ -413,14 +413,14 @@ pub enum PlatformClass {
     Mcu,
 }
 
-/// Per-machine OS axis (SCE Mesh §14, watching-zenoh RFC §5.K).
+/// Per-machine OS axis (SCE Mesh §14, watching-zenoh RFC §synth-5-K).
 ///
 /// Authored values are gated against `class` by
 /// [`validate_platform_class_os_consistency`]: when `class: mcu`, only
 /// `bare_metal` / `rtos` are admitted; when `class: ap`, only the
-/// general-purpose OS values are admitted. The split mirrors the RFC §7
+/// general-purpose OS values are admitted. The split mirrors the RFC §synth-7
 /// rollout (bare_metal / MCU is the foundation target; linux / qnx land
-/// with §7 items D.1 / D.2; the remaining AP slots are reserved for
+/// with §synth-7 items D.1 / D.2; the remaining AP slots are reserved for
 /// items E.1-E.3) without hard-coding rollout order into the schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -471,14 +471,14 @@ impl PlatformClass {
 }
 
 /// Per-machine platform descriptor (SCE Mesh §14, watching-zenoh RFC
-/// §5.K). Captures the target's class/OS plus cache and core-count
-/// invariants the codegen-matrix walker (RFC §5.J.4 / §5.J.5) and the
-/// §5.E cache-policy validator consume.
+/// §synth-5-K). Captures the target's class/OS plus cache and core-count
+/// invariants the codegen-matrix walker (RFC §synth-5-J-4 / §synth-5-J-5) and the
+/// §synth-5-E cache-policy validator consume.
 ///
 /// Field-specific numeric checks (e.g. `dcache_line_size` power-of-2 or
 /// `has_speculative_prefetch` REQUIRED when `has_dcache=true`) are not
 /// enforced here at schema time — each lands alongside its codegen
-/// consumer per the RFC §7 sequence. The single
+/// consumer per the RFC §synth-7 sequence. The single
 /// invariant validated at parse time is `class` ↔ `os` consistency
 /// (`validate_platform_class_os_consistency`), which is intrinsic to
 /// the schema rather than a downstream codegen rule.
@@ -489,20 +489,20 @@ pub struct PlatformConfig {
     pub class: PlatformClass,
     /// Target OS. Required when the section is present.
     pub os: OsKind,
-    /// `true` when the target core has a data cache. Drives §5.E
+    /// `true` when the target core has a data cache. Drives §synth-5-E
     /// cache-maintenance emission (cache invalidate before DMA-RX,
     /// flush after DMA-TX). Optional at parse time; consumer-specific
     /// follow-up rules (e.g. `has_speculative_prefetch` REQUIRED when
     /// `has_dcache=true` on M7+ class cores) land with the codegen
-    /// consumer per RFC §5.K.
+    /// consumer per RFC §synth-5-K.
     #[serde(default)]
     pub has_dcache: Option<bool>,
     /// Cache-line granularity in bytes (e.g. 32, 64). Consumed by
-    /// §5.E cache-maintenance emission. Optional at parse time.
+    /// §synth-5-E cache-maintenance emission. Optional at parse time.
     #[serde(default)]
     pub dcache_line_size: Option<u32>,
     /// `true` for cores with speculative load / hardware prefetcher
-    /// (Cortex-M7, M85, A-class). Drives §5.E pre-DMA-RX invalidate
+    /// (Cortex-M7, M85, A-class). Drives §synth-5-E pre-DMA-RX invalidate
     /// emission. Optional at parse time.
     #[serde(default)]
     pub has_speculative_prefetch: Option<bool>,
@@ -510,42 +510,42 @@ pub struct PlatformConfig {
     /// phases. Optional at parse time.
     #[serde(default)]
     pub core_count: Option<u32>,
-    /// Core clock frequency in MHz (watching-zenoh RFC §5.K line 2185).
+    /// Core clock frequency in MHz (watching-zenoh RFC §synth-5-K line 2185).
     /// Drives the stage-copy WCET formula (`expected_p99_bytes ×
     /// memcpy_cycles_per_byte / clock_freq_mhz`) gated by
-    /// `reassembly/stage-copy-wcet-exceeds-slot-budget` (RFC §5.M line
-    /// 2995, §5.M reassembly consumer) and the §5.B aggregate WCET
+    /// `reassembly/stage-copy-wcet-exceeds-slot-budget` (RFC §synth-5-M line
+    /// 2995, §synth-5-M reassembly consumer) and the §synth-5-B aggregate WCET
     /// roll-up. Optional at parse time; the reassembly cross-doc
     /// validators require it when a reassembly-variant buffer pool is
     /// bound to a link on this machine.
     #[serde(default)]
     pub clock_freq_mhz: Option<u32>,
     /// Per-target memcpy cost in cycles-per-byte (watching-zenoh RFC
-    /// §5.K line 2188-2192). Architecture defaults per spec:
+    /// §synth-5-K line 2188-2192). Architecture defaults per spec:
     /// M0/M0+ = 4.0, M3/M4 = 2.0, M7 = 1.0, A-class = 0.5. Used by the
-    /// §5.M `reassembly/stage-copy-wcet-exceeds-slot-budget` consumer
+    /// §synth-5-M `reassembly/stage-copy-wcet-exceeds-slot-budget` consumer
     /// alongside `clock_freq_mhz`. Optional at parse time;
     /// consumer-side validators raise when missing AND a
     /// reassembly-variant pool is bound.
     #[serde(default)]
     pub memcpy_cycles_per_byte: Option<f32>,
-    /// Per-byte VLE decode cost (watching-zenoh RFC §5.K line 2193-2200).
+    /// Per-byte VLE decode cost (watching-zenoh RFC §synth-5-K line 2193-2200).
     /// Architecture defaults per spec: M0/M0+ = 12.0, M3/M4 = 8.0,
-    /// M7 = 6.0, A-class = 3.0. REQUIRED at the §5.B aggregate WCET
+    /// M7 = 6.0, A-class = 3.0. REQUIRED at the §synth-5-B aggregate WCET
     /// consumer when any codec on the deploy contains a `vle_*` field
     /// AND `scheduler.kind=cooperative`. Optional at parse time
-    /// (presence enforced by §5.B consumer when load-bearing).
+    /// (presence enforced by §synth-5-B consumer when load-bearing).
     #[serde(default)]
     pub vle_decode_cycles_per_byte: Option<f32>,
     /// Fixed cost per TLV chain entry in microseconds (watching-zenoh
-    /// RFC §5.K line 2201-2208). id-byte + length VLE + dispatch.
+    /// RFC §synth-5-K line 2201-2208). id-byte + length VLE + dispatch.
     /// Architecture defaults per spec: M0/M0+ = 1.5, M3/M4 = 0.8,
-    /// M7 = 0.5, A-class = 0.2. REQUIRED at §5.B aggregate WCET when
+    /// M7 = 0.5, A-class = 0.2. REQUIRED at §synth-5-B aggregate WCET when
     /// any codec on the deploy contains a `tlv-chain` AND
     /// `scheduler.kind=cooperative`. Optional at parse time.
     #[serde(default)]
     pub tlv_chain_per_entry_overhead_us: Option<f32>,
-    /// Watching-zenoh RFC §5.O — escalation flag for the
+    /// Watching-zenoh RFC §synth-5-O — escalation flag for the
     /// `traceability/symbol-name-exceeds-c-identifier-limit`
     /// diagnostic. Default `None` = warn-only (the sourcemap still
     /// emits, the long identifier still ships to downstream compilers
@@ -608,7 +608,7 @@ pub struct C11SectionAttribute {
 }
 
 /// Trust-class enum for `machines.<n>.links.<name>.domain_attrs.trust_class`
-/// (watching-zenoh RFC §5.K line 2265 + §5.M line 2716-2732). Three
+/// (watching-zenoh RFC §synth-5-K line 2265 + §synth-5-M line 2716-2732). Three
 /// values determine what traffic the link may carry and whether
 /// reassembly pools may bind to it:
 /// - `untrusted` — Scout / Hello only (small, never fragmented). Pool
@@ -626,13 +626,13 @@ pub struct C11SectionAttribute {
 #[serde(rename_all = "snake_case")]
 pub enum TrustClass {
     /// Scout / Hello traffic only. Reassembly-pool binding raises
-    /// `reassembly/untrusted-link-binding` (RFC §5.M line 2964).
+    /// `reassembly/untrusted-link-binding` (RFC §synth-5-M line 2964).
     Untrusted,
     /// INIT / OPEN handshake traffic. Anti-flood fields apply.
     /// Reassembly-pool binding raises `reassembly/untrusted-link-binding`.
     SessionArming,
     /// Post-handshake Frame / data plane traffic. ONLY trust class
-    /// eligible for reassembly-pool binding (RFC §5.M line 2731).
+    /// eligible for reassembly-pool binding (RFC §synth-5-M line 2731).
     EstablishedSession,
 }
 
@@ -700,7 +700,7 @@ impl LinkRole {
 }
 
 /// RX-dispatch policy for `machines.<n>.links.<name>.rx_dispatch`
-/// (watching-zenoh RFC §5.K line 2254-2262).
+/// (watching-zenoh RFC §synth-5-K line 2254-2262).
 ///
 /// - `isr_to_pool` — RX-complete IRQ immediately re-arms next slot
 ///   from descriptor ring (wire-rate absorption). Required when
@@ -722,7 +722,7 @@ pub enum RxDispatch {
     WorkerTick,
 }
 
-/// Machine-wide stage-copy policy enum (watching-zenoh RFC §5.K
+/// Machine-wide stage-copy policy enum (watching-zenoh RFC §synth-5-K
 /// lines 2351-2369). Drives the policy promotion of
 /// `reassembly/expected-fragmentation-rate-high` (warning under
 /// `warn`) to `pool/stage-copy-policy-error` (hard error under
@@ -739,7 +739,7 @@ pub enum RxDispatch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StageCopyPolicy {
-    /// Spec line 2352-2357: default. §5.M / ARCHITECTURE §9.3
+    /// Spec line 2352-2357: default. §synth-5-M / ARCHITECTURE §9.3
     /// stage-copy-rate gate emits `reassembly/expected-fragmentation-
     /// rate-high` as a warning; the per-link
     /// `<sce:accept-stage-copy-rate>` opt-out suppresses it.
@@ -776,7 +776,7 @@ impl StageCopyPolicy {
     pub const ALL: &'static [&'static str] = &["warn", "error", "forbid"];
 }
 
-/// Machine-wide pool-defaults block (watching-zenoh RFC §5.K
+/// Machine-wide pool-defaults block (watching-zenoh RFC §synth-5-K
 /// lines 2350-2369). Today carries only `stage_copy_policy`; further
 /// pool-default fields are consumer-gated and land here additively
 /// (each gated on its consumer per `[[feedback-silently-broken-hooks]]`).
@@ -793,7 +793,7 @@ impl StageCopyPolicy {
 /// `validate_pool_defaults` could fire the spec-named
 /// `deploy/stage-copy-policy-unknown` diagnostic; the String shape
 /// lets the post-parse validator surface that typo guard verbatim
-/// (RFC §5.K line 2517-2519).
+/// (RFC §synth-5-K line 2517-2519).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PoolDefaults {
@@ -828,7 +828,7 @@ impl StageCopyPolicy {
 }
 
 /// HMAC primitive used by the `stateless_accept` cookie scheme
-/// (watching-zenoh RFC §5.K lines 2325-2330). Today's MVP variant is
+/// (watching-zenoh RFC §synth-5-K lines 2325-2330). Today's MVP variant is
 /// `cookie_hmac_sha256`; alternative primitives (e.g. Blake2s for
 /// SoCs without SHA-256 acceleration) land as new enum values when
 /// the need is concrete per spec line 2326-2330 — not preemptively.
@@ -841,8 +841,8 @@ pub enum HmacMode {
     CookieHmacSha256,
 }
 
-/// Per-peer tracking table parameters (watching-zenoh RFC §5.K line
-/// 2460-2462 + §5.M lines 2705-2706). Author-declared capacity of the
+/// Per-peer tracking table parameters (watching-zenoh RFC §synth-5-K line
+/// 2460-2462 + §synth-5-M lines 2705-2706). Author-declared capacity of the
 /// peer-tracking table the FSM maintains for anti-flood and per-peer
 /// quota accounting. C13 deferred-2 carries only `capacity`; future
 /// per-peer parameters (e.g. eviction policy) land alongside their
@@ -853,8 +853,8 @@ pub enum HmacMode {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PeerTable {
-    /// Spec line 2460-2462 + §5.M lines 2705-2706 — capacity of the
-    /// per-peer tracking table. Build invariant per §5.K line
+    /// Spec line 2460-2462 + §synth-5-M lines 2705-2706 — capacity of the
+    /// per-peer tracking table. Build invariant per §synth-5-K line
     /// 2460-2462: `session_arming_quota × max_handshake_time_s ≤
     /// peer_table.capacity` (else
     /// `deploy/session-arming-quota-vs-peer-table-invariant-violated`
@@ -862,7 +862,7 @@ pub struct PeerTable {
     pub capacity: u32,
 }
 
-/// Stateless-accept cookie scheme block (watching-zenoh RFC §5.K
+/// Stateless-accept cookie scheme block (watching-zenoh RFC §synth-5-K
 /// lines 2320-2349). REQUIRED when `LinkDomainAttrs.untrusted_source`
 /// is `true`; optional but recommended on `trust_class:
 /// session_arming` links facing >0 untrusted peers.
@@ -886,7 +886,7 @@ pub struct StatelessAccept {
     /// (else `stateless-accept-key-rotation-shorter-than-lifetime`
     /// fires).
     pub key_rotation_s: u32,
-    /// Spec line 2339-2344 — symbol name from the §5.I baseline
+    /// Spec line 2339-2344 — symbol name from the §synth-5-I baseline
     /// intrinsics whitelist OR a loaded `target_plugin` entry.
     /// Cross-doc allowlist validator
     /// (`deploy/stateless-accept-extern-not-whitelisted`) fires when
@@ -897,14 +897,14 @@ pub struct StatelessAccept {
     /// responsible for the entropy source. Same allowlist check
     /// surface as `hmac_extern`.
     pub rng_extern: String,
-    /// Spec §5.K line 2460-2462 — per-peer tracking table parameters
+    /// Spec §synth-5-K line 2460-2462 — per-peer tracking table parameters
     /// (peer-tracking shape is anti-flood / DoS-hardening state).
     /// Optional at parse time; absence silent-skips the invariant
     /// check (`deploy/session-arming-quota-vs-peer-table-invariant-
     /// violated`) per the absent-input silent-skip discipline.
     #[serde(default)]
     pub peer_table: Option<PeerTable>,
-    /// Spec §5.K line 2460-2462 — per-handshake time budget in
+    /// Spec §synth-5-K line 2460-2462 — per-handshake time budget in
     /// seconds. Build invariant `session_arming_quota ×
     /// max_handshake_time_s ≤ peer_table.capacity` (an attacker
     /// churning the quota cannot evict a slow legitimate handshake).
@@ -916,7 +916,7 @@ pub struct StatelessAccept {
     pub max_handshake_time_s: Option<u32>,
 }
 
-/// Per-link domain attributes (watching-zenoh RFC §5.K line 2263-2271).
+/// Per-link domain attributes (watching-zenoh RFC §synth-5-K line 2263-2271).
 ///
 /// When declared, `trust_class` is REQUIRED — spec
 /// line 2731 makes `established_session` the explicit gating intent
@@ -936,7 +936,7 @@ pub struct LinkDomainAttrs {
     pub untrusted_source: bool,
 }
 
-/// Per-link configuration entry (watching-zenoh RFC §5.K line 2232-2349).
+/// Per-link configuration entry (watching-zenoh RFC §synth-5-K line 2232-2349).
 ///
 /// Only `bind` + `driver` are required at the schema
 /// level; every other field is `Option` because spec mandates them
@@ -993,22 +993,22 @@ pub struct LinkConfig {
     pub role: Option<LinkRole>,
     /// `mtu_bytes:` (spec line 2236-2242) — link-layer MTU. REQUIRED
     /// for fragmenting links (per the `reassembly/max-fragments-
-    /// insufficient-for-mtu` consumer, RFC §5.M line 2947). Optional at
+    /// insufficient-for-mtu` consumer, RFC §synth-5-M line 2947). Optional at
     /// parse time; when missing on a Fragment-FSM-bound link, the
     /// consumer raises `deploy/link-mtu-missing-on-fragmenting-link`.
     #[serde(default)]
     pub mtu_bytes: Option<u32>,
     /// `expected_p99_bytes:` (spec line 2243-2247) — declared application
     /// p99 payload size. Drives the stage-copy rate warning
-    /// (`reassembly/expected-fragmentation-rate-high`, RFC §5.M line
+    /// (`reassembly/expected-fragmentation-rate-high`, RFC §synth-5-M line
     /// 2950) and the stage-copy WCET check (`reassembly/stage-copy-
-    /// wcet-exceeds-slot-budget`, RFC §5.M line 2995). Optional; when
+    /// wcet-exceeds-slot-budget`, RFC §synth-5-M line 2995). Optional; when
     /// absent, the build assumes `p99 = mtu_bytes` (no warning).
     #[serde(default)]
     pub expected_p99_bytes: Option<u32>,
     /// `burst_pps:` (spec line 2248-2253) — declared peak inbound
     /// packets-per-second. Drives the RX pool sizing check
-    /// (`deploy/link-burst-absorption-insufficient`, RFC §5.K line
+    /// (`deploy/link-burst-absorption-insufficient`, RFC §synth-5-K line
     /// 2489-2495). For multicast: derive from worst peer count × per-
     /// peer rate. REQUIRED when `rx_dispatch: isr_to_pool` per spec
     /// line 2261-2262 (conditional `rx_dispatch` default).
@@ -1028,7 +1028,7 @@ pub struct LinkConfig {
     #[serde(default)]
     pub domain_attrs: Option<LinkDomainAttrs>,
 
-    // ── Anti-flood + stateless_accept (RFC §5.K lines
+    // ── Anti-flood + stateless_accept (RFC §synth-5-K lines
     //    2272-2349 + 2449-2473). All five anti-flood fields plus the
     //    stateless_accept block are conditionally required when
     //    `domain_attrs.trust_class: session_arming` (the listener
@@ -1080,7 +1080,7 @@ pub struct LinkConfig {
     /// Optional otherwise. Per spec line 2466-2469, the
     /// `hmac_extern` + `rng_extern` symbol allowlist check
     /// (`deploy/stateless-accept-extern-not-whitelisted`) consumes
-    /// the loaded target_plugin set + the §5.I baseline whitelist;
+    /// the loaded target_plugin set + the §synth-5-I baseline whitelist;
     /// the validator runs at the orchestrator level where both
     /// inputs converge (C13 deferred-2).
     #[serde(default)]
@@ -1101,7 +1101,7 @@ impl LinkConfig {
 }
 
 /// Per-machine scheduler descriptor (SCE Mesh §14, watching-zenoh RFC
-/// §5.K lines 2209-2222).
+/// §synth-5-K lines 2209-2222).
 ///
 /// Three knobs are REQUIRED when `kind: cooperative`:
 /// - `worker_stack_budget` ([`validate_scheduler_cooperative_stack_budget`])
@@ -1140,7 +1140,7 @@ pub struct MachineSchedulerConfig {
     /// Per-slot WCET ceiling in microseconds (spec line 2213). REQUIRED
     /// when `kind: cooperative` per spec line 2428-2429
     /// `deploy/worker-slot-budget-missing`. Used by the codec / algorithm
-    /// aggregate-WCET check (§5.B + §5.A) and by the cooperative slot-count
+    /// aggregate-WCET check (§synth-5-B + §synth-5-A) and by the cooperative slot-count
     /// derivation in [`validate_machine_scheduler_worker_capacity`].
     #[serde(default)]
     pub worker_slot_budget_us: Option<u32>,
@@ -1148,11 +1148,11 @@ pub struct MachineSchedulerConfig {
     /// REQUIRED when `kind: cooperative` per spec line 2430-2431
     /// `deploy/keepalive-jitter-budget-missing`. Sum of worst-case slot
     /// budgets in one tick window MUST fit inside this bound; the
-    /// downstream check lands with the §5.B aggregate WCET consumer.
+    /// downstream check lands with the §synth-5-B aggregate WCET consumer.
     #[serde(default)]
     pub keepalive_jitter_budget_us: Option<u32>,
     /// Static timer wheel depth — number of timer slots available
-    /// (watching-zenoh RFC §5.D line 904 "compile-time slot in a
+    /// (watching-zenoh RFC §synth-5-D line 904 "compile-time slot in a
     /// static timer wheel" + line 910 `timer/slot-overflow`).
     /// Optional at parse time; when present alongside
     /// `machines.<m>.timers`, the slot-overflow validator
@@ -1162,7 +1162,7 @@ pub struct MachineSchedulerConfig {
     /// don't have the wheel sizing information).
     #[serde(default)]
     pub timer_wheel_depth: Option<u32>,
-    /// Watching-zenoh RFC §5.J.2 + §5.L (item C3):
+    /// Watching-zenoh RFC §synth-5-J-2 + §synth-5-L (item C3):
     /// fallback event-queue capacity for machines
     /// whose SCXML document omits the per-instance
     /// `<scxml sce:capacity="N">` attribute. Unit: events.
@@ -1176,10 +1176,10 @@ pub struct MachineSchedulerConfig {
     /// no_std codegen path has nothing to source the literal from.
     #[serde(default)]
     pub default_event_queue_capacity: Option<u32>,
-    /// Watching-zenoh RFC §5.N line 3056-3057 — per-link
+    /// Watching-zenoh RFC §synth-5-N line 3056-3057 — per-link
     /// work cap inside one cooperative scheduler tick. Unit:
     /// microseconds. Optional at parse time; required for both
-    /// §5.N codes that consume it
+    /// §synth-5-N codes that consume it
     /// (`link/concurrent-count-exceeds-scheduler-slots` derives the
     /// MCU slot ceiling via
     /// `floor(tick_period_us / per_link_budget_us)`;
@@ -1193,9 +1193,9 @@ pub struct MachineSchedulerConfig {
 }
 
 /// Per-machine scheduler kind axis (SCE Mesh §14, watching-zenoh RFC
-/// §5.K). `tokio` and `rt` host the scheduler in async / RTOS-task
+/// §synth-5-K). `tokio` and `rt` host the scheduler in async / RTOS-task
 /// contexts; `cooperative` is the SCE-built single-thread tick loop
-/// used on bare-metal MCUs (the §7 foundation target).
+/// used on bare-metal MCUs (the §synth-7 foundation target).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SchedulerKind {
@@ -1232,7 +1232,7 @@ pub struct WorkerPlacementConfig {
     pub consumer_core: u32,
 }
 
-/// Per-machine worker descriptor (watching-zenoh RFC §5.D + §5.K).
+/// Per-machine worker descriptor (watching-zenoh RFC §synth-5-D + §synth-5-K).
 /// Authors list every worker doc bound to the machine and declare its
 /// runtime placement when cross-core ordering matters. Absent
 /// `placement:` ⇒ codegen-invariant validator silent-skips for that
@@ -1251,7 +1251,7 @@ pub struct WorkerDeployConfig {
     pub placement: Option<WorkerPlacementConfig>,
 }
 
-/// Per-machine timer doc descriptor (watching-zenoh RFC §5.D + §5.K,
+/// Per-machine timer doc descriptor (watching-zenoh RFC §synth-5-D + §synth-5-K,
 /// C1). Authors list every `sce:kind="timer"` doc bound to the
 /// machine; the map's length feeds the static timer wheel slot count
 /// check ([`validate_machine_timer_wheel_capacity`]). The schema
@@ -1262,10 +1262,10 @@ pub struct WorkerDeployConfig {
 #[serde(deny_unknown_fields)]
 pub struct TimerDeployConfig {}
 
-/// SRAM region descriptor (SCE Mesh §14, watching-zenoh RFC §5.K).
+/// SRAM region descriptor (SCE Mesh §14, watching-zenoh RFC §synth-5-K).
 /// Region attributes ride as raw strings at parse time so the schema
 /// admits forward-extension ("dma_coherent", "non_cacheable", "fast",
-/// "nocache") without a closed enum here; the §5.E placement validator
+/// "nocache") without a closed enum here; the §synth-5-E placement validator
 /// is the consumer that interprets them.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -1275,15 +1275,15 @@ pub struct SramRegionConfig {
     pub base: u64,
     /// Region size in bytes. The YAML scalar form (`64K`, `512K`) is
     /// not interpreted here — authors write decimal or hex; size-suffix
-    /// parsing lives in the §5.E consumer when introduced.
+    /// parsing lives in the §synth-5-E consumer when introduced.
     pub size: u64,
     /// Region attributes (e.g. `["dma_coherent", "cacheable"]`).
     #[serde(default)]
     pub attr: Vec<String>,
 }
 
-/// Per-machine memory layout (SCE Mesh §14, watching-zenoh RFC §5.K).
-/// SRAM region map and DMA-channel inventory feed the §5.E placement /
+/// Per-machine memory layout (SCE Mesh §14, watching-zenoh RFC §synth-5-K).
+/// SRAM region map and DMA-channel inventory feed the §synth-5-E placement /
 /// cache-policy validators (the buffer-pool placement checks in
 /// `lib.rs` consume `sram_regions` and the pool `cache_policy`).
 #[derive(Debug, Clone, Deserialize)]
@@ -2125,7 +2125,7 @@ pub struct MachineConfig {
     pub someip_machine_liveness_service_id: Option<u16>,
 
     /// Per-machine platform descriptor (SCE Mesh §14, watching-zenoh RFC
-    /// §5.K). Absent ⇒ no platform classification declared on this
+    /// §synth-5-K). Absent ⇒ no platform classification declared on this
     /// machine; downstream codegen-matrix consumers fall back to their
     /// own defaults. Present ⇒ class/os pair is admissible per
     /// [`PlatformClass::admits_os`], enforced at parse time by
@@ -2134,21 +2134,21 @@ pub struct MachineConfig {
     pub platform: Option<PlatformConfig>,
 
     /// Per-machine scheduler descriptor (SCE Mesh §14, watching-zenoh RFC
-    /// §5.K). Absent ⇒ machine inherits the partition / device runtime
+    /// §synth-5-K). Absent ⇒ machine inherits the partition / device runtime
     /// defaults. Present ⇒ `kind` is required, and `kind: cooperative`
     /// requires `worker_stack_budget` ([`validate_scheduler_cooperative_stack_budget`]).
     #[serde(default)]
     pub scheduler: Option<MachineSchedulerConfig>,
 
-    /// Per-machine memory layout (SCE Mesh §14, watching-zenoh RFC §5.K).
-    /// Absent ⇒ no SRAM/DMA layout declared; the §5.E placement
+    /// Per-machine memory layout (SCE Mesh §14, watching-zenoh RFC §synth-5-K).
+    /// Absent ⇒ no SRAM/DMA layout declared; the §synth-5-E placement
     /// validator skips this machine. Present ⇒ region attributes ride as
-    /// raw strings; structural interpretation lives in the §5.E
+    /// raw strings; structural interpretation lives in the §synth-5-E
     /// placement / cache-policy validators.
     #[serde(default)]
     pub memory: Option<MemoryConfig>,
 
-    /// Per-machine worker doc registry (watching-zenoh RFC §5.D + §5.K).
+    /// Per-machine worker doc registry (watching-zenoh RFC §synth-5-D + §synth-5-K).
     /// Keyed by worker name (matches `<scxml sce:kind="worker"
     /// name="...">`). The map's length feeds the cooperative slot-count
     /// check ([`validate_machine_scheduler_worker_capacity`]); each entry
@@ -2162,7 +2162,7 @@ pub struct MachineConfig {
     #[serde(default)]
     pub workers: HashMap<String, WorkerDeployConfig>,
 
-    /// Per-machine Timer doc registry (watching-zenoh RFC §5.D, C1).
+    /// Per-machine Timer doc registry (watching-zenoh RFC §synth-5-D, C1).
     /// Keyed by timer name (matches `<scxml sce:kind="timer"
     /// name="...">`). The map's length feeds the static timer wheel
     /// slot-overflow check
@@ -2176,13 +2176,13 @@ pub struct MachineConfig {
     pub timers: HashMap<String, TimerDeployConfig>,
 
     /// Per-machine dynamic-state capacity ceilings (watching-zenoh RFC
-    /// §5.L lines 2570-2585 + 2649). Keyed by limit name —
+    /// §synth-5-L lines 2570-2585 + 2649). Keyed by limit name —
     /// the dotted suffix of a `<sce:capacity source="deploy"
     /// key="machines.<machine>.limits.<limit>">` reference on a
     /// bounded-collection doc. Value is the compile-time slot count
     /// the codegen lowers into a per-language constant (Rust
     /// `heapless::Vec<T, N>` / Cpp `std::array<T, N>` / etc per spec
-    /// §5.J.5).
+    /// §synth-5-J-5).
     ///
     /// Absent ⇒ machine declares no limits;
     /// [`validate_bounded_collection_capacity_resolution`] silent-
@@ -2204,7 +2204,7 @@ pub struct MachineConfig {
     #[serde(default)]
     pub limits: HashMap<String, u32>,
 
-    /// Per-machine link configuration registry (watching-zenoh RFC §5.K
+    /// Per-machine link configuration registry (watching-zenoh RFC §synth-5-K
     /// line 2232-2349). Keyed by link name (joined against forge
     /// `<scxml sce:kind="link" name="X">` document names via the
     /// cross-doc validator pair `deploy/{link-not-declared-in-deploy,
@@ -2225,7 +2225,7 @@ pub struct MachineConfig {
     #[serde(default)]
     pub links: HashMap<String, LinkConfig>,
 
-    /// Machine-wide pool-defaults block (watching-zenoh RFC §5.K
+    /// Machine-wide pool-defaults block (watching-zenoh RFC §synth-5-K
     /// lines 2350-2369). Today carries only
     /// `stage_copy_policy`; further consumer-gated fields land additively per
     /// `[[feedback-silently-broken-hooks]]`. Absent ⇒
@@ -2618,7 +2618,7 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_from: Option<String>,
 
-    /// watching-zenoh RFC §5.E — name reference into the forge
+    /// watching-zenoh RFC §synth-5-E — name reference into the forge
     /// pool registry naming the buffer-pool kind artifact whose slots
     /// the link's RX-side `Sample::take()` copies into. Resolved
     /// against [`forge::pool_registry::ForgePoolRegistry`] (built by
@@ -2759,7 +2759,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     Ok(cfg)
 }
 
-/// Watching-zenoh RFC §5.K line 2517-2519 parse-time typo guard
+/// Watching-zenoh RFC §synth-5-K line 2517-2519 parse-time typo guard
 /// (`deploy/stage-copy-policy-unknown`). Walks every machine's
 /// `pool_defaults.stage_copy_policy` String field and rejects values
 /// outside the closed set [`StageCopyPolicy::ALL`] = {warn, error,
@@ -2789,9 +2789,9 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
-/// `machines.<n>.links.<name>` parse-time validators (§5.K).
+/// `machines.<n>.links.<name>` parse-time validators (§synth-5-K).
 ///
-/// Five intra-link checks (RFC §5.K lines 2421-2503):
+/// Five intra-link checks (RFC §synth-5-K lines 2421-2503):
 ///   1. `deploy/link-driver-unknown` — driver in known baseline or
 ///      forge cross-doc registry. Cross-doc lookup runs in the
 ///      orchestrator pass; this parse-time pass only checks the
@@ -2807,7 +2807,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///      fire.
 ///   5. `deploy/link-mtu-missing-on-fragmenting-link` — if
 ///      `domain_attrs.trust_class == EstablishedSession` (the only
-///      class permitted to carry Fragment traffic per RFC §5.M line
+///      class permitted to carry Fragment traffic per RFC §synth-5-M line
 ///      2731) AND `mtu_bytes.is_none()`, fire.
 ///
 /// The cross-doc validators `deploy/link-not-declared-in-deploy` +
@@ -2823,8 +2823,8 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// Known-driver baseline carrying protocol class + min-MTU floor.
 ///
 /// Single source of truth for the driver allowlist. Each core driver
-/// implements exactly one protocol class (per RFC §5.C lines 765-771 +
-/// §8 Q8 line 3747); co-locating the class with the driver name
+/// implements exactly one protocol class (per RFC §synth-5-C lines 765-771 +
+/// §synth-8 Q8 line 3747); co-locating the class with the driver name
 /// keeps `KNOWN_DRIVERS` the authoritative source — no parallel map
 /// to drift against.
 ///
@@ -2834,15 +2834,15 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 ///   - `websocket_tcp = 40` (runs over IPv4 + TCP — same
 ///     encapsulation floor as `lwip_tcp`; the per-frame
 ///     WebSocket header is application-protocol framing
-///     carried by the §5.B framer codec, not by the driver
-///     MTU floor. Spec §8 Q8 line 3747 names the driver;
-///     spec §5.C row 4 (line 770) names the class).
+///     carried by the §synth-5-B framer codec, not by the driver
+///     MTU floor. Spec §synth-8 Q8 line 3747 names the driver;
+///     spec §synth-5-C row 4 (line 770) names the class).
 ///
 /// Non-IP drivers carry floor `0` to mark "skip floor check"
-/// explicitly — the §5.B framer codec carries the frame-size
+/// explicitly — the §synth-5-B framer codec carries the frame-size
 /// invariant at the protocol-decoder layer instead:
 ///   - `serial_uart = 0` (UART has no IP-stack overhead;
-///     watching-zenoh RFC §5.C line 729 + spec C11 atomic)
+///     watching-zenoh RFC §synth-5-C line 729 + spec C11 atomic)
 ///
 /// Unknown drivers fall through to forge cross-doc registry
 /// lookup in the orchestrator pass; the parse-time validator
@@ -2863,7 +2863,7 @@ fn known_driver_floor(driver: &str) -> Option<u32> {
 /// Returns the protocol class implemented by `driver`, or `None` if
 /// the driver is not in the SCE-side allowlist. Target-plugin
 /// drivers (declared via `extern_symbols.target_plugin`) are
-/// silent-skipped — their class-check rides §5.I plugin contract.
+/// silent-skipped — their class-check rides §synth-5-I plugin contract.
 fn known_driver_class(driver: &str) -> Option<LinkClass> {
     KNOWN_DRIVERS
         .iter()
@@ -2962,7 +2962,7 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
                 // ── Anti-flood + stateless_accept ──
                 //
                 // The five checks below mirror the spec-section walk
-                // order of `RFC §5.K lines 2449-2473`:
+                // order of `RFC §synth-5-K lines 2449-2473`:
                 //  - 6. Dead-config rejection (line 2454-2459) —
                 //    anti-flood / stateless_accept on a non-arming
                 //    link. Surfaced FIRST in deterministic walk order
@@ -3128,7 +3128,7 @@ fn validate_links(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
-/// Cross-doc link-name resolution (§5.K).
+/// Cross-doc link-name resolution (§synth-5-K).
 ///
 /// Two validators run after the forge cross-doc registry is populated:
 ///   - `deploy/link-not-declared-in-deploy` — every forge
@@ -3200,7 +3200,7 @@ pub fn validate_links_cross_doc(
     Ok(())
 }
 
-/// Watching-zenoh RFC §5.C lines 765-771 + §8 Q8 line 3747 cross-
+/// Watching-zenoh RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 3747 cross-
 /// doc consistency check between forge `<sce:link-class>` and the
 /// deploy.yaml `driver:` allowlist entry.
 ///
@@ -3212,7 +3212,7 @@ pub fn validate_links_cross_doc(
 /// Silent-skip cases (per `[[feedback-silently-broken-hooks]]` —
 /// "data unavailable" must not synthesize false errors):
 ///   - Driver not in `KNOWN_DRIVERS` — falls through to target-
-///     plugin path; class-check rides §5.I plugin contract there.
+///     plugin path; class-check rides §synth-5-I plugin contract there.
 ///   - No matching forge `LinkModel` for the deploy link name —
 ///     `validate_links_cross_doc` already gates this case as
 ///     `deploy/link-not-declared-in-forge`; reaching this point
@@ -3260,7 +3260,7 @@ pub fn validate_link_driver_class_consistency(
     Ok(())
 }
 
-/// Cross-document join for §5.K + §5.M validators that need the RX
+/// Cross-document join for §synth-5-K + §synth-5-M validators that need the RX
 /// pool slot count of a deploy-declared link.
 ///
 /// Three steps, each silent-skipping on absence per the absent-input precedent
@@ -3270,8 +3270,8 @@ pub fn validate_link_driver_class_consistency(
 /// [`crate::forge::model::BufferPoolModel`] entry in the supplied
 /// registry map. When all three resolve, returns the pool name + its
 /// declared `slot_count` + the [`BufferPoolVariant`] discriminant so
-/// consumers can distinguish reassembly bindings (§5.M) from regular
-/// RX (§5.K burst-rate) cases without re-joining.
+/// consumers can distinguish reassembly bindings (§synth-5-M) from regular
+/// RX (§synth-5-K burst-rate) cases without re-joining.
 ///
 /// Single source of truth for the 3-way join.
 /// Callers are validators in this module (`validate_links_burst_invariants`)
@@ -3401,7 +3401,7 @@ pub fn validate_links_burst_invariants(
     Ok(())
 }
 
-/// Watching-zenoh RFC §5.M lines 2946-2999 cross-doc validators for
+/// Watching-zenoh RFC §synth-5-M lines 2946-2999 cross-doc validators for
 /// reassembly-variant buffer pools bound to deploy-declared links.
 ///
 /// Six codes ride through this one entry point;
@@ -3409,7 +3409,7 @@ pub fn validate_links_burst_invariants(
 /// name=X>` → its `<sce:rx-pool ref=Y>` → `BufferPoolModel` for Y
 /// (resolved via [`resolve_link_rx_pool_slot_count`]). The validators
 /// emit [`crate::forge::error::ValidationError`] rather than
-/// [`DeployError`] because the spec anchor (§5.M) lives in the forge
+/// [`DeployError`] because the spec anchor (§synth-5-M) lives in the forge
 /// kinds catalog, not the deploy schema chapter — and the
 /// `mem/*` + `reassembly/*` slash-paths align with the validation
 /// stage in `[[SCE_ERROR_CONTRACT]]`.
@@ -3438,7 +3438,7 @@ pub fn validate_reassembly_cross_doc(
     // source SCXML carries any `Accepting.*` substate). Drives the
     // session_arming branch of the #4 check below: when the bound
     // link is a listener, the binding silently rebinds to the
-    // synthesized `established_session` sibling (RFC §5.C lines
+    // synthesized `established_session` sibling (RFC §synth-5-C lines
     // 802-803 + 821-825 + 2782-2783); when it is not, the binding
     // has no valid landing site and the validator fires
     // `reassembly/binding-on-unpaired-listener` in place of the
@@ -3523,7 +3523,7 @@ pub fn validate_reassembly_cross_doc(
                 // `Default` arm silent-skips them entirely; this
                 // matches the spec's "reassembly pool bound to a
                 // link" framing — non-reassembly bindings are
-                // governed by the spec's §5.K / §5.E plain RX
+                // governed by the spec's §synth-5-K / §synth-5-E plain RX
                 // pathways.
                 if let BufferPoolVariant::Reassembly(reassembly_cfg) = variant {
                     // ── #2 reassembly/max-fragments-insufficient-for-mtu ──
@@ -3563,7 +3563,7 @@ pub fn validate_reassembly_cross_doc(
                     //   trust_class = SessionArming + listener →
                     //     silent-pass (binding rebinds to the
                     //     synthesized Sibling EstablishedSession
-                    //     instance, RFC §5.C lines 821-825)
+                    //     instance, RFC §synth-5-C lines 821-825)
                     //   trust_class = SessionArming + non-listener →
                     //     fire `reassembly/binding-on-unpaired-listener`
                     //   trust_class = Untrusted → fire
@@ -3586,7 +3586,7 @@ pub fn validate_reassembly_cross_doc(
                                     // not synthesize the Sibling
                                     // EstablishedSession instance,
                                     // so the binding has no valid
-                                    // landing site. RFC §5.M lines
+                                    // landing site. RFC §synth-5-M lines
                                     // 2982-2994.
                                     return Err(Box::new(
                                         ValidationError::ReassemblyBindingOnUnpairedListener {
@@ -3716,7 +3716,7 @@ pub fn validate_reassembly_cross_doc(
                 // path the formula can reference. When the resolved
                 // pool IS the Default variant, use its slot_size.
                 //
-                // Policy promotion semantics (RFC §5.K lines 2358-2367):
+                // Policy promotion semantics (RFC §synth-5-K lines 2358-2367):
                 //   - `Warn` (default): #3 fires unless the link
                 //     declares `<sce:accept-stage-copy-rate>` (opt-out
                 //     suppresses the warning per spec line 2356-2357).
@@ -3821,13 +3821,13 @@ pub fn validate_reassembly_cross_doc(
     Ok(())
 }
 
-/// Watching-zenoh RFC §5.K line 2466-2469 — stateless_accept extern
+/// Watching-zenoh RFC §synth-5-K line 2466-2469 — stateless_accept extern
 /// allowlist (C13 deferred-2). For each link with a `stateless_accept`
 /// block, the `hmac_extern` + `rng_extern` symbol names must be
-/// present in the §5.I baseline intrinsics whitelist
+/// present in the §synth-5-I baseline intrinsics whitelist
 /// ([`crate::forge::intrinsic_registry::BASELINE_SYMBOLS`]) OR in the
 /// passed `plugin_symbols` slice (target_plugin-loaded entries per the
-/// §5.I plugin loader). When the symbol is in neither, the validator returns
+/// §synth-5-I plugin loader). When the symbol is in neither, the validator returns
 /// [`DeployError::StatelessAcceptExternNotWhitelisted`] carrying the
 /// sorted union of baseline + plugin names as `Fix::ReplaceOneOf`
 /// candidates.
@@ -3886,7 +3886,7 @@ pub fn validate_stateless_accept_externs(
     Ok(())
 }
 
-/// SCE Mesh §14 (watching-zenoh RFC §5.K) — when a machine declares a
+/// SCE Mesh §14 (watching-zenoh RFC §synth-5-K) — when a machine declares a
 /// `platform:` block, the `class` axis (`mcu` / `ap`) and the `os`
 /// axis must be mutually admissible per [`PlatformClass::admits_os`].
 /// `class: mcu` admits only `bare_metal` / `rtos`; `class: ap` admits
@@ -3894,8 +3894,8 @@ pub fn validate_stateless_accept_externs(
 /// `freebsd`, `windows`).
 ///
 /// Enforced at parse time so a contradictory pairing (e.g. `class: mcu` +
-/// `os: linux`) cannot reach the codegen-matrix walker (RFC §5.J.4 /
-/// §5.J.5) that consumes `class` to gate MCU-only kinds.
+/// `os: linux`) cannot reach the codegen-matrix walker (RFC §synth-5-J-4 /
+/// §synth-5-J-5) that consumes `class` to gate MCU-only kinds.
 fn validate_platform_class_os_consistency(cfg: &DeployConfig) -> Result<(), DeployError> {
     for device in cfg.topology.values() {
         for (machine_name, machine) in device.machines.iter() {
@@ -3914,7 +3914,7 @@ fn validate_platform_class_os_consistency(cfg: &DeployConfig) -> Result<(), Depl
     Ok(())
 }
 
-/// SCE Mesh §14 (watching-zenoh RFC §5.K, line 2160-2164) — when a
+/// SCE Mesh §14 (watching-zenoh RFC §synth-5-K, line 2160-2164) — when a
 /// machine's scheduler runs in cooperative mode, `worker_stack_budget`
 /// is REQUIRED. The cooperative worker drives `<send>` queue draining
 /// inside a fixed stack frame; without an authored bound the codegen
@@ -3922,7 +3922,7 @@ fn validate_platform_class_os_consistency(cfg: &DeployConfig) -> Result<(), Depl
 /// malformed TLV-chain could silently overflow at runtime.
 ///
 /// Rejected at parse time so a `kind: cooperative` block cannot reach
-/// the §5.J.1 cooperative tick template emitter without a budget.
+/// the §synth-5-J-1 cooperative tick template emitter without a budget.
 fn validate_scheduler_cooperative_stack_budget(cfg: &DeployConfig) -> Result<(), DeployError> {
     for device in cfg.topology.values() {
         for (machine_name, machine) in device.machines.iter() {
@@ -3941,10 +3941,10 @@ fn validate_scheduler_cooperative_stack_budget(cfg: &DeployConfig) -> Result<(),
     Ok(())
 }
 
-/// watching-zenoh RFC §5.K line 2428-2429 (`deploy/worker-slot-budget-missing`)
+/// watching-zenoh RFC §synth-5-K line 2428-2429 (`deploy/worker-slot-budget-missing`)
 /// — when a machine's scheduler runs in cooperative mode,
 /// `worker_slot_budget_us` is REQUIRED. The per-slot WCET ceiling feeds
-/// the §5.B aggregate WCET check and the cooperative slot-count
+/// the §synth-5-B aggregate WCET check and the cooperative slot-count
 /// derivation; without it the build cannot bound TLV/algorithm worst-
 /// case execution time per tick, and the slot-count vs worker-count
 /// invariant cannot be enforced.
@@ -3968,11 +3968,11 @@ fn validate_worker_slot_budget_required_when_cooperative(
     Ok(())
 }
 
-/// watching-zenoh RFC §5.K line 2430-2431
+/// watching-zenoh RFC §synth-5-K line 2430-2431
 /// (`deploy/keepalive-jitter-budget-missing`) — when a machine's
 /// scheduler runs in cooperative mode, `keepalive_jitter_budget_us` is
 /// REQUIRED. The sum of worst-case slot budgets in one tick window must
-/// fit inside this bound; without an authored ceiling, the §5.B
+/// fit inside this bound; without an authored ceiling, the §synth-5-B
 /// aggregate WCET consumer cannot enforce keepalive emission jitter
 /// limits and zenoh peers may drop liveliness tokens under scheduler
 /// stress.
@@ -3998,7 +3998,7 @@ fn validate_keepalive_jitter_required_when_cooperative(
     Ok(())
 }
 
-/// watching-zenoh RFC §5.K line 2423
+/// watching-zenoh RFC §synth-5-K line 2423
 /// (`deploy/scheduler-incompatible-with-worker-count`) — when a machine
 /// declares more workers than the cooperative scheduler can host in one
 /// tick window, raise the deploy-side anchor for the over-subscription.
@@ -4013,11 +4013,11 @@ fn validate_keepalive_jitter_required_when_cooperative(
 ///   [`validate_worker_slot_budget_required_when_cooperative`]).
 ///
 /// The forge-side anchor for the same axis is `worker/scheduler-unsupported`
-/// (spec §5.D line 912), raised during [`crate::compile_forge_with_deploy`]
+/// (spec §synth-5-D line 912), raised during [`crate::compile_forge_with_deploy`]
 /// when a Worker doc compiles against a machine without an entry for
 /// itself in `machines.<m>.workers` (signals: undeclared worker, scheduler
 /// cannot account for it).
-/// Watching-zenoh RFC §5.N lines 3060-3061 — paired
+/// Watching-zenoh RFC §synth-5-N lines 3060-3061 — paired
 /// validators for the multi-link concurrency contract on the
 /// cooperative-scheduler path.
 ///
@@ -4035,7 +4035,7 @@ fn validate_keepalive_jitter_required_when_cooperative(
 ///
 /// Both silent-skip when any of the following are absent:
 ///   - `scheduler.kind` != `cooperative` (tokio/rt use preemption;
-///     spec §5.N AP path uses `tokio::spawn` per link — no slot
+///     spec §synth-5-N AP path uses `tokio::spawn` per link — no slot
 ///     accounting),
 ///   - `tick_period_us` absent,
 ///   - `per_link_budget_us` absent (single-doc
@@ -4135,7 +4135,7 @@ fn validate_machine_scheduler_worker_capacity(cfg: &DeployConfig) -> Result<(), 
     Ok(())
 }
 
-/// watching-zenoh RFC §5.D line 910 (`timer/slot-overflow`) — when a
+/// watching-zenoh RFC §synth-5-D line 910 (`timer/slot-overflow`) — when a
 /// machine declares more `Timer` docs under `machines.<m>.timers` than
 /// `scheduler.timer_wheel_depth` static wheel slots can accommodate,
 /// the build cannot fit the timer set into the wheel at compile time.
@@ -4894,7 +4894,7 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
 }
 
 /// Transports whose RX path supports buffer-pool kind staging
-/// (watching-zenoh RFC §5.E). A binding may
+/// (watching-zenoh RFC §synth-5-E). A binding may
 /// declare `stage_pool: <name>` only on a transport in this list; any
 /// other transport raises `mesh/deploy-stage-pool-transport-mismatch`.
 ///
@@ -4906,12 +4906,12 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// The empty list keeps the diagnostic strict — every
 /// `stage_pool` declaration today fails loud, matching the
 /// `feedback_silently_broken_hooks.md` invariant. See watching-zenoh
-/// RFC §5.E.
+/// RFC §synth-5-E.
 const TRANSPORTS_SUPPORTING_STAGE_POOL: &[&str] = &[];
 
 /// Validate that every `binding.stage_pool` declaration sits on a
 /// transport whose RX path supports buffer-pool kind staging
-/// (watching-zenoh RFC §5.E). Runs as part of
+/// (watching-zenoh RFC §synth-5-E). Runs as part of
 /// [`parse_deploy_str`] so the diagnostic fires at parse time —
 /// independent of forge-side cross-reference resolution, which lives
 /// in [`validate_stage_pool_references`] (a separate post-parse pass
@@ -4946,7 +4946,7 @@ fn validate_stage_pool_transport(cfg: &DeployConfig) -> Result<(), DeployError> 
 }
 
 /// Validate that every `binding.stage_pool` reference resolves to a
-/// declared forge buffer-pool kind name (watching-zenoh RFC §5.E
+/// declared forge buffer-pool kind name (watching-zenoh RFC §synth-5-E
 /// cross-schema reference resolution). Runs
 /// as a post-parse pass — `parse_deploy_str` produces the
 /// `DeployConfig` first, the build pipeline assembles the
@@ -9042,7 +9042,7 @@ topology:
         parse_deploy_str(yaml).expect("non-participant pin must be silently ignored");
     }
 
-    // ── §14 / RFC §5.K item A2 — per-machine platform/scheduler/memory ──
+    // ── §14 / RFC §synth-5-K item A2 — per-machine platform/scheduler/memory ──
 
     #[test]
     fn platform_mcu_with_baremetal_parses() {
@@ -9281,7 +9281,7 @@ topology:
         assert!(machine.memory.is_none());
     }
 
-    // ── watching-zenoh RFC §5.E stage_pool field ────────────────────
+    // ── watching-zenoh RFC §synth-5-E stage_pool field ────────────────────
     //
     // These cover the deploy.yaml side of the cross-schema reference
     // surface. The transport-mismatch path is exercised at parse time

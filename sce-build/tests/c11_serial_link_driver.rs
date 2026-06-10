@@ -1,14 +1,14 @@
 //! Spec C11 — Serial link driver (`serial_uart`) deploy.yaml allowlist.
 //!
-//! watching-zenoh RFC §5.J names `serial_uart` as the lwIP crate's
+//! watching-zenoh RFC §synth-5-J names `serial_uart` as the lwIP crate's
 //! UART driver alongside `lwip_udp` + `lwip_tcp` + `websocket_tcp`.
-//! Spec §7 item C11 ("Serial + WebSocket link drivers", line 3626)
+//! Spec §synth-7 item C11 ("Serial + WebSocket link drivers", line 3626)
 //! commits this driver.
 //!
 //! SCE-side support pinned here: the `KNOWN_DRIVERS` baseline
 //! in [`sce_build::mesh::deploy::validate_links`] gains the
 //! `("serial_uart", 0)` entry. Floor `0` reflects that UART has no
-//! IP-stack overhead; the §5.B framer carries the frame-size invariant
+//! IP-stack overhead; the §synth-5-B framer carries the frame-size invariant
 //! at the protocol-decoder layer (see deploy.rs doc-comment above the
 //! const for the rationale).
 //!
