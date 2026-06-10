@@ -129,7 +129,7 @@ name = "codegen_smoke"
 path = "tests/codegen_smoke.rs"
 required-features = ["cli"]
 
-# NL→IR Item C1 Path A Atomic 2 — per-backend Enum codegen smoke gate.
+# Per-backend Enum codegen smoke gate.
 # Generates each positive Enum fixture on all 6 backends and feeds the
 # output to a per-backend syntax checker (g++, syn::parse_file, gofmt,
 # kotlinc, py_compile, clang). Same `cli`-feature gate as
@@ -139,7 +139,7 @@ name = "forge_codegen_enum_smoke"
 path = "tests/forge_codegen_enum_smoke.rs"
 required-features = ["cli"]
 
-# NL→IR Item C1 Path A Atomic 4 — per-backend EventSchema codegen
+# Per-backend EventSchema codegen
 # smoke gate. Generates each standalone EventSchema fixture on all 6
 # backends (cross-doc enum-import fixtures are exercised by the
 # integration-test layer) and feeds the output to the same per-backend
@@ -150,7 +150,7 @@ name = "forge_codegen_event_schema_smoke"
 path = "tests/forge_codegen_event_schema_smoke.rs"
 required-features = ["cli"]
 
-# RFC rfc-eventschema-bytes-guard.md §6 — cross-backend gate for a
+# Cross-backend gate for a
 # `bytes`-field EventSchema transition guard: 6-backend byte-equality
 # form assertions plus a real C++ compile+run (match/non-match) and a
 # C11 freestanding compile of the bounded-buffer + memcmp lowering.
@@ -161,7 +161,7 @@ name = "event_schema_bytes_guard"
 path = "tests/event_schema_bytes_guard.rs"
 required-features = ["cli"]
 
-# NL→IR Mapping Roadmap Items 1+5 — `sce:req` / `sce:unresolved`
+# `sce:req` / `sce:unresolved`
 # annotation comment emission across all six codegen backends. Pair
 # with `codegen_smoke` (compile gate on annotated output) so both
 # emission shape and toolchain acceptance stay covered.
@@ -179,27 +179,27 @@ name = "b9_drift_detection"
 path = "tests/b9_drift_detection.rs"
 required-features = ["cli"]
 
-# Watching-zenoh RFC §5.O Atomic 0b — per-backend SCE-MAP marker
+# Watching-zenoh RFC §5.O — per-backend SCE-MAP marker
 # presence assertion. Drives `sce-codegen generate -l <backend>`
 # against a minimal SCXML fixture and asserts the rendered output
 # carries the spec marker (`#![doc] + //` for Rust, comment-form for
 # the others at module scope) so a template edit that drops the
 # macro import surfaces immediately rather than silently regressing.
 [[test]]
-name = "s5_o_atomic_0b_markers"
-path = "tests/s5_o_atomic_0b_markers.rs"
+name = "sourcemap_module_markers"
+path = "tests/sourcemap_module_markers.rs"
 required-features = ["cli"]
 
-# Watching-zenoh RFC §5.O Atomic 0c — per-function SCE-MAP marker
-# presence. Extends Atomic 0b's module-level coverage to the per-
+# Watching-zenoh RFC §5.O — per-function SCE-MAP marker
+# presence. Extends the module-level coverage to the per-
 # function emission contract and the forge per-kind body axis.
 [[test]]
-name = "s5_o_atomic_0c_markers"
-path = "tests/s5_o_atomic_0c_markers.rs"
+name = "sourcemap_function_markers"
+path = "tests/sourcemap_function_markers.rs"
 required-features = ["cli"]
 
-# Watching-zenoh RFC §5.O Atomic 1 — OQ-W16 (b) dual-emit preservation
-# guard. Confirms BOTH `#[doc = "SCE-MAP: ..."]` and `// SCE-MAP: ...`
+# Watching-zenoh RFC §5.O — dual-emit preservation
+# guard (OQ-W16 (b)). Confirms BOTH `#[doc = "SCE-MAP: ..."]` and `// SCE-MAP: ...`
 # forms reach the generated Rust source across the std + no_std
 # template paths. A template edit that drops one form regresses here
 # rather than silently breaking the line-comment fallback that exists
@@ -209,15 +209,15 @@ name = "no_std_doc_preservation"
 path = "tests/no_std_doc_preservation.rs"
 required-features = ["cli"]
 
-# Watching-zenoh RFC §5.O Atomic 1 — full sourcemap + symbol mangling
+# Watching-zenoh RFC §5.O — full sourcemap + symbol mangling
 # + addr2sce contract test. Asserts (i) sourcemap JSON shape, (ii)
 # byte-identity across backends, (iii) source_hash byte-equal to drift
 # header, (iv) symbol-mangling round-trip, (v) each new diagnostic
 # fires on its synthetic offender, (vi) addr2sce resolves a known
 # symbol → SCXML coordinates.
 [[test]]
-name = "s5_o_atomic_1_sourcemap"
-path = "tests/s5_o_atomic_1_sourcemap.rs"
+name = "sourcemap_addr2sce"
+path = "tests/sourcemap_addr2sce.rs"
 required-features = ["cli"]
 
 # CLI meta + workspace-root resolution regression. Pins --version

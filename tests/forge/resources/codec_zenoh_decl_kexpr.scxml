@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh declare-keyexpr body (RFC §5.B)
-     . First wireexpr-bearing declare body — composes Y0a
-     wireexpr through Y0c embed grammar with B5-γ Parent-scope parent-
+     . First wireexpr-bearing declare body — composes 
+     wireexpr through the embed grammar with Parent-scope parent-
      flag threading (Case B: pass-through `parent_flags`).
 
      Mirrors zenoh-pico `_z_decl_kexpr_encode` (src/protocol/codec/
@@ -21,7 +21,7 @@
 
      Wire shape (1+ bytes):
        VLE id      (uint16, decl_kexpr declaration id)
-       wireexpr    (Y0c embed; embedded codec's wire is 1+ bytes:
+       wireexpr    (embed; embedded codec's wire is 1+ bytes:
                     VLE id always + parent.N-gated VLE suffix_len +
                     UTF-8 suffix — the wireexpr's parent.N read is
                     threaded through this body's `parent_flags`)
@@ -33,9 +33,9 @@
      wireexpr's decode/encode as-is — no local carrier is needed since
      the upstream MID header carrier lives in the outer envelope.
 
-     Composition: B1-α VLE u16 id + Y0c embed (codec_zenoh_wireexpr) +
-     B5-γ Parent-scope parent_flags pass-through. No new primitive
-     surface beyond Y0c's embed grammar.
+     Composition: VLE VLE u16 id + embed (codec_zenoh_wireexpr) +
+     parent-flags Parent-scope parent_flags pass-through. No new primitive
+     surface beyond 's embed grammar.
 
      Wrap shape per language (always-present nested struct):
        Rust:   `u16` id + `CodecZenohWireexpr` wireexpr

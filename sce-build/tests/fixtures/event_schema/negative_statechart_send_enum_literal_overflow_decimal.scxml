@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  NL→IR Item C1 Path A Atomic 5 negative fixture covering the decimal
+  Enum width-axis negative fixture covering the decimal
   literal form of the send-side overflow (sibling of
   `negative_statechart_send_enum_literal_overflow.scxml` which uses
   hex). Exercises the decimal arm of `parse_int_literal_text` so the

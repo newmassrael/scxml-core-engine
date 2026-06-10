@@ -1,21 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh undecl_subscriber body (RFC §5.B Y0b
+<!-- SCE Forge conformance: Zenoh undecl_subscriber body (RFC §5.B
      — RFC §5.B consumer). First reachable consumer of
-     Y0b's `<sce:embed sce:present-if="parent.Z">` lift.
+     's `<sce:embed sce:present-if="parent.Z">` lift.
 
      Mirrors zenoh-pico `_z_undecl_subscriber_encode` →
      `_z_undecl_encode` (declarations.c:90-104) verbatim. Decoder is
      `_z_undecl_subscriber_decode` → `_z_undecl_trivial_decode`
      (declarations.c:229-239 + 268-272). The 1-byte per-MID header
      (MID + Z bit) is written by the OUTER declaration envelope (a
-     future codec_zenoh_declaration mirroring the Y0c/Y1 / outer-
+     future codec_zenoh_declaration mirroring the // outer-
      envelope precedent set by codec_zenoh_decl_kexpr); this body
      codec carries only the post-header payload.
 
      Wire shape (1+ bytes):
        VLE u32 id     (decoder line 231 `_z_zint32_decode`; encoder
                        line 96 `_z_zsize_encode` shared VLE shape)
-       parent.Z       : ext_keyexpr (Y0b length-bound TLV envelope —
+       parent.Z       : ext_keyexpr (length-bound TLV envelope —
                                      codec_zenoh_decl_ext_keyexpr).
                                      Present iff the outer per-MID
                                      header's Z bit (bit 7) is set,
@@ -30,9 +30,9 @@
      ext_keyexpr embed's `sce:present-if="parent.Z"` reads from the
      threaded parent_flags value.
 
-     Composition: B1-α VLE u32 + Y0b present-if-on-embed (parent.Z
+     Composition: VLE VLE u32 + present-if-on-embed (parent.Z
      gate). The embedded codec_zenoh_decl_ext_keyexpr itself is the
-     Y0b length-bound envelope primitive demoed in
+     length-bound envelope primitive demoed in
      codec_zenoh_decl_ext_keyexpr.scxml.
 
      Wrap shape per language:

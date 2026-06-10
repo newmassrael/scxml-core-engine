@@ -2,7 +2,7 @@
 <!-- SCE Forge conformance: repeat-with-present-if primitive (RFC §5.B
      repeat-with-present-if). Mirrors the established two-fixture
      trunk pattern — this codec is the LOCAL-scope primitive demo
-     (B1-δ-style `<carrier>.<flag>` predicate); codec_zenoh_hello is
+     (present-if-style `<carrier>.<flag>` predicate); codec_zenoh_hello is
      the realistic PARENT-scope consumer (`parent.<flag>`).
 
      Wire shape (1 or 2+(2*N) bytes):
@@ -19,7 +19,7 @@
      count field's IDENTICAL `sce:present-if="carrier.has_list"`
      predicate is what the validator enforces.
 
-     Wrap shape per language (mirrors B2-β tail/length-ref present-if):
+     Wrap shape per language (mirrors present-if-gating tail/length-ref present-if):
        Rust:   `Option<Vec<CodecRepeatElem>>`
        Cpp:    `std::optional<std::vector<codec_repeat_elem>>`
        Kotlin: `MutableList<CodecRepeatElem>?`

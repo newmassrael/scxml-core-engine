@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh locator string body (RFC §5.B B5-ζ,
+<!-- SCE Forge conformance: Zenoh locator string body (RFC §5.B string,
      surface H from the watching-zenoh authoring path).
 
      Mirrors zenoh-pico `_z_string_encode` / `_z_string_decode`
@@ -15,7 +15,7 @@
      contract — zenoh-pico itself aliases without validating, but
      SCE-side codecs reject malformed text early).
 
-     Single locator (the locator LIST primitive defers to B5-η/B5-ι
+     Single locator (the locator LIST primitive defers to recursive variant body/cross-codec composition
      repeat-count composition); this fixture pins the foundation
      surface for `<sce:field sce:type="string">`.
 
@@ -30,7 +30,7 @@
     <sce:field id="locator" sce:type="string" sce:byte="1" sce:bit-size="length-ref"
                sce:length-field="locator_len" sce:max-size="128"/>
   </datamodel>
-  <!-- RFC §5.B B5-θ inline test vectors. Pinned single-byte / multi-
+  <!-- RFC §5.B test-vector inline test vectors. Pinned single-byte / multi-
        byte UTF-8 round-trips so the byte-count semantics ("héllo" = 6
        bytes for 5 codepoints — the é is 0xC3 0xA9) are exercised on
        both encode and decode paths. The sidecar's UTF-8 validator

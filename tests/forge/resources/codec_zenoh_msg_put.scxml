@@ -31,7 +31,7 @@
                               encoding_id field (atomic 2b-iii-α closure).
        Z-gated:
          chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
-                  termination on entry header.Z — Y3 atomic 1 grammar;
+                  termination on entry header.Z — atomic 1 grammar;
                   chain is followed by the always-present payload pair
                   so the exhaust-or-depth termination would not detect
                   the payload boundary. max-depth=4 covers PUT's
@@ -44,12 +44,12 @@
                               supplied length-prefix per
                               `_z_bytes_encode` convention).
 
-     Composition: B1-γ flags (header) + B1-δ present-if-on-fields
-     (T / E gates) + Y3 atomic 2a present-if-on-tlv-chain (header.Z
-     gate) + Y3 atomic 1 entry-flag termination (chain followed by
-     payload pair) + B5-ε surface G (chain element = codec_zenoh_ext_
-     entry variant) + Y0c <sce:embed> (codec_zenoh_timestamp +
-     codec_zenoh_encoding inner codecs) + B1-α length-ref (payload_len
+     Composition: flags (header) + present-if-on-fields
+     (T / E gates) + atomic 2a present-if-on-tlv-chain (header.Z
+     gate) + atomic 1 entry-flag termination (chain followed by
+     payload pair) + variant-entry chain (chain element = codec_zenoh_ext_
+     entry variant) + <sce:embed> (codec_zenoh_timestamp +
+     codec_zenoh_encoding inner codecs) + VLE length-ref (payload_len
      / payload pair). No new primitives.
 
      Body variant arm contract: invoked by codec_zenoh_request when

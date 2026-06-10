@@ -81,7 +81,7 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §5.B L494-519).
     pub fn decode(cursor: &mut SceCursor<'a>) -> Result<Self, CodecError> {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // RFC §5.B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         // mode additionally peeks the cursor's next byte for the variant
@@ -122,7 +122,7 @@ impl<'a> CodecZenohNetworkEnvelope<'a> {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // RFC §5.B peek-byte / streaming-prefix:
         // streaming prefix encode (per-field present_if/tlv-chain/embed/
         // repeat helpers). Peek-byte mode: the arm body's encode prepends
         // its own header byte (which the decoder peeked); no separate

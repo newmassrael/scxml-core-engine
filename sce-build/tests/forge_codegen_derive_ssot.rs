@@ -100,7 +100,7 @@ fn codec_no_flag_default_emits_default_plus_ssot_trio() {
 
 /// Codec WITH `<sce:flag value=>` carrier: `Default` is dropped from
 /// the derive attribute (manual `impl Default` is emitted below the
-/// struct per RFC variant-default-uniformity Atomic β); the SSOT
+/// struct per RFC variant-default-uniformity); the SSOT
 /// trio still appears.
 #[test]
 fn codec_with_flag_default_drops_default_keeps_ssot_trio() {

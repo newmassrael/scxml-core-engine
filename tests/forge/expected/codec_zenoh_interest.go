@@ -26,7 +26,7 @@ type CodecZenohInterest struct {
 // arm) requires using this constructor rather than the bare struct
 // literal `CodecZenohInterest{}`, which would zero-init every field
 // (and leave every Variant arm pointer nil for variant codecs).
-// RFC variant-default-uniformity Atomic β-go.
+// RFC variant-default-uniformity (Go).
 func NewCodecZenohInterest() *CodecZenohInterest {
 	return &CodecZenohInterest{
 		Header: uint8(0x19),

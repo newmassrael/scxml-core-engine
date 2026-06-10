@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// NL→IR Mapping Roadmap Item 4 — physical-quantity unit-mismatch
+// Physical-quantity unit-mismatch
 // arithmetic validator.
 //
 // Walks every expression site in a parsed Forge document whose surface

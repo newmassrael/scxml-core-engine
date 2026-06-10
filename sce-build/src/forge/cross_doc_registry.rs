@@ -203,7 +203,7 @@ impl SceCrossDocRegistry {
 
     /// Sorted union of doc names across one or more kinds. Used by
     /// outbox cross-resolution where multiple recipient kinds
-    /// (statechart + worker per Q-Outbox-3 (b)) are valid candidates.
+    /// (statechart + worker) are valid candidates.
     /// Empty kinds slice yields empty Vec.
     pub fn names_of_any_kind(&self, kinds: &[ScxmlDocKind]) -> Vec<String> {
         let mut out: Vec<String> = self
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn names_of_any_kind_union_sorted_across_kinds() {
-        // Q-Outbox-3 (b) outbox recipient candidates span statechart
+        // Outbox recipient candidates span statechart
         // + worker; this helper unifies the two name lists so the
         // outbox validator's `Fix::ReplaceOneOf` carries every legal
         // recipient regardless of kind.
@@ -349,7 +349,7 @@ mod tests {
     fn record_document_without_stage_pool_leaves_lookup_none() {
         // A link kind without `<sce:stage-pool>` registers normally,
         // but `lookup_stage_pool` returns None — that's the trigger
-        // for the η' `pool/sample-take-without-stage-pool` diagnostic.
+        // for the sample-callback `pool/sample-take-without-stage-pool` diagnostic.
         use super::super::model::{BackpressurePolicy, ForgeDocument, LinkClass, LinkModel};
         let mut reg = SceCrossDocRegistry::new();
         let doc = ForgeDocument::Link(LinkModel {
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn record_document_worker_registers_kind() {
-        // C2-α `WorkerModel` lacks any cross-doc reference fields
+        // Item C2 `WorkerModel` lacks any cross-doc reference fields
         // itself; the registry just records its name so outbox refs
         // pointing AT this worker can resolve.
         use super::super::model::{ForgeDocument, InboxConfig, InboxOrdering, WorkerModel};

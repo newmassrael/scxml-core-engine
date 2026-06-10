@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh source_info body (RFC §5.B Y2 — second
-     realistic consumer of B5-κ Surface L dotted-path length-field +
-     B5-δ Surface F arithmetic offset, after codec_zenoh_scout).
+     realistic consumer of the dotted-path length-field +
+     length-ref arithmetic offset, after codec_zenoh_scout).
 
      Mirrors zenoh-pico `_z_source_info_encode` / `_z_source_info_decode`
      (src/protocol/codec/message.c lines 196-242) verbatim:
@@ -39,10 +39,10 @@
                            on decode)
        byte ?+  : sn      (VLE u32, same VLE u32 convention as eid)
 
-     Composition: B1-γ flags carrier (header) + B5-α multi-bit flag
-     (zidlen_m1 width=4) + B5-κ Surface L dotted-path length-field
-     (`header.zidlen_m1`) + B5-δ Surface F arithmetic offset (+1) +
-     B1-α VLE primitive (eid + sn). NO new SCE primitives required.
+     Composition: flags flags carrier (header) + flags multi-bit flag
+     (zidlen_m1 width=4) + dotted-path dotted-path length-field
+     (`header.zidlen_m1`) + length-ref arithmetic offset (1) +
+     VLE VLE primitive (eid + sn). NO new SCE primitives required.
      Same zid-length encoding pattern as codec_zenoh_scout but with
      no `I` gating bit (zid is always present in source_info, even
      when length=1; upstream encoder always emits it).

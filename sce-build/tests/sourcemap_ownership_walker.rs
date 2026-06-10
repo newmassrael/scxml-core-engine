@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Watching-zenoh RFC §5.O Atomic 1 follow-up — ownership-boundary
+// Watching-zenoh RFC §5.O — ownership-boundary
 // walker integration fixture.
 //
 // `forge::sourcemap::validate_emitted_files_have_markers` runs at the
@@ -220,7 +220,7 @@ fn walker_does_not_descend_into_files_with_non_source_extensions() {
     let tmp = tempfile::TempDir::new().unwrap();
     let out_dir = tmp.path().join("out");
     fs::create_dir_all(&out_dir).unwrap();
-    // sce_sourcemap.json is a sidecar emitted by §5.O Atomic 1; it
+    // sce_sourcemap.json is a sidecar emitted per §5.O; it
     // never carries a `SCE-MAP:` marker (the markers live in the
     // accompanying *_sm.rs file), so the walker must NOT inspect it.
     fs::write(

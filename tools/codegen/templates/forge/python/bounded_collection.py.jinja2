@@ -17,12 +17,12 @@
 #   __len__ / capacity.
 #
 # Handle (spec lines 2621-2622): frozen dataclass with __slots__ over
-# `raw: int` (Q-γ4-Python-Handle-shape (a) lock 2026-05-13). slot/
+# `raw: int` (locked 2026-05-13). slot/
 # generation are property accessors. Immutable + hashable + type-safe;
 # zero __dict__ overhead via __slots__. ABI parity is preserved at
 # the wire level (raw is a 32-bit unsigned packed slot|gen).
 #
-# Overflow signaling (Q-γ4-Python-overflow-emit (a) lock 2026-05-13):
+# Overflow signaling (locked 2026-05-13):
 # insert returns `Optional[Handle]` — None on overflow under
 # `<sce:on-overflow>reject</sce:on-overflow>` /
 # `<sce:on-overflow>diagnostic-event</sce:on-overflow>`. This matches
@@ -57,8 +57,8 @@ assert CAPACITY <= 0xFFFF, (
     "16/16 Handle packing (spec lines 2575 + 2621-2622)."
 )
 
-# Slot-index bit width inside the packed Handle u32 (Q-γ2-Handle-bits
-# (a) symmetric split).
+# Slot-index bit width inside the packed Handle u32 (16/16
+# symmetric split).
 _SLOT_BITS: int = 16
 _GEN_BITS: int = 16
 _SLOT_MASK: int = 0xFFFF
@@ -213,8 +213,8 @@ class {{ pascal }}:
         guard is for the Handle-based :meth:`get`; slot-based access
         is for iteration paths where the caller walks slot indices
         directly). Backs the C7 ``<sce:foreach in="<bc-alias>">``
-        index-loop lowering across all 6 backends (Q-C7-2 (c) lock
-        2026-05-13).
+        index-loop lowering across all 6 backends.
+        Locked 2026-05-13.
         """
         if slot < 0 or slot >= CAPACITY:
             return None

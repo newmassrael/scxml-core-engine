@@ -14,8 +14,7 @@
 //   - Cpp: `<snake>_externs.h` carries `extern "C" <ret> name(...)`
 //     prototypes.
 //   - Kotlin / Go / Python: rejection via existing
-//     `codegen/mcu-class-kind-on-non-mcu-language` family
-//     (Q-Call-7 lock).
+//     `codegen/mcu-class-kind-on-non-mcu-language` family.
 //
 // Sidecar naming follows the existing algorithm/codec/buffer-pool
 // sidecar convention (`<snake>_<purpose>.<ext>`).
@@ -87,7 +86,7 @@ fn rust_emits_extern_c_block_for_baseline_symbols() {
     let output = compile(&scxml, Language::Rust).expect("must compile with externs");
     let sidecar = find_sidecar(&output, "_externs.rs").expect("rust sidecar emitted");
 
-    // Rust emit shape per Q-Call-7: `extern "C" { fn name(p0: T0) -> R; }`.
+    // Rust emit shape: `extern "C" { fn name(p0: T0) -> R; }`.
     assert!(
         sidecar.contains("unsafe extern \"C\" {"),
         "expected `unsafe extern \"C\" {{` block in sidecar:\n{sidecar}",
@@ -111,7 +110,7 @@ fn c11_emits_extern_forward_decls() {
     let output = compile(&scxml, Language::C11).expect("must compile with externs");
     let sidecar = find_sidecar(&output, "_externs.h").expect("c11 sidecar emitted");
 
-    // C11 emit shape per Q-Call-7: `extern <ret> name(<C-args>);`.
+    // C11 emit shape: `extern <ret> name(<C-args>);`.
     assert!(
         sidecar.contains("extern uint32_t sce_atomic_load_acquire_u32(const uint32_t* p0);"),
         "expected atomic_load forward decl in C11 sidecar:\n{sidecar}",
@@ -134,7 +133,7 @@ fn cpp_emits_extern_c_per_decl() {
     let output = compile(&scxml, Language::Cpp).expect("must compile with externs");
     let sidecar = find_sidecar(&output, "_externs.h").expect("cpp sidecar emitted");
 
-    // Cpp emit shape per Q-Call-7: `extern "C" <ret> name(<C-args>);`.
+    // Cpp emit shape: `extern "C" <ret> name(<C-args>);`.
     // Each prototype carries its own `extern "C"` so the sidecar can
     // be included from a C++ header without an extra wrapper.
     assert!(
@@ -199,7 +198,7 @@ fn c11_fence_uses_void_for_empty_params() {
 
 #[test]
 fn extern_on_kotlin_rejected_via_mcu_class_family() {
-    // Q-Call-7 lock: Kotlin/Go/Python reject `<sce:extern>` via the
+    // Kotlin/Go/Python reject `<sce:extern>` via the
     // `codegen/mcu-class-kind-on-non-mcu-language` family. The
     // existing diagnostic carries `kind = "<sce:extern>"` to
     // disambiguate from the kind-axis rejection on the same code.

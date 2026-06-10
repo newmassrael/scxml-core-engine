@@ -382,17 +382,16 @@ fn worker_doc_records_into_cross_doc_registry() {
     }
 }
 
-// ─── 7. C13-α-1 + C13-α-2 deploy-aware orchestrator wiring ──────────
+// ─── 7. Links + reassembly deploy-aware orchestrator wiring ─────────
 //
 // These tests pin that `compile_scxml_with_imports(..., Some(deploy))`
-// fires the C13-α-1 / C13-α-2 cross-doc validators (validate_links_cross_doc
+// fires the deploy-time cross-doc validators (validate_links_cross_doc
 // + validate_links_burst_invariants + validate_reassembly_cross_doc).
 // Before this orchestrator wiring landed, the 3 validators were
-// publicly exposed but had no production caller — closing the
-// silent-broken-hook precedent named in c13_alpha_1_landed.md +
-// c13_alpha_2_landed.md.
+// publicly exposed but had no production caller — closing that
+// silent-broken-hook gap [[feedback-silently-broken-hooks]].
 
-/// Forge `<sce:link>` with an `<sce:rx-pool ref>` that the C13-α-2
+/// Forge `<sce:link>` with an `<sce:rx-pool ref>` that the deploy-time
 /// burst + reassembly validators follow to a `<sce:kind="buffer-pool">`
 /// document in the same build.
 fn link_with_rx_pool(name: &str, rx_pool_ref: &str) -> String {
@@ -480,7 +479,7 @@ fn statechart_minimal(name: &str) -> String {
 
 /// Deploy-aware path silently passes when no deploy is supplied —
 /// orchestrator must NOT fire C13 validators with `None` deploy
-/// (Q-η5 (a) silent-skip precedent). This is the baseline that
+/// (absent-input silent-skip precedent). This is the baseline that
 /// every existing call site relies on.
 #[test]
 fn c13_validators_silent_skip_when_deploy_none() {
@@ -527,7 +526,7 @@ fn c13_validators_silent_skip_when_deploy_none() {
     .expect("None deploy ⇒ C13 validators silent-skip ⇒ Ok");
 }
 
-/// C13-α-1 `validate_links_cross_doc` fires through the orchestrator:
+/// `validate_links_cross_doc` fires through the orchestrator:
 /// forge declares `udp_data` but the supplied deploy.yaml has no
 /// matching `machines.<n>.links.udp_data` entry.
 #[test]
@@ -589,7 +588,7 @@ fn c13_link_not_declared_in_deploy_fires_through_orchestrator() {
     }
 }
 
-/// C13-α-2 `validate_reassembly_cross_doc` fires through the
+/// `validate_reassembly_cross_doc` fires through the
 /// orchestrator: pool slot_size < link.mtu_bytes triggers
 /// `mem/reassembly-slot-size-below-declared-mtu`.
 #[test]
@@ -654,7 +653,7 @@ fn c13_reassembly_slot_size_fires_through_orchestrator() {
     }
 }
 
-/// C13-α-2 `validate_links_burst_invariants` fires through the
+/// `validate_links_burst_invariants` fires through the
 /// orchestrator: burst_pps overruns the RX pool drain capacity.
 #[test]
 fn c13_burst_absorption_fires_through_orchestrator() {

@@ -50,7 +50,7 @@ using CodecZenohDeclarationVariant = std::variant<
 
 struct CodecZenohDeclaration {
     uint8_t header;
-    // RFC variant-default-uniformity Atomic β-cpp: the
+    // RFC variant-default-uniformity (Cpp): the
     // `std::in_place_index_t<N>{}` tag-type selects the arm marked
     // `<sce:arm default="true"/>` by index so a freshly-constructed
     // envelope holds that arm (not the first declared alternative

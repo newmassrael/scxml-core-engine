@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  NL→IR Item C1 Path A follow-up F-κ negative fixture: a statechart
+  Strict enum-variant-membership negative fixture: a statechart
   imports the cross-doc enum-bearing schema AND the underlying Enum
   doc (a closed-set vocabulary — `result.scxml` declares
   `ok=0, error=1, timeout=2` and does NOT carry `sce:strict-variants`,
   so the default `true` applies). The receive-side comparison
   `_event.data.status === 7` passes width narrowing (7 fits the uint8
-  carrier) but fails the F-κ membership check (7 is not declared).
+  carrier) but fails the strict variant-membership check (7 is not declared).
   Surfaces as `validation/cross-kind-type-mismatch` (Item 4 reuse
   precedent — no new wire code per design lock #2).
 -->

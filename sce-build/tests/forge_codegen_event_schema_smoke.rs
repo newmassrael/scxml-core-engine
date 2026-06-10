@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// NL→IR Item C1 Path A Atomic 4 — per-backend EventSchema codegen
+// NL→IR Item C1 Path A — per-backend EventSchema codegen
 // smoke gate.
 //
 // Generates each of the 2 standalone EventSchema fixtures (no enum

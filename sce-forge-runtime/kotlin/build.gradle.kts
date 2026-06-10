@@ -187,7 +187,7 @@ val generateForgeFixtures by tasks.registering(GenerateForgeFixtures::class) {
     outputDir.set(layout.buildDirectory.dir("generated/conformance/kotlin"))
 }
 
-// RFC variant-default-uniformity Atomic γ-3 (kotlin half) — generate
+// RFC variant-default-uniformity (kotlin half) — generate
 // the 3 default-marker codec fixtures into a separate output dir wired
 // into jvmTest. Lives outside the numerical-conformance manifest because
 // the marker fixtures are contract testing (Default emission), not

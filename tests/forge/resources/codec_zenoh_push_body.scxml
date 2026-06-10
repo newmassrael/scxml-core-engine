@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: inner variant — Zenoh push-body envelope
-     (RFC §5.B B5-η Surface I, "recursive variant body"). This codec
+     (RFC §5.B recursive variant body, "recursive variant body"). This codec
      is itself a variant (header MID dispatches PUT vs DEL), AND it is
      used as an arm body of the outer variant codec_zenoh_push — so
      when the outer codec emits its per-language sum-type, that
      sum-type's arm holds an inner sum-type. That nested-sum
-     emission shape is what Surface I validates.
+     emission shape is what validates.
 
      Upstream `_z_push_body_t` (zenoh-pico
      src/protocol/codec/message.c:_z_push_body_decode lines 332-367):
      `switch (_Z_MID(header))` dispatches PUT (0x01) → put body, DEL
      (0x02) → del body, default → unknown error. The fixture mirrors
-     that switch through `<sce:variant tag="header.mid">` (B5-β
+     that switch through `<sce:variant tag="header.mid">` (multi-bit
      variant-from-multi-bit-flag). The non-MID 3 high-order bits are
      declared as a `rest` flag block to keep the carrier byte
      accounted for; they are body-consumed in upstream and stay
@@ -26,7 +26,7 @@
        0x01 → codec_zenoh_put   (mirrors _Z_MID_Z_PUT)
        0x02 → codec_zenoh_del   (mirrors _Z_MID_Z_DEL)
        <sce:default> → codec_zenoh_put (catch-all; preserves runtime
-       mid for round-trip per B1-β default-arm contract). -->
+       mid for round-trip per the default-arm contract). -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_push_body">

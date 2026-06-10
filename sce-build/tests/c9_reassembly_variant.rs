@@ -205,7 +205,7 @@ fn reassembly_variant_missing_timeout_fires_spec_code() {
 /// `variant=reassembly` reuses the generic
 /// `ValidationError::MissingElement` per `[[feedback-no-versioning]]`
 /// — spec line 2944-2945 names only the first two reassembly-specific
-/// codes. C9-α holds the surface tight.
+/// codes. The reassembly surface is held tight.
 #[test]
 fn reassembly_variant_missing_per_peer_quota_uses_generic_code() {
     let xml = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -344,14 +344,14 @@ fn reassembly_max_fragments_zero_rejects() {
     );
 }
 
-/// Closed-enum drift guard — every C9-α spec-named code's
+/// Closed-enum drift guard — every reassembly spec-named code's
 /// `#[serde(rename = "...")]` renders exactly the spec-line-2944-2945
 /// slash-path string. `serde_json::to_string` exercises the wire-side
 /// surface that downstream consumers read (vs. the crate-private
-/// `as_str` form used inside the diagnostic pipeline). Mirrors C6-α
+/// `as_str` form used inside the diagnostic pipeline). Mirrors the
 /// `c6_bounded_collection.rs::closed_enum_drift_guard` precedent.
 #[test]
-fn c9_alpha_codes_serialize_as_spec_paths() {
+fn c9_codes_serialize_as_spec_paths() {
     let rendered =
         serde_json::to_string(&DiagnosticCode::MemReassemblyPoolVariantMissingMaxFragments)
             .expect("serde-serialize");

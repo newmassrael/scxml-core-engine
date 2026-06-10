@@ -1441,7 +1441,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
             source: e,
         })?;
 
-    // Watching-zenoh RFC §5.O Atomic 0b: the transport template imports
+    // Watching-zenoh RFC §5.O: the transport template imports
     // the shared SCE-MAP marker macro. The mesh codegen builds its own
     // minijinja env (the public `load_templates` helper isn't reachable
     // from inside crate::mesh), so the macro file is loaded explicitly

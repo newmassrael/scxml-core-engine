@@ -8,7 +8,7 @@
      the VLE prefix is exactly 1 byte, so the wire layout matches
      `<u8 length> + <length-ref bytes body>` verbatim.
 
-     Applied combination: B2-β length-ref bytes. No new IR/parser
+     Applied combination: present-if-gating length-ref bytes. No new IR/parser
      surface — pure composition of B1/B2 primitives.
 
      Load-bearing deferral: payloads > 127 bytes need a multi-byte
@@ -22,7 +22,7 @@
      The TLV envelope around the attachment (`_Z_MSG_EXT_ENC_ZBUF
      | 0x05` extheader byte for Query/Push/Reply siblings) is the
      parent message's responsibility — this fixture models the body
-     payload only, mirroring B3-α's split where `codec_tlv_entry`
+     payload only, mirroring the TLV-chain split where `codec_tlv_entry`
      models one chain entry independent of the parent codec. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

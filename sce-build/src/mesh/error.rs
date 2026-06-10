@@ -218,7 +218,7 @@ pub struct LinkDriverClassMismatchPayload {
     pub driver_candidates_list: String,
 }
 
-/// NL→IR Mapping Roadmap Item C1 Path A (DL-7') — distinguishes the
+/// EventSchema cross-machine validation — distinguishes the
 /// three shapes a cross-machine EventSchema mismatch can take so
 /// consumers can match without substring-greping the `Display` prose.
 /// The `Display` impl emits the exact phrases spliced into the outer
@@ -482,7 +482,7 @@ pub enum DeployError {
 
     /// A `binding.stage_pool: <name>` reference points at a forge pool
     /// that no `.forge` file in the build declares (watching-zenoh RFC
-    /// §5.E B7-η'). The wire form keys on the missing name so duplicate
+    /// §5.E). The wire form keys on the missing name so duplicate
     /// references coalesce in the diagnostic stream;
     /// [`Fix::ReplaceOneOf`] carries the registry's declared
     /// buffer-pool names, sorted for determinism. An empty
@@ -504,7 +504,7 @@ pub enum DeployError {
 
     /// A `binding.stage_pool: <name>` reference resolves to a forge
     /// artifact that exists but is not a buffer-pool kind
-    /// (watching-zenoh RFC §5.E B7-η'). Today only buffer-pool kind
+    /// (watching-zenoh RFC §5.E). Today only buffer-pool kind
     /// satisfies the `Sample::take()` slot contract; algorithm /
     /// codec / link kinds cannot back a stage copy because they have
     /// no slot table. The repair is to point the reference at one of
@@ -525,7 +525,7 @@ pub enum DeployError {
 
     /// A `binding.stage_pool` field was declared on a binding whose
     /// transport has no buffer-pool RX staging surface (watching-zenoh
-    /// RFC §5.E B7-η' Q-StagePool-3 (a)). Today only RX paths
+    /// RFC §5.E). Today only RX paths
     /// integrated with the forge buffer-pool kind support
     /// `Sample::take()`; mesh RPC transports (`zenoh`, `someip`,
     /// `shm`, `local`, `dds`, `custom_tcp`) route logical events
@@ -1291,20 +1291,21 @@ pub enum DeployError {
         wheel_depth: u32,
     },
 
-    // ── C13-α-1 §5.K `links:` block parse-time + cross-doc validators
+    // ── §5.K `links:` block parse-time + cross-doc validators
     //    (watching-zenoh RFC §5.K lines 2232-2540). 9 codes total: 7
-    //    spec-named (lines 2421, 2440-2503) + 2 cross-doc (Q-C13-5 a
-    //    lock). C13-β anti-flood family + C9-β reassembly cross-doc
-    //    codes defer to follow-up atomics per scope-split decision. ──
+    //    spec-named (lines 2421, 2440-2503) + 2 cross-doc. The
+    //    anti-flood family follows further below in this enum; the
+    //    §5.M reassembly cross-doc codes live on
+    //    `crate::forge::error::ValidationError`. ──
     /// Watching-zenoh RFC §5.K line 2421
     /// (`deploy/link-driver-unknown`). `machines.<n>.links.<name>.driver`
-    /// names a driver that is not in the C13-α-1 known-driver baseline
+    /// names a driver that is not in the known-driver baseline
     /// (currently `{lwip_udp, lwip_tcp}`) AND not declared as a forge
     /// `<scxml sce:kind="link" name="X">` document in the build's
     /// cross-doc registry.
     ///
     /// `candidates` carries the sorted union (known-driver + forge
-    /// link-doc names) per Q-C13-8 (a) lock; the registry-driven
+    /// link-doc names); the registry-driven
     /// expansion lets new forge link-kind docs extend the validator
     /// without freezing the Rust enum surface.
     #[error(
@@ -1337,12 +1338,12 @@ pub enum DeployError {
     /// pool slots per the §5.M `reassembly/max-fragments-insufficient-
     /// for-mtu` consumer.
     ///
-    /// **Under-approximation note**: C13-α-1 uses the trust-class
-    /// signal as a conservative proxy for "Fragment-FSM-bound link" —
-    /// precise reassembly-pool-bound detection awaits C13-α-2 cross-
-    /// doc step. Authors who declare an `established_session` link
-    /// without `mtu_bytes` see this earlier than the C9-β reassembly
-    /// consumer.
+    /// **Under-approximation note**: the parse-time check uses the
+    /// trust-class signal as a conservative proxy for "Fragment-FSM-
+    /// bound link" — precise reassembly-pool-bound detection happens in
+    /// the cross-doc step (`validate_reassembly_cross_doc`). Authors
+    /// who declare an `established_session` link without `mtu_bytes`
+    /// see this earlier than the §5.M reassembly consumer.
     #[error(
         "machine '{machine}': link '{link_name}' declares \
              `domain_attrs.trust_class: established_session` but \
@@ -1359,7 +1360,7 @@ pub enum DeployError {
     /// Watching-zenoh RFC §5.K line 2443-2445
     /// (`deploy/link-mtu-below-driver-floor`). `mtu_bytes` declared
     /// smaller than the driver's minimum payload; the driver default
-    /// would override silently. C13-α-1 baseline driver floors:
+    /// would override silently. Baseline driver floors:
     /// `lwip_udp` = 28 (IPv4 minimum header), `lwip_tcp` = 40
     /// (IPv4+TCP minimum). Unknown drivers silent-skip this check
     /// until their floor is registered.
@@ -1411,11 +1412,11 @@ pub enum DeployError {
     /// Watching-zenoh RFC §5.K line 2446-2448
     /// (`deploy/link-expected-p99-exceeds-mtu`).
     /// `expected_p99_bytes > mtu_bytes`; the p99 message would always
-    /// fragment. C13-α-1 ships the structural warning at parse-time
-    /// regardless of pool binding — the C9-β reassembly consumer
+    /// fragment. The structural warning fires at parse-time
+    /// regardless of pool binding — the §5.M reassembly consumer
     /// (`reassembly/expected-fragmentation-rate-high`) refines this
-    /// when the reassembly-pool-bound-to-link cross-doc step lands in
-    /// C13-α-2.
+    /// in the reassembly-pool-bound-to-link cross-doc step
+    /// (`validate_reassembly_cross_doc`).
     #[error(
         "machine '{machine}': link '{link_name}' declares \
              `expected_p99_bytes: {expected_p99_bytes}` which exceeds \
@@ -1436,7 +1437,7 @@ pub enum DeployError {
     /// Watching-zenoh RFC §5.K line 2489-2495
     /// (`deploy/link-burst-absorption-insufficient`). `burst_pps × 1s`
     /// of worst-case inbound exceeds the RX pool's drain rate within
-    /// one cooperative tick window. C13-α-2 cross-doc consumer of
+    /// one cooperative tick window. Cross-doc consumer of
     /// `resolve_link_rx_pool_slot_count` (joins `deploy.links.<X>` →
     /// forge `<sce:link>` → `<sce:rx-pool ref>` → ForgePoolRegistry's
     /// BufferPoolModel slot_count). Threshold: `slot_count × 1_000_000
@@ -1470,7 +1471,7 @@ pub enum DeployError {
     /// (`deploy/link-rx-dispatch-worker-tick-on-high-burst`).
     /// `rx_dispatch: worker_tick` declared but one tick window of
     /// arrivals overruns the RX pool: `burst_pps × tick_period_us /
-    /// 1_000_000 > slot_count`. C13-α-2 cross-doc consumer of
+    /// 1_000_000 > slot_count`. Cross-doc consumer of
     /// `resolve_link_rx_pool_slot_count`. Silent-skips on any join
     /// failure or missing `scheduler.tick_period_us` / `burst_pps`.
     #[error(
@@ -1501,8 +1502,9 @@ pub enum DeployError {
     /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
     /// `rx_dispatch` is `IsrToPool` but `burst_pps` is not declared.
     /// ISR fast-path requires the rate to size descriptor ring +
-    /// validate stack budget. C13-α-1 fires at parse-time since the
-    /// resolution is purely intra-link-config (per Q-C13-3 a default).
+    /// validate stack budget. Fires at parse-time since the
+    /// resolution is purely intra-link-config (per the conditional
+    /// `rx_dispatch` default).
     #[error(
         "machine '{machine}': link '{link_name}' resolves to \
              `rx_dispatch: isr_to_pool` but `burst_pps` is not declared. \
@@ -1516,7 +1518,7 @@ pub enum DeployError {
     )]
     LinkBurstPpsMissingOnIsrDispatch { machine: String, link_name: String },
 
-    /// C13-α-1 cross-doc validator pair (Q-C13-5 a). A forge
+    /// Cross-doc link validator pair (§5.K). A forge
     /// `<scxml sce:kind="link" name="X">` document was declared in the
     /// build's cross-doc registry but no `machines.<n>.links.<X>`
     /// entry exists in deploy.yaml. The forge-side link declares its
@@ -1531,9 +1533,8 @@ pub enum DeployError {
     #[error(
         "forge `<sce:link name=\"{link_name}\">` declared but no \
              `deploy.yaml::machines.<n>.links.{link_name}` entry \
-             exists. C13-α-1 cross-doc validator \
-             (`deploy/link-not-declared-in-deploy`) per Q-C13-5 (a) \
-             lock. Repair: add the deploy entry under one of [\
+             exists. Cross-doc validator \
+             (`deploy/link-not-declared-in-deploy`). Repair: add the deploy entry under one of [\
              {candidates_list}] or another machine, or remove the \
              forge link doc."
     )]
@@ -1543,7 +1544,7 @@ pub enum DeployError {
         candidates_list: String,
     },
 
-    /// C13-α-1 cross-doc validator pair (Q-C13-5 a). A
+    /// Cross-doc link validator pair (§5.K). A
     /// `deploy.yaml::machines.<n>.links.<X>` entry exists but no
     /// forge `<sce:link name="X">` was declared/imported in the
     /// build. The deploy entry has no wire framer / codec pairing —
@@ -1553,9 +1554,8 @@ pub enum DeployError {
         "machine '{machine}': link '{link_name}' declared in \
              deploy.yaml but no forge `<scxml sce:kind=\"link\" \
              name=\"{link_name}\">` document was declared/imported. \
-             C13-α-1 cross-doc validator \
-             (`deploy/link-not-declared-in-forge`) per Q-C13-5 (a) \
-             lock. Repair: declare the forge link doc and import it \
+             Cross-doc validator \
+             (`deploy/link-not-declared-in-forge`). Repair: declare the forge link doc and import it \
              from a statechart/worker on this machine, or pick one \
              of [{candidates_list}] (forge link doc names known to \
              this build), or remove the orphan deploy entry."
@@ -1741,8 +1741,8 @@ pub enum DeployError {
     /// Watching-zenoh RFC §5.N line 3060 verbatim
     /// (`link/concurrent-count-exceeds-scheduler-slots`). MCU-only:
     /// the cooperative scheduler's per-tick slot ceiling is
-    /// `floor(tick_period_us / per_link_budget_us)` (Q-C10-β-2 a,
-    /// mirroring C2-γ `validate_machine_scheduler_worker_capacity`);
+    /// `floor(tick_period_us / per_link_budget_us)` (mirroring
+    /// `validate_machine_scheduler_worker_capacity`);
     /// when `links.len() > slot_count`, a fixed-order round-robin
     /// cannot service every link within one tick.
     #[error(
@@ -1762,7 +1762,7 @@ pub enum DeployError {
     /// Watching-zenoh RFC §5.N line 3061 verbatim
     /// (`link/per-link-budget-exceeds-tick-period`). The per-link
     /// budget must fit inside one cooperative tick:
-    /// `per_link_budget_us > tick_period_us` (Q-C10-β-3 a single-
+    /// `per_link_budget_us > tick_period_us` (single-
     /// link sanity check). Author-side repair is two-axis (lower
     /// budget or raise tick period).
     #[error(
@@ -1776,7 +1776,7 @@ pub enum DeployError {
         tick_period_us: u32,
     },
 
-    /// NL→IR Mapping Roadmap Item C1 Path A (DL-7' mesh cross-machine
+    /// EventSchema typed-event support (mesh cross-machine
     /// validation): a `<send target="#{receiver_machine}">` in a
     /// statechart deployed on `{sender_machine}` carries event name
     /// `{event_name}`, but the sender's and receiver's imported
@@ -2224,8 +2224,7 @@ pub enum TopologyError {
     ///
     /// SSoT: `super::transport::TransportDescriptor::
     /// supports_machine_lifetime_subscribe`. Currently `true` only
-    /// for `zenoh`; SOME/IP support is tracked under
-    /// `mesh_someip_sd_gaps_roadmap.md`.
+    /// for `zenoh`; SOME/IP support is consumer-gated.
     #[error(
         "machine '{machine}': subscription on source '{source_target}' for event \
              '{event}' uses transport '{transport}', which does not support the \
@@ -3163,7 +3162,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             ],
         },
 
-        // ── C13-α-1 §5.K `links:` block (RFC §5.K lines 2232-2540) ──
+        // ── §5.K `links:` block (RFC §5.K lines 2232-2540) ──
         DeployError::LinkDriverUnknown {
             machine,
             link_name,
@@ -3484,7 +3483,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 extern_name.clone(),
             ],
         },
-        // ── §5.N C10-β concurrent-count-exceeds-scheduler-slots ──
+        // ── §5.N concurrent-count-exceeds-scheduler-slots ──
         DeployError::LinkConcurrentCountExceedsSchedulerSlots {
             machine,
             link_count,
@@ -3509,7 +3508,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 per_link_budget_us.to_string(),
             ],
         },
-        // ── §5.N C10-β per-link-budget-exceeds-tick-period ──
+        // ── §5.N per-link-budget-exceeds-tick-period ──
         DeployError::LinkPerLinkBudgetExceedsTickPeriod {
             machine,
             per_link_budget_us,
@@ -3529,7 +3528,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 tick_period_us.to_string(),
             ],
         },
-        // ── NL→IR Mapping Roadmap Item C1 Path A (DL-7') cross-
+        // ── EventSchema cross-
         //    machine EventSchema mismatch. `actual` carries the
         //    sender's view (hash or "absent" tag), `expected`
         //    enumerates the receiver's view; `key_fragments` joins

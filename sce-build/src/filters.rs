@@ -252,7 +252,7 @@ fn normalize_ws(text: String) -> String {
 
 /// §scxml-5.2.2: read external data file referenced by `<data src="...">`.
 ///
-/// C11 codegen-time read (RFC §5.J.1 R3 zero-deps lock-in: no runtime
+/// C11 codegen-time read (RFC §5.J.1 zero-deps rule: no runtime
 /// fopen in sce-c-runtime). Mirrors cpp `FileLoadingHelper::loadExternalScript` +
 /// `DataModelInitHelper::initializeVariableFromSrc` by inlining the file
 /// content into the generated C source as a string literal. The downstream
@@ -701,8 +701,8 @@ pub fn escape_json_string(text: String) -> String {
 /// §scxml-5.9.2: rewrite pure In('xxx') predicate text to a C11 native
 /// `<machine>_in_state(sm, <MACHINE>_STATE_<XXX>)` call. Mirrors cpp
 /// `parser::convert_in_to_cpp` which substitutes `this->isStateActive("xxx")`
-/// — both sit at the codegen-time-text-substitution layer (T3 inline-only
-/// lock-in for C11) instead of routing through a runtime `In()` callback.
+/// — both sit at the codegen-time-text-substitution layer (inline-only
+/// for C11) instead of routing through a runtime `In()` callback.
 /// The state-id transformation matches `state_machine.h.jinja2`'s enum
 /// emission (uppercase + dot/dash → underscore) so the produced symbol
 /// resolves against the per-fixture `<machine>_state_e` enum.

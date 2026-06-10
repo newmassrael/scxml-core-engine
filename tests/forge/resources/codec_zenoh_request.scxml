@@ -31,7 +31,7 @@
                               "header"><sce:flag name="N" bit="5"/>
                               </sce:requires-parent-flags>` matching
                               this envelope's header carrier verbatim
-                              per Y0a Case B parent-flag pass-through).
+                              per Case B parent-flag pass-through).
        Z-gated  : extensions (codec_zenoh_ext_entry tlv-chain, max-
                               depth=4 covers upstream's 5 ext slots
                               with safety margin (qos / tstamp / target
@@ -55,7 +55,7 @@
        FAILED, so default arm is a defensive recovery shape rather
        than a routine path).
 
-     Cross-codec validator (RFC §5.B Y3 atomic 2b-ii peek-byte)
+     Cross-codec validator (RFC §5.B atomic 2b-ii peek-byte)
      confirms: codec_zenoh_msg_put.header.mid + codec_zenoh_msg_del.
      header.mid + codec_zenoh_query.header.mid (all bit=0 width=5)
      match this peek-byte's mid declaration. Each arm body's
@@ -63,12 +63,12 @@
      sit outside the dispatch bit-range — peek-byte doesn't constrain
      them.
 
-     Composition: B1-γ flags (header) + B5-μ X1 present-if + Y0a
-     gated-string (via wireexpr embed) + B5-ζ Surface H string-vs-
-     bytes + B5-κ Surface L dotted-path length-from + Y3 atomic 1
-     entry-flag termination + Y3 atomic 2a present-if-on-tlv-chain
-     + Y3 atomic 2b-i sub-codec embeds (msg_put / msg_del / query
-     arms) + Y3 atomic 2b-ii peek-byte primitive + Y0c <sce:embed>
+     Composition: flags (header) + repeat-with-present-if + gated-string
+     gated-string (via wireexpr embed) + string string-vs-
+     bytes + dotted-path dotted-path length-from + atomic 1
+     entry-flag termination + atomic 2a present-if-on-tlv-chain
+     + atomic 2b-i sub-codec embeds (msg_put / msg_del / query
+     arms) + atomic 2b-ii peek-byte primitive + <sce:embed>
      (wireexpr inner codec). No new primitives. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

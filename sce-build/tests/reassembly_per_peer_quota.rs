@@ -259,7 +259,7 @@ fn boundary_at_equality_passes() {
 fn silent_skip_when_peer_table_absent() {
     // No stateless_accept block on the link — the per-peer-quota
     // invariant has no source for peer_table.capacity. Per the
-    // Q-η5 (a) discipline (mirror of every other reassembly
+    // Absent-input silent-skip discipline (mirror of every other reassembly
     // validator), the check silent-skips. Other reassembly checks
     // still run; we verify by giving a clearly violating quota/slot
     // combination and assert no error fires (because the silent-skip
@@ -280,5 +280,5 @@ fn silent_skip_when_peer_table_absent() {
     listener_links.insert("udp_listener".to_string());
 
     validate_reassembly_cross_doc(&cfg, &forge_links, &pool_registry, &listener_links)
-        .expect("peer_table absent ⇒ Q-η5 (a) silent-skip");
+        .expect("peer_table absent ⇒ deploy-unaware silent-skip");
 }

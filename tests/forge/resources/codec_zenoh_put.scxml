@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: stripped-down Zenoh PUT body leaf (RFC §5.B
-     B5-η — Surface I, "recursive variant body"). Used as the PUT-arm
+     recursive variant body). Used as the PUT-arm
      body inside the inner variant codec_zenoh_push_body, which is in
      turn an arm body of the outer variant codec_zenoh_push. The inner
      variant being itself an arm body of an outer variant is what makes
-     this composition exercise Surface I.
+     this composition exercise the recursive variant body.
 
      Upstream `_z_msg_put_t` (zenoh-pico
      include/zenoh-pico/protocol/definitions/message.h) carries
      encoding + commons (timestamp + source_info) + attachment +
-     payload — most of those are flag-gated and would drag in B5-γ
-     parent-flags to faithfully model. For B5-η's purpose (validating
+     payload — most of those are flag-gated and would drag in
+     parent-flags to faithfully model. For this fixture's purpose (validating
      that an outer variant's arm body may itself be a variant codec),
      a single fixed-byte payload is enough. The leaf stays
      parent-flag-free so the recursion focus is not blurred by the
-     orthogonal Surface C plumbing. -->
+     orthogonal plumbing. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_put">

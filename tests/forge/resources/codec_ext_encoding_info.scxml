@@ -8,11 +8,11 @@
      (LSB = has_schema flag, upper bits = encoding_id). When
      has_schema is set, a VLE-len-prefix UTF-8 schema string follows.
 
-     Applied combination: B1-γ flags (VLE-bit-size carrier with bit-0
-     `has_schema` accessor) + B1-δ present-if (schema gated on
-     combined_id.has_schema) + B2-β length-ref (the schema body is a
+     Applied combination: flags flags (VLE-bit-size carrier with bit-0
+     `has_schema` accessor) + present-if present-if (schema gated on
+     combined_id.has_schema) + present-if-gating length-ref (the schema body is a
      length-prefix bytes payload). No new IR/parser surface — first
-     B4 fixture exercising the full B1-γ × B1-δ × B2-β fan-in.
+     B4 fixture exercising the full flags × present-if × present-if-gating fan-in.
 
      Load-bearing deferrals to B5:
      1. `encoding_id = combined_id >> 1` is a derived bit-shift

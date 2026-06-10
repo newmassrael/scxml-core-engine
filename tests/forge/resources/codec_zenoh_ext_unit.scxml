@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: Zenoh extension Unit body (RFC §5.B B5-ε,
+<!-- SCE Forge conformance: Zenoh extension Unit body (RFC §5.B variant-entry chain,
      surface G from the watching-zenoh authoring path).
 
      Mirrors zenoh-pico `_z_msg_ext_encode_unit` / `_z_msg_ext_decode_unit`

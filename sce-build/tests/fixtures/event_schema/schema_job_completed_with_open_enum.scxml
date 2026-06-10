@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  NL→IR Item C1 Path A Atomic 5 width-axis isolation schema (post-
-  F-κ): EventSchema referencing the open-set `result_open.scxml`
-  enum so the paired Atomic 5 boundary positive fixtures can
-  exercise width narrowing without inadvertently triggering F-κ
+  Width-axis isolation schema: EventSchema referencing the open-set `result_open.scxml`
+  enum so the paired width-axis boundary positive fixtures can
+  exercise width narrowing without inadvertently triggering the membership check
   membership rejections.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

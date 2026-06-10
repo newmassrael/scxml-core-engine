@@ -1,4 +1,4 @@
-//! C6-α — Bounded-collection kind schema + parse + 2 parse-time
+//! Bounded-collection kind schema + parse + 2 parse-time
 //! structure validators.
 //!
 //! Per watching-zenoh RFC §5.L lines 2540-2655: the schema vertical
@@ -18,7 +18,8 @@
 //! (`collection/index-by-field-missing`), `<sce:concurrency>multi-writer`
 //! atomics-import check (`collection/multi-writer-without-atomics`), and
 //! deploy-time capacity resolution (`collection/capacity-unresolved`)
-//! all defer to C6-β/γ when the consumer wiring is in place — per the
+//! live in the cross-doc + codegen suites (`c6_bounded_collection_beta
+//! .rs` / `c6_bounded_collection_gamma*.rs`) — per the
 //! `feedback_silently_broken_hooks` discipline.
 
 use sce_build::forge::diagnostic::{DiagnosticCode, ToDiagnostics};

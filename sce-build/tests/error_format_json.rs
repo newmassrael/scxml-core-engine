@@ -527,7 +527,7 @@ fn json_mode_condition_missing_expr_reports_leaf_line() {
 /// in scope at that raise-site (forge/parser.rs:530-535).
 ///
 /// **Why transform, not codec**: this fixture used to ride parse_codec's
-/// `fields.is_empty()` check, but RFC §5.B B5-α deliberately accepts
+/// `fields.is_empty()` check, but RFC §5.B deliberately accepts
 /// zero-field codecs (Zenoh KeepAlive empty-body messages keyed by the
 /// surrounding header byte) — parse_codec no longer raises
 /// EmptyCollection on a fields-empty body. parse_transform still

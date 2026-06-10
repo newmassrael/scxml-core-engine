@@ -86,7 +86,7 @@ pub enum InferredType {
     /// and calls to functions absent from the context's `funcs` table.
     Unknown,
 
-    /// Physical-quantity-annotated numeric (NL→IR Item 4).
+    /// Physical-quantity-annotated numeric.
     ///
     /// Layers a `physical = raw * scale + offset` linear conversion over
     /// the inner `NumericBaseType`. Two `Quantity` values combine
@@ -811,7 +811,7 @@ mod tests {
         assert_eq!(ctx.lookup_var("celsius"), float(64));
     }
 
-    // ── Quantity (NL→IR Item 4) ─────────────────────────────────
+    // ── Quantity (physical units) ─────────────────────────────────
 
     fn celsius_q_i8() -> InferredType {
         InferredType::Quantity {

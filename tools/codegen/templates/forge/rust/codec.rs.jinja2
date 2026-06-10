@@ -121,7 +121,7 @@ pub struct {{ struct_name }}{{ struct_lifetime }} {
 }
 {% if ns.has_flag_default %}
 
-// RFC variant-default-uniformity Atomic β: at least one field's
+// RFC variant-default-uniformity: at least one field's
 // `<sce:flags>` carrier declares a wire-MID constant via
 // `<sce:flag value="N"/>`. Manual `impl Default` bakes the OR of
 // every declared `(value & mask) << bit` into that carrier so a
@@ -189,7 +189,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         Ok(Self {})
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // RFC §5.B peek-byte / streaming-prefix:
         // streaming prefix decode (variable-length fields supported via
         // per-field present_if/tlv-chain/embed/repeat helpers). Peek-byte
         // mode additionally peeks the cursor's next byte for the variant
@@ -444,7 +444,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         // RFC §5.B parent-tag carriers — derive carrier bits from each embedded
         // parent-tag variant's active arm before the carrier byte is
         // emitted. Each `_derived_<carrier>` local is OR'd into the
-        // carrier's encode site (see `inject_b5_nu_carrier_suffix`).
+        // carrier's encode site (see `inject_parent_tag_carrier_suffix`).
 {{ parent_tag_derivation_block }}
 {% endif %}
 {% if has_no_fields %}
@@ -456,7 +456,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
         Ok(())
 {% elif has_variant %}
 {% if variant.has_streaming_prefix %}
-        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // RFC §5.B peek-byte / streaming-prefix:
         // streaming prefix encode (per-field present_if/tlv-chain/embed/
         // repeat helpers). Peek-byte mode: the arm body's encode prepends
         // its own header byte (which the decoder peeked); no separate

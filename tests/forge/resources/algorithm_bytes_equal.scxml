@@ -6,13 +6,13 @@
   shape of the runtime keyexpr matcher: it exercises exactly the two
   SCE-side expressibility additions the matcher needs, and nothing of
   the wildcard `*`/`**`/`$*` semantics (those are wz-authored in the
-  W-matcher-fixture step, per Q-C7-8):
+  W-matcher-fixture step, per locked decision):
 
-    - `len(a)` / `len(b)` — the length builtin (Q-W-3), lowering to each
+    - `len(a)` / `len(b)` — the length builtin (locked decision), lowering to each
       backend's native idiom (C11 `(a).len`, Rust `(a).len()`, Cpp
       `(a).size()`, Kotlin `(a).size`, Go/Python `len(a)`).
     - `a[i]` / `b[i]` — random-index byte read into a bytes view
-      (Q-W-1/Q-W-2): C11 projects through `.data`, Kotlin normalizes the
+      (locked decision/locked decision): C11 projects through `.data`, Kotlin normalizes the
       signed `Byte` to `UByte`, the other four index natively.
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

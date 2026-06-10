@@ -16,7 +16,7 @@
      _response_final / _interest / _declare / _oam) all author their
      own `<sce:flags id="header" sce:byte="0">` declaration — they are
      standalone codecs that own byte 0. Wrapping them in a network
-     envelope therefore uses the `<sce:peek-byte>` primitive (Y3 atomic
+     envelope therefore uses the `<sce:peek-byte>` primitive (atomic
      2b-ii) so the envelope dispatches WITHOUT consuming, and each
      network-body arm reads byte 0 as its own header — the same shape
      proven in production by `codec_zenoh_request` (which uses
@@ -53,8 +53,8 @@
                               0x00 as Close; codec_zenoh_request
                               catches non-{put,del,query} as Query)).
 
-     Composition: B1-β `<sce:variant tag="peek.mid">` + Y3 atomic
-     2b-ii peek-byte primitive + Y3 atomic 2b-i sub-codec embeds (all
+     Composition: variant `<sce:variant tag="peek.mid">` + atomic
+     2b-ii peek-byte primitive + atomic 2b-i sub-codec embeds (all
      7 arms). NO new SCE primitives required — reuses primitives
      already proven by the request/response/oam fixtures. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

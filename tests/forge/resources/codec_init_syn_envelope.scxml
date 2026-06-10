@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- SCE Forge conformance: codec parent-flags variant wire-up (RFC §5.B B5-γ).
+<!-- SCE Forge conformance: codec parent-flags variant wire-up (RFC §5.B parent-flags).
 
      Mirrors the upstream Zenoh transport envelope pattern (zenoh-pico
      src/protocol/codec/transport.c:_z_transport_message_decode_inner +
@@ -8,7 +8,7 @@
      arm; the same header's S-flag (bit 6) gates body fields inside
      the dispatched-to body codec via `<sce:requires-parent-flags>`.
 
-     Cross-codec validator (B5-γ) confirms this codec's
+     Cross-codec validator (parent-flags) confirms this codec's
      `<sce:flags id="header">` declares 'S' at bit=6 — matching the
      body codec's `<sce:requires-parent-flags carrier="header">`
      declaration. Mismatch on either name or bit fires

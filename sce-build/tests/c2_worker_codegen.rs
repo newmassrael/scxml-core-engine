@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-//! C2-β — Worker kind dual-emit codegen + cross-resolution + inbox
+//! Worker kind dual-emit codegen + cross-resolution + inbox
 //! ordering integration fixtures.
 //!
-//! Per RFC §5.D + §5.I C2-β lock (textbook narrowing 2026-05-11 after
+//! Per RFC §5.D + §5.I (textbook narrowing 2026-05-11 after
 //! Gate B preflight): worker cross-refs validate directly against
 //! `parsed.imports` filtered by kind (η-precedent), inbox ordering is
 //! a required parse-time attribute, and cross-core ordering is a
@@ -441,7 +441,7 @@ fn relaxed_ordering_with_same_core_placement_passes() {
 fn relaxed_ordering_silent_skip_when_placement_absent() {
     let ws = build_workspace();
     let scxml = worker_xml("udp_scout", None, "relaxed", 16);
-    // No placement → silent-skip per Q-η5 (a) precedent.
+    // No placement → silent-skip per the absent-input precedent.
     compile(
         &scxml,
         Language::Rust,

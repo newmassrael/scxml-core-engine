@@ -105,7 +105,7 @@ fn w1_2_emits_link_rx_trait_and_impl() {
         code.contains("fn deliver_link_scout_link_sample"),
         "missing per-link deliver method:\n{code}"
     );
-    // Generic over M: SampleMeta — Q-Wire-9 lock (codegen does not
+    // Generic over M: SampleMeta (codegen does not
     // know link's concrete metadata type).
     assert!(
         code.contains("M: ::sce_link_runtime::SampleMeta"),
@@ -145,7 +145,7 @@ fn w1_3_emits_active_state_filter_match_arm() {
 
 #[test]
 fn w1_3_multi_state_same_link_emits_arms_per_state() {
-    // Q-OnSample-5 (a) allows multiple states to subscribe to the same
+    // Multiple states may subscribe to the same
     // link (uniqueness is per-state-per-link, not per-link). The deliver
     // method must emit a match arm for EACH such state.
     const MULTI_STATE: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -236,11 +236,11 @@ fn w1_4_no_callback_emits_no_call_site() {
 }
 
 #[test]
-fn w1_5_emits_event_raise_always() {
-    // Contract: per the Q-Wire-3 lock, every per-state arm emits
+fn on_sample_emits_event_raise_always() {
+    // Contract: every per-state arm emits
     // `self.raise_external_by_name("<event>", "")` regardless of
-    // whether a callback is present. Event-data is empty per
-    // Q-Wire-4 (typed payload flows through callback path; event
+    // whether a callback is present. Event-data is empty
+    // (typed payload flows through callback path; event
     // path is for SCXML transition reaction only).
 
     // Case A: no callback — only event raise in arm body.
@@ -251,7 +251,7 @@ fn w1_5_emits_event_raise_always() {
     );
 
     // Case B: with callback — both callback and event raise present
-    // (Q-Wire-3: callback fires synchronously first, then event).
+    // (callback fires synchronously first, then event).
     const WITH_CALLBACK: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
@@ -286,7 +286,7 @@ fn w1_5_emits_event_raise_always() {
         .expect("event-raise position");
     assert!(
         cb_pos < raise_pos,
-        "callback must precede event raise per Q-Wire-3 (callback synchronously, then event)"
+        "callback must precede event raise (callback synchronously, then event)"
     );
 
     syn::parse_file(&with_cb_code)
@@ -304,7 +304,7 @@ fn w2_c11_emits_per_link_deliver_function() {
     // include on the same condition. The .c file emits the
     // definition with active-state filter (`_in_state` predicate)
     // + event raise via `_raise_external` + `event_with_meta_t`
-    // setup. Q-Wire-3 lock: event always raised. The callback path
+    // setup. The event is always raised. The callback path
     // is Rust-only; the C11 backend ignores
     // `<sce:on-sample callback="rust:...">` (a `rust:`-prefixed
     // path has no C11 lowering).

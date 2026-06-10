@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  NL→IR Item C1 Path A Atomic 5 negative fixture (send-side mirror of
+  Enum width-axis negative fixture (send-side mirror of
   `negative_statechart_enum_literal_overflow.scxml`): `<send
   event="job.completed"><param name="status" expr="0x1FFFF"/>` against
   the `enum:Result` field whose underlying is uint8 — the integer

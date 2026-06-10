@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §5.O Atomic 1 — OQ-W16 (b) empirical preservation
+// Watching-zenoh RFC §5.O — empirical preservation
 // guard for Rust's dual-emit SCE-MAP marker contract.
 //
 // Spec lines 3135-3136 (verbatim): "Rust MUST emit BOTH `#[doc =
@@ -12,7 +12,7 @@
 // that the `// SCE-MAP:` line comment provides if rustdoc strips the
 // `#[doc]` attribute under release / no_std).
 //
-// The empirical preservation test scope (per the OQ-W16 (b) lock):
+// The empirical preservation test scope:
 //   1. Generate Rust SM source with the default (std) profile and
 //      assert both marker forms appear.
 //   2. Generate again with `--no-std` (the C3 B-β CLI flag) and assert
@@ -20,7 +20,7 @@
 //   3. (Deferred) A rustdoc JSON dump (`cargo doc --output-format
 //      json`) would catch downstream strip-by-rustdoc behaviour, but
 //      that flag is nightly-only on stable Rust today. The
-//      `traceability/sce-map-attribute-stripped` diagnostic (Atomic 1)
+//      `traceability/sce-map-attribute-stripped` diagnostic
 //      is the runtime channel that surfaces a future strip — the
 //      empirical test of "rustdoc preserves `#[doc]`" lands when a
 //      consumer materialises that exercises the JSON dump path.
@@ -159,7 +159,7 @@ fn rust_default_profile_emits_both_marker_forms() {
 fn rust_no_std_profile_emits_both_marker_forms() {
     // The C3 B-β `--no-std` flag toggles the alternate template path
     // (`#![no_std]` header + `core::*` swaps + invoke/HTTP rejection).
-    // Per OQ-W16 (b) the dual-emit must survive across both paths so
+    // The dual-emit must survive across both paths so
     // the line-comment fallback covers a future rustdoc strip. The
     // fixture is the script-free variant because `--no-std` rejects
     // any `<log expr="...">` (the analyzer flags it as script-bound).

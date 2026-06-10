@@ -40,7 +40,7 @@ import com.sce.generated.{{ element_snake }}.{{ element_pascal }}
 const val CAPACITY: Int = {{ capacity }}
 
 /// Slot-index bit width inside the packed `{{ pascal }}Handle.raw`.
-/// Q-γ2-Handle-bits (a) symmetric split — 65536 slots × 65536
+/// 16/16 symmetric split — 65536 slots × 65536
 /// generations, ABI-parity with C11 `uint32_t` / Cpp `std::uint32_t`.
 const val SLOT_BITS: Int = 16
 /// Generation-counter bit width inside the packed `{{ pascal }}Handle.raw`.
@@ -175,8 +175,8 @@ class {{ pascal }} : Iterable<{{ element_pascal }}> {
     /// after-remove guard is for the Handle-based `get`; slot-based
     /// access is for iteration paths where the caller walks slot
     /// indices directly). Backs the C7 `<sce:foreach in="<bc-alias>">`
-    /// index-loop lowering across all 6 backends (Q-C7-2 (c) lock
-    /// 2026-05-13).
+    /// index-loop lowering across all 6 backends.
+    /// Locked 2026-05-13.
     fun getBySlot(slot: UInt): {{ element_pascal }}? {
         val slotIdx = slot.toInt()
         if (slotIdx >= CAPACITY) return null

@@ -107,7 +107,7 @@ static inline void {{ snake_name }}_link_poll(
 }
 
 {% if is_listener_with_sibling %}
-/* ── C10-α listener-link Sibling half (RFC §5.C lines 802-833) ──
+/* ── Listener-link Sibling half (RFC §5.C lines 802-833) ──
  *
  * The listener-link sibling-pair contract per RFC §5.C lines 802-803:
  * codegen models this `session_arming` listener (machine source SCXML
@@ -139,7 +139,7 @@ typedef struct {
  * physical socket as the Listener half. Per-peer dispatch routes
  * bytes to this half after the unicast session FSM transitions out
  * of `Accepting.*` (RFC §5.C lines 810-813); that dispatch is a
- * runtime concern, NOT part of C10-α's codegen surface. */
+ * runtime concern, NOT part of the listener-link codegen surface. */
 static inline void {{ snake_name }}_established_session_init(
     {{ snake_name }}_established_session_t *self, sce_forge_link_t driver) {
     self->driver = driver;

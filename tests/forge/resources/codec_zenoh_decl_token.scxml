@@ -22,7 +22,7 @@
 
      Wire shape (1+ bytes):
        VLE id      (uint32, liveliness token id)
-       wireexpr    (Y0c embed; parent.N-gated suffix)
+       wireexpr    (embed; parent.N-gated suffix)
 
      Parent-flag threading (Case B): identical to decl_subscriber. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

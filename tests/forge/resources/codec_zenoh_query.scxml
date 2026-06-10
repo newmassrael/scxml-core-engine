@@ -9,10 +9,10 @@
      attachment ext_id=0x05) decode through codec_zenoh_ext_entry's
      ZBuf arm — generic byte payloads with host-side interpretation
      in the caller (mirrors zenoh-pico's `_z_query_decode_extensions`
-     callback pattern). Y3 atomic 2a chain is the codec's LAST field
+     callback pattern). atomic 2a chain is the codec's LAST field
      (zenoh-pico decoder line 501-503: chain is the only thing after
      the gated parameters), so `terminate-on="exhaust-or-depth"` is
-     sufficient — the entry-flag termination strategy is a Y3 atomic
+     sufficient — the entry-flag termination strategy is a atomic
      2b consumer surface (request/response/declare/oam where the body
      variant follows the chain).
 
@@ -33,10 +33,10 @@
                   depth=8 covers query's 3 ext slots with safety
                   margin)
 
-     Composition: B1-γ flags (header) + B1-δ present-if-on-fields
-     (Q_C/Q_P gates) + Y3 atomic 2a present-if-on-tlv-chain (header.Z
-     gate) + B5-ε surface G (chain element = codec_zenoh_ext_entry
-     variant). No new primitives beyond the Y3 atomic 2a lift.
+     Composition: flags (header) + present-if-on-fields
+     (Q_C/Q_P gates) + atomic 2a present-if-on-tlv-chain (header.Z
+     gate) + variant-entry chain surface G (chain element = codec_zenoh_ext_entry
+     variant). No new primitives beyond the atomic 2a lift.
 
      Body variant arm contract: invoked by codec_zenoh_request when
      the inner-MID byte after the request header reads 0x03 (Z_QUERY).

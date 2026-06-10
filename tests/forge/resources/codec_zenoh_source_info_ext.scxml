@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh source_info ext envelope (RFC §5.B Y2 —
-     Y0b length-bound embed of the codec_zenoh_source_info body).
+     length-bound embed of the codec_zenoh_source_info body).
 
      Mirrors zenoh-pico `_z_source_info_encode_ext` (message.c:243-254)
      verbatim:
@@ -25,7 +25,7 @@
        byte ?+ : info      (length-bound embed of codec_zenoh_source_info;
                             inner cursor scope = ext_size bytes)
 
-     Composition: B1-α VLE primitive (ext_size) + Y0b length-bound
+     Composition: VLE primitive (ext_size) + length-bound
      embed (`5a2c8afa`). NO new SCE primitives required. Same shape
      as codec_zenoh_decl_ext_keyexpr / codec_zenoh_timestamp_ext but
      wrapping the source_info body. The embed declares no

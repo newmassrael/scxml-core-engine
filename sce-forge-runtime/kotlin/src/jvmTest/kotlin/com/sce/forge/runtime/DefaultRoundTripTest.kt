@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// RFC variant-default-uniformity Atomic γ-3 kotlin half — runtime
+// RFC variant-default-uniformity kotlin half — runtime
 // round-trip property test. Mirrors
 // sce-forge-runtime/rust/tests/forge_default_round_trip.rs for the
 // Kotlin backend: imports the generated codec classes (wired into the
@@ -9,7 +9,7 @@
 // and asserts that a freshly-constructed instance round-trips through
 // encode → decode into the declared default arm.
 //
-// RFC §5.B B1-α: encode is sink-based — the test exercises both the
+// RFC §5.B: encode is sink-based — the test exercises both the
 // heap-backed `encodeToByteArray()` convenience facade and the primary
 // `encode(SceSink)` over caller-owned sinks (MutableListSink for
 // growable, ByteArraySink for bounded + BufferOverflow path).
@@ -81,7 +81,7 @@ class DefaultRoundTripTest {
             "decode → encode must produce byte-equal output (round-trip stability)",
         )
 
-        // RFC §5.B B1-α writer-direct path: MutableListSink-backed encode
+        // RFC §5.B writer-direct path: MutableListSink-backed encode
         // must produce bytes equal to the facade output (the facade is
         // implemented over MutableListSink so this is tautological — the
         // pin protects future re-implementations of encodeToByteArray).

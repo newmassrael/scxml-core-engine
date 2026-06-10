@@ -18,7 +18,7 @@
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    {# Watching-zenoh RFC §5.O Atomic 0c — function-scope SCE-MAP marker
+    {# Watching-zenoh RFC §5.O — function-scope SCE-MAP marker
        above `execute_entry_actions`. `#[doc]` attaches to the function
        item; the `//` comment-form survives stable as a grep target. #}
     {{ sce_map.source_marker(model.source_location, "rust") }}

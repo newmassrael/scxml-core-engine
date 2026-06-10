@@ -5,7 +5,7 @@
      Mirrors zenoh-pico `_z_reply_encode` / `_z_reply_decode`
      (src/protocol/codec/message.c:507-543) at envelope-level wire
      fidelity. The inner push_body bytes are emitted by the embedded
-     codec_zenoh_push_body (B5-η stripped-down: 1B push_header MID
+     codec_zenoh_push_body (recursive variant body stripped-down: 1B push_header MID
      selector + per-arm body — the inner timestamp/encoding/source_info
      ext wire stays simplified per Q1(b) of atomic 2b dispatch; full
      wire fidelity for those primitives is deferred to a follow-up
@@ -23,7 +23,7 @@
                                  `z_consolidation_mode_t`)
        Z-gated:
          chain  : codec_zenoh_ext_entry tlv-chain (entry-flag
-                  termination on entry header.Z — Y3 atomic 1 grammar;
+                  termination on entry header.Z — atomic 1 grammar;
                   chain is followed by the push_body embed so the
                   exhaust-or-depth termination would not detect the
                   body boundary. max-depth=4 covers reply's actual
@@ -37,13 +37,13 @@
                   line 540 where the put_header is read just before
                   `_z_push_body_decode` consumes the body bytes).
 
-     Composition: B1-γ flags (header) + B1-δ present-if-on-fields
-     (R_C gate) + Y3 atomic 2a present-if-on-tlv-chain (header.Z gate)
-     + Y3 atomic 1 entry-flag termination (chain followed by body
+     Composition: flags (header) + present-if-on-fields
+     (R_C gate) + atomic 2a present-if-on-tlv-chain (header.Z gate)
+     + atomic 1 entry-flag termination (chain followed by body
      field — first realistic consumer of entry-flag termination) +
-     B5-ε surface G (chain element = codec_zenoh_ext_entry variant) +
-     Y0c <sce:embed> (push_body inner variant, recursive sum-type via
-     B5-η Surface I).
+     variant-entry chain (chain element = codec_zenoh_ext_entry variant) +
+     <sce:embed> (push_body inner variant, recursive sum-type via
+     recursive variant body).
 
      Body variant arm contract: invoked by codec_zenoh_response when
      the inner-MID byte after the response header reads 0x04 (Z_REPLY).

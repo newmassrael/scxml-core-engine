@@ -20,10 +20,10 @@
 // (low 16 bits) + generation counter (high 16 bits). ABI-identical
 // to the Rust tuple newtype + Cpp POD + Kotlin @JvmInline value class
 // + C11 typedef'd struct emit — cross-backend Handle interop is
-// wire-format stable (Q-γ4-Go-Handle-method-set (a) lock 2026-05-13:
+// wire-format stable (locked 2026-05-13:
 // receiver methods on uint32 newtype, no boxing, ABI-parity).
 //
-// Iteration (Q-γ4-Go-iter-shape (a) lock 2026-05-13): ForEach
+// Iteration (locked 2026-05-13): ForEach
 // callback iteration. The callback fires exactly once per occupied
 // slot in ascending slot-index order per spec line 2616 ("exposes
 // only occupied slots"). Matches the `slices.Sort` / `slices.Index`
@@ -57,7 +57,7 @@ const {{ pascal }}Capacity = {{ capacity }}
 const _ = uint16({{ capacity }})
 
 // {{ pascal }}SlotBits is the slot-index bit width inside the
-// packed Handle u32 (Q-γ2-Handle-bits (a) symmetric split).
+// packed Handle u32 (16/16 symmetric split).
 const {{ pascal }}SlotBits uint32 = 16
 
 // {{ pascal }}GenBits is the generation-counter bit width inside
@@ -210,7 +210,7 @@ func (t *{{ pascal }}) Get(handle {{ pascal }}Handle) (*{{ element_qualified }},
 // guard is for the Handle-based Get; slot-based access is for
 // iteration paths where the caller walks slot indices directly).
 // Backs the C7 `<sce:foreach in="<bc-alias>">` index-loop lowering
-// across all 6 backends (Q-C7-2 (c) lock 2026-05-13).
+// across all 6 backends (locked 2026-05-13).
 func (t *{{ pascal }}) GetBySlot(slot uint32) (*{{ element_qualified }}, bool) {
 	if slot >= {{ pascal }}Capacity {
 		return nil, false

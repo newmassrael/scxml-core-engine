@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-// RFC §5.B B1-α: the round-trip uses `encode_to_vec`, the heap-backed
+// RFC §5.B: the round-trip uses `encode_to_vec`, the heap-backed
 // convenience facade gated on the `alloc` feature (see
 // `sce-forge-runtime/rust/src/codec.rs`). Without `alloc` the generated
 // codecs include the gated `VecSink` import (also alloc-only), so the
@@ -12,7 +12,7 @@
 // --features alloc`) to exercise this test.
 #![cfg(feature = "alloc")]
 
-// RFC variant-default-uniformity Atomic β-Rust runtime round-trip test.
+// RFC variant-default-uniformity Rust runtime round-trip test.
 //
 // The pattern-check tests in `sce-build/tests/forge_conformance.rs` assert
 // that the generated source carries the expected `impl Default` and
@@ -105,7 +105,7 @@ fn default_marker_round_trips_via_declared_default_arm() {
         CodecVariantDefaultMarkerVariant::CodecDefaultMarkerArmA(_) => {
             panic!(
                 "round-trip dropped into arm A — the legacy first-declared \
-                 arm — meaning the Atomic β-Rust outer Default change didn't \
+                 arm — meaning the variant-default-uniformity outer Default change didn't \
                  take effect"
             )
         }

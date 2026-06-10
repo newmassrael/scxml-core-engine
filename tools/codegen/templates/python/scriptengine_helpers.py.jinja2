@@ -156,8 +156,8 @@
         self, engine, var_id: str, lua_expr: str, fallback: str
     ) -> None:
         """W3C SCXML 5.2.2 — initialise a `<data>` element whose content
-        is inline text. Mirrors Rust's `eval_or_set_string` (Atomic γ-3a,
-        helpers/datamodel_init.rs:107): try Lua eval first, fall back to
+        is inline text. Mirrors Rust's `eval_or_set_string`
+        (helpers/datamodel_init.rs:107): try Lua eval first, fall back to
         JSON.parse for `[...]` / `{...}` payloads, then XML→DOM
         (`set_variable_as_dom`) for `<…>` content per W3C B.2 (test557 +
         test557 via `src=`), and finally to a whitespace-normalised

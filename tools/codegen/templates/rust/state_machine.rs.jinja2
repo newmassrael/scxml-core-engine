@@ -73,7 +73,7 @@
 #![allow(clippy::style)]
 #![allow(clippy::complexity)]
 
-{# Watching-zenoh RFC §5.O Atomic 0b: per-backend SCE-MAP marker
+{# Watching-zenoh RFC §5.O: per-backend SCE-MAP marker
    anchoring the generated module to the `<scxml>` root element's
    post-preprocessor source position. Both forms emitted per spec
    lines 3135-3136 — the `#![doc]` form survives in rustdoc, the
@@ -89,8 +89,8 @@ use sce_rust_runtime::BoundedPush;
 {% endif %}
 {% if model.event_queue_capacity %}
 
-// Watching-zenoh RFC §5.J.2 + §5.L (Q-RustNoStd-7 (a), C3 Atomic
-// B-γ1): per-document event-queue capacity declared via
+// Watching-zenoh RFC §5.J.2 + §5.L (item C3): per-document
+// event-queue capacity declared via
 // `<scxml sce:capacity="N">` or sourced from deploy.yaml
 // `machines.<m>.scheduler.default_event_queue_capacity`. Consumed
 // below by `type EventQueue` as the no_std `heapless::Deque` depth
@@ -1157,14 +1157,14 @@ impl{{ policy_generics_decl }} {{ machine_name }}Policy{{ policy_generics_use }}
 //      via the embedded `SlotGuard`.
 //
 // Generic over `M: SampleMeta` so the codegen does not need to learn
-// the link's concrete metadata type (Q-Wire-9 lock 2026-05-07). The
+// the link's concrete metadata type. The
 // user's call site instantiates `M` from their link driver's
 // `Sample<'pool, MyMeta>` value; rustc enforces the user-callback
-// signature against the borrow contract per Q-Callback-3 / A2.
+// signature against the borrow contract (spec lines 1513-1519).
 //
-// W1.2 emits the trait + impl skeleton with empty bodies; W1.3
-// (config-filter), W1.4 (callback dispatch), W1.5 (event raise) fill
-// the bodies in successive atomics.
+// The trait declares one delivery method per link; the impl below
+// carries the full pipeline: active-config filter, callback
+// dispatch, then event raise.
 pub trait {{ machine_name }}LinkRx {
 {% for link in model.on_sample_links %}
     /// Deliver a Sample arriving on link `{{ link }}`.
@@ -1186,13 +1186,12 @@ impl{{ policy_generics_decl }} {{ machine_name }}LinkRx for ::sce_rust_runtime::
     where
         M: ::sce_link_runtime::SampleMeta,
     {
-        // W1.3 active-state filter: iterate the engine's current
+        // Active-state filter: iterate the engine's current
         // configuration; for every active state that declares
         // `<sce:on-sample link="{{ link }}">`, dispatch into its
-        // per-state arm. Arms are empty in W1.3; W1.4 (callback)
-        // and W1.5 (event raise) fill the bodies. Sample drops
-        // at method exit, returning the slot to its pool via the
-        // embedded `SlotGuard`.
+        // per-state arm (callback dispatch + event raise). Sample
+        // drops at method exit, returning the slot to its pool via
+        // the embedded `SlotGuard`.
         let _ = &sample;
         for active in self.get_active_states() {
             match active {
@@ -1201,17 +1200,17 @@ impl{{ policy_generics_decl }} {{ machine_name }}LinkRx for ::sce_rust_runtime::
 {% if block.link == link %}
                 {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {% if block.callback %}
-                    // W1.4 callback dispatch — synchronous extern
+                    // Callback dispatch — synchronous extern
                     // call. rustc enforces the user's callback
-                    // signature against the borrow contract per
-                    // Q-Callback-3 (A2 spec lines 1513-1519).
+                    // signature against the borrow contract
+                    // (spec lines 1513-1519).
                     {{ block.callback | extern_callback_path }}(&sample);
 {% endif %}
-                    // W1.5 event raise — Q-Wire-3 lock: when a
-                    // callback was present it fired synchronously
-                    // above; this raise still happens so SCXML
-                    // transitions react to the sample arrival.
-                    // Q-Wire-4 lock: event_data is the empty string
+                    // Event raise: when a callback was present it
+                    // fired synchronously above; this raise still
+                    // happens so SCXML transitions react to the
+                    // sample arrival.
+                    // event_data is the empty string
                     // (typed payload flows through the callback
                     // path; the event path is purely for state-
                     // machine reaction).

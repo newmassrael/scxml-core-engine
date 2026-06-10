@@ -17,18 +17,18 @@
 //! source + template state and compares against the embedded values.
 //! Mismatch fires `forge/source-hash-mismatch`.
 //!
-//! ## Locks
+//! ## Design decisions
 //!
-//! - Q-§6.2.6-1: per-file header verbatim (this module emits one block; see
+//! - Per-file header is emitted verbatim (this module emits one block; see
 //!   `render_header`). Python uses `#` comment prefix; everything else uses
 //!   `//`.
-//! - Q-§6.2.6-2: BTreeMap<PathBuf, sha256(content)> 2-level hash.
+//! - Hash shape: BTreeMap<PathBuf, sha256(content)> 2-level hash.
 //!   Deterministic via BTreeMap iteration order; sub-file drift localization
 //!   debugging-friendly because each file's individual digest is recoverable.
-//! - Q-§6.2.6-6: source set = recursive `**/*.scxml` from input root +
+//! - Source set = recursive `**/*.scxml` from input root +
 //!   optional `deploy.yaml` raw bytes (pre-XInclude). XInclude expansion is
 //!   NOT applied — raw on-disk bytes drive the hash.
-//! - Q-§6.2.6-3: `template-hash` = Cargo.lock + recursive sha256 over
+//! - `template-hash` = Cargo.lock + recursive sha256 over
 //!   `tools/codegen/templates/**/*`. Cargo.lock substitutes for the
 //!   spec's "sce-build binary" reference because compiled binary bytes are
 //!   linker-non-deterministic.
@@ -77,7 +77,7 @@ pub enum DriftHashError {
     },
 }
 
-/// Per Q-§6.2.6-6: walks `input_root` recursively for `**/*.scxml`, hashes
+/// Source-set rule (§6.2.6): walks `input_root` recursively for `**/*.scxml`, hashes
 /// each file's raw bytes, and folds the sorted `(rel_path, file_hash)`
 /// pairs through a final BTreeMap digest. If `deploy_yaml` is provided,
 /// its raw bytes are included under the canonical key `"deploy.yaml"`.
@@ -99,7 +99,7 @@ pub fn compute_source_hash(
     Ok(hash_btreemap(&entries))
 }
 
-/// Per Q-§6.2.6-2/3: walks `template_root` recursively for every file
+/// Template-hash rule (§6.2.6): walks `template_root` recursively for every file
 /// (no extension filter — `.jinja2` + `.json` + `.md` + everything else
 /// in the template tree contributes), hashes raw bytes, then folds
 /// `Cargo.lock` into the same BTreeMap as the binary-identity surrogate.

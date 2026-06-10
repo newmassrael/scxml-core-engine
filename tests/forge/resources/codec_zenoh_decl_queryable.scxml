@@ -25,16 +25,16 @@
 
      The queryable_info ext gate uses parent.Z (the per-MID header
      byte's bit 7, set by the outer envelope when has_extensions).
-     B5-γ Parent-scope present-if drives the gate; both ext_type and
+     parent-flags Parent-scope present-if drives the gate; both ext_type and
      ext_value share `parent.Z` so they're emitted/skipped together.
      This is the simplest possible TLV-style ext (no envelope-length
      prefix, no inner header byte — just type + VLE value); the more
      general TLV ext envelope shape (used by undecl_*'s ext_keyexpr)
-     defers to Y0b.
+     defers to .
 
      Wire shape (1+ bytes):
        VLE id          (uint32, queryable id)
-       wireexpr        (Y0c embed; parent.N-gated suffix)
+       wireexpr        (embed; parent.N-gated suffix)
        parent.Z       :
          ext_type      (uint8, fixed value 0x21)
          ext_value     (VLE u64, host-packed flags|distance<<8)

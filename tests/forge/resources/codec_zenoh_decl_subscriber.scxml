@@ -23,7 +23,7 @@
 
      Wire shape (1+ bytes):
        VLE id      (uint32, declarations.c:78 zsize encode of decl id)
-       wireexpr    (Y0c embed; parent.N-gated suffix; wireexpr's
+       wireexpr    (embed; parent.N-gated suffix; wireexpr's
                     parent_flags is the same byte threaded through
                     this body's own parent_flags param)
 
@@ -32,8 +32,8 @@
      bit 7); wireexpr only reads N at bit 5. Pass-through threading
      keeps the bytes identical between body and embedded codec.
 
-     Composition: B1-α VLE u32 id + Y0c embed (codec_zenoh_wireexpr) +
-     B5-γ Parent-scope parent_flags pass-through.
+     Composition: VLE VLE u32 id + embed (codec_zenoh_wireexpr) +
+     parent-flags Parent-scope parent_flags pass-through.
 
      Wrap shape: identical to decl_keyexpr modulo id width (uint32 vs
      uint16) — the wireexpr embed and parent-flag dependency match

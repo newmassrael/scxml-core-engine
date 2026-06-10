@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh timestamp ext envelope (RFC §5.B Y2 —
-     Y0b length-bound embed of the existing codec_zenoh_timestamp body).
+     length-bound embed of the existing codec_zenoh_timestamp body).
 
      Mirrors zenoh-pico `_z_timestamp_encode_ext` (message.c:95-100)
      verbatim:
@@ -24,7 +24,7 @@
        - VLE u64 zid_len
        - length-ref bytes zid (max=16, length=zid_len)
 
-     Composition: B1-α VLE primitive (ext_size) + Y0b length-bound
+     Composition: VLE primitive (ext_size) + length-bound
      embed (`5a2c8afa`). NO new SCE primitives required. The embed
      declares no `<sce:requires-parent-flags>` (Case A — body codec
      is self-contained, no parent flag dependency).

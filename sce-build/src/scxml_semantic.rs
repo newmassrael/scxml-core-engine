@@ -133,9 +133,8 @@ pub enum ScxmlSemanticError {
     /// history pseudostate `default_target` (§scxml-3.10). A
     /// state outside the closure is dead code — keeping it through
     /// codegen wastes generated-state surface and masks authoring
-    /// mistakes that produce orphan subgraphs (a recurring AI-
-    /// generated-SCXML failure mode, see `nl_to_ir_mapping_roadmap.md`
-    /// Item 3).
+    /// mistakes that produce orphan subgraphs (a recurring
+    /// generated-SCXML failure mode).
     ///
     /// Emitted in preference to `DeadTransition` only when the
     /// orphan state has zero `<transition>` children — when at least

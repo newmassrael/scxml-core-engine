@@ -365,7 +365,7 @@ mod tests {
             .parse_string(scxml, "fixture")
             .expect("fixture parses cleanly");
         validate_emission_provenance(&model, "fixture")
-            .expect("real parser output must satisfy §5.O Atomic 0 provenance");
+            .expect("real parser output must satisfy the sourcemap provenance contract");
     }
 
     /// Synthesised None on the root surfaces the diagnostic with
@@ -447,7 +447,7 @@ mod tests {
             .expect("parses cleanly")
             .expect("non-statechart kind");
         validate_forge_emission_provenance(&doc, "ping_frame.scxml")
-            .expect("real forge parser output must satisfy §5.O Atomic 0c provenance");
+            .expect("real forge parser output must satisfy the sourcemap provenance contract");
     }
 
     /// Walker contract: every `ForgeDocument` variant whose

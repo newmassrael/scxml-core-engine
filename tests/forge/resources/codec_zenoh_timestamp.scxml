@@ -20,7 +20,7 @@
                            byte since ZENOH_ID_SIZE=16 < 128)
        bytes   : zid      (raw bytes, length = zid_len, max = 16)
 
-     Composition: B1-α VLE primitive (time + zid_len) + B2-β / B5-ζ
+     Composition: VLE VLE primitive (time + zid_len) + present-if-gating / string
      length-ref bytes (zid). No new SCE primitives required —
      `_z_timestamp_encode`'s wire shape is fully expressible via the
      existing length-prefixed bytes pattern. spec-mirror parity

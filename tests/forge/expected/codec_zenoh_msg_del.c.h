@@ -28,7 +28,7 @@ typedef struct {
     size_t  extensions_len;
 } codec_zenoh_msg_del_t;
 
-/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+/* RFC variant-default-uniformity (C11): designated-initializer
  * macro carrying the codec's wire-MID-baked defaults. C has no Default
  * trait — round-trip safety (`codec_zenoh_msg_del_t x = CODEC_ZENOH_MSG_DEL_DEFAULT_INIT;
  * codec_zenoh_msg_del_t_encode(&x)` decodes back to the same arm)

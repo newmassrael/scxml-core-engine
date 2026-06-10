@@ -45,7 +45,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* B7-ε Layer 1 ownership pull-through. `sce-c-runtime/include/sce/
+/* Layer 1 ownership pull-through (item B7, RFC §5.E). `sce-c-runtime/include/sce/
  * sample.h` provides the `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
  * `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / `SCE_WARN_UNUSED`
  * attribute family + `sce_sample_t` borrow type + 3 function decls
@@ -113,7 +113,7 @@ extern void sce_dcache_invalidate_by_addr(void *start, size_t len);
 {%- if variant_reassembly %}
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- * C9-γ reassembly variant per-slot state (RFC §5.M lines 2680-2698
+ * Reassembly variant per-slot state (RFC §5.M lines 2680-2698
  * + 2864-2876). The reassembly variant of §5.E extends the slot
  * table with three additional per-slot fields the author-level
  * Fragment FSM (RFC §5.M lines 2864-2876, lives in downstream SCXML

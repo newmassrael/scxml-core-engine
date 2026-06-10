@@ -37,7 +37,7 @@ pub struct CodecZenohResponseFinal<'a> {
     pub extensions: Option<HeaplessVec<CodecZenohExtEntry<'a>, 4>>,
 }
 
-// RFC variant-default-uniformity Atomic β: at least one field's
+// RFC variant-default-uniformity: at least one field's
 // `<sce:flags>` carrier declares a wire-MID constant via
 // `<sce:flag value="N"/>`. Manual `impl Default` bakes the OR of
 // every declared `(value & mask) << bit` into that carrier so a

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// NL→IR Mapping Roadmap Item 4 — per-language codegen helpers for the
+// Per-language codegen helpers for the
 // `raw ↔ physical` accessor pair.
 //
 // Each codec / transform field carrying a `Quantity { scale, offset,

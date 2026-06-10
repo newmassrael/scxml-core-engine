@@ -5,8 +5,9 @@
 // API + Layer 1 Clang typestate + capability-attribute family. Lives
 // in the C11 backend's Tier 1 INTERFACE (sce_c_runtime per
 // `c11_4tier_layering.md`) so generated code, downstream consumer
-// crates, and the eventual B7-ε codegen integration all see one
-// contract.
+// crates, and the buffer-pool codegen integration
+// (`tools/codegen/templates/forge/c/buffer_pool.h.jinja2`) all see
+// one contract.
 //
 // ── What this header is ────────────────────────────────────────
 //
@@ -18,7 +19,8 @@
 //     use-after-take, double-take, callback-leak, and ignored
 //     `sce_sample_take` results at compile time. On non-Clang or
 //     older Clang the macros expand to nothing — the API contract
-//     is documented and analyzer-driven (Layer 2/3 land with B7-ε).
+//     is documented and analyzer-driven (Layer 2/3 are
+//     consumer-gated).
 //
 //   * `sce_sample_t` — the read-only borrow handed to subscriber
 //     callbacks. Carries the protocol-decoded key expression, the
@@ -40,7 +42,7 @@
 // ── What this header is not ────────────────────────────────────
 //
 //   * Concrete `sce_keyexpr_t` / `sce_timestamp_t` definitions —
-//     opaque forward-declared structs (Q-ε3). Downstream consumers
+//     opaque forward-declared structs. Downstream consumers
 //     (e.g. `consumer_watching_zenoh.md` zenoh-pico bindings) supply
 //     the bodies via their own typedefs against the same struct tags.
 //     SCE-side cannot commit to zenoh / DDS / MQTT key-space
@@ -49,12 +51,11 @@
 //     `sce_sample_t`, keeping the borrow shape stable across all
 //     possible downstream typedefs.
 //
-//   * Layer 2 (PC-Lint / Coverity / Polyspace) annotations — Q-ε1
-//     defers to a future B7-ε atomic that emits them per spec lines
-//     1349-1378.
+//   * Layer 2 (PC-Lint / Coverity / Polyspace) annotations —
+//     consumer-gated (spec lines 1349-1378 describe the emission).
 //
 //   * Layer 3 / 3.5 (debug-build runtime poisoning, release-mode
-//     opt-in) — same Q-ε1 defer.
+//     opt-in) — likewise consumer-gated.
 //
 // Pre-1.0: this contract may evolve before SCE 1.0 (per
 // `feedback_pre_release_no_compat.md`); downstream consumers re-link
@@ -107,14 +108,14 @@ extern "C" {
 #  define SCE_WARN_UNUSED
 #endif
 
-// ── Q-ε4 self-check ──────────────────────────────────────────────
+// ── Configure-time self-check ─────────────────────────────────────
 //
-// β `mem/inter-pool-padding-not-emitted` precedent: if the operator's
+// Per the `mem/inter-pool-padding-not-emitted` precedent: if the operator's
 // build is Clang but the consumable family is missing (older Clang,
 // non-default flags such as `-fno-thread-safety`), Layer 1 silently
 // becomes inert — the failure mode the downstream
 // `pool/sample-typestate-attributes-disabled` diagnostic catches at
-// configure time (B7-ε). Fire a `#warning` here so single-TU
+// configure time. Fire a `#warning` here so single-TU
 // compiles also surface the gap; the operator can then upgrade
 // Clang, fix flags, or accept Layer 2/3 substitution.
 #if defined(__clang__) && !SCE_OWNERSHIP_ATTRS_AVAILABLE
@@ -126,7 +127,7 @@ extern "C" {
       "Coverity / Polyspace) or Layer 3 debug-build poisoning."
 #endif
 
-// ── Opaque forward typedefs (Q-ε3) ───────────────────────────────
+// ── Opaque forward typedefs ──────────────────────────────────────
 //
 // Protocol-decoded value types: SCE has no opinion on key-expression
 // or timestamp semantics. Downstream consumers (zenoh-pico, DDS, MQTT)
@@ -142,14 +143,14 @@ typedef struct sce_keyexpr_t sce_keyexpr_t;
 struct sce_timestamp_t;
 typedef struct sce_timestamp_t sce_timestamp_t;
 
-// ── Slot handle (mirrors γ template buffer_pool.h.jinja2) ────────
+// ── Slot handle (mirrors forge/c/buffer_pool.h.jinja2) ───────────
 //
 // The discriminant ordering and `SCE_SLOT_INVALID` sentinel value
 // are pinned identically to the per-pool template emission. C11
 // permits identical typedef redeclaration (DR-477 / 6.7.2.3), so
 // downstream code that includes both this header and one or more
 // generated `<pool_name>.h` headers compiles cleanly. If the
-// γ-template ever drifts off this layout, the per-pool header's
+// buffer-pool template ever drifts off this layout, the per-pool header's
 // `static` storage emission against `sce_slot_state_t` would
 // surface a redeclaration error at downstream consumer-build time.
 typedef enum {
@@ -239,10 +240,10 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t* sample
                                    SCE_PARAM_TYPESTATE("unconsumed"),
                                    void* ctx);
 
-// ── _Static_assert invariants (Q-ε5) ─────────────────────────────
+// ── _Static_assert invariants ────────────────────────────────────
 //
 // Layout invariants that must hold across this header and the
-// γ-template emission. A drift on either side trips the assertion
+// generated buffer-pool header (`forge/c/buffer_pool.h.jinja2`). A drift on either side trips the assertion
 // at the offending TU's compile time — the load-bearing properties
 // are: (a) the seven FSM states and the invalid sentinel keep their
 // canonical numeric values so per-pool heap-free runtime tag checks

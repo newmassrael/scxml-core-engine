@@ -38,7 +38,7 @@ data class CodecZenohRequest(
     var rid: ULong = 0uL,
     var keyexpr: CodecZenohWireexpr = CodecZenohWireexpr(),
     var extensions: MutableList<CodecZenohExtEntry>? = null,
-    // RFC variant-default-uniformity Atomic β-kotlin: pick the declared
+    // RFC variant-default-uniformity (Kotlin): pick the declared
     // default arm (`<sce:arm default="true"/>`) instead of the first
     // alternative so a freshly-constructed envelope round-trips byte-
     // exactly through `encode() -> decode()`. Paired with the inner
@@ -99,7 +99,7 @@ data class CodecZenohRequest(
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     fun encode(w: SceSink): CodecError? {
-        // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-prefix:
+        // RFC §5.B peek-byte / streaming-prefix:
         // streaming prefix encode. Peek-byte mode: arm body's encode
         // prepends its own header byte (which the decoder peeked); no
         // separate tag byte here. Streaming-prefix mode (own-field):
@@ -146,7 +146,7 @@ data class CodecZenohRequest(
         /// cursor's tail is shorter than the declared minimum frame
         /// (RFC §5.B L494-519).
         fun decode(cursor: SceCursor): CodecZenohRequest? {
-            // RFC §5.B Y3 atomic 2b-ii peek-byte / 2b-iv streaming-
+            // RFC §5.B peek-byte / streaming-
             // prefix: streaming prefix decode (variable-length fields
             // supported via per-field present_if/tlv-chain/embed/repeat
             // helpers). Peek-byte mode additionally peeks the cursor's

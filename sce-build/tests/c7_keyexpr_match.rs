@@ -128,7 +128,7 @@ fn compile_inline(
 #[test]
 fn rust_foreach_bc_emits_index_loop_with_get_by_slot() {
     let code = compile_algo_for(Language::Rust);
-    // Uniform index-loop per Q-C7-2 (c) — `0..(LocalSubTable::capacity() as u32)`.
+    // Uniform index-loop on every backend — `0..(LocalSubTable::capacity() as u32)`.
     assert!(
         code.contains("for slot_idx in 0..(LocalSubTable::capacity() as u32) {"),
         "Rust foreach-BC missing index loop; got:\n{code}"

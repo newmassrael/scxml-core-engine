@@ -4,7 +4,7 @@
 //! Drives the receive-side typecheck, send-side typecheck, and mesh
 //! cross-machine validator through the production orchestrator
 //! (`compile_scxml_with_imports`) for the fixture catalogue
-//! catalogued in design RFC §3 DL-10' (Atomic 3 subset). Each test
+//! catalogued in design RFC §3 DL-10'. Each test
 //! copies the relevant fixture files into a tempdir, invokes the
 //! orchestrator, and asserts the expected outcome:
 //!
@@ -13,7 +13,7 @@
 //!     cleanly to Rust source.
 //!   * Negative fixtures route through the typed [`ValidationError`]
 //!     / [`DeployError`] variants reused per Item 4 precedent or
-//!     introduced by Atomic 3:
+//!     introduced by the EventSchema kind:
 //!       - unknown receive field → CrossKindFieldNotFound
 //!         (with did-you-mean candidates)
 //!       - receive type mismatch → CrossKindTypeMismatch
@@ -355,7 +355,7 @@ fn schemaless_statechart_passes_unchanged() {
         .expect("schemaless statechart should pass — DL-9' fallback no-ops the validator");
 }
 
-// ─── Atomic 3 (DL-4') send-side payload typecheck ────────────────
+// ─── DL-4' send-side payload typecheck ───────────────────────────
 
 /// Positive — `<send event="X"><param name="F" expr="...">` whose
 /// `F` is declared on the schema and whose `expr` is a primitive
@@ -456,7 +456,7 @@ fn negative_send_type_mismatch_rejects_with_typed_diagnostic() {
     }
 }
 
-// ─── Atomic 3 (DL-7') mesh cross-machine schema validation ───────
+// ─── DL-7' mesh cross-machine schema validation ──────────────────
 
 fn run_with_deploy(
     scxml_paths: &[&Path],
@@ -552,7 +552,7 @@ fn negative_mesh_sender_only_rejects() {
     }
 }
 
-// ─── Atomic 5 (DL-5') cross-doc Enum literal width narrowing ─────
+// ─── DL-5' cross-doc Enum literal width narrowing ────────────────
 
 /// Negative — `_event.data.<enum_field> === 256` against the schema's
 /// `enum:Result` field whose underlying is `uint8`. The narrowing
@@ -747,12 +747,12 @@ fn positive_enum_literal_at_send_side_boundary_accepts() {
     .expect("0xFF send param must fit uint8 underlying");
 }
 
-// ─── F-κ: strict variant membership ─────────────────────────────────
+// ─── Strict variant membership ──────────────────────────────────────
 
 /// Negative — `_event.data.status === 7` against the `enum:Result`
 /// (uint8 carrier, declared `{ok=0, error=1, timeout=2}`, default
 /// strict). 7 fits the underlying width but is not declared, so the
-/// F-κ membership layer rejects with the reused
+/// strict-membership layer rejects with the reused
 /// `validation/cross-kind-type-mismatch` wire code (design lock #2 —
 /// no new code). The diagnostic enumerates the declared variant set
 /// so authors can pick the value they meant.
@@ -805,7 +805,7 @@ fn negative_enum_variant_not_declared_receive_side_rejects() {
 }
 
 /// Negative — send-side mirror: `<send><param name="status" expr="7"/>`
-/// against the same strict `enum:Result` field. The F-κ membership
+/// against the same strict `enum:Result` field. The strict-membership
 /// check rejects on the send branch with the same diagnostic shape.
 #[test]
 fn negative_enum_variant_not_declared_send_side_rejects() {

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Open body, unified
-     OpenSyn + OpenAck shape (RFC §5.B B5-ι Batch 1 with B5-λ negation
+     OpenSyn + OpenAck shape (RFC §5.B cross-codec composition with present-if negation negation
      grammar landed in the prior atomic commit).
 
      Mirrors zenoh-pico `_z_open_encode` (src/protocol/codec/transport.c
@@ -12,13 +12,13 @@
      `_z_open_encode`, so the body codec scope is the two always-present
      VLE u64 fields plus the gated cookie pair.
 
-     The cookie is gated on `!parent.A` (B5-λ negation): present when
+     The cookie is gated on `!parent.A` (present-if negation negation): present when
      the A flag is CLEAR, absent when A=1. Length-prefix uses zenoh's
      standard `_z_slice_encode` pattern (codec.c:247) — VLE u64 length
      followed by length-ref bytes. Both gated fields share the same
      predicate so they're either both present or both absent.
 
-     This unified codec replaces the prior B5-ι atomic-3 specialized
+     This unified codec replaces the prior cross-codec composition atomic-3 specialized
      `codec_zenoh_open_ack` (body-when-A=1, cookie carve-out via
      omission). The carve-out was forced by the absence of negation
      grammar; once `!parent.A` is expressible the unified form is the

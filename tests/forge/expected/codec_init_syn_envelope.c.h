@@ -41,7 +41,7 @@ typedef struct {
     codec_init_syn_envelope_variant_t body;
 } codec_init_syn_envelope_t;
 
-/* RFC variant-default-uniformity Atomic β-c11: designated-initializer
+/* RFC variant-default-uniformity (C11): designated-initializer
  * macro carrying the codec's wire-MID-baked defaults. C has no Default
  * trait — round-trip safety (`codec_init_syn_envelope_t x = CODEC_INIT_SYN_ENVELOPE_DEFAULT_INIT;
  * codec_init_syn_envelope_t_encode(&x)` decodes back to the same arm)
