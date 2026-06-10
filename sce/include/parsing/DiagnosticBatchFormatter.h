@@ -18,7 +18,7 @@
 //
 // `SCXMLParser::getDiagnostics()` is the typical input source; the
 // formatter does not depend on `SCXMLParser` so any consumer with
-// its own diagnostic vector can call this directly. RFC §wire-W2
+// its own diagnostic vector can call this directly. §wire-W2
 // deliverable item #2.
 
 namespace SCE::parsing {

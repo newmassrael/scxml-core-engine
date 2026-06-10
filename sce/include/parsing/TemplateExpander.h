@@ -23,15 +23,10 @@
 // port is string-level (rather than DOM-mutating) because
 // `SCE::parsing::PositionMap` keys diagnostics to byte offsets in
 // the expanded output — a DOM-mutation pipeline cannot produce a
-// stable byte-offset coordinate space (RFC §1 Q1 Hybrid choice in
-// `claudedocs/rfc-sce-template-phase-c.md`). The companion
+// stable byte-offset coordinate space. The companion
 // `PugiXMLDocument::processSceTemplate` drives the expander with
 // post-XInclude serialised bytes, then re-parses the expander
 // output into the DOM.
-//
-// Phase C P2 in `claudedocs/rfc-sce-template-phase-c.md` §3 P2
-// delivers this expander; P1 shipped the `PositionMap` primitive
-// this expander produces.
 
 namespace SCE::parsing {
 
@@ -62,8 +57,8 @@ struct TemplateExpandResult {
 // The expander composes `upstream` into its output so a byte
 // emitted from a non-substituted prefix / suffix region resolves
 // back to its origin file even when that origin is an
-// `xi:include`'d fragment (Rust `template::expand`'s `input_map`
-// parameter, Phase X RFC §1 Q2). When the caller has no upstream
+// `xi:include`'d fragment (mirrors Rust `template::expand`'s
+// `input_map` parameter). When the caller has no upstream
 // rewriting to compose against, pass
 // `PositionMap::identity(selfPath, content)`.
 //

@@ -680,7 +680,7 @@ set(STATIC_W3C_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/w3c_static_generated")
 
 # Output directory for generated static integration-fixture code. Distinct
 # from STATIC_W3C_OUTPUT_DIR so the build system treats W3C and integration
-# trees as separate §6.2.6 drift contexts (RFC `claudedocs/rfc-donedata-5-backend-layout.md` Q-2).
+# trees as separate §6.2.6 drift contexts.
 set(STATIC_INTEGRATION_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated")
 
 # Generate C++ code for W3C tests BEFORE defining executables
@@ -698,7 +698,7 @@ set(W3C_AOT_TESTS "")
 # appends to this in parent scope; the integration_tests target then DEPENDS on it.
 set(GENERATED_INTEGRATION_HEADERS "")
 
-# Integration fixtures (RFC `claudedocs/rfc-donedata-5-backend-layout.md` Phase C).
+# Integration fixtures.
 # Build-time generation only (no committed tree); the build itself is the
 # §6.2.6 freshness invariant.
 sce_generate_static_integration_test(donedata_local_invoke ${STATIC_INTEGRATION_OUTPUT_DIR}
@@ -1229,10 +1229,11 @@ add_dependencies(comprehensive_interactive_test sce_runtime)
 
 
 # ============================================================================
-# SCE Mesh compile verification test (Phase 1)
+# SCE Mesh compile verification test
 # ============================================================================
 # Validates that generated mesh transport code compiles against generated SM
-# headers. Compilation success = test pass (runtime assertions in Phase 2).
+# headers. Compilation success = test pass (runtime assertions live in
+# the *_runtime_verification tests below).
 if(SCE_ENABLE_MESH AND NOT EMSCRIPTEN)
     set(MESH_TEST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/mesh")
     set(MESH_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_generated")
@@ -1264,7 +1265,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     set(SCE_MESH_CPP_TEMPLATE
         "${CMAKE_SOURCE_DIR}/tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2")
 
-    # ── MeshEnvelope codec unit tests (Phase 3.5 Step 3) ──────────
+    # ── MeshEnvelope codec unit tests ─────────────────────────────
     # Pure unit tests on the CBOR envelope codec — no codegen, no
     # transport, no scheduler. Catches wire-format regressions early.
     add_executable(mesh_envelope_codec_test
@@ -2885,7 +2886,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
     # Forces the srcexpr `{% if invoke_info.srcexpr %}` branches in
     # entry_exit_actions.jinja2 + state_machine.jinja2 to render and
     # compile. Until this fixture landed, no SCXML in-tree used
-    # `<invoke type="sce:mesh-rpc" srcexpr="...">`, so the Phase 5 β
+    # `<invoke type="sce:mesh-rpc" srcexpr="...">`, so the
     # srcexpr code sat "built but unconsumed" — the member declaration
     # was even trapped inside the scxml/hybrid guard until this session
     # moved it out. Compile-only test with sce_scripting linked so the
@@ -3202,7 +3203,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_shm_compile_verification COMMAND mesh_shm_compile_test)
 
-    # ── Phase 2: local_transport runtime verification ────────────
+    # ── local_transport runtime verification ─────────────────────
     # Exercises the full send chain: brake <send target="#motor"/>
     # → engine.raiseExternal → onMeshSend → router.wireTo lambda
     # → motor.processEvent. Compile-only tests cannot catch a missing
@@ -3232,7 +3233,7 @@ run tests/mesh/setup_crossdev_netns.sh as root before enabling"
 
     add_test(NAME mesh_local_runtime_verification COMMAND mesh_local_runtime_test)
 
-    # ── Phase 2: shm_transport runtime verification (fork-based) ──
+    # ── shm_transport runtime verification (fork-based) ──────────
     # Parent sends via router; child opens shm and drains. Proves
     # READY_MAGIC handshake, end-to-end event delivery, and
     # shm_unlink ownership across process boundary.
@@ -3601,7 +3602,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         # the same port cache variable serialise cleanly.
         RESOURCE_LOCK sce_mesh_crossdev_donedata_${SCE_TEST_CROSSDEV_DONEDATA_PORT})
 
-    # ── Phase 3 entry #4d: end-to-end payload verification ─────────
+    # ── End-to-end payload verification ────────────────────────────
     # Proves <param> data survives: sender → JSON → wire → drain
     # → raiseExternal → _event.data → receiver cond matches.
     set(MESH_SHM_PAYLOAD_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/mesh_shm_payload_generated")
@@ -3680,7 +3681,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         TIMEOUT 30
         RESOURCE_LOCK sce_mesh_shm_brake_payload_motor_payload)
 
-    # ── Phase 3: someip_transport compile verification ─────────
+    # ── someip_transport compile verification ──────────────────
     # Validates that generated SOME/IP transport code compiles against
     # real vsomeip 3.x headers. Gated on find_package(vsomeip3).
     find_package(vsomeip3 QUIET)
@@ -4747,7 +4748,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
         message(STATUS "vsomeip3 not found — skipping mesh_someip_compile_test")
     endif()
 
-    # ── Phase 3: zenoh_transport compile verification ─────────
+    # ── zenoh_transport compile verification ──────────────────
     # Validates that generated Zenoh transport code compiles against
     # real zenoh-cpp headers. Gated on find_package(zenohcxx).
     #
@@ -6536,7 +6537,7 @@ with -DSCE_TEST_CROSSDEV_DONEDATA_PORT=N on collision.")
     )
     list(APPEND SCE_REJECTION_TESTS mesh_scxml_invoke_cross_device_missing_rejection)
 
-    # ── Phase 3 entry #5: deploy.yaml-only middleware switch demo ──────
+    # ── deploy.yaml-only middleware switch demo ────────────────────────
     # Proves that the SAME brake.scxml compiles against four different
     # transports with zero source changes — only the deploy.yaml differs.
     # Each variant is verified to produce a transport header containing
@@ -6841,18 +6842,16 @@ set_tests_properties(IntegrationTests PROPERTIES COST 3000)
 # Priority Level 4: COST 2500 (W3C SCXML compliance validation, higher priority than benchmarks)
 set_tests_properties(W3CFullComplianceTests PROPERTIES COST 2500)
 
-# Phase B SSOT byte-equivalence harness — Rust vs C++ `sce:template`
+# SSOT byte-equivalence harness — Rust vs C++ `sce:template`
 # expansion parity. Skipped on WASM because the harness spawns
 # `sce-codegen expand` as a subprocess via popen, which is not
-# available in the Emscripten runtime. See
-# claudedocs/rfc-sce-template-phase-b.md §3 M1.
+# available in the Emscripten runtime.
 if(NOT EMSCRIPTEN)
-    add_subdirectory(w3c_phase_b_parity)
+    add_subdirectory(w3c_template_parity)
 endif()
 
-# Phase C P1 — PositionMap unit-test family. Runs everywhere
-# (no subprocess dependency). See
-# claudedocs/rfc-sce-template-phase-c.md §3 P1.
+# PositionMap unit-test family. Runs everywhere
+# (no subprocess dependency).
 add_subdirectory(parsing)
 
 # Priority Level 5: Performance benchmarks (measure performance after functional validation, execute last)

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template parity fixture: sibling_uses.
+
+  Replay of the Rust unit test `sibling_uses_are_independent`
+  (sce-build/src/template.rs::tests). Two `<sce:use>` siblings
+  reference the same template with different `n` bindings, so
+  both producers must splice the template body twice and bind
+  each expansion's `{$n}` independently. Catches regressions
+  where a producer mistakenly threads state across sibling
+  expansions (e.g. cached parameter maps that survive their
+  call site).
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle">
+  <state id="idle">
+    <sce:use template="counter.scxml" n="1"/>
+    <sce:use template="counter.scxml" n="2"/>
+  </state>
+</scxml>

@@ -19,7 +19,7 @@
 namespace SCE::parsing {
 
 // SCXML semantic-validation typed exception family thrown by
-// `SCE::SCXMLParser::parseScxmlNode` and `validateModel` under RFC §wire-W5
+// `SCE::SCXMLParser::parseScxmlNode` and `validateModel` under §wire-W5
 // D1 (typed-throw, mirror of W4 D1-C). Each leaf carries a typed
 // payload — `SCXMLParser::parseFile` / `parseContent` catch it on the
 // `SemanticError` base and surface the typed instance via
@@ -43,26 +43,25 @@ namespace SCE::parsing {
 // The fourth leaf, `SemanticTopLevelScriptUnloaded`, carries a NEW
 // wire code `scxml/top-level-script-unloaded` because §scxml-5.8
 // has no forge analog — the rejection rule is unique to SCXML's
-// document-loading semantics. RFC §wire-W5 D2 documents the 1-NEW + 3-
+// document-loading semantics. §wire-W5 D2 documents the 1-NEW + 3-
 // REUSE breakdown.
 //
 // Stage = "validation" for ALL four leaves: SCXML semantic validation
 // IS post-parse semantic validation, the same analytical stage as
 // forge `validation/*`. Adding a `Stage::ScxmlSemantic` for separate-
-// stage routing is a future decision driven by a real consumer ask
-// (RFC §wire-W5 anti-pattern #7).
+// stage routing is consumer-gated (§wire-W5 anti-pattern #7).
 //
-// RFC §wire-W5 α-strict per
-// `claudedocs/rfc-sce-diagnostic-wire-unification.md` line 1755+.
+// NEW wire codes are declared only where a matching Rust producer
+// exists; producer-less leaves reuse existing codes (§wire-W5).
 
 class SemanticError : public std::runtime_error, public Diagnostic {
 public:
     using std::runtime_error::runtime_error;
 
-    // Reserved for future location stamping. No throw site populates
+    // Reserved for location stamping. No throw site populates
     // this today (`parseScxmlNode` / `validateModel` callsites have
     // SCXML-element node pointers but no captured source position —
-    // see W5a deferred prerequisite in §3 milestone roadmap).
+    // stamping is consumer-gated).
     void setLocation(SourcePos pos) {
         location_ = std::move(pos);
     }
@@ -200,7 +199,7 @@ public:
 // `src` attribute value when set. Both are optional because the
 // analyzer-side Rust producer (`analyzer::can_generate_static`) emits
 // without parser-captured detail — the wire code identity holds
-// across the asymmetry per RFC §wire-W5 anti-pattern #5.
+// across the asymmetry per §wire-W5 anti-pattern #5.
 class SemanticTopLevelScriptUnloaded : public SemanticError {
 public:
     SemanticTopLevelScriptUnloaded(std::string message,

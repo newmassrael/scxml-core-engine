@@ -65,7 +65,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         actionParser_->setScxmlBasePath(basePath);
         SCE_LOG_DEBUG("Set SCXML base path for external script resolution: {}", basePath);
 
-        // RFC §wire-W4 D1-C: PugiXMLParser throws `ParseFileNotFound` /
+        // §wire-W4 D1-C: PugiXMLParser throws `ParseFileNotFound` /
         // `ParseXmlFailed` on parse-entry failures; the caller no
         // longer polls a nullable result + `getLastError()`. The
         // existing `if (!doc || !doc->isValid())` branch became dead
@@ -74,9 +74,9 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         auto doc = xmlParser->parseFile(filename);
 
         // Process XIncludes; the produced PositionMap threads into
-        // `processSceTemplate` so Phase X RFC §1 Q2 composition
-        // unifies post-XInclude and post-template diagnostic
-        // coordinates through a single map. RFC §wire-W4.5 D1: typed
+        // `processSceTemplate` so map composition unifies
+        // post-XInclude and post-template diagnostic
+        // coordinates through a single map. §wire-W4.5 D1: typed
         // throws bubble to the catch arms below
         // (XIncludeExpansionError / ParseError) — there is no
         // longer a polling result.
@@ -87,22 +87,20 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         // mode raises a typed `SCE::parsing::TemplateError`
         // subtype (see `sce/include/parsing/TemplateError.h` for
         // the 8-variant set) caught below; reparse failures of the
-        // spliced text raise `ParseXmlFailed` per RFC §wire-W4.5 D2.
-        // See Phase C P2 §3 P2 in
-        // claudedocs/rfc-sce-template-phase-c.md.
+        // spliced text raise `ParseXmlFailed` per §wire-W4.5 D2.
         SCE_LOG_DEBUG("Processing sce:template");
         documentPositions_ = doc->processSceTemplate(xincludePositions);
 
         // Parse document
         return parseAbstractDocument(doc);
     } catch (const SCE::parsing::ParseError &pe) {
-        // RFC §wire-W4 D1-C: PugiXMLParser + parseAbstractDocument throw
+        // §wire-W4 D1-C: PugiXMLParser + parseAbstractDocument throw
         // typed `ParseError` subtypes for parser-entry failures
         // (file-not-found, malformed XML, no/wrong root element).
         // Q4-B coexistence: `addError` populates the legacy string
         // surface; `recordDiagnostic` populates the typed
         // `getDiagnostics()` surface that consumers dispatch on
-        // (RFC §wire-W4 D8 ParseErrorConsumer.TypedCodeDistinguishesFailureClass*).
+        // (§wire-W4 D8 ParseErrorConsumer.TypedCodeDistinguishesFailureClass*).
         addError(pe.what());
         recordDiagnostic(pe.clone());
         return nullptr;
@@ -117,11 +115,11 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         recordDiagnostic(tpl.clone());
         return nullptr;
     } catch (const SCE::parsing::XIncludeExpansionError &xie) {
-        // RFC §W3-5: re-thrown by `PugiXMLDocument::processXInclude`
+        // §wire-W3: re-thrown by `PugiXMLDocument::processXInclude`
         // so the typed leaf reaches `getDiagnostics()` with its
         // `xml/xinclude-*` `code()` intact. `addError` populates the
         // legacy string surface for Q4-B coexistence, paralleling
-        // the W2 TemplateError arm above.
+        // the §wire-W2 TemplateError arm above.
         std::string msg = "XInclude processing failed: " + std::string(xie.what());
         if (xie.location().has_value()) {
             const auto &loc = *xie.location();
@@ -132,7 +130,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         recordDiagnostic(xie.clone());
         return nullptr;
     } catch (const SCE::parsing::SemanticError &se) {
-        // RFC §wire-W5 D5: SCXML semantic-validation throws (parseScxmlNode
+        // §wire-W5 D5: SCXML semantic-validation throws (parseScxmlNode
         // top-level-script + no-states; validateModel initial-state +
         // transition-target + compound-state-initial) surface here.
         // Q4-B coexistence: legacy `addError` populates
@@ -142,7 +140,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         recordDiagnostic(se.clone());
         return nullptr;
     } catch (const std::exception &ex) {
-        // RFC §wire-W4 D1-C: wrap unexpected std::exception as typed
+        // §wire-W4 D1-C: wrap unexpected std::exception as typed
         // `ParseException` so the typed surface stays populated even
         // for non-typed throws (bad_alloc, third-party throws). Per
         // D4 α-strict, `typeid(ex).name()` is NOT included — the wire
@@ -163,29 +161,29 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
 
         SCE_LOG_INFO("Parsing SCXML content");
 
-        // RFC §wire-W4 D1-C: PugiXMLParser throws `ParseXmlFailed` on
+        // §wire-W4 D1-C: PugiXMLParser throws `ParseXmlFailed` on
         // malformed input; the caller no longer polls a nullable
         // result + `getLastError()`.
         auto xmlParser = IXMLParser::create();
         auto doc = xmlParser->parseContent(content);
 
         // Process XIncludes; the produced PositionMap composes into
-        // the template stage (Phase X RFC §1 Q2). Typed throws
-        // bubble to the catch arms below (RFC §wire-W4.5 D1).
+        // the template stage. Typed throws
+        // bubble to the catch arms below (§wire-W4.5 D1).
         SCE_LOG_DEBUG("Processing XIncludes");
         auto xincludePositions = doc->processXInclude();
 
         // Process `<sce:use>` template expansion. Each failure
         // mode raises a typed `SCE::parsing::TemplateError`
         // subtype caught below; reparse failures raise
-        // `ParseXmlFailed` per RFC §wire-W4.5 D2.
+        // `ParseXmlFailed` per §wire-W4.5 D2.
         SCE_LOG_DEBUG("Processing sce:template");
         documentPositions_ = doc->processSceTemplate(xincludePositions);
 
         // Parse document
         return parseAbstractDocument(doc);
     } catch (const SCE::parsing::ParseError &pe) {
-        // RFC §wire-W4 D1-C: parser-entry typed surface (mirror of
+        // §wire-W4 D1-C: parser-entry typed surface (mirror of
         // `parseFile`'s arm above).
         addError(pe.what());
         recordDiagnostic(pe.clone());
@@ -201,7 +199,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         recordDiagnostic(tpl.clone());
         return nullptr;
     } catch (const SCE::parsing::XIncludeExpansionError &xie) {
-        // RFC §W3-5: re-thrown by `PugiXMLDocument::processXInclude`
+        // §wire-W3: re-thrown by `PugiXMLDocument::processXInclude`
         // so the typed leaf reaches `getDiagnostics()` with its
         // `xml/xinclude-*` `code()` intact. `addError` populates the
         // legacy string surface for Q4-B coexistence.
@@ -215,7 +213,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         recordDiagnostic(xie.clone());
         return nullptr;
     } catch (const SCE::parsing::SemanticError &se) {
-        // RFC §wire-W5 D5: SCXML semantic-validation throws (parseScxmlNode
+        // §wire-W5 D5: SCXML semantic-validation throws (parseScxmlNode
         // top-level-script + no-states; validateModel initial-state +
         // transition-target + compound-state-initial) surface here.
         // Q4-B coexistence: legacy `addError` populates
@@ -226,7 +224,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         recordDiagnostic(se.clone());
         return nullptr;
     } catch (const std::exception &ex) {
-        // RFC §wire-W4 D1-C: wrap unexpected std::exception as typed
+        // §wire-W4 D1-C: wrap unexpected std::exception as typed
         // `ParseException`.
         SCE::parsing::ParseException pe(
             "Exception while parsing content: " + std::string(ex.what()));
@@ -237,13 +235,13 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
 }
 
 std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::shared_ptr<IXMLDocument> doc) {
-    // RFC §wire-W4 D1-C: PugiXMLParser::parseFile / parseContent throw on
+    // §wire-W4 D1-C: PugiXMLParser::parseFile / parseContent throw on
     // failure rather than returning nullptr, so this function's
     // callers (parseFile / parseContent above) only invoke it with a
     // valid document. The historical `if (!doc) { addError("Null
     // document"); return nullptr; }` branch became dead under
     // typed-throw and is removed (the dropped `ParseNullDocument`
-    // leaf in RFC §wire-W4 α-strict).
+    // leaf in §wire-W4 α-strict).
 
     // Get root element. roxmltree's Rust-side analog cannot reach
     // this case (parse rejects root-less input), so the C++ leaf
@@ -292,7 +290,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::sh
 
 bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlNode,
                                       std::shared_ptr<SCXMLModel> model) {
-    // RFC §wire-W5 Stage E: removed `if (!scxmlNode || !model)` precondition
+    // §wire-W5 Stage E: removed `if (!scxmlNode || !model)` precondition
     // guard. Callers (parseAbstractDocument) construct `model` with
     // `std::make_shared` (never null) and reach this point only after
     // `getRootElement()` returned a non-null handle and the
@@ -398,7 +396,7 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
                 errorDetail += " - document rejected per W3C SCXML 5.8";
 
                 SCE_LOG_ERROR("Failed to parse top-level script element #{} (W3C SCXML 5.8)", i + 1);
-                // RFC §wire-W5 D5: typed-throw replaces addError + return-false
+                // §wire-W5 D5: typed-throw replaces addError + return-false
                 // so the parser-entry catch arm can record both the legacy
                 // string and the typed Diagnostic in one site.
                 throw SCE::parsing::SemanticTopLevelScriptUnloaded(
@@ -425,7 +423,7 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
     rootStateElements.insert(rootStateElements.end(), finalElements.begin(), finalElements.end());
 
     if (rootStateElements.empty()) {
-        // RFC §wire-W5 D5: typed-throw — folded onto `validation/empty-collection`
+        // §wire-W5 D5: typed-throw — folded onto `validation/empty-collection`
         // per W4 D4 fold (concept identity with forge "kind requires at
         // least one X").
         throw SCE::parsing::SemanticNoStates(
@@ -565,7 +563,7 @@ void SCE::SCXMLParser::recordDiagnostic(
 }
 
 bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
-    // RFC §wire-W5 Stage E: removed `if (!model)` and `if
+    // §wire-W5 Stage E: removed `if (!model)` and `if
     // (!model->getRootState())` guards. The first is unreachable
     // because callers construct `model` with `std::make_shared` and
     // only invoke `validateModel` from the success path of
@@ -580,7 +578,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
     // Snapshot all declared state ids once for the typed-throw
     // payload's `available` list. Used by `SemanticInitialStateUnknown`
     // and `SemanticTransitionTargetUnknown` so consumers receive a
-    // structured `fix.candidates` list (RFC §wire-W5 D2 fold of forge
+    // structured `fix.candidates` list (§wire-W5 D2 fold of forge
     // `validation/invalid-reference`).
     std::vector<std::string> availableStateIds;
     availableStateIds.reserve(model->getAllStates().size());
@@ -593,7 +591,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
     if (!initialStates.empty()) {
         for (const auto &initialStateId : initialStates) {
             if (!model->findStateById(initialStateId)) {
-                // RFC §wire-W5 D5 typed-throw — fail-fast on the first bad
+                // §wire-W5 D5 typed-throw — fail-fast on the first bad
                 // id (W4 D1-C invariant: a single semantic error
                 // terminates the parse, paralleling the parser-entry
                 // ParseError catch arm).
@@ -609,7 +607,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
 
     // 3. Validate state relationships
     //
-    // RFC §wire-W5 Stage E removed the parent/children consistency guard
+    // §wire-W5 Stage E removed the parent/children consistency guard
     // (previously: "State '<X>' has parent '<Y>' but is not in
     // parent's children list"). The check was a defensive guard for
     // an internal model-construction invariant — `StateNode::addChild`
@@ -628,7 +626,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
             const auto &targets = transition->getTargets();
             for (const auto &target : targets) {
                 if (!target.empty() && !model->findStateById(target)) {
-                    // RFC §wire-W5 D5 typed-throw — folded onto
+                    // §wire-W5 D5 typed-throw — folded onto
                     // `validation/invalid-reference` (concept identity
                     // with forge `ValidationError::InvalidReference`).
                     throw SCE::parsing::SemanticTransitionTargetUnknown(
@@ -648,7 +646,7 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
             std::string initialStateId;
             while (iss >> initialStateId) {
                 if (!model->findStateById(initialStateId)) {
-                    // Same wire code as root-level (RFC §wire-W5 D2 — one
+                    // Same wire code as root-level (§wire-W5 D2 — one
                     // C++ leaf covers both scopes), payload `Scope`
                     // discriminates root vs compound for in-process
                     // typed dispatch.

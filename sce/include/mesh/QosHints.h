@@ -5,10 +5,10 @@
 //
 // Hints, not guarantees: each transport may honor a subset (e.g. SOME/IP
 // always-reliable for unicast, Zenoh reliable/best_effort selectable, shm
-// inherently reliable+ordered). See SCE_MESH.md Section 13 Phase 3.5
-// envelope key 13. Default = best-effort + unordered (lowest cost). Wire
-// serialization is added when transports start consuming it; Session B
-// keeps the field present in-memory but omits the optional CBOR key.
+// inherently reliable+ordered). See SCE_MESH.md §mesh-13 "Pattern Realization"
+// envelope key 13. Default = best-effort + unordered (lowest cost). The
+// field is in-memory only — the optional CBOR key stays omitted until a
+// transport starts consuming it.
 
 #pragma once
 

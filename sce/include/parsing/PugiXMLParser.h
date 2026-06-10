@@ -107,8 +107,8 @@ private:
     // absolute path on success, empty string on not-found.
     //
     // The out-param overload additionally records the search trail —
-    // the paths that were checked and did not exist — so the Phase B
-    // M4 `TemplateNotFound` throw site can render the same
+    // the paths that were checked and did not exist — so the
+    // `TemplateNotFound` throw site can render the same
     // comma-separated trail Rust emits via
     // `resolve_template_path`'s `tried` vector in
     // `sce-build/src/template.rs`. Callers that do not need the

@@ -17,23 +17,23 @@
 // Mirrors the Rust `sce-build::forge::diagnostic::Diagnostic` envelope
 // pinned by `schemas/sce-diagnostic.v1.schema.json`. The C++ side adds
 // a second independent conformer to that schema; the Rust side stays
-// the authoritative producer and the C++ side conforms field-for-field
-// (Q2 in `claudedocs/rfc-sce-diagnostic-wire-unification.md` §1).
+// the authoritative producer and the C++ side conforms
+// field-for-field.
 //
 // Concrete subtypes (W1 promotes `SCE::parsing::TemplateError`) provide:
 //   - `code()` — the schema's wire code string, e.g. `"xml/template-cycle"`.
 //                Must appear in the Rust `DiagnosticCode` registry; the
 //                drift guard lives in `sce-build/src/forge/diagnostic.rs`.
 //   - `location()` — author-source `SourcePos` when the throw site
-//                    populated one (Phase C P2 plumbing); `nullopt` for
+//                    populated one; `nullopt` for
 //                    diagnostics raised before position data is computed.
 //   - `to_json()` — single NDJSON record matching v1 schema. Field shape
 //                   follows the Rust struct member order so canonicalised
 //                   byte-diffs against `--error-format=json` agree.
 //
-// `addError(string)` on `SCXMLParser` continues to coexist (Q4-B); the
+// `addError(string)` on `SCXMLParser` continues to coexist; the
 // typed surface here is opt-in for consumers that want structured
-// diagnostics without re-parsing log text. RFC §wire-W1 contract.
+// diagnostics without re-parsing log text. §wire-W1 contract.
 
 namespace SCE::parsing {
 
@@ -50,7 +50,7 @@ public:
     virtual std::string_view code() const noexcept = 0;
 
     // Const-ref return matches the existing `TemplateError::location()`
-    // accessor (Phase C P2) so callers like `SCXMLParser::parseFile`
+    // accessor so callers like `SCXMLParser::parseFile`
     // can continue binding `const auto &loc = *diag.location();`
     // without touching a temporary's storage.
     virtual const std::optional<SourcePos> &location() const noexcept = 0;
@@ -63,7 +63,7 @@ public:
     // — no whitespace, no key-order coupling to the
     // `nlohmann::ordered_json` insertion order on the producer side.
     // Matches the canonicalisation Rust output is expected to round-
-    // trip through for any cross-side byte-diff consumer (RFC §wire-W2
+    // trip through for any cross-side byte-diff consumer (§wire-W2
     // deliverable item #3 / RFC §4 risk row "canonicalisation hides
     // semantic divergence" — only key order and whitespace are
     // normalised, never field names or values).
@@ -77,7 +77,7 @@ public:
     // workaround for slicing through a base-class copy ctor; each leaf
     // returns `std::make_unique<Self>(*this)` so the dynamic type is
     // preserved and `to_json()` keeps dispatching to the right override.
-    // RFC §wire-W1 audit finding #1 closure (W2 deliverable).
+    // §wire-W1 audit finding #1 closure (W2 deliverable).
     virtual std::unique_ptr<Diagnostic> clone() const = 0;
 };
 

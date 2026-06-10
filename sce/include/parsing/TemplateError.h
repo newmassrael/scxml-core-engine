@@ -20,7 +20,6 @@ namespace SCE::parsing {
 // C++ exception hierarchy for `sce:template` preprocessor
 // failures thrown by `PugiXMLDocument::processSceTemplate`.
 //
-// Phase B tracked in `claudedocs/rfc-sce-template-phase-b.md`.
 // Each subtype maps one-to-one to a Rust
 // `sce-build/src/template.rs::TemplateError` variant and the
 // `xml/template-*` DiagnosticCode it emits. The 1:1 mapping is
@@ -31,10 +30,10 @@ namespace SCE::parsing {
 // or renames a variant on one side without updating the other
 // surfaces as red rather than silent cross-language drift.
 //
-// W1 (`claudedocs/rfc-sce-diagnostic-wire-unification.md`) makes
-// `TemplateError` implement `SCE::parsing::Diagnostic`. Each subtype
-// overrides `code()` with its `xml/template-*` wire string; the
-// shared base contributes `location()` (the Phase C P2 SourcePos)
+// `TemplateError` implements `SCE::parsing::Diagnostic` (§wire-W1).
+// Each subtype overrides `code()` with its `xml/template-*` wire
+// string; the shared base contributes `location()` (the
+// author-source SourcePos)
 // and `to_json()` (the v1 schema NDJSON record). Subtype field
 // shape is unchanged — the existing message-string ctor stays the
 // throw-site API.
@@ -60,8 +59,8 @@ public:
     //
     // `location()` here also serves the existing
     // `TemplateExpander::run` / `SCXMLParser::parseFile` callers that
-    // bind `const auto &loc = *err.location();` — Phase C P2 plumbing,
-    // unchanged on the consumer side.
+    // bind `const auto &loc = *err.location();` — unchanged on the
+    // consumer side.
     std::string_view code() const noexcept override = 0;
     const std::optional<SourcePos> &location() const noexcept override {
         return location_;

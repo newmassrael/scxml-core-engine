@@ -84,7 +84,7 @@ std::string Diagnostic::to_canonical_json_string() const {
     //   ensure_ascii = false → preserve UTF-8 bytes verbatim
     // The result is the canonical NDJSON record body the W1 byte-
     // diff parity test pins against Rust's --error-format=json
-    // output. RFC §wire-W2 deliverable item #3.
+    // output. §wire-W2 deliverable item #3.
     const auto record = to_json();
     const auto canonical =
         nlohmann::json::parse(record.dump());

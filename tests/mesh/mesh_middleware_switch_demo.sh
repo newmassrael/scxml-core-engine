@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
-# SCE Mesh Phase 3 entry #5 — deploy.yaml-only middleware switch demo.
+# SCE Mesh deploy.yaml-only middleware switch demo.
 #
-# Proves the central Phase 3 claim: the same SCXML compiles against any
+# Proves the central mesh claim: the same SCXML compiles against any
 # supported transport with zero source changes — only the deploy.yaml
 # differs. Runs sce-codegen against one SCXML and N deploy.yaml variants,
 # asserts:

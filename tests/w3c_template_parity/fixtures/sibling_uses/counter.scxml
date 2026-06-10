@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template parity template: counter.
+
+  One required parameter `n` substituted into the `target`
+  attribute of a single transition. The minimal body keeps the
+  canonicalised diff focused on whether both producers spliced
+  two independent copies with different bindings.
+-->
+<sce:template xmlns:sce="http://sce.dev/ext" name="counter">
+  <sce:param name="n" required="true"/>
+  <transition event="tick" target="tick_{$n}"/>
+</sce:template>

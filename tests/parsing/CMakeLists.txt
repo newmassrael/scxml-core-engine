@@ -1,9 +1,8 @@
-# Phase C P1 — PositionMap unit-test family.
-# claudedocs/rfc-sce-template-phase-c.md §3 P1 deliverable #4.
+# PositionMap unit-test family.
 #
-# Standing consumer for the PositionMap primitive (see
-# `feedback_built_but_unconsumed.md`) until P2 wires
-# `PugiXMLDocument::processSceTemplate` into the remap pipeline.
+# Exercises every public method of the PositionMap primitive; the
+# production consumers are `PugiXMLDocument::processXInclude` /
+# `processSceTemplate`.
 
 add_executable(position_map_test
     PositionMap_test.cpp
@@ -24,9 +23,9 @@ apply_sce_test_policies(position_map_test)
 
 add_test(NAME PositionMapTests COMMAND position_map_test)
 
-# Phase C P2 — TemplateExpander scanner-primitive unit tests.
-# Standing consumer for `parsing/TemplateExpander.h` while the
-# full recursive expansion lands in follow-up P2 commits.
+# TemplateExpander scanner-primitive unit tests.
+# Exercises `parsing/TemplateExpander.h`; the production consumer is
+# `PugiXMLDocument::processSceTemplate` via `expandString`.
 add_executable(template_expander_test
     TemplateExpander_test.cpp
 )
@@ -46,10 +45,9 @@ apply_sce_test_policies(template_expander_test)
 
 add_test(NAME TemplateExpanderTests COMMAND template_expander_test)
 
-# Phase X B1 — XIncludeExpander unit tests.
-# Standing consumer for `parsing/XIncludeExpander.h` while
-# Phase X B2 swaps `PugiXMLDocument::processXInclude` to use it
-# (per `feedback_built_but_unconsumed.md`).
+# XIncludeExpander unit tests.
+# Exercises `parsing/XIncludeExpander.h`; the production consumer is
+# `PugiXMLDocument::processXInclude` via `expandStringX`.
 add_executable(xinclude_expander_test
     XIncludeExpander_test.cpp
 )

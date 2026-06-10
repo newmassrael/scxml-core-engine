@@ -19,12 +19,10 @@
 
 // String-level `<sce:use>` / `<sce:template>` expander
 // implementation. Mirrors `sce-build/src/template.rs`; see the
-// header comment for the module-level contract. Phase C P2 ships
-// the low-level scanner primitives (`findElementEnd`,
-// `collectTopLevelSceUseRanges`) and the fast-path return from
-// `expandString`. The full recursive expansion path lands in
-// follow-up Phase C P2 commits that port
-// `apply_substitution_with_tracking`,
+// header comment for the module-level contract. The scanner
+// primitives (`findElementEnd`, `collectTopLevelSceUseRanges`),
+// the fast-path return from `expandString`, and the recursive
+// expansion path are ports of `apply_substitution_with_tracking`,
 // `substitute_into_template_with_map`, and `expand_impl` from the
 // Rust reference.
 
@@ -788,8 +786,8 @@ TemplateExpandResult expandImpl(std::string_view content,
         // through `inputMap` rather than a content-local identity:
         // when the byte sits inside an `xi:include`'d fragment the
         // upstream map carries fragment-file attribution, so
-        // diagnostics correctly resolve to the fragment author file
-        // (Phase X RFC §1 Q2). For the no-XInclude case `inputMap`
+        // diagnostics correctly resolve to the fragment author file.
+        // For the no-XInclude case `inputMap`
         // is identity over the host content, so the lookup collapses
         // to the previous behaviour.
         const SourcePos useLocation = inputMap.lookup(useRange.start);

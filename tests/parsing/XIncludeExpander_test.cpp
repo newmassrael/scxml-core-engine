@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Phase X B1 unit tests for `SCE::parsing::expandStringX`. Standing
-// consumer for the `XIncludeExpander.h` / `.cpp` infrastructure
-// until Phase X B2 wires `PugiXMLDocument::processXInclude` into
-// the expander — per `feedback_built_but_unconsumed.md`, every new
-// helper here must be exercised so the header is not dead-code.
+// Unit tests for `SCE::parsing::expandStringX`. Every helper in
+// the `XIncludeExpander.h` / `.cpp` infrastructure is exercised
+// here so the header carries no dead code; the production
+// consumer is `PugiXMLDocument::processXInclude`.
 //
-// Phase X RFC §3 B1 deliverable. Mirrors the Rust unit tests in
+// Mirrors the Rust unit tests in
 // `sce-build/src/xinclude.rs::tests` for parity coverage.
 
 #include "parsing/XIncludeExpander.h"
@@ -275,7 +274,7 @@ TEST(XIncludeExpander, PugiXMLDocumentProcessXIncludePopulatesMap) {
     doc.setSourceText(mainSrc);
     doc.setBasePath(tmp.root().string());
 
-    // RFC §W4.5 D1: processXInclude returns PositionMap directly;
+    // §wire-W4.5 D1: processXInclude returns PositionMap directly;
     // any failure throws (XIncludeExpansionError or ParseXmlFailed)
     // and would surface as a gtest unhandled-exception failure.
     const auto positions = doc.processXInclude();
