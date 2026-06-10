@@ -7,7 +7,7 @@ Convert the Wire RFC's milestone headings into a Mnemosyne bulk-section-create
 manifest for the SCE design ledger's `wire` namespace workspace
 (docs/sce-ledger/wire).
 
-The Wire RFC (claudedocs/rfc-sce-diagnostic-wire-unification.md) is an SCE design
+The Wire RFC (docs/sce-ledger/wire/rfc-sce-diagnostic-wire-unification.md) is an SCE design
 document whose §3 "Milestone roadmap" defines a commit-series of waves W0..W5
 (plus the half-wave W4.5). SCE code comments cite those waves as §W<n>
 ("RFC §W4", "§W5 D5"); this ledger makes the §wire-W<n> form resolve so the
@@ -26,7 +26,7 @@ uses only the Python standard library.
 
 Usage:
     python3 tools/mnemosyne-adoption/sce_wire_rfc_to_manifest.py \\
-        [--md claudedocs/rfc-sce-diagnostic-wire-unification.md] \\
+        [--md docs/sce-ledger/wire/rfc-sce-diagnostic-wire-unification.md] \\
         [--parent-doc GENERATED.md] \\
         [--manifest out/wire-manifest.json]
 """
@@ -90,7 +90,7 @@ def convert(md_text, parent_doc):
 def main(argv=None):
     here = Path(__file__).resolve().parent
     repo_root = here.parent.parent
-    default_md = repo_root / "claudedocs" / "rfc-sce-diagnostic-wire-unification.md"
+    default_md = repo_root / "docs" / "sce-ledger" / "wire" / "rfc-sce-diagnostic-wire-unification.md"
     ap = argparse.ArgumentParser(description="Wire RFC waves -> Mnemosyne manifest")
     ap.add_argument("--md", default=str(default_md))
     ap.add_argument("--parent-doc", default="GENERATED.md")

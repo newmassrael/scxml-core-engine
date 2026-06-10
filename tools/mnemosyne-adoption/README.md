@@ -223,7 +223,7 @@ while their `§scxml-` cites stay gated by the scxml workspace.
 
 ## C — Wire RFC design-ledger workspace (`wire` namespace)
 
-The Wire RFC (`claudedocs/rfc-sce-diagnostic-wire-unification.md`) defines a
+The Wire RFC (`docs/sce-ledger/wire/rfc-sce-diagnostic-wire-unification.md`) defines a
 commit-series of milestone waves W0..W5 (plus the half-wave W4.5). SCE code in
 `parsing/` and `runtime/` cites them as `§W<n>` ("RFC §W4", "§W5 D5"); the `wire`
 namespace gives those cites their own ledger under `docs/sce-ledger/wire`.
