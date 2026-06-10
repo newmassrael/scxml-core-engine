@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn native_action_is_not_a_script_engine_cause() {
-        // W3C SCXML G.7: a `<sce:action>` Custom Action Element dispatches
+        // §scxml-G-7: a `<sce:action>` Custom Action Element dispatches
         // to a host trait method; it never needs a runtime engine even with
         // typed-payload arguments. The whole document must analyze clean.
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext" version="1.0" initial="s">
@@ -697,7 +697,7 @@ mod tests {
 
     #[test]
     fn donedata_content_expression_triggers() {
-        // W3C §5.5: `<content expr="...">` MUST be evaluated against the
+        // §scxml-5.5: `<content expr="...">` MUST be evaluated against the
         // datamodel — so the script engine is required.
         let scxml = r##"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
             <state id="s" initial="f"><final id="f"><donedata><content expr="1"/></donedata></final></state>
@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn donedata_content_literal_null_datamodel_does_not_trigger() {
-        // W3C §5.5 + `datamodel="null"`: inline text is the content value
+        // §scxml-5.5 + `datamodel="null"`: inline text is the content value
         // verbatim — no evaluation, no script engine. This is the
         // native-only path (`cpp:` / `kt:` documents, tc8-harness verdict
         // payloads). The same XML under the ECMAScript datamodel would

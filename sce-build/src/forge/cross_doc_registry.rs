@@ -85,7 +85,7 @@ impl ScxmlDocKind {
 ///
 /// `stage_pools` is a sparse parallel map keyed by link names —
 /// populated only for links that declare `<sce:stage-pool ref="X"/>`
-/// (RFC §5.E sample-callback surface). The keys are a strict subset of the
+/// (RFC §synth-5-E sample-callback surface). The keys are a strict subset of the
 /// link entries in `docs`. Consumers query it via
 /// [`Self::lookup_stage_pool`] to wire the SCXML on-sample
 /// validator's `pool/sample-take-without-stage-pool` diagnostic.

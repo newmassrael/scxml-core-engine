@@ -342,7 +342,7 @@ done
 log_step "Stage 8/8 — spec-citation ledger validation (4 workspaces)"
 command -v mnemosyne-cli >/dev/null 2>&1 \
     || fail_step "Stage 8 (mnemosyne-cli not on PATH — install per spec-citations.yml MNEMOSYNE_REV)"
-for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth; do
+for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth docs/sce-ledger/bytesguard; do
     ( cd "$ws" \
         && mnemosyne-cli validate-workspace >/dev/null \
         && mnemosyne-cli validate-code-refs >/dev/null \
@@ -356,5 +356,8 @@ python3 tools/mnemosyne-adoption/migrate_citations.py --check \
 python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace synth \
     --from-toml docs/spec/synth/mnemosyne.toml >/dev/null \
     || fail_step "Stage 8 (synth citation-form gate)"
+python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace bytesguard \
+    --from-toml docs/sce-ledger/bytesguard/mnemosyne.toml >/dev/null \
+    || fail_step "Stage 8 (bytesguard citation-form gate)"
 
 printf '\npre-push: all 8 gates passed — push allowed.\n' >&2

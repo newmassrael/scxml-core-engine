@@ -43,7 +43,7 @@ if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build
 fi
 
-# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §6) rides the same
+# The bytes fixture (RFC rfc-eventschema-bytes-guard.md §bytesguard-6) rides the same
 # compile+run gate so the Python `bytes == b"ack"` guard is REALLY run — a
 # `bytes == str` regression silently evaluates False and only a runtime
 # transition check catches it.

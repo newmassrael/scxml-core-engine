@@ -274,7 +274,7 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
 ///     `native_typed_inject_events` switchboard SSOT, which is
 ///     all-or-nothing across backends: a guard one backend can emit but
 ///     another cannot must not be classed native, or the SSOT splits
-///     ([`select_native_typed_guards`] doc, RFC §1.3). Earlier this
+///     ([`select_native_typed_guards`] doc, RFC §bytesguard-1.3). Earlier this
 ///     proxied all six by checking only Rust + Go on the documented
 ///     assumption that the other emitters never fail. Iterating
 ///     [`ExprTarget::ALL`] removes the proxy structurally — the verdict
@@ -288,7 +288,7 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
 ///     [`bytes_comparisons_are_native_representable`]. A `bytes` operand
 ///     under an ordering operator, or compared against a
 ///     non-printable-ASCII literal, has no byte-identical native
-///     lowering (RFC §3 B2/B3); the hosted emitters would mangle it
+///     lowering (RFC §bytesguard-3 B2/B3); the hosted emitters would mangle it
 ///     silently (Go emits an illegal slice `<`; Python a `False`-always
 ///     `bytes < str`) rather than fail, so the verdict cannot rely on
 ///     the per-target lowering in (d) to reject it. This explicit
@@ -320,7 +320,7 @@ pub fn guard_is_native_lowerable(cond: &str, schema: &EventSchemaModel) -> bool 
 /// six backends: an equality (`===` / `!==`) against a printable-ASCII
 /// string literal. Ordering operators (`<`, `>`, `<=`, `>=`) on a
 /// `bytes` operand and equality against a non-decodable literal have no
-/// such lowering (RFC §3 B2/B3) and make the cond non-native. Each
+/// such lowering (RFC §bytesguard-3 B2/B3) and make the cond non-native. Each
 /// comparison is classified by [`classify_bytes_comparison`] — the SAME
 /// SSOT rule the receive-side validator renders as a diagnostic — so the
 /// verdict and the diagnostic can never disagree about which forms are
@@ -661,7 +661,7 @@ fn walk_for_event_data_refs(
             )?;
             if is_comparison(*op) {
                 // Each operand is checked against the schema with the
-                // OTHER operand as its comparison partner. RFC §3 B2/B3
+                // OTHER operand as its comparison partner. RFC §bytesguard-3 B2/B3
                 // (non-representable bytes form) surfaces before the
                 // primitive-literal type check: it is a structural
                 // rejection the SSOT classifier decides, independent of
@@ -899,7 +899,7 @@ fn check_comparison_type(
             },
         ));
     }
-    // Note: the `bytes`-specific representability rules (RFC §3 B2/B3 —
+    // Note: the `bytes`-specific representability rules (RFC §bytesguard-3 B2/B3 —
     // non-ASCII literal, ordering operator) are NOT decided here. They
     // live in the SSOT [`classify_bytes_comparison`] and are surfaced as
     // diagnostics by [`reject_non_representable_bytes`], which the walk
@@ -951,7 +951,7 @@ fn check_comparison_type(
 /// validator (which renders a violation as a diagnostic) and the
 /// native-lowerability verdict (which renders it as a non-native
 /// classification). Defining it once keeps "which `bytes` comparison
-/// forms lower natively" in exactly one place (RFC §3 B2/B3): a third
+/// forms lower natively" in exactly one place (RFC §bytesguard-3 B2/B3): a third
 /// forbidden form is added here and both consumers inherit it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BytesComparisonForm {
@@ -991,7 +991,7 @@ fn classify_bytes_comparison(op: BinOp, other: &TypedExpr) -> BytesComparisonFor
 }
 
 /// Render a non-representable `bytes` comparison as its receive-side
-/// diagnostic (RFC §3 B2/B3). A no-op for a non-`bytes` field or a
+/// diagnostic (RFC §bytesguard-3 B2/B3). A no-op for a non-`bytes` field or a
 /// representable form — [`classify_bytes_comparison`] is the SSOT that
 /// decides; this only maps the verdict to a diagnostic. `op` and `other`
 /// are the comparison operator and the partner operand of `field`.
@@ -1808,7 +1808,7 @@ mod tests {
         ));
     }
 
-    // RFC §3 B6 — the native-lowerability verdict is the conjunction over
+    // RFC §bytesguard-3 B6 — the native-lowerability verdict is the conjunction over
     // every backend SCE generates (`ExprTarget::ALL`), not a Rust + Go
     // proxy. A guard the verdict classes native must lower on each target.
     #[test]
@@ -1900,7 +1900,7 @@ mod tests {
         assert!(guard_is_native_lowerable("_event.data.raw === 'ack'", &s));
     }
 
-    // RFC §3 B2/B3 — the per-guard representability pre-check keeps a
+    // RFC §bytesguard-3 B2/B3 — the per-guard representability pre-check keeps a
     // non-lowerable bytes form off the native path even though the schema
     // is eligible: an ordering operator (B3) or a non-printable-ASCII
     // literal (B2) on a bytes operand is classed non-native (the

@@ -94,28 +94,28 @@ pub enum ForgeKind {
     /// Threshold monitoring with hysteresis.
     Observer,
     /// Pure synchronous function with bounded loops and mutable locals
-    /// — watching-zenoh RFC §5.A (item A3). Free function emit on
+    /// — watching-zenoh RFC §synth-5-A (item A3). Free function emit on
     /// every backend (`#![no_std]`-clean on Rust when no bytes param).
     Algorithm,
-    /// Byte-stream link endpoint — watching-zenoh RFC §5.C. MCU-class
-    /// kind (RFC §5.J.4): emits only on `(rust, *)` and
+    /// Byte-stream link endpoint — watching-zenoh RFC §synth-5-C. MCU-class
+    /// kind (RFC §synth-5-J-4): emits only on `(rust, *)` and
     /// `(c11, bare_metal)`. SCE owns the `Link` trait surface in
     /// `sce-link-runtime`; per-OS impls (`sce_link_runtime_lwip`,
     /// `_tokio`, `_qnx`) live downstream in watching-zenoh.
     Link,
-    /// SRAM-placed, DMA-aligned slot table — watching-zenoh RFC §5.E.
-    /// Second MCU-class kind (RFC §5.J.4): emits only on `(rust, *)`
+    /// SRAM-placed, DMA-aligned slot table — watching-zenoh RFC §synth-5-E.
+    /// Second MCU-class kind (RFC §synth-5-J-4): emits only on `(rust, *)`
     /// and `(c11, bare_metal)`. The slot table carries the
     /// `<sce:slot-count>` / `<sce:slot-size>` / `<sce:section>` /
     /// `<sce:alignment>` / `<sce:dma-channel>` / `<sce:cache-policy>`
     /// schema, the 7-state lifecycle FSM (`free` / `cpu-mut` /
     /// `dma-armed-{tx,rx}` / `dma-busy-{tx,rx}` / `cpu-ref`), and
-    /// cache-maintenance pinning routed through the §5.I `<sce:call>`
+    /// cache-maintenance pinning routed through the §synth-5-I `<sce:call>`
     /// intrinsic registry.
     BufferPool,
     /// Concurrent execution context driven by a `<sce:link-rx>` source —
-    /// watching-zenoh RFC §5.D lines 858-913. Third MCU-class kind (RFC
-    /// §5.J.4): emits only on `(rust, *)` (tokio::spawn on AP, cooperative-
+    /// watching-zenoh RFC §synth-5-D lines 858-913. Third MCU-class kind (RFC
+    /// §synth-5-J-4): emits only on `(rust, *)` (tokio::spawn on AP, cooperative-
     /// scheduler slot on MCU) and `(c11, bare_metal)` (cooperative-
     /// scheduler slot, fixed ring-buffer inbox). The schema carries a
     /// parse-time author guard for `worker/shared-mutable-state`; codegen
@@ -125,10 +125,10 @@ pub enum ForgeKind {
     /// deploy.yaml.
     Worker,
     /// Typed container with build-time-declared capacity but runtime-varying
-    /// occupancy — watching-zenoh RFC §5.L lines 2540-2655. zenoh-pico parity
+    /// occupancy — watching-zenoh RFC §synth-5-L lines 2540-2655. zenoh-pico parity
     /// (runtime subscription declare/undeclare + queryable + reassembly
     /// tables) requires this on MCU where heap is forbidden. Six-language
-    /// emitter table per §5.J.5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap
+    /// emitter table per §synth-5-J-5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap
     /// struct / Cpp `std::array<T, N>` + `std::bitset<N>` / Kotlin
     /// `Array<T?>` + `BooleanArray` / Go fixed-array + mask / Python list +
     /// bytearray mask). Parse-time validators cover the two
@@ -532,7 +532,7 @@ impl SceType {
         matches!(self, Self::Float32 | Self::Float64)
     }
 
-    /// Bit width for fixed-width integer types — used by the RFC §5.B
+    /// Bit width for fixed-width integer types — used by the RFC §synth-5-B
     /// flags primitive to bound `<sce:flag bit="N"/>` against the carrier
     /// type's domain. Returns `None` for non-integer types (float / bool /
     /// string / bytes), where bit-positioned flags have no meaning.
@@ -2245,7 +2245,7 @@ pub struct FilterModel {
     /// Smoothing factor (0..1) for low-pass filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alpha: Option<f64>,
-    /// Watching-zenoh RFC §5.O: post-preprocessor source
+    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="filter">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2328,7 +2328,7 @@ pub struct InterpolationModel {
     pub axes: Vec<InterpolationAxis>,
     /// Table values (flat, row-major for 2D).
     pub values: Vec<f64>,
-    /// Watching-zenoh RFC §5.O: post-preprocessor source
+    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="interpolation">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3025,14 +3025,14 @@ pub struct LinkOutboundEvent {
     pub encode: String,
 }
 
-/// Link document — RFC §5.C byte-stream link endpoint.
+/// Link document — RFC §synth-5-C byte-stream link endpoint.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct LinkModel {
     pub name: String,
     /// `<sce:link-class>` body text, parsed into the closed enum.
     pub class: LinkClass,
-    /// `<sce:framer ref="...">` — the §5.B codec that decodes/encodes
+    /// `<sce:framer ref="...">` — the §synth-5-B codec that decodes/encodes
     /// wire bytes. Required; absence raises
     /// `link/framer-missing` (parser).
     pub framer: String,
@@ -3046,8 +3046,8 @@ pub struct LinkModel {
     /// `<sce:events><sce:outbound .../></sce:events>` rows.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outbound: Vec<LinkOutboundEvent>,
-    /// `<sce:rx-pool ref="...">` — RX buffer-pool name (RFC §5.C body +
-    /// §5.E). Authors who want zero-copy RX path
+    /// `<sce:rx-pool ref="...">` — RX buffer-pool name (RFC §synth-5-C body +
+    /// §synth-5-E). Authors who want zero-copy RX path
     /// declare a `<scxml sce:kind="buffer-pool" name="...">` document
     /// and bind it here. The parser accepts the element and
     /// emits the ref as a `pub const` on the generated wrapper; the
@@ -3146,7 +3146,7 @@ impl LinkInstanceRole {
     }
 }
 
-/// Watching-zenoh RFC §5.C lines 802-833 + §5.M lines 2782-2783
+/// Watching-zenoh RFC §synth-5-C lines 802-833 + §synth-5-M lines 2782-2783
 /// — resolved link-instance produced by the orchestrator's
 /// listener-pair walker. For a non-listener `<sce:link>` the
 /// orchestrator emits a single `Listener`-role instance; for a
@@ -3252,8 +3252,8 @@ impl std::fmt::Display for CachePolicy {
     }
 }
 
-/// `<sce:variant>` on `<scxml sce:kind="buffer-pool">` — RFC §5.M lines
-/// 2676-2698. The reassembly variant of §5.E carries three additional
+/// `<sce:variant>` on `<scxml sce:kind="buffer-pool">` — RFC §synth-5-M lines
+/// 2676-2698. The reassembly variant of §synth-5-E carries three additional
 /// fields (`max-fragments-per-message`, `reassembly-timeout-ms`,
 /// `per-peer-quota`) bundled on the `Reassembly` arm via the
 /// [`ReassemblyConfig`] payload. The `Default` arm covers the absence
@@ -3268,12 +3268,12 @@ impl std::fmt::Display for CachePolicy {
 /// `Option<u32>` fields would spread the coupling across the
 /// `BufferPoolModel` struct.
 ///
-/// Future variants per spec §5.E lines 1166-1180 "FSM extension
+/// Future variants per spec §synth-5-E lines 1166-1180 "FSM extension
 /// policy" (TX-only, crypto-DMA, etc.) add new arms additively — the
 /// existing `Default` / `Reassembly` arms are stable.
 ///
 /// **Backend coverage (spec line 2659-2664)**: reassembly variant
-/// inherits §5.E backend coverage — emits only on `(rust, *)` and
+/// inherits §synth-5-E backend coverage — emits only on `(rust, *)` and
 /// `(c11, bare_metal)`. The existing
 /// `codegen/mcu-class-kind-on-non-mcu-language` diagnostic on the
 /// `ForgeKind::BufferPool` axis gates non-MCU targets;
@@ -3286,42 +3286,42 @@ pub enum BufferPoolVariant {
     /// `<sce:variant>default</sce:variant>`). Regular RX / TX / stage
     /// pool semantics; carries no extra fields.
     Default,
-    /// `<sce:variant>reassembly</sce:variant>` (RFC §5.M lines 2682,
+    /// `<sce:variant>reassembly</sce:variant>` (RFC §synth-5-M lines 2682,
     /// 2688-2690). Per-slot fragment-index bitmap + deadline + peer-id
-    /// emission (codegen contract per RFC §5.M). Parse-time enforces
+    /// emission (codegen contract per RFC §synth-5-M). Parse-time enforces
     /// the three sibling elements `<sce:max-fragments-per-message>`,
     /// `<sce:reassembly-timeout-ms>`, `<sce:per-peer-quota>` are all
     /// present (single-arm payload).
     Reassembly(ReassemblyConfig),
 }
 
-/// Reassembly-variant configuration — RFC §5.M lines 2682, 2688-2690.
+/// Reassembly-variant configuration — RFC §synth-5-M lines 2682, 2688-2690.
 ///
 /// Bundles the three required fields a reassembly-variant buffer pool
-/// declares beyond the base §5.E shape. The shape is validated at
+/// declares beyond the base §synth-5-E shape. The shape is validated at
 /// parse time (all three required, all `> 0`); cross-doc invariants
 /// reference `links.<name>.{mtu_bytes, expected_p99_bytes,
 /// domain_attrs.trust_class}` and enforce the peer-table-capacity
-/// build-time invariant against the §5.K `links:` block.
+/// build-time invariant against the §synth-5-K `links:` block.
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct ReassemblyConfig {
-    /// `<sce:max-fragments-per-message>` (RFC §5.M line 2688) — fragment-
+    /// `<sce:max-fragments-per-message>` (RFC §synth-5-M line 2688) — fragment-
     /// index bitmap width per slot; bounds the worst-case fragment count
     /// per reassembled message. Parse rejection: missing element
     /// (`mem/reassembly-pool-variant-missing-max-fragments`) or
     /// value == 0 (`<sce:max-fragments-per-message> body text: 0`
     /// generic `InvalidAttribute`).
     pub max_fragments_per_message: u32,
-    /// `<sce:reassembly-timeout-ms>` (RFC §5.M line 2689) — per-slot
+    /// `<sce:reassembly-timeout-ms>` (RFC §synth-5-M line 2689) — per-slot
     /// deadline emitted at codegen time. Parse rejection: missing
     /// element (`mem/reassembly-pool-variant-missing-timeout`) or
     /// value == 0 (generic `InvalidAttribute`).
     pub reassembly_timeout_ms: u32,
-    /// `<sce:per-peer-quota>` (RFC §5.M lines 2690, 2841-2861) — caps
+    /// `<sce:per-peer-quota>` (RFC §synth-5-M lines 2690, 2841-2861) — caps
     /// the in-flight reassembly slots a single peer may hold. The
     /// `peer_table.capacity × per-peer-quota ≥ slot_count` invariant
-    /// is enforced build-time against the §5.K `peer_table.capacity`
+    /// is enforced build-time against the §synth-5-K `peer_table.capacity`
     /// source. Parse rejection: missing element (we reuse the
     /// generic `MissingElement` rather than minting a third
     /// reassembly-specific code — the
@@ -3330,7 +3330,7 @@ pub struct ReassemblyConfig {
     pub per_peer_quota: u32,
 }
 
-/// Buffer-pool document — RFC §5.E SRAM-placed, DMA-aligned slot table.
+/// Buffer-pool document — RFC §synth-5-E SRAM-placed, DMA-aligned slot table.
 ///
 /// Schema (per `<scxml sce:kind="buffer-pool">` body):
 /// - `<sce:slot-count>` (u32, > 0) — number of slots in the pool
@@ -3417,7 +3417,7 @@ impl std::fmt::Display for InboxOrdering {
     }
 }
 
-/// `<sce:inbox>` configuration — RFC §5.D line 894 + §5.I lines
+/// `<sce:inbox>` configuration — RFC §synth-5-D line 894 + §synth-5-I lines
 /// 1752-1758. SPSC ring-buffer inbox shape; the
 /// producer/consumer split is the type-level FSM
 /// (`heapless::spsc::{Producer,Consumer}` on Rust; opaque

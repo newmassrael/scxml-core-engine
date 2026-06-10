@@ -79,7 +79,7 @@ pub struct SCXMLParser {
     invoke_counter: u32,
     hybrid_invoke_counter: u32,
     send_counter: u32,
-    /// W3C SCXML §3.14: every `<invoke>` id must be document-unique.
+    /// §scxml-3.14: every `<invoke>` id must be document-unique.
     /// Both author-supplied and auto-generated ids feed this set so
     /// the author-shadows-auto-counter case (e.g. `<invoke id="_invoke_0">`
     /// followed by an idless invoke whose auto counter hits 0) is
@@ -3564,7 +3564,7 @@ fn restore_context_strings(code: &str, literals: &[String]) -> String {
     result
 }
 
-/// W3C SCXML 6.5: Convert finalize actions to JavaScript code string.
+/// §scxml-6.5: Convert finalize actions to JavaScript code string.
 /// Supports: assign, script, log, if/elseif/else.
 fn actions_to_javascript(actions: &[Action]) -> String {
     if actions.is_empty() {
@@ -3677,7 +3677,7 @@ fn scxml_child<'a>(
         .find(|c| c.is_element() && c.tag_name().name() == tag && is_scxml_ns(c))
 }
 
-/// watching-zenoh RFC §5.E helper: collect all `<sce:on-sample>`
+/// watching-zenoh RFC §synth-5-E helper: collect all `<sce:on-sample>`
 /// children of a `<state>` or `<parallel>` element into the supplied
 /// vector, in document order. The namespace check (`SCE_NAMESPACE`)
 /// distinguishes `<sce:on-sample>` from a hypothetical W3C-namespace
@@ -5524,7 +5524,7 @@ mod tests {
         assert_eq!(entry[0].sendid, "timer1");
     }
 
-    /// W3C SCXML §6.3 enforcement — `<cancel>` MUST carry sendid or
+    /// §scxml-6.3 enforcement — `<cancel>` MUST carry sendid or
     /// sendidexpr. The both-empty shape is a parse-time hard error,
     /// emitted as `ValidationError::RequireEither` (wire code
     /// `validation/require-either` per W4 D4 fold). 5-backend cancel
@@ -5806,7 +5806,7 @@ mod tests {
 
     #[test]
     fn invoke_field_suffix_strips_auto_id_leading_underscore() {
-        // No `id` attribute → parser auto-generates `_invoke_0` per W3C SCXML 6.4.1.
+        // No `id` attribute → parser auto-generates `_invoke_0` per §scxml-6.4.1.
         // field_suffix drops the leading underscore so `child_` + suffix is
         // `child_invoke_0`, not `child__invoke_0`.
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s">
@@ -5832,12 +5832,12 @@ mod tests {
         assert_eq!(field_suffix, "invokedChild");
     }
 
-    // ── W3C SCXML §3.14 invoke-id uniqueness ─────────────────────────
+    // ── §scxml-3.14 invoke-id uniqueness ─────────────────────────
 
     #[test]
     fn invoke_id_duplicate_author_rejected() {
         // Two parallel regions with the same author-supplied <invoke id>.
-        // W3C §3.14 forbids duplicate ids; the parser must surface this as
+        // §scxml-3.14 forbids duplicate ids; the parser must surface this as
         // ValidationError::DuplicateId rather than let the collision reach
         // AOT event matching or the mesh active_invokes_ map.
         let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="p">
@@ -6345,7 +6345,7 @@ mod tests {
         //
         // Shape: main.scxml has an outer <state> with a single
         // <xi:include> pointing at frag.xml. frag.xml declares two
-        // <invoke id="dup"/> — W3C SCXML §3.14 duplicate-id catches
+        // <invoke id="dup"/> — §scxml-3.14 duplicate-id catches
         // this during parse_impl's invoke parse, producing a
         // Located<ValidationError::DuplicateId> whose raw row/col
         // lie in the expanded document. After remap, the location
@@ -6423,7 +6423,7 @@ mod tests {
         // t.xml. t.xml declares two `<invoke id="{$id}">` in a
         // row — parameterised over `{$id}` so the same value is
         // spliced twice, producing duplicate invoke ids after
-        // expansion. parse_impl's W3C SCXML §3.14 duplicate-id
+        // expansion. parse_impl's §scxml-3.14 duplicate-id
         // check fires at the second `<invoke>` element's range —
         // bytes that came 1:1 from t.xml, so Origin::File routes
         // the diagnostic back to t.xml's row, not to the expanded
@@ -7080,7 +7080,7 @@ mod tests {
         );
     }
 
-    // ── watching-zenoh RFC §5.E — `<sce:on-sample>` cross-ref ───────
+    // ── watching-zenoh RFC §synth-5-E — `<sce:on-sample>` cross-ref ───────
     //
     // Cross-ref validator integrates with the build's
     // SceCrossDocRegistry (populated by walking every parsed `.forge`
@@ -7119,7 +7119,7 @@ mod tests {
             stage_pool: stage_pool.map(String::from),
             accept_stage_copy_rate: false,
             // Synthetic test helper — not built from a real
-            // `<scxml>` element, so §5.O Atomic 0c populates the
+            // `<scxml>` element, so §synth-5-O Atomic 0c populates the
             // post-emit walker with the same fixture stub the rest
             // of these tests use.
             source_location: None,
@@ -7129,7 +7129,7 @@ mod tests {
     #[test]
     fn cross_ref_link_resolves_when_registered() {
         // Happy path: the registry knows the link by name AND records
-        // a `<sce:stage-pool>` for it (RFC §5.E stage-pool gate) →
+        // a `<sce:stage-pool>` for it (RFC §synth-5-E stage-pool gate) →
         // both checks pass, no diagnostic.
         use crate::forge::cross_doc_registry::SceCrossDocRegistry;
         use crate::forge::pool_registry::ForgePoolRegistry;

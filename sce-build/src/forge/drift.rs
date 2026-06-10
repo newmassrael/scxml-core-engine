@@ -162,7 +162,7 @@ pub fn comment_prefix_for_path(path: &Path) -> &'static str {
     }
 }
 
-/// Prepends the §6.2.6 header to a file's content. Idempotent against
+/// Prepends the §synth-6.2.6 header to a file's content. Idempotent against
 /// already-headered content — if `content` already begins with the
 /// banner line, the existing header block is replaced rather than
 /// duplicated. Idempotence matters for the production pipeline where

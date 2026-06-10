@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  RFC rfc-eventschema-bytes-guard.md §3 positive fixture: a statechart
+  RFC rfc-eventschema-bytes-guard.md §bytesguard-3 positive fixture: a statechart
   that imports the bytes EventSchema and reads `_event.data.raw` in a
   transition cond as a by-value byte equality against a printable-ASCII
   literal. The guard lowers natively on all six backends to that

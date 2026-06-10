@@ -343,7 +343,7 @@ mod tests {
         }
     }
 
-    /// RFC §5.A §5.J.4 matrix closure: Algorithm ships on all six
+    /// RFC §synth-5-A §synth-5-J-4 matrix closure: Algorithm ships on all six
     /// backends after the post-A6 Go / Kotlin / Python follow-up trio.
     /// No backend remains gated by `codegen/generic-kind-backend-emit-missing`.
     #[test]

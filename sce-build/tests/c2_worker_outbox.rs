@@ -142,7 +142,7 @@ fn run_orchestrator(
 
 #[test]
 fn happy_outbox_to_statechart_basic() {
-    // Spec §5.D line 895 example shape: worker `rx_loop` routes
+    // Spec §synth-5-D line 895 example shape: worker `rx_loop` routes
     // `<sce:outbox ref="session_fsm.inbox">` into the statechart
     // `session_fsm`. Both docs in the build; outbox owner resolves
     // to a registered statechart kind; suffix is `inbox`; the

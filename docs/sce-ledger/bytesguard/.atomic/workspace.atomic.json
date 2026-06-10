@@ -1,0 +1,73 @@
+{
+  "sections": {
+    "bytesguard-1": {
+      "title": "Background",
+      "parent_doc": "bytesguard",
+      "decision_status": "active"
+    },
+    "bytesguard-1.1": {
+      "title": "The reported defect",
+      "parent_doc": "bytesguard",
+      "parent_section": "bytesguard-1",
+      "decision_status": "active"
+    },
+    "bytesguard-1.2": {
+      "title": "Why it is worse than \"fix the Rust literal\"",
+      "parent_doc": "bytesguard",
+      "parent_section": "bytesguard-1",
+      "decision_status": "active"
+    },
+    "bytesguard-1.3": {
+      "title": "The SSOT-honesty problem",
+      "parent_doc": "bytesguard",
+      "parent_section": "bytesguard-1",
+      "decision_status": "active"
+    },
+    "bytesguard-1.4": {
+      "title": "Existing reusable infrastructure",
+      "parent_doc": "bytesguard",
+      "parent_section": "bytesguard-1",
+      "decision_status": "active"
+    },
+    "bytesguard-2": {
+      "title": "Driver / non-goals",
+      "parent_doc": "bytesguard",
+      "decision_status": "active"
+    },
+    "bytesguard-3": {
+      "title": "Lock-in decisions",
+      "parent_doc": "bytesguard",
+      "decision_status": "active"
+    },
+    "bytesguard-3.1": {
+      "title": "Honest interim gate (before B1–B6 land)",
+      "parent_doc": "bytesguard",
+      "parent_section": "bytesguard-3",
+      "decision_status": "active"
+    },
+    "bytesguard-4": {
+      "title": "Surface / accepted-subset changes",
+      "parent_doc": "bytesguard",
+      "decision_status": "active"
+    },
+    "bytesguard-5": {
+      "title": "Implementation plan (never-broken staging)",
+      "parent_doc": "bytesguard",
+      "decision_status": "active"
+    },
+    "bytesguard-6": {
+      "title": "Acceptance gates",
+      "parent_doc": "bytesguard",
+      "decision_status": "active"
+    },
+    "bytesguard-7": {
+      "title": "Risks",
+      "parent_doc": "bytesguard",
+      "decision_status": "active"
+    }
+  },
+  "changelog_entries": {},
+  "inventory_entries": {},
+  "confirmation_events": {},
+  "schema_version": 11
+}

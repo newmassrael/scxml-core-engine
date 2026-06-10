@@ -1214,7 +1214,7 @@ impl SchedulerKind {
     }
 }
 
-/// Per-machine worker placement entry (watching-zenoh RFC §5.D + §5.I).
+/// Per-machine worker placement entry (watching-zenoh RFC §synth-5-D + §synth-5-I).
 /// Declares which core hosts each worker doc's inbox producer
 /// (link-rx-driven path) and consumer (SCXML processing thread).
 ///
@@ -3294,7 +3294,7 @@ pub fn resolve_link_rx_pool_slot_count<'a>(
     Some((rx_pool_ref, pool.slot_count, &pool.variant))
 }
 
-/// Watching-zenoh RFC §5.K lines 2489-2500 (`deploy/link-burst-
+/// Watching-zenoh RFC §synth-5-K lines 2489-2500 (`deploy/link-burst-
 /// absorption-insufficient` + `deploy/link-rx-dispatch-worker-tick-
 /// on-high-burst`) — cross-doc validators that consume
 /// [`resolve_link_rx_pool_slot_count`] to check the cooperative-tick

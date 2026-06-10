@@ -271,7 +271,7 @@ fn happy_multi_writer_with_atomic_extern() {
     // multi-writer axis silent-passes.
     let dir = tempdir().expect("tempdir");
     // Codec doc carries the atomic extern declaration — `<sce:extern>`
-    // is a doc-root sibling of `<datamodel>` per the §5.I parse-time
+    // is a doc-root sibling of `<datamodel>` per the §synth-5-I parse-time
     // grammar.
     let codec_with_extern = r##"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

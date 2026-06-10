@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  RFC rfc-eventschema-bytes-guard.md §3 fixture: an EventSchema with a
+  RFC rfc-eventschema-bytes-guard.md §bytesguard-3 fixture: an EventSchema with a
   single `bytes`-typed payload field. The field carries natively as a
   no-alloc bounded buffer on C11 (uint8_t[CAP] + size_t _len, CAP from
   sce:max-size) and as the owned byte-sequence type on each hosted

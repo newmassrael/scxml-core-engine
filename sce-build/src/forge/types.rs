@@ -549,7 +549,7 @@ pub struct TypeCtx<'a> {
     pub vars: HashMap<&'a str, InferredType>,
     pub funcs: HashMap<&'a str, FuncSig>,
     /// Per-identifier element type for indexable containers — populated
-    /// by RFC §5.A `<sce:const name=… type="array<elem, N>">` so that
+    /// by RFC §synth-5-A `<sce:const name=… type="array<elem, N>">` so that
     /// `CRC16_TABLE[idx]` can be inferred as `elem` instead of falling
     /// through to `Unknown`. Without this, Kotlin's narrow-unsigned
     /// arithmetic widening cannot insert `.toInt()` at the index access

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  RFC rfc-eventschema-bytes-guard.md §3 B2 negative fixture: a `bytes`
+  RFC rfc-eventschema-bytes-guard.md §bytesguard-3 B2 negative fixture: a `bytes`
   equality against a literal carrying a non-printable-ASCII byte (the
   multi-byte UTF-8 'é'). Such a literal has no unambiguous cross-backend
   byte constant, so the receive-side validator rejects it as a

@@ -162,7 +162,7 @@ pub fn parse_forge_with_imports_and_plugin(
     let mut externs = parse_externs(&root, diag, plugin)?;
     let document = parse_forge_from_node(&root, label, kind)?;
 
-    // C5 auto-inject (spec §5.E lines 1222-1227 + lines 1736-1740):
+    // C5 auto-inject (spec §synth-5-E lines 1222-1227 + lines 1736-1740):
     // a buffer-pool with `cache-policy: maintain` triggers FSM-driven
     // cache call sites in the buffer-pool template (link_arm_tx +
     // link_arm_rx). To keep `<sce:extern>` author-required for
@@ -440,7 +440,7 @@ fn parse_forge_from_node(
     label: DocumentLabel<'_>,
     kind: ForgeKind,
 ) -> Result<ForgeDocument, Located<ForgeError>> {
-    // RFC §5.B "Test vector": v1 supports algorithm kind (B2) and
+    // RFC §synth-5-B "Test vector": v1 supports algorithm kind (B2) and
     // codec kind (codec test vectors). Reject `<sce:test-vector>` elements
     // declared under any other kind here so the rejection anchors at
     // the offending element rather than at codegen time.
@@ -1604,7 +1604,7 @@ fn validate_codec_present_if_predicates(
     use std::collections::BTreeMap;
     let mut by_id_so_far: BTreeMap<&str, &CodecField> = BTreeMap::new();
     for field in fields {
-        // RFC §5.B disjunction chains: validate every clause of the
+        // RFC §synth-5-B disjunction chains: validate every clause of the
         // disjunction chain (`a.X || b.Y || ...`) — each clause
         // independently must satisfy the same Local/Input scope rules
         // as the v1 single-clause grammar. Walk the chain via the
@@ -1992,7 +1992,7 @@ fn parse_codec_variant(
     // validation since carrier resolution branches on its presence.
     let peek_byte = parse_peek_byte_from_variant_node(&variant_node, label)?;
 
-    // RFC §5.B uses unqualified attributes on <sce:variant>/<sce:arm>/
+    // RFC §synth-5-B uses unqualified attributes on <sce:variant>/<sce:arm>/
     // <sce:default> child elements (matches the <sce:entry key="..."/>
     // convention for SCE-element-internal attributes; SCE-namespaced
     // attributes are reserved for attributes declared on non-SCE host
@@ -3510,7 +3510,7 @@ fn parse_codec_tlv_chain_from_node(
         }
     };
 
-    // RFC §5.B — `sce:terminate-on` selects chain termination.
+    // RFC §synth-5-B — `sce:terminate-on` selects chain termination.
     // Default: cursor-exhaust + max_depth (B3 trunk shape — used when
     // nothing follows the chain on the wire). `entry-flag` reads a
     // named flag on each decoded entry's flags carrier; chain stops
@@ -4104,7 +4104,7 @@ fn format_present_if_predicate_for_diag(p: &PresentIfPredicate) -> String {
     }
 }
 
-/// RFC §5.B B3 DMA alignment cross-field validation. For every field
+/// RFC §synth-5-B B3 DMA alignment cross-field validation. For every field
 /// carrying `sce:dma-burst-align="N"`:
 ///
 /// 1. The field's authored `sce:byte` MUST be divisible by N (the
@@ -4187,7 +4187,7 @@ fn validate_codec_dma_alignment(
     Ok(())
 }
 
-// ── RFC §5.B codec test-vector parsing ────────────────────
+// ── RFC §synth-5-B codec test-vector parsing ────────────────────
 //
 // `<sce:test-vector hex="cafe">
 //    <sce:decoded field="sn" value="1"/>
@@ -5916,12 +5916,12 @@ fn parse_algorithm(
         ));
     }
 
-    // RFC §5.A `algorithm/lvalue-unsupported`: assigning to a parameter
+    // RFC §synth-5-A `algorithm/lvalue-unsupported`: assigning to a parameter
     // is forbidden in v1. Walk the parsed body once at parse time so
     // diagnostics anchor at the body element rather than at codegen.
     reject_param_assignment(&body, &signature, &body_node, label.diagnostic_label)?;
 
-    // RFC §5.A `algorithm/return-missing`: when the signature declares
+    // RFC §synth-5-A `algorithm/return-missing`: when the signature declares
     // a non-void return type, the body's terminal statement must be
     // `<sce:return>`. v1 only checks the trivial last-statement form;
     // flow-sensitive path tracking is not implemented until a
@@ -6807,7 +6807,7 @@ fn parse_link(
     // `LinkClass::ALL_NAMES`. Missing element raises
     // `validation/missing-element`; unknown body text raises the
     // dedicated `link/link-class-unknown` diagnostic (item B6 — RFC
-    // §5.C lines 765-771 5-class enum).
+    // §synth-5-C lines 765-771 5-class enum).
     let class_node = find_sce_child(root, "link-class").ok_or_else(|| {
         located(
             root,
@@ -6831,7 +6831,7 @@ fn parse_link(
     })?;
 
     // `<sce:framer ref="...">` is required on every link kind
-    // (RFC §5.C). Absence raises the dedicated `link/framer-missing`
+    // (RFC §synth-5-C). Absence raises the dedicated `link/framer-missing`
     // diagnostic; presence without a `ref=` attribute raises the
     // generic `validation/missing-attribute`.
     let framer_node = find_sce_child(root, "framer").ok_or_else(|| {
@@ -6845,7 +6845,7 @@ fn parse_link(
     })?;
     let framer = require_attr(&framer_node, "ref", "<sce:framer>", doc_name)?;
 
-    // `<sce:backpressure>` body text — required per RFC §5.C body.
+    // `<sce:backpressure>` body text — required per RFC §synth-5-C body.
     // Earlier revisions tolerated absence with a parser-side
     // default-to-`drop`; a missing element is now a hard error
     // (`link/backpressure-undeclared`) so authors must declare the
@@ -6899,7 +6899,7 @@ fn parse_link(
         }
     }
 
-    // RFC §5.C body + §5.E item B7 schema-only: `<sce:rx-pool ref="..."/>`
+    // RFC §synth-5-C body + §synth-5-E item B7 schema-only: `<sce:rx-pool ref="..."/>`
     // / `<sce:tx-pool ref="..."/>` bind the link to a `sce:kind="buffer-pool"`
     // sibling document. The parser accepts the elements + validates
     // ref-attribute presence; cross-resolution validator (link/pool-slot-
@@ -6914,7 +6914,7 @@ fn parse_link(
         Some(node) => Some(require_attr(&node, "ref", "<sce:tx-pool>", doc_name)?),
         None => None,
     };
-    // RFC §5.E sample-callback stage-pool: link-side `<sce:stage-pool ref="X"/>`
+    // RFC §synth-5-E sample-callback stage-pool: link-side `<sce:stage-pool ref="X"/>`
     // names the buffer-pool kind whose slots back `Sample::take()`'s
     // owned-copy destination. Schema locality on the link kind (not
     // on deploy.yaml) puts the source of truth alongside rx_pool/
@@ -7061,7 +7061,7 @@ fn parse_buffer_pool(
         )
     })?;
 
-    // RFC §5.M item C9 — parse the optional `<sce:variant>` discriminator.
+    // RFC §synth-5-M item C9 — parse the optional `<sce:variant>` discriminator.
     // Absent / "default" body text → `BufferPoolVariant::Default` (the
     // pre-C9 regular RX/TX/stage pool semantics). Body text "reassembly"
     // → `BufferPoolVariant::Reassembly(ReassemblyConfig { ... })` with
@@ -7083,7 +7083,7 @@ fn parse_buffer_pool(
 }
 
 /// Parse the `<sce:variant>` discriminator on a `<scxml sce:kind="buffer-pool">`
-/// document per RFC §5.M lines 2676-2698 (item C9).
+/// document per RFC §synth-5-M lines 2676-2698 (item C9).
 ///
 /// **Closed enum body-text set**: `default` (or absent) → `Default` arm;
 /// `reassembly` → `Reassembly(ReassemblyConfig { ... })` arm with the
@@ -7566,10 +7566,10 @@ fn require_u32_body(
     })
 }
 
-// ── Bounded-collection kind parsing (RFC §5.L) ────────────────
+// ── Bounded-collection kind parsing (RFC §synth-5-L) ────────────────
 
 /// Parse a `<scxml sce:kind="bounded-collection">` document body per
-/// watching-zenoh RFC §5.L lines 2540-2655.
+/// watching-zenoh RFC §synth-5-L lines 2540-2655.
 ///
 /// Item C6 parse-time scope: schema + parse + 2 parse-time structure validators
 /// (`collection/ordering-sorted-requires-index-by` from spec line 2559 +
@@ -8107,7 +8107,7 @@ pub fn parse_imports(
 
         let line = Some(child.document().text_pos_at(child.range().start).row);
 
-        // RFC §5.B parent-side variant-dispatch — parse the
+        // RFC §synth-5-B parent-side variant-dispatch — parse the
         // optional `<sce:variant-dispatch flag="X.Y"/>` child element.
         // Cross-doc validator (`validate_cross_codec_variant_dispatch`)
         // resolves the dotted reference against the importing codec's
