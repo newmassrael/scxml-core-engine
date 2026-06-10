@@ -6,7 +6,7 @@
 // Modeled on grpc::StatusCode for cross-ecosystem familiarity. Ok (0) means
 // success; all other values are errors. Values are IMMUTABLE once shipped;
 // populated on RpcReply envelopes only — omitted on RpcRequest and on
-// successful replies (absent == Ok). See SCE_MESH.md Section 13 Phase 3.5.
+// successful replies (absent == Ok). See SCE_MESH.md §mesh-13 "Pattern Realization".
 // Serialized into MeshEnvelope key 10 as CBOR uint8 when present.
 
 #pragma once

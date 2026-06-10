@@ -96,7 +96,7 @@ public:
      * Populated when the parse hits a typed throw site that the
      * boundary flatten in `parseFile`/`parseContent` recognises —
      * presently the 8 `SCE::parsing::TemplateError` subtypes
-     * (RFC §wire-W1 audit finding #1 closure / W2 deliverable). Returns
+     * (§wire-W1 audit finding #1 closure / W2 deliverable). Returns
      * empty vector for parse paths that surface only string errors.
      */
     const std::vector<std::unique_ptr<SCE::parsing::Diagnostic>> &
@@ -177,7 +177,7 @@ public:
      * Downstream diagnostic emitters can call
      * `documentPositions().lookup(byte_offset)` to translate a
      * post-expansion in-memory offset back to the author's
-     * `(file, row, col)`. Composition contract: Phase X RFC §1 Q2.
+     * `(file, row, col)` through both preprocessor stages.
      */
     const SCE::parsing::PositionMap &documentPositions() const noexcept {
         return documentPositions_;

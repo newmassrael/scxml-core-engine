@@ -32,12 +32,11 @@ namespace SCE::parsing {
 // as red rather than silent cross-language drift. Mirrors the W1
 // `TemplateError` pattern in `parsing/TemplateError.h`.
 //
-// W3 (`claudedocs/rfc-sce-diagnostic-wire-unification.md` §wire-W3) makes
-// `XIncludeExpansionError` implement `SCE::parsing::Diagnostic`. Each
-// subtype overrides `code()` with its `xml/xinclude-*` wire string;
-// the shared base contributes `location()` (currently always
-// `nullopt` — expander throw sites do not stamp source locations
-// today; deferred until a consumer asks per RFC §wire-W3 design pin) and
+// `XIncludeExpansionError` implements `SCE::parsing::Diagnostic`
+// (§wire-W3). Each subtype overrides `code()` with its
+// `xml/xinclude-*` wire string; the shared base contributes
+// `location()` (currently always `nullopt` — expander throw sites
+// do not stamp source locations; consumer-gated per §wire-W3) and
 // `to_json()` (the v1 schema NDJSON record). Subtype field shape is
 // unchanged — the existing message-string ctor stays the throw-site
 // API so the 10 expander throw sites read as before.
@@ -50,7 +49,7 @@ public:
     // Attach a `SourcePos` to this error. Currently unused by the
     // expander throw sites — the `<xi:include>` element's pre-
     // expansion (row, col) is embedded in the message text only.
-    // Reserved for the location-stamping milestone (RFC §wire-W3 design
+    // Reserved for the location-stamping milestone (§wire-W3 design
     // pin "(ii) stamps with the throw-site's pre-expansion outer-
     // document (row, col)") so consumers do not need to reparse
     // message text for coordinates once stamping lands.
@@ -195,8 +194,8 @@ public:
 // `<xi:fallback>` alternative-content child. Mirrors
 // `sce-build/src/xinclude.rs::XIncludeError::Unsupported` (fields
 // `href`, `feature`) and maps 1:1 to the Rust
-// `xml/xinclude-unsupported` `DiagnosticCode`. Phase X preserves
-// this rejection set so the AOT and Interpreter pipelines agree on
+// `xml/xinclude-unsupported` `DiagnosticCode`. The C++ expander
+// preserves this rejection set so the AOT and Interpreter pipelines agree on
 // which inputs are accepted.
 class XIncludeUnsupported : public XIncludeExpansionError {
 public:

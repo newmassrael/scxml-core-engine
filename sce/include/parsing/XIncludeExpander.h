@@ -20,15 +20,15 @@
 // so the C++ Interpreter side and the AOT pipeline produce
 // byte-equivalent post-XInclude documents and identical PositionMap
 // composition. The port is string-level (rather than DOM-mutating
-// like the pre-Phase-X path this expander replaces) because
+// like the pugixml splice path it replaced) because
 // `SCE::parsing::PositionMap` keys diagnostics to byte offsets in
 // the expanded output — DOM mutation cannot produce a stable
 // byte-offset coordinate space.
 //
-// Phase X in `claudedocs/rfc-sce-template-phase-x.md` §3 B1 ships
-// this expander; B2 swaps `PugiXMLDocument::processXInclude` to use
-// it (replacing the DOM-mutation `processXIncludeRecursive` path);
-// B3 adds the Rust ↔ C++ shape drift test.
+// `PugiXMLDocument::processXInclude` delegates to this expander;
+// `cpp_xinclude_expander_matches_rust_shape` in
+// `sce-build/src/xinclude.rs` tests pins the Rust ↔ C++ shape
+// agreement.
 //
 // Failure model: expander-internal errors (missing href, not-found,
 // cycle, too-deep, malformed, unsupported feature, read failure)
@@ -38,33 +38,29 @@
 // the matching `xml/xinclude-*` wire string. Catch sites can bind
 // `XIncludeExpansionError const &` for the legacy string surface
 // or upcast through `Diagnostic` for the typed surface; both work
-// against any subtype. RFC §wire-W3 in
-// `claudedocs/rfc-sce-diagnostic-wire-unification.md`.
+// against any subtype. §wire-W3.
 
 namespace SCE::parsing {
 
 // Maximum nesting depth for recursive `<xi:include>` expansion.
-// Mirrors Rust `xinclude::MAX_XINCLUDE_DEPTH`
-// (sce-build/src/xinclude.rs:63). Phase X B3 adds
-// `cpp_xinclude_expander_matches_rust_shape` to pin two-way
-// agreement of this constant alongside the result-struct shape;
-// the existing Rust-side `xinclude_depth_matches_runtime` test
-// is updated in B3 to verdict against this header rather than the
-// deleted `PugiXMLDocument::MAX_XINCLUDE_DEPTH` static.
+// Mirrors Rust `xinclude::MAX_XINCLUDE_DEPTH`. Two-way agreement
+// of this constant is pinned by the Rust-side
+// `xinclude_depth_matches_runtime` test, which verdicts against
+// this header.
 constexpr unsigned MAX_XINCLUDE_DEPTH = 10;
 
 // W3C XInclude 1.0 namespace URI. Element matching is done by local
-// name (`include`) for parity with the pre-Phase-X pugixml runtime
-// which was lenient about namespace declarations. Exposed for
-// diagnostic context.
+// name (`include`) for parity with the DOM-mutating pugixml
+// expansion this expander replaced, which was lenient about
+// namespace declarations. Exposed for diagnostic context.
 inline constexpr std::string_view XINCLUDE_NS =
     "http://www.w3.org/2001/XInclude";
 
 // Result of a successful XInclude expansion: the expanded source
 // text (post-splice) and a `PositionMap` keyed against that text's
 // bytes. Mirrors Rust's `(String, PositionMap)` return from
-// `sce-build/src/xinclude.rs::expand`. Three-way shape agreement
-// is pinned by the Phase X B3 drift test.
+// `sce-build/src/xinclude.rs::expand`. Shape agreement is pinned
+// by the `cpp_xinclude_expander_matches_rust_shape` drift test.
 struct XIncludeExpandResult {
     std::string expanded_text;
     PositionMap positions;

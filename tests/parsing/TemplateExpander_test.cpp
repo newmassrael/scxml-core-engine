@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Phase C P2 scanner-primitive unit tests for
+// Scanner-primitive unit tests for
 // `SCE::parsing::detail::findElementEnd` +
-// `SCE::parsing::detail::collectTopLevelSceUseRanges`. Standing
-// consumer for the `TemplateExpander.h` / `.cpp` infrastructure
-// until a later Phase C P2 commit wires the full recursive
-// expansion and `processSceTemplate` routes through it — per
-// `feedback_built_but_unconsumed.md`, every new helper here must
-// be exercised so the header is not dead-code.
+// `SCE::parsing::detail::collectTopLevelSceUseRanges`. Every
+// helper in the `TemplateExpander.h` / `.cpp` infrastructure is
+// exercised here so the header carries no dead code; the
+// production consumer is `PugiXMLDocument::processSceTemplate`,
+// which routes through `expandString`.
 
 #include "parsing/PugiXMLParser.h"
 #include "parsing/TemplateExpander.h"
@@ -429,7 +428,7 @@ TEST(ProcessSceTemplate, RoundtripResolvesBodyAndCallsite) {
     SCE::PugiXMLParser parser;
     auto doc = parser.parseFile(callerPath.string());
     ASSERT_NE(doc, nullptr);
-    // RFC §W4.5 D1: process*() return PositionMap directly; failures
+    // §wire-W4.5 D1: process*() return PositionMap directly; failures
     // throw and would surface as gtest unhandled-exception failures.
     const auto xPositions = doc->processXInclude();
     const auto positions = doc->processSceTemplate(xPositions);
@@ -467,7 +466,7 @@ TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
 }
 
 // ── PugiXMLDocument::processSceTemplate threads upstream map ────────
-// Phase X RFC §1 Q2 contract: when a document has an `<xi:include>`
+// Composition contract: when a document has an `<xi:include>`
 // but no `<sce:use>`, the upstream PositionMap produced by
 // `processXInclude` must thread through `processSceTemplate`'s
 // fast-path unchanged, so a byte originating in the spliced fragment
@@ -475,14 +474,13 @@ TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
 // have run. Without this passthrough, fragment-byte diagnostics
 // would be wrongly attributed to the host file.
 //
-// Standing-consumer pattern from RFC §1 Q4 condition #1: the test
-// drives the production entry points (`processXInclude` →
+// The test drives the production entry points (`processXInclude` →
 // `processSceTemplate`) end-to-end, not the expander helpers in
 // isolation. Bite: replacing `result.positions = upstream;` in the
 // no-`<sce:use>` fast path with
-// `PositionMap::identity(sourcePath_, sourceText_)` (the pre-Phase-X
-// shape) reds the assertion below — the fragment byte then resolves
-// to `main.xml` instead of `frag.xml`.
+// `PositionMap::identity(sourcePath_, sourceText_)` (the
+// pre-composition shape) reds the assertion below — the fragment
+// byte then resolves to `main.xml` instead of `frag.xml`.
 TEST(ProcessSceTemplate, ThreadsUpstreamMapForNoSceUseDoc) {
     const auto tmpDir = std::filesystem::temp_directory_path() /
                         "sce_process_sce_template_threads_upstream";
@@ -508,7 +506,7 @@ TEST(ProcessSceTemplate, ThreadsUpstreamMapForNoSceUseDoc) {
     doc.setSourceText(mainSrc);
     doc.setBasePath(tmpDir.string());
 
-    // RFC §W4.5 D1: process*() return PositionMap directly.
+    // §wire-W4.5 D1: process*() return PositionMap directly.
     const auto xPositions = doc.processXInclude();
 
     // Upstream attributes some byte to frag.xml (the spliced
@@ -534,8 +532,8 @@ TEST(ProcessSceTemplate, ThreadsUpstreamMapForNoSceUseDoc) {
     const auto downstreamPos = tPositions.lookup(fragByte);
     EXPECT_EQ(upstreamPos.file, downstreamPos.file)
         << "fragment-byte origin must survive processSceTemplate's "
-           "no-`<sce:use>` fast path — Phase X RFC §1 Q2 upstream "
-           "passthrough";
+           "no-`<sce:use>` fast path — upstream-map "
+           "passthrough contract";
     EXPECT_EQ(upstreamPos.row, downstreamPos.row);
     EXPECT_EQ(upstreamPos.col, downstreamPos.col);
 

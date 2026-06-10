@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Mesh Phase 2 local_transport end-to-end runtime test.
+// SCE Mesh local_transport end-to-end runtime test.
 //
 // Exercises the full send path:
 //   brake <send target="#motor" event="brake.activate"/>

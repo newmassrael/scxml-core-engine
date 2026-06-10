@@ -4,11 +4,11 @@
 // W3C SCXML 5.5 + 6.3.1 donedata surfacing — C++ AOT local-invoke path.
 //
 // Closes the W3C IRP coverage gap by exercising the canonical
-// `donedata_local_invoke` fixture (RFC `claudedocs/rfc-donedata-5-backend-layout.md`)
+// `donedata_local_invoke` fixture
 // against the AOT engine. Sibling `DonedataLocalInvokeTest.cpp` covers
 // the Interpreter engine — both channels exist in production (Interpreter
 // for embedded usage, AOT for codegen consumers), so both are verified
-// independently (Q-3).
+// independently.
 //
 // Fixture: integration_resources/donedata_local_invoke/donedata_local_invoke.scxml
 //

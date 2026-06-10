@@ -206,13 +206,13 @@ StateSnapshot captureCurrentSnapshot(InteractiveTestRunner &runner) {
 /**
  * @brief Find reference snapshot matching target stepNumber
  *
- * Phase 1 may capture duplicate snapshots at same step when FINAL_STATE is returned
+ * Stage 1 may capture duplicate snapshots at same step when FINAL_STATE is returned
  * (e.g., refs[1] and refs[2] both have stepNumber=1).
  *
  * This function searches for the matching snapshot using reverse iteration to find
  * the LAST occurrence, which represents the most recent state at that step number.
  *
- * @param snapshots Vector of reference snapshots from Phase 1
+ * @param snapshots Vector of reference snapshots from Stage 1
  * @param stepNumber Target step number to find
  * @return Iterator to matching snapshot, or snapshots.end() if not found
  */
@@ -275,7 +275,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
         return;
     }
 
-    // Phase 1: Execute forward steps and capture snapshots
+    // Stage 1: Execute forward steps and capture snapshots
     std::vector<StateSnapshot> forwardSnapshots;
     int maxSteps = 100;  // Safety limit
     int totalSteps = 0;
@@ -283,7 +283,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
     for (int step = 0; step < maxSteps; step++) {
         // Capture snapshot at current state
         auto snapshot = captureCurrentSnapshot(runner);
-        SCE_LOG_DEBUG("Phase 1: step={}, captured snapshot with stepNumber={}", step, snapshot.stepNumber);
+        SCE_LOG_DEBUG("Stage 1: step={}, captured snapshot with stepNumber={}", step, snapshot.stepNumber);
         forwardSnapshots.push_back(snapshot);
 
         // Step forward
@@ -294,7 +294,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
             totalSteps = step + 1;
             // Capture final snapshot
             auto finalSnapshot = captureCurrentSnapshot(runner);
-            SCE_LOG_DEBUG("Phase 1: FINAL_STATE/NO_EVENTS_AVAILABLE, captured final snapshot with stepNumber={}",
+            SCE_LOG_DEBUG("Stage 1: FINAL_STATE/NO_EVENTS_AVAILABLE, captured final snapshot with stepNumber={}",
                       finalSnapshot.stepNumber);
             forwardSnapshots.push_back(finalSnapshot);
             break;
@@ -304,7 +304,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
             // Scheduled events waiting - consider this end of execution
             totalSteps = step + 1;
             auto finalSnapshot = captureCurrentSnapshot(runner);
-            SCE_LOG_DEBUG("Phase 1: NO_EVENTS_READY, captured final snapshot with stepNumber={}", finalSnapshot.stepNumber);
+            SCE_LOG_DEBUG("Stage 1: NO_EVENTS_READY, captured final snapshot with stepNumber={}", finalSnapshot.stepNumber);
             forwardSnapshots.push_back(finalSnapshot);
             break;
         }
@@ -316,7 +316,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
         forwardSnapshots.push_back(captureCurrentSnapshot(runner));
     }
 
-    // Phase 2: Step backward and verify each snapshot
+    // Stage 2: Step backward and verify each snapshot
     for (int step = totalSteps - 1; step >= 0; step--) {
         if (step == 0) {
             // Already at step 0, can't step back further
@@ -342,14 +342,14 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
         }
     }
 
-    // W3C SCXML 3.13: Always reset before Phase 3 for deterministic replay
-    // When totalSteps=1, Phase 2 skips all backward steps, leaving scheduler logical time advanced
+    // W3C SCXML 3.13: Always reset before Stage 3 for deterministic replay
+    // When totalSteps=1, Stage 2 skips all backward steps, leaving scheduler logical time advanced
     // Reset ensures both currentStep_ and scheduler logical time are restored to initial state
     SCE_LOG_DEBUG("Before reset, getCurrentStep()={}", runner.getCurrentStep());
     runner.reset();
     SCE_LOG_DEBUG("After reset, getCurrentStep()={}", runner.getCurrentStep());
 
-    // Phase 3: Step forward again and verify determinism (replay)
+    // Stage 3: Step forward again and verify determinism (replay)
     for (int step = 0; step < totalSteps; step++) {
         // Capture snapshot before stepping forward
         auto beforeSnapshot = captureCurrentSnapshot(runner);
@@ -420,7 +420,7 @@ TEST_P(ComprehensiveInteractiveTest, ResetReplayConsistency) {
         return;
     }
 
-    // Phase 1: Execute to completion and capture all snapshots
+    // Stage 1: Execute to completion and capture all snapshots
     std::vector<StateSnapshot> firstRunSnapshots;
     int maxSteps = 100;
 
@@ -436,7 +436,7 @@ TEST_P(ComprehensiveInteractiveTest, ResetReplayConsistency) {
         }
     }
 
-    // Phase 2: Reset
+    // Stage 2: Reset
     runner.reset();
 
     // Verify reset to step 0
@@ -448,7 +448,7 @@ TEST_P(ComprehensiveInteractiveTest, ResetReplayConsistency) {
     EXPECT_TRUE(diff.isIdentical) << "Test " << testId << ": Reset snapshot differs from initial snapshot\n"
                                   << diff.format();
 
-    // Phase 3: Re-execute and compare
+    // Stage 3: Re-execute and compare
     for (size_t step = 0; step < firstRunSnapshots.size() - 1; step++) {
         // Capture before stepping
         auto beforeSnapshot = captureCurrentSnapshot(runner);
@@ -516,7 +516,7 @@ TEST_P(ComprehensiveInteractiveTest, ComplexNavigationPattern) {
         return;
     }
 
-    // Phase 1: Execute forward and capture all snapshots
+    // Stage 1: Execute forward and capture all snapshots
     std::vector<StateSnapshot> referenceSnapshots;
     int maxSteps = 100;
 
@@ -534,7 +534,7 @@ TEST_P(ComprehensiveInteractiveTest, ComplexNavigationPattern) {
 
     int totalSteps = static_cast<int>(referenceSnapshots.size()) - 1;
 
-    // Phase 2: Adaptive complex navigation pattern based on available steps
+    // Stage 2: Adaptive complex navigation pattern based on available steps
     // Adapt pattern complexity to test length for comprehensive coverage
 
     if (totalSteps == 0) {
@@ -551,7 +551,7 @@ TEST_P(ComprehensiveInteractiveTest, ComplexNavigationPattern) {
     int midPoint = totalSteps / 2;
 
     // CRITICAL FIX: Use runner's actual current step, not totalSteps index
-    // After phase 1, runner might be at step N-1 even though totalSteps = N (due to FINAL_STATE)
+    // After stage 1, runner might be at step N-1 even though totalSteps = N (due to FINAL_STATE)
     int currentStepBeforeBackward = runner.getCurrentStep();
 
     // Step 2.1: Back to midpoint (always execute, even if midPoint == 0)
@@ -751,7 +751,7 @@ TEST_P(ComprehensiveInteractiveTest, RandomNavigationStress) {
         return;
     }
 
-    // Phase 1: Capture reference execution
+    // Stage 1: Capture reference execution
     std::vector<StateSnapshot> referenceSnapshots;
     int maxSteps = 100;
 
@@ -769,7 +769,7 @@ TEST_P(ComprehensiveInteractiveTest, RandomNavigationStress) {
 
     int totalSteps = static_cast<int>(referenceSnapshots.size()) - 1;
 
-    // Phase 2: Adaptive deterministic pseudo-random navigation (seed = testId for reproducibility)
+    // Stage 2: Adaptive deterministic pseudo-random navigation (seed = testId for reproducibility)
     // Scale number of operations based on test length for comprehensive coverage
     std::mt19937 rng(testId);
     std::uniform_int_distribution<int> actionDist(0, 2);  // 0=forward, 1=backward, 2=reset
@@ -778,7 +778,7 @@ TEST_P(ComprehensiveInteractiveTest, RandomNavigationStress) {
     int numRandomOps = std::min(50, std::max(10, totalSteps * 5));
 
     // CRITICAL FIX: Initialize from runner's actual current step, not 0
-    // After phase 1, runner might be at step N-1 even though totalSteps = N (due to FINAL_STATE)
+    // After stage 1, runner might be at step N-1 even though totalSteps = N (due to FINAL_STATE)
     int currentStep = runner.getCurrentStep();
 
     for (int op = 0; op < numRandomOps; op++) {

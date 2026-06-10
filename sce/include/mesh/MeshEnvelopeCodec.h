@@ -7,8 +7,8 @@
 // keys are always emitted; absent optional keys are omitted from the map.
 // Decoders MUST skip unknown integer keys (forward compatibility).
 //
-// Schema and key map are pinned in SCE_MESH.md Section 13 Phase 3.5; see the
-// kEnvelopeKey* constants below for the wire integers.
+// Schema and key map are pinned in SCE_MESH.md §mesh-13 "Pattern Realization"; see
+// the kEnvelopeKey* constants below for the wire integers.
 
 #pragma once
 

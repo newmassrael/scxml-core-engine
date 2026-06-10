@@ -25,7 +25,7 @@
 #include <vector>
 
 // Standing consumer for `SCE::parsing::Diagnostic` and the concrete
-// `TemplateError` refit (RFC §W1 commit-series). Two layers:
+// `TemplateError` refit (§wire-W1 commit-series). Two layers:
 //
 //   1. Abstract-base contract (FakeDiagnostic) — removing any pure
 //      virtual override reds the build with "cannot declare variable
@@ -266,7 +266,7 @@ TEST(TemplateErrorWire, LocationFieldShapeWhenPresent) {
 }
 
 TEST(TemplateErrorWire, IdIsStableAcrossCalls) {
-    // Identity is content-addressed (RFC §W1 / SCE_ERROR_CONTRACT.md):
+    // Identity is content-addressed (§wire-W1 / SCE_ERROR_CONTRACT.md):
     // re-rendering the same logical error must not shift its id.
     const TemplateCycle err(
         "<sce:use template=\"a.sce-template.xml\">: cycle detected");
@@ -281,8 +281,8 @@ TEST(TemplateErrorWire, IdIsStableAcrossCalls) {
 // `schemas/sce-diagnostic.v1.schema.json` lines 27-32 and
 // `sce-build/src/forge/diagnostic.rs::DiagnosticCode::Xml*`).
 //
-// W3 (`claudedocs/rfc-sce-diagnostic-wire-unification.md`) promotes
-// `XIncludeExpansionError` to implement `SCE::parsing::Diagnostic`
+// `XIncludeExpansionError` implements `SCE::parsing::Diagnostic`
+// (§wire-W3)
 // with 7 typed leaf subtypes — `XIncludeMissingHref`,
 // `XIncludeNotFound`, `XIncludeReadError`, `XIncludeCycle`,
 // `XIncludeTooDeep`, `XIncludeMalformed`, `XIncludeUnsupported`.
@@ -328,7 +328,7 @@ TEST(XIncludeErrorWire, EmptyHrefCarriesActionableFragmentInMessage) {
 // ── v1 schema conformance for XIncludeError subtypes ──────────────
 //
 // Mirror of the TemplateError schema-conformance tests above for the
-// 7 typed xinclude leaves promoted in RFC §W3. Each test constructs
+// 7 typed xinclude leaves promoted in §wire-W3. Each test constructs
 // a leaf with an example message and asserts the to_json() envelope
 // passes the shared `assertSchemaConformantBase` + `assertNoUnexpectedKeys`
 // curated checks against `schemas/sce-diagnostic.v1.schema.json`.
@@ -437,7 +437,7 @@ TEST(XIncludeErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
               b.to_json().at("id").get<std::string>());
 }
 
-// ── Canonical-JSON string (RFC §W2 deliverable #3) ────────────────
+// ── Canonical-JSON string (§wire-W2 deliverable #3) ────────────────
 
 TEST(TemplateErrorWire, CanonicalJsonStringIsKeyOrderStable) {
     // `to_canonical_json_string()` must produce the same bytes for
@@ -495,7 +495,7 @@ TEST(TemplateErrorWire, CanonicalJsonStringHasAlphabeticalKeyOrder) {
         << "canonical string did not alphabetise keys: " << canonical;
 }
 
-// ── Batch NDJSON formatter (RFC §W2 deliverable #2) ───────────────
+// ── Batch NDJSON formatter (§wire-W2 deliverable #2) ───────────────
 
 TEST(TemplateErrorWire,
      BatchFormatterEmitsOneRecordPerDiagnosticAsNdjson) {
@@ -591,7 +591,7 @@ TEST(TemplateErrorWire, BatchFormatterEmptyVectorWritesNothing) {
     EXPECT_TRUE(oss.str().empty());
 }
 
-// ── SCXMLParser boundary flatten (RFC §W1 audit #1 / W2) ──────────
+// ── SCXMLParser boundary flatten (§wire-W1 audit #1 / W2) ──────────
 
 TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTemplateDiagnostic) {
     // `<sce:use/>` without the required `template` attribute fires
@@ -628,7 +628,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTemplateDiagnostic) {
     EXPECT_TRUE(parser.hasErrors());
     EXPECT_FALSE(parser.getErrorMessages().empty());
 
-    // RFC §W1 audit #1 closure: typed surface populated.
+    // §wire-W1 audit #1 closure: typed surface populated.
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u) << "expected exactly one typed diagnostic";
     ASSERT_NE(diags[0], nullptr);
@@ -653,7 +653,7 @@ TEST(SCXMLParserBoundary, EndToEndParseGetDiagnosticsEmitNdjson) {
     //     → assert code matches `xml/template-missing-attribute`.
     //
     // Q4-B coexistence: legacy `getErrorMessages()` is also
-    // populated. RFC §W2 deliverable plus §W1 audit #1 closure
+    // populated. §wire-W2 deliverable plus §W1 audit #1 closure
     // composed in one fixture.
     //
     // Load-bearing bite: drop the `<sce:use/>` line from the
@@ -740,7 +740,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedXIncludeDiagnostic) {
     EXPECT_TRUE(parser.hasErrors());
     EXPECT_FALSE(parser.getErrorMessages().empty());
 
-    // RFC §W3-5: typed surface populated with the leaf's wire code.
+    // §wire-W3: typed surface populated with the leaf's wire code.
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u) << "expected exactly one typed diagnostic";
     ASSERT_NE(diags[0], nullptr);
@@ -801,7 +801,7 @@ TEST(TemplateErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
 // Three of the five leaves (ParseXmlFailed, ParseException,
 // ParseNoRootElement) reuse the existing `xml/parse` wire code
 // because the Rust error model has no distinct producer for those
-// scenarios — see `ParseError.h` per-leaf comments and RFC §W4 D2.
+// scenarios — see `ParseError.h` per-leaf comments and §wire-W4 D2.
 // Schema conformance still applies per-leaf (each `to_json()` must
 // pass) even when the wire code is shared.
 
@@ -816,7 +816,7 @@ namespace conformance {
 // codes belong in this curated set. Pinned cross-side by the W4
 // Rust drift test
 // `cpp_parse_subtypes_match_rust_diagnostic_codes` in
-// `sce-build/src/parser.rs::tests` (RFC §W4 Stage D).
+// `sce-build/src/parser.rs::tests` (§wire-W4 Stage D).
 const std::array<std::string_view, 2> kExpectedNewParseCodes = {
     "xml/file-not-found",
     "xml/wrong-root-element",
@@ -917,7 +917,7 @@ TEST(SCXMLParserBoundary, ParseFileSurfacesTypedFileNotFoundDiagnostic) {
     EXPECT_TRUE(parser.hasErrors());
     EXPECT_FALSE(parser.getErrorMessages().empty());
 
-    // RFC §W4 D1-C: typed surface populated with the leaf's wire code.
+    // §wire-W4 D1-C: typed surface populated with the leaf's wire code.
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u) << "expected exactly one typed diagnostic";
     ASSERT_NE(diags[0], nullptr);
@@ -965,7 +965,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedWrongRootElementDiagnostic) {
     EXPECT_EQ(j.at("code").get<std::string>(), "xml/wrong-root-element");
 }
 
-// ── Consumer-fragility tests (load-bearing — RFC §W4 D8) ──────────
+// ── Consumer-fragility tests (load-bearing — §wire-W4 D8) ──────────
 //
 // These two tests codify what the typed surface UNLOCKS: behavior
 // that string-parsing cannot deliver robustly. Without them, W4 is
@@ -1046,7 +1046,7 @@ TEST(ParseErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
            "typed code() does not. THIS is what the W4 surface unlocks.";
 }
 
-// ── RFC §W5: SCXML semantic-validation typed family ───────────────
+// ── §wire-W5: SCXML semantic-validation typed family ───────────────
 //
 // Wire-code conformance and ID-stability tests mirror the W4
 // `ParseErrorWire` block. Stage assertion is inlined ("validation"
@@ -1064,7 +1064,7 @@ namespace semantic_conformance {
 
 // W5 variant of the schema-conformance helper. `stage` is fixed to
 // "validation" because all four SemanticError leaves share that
-// stage (RFC §W5 D2).
+// stage (§wire-W5 D2).
 void assertSemanticBase(const nlohmann::ordered_json &j,
                         std::string_view expectedCode) {
     ASSERT_TRUE(j.contains("v")) << j.dump();
@@ -1087,7 +1087,7 @@ void assertSemanticBase(const nlohmann::ordered_json &j,
 }  // namespace semantic_conformance
 
 TEST(SemanticErrorWire, InitialStateUnknownConformsToV1Schema) {
-    // Folded onto `validation/invalid-reference` per RFC §W5 D2 — the
+    // Folded onto `validation/invalid-reference` per §wire-W5 D2 — the
     // same wire code forge `ValidationError::InvalidReference` emits.
     // Test pins the fold: a consumer dispatching on
     // `validation/invalid-reference` MUST see this leaf's payload
@@ -1154,7 +1154,7 @@ TEST(SemanticErrorWire, NoStatesConformsToV1Schema) {
 }
 
 TEST(SemanticErrorWire, TopLevelScriptUnloadedConformsToV1Schema) {
-    // The 1 NEW wire code RFC §W5 D2 introduces. Carries `spec` field
+    // The 1 NEW wire code §wire-W5 D2 introduces. Carries `spec` field
     // ("W3C SCXML §5.8") because the code has a spec_anchor on the
     // Rust side; key ordering is (v, id, code, stage, spec, message,
     // location?, actual?) per the schema's canonical order.
@@ -1175,7 +1175,7 @@ TEST(SemanticErrorWire, TopLevelScriptUnloadedAnalyzerPathOmitsActual) {
     // Analyzer-path producer (Rust `analyzer::can_generate_static`)
     // emits with both `index` and `src` as None — wire output omits
     // `actual` but keeps `spec` and the wire `code`. Pins payload
-    // asymmetry symmetric across producers (RFC §W5 anti-pattern #5:
+    // asymmetry symmetric across producers (§wire-W5 anti-pattern #5:
     // "NEW wire code count > NEW Rust producer count" — both sides
     // emit the same code; payload detail varies).
     const SemanticTopLevelScriptUnloaded err(
@@ -1230,7 +1230,7 @@ TEST(SemanticErrorWire, IdDiffersAcrossDifferentWireCodes) {
         << "different wire codes must yield distinct ids even with shared message";
 }
 
-// ── Test-as-consumer fragility tests (RFC §W5 D6) ─────────────────
+// ── Test-as-consumer fragility tests (§wire-W5 D6) ─────────────────
 //
 // Mirror W4's `ParseErrorConsumer.TypedCodeDistinguishesFailureClass*`
 // tests: a hypothetical consumer dispatching on `code()` MUST be able
@@ -1401,7 +1401,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTransitionTargetUnknownDiagno
 }
 
 TEST(SCXMLParserBoundary, ParseContentSurfacesTypedCompoundInitialUnknownDiagnostic) {
-    // RFC §W5 D2 fold: compound-state initial uses the SAME wire code
+    // §wire-W5 D2 fold: compound-state initial uses the SAME wire code
     // (`validation/invalid-reference`) as document-root initial. The
     // typed leaf carries `Scope::CompoundState` for in-process typed
     // dispatch consumers; wire consumers see one branch.
@@ -1438,7 +1438,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedCompoundInitialUnknownDiagnos
 TEST(SCXMLParserBoundary, ParseContentSurfacesTypedNoStatesDiagnostic) {
     // Doc with no top-level state/parallel/final children. W3C SCXML
     // §3.2 requires at least one — folded onto
-    // `validation/empty-collection` per RFC §W5 D2.
+    // `validation/empty-collection` per §wire-W5 D2.
     constexpr const char *kBrokenScxml =
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
         "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
@@ -1461,7 +1461,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnos
     // — `FileLoadingHelper::loadExternalScript` fails, `ActionParser`
     // returns nullptr, `parseScxmlNode` throws
     // `SemanticTopLevelScriptUnloaded`. This is the C++-side trigger
-    // for the 1 NEW wire code RFC §W5 introduces.
+    // for the 1 NEW wire code §wire-W5 introduces.
     //
     // Note: empty `<script/>` does NOT trigger the throw on C++ —
     // `ActionParser` returns a ScriptAction with empty content (the

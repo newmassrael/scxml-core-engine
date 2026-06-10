@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Phase C P1 unit-test family for the C++ PositionMap primitive.
+// Unit-test family for the C++ PositionMap primitive.
 // Mirrors the test coverage in `sce-build/src/position_map.rs::tests`:
 // identity mapping, multi-line lookup, Unicode-scalar column counting,
 // splice composition via `append_mapped_substring`, predicate shape
-// for `is_identity()`. The standing consumer for P1 until
-// `processSceTemplate` grows a PositionMap producer in P2 — per
-// `feedback_built_but_unconsumed.md`, every public method must be
-// exercised by this file so the header is not dead-code.
+// for `is_identity()`. Every public method must be exercised by this
+// file so the header carries no dead code; production consumers are
+// `processXInclude` / `processSceTemplate`.
 
 #include "parsing/PositionMap.h"
 

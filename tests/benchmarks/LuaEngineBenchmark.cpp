@@ -480,7 +480,7 @@ BENCHMARK_REGISTER_F(LuaEngineFixture, ManySessionsStress)->Arg(10)->Arg(50)->Ar
 // the typedData-overlay path that runs in `EventRaiserImpl` 's
 // pipeline-level pre-parse + the shared_ptr `setCurrentEvent` overlay.
 //
-// Threshold-driven decision (composed-roaming-kernighan.md Phase 1.2):
+// Threshold-driven decision rule:
 //   < 100 ns/event waste → AUTO-CLOSE
 //   100-500 ns/event     → DOCUMENT-ONLY
 //   > 500 ns/event       → AUTO-FIX

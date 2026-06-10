@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template parity fixture: undeclared_braces.
+
+  Replay of the Rust unit test `undeclared_braces_pass_through`
+  (sce-build/src/template.rs::tests). The template body
+  contains `{$undeclared}` alongside a declared `{$a}`; only
+  the declared token is substituted. Unknown `{$token}`
+  sequences pass through unchanged so that authored literal
+  content (e.g. documentation snippets or intentional
+  placeholders) survives expansion.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle">
+  <state id="idle">
+    <sce:use template="literal_braces.scxml" a="X"/>
+  </state>
+</scxml>

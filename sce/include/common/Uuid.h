@@ -6,7 +6,7 @@
 // v7 (preferred): 48-bit Unix millisecond timestamp prefix + 74 random bits
 // + version/variant. Time-ordered for log/correlation use; sufficient
 // uniqueness for distributed peers (MeshEnvelope correlation_id, mesh peer
-// identity). See SCE_MESH.md Section 13 Phase 3.5.
+// identity). See SCE_MESH.md §mesh-13 "Pattern Realization".
 //
 // v4 (fallback): 122 fully random bits + version/variant. Use when time
 // source is unavailable or monotonic ordering is not required.

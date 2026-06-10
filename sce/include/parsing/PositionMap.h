@@ -22,12 +22,9 @@
 // practical; the Rust side is the authoritative reference and the
 // Origin enum shape is pinned across the two sides by the drift
 // test `cpp_origin_shape_matches_rust` in
-// `sce-build/src/position_map.rs::tests`.
-//
-// Phase C tracked in `claudedocs/rfc-sce-template-phase-c.md`. P1
-// ships the header + implementation + unit tests only; the P2
-// consumer (PugiXMLDocument::processSceTemplate) and the P3
-// coordinate-parity harness land in follow-up sessions.
+// `sce-build/src/position_map.rs::tests`. Consumers:
+// `PugiXMLDocument::processXInclude` / `processSceTemplate`
+// compose these maps across the two preprocessor stages.
 
 namespace SCE::parsing {
 

@@ -5,7 +5,7 @@
 // enum + `kReasonCodeTable` (sce/include/mesh/CommunicationError.h)
 // and the canonical §16.7 reason-code catalog in `SCE_MESH.md`.
 //
-// Axis-5 inversion fix — the typed enum is the C++ source of truth
+// The typed enum is the C++ source of truth
 // for the reason-code vocabulary; the markdown table is the
 // authoring source of truth that SCXML authors consult to write
 // `_event.data.reason == 'X'` cond branches. This test binds the two
