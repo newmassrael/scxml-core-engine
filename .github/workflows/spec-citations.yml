@@ -45,21 +45,22 @@ concurrency:
 
 env:
   # Pin to a Mnemosyne commit, never a branch; --locked builds against its
-  # committed Cargo.lock for a reproducible binary. a32f284 (R427) completes the
-  # verify-axis validity rung from SCE's field report: R425 adds the
-  # BlanketVerifies detector (severity_blanket) + the unconfirmed_verifies
-  # surface, R426 adds the authoritative verifies-catalog linkage check
-  # ([verifies_catalog] + validate-verifies-linkage), R427 lets a catalog-
-  # validated binding count as confirmed without a model review. R423 added the
-  # MisclassifiedCoverage invariant (severity_classification); R421/R422 the
-  # 3-state coverage_expectation; R416-R420 the confirmation subsystem.
+  # committed Cargo.lock for a reproducible binary. aa66c61 (R428) adds the
+  # [verifies_catalog].sha256 pin (epub_sha256 symmetry): every catalog load
+  # re-hashes the file and fails loudly on mismatch, guarding the authority input
+  # of the R427 catalog-live confirmed rule. R425-R427 are the verify-axis
+  # validity rung from SCE's field report: R425 BlanketVerifies detector
+  # (severity_blanket) + unconfirmed_verifies surface, R426 the verifies-catalog
+  # linkage check ([verifies_catalog] + validate-verifies-linkage), R427 the
+  # catalog-live confirmed branch. R423 MisclassifiedCoverage; R421/R422 3-state
+  # coverage_expectation; R416-R420 the confirmation subsystem.
   # Earlier on this line: R400 retired the markdown-doc render path (store is the
   # sole SSOT, no GENERATED.md round-trip), R402-R405 added the offline
   # content-drift gate (NormativeExcerpt.text_sha256 + committed-EPUB file pin),
   # R407 projects each section body from the pinned EPUB, R413 added the verify
   # axis. The scxml store is schema v11; mesh/wire stay v8 (the v11 CLI reads
   # them, validate is read-only). See claudedocs/rfc-epub-ssot-adoption-poc.md.
-  MNEMOSYNE_REV: a32f28438ede6e0a21310245c8b5a4cfb0972994
+  MNEMOSYNE_REV: aa66c61631b977d45037d82a8977484e07683c3e
 
 jobs:
   citations:

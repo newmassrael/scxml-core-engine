@@ -35,6 +35,7 @@ sub-section precision.
 Deterministic and standard-library only.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -95,6 +96,7 @@ def main():
     entries, skipped = build_entries(args.repo_root)
     catalog = {"format": "verifies-catalog/v1", "entries": entries}
     rendered = json.dumps(catalog, indent=2, ensure_ascii=False) + "\n"
+    sha256 = hashlib.sha256(rendered.encode("utf-8")).hexdigest()
 
     if args.check:
         if not os.path.exists(args.out):
@@ -104,13 +106,17 @@ def main():
             print(f"catalog STALE: {args.out} — regenerate with "
                   f"tools/mnemosyne-adoption/gen_verifies_catalog.py", file=sys.stderr)
             return 1
-        print(f"catalog up to date: {len(entries)} entries")
+        # Surface the hash so a reviewer can confirm/update the
+        # [verifies_catalog].sha256 pin in mnemosyne.toml in one motion.
+        print(f"catalog up to date: {len(entries)} entries; sha256={sha256}")
         return 0
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     open(args.out, "w").write(rendered)
     print(f"wrote {args.out}: {len(entries)} entries"
           + (f" ({len(skipped)} tests skipped: no aot header)" if skipped else ""))
+    # Re-pin in one motion: paste this into [verifies_catalog].sha256.
+    print(f"sha256={sha256}  -> update [verifies_catalog].sha256 in mnemosyne.toml")
     return 0
 
 
