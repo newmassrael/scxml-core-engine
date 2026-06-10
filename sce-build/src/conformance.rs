@@ -275,14 +275,12 @@ pub enum FixtureSpec {
         /// filtering time. Must be absent in the manifest JSON — the user
         /// cannot override what the SCXML structurally declares.
         ///
-        /// Used by the C11 backend's per-phase `c11_supported_kind` filter:
-        /// Phase D-1 admits `is_l2: false` only (pure guard-only diamonds);
-        /// D-2 widens to `is_l2: true` with the matching `procedure.h`
-        /// runtime header. After Phase D-3 closes, every procedure shape
-        /// (L1/L2, with or without imports) flows through C11 unchanged,
-        /// so the field's role is documentation-only at the variant level
-        /// (it remains useful for per-template gating in cpp/Rust/Go/etc.
-        /// where L1 emit shape diverges from L2).
+        /// Consumed at harness-render time: the per-language procedure
+        /// fragments branch on it where the L1 emit shape diverges from
+        /// L2 (e.g. `kinds/procedure.c.jinja2`'s `{% if f.is_l2 %}`).
+        /// Every procedure shape (L1/L2, with or without imports) is
+        /// admitted by every backend — the field selects emit shape, it
+        /// does not gate admission.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         is_l2: bool,
     },
@@ -633,7 +631,7 @@ pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
             }
         }
         // Null / array / object are not valid scalar oracle values for
-        // Phase A's transform fixtures; emit a syntactic marker so the C
+        // transform fixtures; emit a syntactic marker so the C
         // compiler rejects with a clear message if reached.
         _ => format!("/* unsupported oracle value: {value} */"),
     }
@@ -999,21 +997,15 @@ pub fn harness_filename(language: Language) -> &'static str {
     harness_layout(language).output_filename
 }
 
-/// RFC §5.J.2: gate which fixture kinds the C11 conformance harness
-/// includes per phase. The filter exists because `harness.c.jinja2`
-/// does dynamic `{% include "kinds/" ~ f.kind ~ ".c.jinja2" %}` and
-/// would fail at render time on any kind whose fragment is not yet
-/// present. Each new sub-phase widens the predicate alongside the
-/// matching `kinds/<kind>.c.jinja2` fragment landing:
-///   * Phase A:   Transform
-///   * Phase B-1: Condition
-///   * Phase B-2: Lookup
-///   * Phase B-3: Codec
-///   * Phase C:   Validator
-///   * Phase D-1: Procedure (L1 only — `is_l2: false`, pure guard-only
-///     diamonds with no service/helper/donedata/internals); D-2 widens
-///     to `is_l2: true` once the matching `procedure.h` runtime header
-///     and L2 emit paths land.
+/// Gate which fixture kinds the C11 conformance harness includes. The
+/// filter exists because `harness.c.jinja2` does dynamic
+/// `{% include "kinds/" ~ f.kind ~ ".c.jinja2" %}` and would fail at
+/// render time on any kind whose fragment is not present. The
+/// predicate is currently total — every shipped `FixtureSpec` variant
+/// lowers through the C11 backend — but it stays an exhaustive match
+/// (see the note on the final arm) so a future kind addition forces an
+/// explicit C11 admission decision alongside its
+/// `kinds/<kind>.c.jinja2` fragment.
 ///
 /// Exposed as `pub` so the `sce-codegen list-fixtures --language c11`
 /// CLI can apply the same filter that `generate-conformance` uses,
@@ -1023,8 +1015,8 @@ pub fn harness_filename(language: Language) -> &'static str {
 /// `template_ships` matrix with two per-fixture predicates that the
 /// matrix cannot express:
 ///
-///   1. **C11 phase filter** (`c11_supported_kind`) — phase-driven
-///      kind subset that's already separately gated.
+///   1. **C11 kind filter** (`c11_supported_kind`) — the explicit
+///      per-kind C11 admission predicate, documented separately.
 ///   2. **MCU-only fixture filter** (`codec_has_mcu_only_features`) —
 ///      `<sce:dma-aligned>` codecs lower to Rust + C11 only; cpp /
 ///      kotlin / go / python codegen rejects them with the typed
@@ -1083,53 +1075,48 @@ pub fn c11_supported_kind(spec: &FixtureSpec) -> bool {
         | FixtureSpec::Condition { .. }
         | FixtureSpec::Lookup { .. }
         | FixtureSpec::Validator { .. } => true,
-        // RFC §5.B B5-ζ Surface H closure: every codec — including
-        // fields declared `sce:type="string"` — flows through the C11
-        // backend. The closure landed `char[N] + size_t len` storage,
-        // `sce_forge_is_valid_utf8` decode-time validation, and
-        // SCE_FORGE_CODEC_INVALID_UTF8 typed return; see
-        // `render_codec` and `c/codec.h.jinja2`'s `field.is_string`
-        // branch.
+        // String-bearing codecs included: fields declared
+        // `sce:type="string"` lower to `char[N] + size_t len` storage
+        // with `sce_forge_is_valid_utf8` decode-time validation and the
+        // SCE_FORGE_CODEC_INVALID_UTF8 typed return; see `render_codec`
+        // and `c/codec.h.jinja2`'s `field.is_string` branch.
         FixtureSpec::Codec { .. } => true,
-        // RFC §5.J.2 Phase D-3 closure: stateful imports (`<sce:import
-        // kind="codec"/>` etc.) lower into the procedure state struct
-        // via the C11 codegen import path + AST pre-pass
-        // (expr::lower_stateful_import_calls). Cross-file procedure
-        // fixtures now flow through the same harness as in-file ones.
+        // Stateful imports (`<sce:import kind="codec"/>` etc.) lower
+        // into the procedure state struct via the C11 codegen import
+        // path + AST pre-pass (expr::lower_stateful_import_calls), so
+        // cross-file procedure fixtures flow through the same harness
+        // as in-file ones.
         FixtureSpec::Procedure { .. } => true,
-        // RFC §5.J.2 Phase E-1: signal filter kinds (low_pass /
-        // moving_average / debounce). C11 bakes the algorithm at codegen
-        // time per fixture (no runtime header surface) — matches codec's
-        // bake-at-codegen pattern. The unified `render_filter` adds
-        // `<snake>` + `<input_id_snake>` to its context so the C11
-        // template emits free functions instead of templated classes.
+        // Signal filter kinds (low_pass / moving_average / debounce):
+        // C11 bakes the algorithm at codegen time per fixture (no
+        // runtime header surface) — matches codec's bake-at-codegen
+        // pattern. The unified `render_filter` adds `<snake>` +
+        // `<input_id_snake>` to its context so the C11 template emits
+        // free functions instead of templated classes.
         FixtureSpec::Filter { .. } => true,
-        // RFC §5.J.2 Phase E-2: hysteresis observer kind. C11 bakes the
-        // ThresholdState bool flag + fixed-cap EventQueue + tag enum
-        // inline per fixture. `render_observer` closed the prior C11
-        // `active_var` unimplemented site by adopting Rust's
-        // `<id>_active` convention, and inserts `<snake>`/`<upper>` so
-        // global C identifiers (enum tag constants, capacity macro) are
+        // Hysteresis observer kind: C11 bakes the ThresholdState bool
+        // flag + fixed-cap EventQueue + tag enum inline per fixture.
+        // `render_observer` follows Rust's `<id>_active` naming
+        // convention and inserts `<snake>`/`<upper>` so global C
+        // identifiers (enum tag constants, capacity macro) are
         // observer-prefixed.
         FixtureSpec::Observer { .. } => true,
-        // RFC §5.J.2 Phase E-3: 1D linear / 2D bilinear interpolation.
-        // C11 inlines the algorithm per fixture with the array sizes
-        // substituted in (cpp/Rust use templates over array sizes;
-        // bake-at-codegen sidesteps the lack of generics). Static const
-        // breakpoint + value tables are emitted at codegen time.
+        // 1D linear / 2D bilinear interpolation: C11 inlines the
+        // algorithm per fixture with the array sizes substituted in
+        // (cpp/Rust use templates over array sizes; bake-at-codegen
+        // sidesteps the lack of generics). Static const breakpoint +
+        // value tables are emitted at codegen time.
         FixtureSpec::Interpolation { .. } => true,
-        // RFC §5.J.2 Phase E-4: timer scheduler. C11 emits a
-        // vtable-based ITimer interface + function-pointer handler
-        // struct + per-timer start/cancel pairs. cpp uses
-        // `class ITimer { virtual ... };` + a `Handler&` template
-        // parameter (duck typing); the C11 mirror is an explicit
-        // method-pointer struct + a NULL-checked handler dispatch in
-        // the trampoline.
+        // Timer scheduler: C11 emits a vtable-based ITimer interface +
+        // function-pointer handler struct + per-timer start/cancel
+        // pairs. cpp uses `class ITimer { virtual ... };` + a
+        // `Handler&` template parameter (duck typing); the C11 mirror
+        // is an explicit method-pointer struct + a NULL-checked handler
+        // dispatch in the trampoline.
         //
-        // After Phase E-4, the C11 backend covers every `FixtureSpec`
-        // variant — all 10 forge kinds emit through the same C11
-        // codegen path. Remove the catch-all so a future kind addition
-        // forces an explicit decision here.
+        // Every `FixtureSpec` variant is admitted — all 10 forge kinds
+        // emit through the same C11 codegen path. No catch-all arm, so
+        // a future kind addition forces an explicit decision here.
         FixtureSpec::Timer { .. } => true,
         // RFC §7 A6: §5.A algorithm kind. The C11 algorithm template
         // (`tools/codegen/templates/forge/c/algorithm.h.jinja2`) shipped
