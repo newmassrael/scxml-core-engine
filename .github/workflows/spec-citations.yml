@@ -6,6 +6,8 @@ name: Spec Citations (Mnemosyne adoption)
 #   docs/spec/scxml     §scxml-<n>   W3C SCXML Recommendation mirror
 #   docs/sce-ledger/mesh §mesh-<n>   SCE_MESH.md design ledger
 #   docs/sce-ledger/wire §wire-W<n>  Wire RFC design ledger
+#   docs/spec/synth     §synth-<id>  protocol-synthesis RFC mirror (revision-
+#                                    pinned snapshot of the watching-zenoh RFC)
 #
 # `validate-code-refs` fails (severity_missing = "reject") on any §<ns>-<id>
 # citation with no matching ledger section — the hallucination gate. The
@@ -18,7 +20,7 @@ name: Spec Citations (Mnemosyne adoption)
 # vendored), so it is installed at a pinned revision via `cargo install --git
 # --rev --locked` and cached by that rev — the consumer CI pattern from
 # Mnemosyne's SCHEMA_GUIDE. Bump MNEMOSYNE_REV deliberately, re-validating the
-# three workspaces locally against the new rev before committing the change.
+# four workspaces locally against the new rev before committing the change.
 
 on:
   push:
@@ -26,7 +28,14 @@ on:
     paths:
       - 'sce/**'
       - 'sce-build/**'
-      - 'docs/spec/scxml/**'
+      - 'sce-rust-runtime/**'
+      - 'sce-forge-runtime/**'
+      - 'sce-c-runtime/**'
+      - 'tools/codegen/templates/**'
+      - 'tests/forge/resources/**'
+      - 'scripts/**'
+      - 'schemas/**'
+      - 'docs/spec/**'
       - 'docs/sce-ledger/**'
       - '.github/workflows/spec-citations.yml'
   pull_request:
@@ -34,7 +43,14 @@ on:
     paths:
       - 'sce/**'
       - 'sce-build/**'
-      - 'docs/spec/scxml/**'
+      - 'sce-rust-runtime/**'
+      - 'sce-forge-runtime/**'
+      - 'sce-c-runtime/**'
+      - 'tools/codegen/templates/**'
+      - 'tests/forge/resources/**'
+      - 'scripts/**'
+      - 'schemas/**'
+      - 'docs/spec/**'
       - 'docs/sce-ledger/**'
       - '.github/workflows/spec-citations.yml'
   workflow_dispatch:
@@ -88,7 +104,7 @@ jobs:
       - name: Validate citations + excerpt content drift (per workspace)
         run: |
           set -euo pipefail
-          for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire; do
+          for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth; do
             echo "::group::${ws}"
             ( cd "${ws}" \
                 && mnemosyne-cli validate-workspace \
@@ -107,3 +123,13 @@ jobs:
         run: |
           python3 tools/mnemosyne-adoption/migrate_citations.py --check \
             --from-toml docs/spec/scxml/mnemosyne.toml
+
+      # Same form gate for the protocol-synthesis RFC: a claimable free-text
+      # cite ("RFC §5.B" with a lettered label, or a numeric one under the
+      # watching-zenoh document marker) must be in §synth- form so
+      # validate-code-refs gates it; skipped sightings (sibling-namespace
+      # numbers, other documents' ids) legitimately stay prose.
+      - name: Forbid claimable free-text synth RFC cites (force §synth- form)
+        run: |
+          python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace synth \
+            --from-toml docs/spec/synth/mnemosyne.toml
