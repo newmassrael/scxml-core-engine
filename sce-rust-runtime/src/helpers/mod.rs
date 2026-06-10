@@ -37,11 +37,18 @@
 //! - [`foreach`]: Foreach iteration (static variant)
 //! - [`guard`]: Guard condition evaluation (In() predicate-based)
 //! - [`datamodel_init`]: Datamodel initialization helpers
+//! - `invoke_processing` (std-only): W3C SCXML 6.4 invoke processing algorithms
 //! - `url_encoding` (std-only): RFC 3986 URL encoding/decoding
 //!
-//! Modules marked "std-only" are `!no_std`-gated (see the `#[cfg]` rationale
-//! on each `pub mod` below); their index entries stay plain code spans because
-//! an intra-doc link to them cannot resolve in the no_std docs profile.
+//! Modules marked "std-only" are unavailable under `--features no_std` (see
+//! the `#[cfg]` rationale on each `pub mod` below).
+
+// Index discipline: std-only entries above are plain code spans, not
+// intra-doc links — a cfg-gated target cannot resolve in the no_std docs
+// profile (both profiles are doc-gated). rustdoc therefore can never catch
+// a stale "(std-only)" marker; tests/helpers_index_drift.rs keeps the
+// marker set in lockstep with the actual `cfg(not(feature = "no_std"))`
+// gating instead.
 
 // Phase 1 modules
 pub mod event_queue;
