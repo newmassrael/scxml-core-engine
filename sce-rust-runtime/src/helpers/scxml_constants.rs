@@ -13,7 +13,7 @@
 pub const SCXML_EVENT_PROCESSOR_TYPE: &str = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
 
 /// BasicHTTP Event I/O Processor (W3C SCXML C.2). Used for `<send type="...">`
-/// targeting an HTTP URL via [`HttpSendRequest`](crate::HttpSendRequest).
+/// targeting an HTTP URL via `HttpSendRequest` (`!no_std`-gated `http` module).
 pub const BASIC_HTTP_EVENT_PROCESSOR_TYPE: &str =
     "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
 

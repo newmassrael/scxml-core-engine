@@ -15,7 +15,7 @@
 //!   `entry_exit_actions.rs.jinja2` emits a call to it unconditionally for
 //!   `<content>literal</content>` donedata) but returns [`crate::SceString`]
 //!   so it composes with the capped `EventMetadata.data` field.
-//! - [`build_done_data_json`] and [`escape_json_string`] depend on
+//! - `build_done_data_json` and `escape_json_string` depend on
 //!   `helpers::event_data` (whole-module `!no_std`-gated) and have no current
 //!   consumer; they are gated to `!no_std`.
 

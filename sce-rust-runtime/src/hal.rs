@@ -115,7 +115,7 @@ pub trait Hal {
 ///
 /// ## Implementation notes
 ///
-/// - `now_ticks_ms` uses [`std::time::Instant`]'s monotonic-since-process-
+/// - `now_ticks_ms` uses `std::time::Instant`'s monotonic-since-process-
 ///   start clock, milliseconds. Process-lifetime monotonicity is guaranteed
 ///   by the platform clock.
 /// - `wake` is a no-op (single-threaded by design — see [`crate::Engine`]

@@ -12,7 +12,7 @@
 //! In Rust, we use `&mut [Box<dyn FnMut()>]` or closures for the same effect.
 //!
 //! Watching-zenoh RFC §5.J.2 (lines 1989-1994): the `Box<dyn FnMut()>` block
-//! variants ([`execute_entry_blocks`] / [`execute_exit_blocks`]) require
+//! variants (`execute_entry_blocks` / `execute_exit_blocks`, `!no_std`-gated) require
 //! `alloc` and are gated to `!no_std`. The pure-closure variants
 //! ([`execute_entry_closures`] / [`execute_exit_closures`]) take
 //! `&mut [&mut dyn FnMut()]` slices (no allocation) and stay available under

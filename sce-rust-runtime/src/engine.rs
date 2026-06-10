@@ -110,7 +110,7 @@ pub type SchedTimePoint = u64;
 ///
 /// Watching-zenoh RFC §5.J.2 (lines 1989-1994): under `--features=no_std`
 /// the backing store is a stack-allocated `heapless::Vec` capped at
-/// [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS) (= 32 in v1; see the `lib.rs` doc-comment for the
+/// [`crate::MAX_SCHEDULED_EVENTS`] (= 32 in v1; see the `lib.rs` doc-comment for the
 /// reasoning and the deferred per-document tunable). Capacity overflow under
 /// no_std is treated as a fatal configuration error (panic) per the same
 /// "no silent transition drop" discipline the W3C SCXML algorithm follows.
@@ -176,7 +176,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// `schedule_event` wrapper does this via `sched_now_plus(delay)`.
     ///
     /// Watching-zenoh RFC §5.J.2: under `--features=no_std` an attempted
-    /// push past [`MAX_SCHEDULED_EVENTS`](crate::MAX_SCHEDULED_EVENTS) panics rather than silently dropping
+    /// push past [`crate::MAX_SCHEDULED_EVENTS`] panics rather than silently dropping
     /// the event (W3C SCXML no-silent-drop discipline).
     pub fn schedule_event_at(
         &mut self,
@@ -272,8 +272,8 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
 
     /// no_std variant of [`pop_ready_event_at`](Self::pop_ready_event_at).
     ///
-    /// The delayed-send data string is elided under no_std (see
-    /// [`ScheduledEntry`]), so the popped event carries no data. The no_std
+    /// The delayed-send data string is elided under no_std (see the private
+    /// `ScheduledEntry`'s field docs), so the popped event carries no data. The no_std
     /// drain in [`Engine::tick`] passes `""` to
     /// [`raise_external`](Engine::raise_external), which discards it anyway —
     /// returning `Option<E>` instead of `Option<(E, SceString)>` avoids moving
