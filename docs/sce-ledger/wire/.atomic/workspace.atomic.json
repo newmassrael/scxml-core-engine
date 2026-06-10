@@ -19,6 +19,10 @@
           "file": "sce/include/parsing/SCXMLParser.h",
           "symbol": "getDiagnostics",
           "kind": "implements"
+        },
+        {
+          "file": "sce/include/parsing/TemplateError.h",
+          "kind": "references"
         }
       ]
     },
@@ -40,6 +44,10 @@
           "file": "sce/src/parsing/Diagnostic.cpp",
           "symbol": "Diagnostic::to_canonical_json_string",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "kind": "references"
         }
       ]
     },
@@ -61,6 +69,18 @@
         {
           "file": "sce/include/parsing/XIncludeExpander.h",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/parsing/ParseError.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/PugiXMLParser.cpp",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "kind": "implements"
         }
       ]
     },
@@ -203,5 +223,6 @@
   },
   "changelog_entries": {},
   "inventory_entries": {},
-  "schema_version": 8
+  "confirmation_events": {},
+  "schema_version": 11
 }

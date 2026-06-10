@@ -354,6 +354,30 @@
         {
           "file": "sce/include/mesh/transports/ZenohScxmlInvokeEndpoint.h",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/common/Uuid.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/MeshEnvelope.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/MeshEnvelopeCodec.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/PayloadCodec.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/QosHints.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/RpcStatus.h",
+          "kind": "references"
         }
       ]
     },
@@ -1518,5 +1542,6 @@
   },
   "changelog_entries": {},
   "inventory_entries": {},
-  "schema_version": 8
+  "confirmation_events": {},
+  "schema_version": 11
 }
