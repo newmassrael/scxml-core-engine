@@ -91,8 +91,8 @@ fn typed_entry_surfaces_xinclude_fragment_dep() {
     // sole purpose is to be stripped at splice time, leaving just the
     // `<transition>` child to land directly inside `<state id="phase1">`.
     // Without the wrapper the include would be a no-op and phase1 would
-    // gain no transitions, which `scxml_reachability::validate`
-    // (NL→IR Mapping Roadmap Item 3 Phase A) now catches as the
+    // gain no transitions, which the statechart graph-reachability
+    // validator `scxml_reachability::validate` catches as the
     // orphan `<final id="pass">`.
     let fragment = write_file(
         tmp.path(),

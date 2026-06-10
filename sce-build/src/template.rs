@@ -2,19 +2,17 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // `sce:template` / `sce:use` / `sce:param` preprocessing for SCXML
-// source documents. AOT-only expansion per RFC §6.5 Phase A; the C++
-// runtime does not implement template expansion, so documents
-// containing `<sce:use>` are accepted only through the `sce-build`
-// pipeline.
+// source documents. This is the Rust reference expansion; the C++
+// Interpreter runtime performs the same string-level expansion via
+// `sce/src/parsing/TemplateExpander.cpp`, which mirrors this module.
 //
 // Pairs logically with `sce-build/src/xinclude.rs` and runs
 // immediately after it in `parser.rs` so templates see a
 // post-XInclude document and can reference fragments composed
 // through either mechanism. See `ARCHITECTURE.md` → "Scope &
-// Composition" for the composition charter; spec frozen in
-// `claudedocs/rfc-sce-template-sce-param.md`.
+// Composition" for the composition charter.
 //
-// # Syntax (RFC §3)
+// # Syntax
 //
 // Template declaration — standalone file, root `<sce:template>`:
 //
@@ -482,7 +480,7 @@ fn resolve_template_path(
 /// fed back through [`expand_impl`] for nested `<sce:use>` expansion
 /// without losing the `sce:` namespace binding declared on the
 /// template root, and (b) `<sce:param default="...">` literals are
-/// not themselves substituted (Q1 literal-only defaults).
+/// not themselves substituted (defaults are literal-only).
 ///
 /// The emitted map carries one [`Origin::File`] entry per contiguous
 /// run of template-file bytes (prefix before body, non-substituted
@@ -1491,9 +1489,9 @@ mod tests {
     /// Follows the `xinclude::xinclude_depth_matches_runtime` pattern
     /// for cross-language mirrored constants.
     ///
-    /// Phase B M2 extended this test to also verify behavioural
-    /// agreement of the C++ `PARAM_NAME_PATTERN` constant (now
-    /// consumed by `SCE::parsing::is_valid_param_name`). The C++
+    /// This test also verifies behavioural agreement of the C++
+    /// `PARAM_NAME_PATTERN` constant (consumed by
+    /// `SCE::parsing::is_valid_param_name`). The C++
     /// header is read via `include_str!`, its raw-string literal is
     /// extracted, compiled as a Rust regex, and applied to the same
     /// corpus. Byte-equality between the C++ and XSD patterns is
@@ -1540,8 +1538,8 @@ mod tests {
         // shape `cpp_param_name_pattern_matches_rust` pins) and compile
         // it as a Rust regex. Corpus agreement closes the triangle:
         // XSD regex <-> Rust validator <-> C++ regex all verdict the
-        // same cases. Option 2 from the Phase B M2 task spec (pure
-        // Rust, no cross-build dependency).
+        // same cases. Implemented in pure Rust with no cross-build
+        // dependency.
         let cpp_hdr = include_str!("../../sce/include/parsing/TemplateConstants.h");
         let cpp_begin_anchor = r#"R"pat("#;
         let cpp_end_anchor = r#")pat""#;
@@ -1617,13 +1615,13 @@ mod tests {
     /// `MAX_TEMPLATE_DEPTH` and the C++ Interpreter runtime's
     /// `sce/include/parsing/TemplateConstants.h::MAX_TEMPLATE_DEPTH`.
     ///
-    /// Phase B M1 declares the C++ constant ahead of its M3
-    /// consumer so the drift test has a pinned target the moment
-    /// the constant exists. Without this test a future change on
-    /// either side would silently drift — e.g. a Rust bump to 16
-    /// could leave C++ still enforcing 10, so a document accepted
-    /// by sce-codegen would be rejected by the Interpreter
-    /// (or vice versa) once M3 lands the recursion loop.
+    /// Both sides consume the constant: the Rust AOT expander here
+    /// and the C++ `TemplateExpander` recursion-depth check in
+    /// `sce/src/parsing/TemplateExpander.cpp`. Without this test a
+    /// future change on either side would silently drift — e.g. a
+    /// Rust bump to 16 could leave C++ still enforcing 10, so a
+    /// document accepted by sce-codegen would be rejected by the
+    /// Interpreter (or vice versa).
     ///
     /// Follows `xsd_param_name_pattern_agrees_with_rust_impl` and
     /// `xinclude::xinclude_depth_matches_runtime` for the
@@ -1801,9 +1799,7 @@ mod tests {
             found_refs, expected_cpp,
             "TemplateError subtype drift: C++ header = {:?}, \
              expected (from DiagnosticCode mapping) = {:?}. Change \
-             both sides in the same commit — see RFC §1 Q4 \
-             (claudedocs/rfc-sce-template-phase-b.md) for the \
-             invariant.",
+             both sides in the same commit.",
             found_refs, expected_cpp
         );
 
@@ -1830,7 +1826,7 @@ mod tests {
         }
     }
 
-    /// W1 (`claudedocs/rfc-sce-diagnostic-wire-unification.md`) makes
+    /// §wire-W1 makes
     /// each C++ `Template<Variant>` subtype override
     /// `Diagnostic::code()` to return its `xml/template-*` wire string.
     /// The sister test above pins **subtype names** between Rust and
@@ -1885,7 +1881,7 @@ mod tests {
                  subtype's `code()` override must return the Rust \
                  DiagnosticCode wire literal exactly so the JSON wire \
                  emitted by `to_json()` agrees with `--error-format=\
-                 json`. RFC §W1 / SCE_ERROR_CONTRACT.md §3.",
+                 json`. §wire-W1 / SCE_ERROR_CONTRACT.md §3.",
                 cpp_class,
                 needle
             );

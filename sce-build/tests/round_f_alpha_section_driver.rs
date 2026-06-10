@@ -4,8 +4,7 @@
 // Watching-zenoh RFC §5.2 Round F-α — `<sce:driver href>` + C11 section
 // attribute boundary fixture.
 //
-// Three contracts pinned here, matching the F-α scope split locked in
-// `claudedocs/project-round-f-scope-split.md`:
+// Three contracts pinned here:
 //
 //   1. A top-level `<sce:driver href="..."/>` whose target file exists
 //      under the SCXML file's parent directory lowers to a

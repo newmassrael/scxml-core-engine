@@ -2,22 +2,21 @@
 //!
 //! watching-zenoh RFC §5.J names `serial_uart` as the lwIP crate's
 //! UART driver alongside `lwip_udp` + `lwip_tcp` + `websocket_tcp`.
-//! Spec §7 line 3615 ("Serial + WebSocket link drivers") commits this
-//! to Phase C atomic #11.
+//! Spec §7 item C11 ("Serial + WebSocket link drivers", line 3626)
+//! commits this driver.
 //!
-//! This atomic delivers SCE-side support: the `KNOWN_DRIVERS` baseline
+//! SCE-side support pinned here: the `KNOWN_DRIVERS` baseline
 //! in [`sce_build::mesh::deploy::validate_links`] gains the
 //! `("serial_uart", 0)` entry. Floor `0` reflects that UART has no
 //! IP-stack overhead; the §5.B framer carries the frame-size invariant
 //! at the protocol-decoder layer (see deploy.rs doc-comment above the
 //! const for the rationale).
 //!
-//! WebSocket follow-up + driver↔class cross-validator follow-up are
-//! tracked separately per RFC §5.1 + §5.2 with explicit re-entry
-//! triggers. They are NOT in scope for this atomic — the cross-class
-//! pass-through (e.g. `driver: serial_uart` with no class context
-//! check at deploy layer) is the pre-existing silently-broken hook
-//! that the cross-validator follow-up will close.
+//! The WebSocket driver and the driver↔class cross-validator are
+//! separate surfaces, covered by `c11_websocket_link_driver.rs` and
+//! `c11_driver_class_cross_validator.rs` respectively. They are NOT
+//! in scope here — this file pins only the `serial_uart` allowlist
+//! entry.
 
 use sce_build::mesh::deploy::parse_deploy_str;
 use sce_build::mesh::error::DeployError;

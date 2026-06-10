@@ -586,7 +586,7 @@ mod tests {
         // Guards against silent drift of the Rust-side constant
         // value. Two-way agreement against the C++ header is
         // enforced separately by `cpp_xinclude_expander_matches_rust_shape`
-        // below (Phase X B3) — that test reads
+        // below — that test reads
         // `sce/include/parsing/XIncludeExpander.h` via `include_str!`
         // and asserts the literal matches.
         assert_eq!(MAX_XINCLUDE_DEPTH, 10);
@@ -808,9 +808,7 @@ mod tests {
     }
 
     /// Drift test pinning the C++ `XIncludeExpander` API shape
-    /// against the Rust `expand` return type and constants. Phase X
-    /// B3 deliverable — see
-    /// `claudedocs/rfc-sce-template-phase-x.md` §3 B3. Follows the
+    /// against the Rust `expand` return type and constants. Follows the
     /// `cpp_origin_shape_matches_rust` pattern in
     /// `sce-build/src/position_map.rs::tests`: read the
     /// authoritative C++ header via `include_str!` at test compile
@@ -907,10 +905,10 @@ mod tests {
     /// Pin the 1:1 mapping between Rust `XIncludeError` variants,
     /// the `xml/xinclude-*` `DiagnosticCode`s they emit, and the C++
     /// `SCE::parsing::XInclude<Variant>` subtypes declared in
-    /// `sce/include/parsing/XIncludeError.h`. RFC §W3 milestone in
-    /// `claudedocs/rfc-sce-diagnostic-wire-unification.md`.
+    /// `sce/include/parsing/XIncludeError.h`. §wire-W3 keeps the
+    /// Rust and C++ sides of this mapping in lockstep.
     ///
-    /// Mirrors the W1 sister test
+    /// Mirrors the §wire-W1 sister test
     /// `cpp_template_subtypes_match_rust_diagnostic_codes` in
     /// `sce-build/src/template.rs::tests`. A commit on any one side
     /// that fails to update the other two is the drift this test
@@ -963,8 +961,7 @@ mod tests {
             found_refs, expected_cpp,
             "XIncludeError subtype drift: C++ header = {:?}, \
              expected (from DiagnosticCode mapping) = {:?}. Change \
-             both sides in the same commit — see RFC §W3 \
-             (claudedocs/rfc-sce-diagnostic-wire-unification.md).",
+             both sides in the same commit (§wire-W3).",
             found_refs, expected_cpp
         );
 
@@ -983,7 +980,7 @@ mod tests {
                  declared as a `serde(rename)` literal in \
                  sce-build/src/forge/diagnostic.rs. Keep the wire \
                  name, the Rust variant, and the C++ subtype in \
-                 sync — see RFC §W3.",
+                 sync — see §wire-W3.",
                 rust_code,
                 cpp_name
             );
@@ -991,7 +988,7 @@ mod tests {
     }
 
     /// Pin the wire-string return literal inside each C++
-    /// `XInclude<Variant>` subtype's `code()` body. RFC §W3 makes
+    /// `XInclude<Variant>` subtype's `code()` body. §wire-W3 makes
     /// each subtype override `Diagnostic::code()` to return its
     /// `xml/xinclude-*` wire string; the sister test above pins
     /// **subtype names** between Rust and C++; this one pins the
@@ -1043,7 +1040,7 @@ mod tests {
                  subtype's `code()` override must return the Rust \
                  DiagnosticCode wire literal exactly so the JSON \
                  wire emitted by `to_json()` agrees with \
-                 `--error-format=json`. RFC §W3 / SCE_ERROR_CONTRACT.md §3.",
+                 `--error-format=json`. §wire-W3 / SCE_ERROR_CONTRACT.md §3.",
                 cpp_class,
                 needle
             );

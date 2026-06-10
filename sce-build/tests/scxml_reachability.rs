@@ -1,7 +1,7 @@
-//! NL→IR Mapping Roadmap Item 3 Phase A — Statechart graph reachability.
+//! Statechart graph reachability validation.
 //!
 //! Drives the wire-layer entry [`sce_build::compile_scxml_lang_typed`]
-//! end-to-end so the new validator exercises the same path codegen does
+//! end-to-end so the validator exercises the same path codegen does
 //! (XInclude expansion, parser, analyzer, `guard_static_generatable`,
 //! and finally `scxml_reachability::validate`). The validator's
 //! module-internal unit tests in `sce-build/src/scxml_reachability.rs`

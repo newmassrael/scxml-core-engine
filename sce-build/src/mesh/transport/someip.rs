@@ -278,8 +278,7 @@ pub enum AssignInvokeServiceIdError {
 }
 
 /// Hybrid (counter + optional author-pin) assigner for §9.6 SOMEIP
-/// scxml-invoke service IDs. Per RFC F.X-1
-/// (`claudedocs/rfc-someip-service-id-counter.md`).
+/// scxml-invoke service IDs. Per RFC F.X-1.
 ///
 /// **Input.** `participants` maps each canonical participant's machine name
 /// to its optional pin from deploy.yaml `someip_service_id:`. The map's keys
@@ -364,8 +363,7 @@ pub enum AssignLivenessServiceIdError {
 }
 
 /// Hybrid (counter + optional author-pin) assigner for §16.4 region-partition
-/// liveness service IDs. Per RFC F.X-3
-/// (`claudedocs/rfc-someip-region-liveness.md`).
+/// liveness service IDs. Per RFC F.X-3.
 ///
 /// **Input.** `participants` maps each canonical liveness participant key
 /// (`<machine>__P__<partition>`, see RFC F.X-3 D2) to its optional pin from
@@ -456,8 +454,7 @@ pub enum AssignMachineLivenessServiceIdError {
 }
 
 /// Hybrid (counter + optional author-pin) assigner for §16.7 row 8
-/// machine-level liveness service IDs. Per RFC F.X-4
-/// (`claudedocs/rfc-someip-machine-liveness.md`).
+/// machine-level liveness service IDs. Per RFC F.X-4.
 ///
 /// **Input.** `participants` maps each canonical liveness participant key
 /// (the machine name `<machine>`, see RFC F.X-4 D1) to its optional pin

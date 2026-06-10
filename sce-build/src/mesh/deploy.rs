@@ -418,10 +418,10 @@ pub enum PlatformClass {
 /// Authored values are gated against `class` by
 /// [`validate_platform_class_os_consistency`]: when `class: mcu`, only
 /// `bare_metal` / `rtos` are admitted; when `class: ap`, only the
-/// general-purpose OS values are admitted. The split mirrors the RFC's
-/// implementation-phase plan (Phase A serves bare_metal / MCU; Phase D+
-/// adds linux / qnx; Phase E+ reserves the other AP slots) without
-/// hard-coding phase order into the schema.
+/// general-purpose OS values are admitted. The split mirrors the RFC §7
+/// rollout (bare_metal / MCU is the foundation target; linux / qnx land
+/// with §7 items D.1 / D.2; the remaining AP slots are reserved for
+/// items E.1-E.3) without hard-coding rollout order into the schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OsKind {
@@ -477,8 +477,8 @@ impl PlatformClass {
 ///
 /// Field-specific numeric checks (e.g. `dcache_line_size` power-of-2 or
 /// `has_speculative_prefetch` REQUIRED when `has_dcache=true`) are not
-/// enforced here at schema time — they land alongside their codegen
-/// consumer in Phase A3+ per the RFC §7 sequence. The single
+/// enforced here at schema time — each lands alongside its codegen
+/// consumer per the RFC §7 sequence. The single
 /// invariant validated at parse time is `class` ↔ `os` consistency
 /// (`validate_platform_class_os_consistency`), which is intrinsic to
 /// the schema rather than a downstream codegen rule.
@@ -651,8 +651,8 @@ impl TrustClass {
     }
 }
 
-/// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-declarations.md`)
-/// — explicit cross-document role declaration for a deploy.yaml link.
+/// Axis-3 inversion — explicit cross-document role declaration for a
+/// deploy.yaml link.
 /// Decouples the implicit "trust_class: session_arming = listener"
 /// claim from C10-α into an explicit named-role contract that pairs
 /// with the SCXML-side `<sce:session-role kind="..."/>` declaration.
@@ -664,8 +664,10 @@ impl TrustClass {
 /// Cardinality: optional. Default `None` = "this link does not
 /// participate in a listener-pair role" (the common case for plain
 /// `established_session` links and for non-session-FSM machines).
-/// During Phase A (foundation) the parser captures the field but no
-/// orchestrator consumes it yet; Phase B wires the join.
+/// The parser captures the field; `crate::resolve_listener_links`
+/// joins it with the SCXML-side declaration and
+/// `crate::validate_cross_doc_listener_roles` enforces the
+/// partial-claim contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkRole {
@@ -972,23 +974,21 @@ pub struct LinkConfig {
     /// `{lwip_udp, lwip_tcp}`; extended as new forge link-kind docs
     /// ship) AND from any cross-doc forge link-kind registry entry.
     pub driver: String,
-    /// `role:` (Axis-3 inversion, RFC
-    /// `claudedocs/rfc-axis3-listener-role-declarations.md` Q-A3 (a))
+    /// `role:` (Axis-3 inversion, Q-A3 (a))
     /// — explicit cross-document role declaration. Pairs with the
     /// SCXML-side `<sce:session-role kind="..."/>` top-level element
     /// on the machine's source SCXML.
     ///
-    /// Phase A (foundation): the parser captures the field; no
-    /// validator or orchestrator consumes it yet. Phase B wires the
+    /// Consumed by the
     /// `resolve_listener_links` join + the three typed partial-claim
     /// diagnostics (`link/deploy-role-listener-without-scxml-accept-
     /// side-role`, `scxml/accept-side-role-without-listener-link`,
     /// `link/role-listener-with-non-session-arming-trust-class`).
     ///
     /// Default `None` is the explicit "this link does not claim a
-    /// session-FSM role" case. Phase B enforces "required when
-    /// trust_class: session_arming" via typed diagnostic per
-    /// Q-A4 (d) — the deploy author MUST say so explicitly.
+    /// session-FSM role" case (legacy fixtures silent-pass per the
+    /// Q-A9 staged-migration discipline); the Q-A4 (d) matrix
+    /// rejects `role: listener` on any non-`session_arming` link.
     #[serde(default)]
     pub role: Option<LinkRole>,
     /// `mtu_bytes:` (spec line 2236-2242) — link-layer MTU. REQUIRED
@@ -1195,7 +1195,7 @@ pub struct MachineSchedulerConfig {
 /// Per-machine scheduler kind axis (SCE Mesh §14, watching-zenoh RFC
 /// §5.K). `tokio` and `rt` host the scheduler in async / RTOS-task
 /// contexts; `cooperative` is the SCE-built single-thread tick loop
-/// used on bare-metal MCUs (Phase A target).
+/// used on bare-metal MCUs (the §7 foundation target).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SchedulerKind {
@@ -1283,10 +1283,9 @@ pub struct SramRegionConfig {
 }
 
 /// Per-machine memory layout (SCE Mesh §14, watching-zenoh RFC §5.K).
-/// SRAM region map and DMA-channel inventory feed §5.E placement /
-/// cache-policy validation in Phase B+; admitted at parse time so the
-/// MCU author can declare the layout in deploy.yaml without waiting
-/// for the consumer wiring.
+/// SRAM region map and DMA-channel inventory feed the §5.E placement /
+/// cache-policy validators (the buffer-pool placement checks in
+/// `lib.rs` consume `sram_regions` and the pool `cache_policy`).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemoryConfig {
@@ -2144,7 +2143,7 @@ pub struct MachineConfig {
     /// Absent ⇒ no SRAM/DMA layout declared; the §5.E placement
     /// validator skips this machine. Present ⇒ region attributes ride as
     /// raw strings; structural interpretation lives in the §5.E
-    /// consumer (Phase B+).
+    /// placement / cache-policy validators.
     #[serde(default)]
     pub memory: Option<MemoryConfig>,
 
@@ -3642,9 +3641,9 @@ pub fn validate_reassembly_cross_doc(
                     //
                     // The placeholder comment in `forge/diagnostic.rs:1170`
                     // deferred this to C9-β where the `peer_table.capacity`
-                    // source becomes available; it lands here in Axis-2
-                    // Phase Z (the last open Axis-2 declared-consumption
-                    // gap per the 6-axis program audit).
+                    // source becomes available; it lands here instead,
+                    // closing the last open Axis-2 declared-consumption
+                    // gap found by the 6-axis program audit.
                     //
                     // Silent-skip per Q-η5 (a) when:
                     //   - link.stateless_accept absent (no session_arming
@@ -8335,7 +8334,7 @@ partitions:
     #[test]
     fn non_pool_machine_in_partition_passes() {
         // Regression guard — a non-pool machine listed in a partition
-        // must parse under the Phase A/A' rules alone; the Gap I
+        // must parse under the partition baseline rules alone; the Gap I
         // check is load-bearing only for pool machines.
         let yaml = r##"
 version: "1.0"
@@ -9047,7 +9046,7 @@ topology:
         parse_deploy_str(yaml).expect("non-participant pin must be silently ignored");
     }
 
-    // ── §14 / RFC §5.K Phase A2 — per-machine platform/scheduler/memory ──
+    // ── §14 / RFC §5.K item A2 — per-machine platform/scheduler/memory ──
 
     #[test]
     fn platform_mcu_with_baremetal_parses() {

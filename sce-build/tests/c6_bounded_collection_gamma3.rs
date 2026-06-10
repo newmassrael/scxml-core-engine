@@ -1,15 +1,15 @@
-//! C6-γ3 — Bounded-collection Cpp + Kotlin template emit
+//! Bounded-collection Cpp + Kotlin template emit
 //! integration tests.
 //!
-//! Per watching-zenoh RFC §5.L lines 2540-2655, the γ3 atomic ships
-//! the 2nd + 3rd backends (Cpp + Kotlin) for `<scxml sce:kind=
+//! Per watching-zenoh RFC §5.L lines 2540-2655, this suite covers
+//! the Cpp + Kotlin backends for `<scxml sce:kind=
 //! "bounded-collection">`. Both backends reuse the
 //! [`BoundedCollectionResolution`] resolution bundle threaded by
-//! the orchestrator that γ2 introduced, swapping the abstract
+//! the orchestrator, swapping the abstract
 //! `index_by_field_sce_type` for their per-language type string at
 //! render time via the existing `cpp_type` / `kotlin_type` helpers.
 //!
-//! Test strategy follows γ2's `c6_bounded_collection_gamma2.rs`:
+//! Test strategy follows `c6_bounded_collection_gamma2.rs`:
 //! emit-shape grep against spec-locked emit invariants is cheaper
 //! than standing up `g++` / `kotlinc` and catches the template-
 //! layer regressions that matter for codegen correctness.
@@ -125,7 +125,7 @@ fn cpp_happy_compile_const_no_index_by() {
     // Capacity literal (spec line 2583-2585).
     assert!(code.contains("inline constexpr std::size_t CAPACITY = 8;"));
 
-    // POD Handle struct + 16/16 split (Q-γ3-Handle-cpp-shape (a)).
+    // POD Handle struct + 16/16 split (locked cpp Handle shape).
     assert!(code.contains("struct LocalSubTableHandle {"));
     assert!(code.contains("std::uint32_t raw;"));
     assert!(code.contains("inline constexpr std::uint32_t SLOT_BITS = 16;"));
@@ -290,7 +290,7 @@ fn kotlin_happy_compile_const_no_index_by() {
     // Capacity literal.
     assert!(code.contains("const val CAPACITY: Int = 8"));
 
-    // @JvmInline value class Handle (Q-γ3-Handle-kotlin-shape (a)).
+    // @JvmInline value class Handle (locked kotlin Handle shape).
     assert!(code.contains("@JvmInline"));
     assert!(code.contains("value class LocalSubTableHandle(val raw: UInt)"));
     assert!(code.contains("const val SLOT_BITS: Int = 16"));

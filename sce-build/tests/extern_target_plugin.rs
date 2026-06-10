@@ -2,16 +2,17 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // watching-zenoh RFC §5.I `<sce:extern>` target-plugin extension —
-// Atomic B end-to-end fixtures. Each test exercises plugin loading
+// end-to-end fixtures. Each test exercises plugin loading
 // through a constructed `DeployConfig` + `compile_forge_with_deploy`,
 // asserting on the surfaced diagnostic axis:
 //
 //   - Reject fixture: plugin YAML redefines a baseline symbol →
-//     `extern/target-plugin-symbol-conflict` (spec line 1852 verbatim,
-//     atomic B's 1 spec-verbatim code).
+//     `extern/target-plugin-symbol-conflict` (spec line 1852
+//     verbatim — the only spec-verbatim code on this surface).
 //   - Reject fixture: plugin YAML missing on disk →
 //     `io/filesystem` (existing code; plugin file IO failures ride
-//     the generic forge `Io` axis per Atomic B's bounded scope).
+//     the generic forge `Io` axis — there is no plugin-specific
+//     IO diagnostic code).
 //   - Reject fixture: plugin YAML malformed →
 //     `io/filesystem` (same axis; the plugin file is treated as
 //     pipeline input outside the SCXML parser).
@@ -52,7 +53,8 @@ fn deploy_with_plugin(path: std::path::PathBuf) -> DeployConfig {
 }
 
 /// Wrap one or more `<sce:extern>` declarations in a minimal
-/// `transform` kind SCXML — same shape used by atomic A's fixtures.
+/// `transform` kind SCXML — same shape used by the
+/// `extern_intrinsic_registry.rs` fixtures.
 fn fixture_transform_with_externs(extern_decls: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -164,12 +166,12 @@ symbols:
 
 #[test]
 fn reject_baseline_shadow_irrespective_of_signature_match() {
-    // Q-Call-6 (a) lock: even when the plugin's sig matches baseline
+    // Locked semantics: even when the plugin's sig matches baseline
     // exactly, redefinition is disallowed (spec line 1852 trigger is
     // "redefines", not "redefines incompatibly"). C5 (spec §5.E line
     // 1548) makes the cache-maintenance trio FSM-driven and rejects
     // its author authoring at parse time before this check could
-    // fire. Substitute `sce_atomic_load_acquire_u32` so the atomic B
+    // fire. Substitute `sce_atomic_load_acquire_u32` so the plugin
     // shadow-rejection semantic remains exercised on a baseline
     // symbol that authors are actually allowed to write.
     let plugin_yaml = r#"
@@ -191,7 +193,7 @@ symbols:
         Some(&cfg),
         None,
     ) {
-        Ok(_) => panic!("Q-Call-6 (a) — redefinition rejected even when sig matches"),
+        Ok(_) => panic!("redefinition must be rejected even when sig matches"),
         Err(e) => e,
     };
 
@@ -204,8 +206,9 @@ symbols:
 
 #[test]
 fn reject_missing_plugin_file_surfaces_through_io_axis() {
-    // Atomic B v1 routes IO failures through the existing
-    // `io/filesystem` axis (Atomic B's bounded code scope).
+    // Plugin-file IO failures route through the existing
+    // `io/filesystem` axis — no plugin-specific IO diagnostic
+    // code exists.
     let cfg = deploy_with_plugin(std::path::PathBuf::from(
         "/path/that/does/not/exist/sce-target-plugin.yaml",
     ));
@@ -289,8 +292,9 @@ symbols:
 
 #[test]
 fn deploy_without_plugin_preserves_baseline_only_semantics() {
-    // No `extern_symbols` field on deploy → atomic A semantics
-    // unchanged. Vendor symbol → `extern/symbol-not-in-whitelist`.
+    // No `extern_symbols` field on deploy → baseline-whitelist
+    // semantics unchanged. Vendor symbol →
+    // `extern/symbol-not-in-whitelist`.
     let cfg = DeployConfig {
         version: None,
         topology: HashMap::new(),

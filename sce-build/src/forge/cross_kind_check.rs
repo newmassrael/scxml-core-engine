@@ -5,8 +5,8 @@
 //
 // Walks every expression site in a parsed Forge document and validates each
 // `<alias>.<field>` member-access reference against the imported kind's
-// declared member surface. Closes the silent-broken pattern documented in
-// `feedback_spec_mirror_parity.md`: the typed-expression pipeline already
+// declared member surface. Closes a silently-broken pattern: the
+// typed-expression pipeline already
 // has the symbol table (populated by `validate_and_enrich_imports` →
 // `discover_stateful_member_fields`) but `infer_types` returns
 // `InferredType::Unknown` for unresolved Member access — no diagnostic.
@@ -23,9 +23,7 @@
 // Scope (v1): the validator is wired only on the Forge→Forge path inside
 // `compile_forge_from_parsed` after `validate_and_enrich_imports`. The
 // module's public API is kind-agnostic so a future Statechart→Forge
-// binding (currently zero consumers — see
-// `nl_to_ir_mapping_roadmap.md` Item 2 "Forge→Forge first" decision)
-// would add a second call site without changing diagnostic shape or
+// binding (currently zero consumers) would add a second call site without changing diagnostic shape or
 // payload.
 //
 // Coverage (v1):
@@ -205,13 +203,13 @@ fn collect_member_fields(doc: &ForgeDocument) -> Option<Vec<(String, SceType)>> 
         | ForgeDocument::Link(_)
         | ForgeDocument::BufferPool(_)
         | ForgeDocument::Worker(_)
-        // NL→IR Item C1 Path A: Enum is a typed vocabulary declaration
+        // Enum is a typed vocabulary declaration
         // — variants are not member fields accessed via `alias.field`.
         // Authors reference variants as `<EnumName>.<variant>` which
         // resolves through the cross-kind binding pass to the imported
         // enum's variant list, not the member-field check below.
         | ForgeDocument::Enum(_)
-        // NL→IR Item C1 Path A: EventSchema is imported via
+        // EventSchema is imported via
         // `<sce:import>` for cross-doc binding (the receive-side
         // typecheck pass resolves `_event.data.<field>` against the
         // schema's declared fields by *event name*, not by alias

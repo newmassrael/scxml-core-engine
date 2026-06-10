@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// NL→IR Mapping Roadmap Item 3 Phase C — Statechart guard analysis.
+// Statechart guard analysis.
 //
 // Two rejection codes, both NeutralOrDeterministic:
 //
@@ -41,8 +41,8 @@ use crate::model::{SCXMLModel, State};
 use crate::scxml_semantic::ScxmlSemanticError;
 
 /// Reject the document on the first guard-analysis violation.
-/// Mirrors the short-circuit convention of the Phase A / B
-/// validators.
+/// Mirrors the short-circuit convention of the semantic and
+/// exhaustiveness validators that run before this one.
 pub fn validate(model: &SCXMLModel, source: &str) -> Result<(), Located<ForgeError>> {
     let mut states: Vec<&State> = model.states.values().collect();
     states.sort_by_key(|s| s.document_order);
@@ -214,7 +214,7 @@ fn is_unconditional(cond: &str) -> bool {
 }
 
 /// Do two `event` attribute values describe literally the same event
-/// descriptor set? The Phase C walker requires literal equality (after
+/// descriptor set? The shadowed-transition walker requires literal equality (after
 /// whitespace normalisation) so the shadowing claim is unambiguous —
 /// token-prefix superset cases (`event="foo"` covering `event="foo.bar"`)
 /// depend on ancestor-priority resolution and are intentionally not

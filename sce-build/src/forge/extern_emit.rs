@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` per-language emit — watching-zenoh RFC §5.I, Atomic C.
+// `<sce:extern>` per-language emit — watching-zenoh RFC §5.I.
 //
-// Q-Call-7 lock: 3-language scope (Rust + C11 + Cpp); Kotlin/Go/Python
+// 3-language scope (Rust + C11 + Cpp); Kotlin/Go/Python
 // reject `<sce:extern>` via the existing
 // `codegen/mcu-class-kind-on-non-mcu-language` family (the
 // rejection lives in lib.rs's compile_forge_* gate, not here).
 //
-// Emit shapes per Q-Call-7:
+// Emit shapes:
 //
 // | Backend | Shape |
 // |---|---|
@@ -25,7 +25,7 @@
 // (`UnknownType`) rather than a silent passthrough.
 //
 // The translator is closed-set on purpose: the spec defines the
-// whitelist (and target plugins extending it via Atomic B's loader
+// whitelist (and target plugins extending it via the plugin loader
 // MAY introduce vendor types like `irq_state_t`, which the closed set
 // passes through as-is so plugin authors do not have to register every
 // vendor type with SCE).
@@ -46,7 +46,7 @@ pub struct ParsedSignature {
     pub ret: Option<String>,
 }
 
-/// Sig-parse failure modes. Surfaces are bounded per Q-Call-3 closed
+/// Sig-parse failure modes. Surfaces are bounded by the closed
 /// signature shape: parens-wrapped param list + optional `-> T` return
 /// suffix. Any deviation is a hard error so the registry/plugin entries
 /// stay byte-byte verifiable.
@@ -191,7 +191,7 @@ pub fn rust_type_to_c(rust_ty: &str) -> Option<String> {
 pub struct ExternEmit {
     /// Symbol name (lookup key against registry).
     pub name: String,
-    /// ABI as authored (`c` / `rust`). Today every Q-Call-3 baseline
+    /// ABI as authored (`c` / `rust`). Today every baseline
     /// entry is `c`; carried verbatim so future ABI extensions ride
     /// without a template change.
     pub abi: String,

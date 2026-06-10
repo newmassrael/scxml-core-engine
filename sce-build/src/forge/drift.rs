@@ -17,7 +17,7 @@
 //! source + template state and compares against the embedded values.
 //! Mismatch fires `forge/source-hash-mismatch`.
 //!
-//! ## Locks (RFC `rfc-b9-generated-source-drift-detection.md`)
+//! ## Locks
 //!
 //! - Q-§6.2.6-1: per-file header verbatim (this module emits one block; see
 //!   `render_header`). Python uses `#` comment prefix; everything else uses

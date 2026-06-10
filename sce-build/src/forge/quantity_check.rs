@@ -65,7 +65,7 @@ pub fn check(
         }
         // Other kinds either carry no expression slot (Lookup,
         // Interpolation, Timer, BufferPool) or their expression surface
-        // is deferred to a later atomic with a real consumer (see
+        // is not implemented until a real consumer needs it (see
         // module-level scope comment).
         _ => {}
     }

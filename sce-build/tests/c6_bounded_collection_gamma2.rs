@@ -1,7 +1,7 @@
-//! C6-γ2 — Bounded-collection Rust template emit integration tests.
+//! Bounded-collection Rust template emit integration tests.
 //!
-//! Per watching-zenoh RFC §5.L lines 2540-2655, the γ2 atomic ships
-//! the first-backend (Rust) emit for `<scxml sce:kind="bounded-
+//! Per watching-zenoh RFC §5.L lines 2540-2655, this suite covers
+//! the Rust backend emit for `<scxml sce:kind="bounded-
 //! collection">`. The template emits a slot table over
 //! `Vec<Option<T>>` (std) / `heapless::Vec<Option<T>, N>` (no_std),
 //! a `[u32; CAPACITY]` generation array, a `[u32; (CAPACITY+31)/32]`
@@ -9,8 +9,7 @@
 //! 2609-2619 (`insert` / `remove` / `get` / `find_by_index` /
 //! `iter` / `len` / `capacity`). Handle is a tuple newtype over
 //! `u32` carrying slot index (low 16 bits) + generation counter
-//! (high 16 bits) per spec lines 2621-2622 + Q-γ2-Handle-bits (a)
-//! lock 2026-05-13.
+//! (high 16 bits) per spec lines 2621-2622.
 //!
 //! Test strategy follows the existing `rust_golden_syn_gate`
 //! precedent in `forge_conformance.rs`: parse the emitted Rust

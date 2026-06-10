@@ -395,8 +395,8 @@ topology:
 fn period_check_silent_skips_when_tick_period_absent() {
     let dir = tempdir().expect("tempdir");
     // cooperative without tick_period_us → period check has no
-    // reference point, silent-skip per Q-η5 (a). Other validators
-    // catch missing fields.
+    // reference point, silent-skip per the shared silent-skip
+    // discipline. Other validators catch missing fields.
     let yaml = r##"
 version: "1.0"
 topology:

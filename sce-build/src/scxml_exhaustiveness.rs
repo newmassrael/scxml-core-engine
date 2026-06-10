@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// NL→IR Mapping Roadmap Item 3 Phase B — event-set exhaustiveness.
+// Event-set exhaustiveness.
 //
 // Walks every compound `<state>` and checks that its sibling children
 // agree on whether each event is handled. A genuine intent-gap pattern

@@ -1228,8 +1228,8 @@ fn parse_codec(
     // reuses the generic `validation/invalid-attribute`.
     validate_codec_repeat_count_refs(&fields, label, &datamodel)?;
 
-    // RFC §5.B B5-μ — co-gating constraint for repeat-with-present-if
-    // (Wire RFC Phase B X1). When a `<sce:repeat sce:count="X"
+    // RFC §5.B B5-μ — co-gating constraint for
+    // repeat-with-present-if. When a `<sce:repeat sce:count="X"
     // sce:present-if="P"/>` field is gated, the count source field
     // `X` MUST carry the IDENTICAL `sce:present-if="P"` predicate
     // (same scope, same field_id, same flag_name, same negate). The
@@ -1301,9 +1301,9 @@ fn parse_codec(
 /// width="N"/>` children. Returns an empty `Vec` when the element is
 /// absent (the common case for codecs that need no caller-supplied
 /// flags). Per Q-1=(b), this replaces `<sce:requires-parent-flags>`
-/// for the inverted ownership shape; both coexist during Phase A
-/// while fixtures migrate, and the legacy form is deleted in a
-/// later atomic.
+/// for the inverted ownership shape; both coexist while fixtures
+/// migrate, and the legacy form is deleted once the last fixture
+/// moves off it.
 ///
 /// Validation: each `<sce:flag-input>` must carry a non-empty
 /// `name`; names are unique within the block; `width` (v1 lock-in)
@@ -1496,10 +1496,10 @@ fn parse_flag_binds(
                 },
             ));
         }
-        // Duplicate-input check is parent-local — fires the new
-        // `codec/flag-bind-duplicate-input` diagnostic. Reusing
-        // ValidationError::InvalidAttribute for Phase A; the typed
-        // ValidationError variant lands with cross-doc validator wire-up.
+        // Duplicate-input check is parent-local. This parse site
+        // reuses ValidationError::InvalidAttribute; the typed
+        // `ValidationError::CodecFlagBindDuplicateInput` variant backs
+        // the `codec/flag-bind-duplicate-input` wire code.
         if binds.iter().any(|b| b.input == input) {
             return Err(located(
                 &child,
@@ -2720,7 +2720,7 @@ pub fn parse_codec_field_from_node(
     // RFC §5.B B5-ζ Surface H — `sce:type="string"` v1 surface:
     // requires `sce:bit-size="length-ref"` (UTF-8 text is length-
     // prefixed; tail / fixed-bit / vle defer until a consumer
-    // surfaces). Wire RFC Phase B Y0a lifted the present-if ban —
+    // surfaces). The present-if ban on string fields is lifted —
     // zenoh-pico `_z_wireexpr_encode` (message.c:115-125) gates the
     // suffix UTF-8 string on the caller's per-MID header N flag
     // (`has_suffix` external bool), and `codec_zenoh_wireexpr`
@@ -3325,8 +3325,8 @@ fn parse_codec_repeat_from_node(
 
     let max_count = node.attribute("max-count").and_then(parse_int);
 
-    // RFC §5.B B5-μ — present-if on `<sce:repeat>` (Wire RFC Phase B
-    // X1). Parses the optional `sce:present-if` attribute identically
+    // RFC §5.B B5-μ — present-if on `<sce:repeat>`.
+    // Parses the optional `sce:present-if` attribute identically
     // to `<sce:field>` (`<carrier>.<flag>` Local, `parent.<flag>`
     // Parent, optional `!` negation). Cross-field co-gating with the
     // count source field runs in `validate_codec_repeat_present_if_
@@ -4002,8 +4002,8 @@ fn validate_codec_repeat_count_refs(
     Ok(())
 }
 
-/// RFC §5.B B5-μ — repeat-with-present-if co-gating validator (Wire
-/// RFC Phase B X1). When `<sce:repeat sce:count="X" sce:present-if="P"/>`
+/// RFC §5.B B5-μ — repeat-with-present-if co-gating validator.
+/// When `<sce:repeat sce:count="X" sce:present-if="P"/>`
 /// is gated, the count source field `X` MUST carry the IDENTICAL
 /// predicate `P`. Wire semantics: when the gate fires off the count
 /// bytes are absent, so the streaming decoder cannot read `X` to
@@ -4858,7 +4858,7 @@ fn parse_procedure(
         source_location: forge_source_location_of(root, label.diagnostic_label),
     };
 
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: catch
+    // Bounded-bytes static consistency: catch
     // self-contradicting bytes max-size declarations before any
     // backend codegen runs. The runtime β path (error.execution
     // raised at the actual cap-violation site in the generated
@@ -4979,7 +4979,7 @@ fn parse_procedure_helper(
             },
         )
     })?;
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: optional cap
+    // Bounded-bytes contract: optional cap
     // on a bytes-typed return. Validator pass flags it if `returns` is
     // not bytes.
     let returns_max_size = sce_attr(node, "returns-max-size").and_then(|s| parse_int(&s));
@@ -5113,7 +5113,7 @@ fn parse_procedure_onentry(
             let subfunc = sce_attr(&child, "subfunc");
             let addr = sce_attr(&child, "addr");
             let payload = sce_attr(&child, "payload");
-            // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: cap on
+            // Bounded-bytes contract: cap on
             // the bytes the service handler may return as `_event.data`.
             let response_max_size =
                 sce_attr(&child, "response-max-size").and_then(|s| parse_int(&s));
@@ -5924,7 +5924,8 @@ fn parse_algorithm(
     // RFC §5.A `algorithm/return-missing`: when the signature declares
     // a non-void return type, the body's terminal statement must be
     // `<sce:return>`. v1 only checks the trivial last-statement form;
-    // flow-sensitive path coverage lands with §5.F (Phase A4).
+    // flow-sensitive path tracking is not implemented until a
+    // consumer needs it (mirrors the `AlgorithmReturnMissing` doc).
     if signature.return_type.is_some() && !matches!(body.last(), Some(AlgorithmStmt::Return { .. }))
     {
         return Err(located(
@@ -6390,7 +6391,7 @@ fn parse_algorithm_const(
                 ));
             }
             // A fold body requires an `array<elem, len>` outer type;
-            // the host interpreter (Phase A4-β) emits one element per
+            // the host interpreter (§5.F build-time fold) emits one element per
             // iteration into a fixed-length array.
             let (expected_elem, expected_len) = match &sce_type {
                 AlgorithmConstType::Array { elem, len } => (elem.clone(), *len),
@@ -8366,9 +8367,9 @@ fn parse_forge_field(
 
     let expr = data.attribute("expr").map(|s| s.to_string());
     let quantity = parse_quantity_attrs(data, doc_name, &format!("field '{id}'"))?;
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B1: optional cap
-    // on bytes-typed slots. Parsed for every field; the validator pass
-    // (RFC §7) decides whether to flag it on a non-bytes field.
+    // Bounded-bytes contract: optional cap
+    // on bytes-typed slots. Parsed for every field; the validator
+    // pass decides whether to flag it on a non-bytes field.
     let max_size = sce_attr(data, "max-size").and_then(|s| parse_int(&s));
 
     Ok(ForgeField {

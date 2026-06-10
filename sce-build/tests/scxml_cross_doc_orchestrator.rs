@@ -1,10 +1,10 @@
 //! Cross-doc orchestrator integration tests — watching-zenoh RFC §5.D
-//! C2 outbox follow-up Atomic A (Q-Outbox-1 (a) + Q-Outbox-5 (a)).
+//! worker/outbox cross-doc surface.
 //!
-//! Atomic A's distinguishing value: production wire-up of
-//! `validate_on_sample_link_references` (parser.rs:3187) via the new
+//! The distinguishing value pinned here: production wire-up of
+//! `validate_on_sample_link_references` (parser.rs:3187) via the
 //! `compile_scxml_with_imports` orchestrator entry point. Before this
-//! atomic landed, the on-sample cross-ref validator existed only as a
+//! wire-up landed, the on-sample cross-ref validator existed only as a
 //! pub fn callable from tests — every production build path
 //! (`compile_scxml`, `compile_scxml_to_string`, `compile_forge_with_imports`,
 //! `sce-codegen generate`) processed files one at a time with no
@@ -23,14 +23,14 @@
 //!    without-stage-pool` fires.
 //! 4. on_sample_link_wrong_kind_fires — name resolves to a non-link
 //!    kind (statechart with colliding name) → `scxml/on-sample-link-
-//!    wrong-kind` fires (this arm became reachable only after Atomic
-//!    A's registry extension landed multi-kind variants).
+//!    wrong-kind` fires (this arm became reachable in production once
+//!    the registry extension landed multi-kind variants).
 //! 5. empty_file_lists_yield_empty_outputs — no-op edge with both
 //!    slices empty; orchestrator does not crash, returns Vec::new().
-//! 6. worker_doc_records_into_cross_doc_registry — Atomic B prereq:
-//!    a worker doc's name reaches the registry so future
-//!    `<sce:outbox ref="worker.inbox">` resolution lands cleanly on
-//!    the now-present foundation.
+//! 6. worker_doc_records_into_cross_doc_registry — registry
+//!    foundation: a worker doc's name reaches the registry so
+//!    `<sce:outbox ref="worker.inbox">` resolution (covered in
+//!    `c2_worker_outbox.rs`) lands cleanly on it.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -158,9 +158,9 @@ fn happy_orchestrator_compiles_multi_doc() {
 #[test]
 fn on_sample_link_not_declared_fires_in_production() {
     // The on-sample reference names "unknown_link"; the only forge
-    // link in the build is "scout_link". Before Atomic A this passed
-    // silently because no production path built the registry. The
-    // orchestrator now closes that hole.
+    // link in the build is "scout_link". Before the orchestrator
+    // wire-up this passed silently because no production path built
+    // the registry. The orchestrator now closes that hole.
     let dir = tempdir().expect("tempdir");
     let scxml = write_doc(
         dir.path(),
@@ -204,8 +204,8 @@ fn on_sample_link_not_declared_fires_in_production() {
 fn on_sample_sample_take_without_stage_pool_fires() {
     // Link "scout_link" exists in the registry, but lacks
     // `<sce:stage-pool>`. The on-sample callback that takes
-    // ownership would route through a runtime panic hook today —
-    // Atomic A's wire-up surfaces the gap at compile time.
+    // ownership would route through a runtime panic hook —
+    // the orchestrator wire-up surfaces the gap at compile time.
     let dir = tempdir().expect("tempdir");
     let scxml = write_doc(
         dir.path(),
@@ -247,8 +247,8 @@ fn on_sample_link_wrong_kind_fires() {
     // The on-sample reference names "scout_helper"; the cross-doc
     // registry holds "scout_helper" as a STATECHART (sibling doc),
     // not a link kind. The on-sample validator's wrong-kind arm
-    // became reachable in production only after Atomic A's registry
-    // extension introduced multi-kind variants; before the rename
+    // became reachable in production only once the registry
+    // extension introduced multi-kind variants; before that
     // the registry could only hold Link kinds so this arm was
     // forward-compat-only.
     let dir = tempdir().expect("tempdir");
@@ -323,19 +323,18 @@ fn empty_file_lists_yield_empty_outputs() {
     assert!(outputs.is_empty(), "empty input must yield empty output");
 }
 
-// ─── 6. Worker doc lands in cross-doc registry (Atomic B prereq) ────
+// ─── 6. Worker doc lands in cross-doc registry (outbox prereq) ─────
 
 #[test]
 fn worker_doc_records_into_cross_doc_registry() {
-    // The C2-α worker schema includes a `name` attribute and the
-    // C2-outbox follow-up Atomic A extends the cross-doc registry
-    // to record worker docs alongside statecharts + links.
+    // The worker schema includes a `name` attribute and the
+    // cross-doc registry records worker docs alongside statecharts
+    // + links.
     // This test pins that an SCXML on-sample reference targeting a
-    // WORKER name (mispoint — workers aren't link subscribers) now
+    // WORKER name (mispoint — workers aren't link subscribers)
     // fires wrong-kind, proving the worker's name reached the
-    // registry. Atomic B's `<sce:outbox ref="rx_loop.inbox">` will
-    // walk the same registry — this fixture is the first lit-up
-    // consumer of the worker arm of the registry.
+    // registry. `<sce:outbox ref="rx_loop.inbox">` resolution
+    // (covered in `c2_worker_outbox.rs`) walks the same registry.
     let dir = tempdir().expect("tempdir");
     // Worker fixture needs sibling link doc for its `<sce:import>`
     // to resolve at parse time.
@@ -374,7 +373,7 @@ fn worker_doc_records_into_cross_doc_registry() {
                 assert_eq!(
                     actual_kind, "worker",
                     "registry must classify rx_loop as worker — \
-                     Atomic A's record_document Worker arm landed"
+                     record_document's Worker arm must be wired"
                 );
             }
             other => panic!("expected OnSampleLinkWrongKind, got: {other:?}"),

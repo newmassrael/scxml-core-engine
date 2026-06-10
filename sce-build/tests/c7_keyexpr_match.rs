@@ -1,16 +1,14 @@
 //! C7-lowering — algorithm-over-BC dispatch integration tests across
 //! all 6 backends.
 //!
-//! Per watching-zenoh RFC §5.A line 311 + §5.L line 2642-2647 + RFC
-//! stub `claudedocs/rfc-c7-keyexpr-matching-algorithm.md` §3
-//! Q-C7-1..11 locks 2026-05-13: an algorithm body that imports a
+//! Per watching-zenoh RFC §5.A line 311 + §5.L lines 2642-2647: an
+//! algorithm body that imports a
 //! bounded-collection emits a uniform index-loop `<sce:foreach
 //! in="<bc-alias>">` and dispatches into the BC's read-only method
 //! roster via `<sce:call target="<alias>.<method>">`. This file is
-//! the in-atomic consumer of the foreach-BC codegen + dotted-call
-//! resolution + 6 spec-named diagnostics added by C7-lowering. Without
-//! these tests the surface would be silently built-but-unconsumed per
-//! `[[feedback-silently-broken-hooks]]`.
+//! the in-tree consumer of the foreach-BC codegen + dotted-call
+//! resolution + 6 spec-named diagnostics of the lowering. Without
+//! these tests the surface would be silently built-but-unconsumed.
 //!
 //! Three groups of tests:
 //!   1. Per-backend foreach-BC emit shape (6 backends × 1 test each).
@@ -419,7 +417,7 @@ fn c7_lowering_emits_on_all_six_backends() {
     // Drift guard: every backend's foreach-BC emit must surface the
     // index-loop slot variable + get_by_slot dispatch. A regression
     // that drops the dispatch on one backend would be caught here
-    // before the C7-keyexpr-fixture atomic exercises the full
+    // before `c7_keyexpr_fixture.rs` exercises the full
     // exemplar.
     for lang in [
         Language::Rust,

@@ -1,4 +1,4 @@
-//! C9-α — Fragment / reassembly buffer-pool variant schema + parse +
+//! Fragment / reassembly buffer-pool variant schema + parse +
 //! 2 parse-time structure validators.
 //!
 //! Per watching-zenoh RFC §5.M lines 2676-2698 + 2944-2945: the
@@ -16,28 +16,29 @@
 //! (`mem/reassembly-pool-variant-missing-max-fragments` +
 //! `mem/reassembly-pool-variant-missing-timeout` per spec line
 //! 2944-2945); the third (`per-peer-quota`) reuses the generic
-//! `ValidationError::MissingElement` per `[[feedback-no-versioning]]`
+//! `ValidationError::MissingElement`
 //! since spec only names the first two codes explicitly.
 //!
 //! Cross-arm exclusivity: under `variant=default` (absent
 //! `<sce:variant>` or explicit `default` body text) the three
 //! reassembly-only siblings are **forbidden** — their presence raises
 //! `ValidationError::InvalidAttribute` naming the misapplied element
-//! (the type-system mirror of the sum-type's "only-on-arm" invariant
-//! per Q-C9-1 (a) lock).
+//! (the type-system mirror of the sum-type's "only-on-arm"
+//! invariant).
 //!
 //! Cross-doc validators referencing §5.K
 //! `links.<name>.{mtu_bytes, expected_p99_bytes, domain_attrs.trust_class}`
 //! (6-8 codes including `reassembly/max-fragments-insufficient-for-mtu` +
-//! `reassembly/untrusted-link-binding`) defer to **C9-β** co-landing
-//! with C13. Codegen-side per-slot bitmap/deadline/peer-id emission +
+//! `reassembly/untrusted-link-binding`) are covered by
+//! `c13_alpha2_reassembly_cross_doc.rs`. Codegen-side per-slot
+//! bitmap/deadline/peer-id emission +
 //! `reassembly/peer-id-not-zid-on-established-session` template-
-//! regression guard defer to **C9-γ**. Listener-link sibling-split
-//! codes (`link/listener-link-not-paired-with-established-sibling` +
-//! `reassembly/binding-on-unpaired-listener`) belong to **C10/C11**
-//! per spec line 2820-2824 (§5.C codegen contract). The Q-C9-1..6
-//! locks are documented in
-//! `claudedocs/rfc-c9-fragment-reassembly-kind.md`.
+//! regression guard are covered by `c9_gamma_reassembly_codegen.rs`.
+//! Listener-link sibling-split codes
+//! (`link/listener-link-not-paired-with-established-sibling` +
+//! `reassembly/binding-on-unpaired-listener`) are covered by
+//! `c10_alpha_listener_sibling_pair.rs`
+//! per spec line 2820-2824 (§5.C codegen contract).
 
 use sce_build::forge::diagnostic::DiagnosticCode;
 use sce_build::forge::error::{ForgeError, Located, ValidationError};
@@ -60,10 +61,10 @@ fn parse(content: &str, name: &'static str) -> Result<BufferPoolModel, Located<F
     }
 }
 
-/// Happy path: pre-C9 baseline shape — no `<sce:variant>` element. The
+/// Happy path: baseline shape — no `<sce:variant>` element. The
 /// parser maps this to `BufferPoolVariant::Default`, preserving the
-/// existing B7-α / C5 buffer-pool semantics byte-for-byte. C9-α is
-/// purely additive at this arm.
+/// pre-variant buffer-pool semantics byte-for-byte. The variant
+/// discriminator is purely additive at this arm.
 #[test]
 fn buffer_pool_no_variant_element_parses_as_default() {
     let xml = r##"<?xml version="1.0" encoding="UTF-8"?>

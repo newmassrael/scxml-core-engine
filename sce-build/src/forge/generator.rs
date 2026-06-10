@@ -623,11 +623,11 @@ fn cpp_param_type(ty: &SceType) -> String {
     }
 }
 
-/// Map SceType to C11 type name (RFC §5.J.2 F2). All types are stdint
+/// Map SceType to C11 type name. All types are stdint
 /// fixed-width integers, plain `bool` (from `<stdbool.h>`), or IEEE
-/// `float`/`double`. String/Bytes are out of scope for Phase A — the
-/// transform fixtures do not exercise them; Phase B's codec arms add
-/// the heap-free byte-array handling.
+/// `float`/`double`. String/Bytes are not exercised by the transform
+/// fixtures; the codec kind's arms provide the heap-free byte-array
+/// handling.
 ///
 /// Lifted to `pub(crate)` so the §5.L bounded-collection's C11
 /// `find_by_index` emit can convert the abstract `index_by_field_sce_type`
@@ -646,9 +646,9 @@ pub(crate) fn c_type(ty: &SceType) -> &'static str {
         SceType::Float32 => "float",
         SceType::Float64 => "double",
         SceType::Bool => "bool",
-        // String / Bytes flow through Phase B+ (codec & condition kinds).
+        // String / Bytes flow through the codec & condition kinds.
         // Returning a stable placeholder lets the match be exhaustive
-        // without adding a panic site — the Phase-A transform pipeline
+        // without adding a panic site — the transform pipeline
         // never reaches these arms because the fixture set is purely
         // numeric.
         SceType::String => "const char *",
@@ -662,15 +662,17 @@ pub(crate) fn c_type(ty: &SceType) -> &'static str {
     }
 }
 
-/// C11 parameter type. For Phase A's numeric-only transform fixtures
-/// this is the same as `c_type` — strings and bytes (which would need
-/// length-paired pointer pairs) are deferred to Phase B+.
+/// C11 parameter type. For the numeric-only transform fixtures this
+/// is the same as `c_type` — strings and bytes (which would need
+/// length-paired pointer pairs) are not exercised by the transform
+/// pipeline.
 fn c_param_type(ty: &SceType) -> &'static str {
     c_type(ty)
 }
 
-/// C11 literal formatter. Mirrors `cpp_literal` exactly for the shape
-/// Phase A exercises (decimal-integer-to-float `.0` promotion, `f`
+/// C11 literal formatter. Mirrors `cpp_literal` exactly for the
+/// shapes the transform fixtures exercise (decimal-integer-to-float
+/// `.0` promotion, `f`
 /// suffix for Float32). C and C++ accept the same literal grammar at
 /// this level.
 fn c_literal(text: &str, ty: &SceType) -> String {
@@ -1261,7 +1263,7 @@ fn render_lookup(
         ctx.insert("match_suffix".into(), match_suffix.into());
     }
 
-    // C11 (RFC §5.J.2 §3 D1): fully-qualified flat-scope identifiers derived
+    // C11: fully-qualified flat-scope identifiers derived
     // from `func_name` (already `<m.name>_<output_id>`). Variant prefix is
     // its UPPER_SNAKE form; sibling helpers / arrays append a stable suffix.
     // Variant list and value-name switch arms are joined here rather than
@@ -3145,12 +3147,13 @@ fn render_codec(
     // a cross-language compiler arity-mismatch error downstream.
     validate_cross_codec_variant_arm_not_caller_tag(m, imports)?;
 
-    // RFC Axis-1 inversion (Phase A): parent-local cross-doc validator
+    // RFC Axis-1 inversion: parent-local cross-doc validator
     // for the `<sce:flag-bind>` import-site declaration. Walks every
     // codec-kind import and confirms binding-completeness + source
-    // resolution + width + carrier-before-embed ordering. Phase A is
-    // additive — coexists with the legacy RPF / `parent.X` predicate
-    // validators until a later atomic deletes the legacy forms.
+    // resolution + width + carrier-before-embed ordering. The
+    // flag-bind surface is additive — it coexists with the legacy
+    // RPF / `parent.X` predicate validators until the last fixture
+    // migrates off the legacy forms.
     validate_cross_codec_flag_bind(m, imports)?;
 
     // RFC §5.B B5-γ closures complete: all six backends (Rust / Cpp /
@@ -3195,7 +3198,7 @@ fn render_codec(
     let has_present_if_fields = m.has_present_if_fields();
     let has_repeat_fields = m.has_repeat_fields();
 
-    // RFC §5.B B5-ν Phase B — compute derivations BEFORE the field-meta
+    // RFC §5.B parent-tag carriers — compute derivations BEFORE the field-meta
     // builder so per-field encode blocks can append the `| _derived_<carrier>`
     // suffix at the carrier field. The locals block lives in the codec
     // emit ctx (rendered at `encode()` entry); the suffix lives per-
@@ -3994,7 +3997,7 @@ fn render_codec(
                     m.default_endian,
                     lang,
                 );
-                // RFC §5.B B5-ν Phase B — inject `| _derived_<carrier>`
+                // RFC §5.B parent-tag carriers — inject `| _derived_<carrier>`
                 // into the single-byte carrier emit so the derived bits
                 // land in the outgoing stream. Carrier is uint8 per v1
                 // rpf lock-in (single-byte field), so the substitution
@@ -4045,8 +4048,8 @@ fn render_codec(
                             // via `append([]byte(nil), ...)`. Fixed and
                             // Vle keep `*T` because their value types
                             // have no nil distinction. STRING fields
-                            // (Wire RFC Phase B Y0a — gated String
-                            // landed for length-ref) are NOT nilable in
+                            // (gated String ships for
+                            // length-ref) are NOT nilable in
                             // Go (`string` is a value type, no zero
                             // value distinguishes empty-from-absent),
                             // so they take the `*string` shape uniformly
@@ -4133,7 +4136,7 @@ fn render_codec(
 
     let encode_exprs = generate_encode_exprs(&m.fields, m.default_endian, lang);
 
-    // RFC §5.B B5-ν Phase B — locals block; `b5_nu_derivations` was
+    // RFC §5.B parent-tag carriers — locals block; `b5_nu_derivations` was
     // computed at the top of `compile_codec` so it could feed the
     // field-meta builder's per-field encode-block suffix injection.
     // The block now threads `m` + `imports` so the C11 emitter can
@@ -4411,7 +4414,7 @@ fn render_codec(
     );
     ctx.insert("has_caller_tag".into(), has_caller_tag.into());
     ctx.insert("encode_exprs".into(), serde_json::json!(encode_exprs));
-    // RFC §5.B B5-ν Phase B — per-codec derivation locals block.
+    // RFC §5.B parent-tag carriers — per-codec derivation locals block.
     // Templates render `{{ parent_tag_derivation_block }}` immediately
     // inside `encode()` so the locals are in scope before any field
     // emits its bytes. Empty string when the codec has no B5-ν
@@ -4420,7 +4423,7 @@ fn render_codec(
         "parent_tag_derivation_block".into(),
         b5_nu_derivation_block_str.into(),
     );
-    // RFC §5.B B5-ν Phase B — flag the codec as a B5-ν encode parent so
+    // RFC §5.B parent-tag carriers — flag the codec as a B5-ν encode parent so
     // templates can branch (e.g., emit a deterministic blank line
     // after the locals block when present). Useful for templates that
     // would otherwise eat the leading whitespace when the locals are
@@ -4832,7 +4835,7 @@ fn render_codec(
         // `let _peek = cursor.peek_slice(1)?[0];` (per-language idiom)
         // before the dispatch when `variant.peek_byte` is set.
         let peek_mode = v.peek_byte.is_some();
-        // RFC §5.B B5-ν Phase B: parent-scope variants read the carrier
+        // RFC §5.B parent-tag carriers: parent-scope variants read the carrier
         // from the codec's `parent_flags` parameter (already threaded
         // by B5-γ at all 6 backends). Identifier varies per language:
         // snake_case `parent_flags` for Rust/Cpp/C11/Python, camelCase
@@ -5094,7 +5097,7 @@ fn render_codec(
         ctx.insert("has_variant".into(), false.into());
     }
 
-    // C11 (RFC §5.J.2 §3 D2): full-qual flat-scope identifiers.
+    // C11: full-qual flat-scope identifiers.
     // Decode = α (`bool fn(raw, len, *out)`); encode = β (return-by-value
     // `<name>_encoded_t { bytes[MAX]; len }`). MAX = MIN + Σ(max_size of
     // variable-length fields), resolved through `BYTES_DEFAULT_MAX` when
@@ -7505,7 +7508,7 @@ struct RepeatDecodeGated<'a> {
     lang: crate::generator::Language,
 }
 
-/// RFC §5.B B5-μ — gated repeat decode (Wire RFC Phase B X1). Wraps
+/// RFC §5.B B5-μ — gated repeat decode. Wraps
 /// `repeat_streaming_decode_stmt` body with a per-language predicate
 /// test so a `parent.L`-style flag toggles the entire count + repeat
 /// block on/off the wire. The co-gating validator
@@ -7741,7 +7744,7 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
     }
 }
 
-/// RFC §5.B B5-μ — gated repeat encode (Wire RFC Phase B X1). Mirrors
+/// RFC §5.B B5-μ — gated repeat encode. Mirrors
 /// the B2-β tail/length-ref present-if encode shape: 5 backends test
 /// the wrapped storage form (Option::is_some / has_value / ?.let /
 /// `is not None` / Go nil-slice) — author owns the carrier-flag-vs-
@@ -9348,8 +9351,8 @@ fn present_if_decode_length_ref(
     // Wire shape is identical to a length-prefixed bytes field, but
     // the host-language local is `String` / `std::string` / etc. and
     // the byte slice is validated as UTF-8 before construction.
-    // Wire RFC Phase B Y0a lifted the parser ban on gated String
-    // (parser.rs:1583+ pre-Y0a); gated form mirrors the gated Bytes
+    // The parser admits gated String (a parser ban historically
+    // rejected it); the gated form mirrors the gated Bytes
     // shape (Option<String> / std::optional<std::string> / String? /
     // *string / Optional[str]; C11 carrier-bit-as-truth).
     if field.is_string() {
@@ -9548,8 +9551,8 @@ fn present_if_decode_length_ref(
 /// two languages never construct CodecError variants at runtime
 /// (mirrors the VleWidthOverflow declaration-only convention).
 ///
-/// Wire RFC Phase B Y0a (2026-05-03) lifted the parser ban — gated
-/// arms now ship for every backend (`Option<String>` /
+/// The parser ban on gated String was lifted 2026-05-03 — gated
+/// arms ship for every backend (`Option<String>` /
 /// `std::optional<std::string>` / `String?` / `*string` /
 /// `Optional[str]`; C11 keeps carrier-bit-as-truth). `sibling_gated`
 /// may still be true (the length sibling carries present-if) so the
@@ -9770,7 +9773,7 @@ fn present_if_decode_string_length_ref(
             )
         }
         (Language::C11, Some(p)) => {
-            // Wire RFC Phase B Y0a — gated String C11 mirrors the gated
+            // Gated String C11 mirrors the gated
             // Bytes C11 arm in `present_if_decode_length_ref`: carrier-
             // bit-as-truth (no Optional wrapper around `char[N]`); when
             // the predicate fires off the `<id>_len = 0` clamp marks
@@ -10415,7 +10418,7 @@ fn present_if_encode_string_length_ref(
     let id = id_owned.as_str();
     match (lang, &field.present_if) {
         (Language::Rust, None) => format!("        w.write_bytes(self.{id}.as_bytes())?;"),
-        // Wire RFC Phase B Y0a — gated String encode on Rust:
+        // Gated String encode on Rust:
         // `Option<String>::as_ref()` borrows the inner String so
         // `.as_bytes()` resolves; `if let Some(_v) = ...` mirrors the
         // bytes shape exactly.
@@ -10434,7 +10437,7 @@ fn present_if_encode_string_length_ref(
             "        if (auto _e = w.write_bytes(\n            \
                  reinterpret_cast<const std::uint8_t*>({id}.data()), {id}.size()); _e) return _e;"
         ),
-        // Wire RFC Phase B Y0a — gated String encode on Cpp:
+        // Gated String encode on Cpp:
         // `std::optional<std::string>::has_value()` + arrow access on
         // the optional yields `const std::string*`; reinterpret-cast
         // through `->data()` keeps the same byte-aliasing pattern.
@@ -10451,7 +10454,7 @@ fn present_if_encode_string_length_ref(
         (Language::Kotlin, None) => format!(
             "        w.writeBytes(this.{id}.toByteArray(Charsets.UTF_8))?.let {{ return it }}"
         ),
-        // Wire RFC Phase B Y0a — gated String encode on Kotlin:
+        // Gated String encode on Kotlin:
         // `String?` + safe-call `?.let { _v -> ... }` mirrors the
         // bytes encode arm.
         (Language::Kotlin, Some(_)) => format!(
@@ -10470,7 +10473,7 @@ fn present_if_encode_string_length_ref(
                  }}"
             )
         }
-        // Wire RFC Phase B Y0a — gated String encode on Go: pointer-
+        // Gated String encode on Go: pointer-
         // wrap via `*string` (mirrors gated bytes' `[]byte` slice
         // nilness pattern but Go strings are not zeroable).
         (Language::Go, Some(_)) => {
@@ -10489,7 +10492,7 @@ fn present_if_encode_string_length_ref(
             let py_id = filters::to_snake_case(id.to_string());
             format!("        w.write_bytes(self.{py_id}.encode('utf-8'))")
         }
-        // Wire RFC Phase B Y0a — gated String encode on Python:
+        // Gated String encode on Python:
         // `Optional[str]` + `is not None` + same `.encode('utf-8')`.
         (Language::Python, Some(_)) => {
             let py_id = filters::to_snake_case(id.to_string());
@@ -10515,7 +10518,7 @@ fn present_if_encode_string_length_ref(
                 "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->{id_snake}, self->{id_snake}_len));"
             )
         }
-        // Wire RFC Phase B Y0a — gated String encode on C11: gate the
+        // Gated String encode on C11: gate the
         // memcpy loop on the same predicate the decode arm tests
         // (carrier-bit-as-truth — no Optional wrapper). When the gate
         // fires off, `<id>_len` should already be 0 (decode side
@@ -10555,8 +10558,8 @@ fn present_if_encode_length_ref(
         .as_deref()
         .expect("LengthRef bit_size requires sce:length-field attribute");
     // RFC §5.B B5-ζ Surface H — `sce:type="string"` UTF-8 encode.
-    // Wire RFC Phase B Y0a lifted the parser ban (parser.rs:1583+
-    // pre-Y0a) so the gated arm now ships for every backend (mirrors
+    // The parser ban on gated String is lifted, so the gated arm
+    // ships for every backend (mirrors
     // the gated bytes shape: Option<String>::as_bytes via as_ref;
     // std::optional<std::string>::has_value; String?.let; *string nil
     // check; Optional[str] is-not-None; C11 carrier-bit test). Encode
@@ -10762,7 +10765,7 @@ fn present_if_encode_vle(
             )
         }
         Language::Python => {
-            // Wire RFC Phase B Y0a — the prior form delegated to
+            // Gated VLE encode on Python — the prior form delegated to
             // `vle_encode_block` whose Python arm emits at 8-space
             // indent (function-body level); when inserted inside an
             // `if self.<id> is not None:` block (also at 8-space),
@@ -12083,7 +12086,7 @@ fn decode_multibyte_unified(
     }
 }
 
-/// RFC §5.B B5-ν Phase B — analyze a parent codec's embed fields to
+/// RFC §5.B parent-tag carriers — analyze a parent codec's embed fields to
 /// discover which (carrier, flag) pairs need encode-time derivation
 /// from an embedded B5-ν variant arm.
 ///
@@ -12510,7 +12513,7 @@ fn b5_nu_switch_block_c11(
     }
 }
 
-/// RFC §5.B B5-ν Phase B — given a codec's derivations, build a map
+/// RFC §5.B parent-tag carriers — given a codec's derivations, build a map
 /// from carrier field id → per-language OR suffix string (e.g.,
 /// `" | _derived_header"`). Encode helpers consult this map when
 /// emitting the carrier byte so the derived bits land in the
@@ -12543,7 +12546,7 @@ fn b5_nu_carrier_or_suffix_map(
     out
 }
 
-/// RFC §5.B B5-ν Phase B — splice the OR suffix into a streaming
+/// RFC §5.B parent-tag carriers — splice the OR suffix into a streaming
 /// per-field encode block emitted by `streaming_fixed_field_encode_*`.
 /// The carrier is uint8 per v1 rpf lock-in, so each backend's `n == 1`
 /// shape is patched here without touching the multi-byte path.
@@ -12613,7 +12616,7 @@ fn inject_b5_nu_carrier_suffix(
     }
 }
 
-/// RFC §5.B B5-ν Phase B — splice the OR suffix into a simple-path
+/// RFC §5.B parent-tag carriers — splice the OR suffix into a simple-path
 /// `encode_exprs` entry that emits the carrier byte. The simple path
 /// uses `byte_groups` keyed by `byte_offset`; we walk codec fields to
 /// recover which carrier (if any) owns the byte at this position and
@@ -13169,8 +13172,8 @@ fn render_validator(
         serde_json::json!(plausibility_expr),
     );
 
-    // C11 (RFC §5.J.2 §3 Phase C V1b): per-fixture flat-scope typedef + V2c
-    // mixed calling convention. Stateless validators (no rocs and no
+    // C11: per-fixture flat-scope typedef + mixed calling
+    // convention. Stateless validators (no rocs and no
     // stateful imports) emit a free function `<snake>_validate(args)`;
     // stateful validators emit a state struct + pointer-passing
     // `<snake>_validate(<snake>_t *self, args)`, mirroring the cpp shape
@@ -15179,13 +15182,14 @@ pub fn generate_python_with_imports(
 }
 
 // ══════════════════════════════════════════════════════════════
-// ── C11 code generation (RFC §5.J.2) ────────────────────────
+// ── C11 code generation ─────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
 //
-// Phase A scope: `Transform` kind only. All other ForgeDocument
-// variants return a precise GenerateError that names the deferring
-// phase (matches `forge_phase3_complete.md` discipline of failing
-// loud at codegen time, not at compile time of stale generated code).
+// Every ForgeDocument kind renders through the dispatch in
+// `generate_c11_with_imports`; only `ForgeDocument::Statechart` is
+// unreachable here (it never reaches forge codegen). Unsupported
+// shapes inside a kind fail loud with a typed GenerateError at
+// codegen time, not at compile time of stale generated code.
 
 /// Generate code from a ForgeDocument for C11 using Jinja2 templates.
 pub fn generate_c11(
@@ -15202,12 +15206,12 @@ pub fn generate_c11(
 
 /// Generate C11 code with cross-file import support.
 ///
-/// Phase A landed Transform; Phase B added Condition, Lookup, Codec;
-/// Phase C lifts Validator. Procedure/Filter/Interpolation/Timer/
-/// Observer remain `GenerateError::UnsupportedFeature` until their
-/// phase, so an operator who points `--language c11` at a fixture in
-/// scope for a future phase sees a single-line "deferred to Phase X"
-/// diagnostic instead of an `unimplemented!` panic.
+/// Every forge kind has a C11 render arm — Transform, Condition,
+/// Lookup, Codec, Validator, Procedure, Filter, Observer,
+/// Interpolation, Timer, Algorithm, Link, BufferPool, Worker,
+/// BoundedCollection, Enum, and EventSchema all lower here. An
+/// unsupported shape inside a kind surfaces as a typed
+/// `GenerateError` instead of an `unimplemented!` panic.
 pub fn generate_c11_with_imports(
     doc: &ForgeDocument,
     template_dir: &Path,
@@ -15390,7 +15394,7 @@ fn render_procedure_cpp(
     // Collect unique events: original SCXML string → PascalCase enum name.
     // BTreeMap orders by raw SCXML event string (key).
     //
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4: `error.execution`
+    // Bounded-bytes cap contract: `error.execution`
     // is always emitted in the cpp procedure Event enum so the
     // assign-time cap-check codegen can raise it through the shared
     // run_procedure() loop's normal transition machinery, even when the
@@ -15759,7 +15763,7 @@ fn render_procedure_cpp(
     Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
-// ── Procedure: C11 (D-1 L1 only — RFC §5.J.2 §3.D) ──────────
+// ── Procedure: C11 (L1 guard-only diamonds) ─────────────────
 //
 // L1 procedures are pure guard-only diamond flows: no `<sce:helper>`,
 // no internal `<data>`, no `<onentry><send>`, no `<donedata>`. The
@@ -15916,7 +15920,7 @@ fn render_procedure_c(
     Ok(tmpl.render(ctx).map_err(generator::render_error)?)
 }
 
-// ── Procedure: C11 (L2 — RFC §5.J.2 Phase D-2) ─────────────────────
+// ── Procedure: C11 (L2 — event-driven) ─────────────────────
 
 /// Render a Level-2 (event-driven) procedure for the C11 backend.
 ///
@@ -15925,8 +15929,8 @@ fn render_procedure_c(
 /// a class. Helpers + service handler are passed by function pointer +
 /// `void *user_data` pair (no captures), `_event.data` is a
 /// stack-bounded `sce_forge_bytes_t`, and bytes-typed assigns wrap in
-/// the cap-check guard from RFC `claudedocs/rfc-forge-bytes-bounded.md`
-/// §3 B4. See `tools/codegen/templates/forge/c/procedure.h.jinja2`
+/// the bounded-bytes cap-check guard. See
+/// `tools/codegen/templates/forge/c/procedure.h.jinja2`
 /// `is_l2 == true` branch.
 fn render_procedure_c_l2(
     env: &minijinja::Environment,
@@ -16713,7 +16717,7 @@ fn build_procedure_common(m: &ProcedureModel, include_error_execution: bool) -> 
 
     let mut event_raw_to_pascal: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4: backends that
+    // Bounded-bytes cap contract: backends that
     // wire their procedure runtime for the assign-time cap-check raise
     // path opt in via `include_error_execution = true`. The cpp backend
     // (commit 3a) uses its own inline event-enum builder; this shared
@@ -16943,11 +16947,11 @@ fn build_procedure_states_with_assigns(
     assign_rename_map: &std::collections::HashMap<&str, &str>,
     import_lowerings: &[expr::ImportLowering],
 ) -> Vec<serde_json::Value> {
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4: bytes-typed
-    // slot id → resolved cap. Only the cpp branch consumes these
-    // fields today (commit 3a). Other backends ignore the extra JSON
-    // properties; their per-language commits land later (commits
-    // 3b/3c/3d/3e per RFC §8 split).
+    // Bounded-bytes cap contract: bytes-typed slot id → resolved
+    // cap. The cpp branch consumes these fields directly; the other
+    // backends ignore the extra JSON properties and wire the
+    // cap-check raise path through `build_procedure_common(m, true)`
+    // (see the Rust/Kotlin/Go/Python render functions).
     let bytes_slot_caps: std::collections::HashMap<&str, u32> = m
         .inputs
         .iter()
@@ -17153,7 +17157,7 @@ fn render_procedure_kotlin(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 commit 3c: Kotlin
+    // Bounded-bytes cap-check raise path: Kotlin
     // ProcedureStateMachine.executeTransitionActions now returns Event?,
     // so opt into the always-emit ErrorExecution variant for the
     // cap-check raise path.
@@ -17341,7 +17345,7 @@ fn render_procedure_rust(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 commit 3b: Rust
+    // Bounded-bytes cap-check raise path: Rust
     // procedure runtime now consumes Option<Event> from
     // execute_transition_actions, so opt into the always-emit
     // ErrorExecution variant to support the cap-check raise path.
@@ -17617,7 +17621,7 @@ fn render_procedure_go(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 commit 3d: Go
+    // Bounded-bytes cap-check raise path: Go
     // ProcedurePolicy.ExecuteTransitionActions now returns (raised,
     // ok); opt into the always-emit ErrorExecution event constant for
     // the cap-check raise path.
@@ -17837,7 +17841,7 @@ fn render_procedure_python(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
-    // RFC `claudedocs/rfc-forge-bytes-bounded.md` §3 B4 commit 3e: Python
+    // Bounded-bytes cap-check raise path: Python
     // _execute_transition_actions abstract signature now returns
     // Optional[int]; opt into the always-emit ErrorExecution variant for
     // the cap-check raise path.
@@ -18134,7 +18138,7 @@ fn build_member_renames(raw_expr: &str, l: &LangCtx) -> Result<Vec<(String, Stri
                 .collect())
         }
         Language::C11 => {
-            // RFC §5.J.2 Phase F: C11 inline-kind member access mirrors the
+            // C11 inline-kind member access mirrors the
             // standalone procedure D14a pattern — free-standing `static inline`
             // functions take a `const <sm>_policy_t *_st` parameter and rewrite
             // bare datamodel identifiers to `_st->{snake}`. Identical to
@@ -18221,7 +18225,7 @@ fn render_inline_transform_member(
             )
         }
         Language::C11 => {
-            // RFC §5.J.2 Phase F: free-standing `static inline` function with
+            // Free-standing `static inline` function with
             // `const <sm>_policy_t *_st` first parameter. Mirrors cpp's
             // `[[nodiscard]] T compute<Id>() const` — the C11 `_st` parameter
             // expresses the same const-receiver contract.
@@ -18442,7 +18446,7 @@ fn render_inline_lookup_member(
             Ok((String::new(), code))
         }
         Language::C11 => {
-            // RFC §5.J.2 Phase F: top-level enum typedef + free `static
+            // Top-level enum typedef + free `static
             // inline` lookup function. C11 has no namespacing, so enum
             // constants are prefixed `<SM_UPPER>_<ID_UPPER>_<VALUE>`
             // (mirrors procedure_security_access's
@@ -18555,7 +18559,7 @@ fn render_inline_condition_member(
             )
         }
         Language::C11 => {
-            // RFC §5.J.2 Phase F: free `static inline bool` function with
+            // Free `static inline bool` function with
             // `const <sm>_policy_t *_st` first parameter. Mirror of cpp's
             // `[[nodiscard]] bool isReady() const` — same const-receiver
             // contract expressed via the `_st` pointer.
@@ -18837,7 +18841,7 @@ fn render_inline_codec_member(
             Ok((String::new(), code))
         }
         Language::C11 => {
-            // RFC §5.J.2 Phase F-2: free-standing inline codec emit. Mirrors
+            // Free-standing inline codec emit. Mirrors
             // the standalone `forge/c/codec.h.jinja2` shape (typedef struct
             // + encoded buffer struct + static inline decode/encode pair)
             // but injects without #ifndef guards or #include — those are
@@ -18902,10 +18906,10 @@ fn render_inline_codec_member(
 }
 
 // ══════════════════════════════════════════════════════════════
-// ── Phase 3: unified render functions (language-parameterized) ──
+// ── Unified render functions (language-parameterized) ──
 // ══════════════════════════════════════════════════════════════
 
-/// Language-specific helpers for Phase 3 kind rendering.
+/// Language-specific helpers for unified kind rendering.
 /// Eliminates per-language duplication across filter/interpolation/timer/observer.
 /// Language-aware helper for template context construction.
 ///
@@ -19326,7 +19330,7 @@ fn render_filter(
         serde_json::to_value(&all_imports).unwrap_or_default(),
     );
 
-    // RFC §5.J.2 Phase E-1: C11 emits per-fixture state struct + free
+    // C11 emits per-fixture state struct + free
     // functions (`<snake>_t`, `<snake>_update`, `<snake>_reset`) instead
     // of a runtime header (codec/transform's bake-at-codegen pattern).
     // The unified template references `{{ snake }}` and `{{ input_id_snake }}`
@@ -19369,7 +19373,7 @@ fn render_interpolation(
             };
             serde_json::json!({
                 "input_id": a.input_id,
-                // RFC §5.J.2 Phase E-3: C11 uses snake_case parameter names
+                // C11 uses snake_case parameter names
                 // (matches `param_str` C11 arm at line 5113); cpp/Kotlin keep
                 // camelCase, Rust/Python/Go use their own conventions emitted
                 // through `param_str`. The template references this only when
@@ -19415,7 +19419,7 @@ fn render_interpolation(
         serde_json::to_value(&all_imports).unwrap_or_default(),
     );
 
-    // RFC §5.J.2 Phase E-3: C11 bakes the linear/bilinear algorithm
+    // C11 bakes the linear/bilinear algorithm
     // inline per fixture (no runtime header surface). Adds `<snake>` so
     // the static const breakpoint and value tables can be prefixed and
     // not collide across fixtures sharing a translation unit.
@@ -19559,8 +19563,8 @@ fn render_observer(
                 crate::generator::Language::Kotlin => format!("{}Active", mon.id),
                 crate::generator::Language::Go => format!("{}Active", mon.id),
                 // C11 follows Rust/Python's snake_case "<id>_active" convention.
-                // The bake-at-codegen observer template (RFC §5.J.2 Phase E-2)
-                // emits these as bool fields on the `<snake>_t` state struct,
+                // The bake-at-codegen observer template emits these
+                // as bool fields on the `<snake>_t` state struct,
                 // mirroring the cpp ThresholdState::active_ flag bit-for-bit.
                 crate::generator::Language::Rust
                 | crate::generator::Language::Python
@@ -19607,7 +19611,7 @@ fn render_observer(
         serde_json::to_value(&all_imports).unwrap_or_default(),
     );
 
-    // RFC §5.J.2 Phase E-2: C11 emits per-fixture state struct + tag enum
+    // C11 emits per-fixture state struct + tag enum
     // + fixed-cap event queue inline (no runtime header surface). Adds
     // `<snake>` and `<upper>` so the template can prefix global C
     // identifiers (enum tag constants, capacity macro) without colliding
@@ -19634,9 +19638,8 @@ fn render_observer(
 /// what `lower_algorithm_stmt`'s foreach arm reads, and the zero-copy view
 /// matches the other five backends (all already borrow: Cpp `std::span`,
 /// Rust `&[u8]`, Go `[]byte`, …). A pure function reads its input, so it
-/// takes the view, never the owned 256-byte `sce_forge_bytes_t` copy (RFC
-/// `claudedocs/rfc-c7-wildcard-keyexpr-expressibility.md` §8 Smell 4 —
-/// borrowed-by-default). Other types and languages reuse `param_type`.
+/// takes the view, never the owned 256-byte `sce_forge_bytes_t` copy
+/// (borrowed-by-default). Other types and languages reuse `param_type`.
 fn algorithm_param_type(lang: crate::generator::Language, ty: &SceType) -> String {
     use crate::generator::Language;
     match (lang, ty) {
@@ -20665,7 +20668,7 @@ pub(crate) fn forge_algorithm_symbol(name: &str, language: crate::generator::Lan
 
 /// W1 symbol-name SSOT: the C11 flat-namespace qualifier. C has no
 /// namespaces, so a cross-doc symbol is flattened to `<snake(ns)>_<base>`
-/// (RFC §5.J.2 §3 D1). This is the single source for that composition — the
+/// (flat-scope naming rule). This is the single source for that composition — the
 /// definition sites ([`forge_stateless_def_symbol`]) and
 /// [`build_qualified_call`] flatten the same way. `ns` is snake-cased here so
 /// callers may pass a document name or an already-snake namespace (the

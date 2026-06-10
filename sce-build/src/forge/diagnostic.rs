@@ -346,7 +346,7 @@ pub enum DiagnosticCode {
     XmlParse,
     #[serde(rename = "xml/schema-validation")]
     XmlSchemaValidation,
-    // ── Top-level parser-entry errors (RFC §W4 α-strict). The two
+    // ── Top-level parser-entry errors (§wire-W4 α-strict). The two
     //    codes here have full Rust producers in
     //    `crate::parser::SCXMLParser` (parse_file ErrorKind::NotFound
     //    branch + parse_impl root-tag check). Mirrored in C++ by
@@ -380,7 +380,7 @@ pub enum DiagnosticCode {
     XmlXIncludeMalformed,
     #[serde(rename = "xml/xinclude-unsupported")]
     XmlXIncludeUnsupported,
-    // ── sce:template preprocessing (AOT-only, RFC §6.5 Phase A).
+    // ── sce:template preprocessing (AOT-only).
     //    Split by repair shape so agents can dispatch without
     //    parsing message text: missing-attribute / missing-param
     //    carry deterministic add_attribute fixes, unknown-param
@@ -458,8 +458,7 @@ pub enum DiagnosticCode {
     ValidationMeshRpcDuplicateTarget,
     #[serde(rename = "validation/removed-attribute")]
     ValidationRemovedAttribute,
-    // ── Forge bytes-typed slot capacity contract (RFC
-    //    `claudedocs/rfc-forge-bytes-bounded.md` §3 B1+B4). The
+    // ── Forge bytes-typed slot capacity contract. The
     //    inconsistency is between two SCXML-declared caps (e.g.
     //    `sce:response-max-size` on a `<send>` exceeds
     //    `sce:max-size` on the destination `<data>` slot), caught
@@ -500,13 +499,13 @@ pub enum DiagnosticCode {
     #[serde(rename = "validation/cross-kind-circular-dependency")]
     ValidationCrossKindCircularDependency,
 
-    // ── Algorithm kind (watching-zenoh RFC §5.A, Phase A3).
-    //    Parser-stage sema for the new pure-function kind. Three
-    //    of the six RFC §5.A diagnostics land in A3-δ; the rest
+    // ── Algorithm kind (watching-zenoh RFC §5.A, item A3).
+    //    Parser-stage sema for the pure-function kind. Three of
+    //    the six RFC §5.A diagnostics are implemented; the rest
     //    (`return-type-mismatch`, `while-unbounded`,
     //    `call-cycle`) need typed expression flow / deploy-yaml
-    //    MCU detection / cross-file import resolution and are
-    //    deferred to A4+. ────────────────────────────────────
+    //    MCU detection / cross-file import resolution and wait
+    //    until a consumer needs them. ─────────────────────────
     #[serde(rename = "algorithm/local-shadows-param")]
     AlgorithmLocalShadowsParam,
     #[serde(rename = "algorithm/lvalue-unsupported")]
@@ -535,7 +534,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "algorithm/call-arg-count-mismatch")]
     AlgorithmCallArgCountMismatch,
 
-    // ── SCXML semantic-validation (RFC §W5). Three of the four
+    // ── SCXML semantic-validation (§wire-W5). Three of the four
     //    SCXML semantic failures fold into existing `validation/*`
     //    codes per the W4 D4 fold precedent — concept identity:
     //    "name does not resolve to declared symbol" is the same
@@ -544,7 +543,7 @@ pub enum DiagnosticCode {
     //    `<script>` rejection per §5.8 has no forge analog). ──
     #[serde(rename = "scxml/top-level-script-unloaded")]
     ScxmlTopLevelScriptUnloaded,
-    // ── NL→IR Mapping Roadmap Item 3 Phase A — Statechart graph
+    // ── NL→IR Mapping Roadmap Item 3 — Statechart graph
     //    reachability. BFS from the document `initial` (plus the
     //    parallel-all-children, compound-initial-cascade, and history
     //    default-target entry rules) computes the design-time reach
@@ -557,7 +556,7 @@ pub enum DiagnosticCode {
     ScxmlUnreachableState,
     #[serde(rename = "scxml/dead-transition")]
     ScxmlDeadTransition,
-    // ── NL→IR Mapping Roadmap Item 3 Phase B — event-set
+    // ── NL→IR Mapping Roadmap Item 3 — event-set
     //    exhaustiveness. Fires when a compound `<state>` has sibling
     //    children that disagree on whether a given event is handled,
     //    with no parent-level fallthrough. Narrow heuristic (requires
@@ -569,7 +568,7 @@ pub enum DiagnosticCode {
     //    annotate the opt-out). ──────────────────────────────────────
     #[serde(rename = "scxml/non-exhaustive-event-handling")]
     ScxmlNonExhaustiveEventHandling,
-    // ── NL→IR Mapping Roadmap Item 3 Phase C — guard analysis.
+    // ── NL→IR Mapping Roadmap Item 3 — guard analysis.
     //    `scxml/always-false-guard` fires when a transition's
     //    `cond` expression is statically determinable as false
     //    (literal `false`, numeric `0`, `N==M` with differing
@@ -609,17 +608,16 @@ pub enum DiagnosticCode {
     #[serde(rename = "scxml/on-sample-link-wrong-kind")]
     ScxmlOnSampleLinkWrongKind,
 
-    // ── Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-
-    //    declarations.md`) Phase A — top-level `<sce:session-role
-    //    kind="..."/>` SCXML extension structural validators. Phase A
-    //    surfaces only the parse-time kind-value family; Phase B adds
-    //    three cross-doc partial-claim codes that join this set with
-    //    deploy.yaml `LinkConfig.role`.
+    // ── Axis-3 inversion — top-level `<sce:session-role
+    //    kind="..."/>` SCXML extension structural validators: the
+    //    parse-time kind-value family. The three cross-doc
+    //    partial-claim codes below join this set with deploy.yaml
+    //    `LinkConfig.role`.
     #[serde(rename = "scxml/unknown-session-role-kind")]
     ScxmlUnknownSessionRoleKind,
     #[serde(rename = "scxml/duplicate-session-role-declaration")]
     ScxmlDuplicateSessionRoleDeclaration,
-    // ── Axis-3 inversion Phase B (RFC Q-A7 (a) — typed-per-direction)
+    // ── Axis-3 inversion (Q-A7 (a) — typed-per-direction)
     //    cross-doc partial-claim family + Q-A4 (d) matrix validator.
     //    Three NeutralOrDeterministic codes covering each direction
     //    of the listener-role declaration cross-claim. C10-α's
@@ -632,7 +630,7 @@ pub enum DiagnosticCode {
     ScxmlAcceptSideRoleWithoutListenerLink,
     #[serde(rename = "link/role-listener-with-non-session-arming-trust-class")]
     LinkRoleListenerWithNonSessionArmingTrustClass,
-    // ── Axis-3 inversion Phase D migration-helper (RFC Q-A8 (c) flip)
+    // ── Axis-3 inversion migration-helper (RFC Q-A8 (c) flip)
     //    — fires when an SCXML carries reserved `Accepting.*` state
     //    ids but no `<sce:session-role kind="accept-side"/>`
     //    declaration. Repurposes the legacy `accepting_substate_
@@ -640,14 +638,13 @@ pub enum DiagnosticCode {
     //    rather than deleting it outright.
     #[serde(rename = "scxml/accept-side-states-without-role-declaration")]
     ScxmlAcceptSideStatesWithoutRoleDeclaration,
-    // ── Axis-2 declared-consumption Phase Z (watching-zenoh RFC §5.M
+    // ── Axis-2 declared-consumption (watching-zenoh RFC §5.M
     //    lines 2841-2861) — `peer_table.capacity × per_peer_quota ≥
     //    slot_count` invariant. Forge buffer-pool declares its quota
     //    + slot count; deploy.yaml link declares its peer-table
-    //    capacity; cross-doc validator catches violations. The
-    //    placeholder comment in `diagnostic.rs:1170` deferred this
-    //    to C9-β; it was never landed there and surfaces now as the
-    //    last open Axis-2 gap.
+    //    capacity; cross-doc validator catches violations. Closes
+    //    the declared-consumption coverage gap an earlier
+    //    placeholder had deferred.
     #[serde(rename = "reassembly/per-peer-quota-build-invariant-violated")]
     ReassemblyPerPeerQuotaBuildInvariantViolated,
 
@@ -694,9 +691,10 @@ pub enum DiagnosticCode {
     GenerateUnsupportedFeature,
 
     // ── Codegen matrix invariants (watching-zenoh RFC §5.J.4 / §5.J.5).
-    //    Shell-only at PR-0 (Phase A1): variants present so downstream
-    //    consumers can pin the wire IDs; producer + matrix walker land
-    //    with the algorithm kind in Phase A3. Stage = Generate
+    //    The variants shipped first as shells (item A1) so downstream
+    //    consumers could pin the wire IDs; the producer + matrix walker
+    //    live in `forge/codegen_matrix.rs` (landed with the §5.A
+    //    algorithm kind, item A3). Stage = Generate
     //    (codegen-time errors share the existing repair-routing key).
     //    See `docs/rfc-sce-protocol-synthesis.md` §5.J.4 commitment. ──
     #[serde(rename = "codegen/mcu-class-kind-on-non-mcu-language")]
@@ -729,7 +727,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codegen/no-std-invoke-not-supported")]
     CodegenNoStdInvokeNotSupported,
 
-    // ── §5.F build-time const-fold (watching-zenoh RFC §5.F, Phase A4-γ).
+    // ── §5.F build-time const-fold (watching-zenoh RFC §5.F, item A4).
     //    The host interpreter (`forge::const_fold`) emits these
     //    codegen-time errors when a `<sce:fold>` body — or a scalar
     //    `<sce:const init=...>` — fails the foldable substrate, blows
@@ -757,8 +755,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/variant-arm-unreachable")]
     CodecVariantArmUnreachable,
 
-    // ── RFC variant-default-uniformity Atomic α (claudedocs/
-    //    rfc-variant-default-uniformity.md). Parse-time check on
+    // ── RFC variant-default-uniformity Atomic α. Parse-time check on
     //    `<sce:variant>` children: at most one `<sce:arm>` may
     //    declare `default="true"`. The marker steers the outer
     //    codec's `Default::default()` to a single deliberately-
@@ -1144,17 +1141,14 @@ pub enum DiagnosticCode {
     //    pulled in by the generated pool header. The diagnostic catches
     //    a future template edit that drops the `#include` — Layer 1
     //    coverage would silently disappear without it. Stage =
-    //    Validation. The remaining `pool/...` codes
-    //    (`pool/sample-take-without-stage-pool`,
-    //    `pool/sample-callback-signature-non-borrow`,
-    //    `pool/clang-tidy-not-configured`,
-    //    `pool/ownership-violation`,
-    //    `pool/cache-maintenance-misplaced`,
-    //    `pool/slot-leak-on-error-path`) defer to later atomics gated on
-    //    deploy.yaml `stage_pool` field, SCXML `<sce:on-sample>`
-    //    extension, and §5.I `<sce:call>` intrinsic registry — see
-    //    `claudedocs/rfc-b7-eta-prime-sample-runtime.md` /
-    //    `rfc-sce-call-intrinsic-registry.md`. ──
+    //    Validation. Of the related `pool/...` family,
+    //    `pool/sample-take-without-stage-pool`,
+    //    `pool/sample-callback-signature-non-borrow`, and
+    //    `pool/cache-maintenance-misplaced` are declared below;
+    //    `pool/clang-tidy-not-configured`, `pool/ownership-violation`,
+    //    and `pool/slot-leak-on-error-path` stay unimplemented until a
+    //    consumer needs them (they gate on clang-tidy build wiring and
+    //    the §5.I `<sce:call>` intrinsic registry). ──
     /// `<sce/sample.h>` runtime header pull-through (the producer of
     /// the Layer 1 `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` /
     /// `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` /
@@ -1901,7 +1895,7 @@ pub enum DiagnosticCode {
     MeshDistributabilityR1SharedWrite,
     #[serde(rename = "mesh/distributability-r2-cross-region-transition")]
     MeshDistributabilityR2CrossRegionTransition,
-    // §14 per-machine platform/scheduler schema (RFC §5.K, Phase A2)
+    // §14 per-machine platform/scheduler schema (RFC §5.K, item A2)
     #[serde(rename = "mesh/deploy-platform-class-os-mismatch")]
     MeshDeployPlatformClassOsMismatch,
     /// Watching-zenoh RFC §5.K line 2426 verbatim
@@ -2531,7 +2525,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationCrossKindFieldNotFound,
         ValidationCrossKindTypeMismatch,
         ValidationCrossKindCircularDependency,
-        // Algorithm (watching-zenoh RFC §5.A, Phase A3)
+        // Algorithm (watching-zenoh RFC §5.A, item A3)
         AlgorithmLocalShadowsParam,
         AlgorithmLvalueUnsupported,
         AlgorithmReturnMissing,
@@ -2543,14 +2537,14 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmBcMutationForbidden,
         AlgorithmForeachSourceBcWithBytesItemType,
         AlgorithmCallArgCountMismatch,
-        // SCXML semantic (RFC §W5)
+        // SCXML semantic (§wire-W5)
         ScxmlTopLevelScriptUnloaded,
-        // NL→IR Mapping Roadmap Item 3 Phase A — Statechart graph reachability
+        // NL→IR Mapping Roadmap Item 3 — Statechart graph reachability
         ScxmlUnreachableState,
         ScxmlDeadTransition,
-        // NL→IR Mapping Roadmap Item 3 Phase B — event-set exhaustiveness
+        // NL→IR Mapping Roadmap Item 3 — event-set exhaustiveness
         ScxmlNonExhaustiveEventHandling,
-        // NL→IR Mapping Roadmap Item 3 Phase C — guard analysis
+        // NL→IR Mapping Roadmap Item 3 — guard analysis
         ScxmlAlwaysFalseGuard,
         ScxmlShadowedTransition,
         ScxmlOnSampleInvalidParent,
@@ -2558,16 +2552,16 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ScxmlOnSampleEventNameConflict,
         ScxmlOnSampleLinkNotDeclared,
         ScxmlOnSampleLinkWrongKind,
-        // Axis-3 inversion Phase A — top-level `<sce:session-role>` structural codes
+        // Axis-3 inversion — top-level `<sce:session-role>` structural codes
         ScxmlUnknownSessionRoleKind,
         ScxmlDuplicateSessionRoleDeclaration,
-        // Axis-3 inversion Phase B — cross-doc partial-claim + matrix validators
+        // Axis-3 inversion — cross-doc partial-claim + matrix validators
         LinkDeployRoleListenerWithoutScxmlAcceptSideRole,
         ScxmlAcceptSideRoleWithoutListenerLink,
         LinkRoleListenerWithNonSessionArmingTrustClass,
-        // Axis-3 inversion Phase D — migration-helper parser diagnostic
+        // Axis-3 inversion — migration-helper parser diagnostic
         ScxmlAcceptSideStatesWithoutRoleDeclaration,
-        // Axis-2 declared-consumption Phase Z — reassembly cross-doc invariant
+        // Axis-2 declared-consumption — reassembly cross-doc invariant
         ReassemblyPerPeerQuotaBuildInvariantViolated,
         // Expression
         ExpressionEmpty,
@@ -2601,7 +2595,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodegenNoStdHttpNotSupported,
         CodegenNoStdFsLoadNotSupported,
         CodegenNoStdInvokeNotSupported,
-        // Algorithm §5.F const-fold (watching-zenoh RFC §5.F, Phase A4-γ)
+        // Algorithm §5.F const-fold (watching-zenoh RFC §5.F, item A4)
         AlgorithmConstNotFoldable,
         AlgorithmConstFoldBudgetExceeded,
         AlgorithmConstYieldTypeMismatch,
@@ -2980,7 +2974,7 @@ impl DiagnosticCode {
             | ValidationMeshRpcMissingTarget
             | ValidationMeshRpcDuplicateTarget => Some("SCE Mesh §9.5"),
 
-            // ── SCXML §5.8 top-level script (RFC §W5) ─────────────
+            // ── SCXML §5.8 top-level script (§wire-W5) ─────────────
             ScxmlTopLevelScriptUnloaded => Some("W3C SCXML §5.8"),
 
             // ── Algorithm kind (watching-zenoh RFC §5.A) ──────────
@@ -3434,12 +3428,11 @@ impl DiagnosticCode {
             | MeshCodegenEventNameCollision
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshIo
-            // Axis-3 inversion Phase A + B — RFC is SCE-internal at
-            // `claudedocs/rfc-axis3-listener-role-declarations.md`,
-            // not a watching-zenoh spec section. The codes describe
-            // an SCE-only cross-doc role contract; spec_anchor stays
-            // None until / unless a future spec section adopts the
-            // same vocabulary.
+            // Axis-3 inversion — the listener-role contract is
+            // SCE-internal, not a watching-zenoh spec section. The
+            // codes describe an SCE-only cross-doc role contract;
+            // spec_anchor stays None until / unless a future spec
+            // section adopts the same vocabulary.
             | ScxmlUnknownSessionRoleKind
             | ScxmlDuplicateSessionRoleDeclaration
             | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
@@ -3460,7 +3453,7 @@ impl DiagnosticCode {
             | ValidationCrossKindFieldNotFound
             | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
-            // NL→IR Mapping Roadmap Item 3 Phase A — reachability is
+            // NL→IR Mapping Roadmap Item 3 — reachability is
             // implied by §scxml-3 entry semantics (the design-time
             // BFS over `initial`, parallel cascade, history default
             // targets, and transition `target` edges), but no spec
@@ -3468,12 +3461,12 @@ impl DiagnosticCode {
             // as SCE-internal hygiene; spec_anchor stays None.
             | ScxmlUnreachableState
             | ScxmlDeadTransition
-            // NL→IR Mapping Roadmap Item 3 Phase B — event-set
+            // NL→IR Mapping Roadmap Item 3 — event-set
             // exhaustiveness. Heuristic over §scxml-5.10 event
             // matching, but no spec section names "non-exhaustive
             // event handling" as a rejection. SCE-internal hygiene.
             | ScxmlNonExhaustiveEventHandling
-            // NL→IR Mapping Roadmap Item 3 Phase C — guard analysis.
+            // NL→IR Mapping Roadmap Item 3 — guard analysis.
             // §scxml-5.10 transition selection implies that an
             // always-false guard makes the transition unreachable
             // and a shadowed transition cannot fire, but the spec
@@ -3481,8 +3474,8 @@ impl DiagnosticCode {
             // hygiene.
             | ScxmlAlwaysFalseGuard
             | ScxmlShadowedTransition => None,
-            // Axis-2 Phase Z carries the spec anchor that lived in the
-            // diagnostic.rs:1170 placeholder comment.
+            // The Axis-2 reassembly invariant carries the spec anchor
+            // that lived in the diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
                 Some("watching-zenoh RFC §5.M")
             }
@@ -4159,7 +4152,7 @@ fn xml_fields(e: &XmlError) -> DiagnosticPayload {
             fix: None,
             key_fragments: Vec::new(),
         },
-        // Top-level parser-entry errors (RFC §W4 α-strict). `actual`
+        // Top-level parser-entry errors (§wire-W4 α-strict). `actual`
         // carries the offending path / found tag-name so repair tools
         // can act without parsing the message text; `key_fragments`
         // tie the FNV-1a id to the same payload so two runs against
@@ -5789,7 +5782,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             key_fragments: vec![state_id.clone(), link.clone(), actual_kind.clone()],
         },
         ValidationError::ScxmlUnknownSessionRoleKind { kind, allowed } => DiagnosticPayload {
-            // Axis-3 inversion Phase A — closed-set kind vocabulary
+            // Axis-3 inversion — closed-set kind vocabulary
             // rides `Fix::ReplaceOneOf` per FixCarriesCandidates
             // non-overlap class. `expected` stays None (the candidate
             // list lives in fix, not expected, per the non-overlap
@@ -5804,7 +5797,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             key_fragments: vec![kind.clone()],
         },
         ValidationError::ScxmlDuplicateSessionRoleDeclaration { kind } => DiagnosticPayload {
-            // Axis-3 inversion Phase A — single-axis repair (delete
+            // Axis-3 inversion — single-axis repair (delete
             // the duplicate); no closed candidate list. `actual`
             // surfaces the offending kind so CLI consumers see which
             // kind was duplicated without parsing the message body.
@@ -5820,7 +5813,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             link_name,
         } => {
             DiagnosticPayload {
-                // Axis-3 inversion Phase B — typed partial-claim.
+                // Axis-3 inversion — typed partial-claim.
                 // 2-axis repair (add SCXML role OR remove deploy role);
                 // NeutralOrDeterministic per C10-α Q-C10-7 precedent.
                 // `actual` carries the link name; `key_fragments`
@@ -5840,7 +5833,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             machine,
             scxml_source,
         } => DiagnosticPayload {
-            // Axis-3 inversion Phase B — typed partial-claim mirror
+            // Axis-3 inversion — typed partial-claim mirror
             // direction. 2-axis repair. `actual` carries the SCXML
             // source basename so consumers can navigate to the
             // offending file; `key_fragments` carry both fields.
@@ -5856,7 +5849,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             link_name,
             trust_class,
         } => DiagnosticPayload {
-            // Axis-3 inversion Phase B — Q-A4 (d) matrix check.
+            // Axis-3 inversion — Q-A4 (d) matrix check.
             // 2-axis repair (change trust_class OR remove role);
             // NeutralOrDeterministic. `actual` carries the wrong
             // trust_class wire-form value so the violation is visible
@@ -5870,7 +5863,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
         },
         ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration { offending_ids } => {
             DiagnosticPayload {
-                // Axis-3 inversion Phase D migration-helper. 2-axis
+                // Axis-3 inversion migration-helper. 2-axis
                 // repair (add role declaration OR rename states); no
                 // closed candidate set so `fix: None`. `actual`
                 // serializes the offending id list in document order
@@ -5894,7 +5887,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             per_peer_quota,
             product,
         } => DiagnosticPayload {
-            // Axis-2 Phase Z — peer_table.capacity × per_peer_quota
+            // Axis-2 declared-consumption — peer_table.capacity × per_peer_quota
             // >= slot_count. 3-axis repair; NeutralOrDeterministic.
             // `actual` carries the violating product so consumers can
             // see the shortfall without parsing the message body.
@@ -7289,7 +7282,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
     }
 }
 
-/// SCXML semantic-validation field mapping (RFC §W5 D2).
+/// SCXML semantic-validation field mapping (§wire-W5 D2).
 ///
 /// Three of the four variants reuse existing `validation/*` wire codes
 /// per the W4 D4 fold precedent — concept identity over namespace
@@ -7297,7 +7290,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
 /// code (`scxml/top-level-script-unloaded`) because §scxml-5.8
 /// has no forge analog.
 ///
-/// Stage stays `Stage::Validation` for all four (RFC §W5 D2 reverse-
+/// Stage stays `Stage::Validation` for all four (§wire-W5 D2 reverse-
 /// reverse-default): SCXML semantic-validation IS post-parse semantic
 /// validation, the same analytical stage as forge `validation/*`. A
 /// future production consumer that needs separate-stage routing can
@@ -7377,7 +7370,7 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
         },
         ScxmlSemanticError::TopLevelScriptUnloaded { index, src } => DiagnosticPayload {
             // NEW — §scxml-5.8 has no forge analog. The 1 NEW
-            // wire code RFC §W5 D2 introduces.
+            // wire code §wire-W5 D2 introduces.
             code: DiagnosticCode::ScxmlTopLevelScriptUnloaded,
             stage: Stage::Validation,
             expected: None,
@@ -7401,7 +7394,7 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
             },
         },
         ScxmlSemanticError::UnreachableState { state_id } => DiagnosticPayload {
-            // NEW — NL→IR Mapping Roadmap Item 3 Phase A. Reachability
+            // NEW — NL→IR Mapping Roadmap Item 3. Reachability
             // is a Statechart-graph rule with no forge analog (Forge
             // kinds carry no control-flow surface), so the wire code
             // sits in the `scxml/*` namespace.
@@ -7435,7 +7428,7 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
             ],
         },
         ScxmlSemanticError::AlwaysFalseGuard { state, cond } => DiagnosticPayload {
-            // NEW — NL→IR Mapping Roadmap Item 3 Phase C. The
+            // NEW — NL→IR Mapping Roadmap Item 3 guard analysis. The
             // `actual` slot carries the raw guard text so consumers
             // can quote it back to the author; `key_fragments`
             // distinguish two always-false guards in the same state.
@@ -7480,7 +7473,7 @@ fn scxml_semantic_fields(e: &crate::scxml_semantic::ScxmlSemanticError) -> Diagn
             handlers: _,
             non_handlers,
         } => DiagnosticPayload {
-            // NEW — NL→IR Mapping Roadmap Item 3 Phase B. The
+            // NEW — NL→IR Mapping Roadmap Item 3 event-set exhaustiveness. The
             // `actual` slot carries the unhandled event so consumers
             // dispatching on (code, actual) can route the diagnostic
             // even when the parent id is verbose. handlers /
@@ -8136,7 +8129,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:45992402abee5c5d","code":"validation/bytes-max-size-violation","stage":"validation","message":"security_access: <send sce:service=\"SecurityAccess\"> sce:response-max-size=128 exceeds destination slot 'seed' sce:max-size=64"}"#,
             ),
             (
-                // RFC §W5: SCXML semantic family — TopLevelScriptUnloaded
+                // §wire-W5: SCXML semantic family — TopLevelScriptUnloaded
                 // is the 1 NEW wire code (others reuse `validation/*`).
                 // Golden uses the parser-path shape (index + src
                 // populated) so the wire payload exercises both
@@ -8151,7 +8144,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:60cc8f4eef6d11ca","code":"scxml/top-level-script-unloaded","stage":"validation","spec":"W3C SCXML §5.8","message":"Top-level <script> rejected per W3C SCXML 5.8","actual":"init.js"}"#,
             ),
             (
-                // NL→IR Mapping Roadmap Item 3 Phase A — Statechart
+                // NL→IR Mapping Roadmap Item 3 — Statechart
                 // reachability. State-level form fires only when an
                 // orphan state has no `<transition>` children (the
                 // per-transition variant outranks it otherwise).
@@ -8163,7 +8156,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:c62a2a67930417c8","code":"scxml/unreachable-state","stage":"validation","message":"State 'ghost_branch' is unreachable from the document initial configuration","actual":"ghost_branch"}"#,
             ),
             (
-                // NL→IR Mapping Roadmap Item 3 Phase A — per-transition
+                // NL→IR Mapping Roadmap Item 3 — per-transition
                 // form. Source is the unreachable state, target is the
                 // transition's `target` attribute verbatim.
                 "forge/scxml-dead-transition",
@@ -8175,7 +8168,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:c6afb255ec2689b7","code":"scxml/dead-transition","stage":"validation","message":"Transition in unreachable state 'ghost_branch' targets 'armed' — source state is never entered","actual":"armed"}"#,
             ),
             (
-                // NL→IR Mapping Roadmap Item 3 Phase B — non-exhaustive
+                // NL→IR Mapping Roadmap Item 3 — non-exhaustive
                 // event handling. The parent compound state has three
                 // children that share `cmd.stop` as common ground;
                 // `cmd.start` is handled by `idle` + `stopped` but
@@ -8191,7 +8184,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:7072cc6c1038cfb6","code":"scxml/non-exhaustive-event-handling","stage":"validation","message":"Compound state 'dispatch' has children handling event 'cmd.start' inconsistently — handlers: [\"idle\", \"stopped\"], non-handlers: [\"active\"]. Add the missing transition, add a parent-level fallthrough, or annotate the parent with sce:exhaustive=\"false\" if the gap is intentional.","actual":"cmd.start"}"#,
             ),
             (
-                // NL→IR Mapping Roadmap Item 3 Phase C — trivially
+                // NL→IR Mapping Roadmap Item 3 — trivially
                 // false guard. The validator stops at structural
                 // false literals (`false`, `0`, differing numeric
                 // equality, equal numeric inequality) and leaves
@@ -8206,7 +8199,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:9e9dbc120c0f1890","code":"scxml/always-false-guard","stage":"validation","message":"Transition in state 'armed' carries guard 'false' that is statically false — the transition can never fire. Remove the transition or change the guard expression.","actual":"false"}"#,
             ),
             (
-                // NL→IR Mapping Roadmap Item 3 Phase C — shadowed
+                // NL→IR Mapping Roadmap Item 3 — shadowed
                 // transition. Document-order #0 (unconditional)
                 // shadows #1 (guarded) on the same event descriptor.
                 "forge/scxml-shadowed-transition",
@@ -8282,7 +8275,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:38b424712554fe91","code":"scxml/on-sample-link-wrong-kind","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_codec\"> resolves to a forge 'codec' kind, not 'link'. Only link kind documents back the on-sample subscriber contract. Repoint the reference at one of the build's link kind names. See watching-zenoh RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_link"]}}"#,
             ),
             (
-                // Axis-3 inversion Phase A — `<sce:session-role kind="X"/>`
+                // Axis-3 inversion — `<sce:session-role kind="X"/>`
                 // unknown-kind structural diagnostic. Carries the
                 // closed-set vocabulary via `Fix::ReplaceOneOf` so
                 // authors get a closed picker even when v1 has only
@@ -8297,7 +8290,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:1a3bf2135f63c092","code":"scxml/unknown-session-role-kind","stage":"validation","message":"<sce:session-role kind=\"listener\"/>: unknown session-role kind. v1 vocabulary: [\"accept-side\"]. Repair: change `kind` to one of the listed values or remove the element if no session-FSM role applies.","actual":"listener","fix":{"kind":"replace_one_of","candidates":["accept-side"]}}"#,
             ),
             (
-                // Axis-3 inversion Phase A — duplicate
+                // Axis-3 inversion — duplicate
                 // `<sce:session-role>` declaration on one document.
                 // NeutralOrDeterministic non_overlap class; no
                 // candidate list. Hash placeholder — patched by byte-
@@ -8310,7 +8303,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:ebc5cc71107bd7e9","code":"scxml/duplicate-session-role-declaration","stage":"validation","message":"<sce:session-role kind=\"accept-side\"/>: declared more than once on this SCXML document. Each session-role kind may appear at most once per document. Repair: delete the duplicate `<sce:session-role kind=\"accept-side\"/>` element.","actual":"accept-side"}"#,
             ),
             (
-                // Axis-3 inversion Phase B — deploy declares listener
+                // Axis-3 inversion — deploy declares listener
                 // role but SCXML lacks accept-side declaration. Hash
                 // placeholder — patched by byte-stability assertion.
                 "forge/link-deploy-role-listener-without-scxml-accept-side-role",
@@ -8319,10 +8312,10 @@ mod tests {
                     link_name: "udp_listener".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c2f9a854621bdaa3","code":"link/deploy-role-listener-without-scxml-accept-side-role","stage":"validation","message":"deploy machine 'mcu_node' link 'udp_listener': declares `role: listener` but its source SCXML carries no `<sce:session-role kind=\"accept-side\"/>` top-level declaration. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if it implements the session-FSM accept-side, OR remove `role: listener` from the deploy link if the link is not a listener half. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"udp_listener"}"#,
+                r#"{"v":1,"id":"fnv1a:c2f9a854621bdaa3","code":"link/deploy-role-listener-without-scxml-accept-side-role","stage":"validation","message":"deploy machine 'mcu_node' link 'udp_listener': declares `role: listener` but its source SCXML carries no `<sce:session-role kind=\"accept-side\"/>` top-level declaration. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if it implements the session-FSM accept-side, OR remove `role: listener` from the deploy link if the link is not a listener half.","actual":"udp_listener"}"#,
             ),
             (
-                // Axis-3 inversion Phase B — SCXML declares accept-side
+                // Axis-3 inversion — SCXML declares accept-side
                 // but no deploy link has listener role. Hash placeholder.
                 "forge/scxml-accept-side-role-without-listener-link",
                 ValidationError::ScxmlAcceptSideRoleWithoutListenerLink {
@@ -8330,10 +8323,10 @@ mod tests {
                     scxml_source: "session_fsm.scxml".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:126e3b7664c66f4a","code":"scxml/accept-side-role-without-listener-link","stage":"validation","message":"SCXML machine 'mcu_node' (source `session_fsm.scxml`): declares `<sce:session-role kind=\"accept-side\"/>` but no deploy link on this machine has `role: listener`. Repair: add `role: listener` to the deploy link that hosts the accept-side handshake, OR remove the `<sce:session-role>` element from the SCXML if it does not serve as the accept-side FSM. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"session_fsm.scxml"}"#,
+                r#"{"v":1,"id":"fnv1a:126e3b7664c66f4a","code":"scxml/accept-side-role-without-listener-link","stage":"validation","message":"SCXML machine 'mcu_node' (source `session_fsm.scxml`): declares `<sce:session-role kind=\"accept-side\"/>` but no deploy link on this machine has `role: listener`. Repair: add `role: listener` to the deploy link that hosts the accept-side handshake, OR remove the `<sce:session-role>` element from the SCXML if it does not serve as the accept-side FSM.","actual":"session_fsm.scxml"}"#,
             ),
             (
-                // Axis-3 inversion Phase B Q-A4 (d) matrix — listener
+                // Axis-3 inversion Q-A4 (d) matrix — listener
                 // role with wrong trust_class. Hash placeholder.
                 "forge/link-role-listener-with-non-session-arming-trust-class",
                 ValidationError::LinkRoleListenerWithNonSessionArmingTrustClass {
@@ -8342,10 +8335,10 @@ mod tests {
                     trust_class: "untrusted".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:df7bcfc9e6b3e2ec","code":"link/role-listener-with-non-session-arming-trust-class","stage":"validation","message":"deploy machine 'mcu_node' link 'udp_listener': declares `role: listener` but `trust_class: untrusted` (not `session_arming`). The listener-role declaration applies only to pre-handshake traffic, which lives on the `session_arming` trust tier. Repair: change `trust_class` to `session_arming`, OR remove `role: listener`. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"untrusted"}"#,
+                r#"{"v":1,"id":"fnv1a:df7bcfc9e6b3e2ec","code":"link/role-listener-with-non-session-arming-trust-class","stage":"validation","message":"deploy machine 'mcu_node' link 'udp_listener': declares `role: listener` but `trust_class: untrusted` (not `session_arming`). The listener-role declaration applies only to pre-handshake traffic, which lives on the `session_arming` trust tier. Repair: change `trust_class` to `session_arming`, OR remove `role: listener`.","actual":"untrusted"}"#,
             ),
             (
-                // Axis-3 inversion Phase D migration-helper — Accepting.*
+                // Axis-3 inversion migration-helper — Accepting.*
                 // state ids without role declaration. Hash placeholder.
                 "forge/scxml-accept-side-states-without-role-declaration",
                 ValidationError::ScxmlAcceptSideStatesWithoutRoleDeclaration {
@@ -8355,10 +8348,10 @@ mod tests {
                     ],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:9c490c868c1407cc","code":"scxml/accept-side-states-without-role-declaration","stage":"validation","message":"SCXML doc carries state ids matching the reserved `Accepting.*` prefix ([\"Accepting\", \"Accepting.AwaitingInitSyn\"]) but no top-level `<sce:session-role kind=\"accept-side\"/>` declaration. The canonical session-FSM accept-side state names are reserved for documents that claim the accept-side role. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if the doc implements the session-FSM accept-side, OR rename the offending state ids to avoid the `Accepting.*` reservation. See claudedocs/rfc-axis3-listener-role-declarations.md.","actual":"Accepting,Accepting.AwaitingInitSyn"}"#,
+                r#"{"v":1,"id":"fnv1a:9c490c868c1407cc","code":"scxml/accept-side-states-without-role-declaration","stage":"validation","message":"SCXML doc carries state ids matching the reserved `Accepting.*` prefix ([\"Accepting\", \"Accepting.AwaitingInitSyn\"]) but no top-level `<sce:session-role kind=\"accept-side\"/>` declaration. The canonical session-FSM accept-side state names are reserved for documents that claim the accept-side role. Repair: add `<sce:session-role kind=\"accept-side\"/>` to the SCXML root if the doc implements the session-FSM accept-side, OR rename the offending state ids to avoid the `Accepting.*` reservation.","actual":"Accepting,Accepting.AwaitingInitSyn"}"#,
             ),
             (
-                // Axis-2 Phase Z — reassembly per-peer-quota peer-table
+                // Axis-2 declared-consumption — reassembly per-peer-quota peer-table
                 // build invariant violated. Hash placeholder.
                 "forge/reassembly-per-peer-quota-build-invariant-violated",
                 ValidationError::ReassemblyPerPeerQuotaBuildInvariantViolated {
@@ -8756,8 +8749,8 @@ mod tests {
             (
                 // RFC §5.M lines 2982-2994: reassembly binding on
                 // session_arming link without paired sibling.
-                // NeutralOrDeterministic; two valid repair paths after
-                // Axis-3 Phase D (declare explicit role on both sides
+                // NeutralOrDeterministic; two valid repair paths under
+                // the explicit-role contract (declare explicit role on both sides
                 // OR remove the binding).
                 "forge/reassembly-binding-on-unpaired-listener",
                 ValidationError::ReassemblyBindingOnUnpairedListener {
@@ -8767,7 +8760,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:c9d90099f8ed9a01","code":"reassembly/binding-on-unpaired-listener","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node'; the link declares `trust_class: session_arming` but its machine source SCXML did not pair with a listener-role declaration (deploy `role: listener` + SCXML `<sce:session-role kind=\"accept-side\"/>`), so codegen cannot synthesize the paired `established_session` sibling. watching-zenoh RFC §5.M lines 2982-2994 — only listeners (the explicit Axis-3 deploy/SCXML role pair, see claudedocs/rfc-axis3-listener-role-declarations.md) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. Repair: declare `role: listener` on the deploy link AND add `<sce:session-role kind=\"accept-side\"/>` to machine 'mcu_node's source SCXML (making link 'udp_listener' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link 'udp_listener'."}"#,
+                r#"{"v":1,"id":"fnv1a:c9d90099f8ed9a01","code":"reassembly/binding-on-unpaired-listener","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node'; the link declares `trust_class: session_arming` but its machine source SCXML did not pair with a listener-role declaration (deploy `role: listener` + SCXML `<sce:session-role kind=\"accept-side\"/>`), so codegen cannot synthesize the paired `established_session` sibling. watching-zenoh RFC §5.M lines 2982-2994 — only listeners (the explicit deploy/SCXML role pair) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. Repair: declare `role: listener` on the deploy link AND add `<sce:session-role kind=\"accept-side\"/>` to machine 'mcu_node's source SCXML (making link 'udp_listener' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link 'udp_listener'."}"#,
             ),
             (
                 // RFC §5.N line 3062: cross-doc link has inbound
@@ -9235,8 +9228,8 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:b3b0c2c9723a4ca2","code":"xml/template-too-deep","stage":"xml","message":"<sce:use> template nesting exceeds depth limit of 10"}"#,
             ),
             // ── Watching-zenoh RFC §5.J.4 / §5.J.5 codegen matrix shells.
-            //    Producer constructors are reachable; matrix walker that
-            //    invokes them lands with the algorithm kind in Phase A3. ──
+            //    Producer constructors are reachable; the matrix walker
+            //    in `forge/codegen_matrix.rs` invokes them. ──
             (
                 "forge/codegen-mcu-class-kind-on-non-mcu-language",
                 GenerateError::CodegenMcuClassKindOnNonMcuLanguage {
@@ -11649,7 +11642,7 @@ mod tests {
             | PoolSampleTakeWithoutStagePool
             | ScxmlOnSampleLinkNotDeclared
             | ScxmlOnSampleLinkWrongKind
-            // Axis-3 inversion Phase A — `<sce:session-role kind="X"/>`
+            // Axis-3 inversion — `<sce:session-role kind="X"/>`
             // unknown-kind diagnostic rides `Fix::ReplaceOneOf` with
             // the v1 vocabulary (currently `["accept-side"]`). Future
             // kind variants extend the candidate list in lockstep
@@ -12033,17 +12026,17 @@ mod tests {
             // ScxmlOnSampleLinkNotDeclared + ScxmlOnSampleLinkWrongKind
             // sit in FixCarriesCandidates above (cross-ref ride
             // `Fix::ReplaceOneOf` with the registry's name list).
-            // Axis-3 inversion Phase A duplicate-declaration: repair
+            // Axis-3 inversion duplicate-declaration: repair
             // is single-axis (delete the duplicate); no closed
             // candidate list. NeutralOrDeterministic.
             | ScxmlDuplicateSessionRoleDeclaration
-            // Axis-3 inversion Phase B partial-claim codes — all
+            // Axis-3 inversion partial-claim codes — all
             // three are NeutralOrDeterministic (C10-α Q-C10-7
             // precedent: 2-axis repair, no closed candidate set).
             | LinkDeployRoleListenerWithoutScxmlAcceptSideRole
             | ScxmlAcceptSideRoleWithoutListenerLink
             | LinkRoleListenerWithNonSessionArmingTrustClass
-            // Axis-3 inversion Phase D migration-helper —
+            // Axis-3 inversion migration-helper —
             // NeutralOrDeterministic (2-axis repair: add role or
             // rename states).
             | ScxmlAcceptSideStatesWithoutRoleDeclaration
@@ -12330,7 +12323,7 @@ mod tests {
             // candidate set on the diagnostic wire.
             | ValidationCrossKindTypeMismatch
             | ValidationCrossKindCircularDependency
-            // NL→IR Mapping Roadmap Item 3 Phase A — reachability codes
+            // NL→IR Mapping Roadmap Item 3 — reachability codes
             // ship without a closed candidate set. Repair for an
             // unreachable state is author-domain (delete the orphan or
             // re-connect via a new transition); listing every reachable
@@ -12342,7 +12335,7 @@ mod tests {
             // not.
             | ScxmlUnreachableState
             | ScxmlDeadTransition
-            // NL→IR Mapping Roadmap Item 3 Phase B — non-exhaustive
+            // NL→IR Mapping Roadmap Item 3 — non-exhaustive
             // event handling. Repair has three axes (add the
             // transition, add a parent-level fallthrough, or annotate
             // the parent with `sce:exhaustive="false"`) none of which
@@ -12350,7 +12343,7 @@ mod tests {
             // a rename when the author almost always meant to add a
             // missing handler or accept the gap deliberately.
             | ScxmlNonExhaustiveEventHandling
-            // NL→IR Mapping Roadmap Item 3 Phase C — always-false
+            // NL→IR Mapping Roadmap Item 3 — always-false
             // guards and shadowed transitions. Repair is deterministic
             // per use-site (remove the dead transition, rewrite the
             // guard, or reorder) with no closed candidate set the
@@ -12893,789 +12886,12 @@ mod tests {
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
             322,
-            "ALL_DIAGNOSTIC_CODES has duplicates or missing entries —\
+            "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
              expected 322 distinct variants to match the DiagnosticCode \
-             enum (watching-zenoh RFC §5.B B3 added the MCU-class TLV \
-             chain v1 gate: CodecTlvChainDepthUnspecified; 168 → 169, \
-             then DMA alignment v1 gate: CodecDmaAlignmentUnsatisfiable; \
-             169 → 170, then B5-γ parent-flags dependency: \
-             CodecParentFlagMismatch; 170 → 171; then watching-zenoh \
-             RFC §5.C B6-α first link kind diagnostic LinkFramerMissing; \
-             171 → 172; then B6-γ parse-time pair LinkLinkClassUnknown \
-             + LinkBackpressureUndeclared; 172 → 174; then B6-η \
-             OS-axis validate-time LinkClassUnsupportedOnTarget; \
-             174 → 175; then watching-zenoh RFC §5.E B7-α first \
-             buffer-pool kind diagnostic MemPoolSectionConflict \
-             — η-second-consumer pattern on `compile_forge_with_deploy` \
-             section validation; 175 → 176; then B7-β c11 parity \
-             pair: MemPoolTooLarge — η-third-consumer extension that \
-             checks `slot_count × slot_size` fits the resolved region's \
-             `size` after section validation; and \
-             MemInterPoolPaddingNotEmitted — codegen self-check for \
-             the §5.E lines 1059-1064 inter-pool `. = ALIGN(N);` \
-             sentinel artifact; 176 → 178; then watching-zenoh RFC \
-             §5.C B6-α' link↔pool cross-resolution \
-             LinkPoolSlotSmallerThanFramerMax — fourth consumer of the \
-             `compile_forge_with_imports` enrichment infra (after the \
-             three codec-side codec_max_bytes / requires_parent_flags / \
-             first_flags consumers), pairing the B6-side \
-             `<sce:rx-pool>` / `<sce:tx-pool>` schema (B7-α) with the \
-             B7-side slot-size against the framer codec's recursive \
-             worst-case bytes; 178 → 179; then watching-zenoh RFC §5.E \
-             B7-ε Layer 1 ownership pull-through codegen self-check \
-             PoolSampleTypestateAttributesDisabled — buffer-pool C11 \
-             header must `#include <sce/sample.h>` so the runtime \
-             header's `SCE_CONSUMABLE` / `SCE_CALLABLE_WHEN` / \
-             `SCE_SET_TYPESTATE` / `SCE_PARAM_TYPESTATE` / \
-             `SCE_WARN_UNUSED` family reaches downstream consumer builds; \
-             β `mem/inter-pool-padding-not-emitted` codegen-invariant \
-             precedent — diagnostic exists so a future template edit \
-             that drops the include surfaces; 179 → 180; then watching-zenoh \
-             RFC §5.E B7-η' deploy.yaml `binding.stage_pool:` cross-reference \
-             into the forge pool registry — three companion diagnostics \
-             (`mesh/deploy-stage-pool-not-declared`, \
-             `mesh/deploy-stage-pool-wrong-kind`, \
-             `mesh/deploy-stage-pool-transport-mismatch`) opening the \
-             cross-schema reference resolution surface for `Sample::take()` \
-             stage destinations. The first two ride `Fix::ReplaceOneOf` over \
-             the `ForgePoolRegistry` declared-name candidate set; the third \
-             rides `Fix::RemoveFields` to drop the misapplied field on a \
-             non-staging-capable transport; 180 → 183; then watching-zenoh \
-             RFC §5.E B7-η' Q-OnSample atomic A — the SCXML `<sce:on-sample>` \
-             extension's three structural diagnostics \
-             (`scxml/on-sample-invalid-parent`, \
-             `scxml/on-sample-link-duplicate-in-state`, \
-             `scxml/on-sample-event-name-conflict`) gating placement, \
-             per-state link uniqueness, and W3C internal-event-prefix \
-             collision; 183 → 186; then watching-zenoh RFC §5.E B7-η' \
-             Q-OnSample atomic B — `<sce:on-sample link=\"X\">` cross-reference \
-             into the forge link registry pair \
-             (`scxml/on-sample-link-not-declared`, \
-             `scxml/on-sample-link-wrong-kind`) closing the η' codegen \
-             prereq chain. Both ride `Fix::ReplaceOneOf` over the \
-             `SceCrossDocRegistry`-declared link-name candidate set; \
-             `wrong-kind` is wired forward-compat per the stage_pool \
-             `wrong-kind` precedent — the single-variant `ScxmlDocKind` \
-             registry today only stores Link kinds, so the validator's \
-             match never reaches the `Some(non-Link)` arm in \
-             production until a future cross-registry generalization; \
-             186 → 188); then watching-zenoh RFC §5.E B7-η' Atomic A1 \
-             schema-locality fix — `pool/sample-take-without-stage-pool` \
-             surfaces the gap when SCXML `<sce:on-sample link=\"X\">` \
-             targets a registered link kind whose forge document does \
-             not declare a `<sce:stage-pool>` (rx_pool/tx_pool sibling \
-             pattern, single source of truth on the link kind). Diagnostic \
-             rides `Fix::ReplaceOneOf` over the `ForgePoolRegistry` \
-             buffer-pool kind candidates so authors picking a stage pool \
-             reference see legal options at hand; 188 → 189; then watching-zenoh \
-             RFC §5.E B7-η' Atomic A2 callback-path syntax — \
-             `pool/sample-callback-signature-non-borrow` surfaces the gap \
-             when `<sce:on-sample callback=\"rust:...\">` carries an \
-             authoring path that fails the Q-Callback-3 Rust path subset \
-             (unknown language prefix, leading/trailing `::`, malformed \
-             segment, empty path). Diagnostic name preserves spec wording \
-             verbatim per `feedback_spec_mirror_parity.md`; the per-instance \
-             reason field disambiguates the specific path-syntax mistake. \
-             Forward-compat for future signature inspection (β-extension on \
-             top of α) extending the same code with shape-mismatch arms; \
-             189 → 190; then watching-zenoh RFC §5.I `<sce:extern>` \
-             whitelisted intrinsic registry Atomic A — four spec-verbatim \
-             rejection codes (`extern/symbol-not-in-whitelist`, \
-             `extern/abi-mismatch`, `extern/signature-mismatch`, \
-             `extern/ordering-unspecified`) firing at parse-time on \
-             `<sce:extern>` declarations against the 101-symbol baseline \
-             registry (atomics × per-width × per-ordering + fences + cache \
-             maintenance + IRQ control); 190 → 194. Atomic B then adds \
-             `extern/target-plugin-symbol-conflict` (spec line 1852 \
-             verbatim: 'target plugin redefines a core whitelist symbol'), \
-             firing at plugin-load time when a target_plugin YAML \
-             (`extern_symbols.target_plugin: <path>`) tries to redeclare \
-             a baseline symbol. Q-Call-6 (a) lock: plugin entries are \
-             additive — same name = conflict, regardless of sig parity, \
-             because SCE-shipped baseline is canonical and platform-specific \
-             impls plug in via the entry's `crate` field on a \
-             differently-named symbol; 194 → 195. The remaining §5.C codes \
-             defer to B6-δ (listener self-check, gated on §5.K + §5.M \
-             SCE-side prerequisites), D.2 (`link/link-class-incompatible-with-os` \
-             alongside OS-specific classes), and B7 (`mem/alignment-violation` \
-             deferred until codec field placement lands a consumer surface, \
-             B7-γ FSM family). The §5.I plugin-extension axes superseded \
-             by Atomic B's spec-verbatim reduction \
-             (`extern/target-plugin-not-loaded` is subsumed by Atomic A's \
-             `extern/symbol-not-in-whitelist` since a non-loaded plugin \
-             leaves missing symbols outside the registry; \
-             `extern/target-plugin-shadows-baseline` is the same semantic \
-             as the spec-verbatim `extern/target-plugin-symbol-conflict` \
-             above). Plugin-axis codes still deferred to Atomic C of \
-             `rfc-sce-call-intrinsic-registry.md`: \
-             `extern/linker-flavor-unsupported`, \
-             `extern/linker-flavor-os-managed-without-cmake-import`, \
-             `extern/ordering-insufficient-for-cross-core`. Then \
-             watching-zenoh RFC §5.E C5 cache-maintenance intrinsics \
-             wired into §5.E codegen — six spec-named codes from \
-             RFC §5.E lines 1543-1545 + 1548 + 1552-1553 covering the \
-             cache-policy=maintain enforcement surface: \
-             `mem/cache-line-alignment` (pool alignment < platform \
-             dcache_line_size), \
-             `mem/slot-size-not-cache-line-multiple` (slot_size % \
-             dcache_line_size != 0), \
-             `mem/cache-policy-unsupported-on-no-dcache-core` \
-             (maintain/non-cacheable on platform.has_dcache=false; \
-             FixCarriesCandidates with `[\"none\"]`), \
-             `pool/cache-maintenance-misplaced` (parse-time author \
-             guard: <sce:extern> for cache trio rejected per spec \
-             lines 1222-1227 author-must-not), \
-             `pool/speculative-prefetch-flag-missing` (config-\
-             completeness: has_dcache=true requires has_speculative_\
-             prefetch when at least one cache-policy=maintain pool \
-             exists), \
-             `pool/cache-pre-arm-invalidate-missing-on-speculative-\
-             core` (codegen-invariant guard against template \
-             regression that would silently drop the pre-arm \
-             cache-invalidate edge on M7+ cores). Auto-injects 3 \
-             cache extern declarations at parse time (atomic C \
-             sidecar emit picks them up automatically); 195 → 201. \
-             Then watching-zenoh RFC §5.D Worker kind C2-α — one \
-             spec-named code `worker/shared-mutable-state` from RFC \
-             §5.D line 911 covering the worker encapsulation surface: \
-             layer 1 rejects `<sce:import kind=\"worker\">` siblings \
-             inside a worker document (workers cannot import other \
-             worker kinds); layer 2 rejects body SCXML data-refs whose \
-             namespace prefix names a foreign owner (not in the inbox-\
-             only allowlist of `[<self-name>, _event, _data, _name, \
-             _iolocation, <outbox-target>]`). Layer 3 (`<sce:extern>` \
-             non-inbox symbol use in worker body) defers to a tracked \
-             follow-up atomic gated on C4 intrinsic-registry composition \
-             surface per Q-C2-7 (a)+(b) lock; spec line 911 phrasing \
-             \"any non-inbox access to another worker's state\" covers \
-             all three layers together; 201 → 202. Then watching-zenoh \
-             RFC §5.D + §5.I C2-β Worker codegen + inbox ordering — \
-             three codes (count narrowed from the original 4 after Gate \
-             B preflight surfaced `parse_imports` rejects \
-             `kind=\"statechart\"` imports as a long-standing forge \
-             invariant): `worker/link-rx-ref-unknown` for `<sce:link-rx \
-             ref>` not matching a `kind=\"link\"` import alias follows \
-             the η-precedent `validate_link_pool_framer_resolution` \
-             shape, validating against `parsed.imports` within \
-             `compile_forge_with_imports` and riding `Fix::ReplaceOneOf` \
-             over the sorted alias candidate set; two spec-verbatim \
-             SPSC inbox ordering codes from RFC §5.I lines 1752-1758 \
-             (`worker/inbox-ordering-unspecified` parse-time error when \
-             `<sce:inbox>` lacks the required `ordering` attribute — \
-             SCE's error-only wire realizes the spec \"warning\" as \
-             required-when-worker-exists, and \
-             `worker/inbox-ordering-relaxed-across-cores` codegen-invariant \
-             when explicit `ordering=\"relaxed\"` coexists with deploy \
-             placement pinning producer and consumer on different cores). \
-             Outbox cross-resolution (`worker/outbox-ref-unknown`) defers \
-             to a follow-up atomic that places the validator on the \
-             SCXML-side build tier (where statechart docs are first-class) \
-             — `parse_imports`'s long-standing statechart-rejection \
-             prevents the η-precedent's parsed.imports-direct shape from \
-             applying to outbox refs without a deeper architectural \
-             change; 202 → 205. Then watching-zenoh RFC §5.D + §5.K \
-             C2-γ scheduler-capacity axis adds four spec-named codes: \
-             `worker/scheduler-unsupported` (§5.D line 912 — forge-side \
-             anchor for compile_forge_with_deploy when a Worker doc is \
-             not declared in `machines.<m>.workers`), \
-             `deploy/worker-slot-budget-missing` (§5.K line 2428-2429 — \
-             cooperative scheduler missing `worker_slot_budget_us`), \
-             `deploy/keepalive-jitter-budget-missing` (§5.K line 2430-2431 \
-             — cooperative scheduler missing `keepalive_jitter_budget_us`), \
-             and `deploy/scheduler-incompatible-with-worker-count` (§5.K \
-             line 2423 — `workers.len() > floor(tick_period_us / \
-             worker_slot_budget_us)`). The C2-γ landing also renames the \
-             pre-existing wire `mesh/deploy-scheduler-cooperative-missing-stack-budget` \
-             to spec-verbatim `deploy/worker-stack-budget-missing` (§5.K \
-             line 2426). Rename is wire-only; variant ident retained. \
-             205 → 209. Then watching-zenoh RFC §5.D C1 Timer kind \
-             migration adds two spec-named codes: \
-             `timer/period-below-tick-rate` (line 909, period < \
-             scheduler.tick_period_us on cooperative) and \
-             `timer/slot-overflow` (line 910, total Timer doc count \
-             for a machine exceeds scheduler.timer_wheel_depth). \
-             C1 also migrates the legacy multi-timer-per-doc \
-             `<datamodel>/<data sce:timer=\"periodic|timeout|delayed\">` \
-             shape to the spec-mandated single-timer-per-doc shape \
-             with body-text `<sce:period>` (unit suffix us/ms/s/m) + \
-             event-driven `<sce:reset-on>` / state-exit-driven \
-             `<sce:cancel-on>` / required `<sce:fire-event>` \
-             lifecycle. 209 → 211. Then watching-zenoh RFC §5.D C2 \
-             follow-up Atomic B adds the SCXML-side `<sce:outbox ref>` \
-             cross-resolution surface (the outbox piece C2-β deferred \
-             pending the cross-doc registry foundation Atomic A landed): \
-             three non-spec codes per Q-Outbox-8 (c) lock 2026-05-12 \
-             splitting the failure axes by repair surface — \
-             `worker/outbox-ref-unknown` for an owner not in the \
-             `SceCrossDocRegistry` (statechart + worker union per \
-             Q-Outbox-3 (b)), `worker/outbox-target-wrong-kind` for an \
-             owner registered as an incompatible kind (today only \
-             link — buffer-pool / algorithm / codec / timer / extern \
-             never enter the registry), and `worker/outbox-target-\
-             suffix-invalid` for any suffix !=  `inbox` per Q-Outbox-6 \
-             (a) strict-suffix lock (RFC §5.D line 895 example + line \
-             1998 codegen table jointly fix the recipient queue name). \
-             The first two ride `Fix::ReplaceOneOf` over the sorted \
-             union of statechart + worker `.inbox` candidates; the \
-             third rides `Fix::ReplaceWith` (deterministic single \
-             repair `{{owner}}.inbox`) and sits in `NeutralOrDeterministic`. \
-             Validator `validate_worker_outbox_references` consumes the \
-             registry from `compile_scxml_with_imports` (Atomic A \
-             foundation) and runs after statechart-name registration \
-             so worker→statechart and worker→worker outboxes resolve \
-             symmetrically. 211 → 214; then watching-zenoh RFC §5.J.2 \
-             C3 Atomic B-β Rust no_std variant rejection pair: \
-             `codegen/no-std-script-not-supported` fires when an SCXML \
-             document that contains `<script>` is generated with \
-             `sce-codegen generate -l rust --no-std` (the `sce-rust-runtime` \
-             `no_std` Cargo feature is mutually exclusive with the \
-             `script-engine-lua` / `script-engine-quickjs` features per \
-             spec line 1989 zero-alloc mandate), and \
-             `codegen/no-std-http-not-supported` fires when the same \
-             document carries a `<send type=\"BasicHTTPEventProcessor\">` \
-             or `<send target=\"http://...\">` (the runtime crate's \
-             `http-send` feature is std-coupled to tokio/reqwest, so \
-             `no_std + http-send` is rejected at the cfg-assert layer in \
-             the runtime crate's `lib.rs`). Both ride \
-             `NeutralOrDeterministic` non_overlap_class — author repair \
-             is to drop `--no-std` or to remove the incompatible \
-             construct, no closed candidate set. 214 → 216. Then \
-             watching-zenoh RFC §5.J.2 C3 Atomic B-γ2c closes the helper \
-             runtime cfg-gate with a second no_std rejection pair: \
-             `codegen/no-std-fs-load-not-supported` fires when the document \
-             contains `<data src=\"...\">` (the filesystem helpers in \
-             `sce-rust-runtime/src/helpers/datamodel_init.rs` need `PathBuf` \
-             plus `std::fs::read_to_string`, both alloc/OS-coupled per spec \
-             line 1989-1994), and `codegen/no-std-invoke-not-supported` \
-             fires when the document contains `<invoke>` (the invoke \
-             machinery uses `Arc<Mutex<Vec<...>>>` plus `HashMap` and is \
-             whole-module gated to `!no_std`). Both ride \
-             `NeutralOrDeterministic` non_overlap_class for the same \
-             reason as the B-β pair — drop `--no-std` or remove the \
-             construct, no closed candidate set. 216 → 218. Then \
-             watching-zenoh RFC §5.L C6 Atomic α bounded-collection kind \
-             — two parse-time structure validators from spec lines 2559 \
-             + 2655: `collection/ordering-sorted-requires-index-by` \
-             (sorted-by ordering declared without an accompanying \
-             `<sce:index-by>` element — codegen has no comparator) and \
-             `collection/overflow-policy-oldest-wins-requires-ordering-\
-             insertion` (oldest-wins overflow paired with sorted-by \
-             ordering — \"oldest\" has no temporal meaning when iteration \
-             order is comparator-derived). Both ride \
-             `NeutralOrDeterministic` non_overlap_class (sorted: author \
-             must name a field from author-domain knowledge; \
-             oldest-wins: two equally valid repair paths means no single \
-             canonical candidate). C6-α schema lock ships \
-             `<sce:element-type>` / `<sce:capacity source=deploy|const>` / \
-             `<sce:index-by field>` / `<sce:on-overflow>` / `<sce:ordering>` \
-             / `<sce:concurrency>` body with cross-doc resolution + \
-             deploy-time + codegen surfaces deferred to β/γ; 218 → 220. \
-             Then watching-zenoh RFC §5.L C6 Atomic β bounded-collection \
-             cross-doc resolution — three codes from spec lines 2566-2567 \
-             + 2615 + 2560-2562 closing the cross-doc layer C6-α \
-             deferred: `collection/element-type-not-a-kind` for \
-             `<sce:element-type>NAME` body text that does not resolve to \
-             a codec-kind struct or procedure-kind state record \
-             anywhere in the build, and `collection/index-by-field-\
-             missing` for `<sce:index-by field=\"X\"/>` naming a field \
-             absent from the resolved element-type's struct (codec \
-             `.fields[].id` or procedure `.inputs[].id + .internals[].id` \
-             enumeration mirroring `discover_stateful_member_fields`). \
-             Both ride `Fix::ReplaceOneOf` over the sorted candidate \
-             union — codec + procedure name set for element-type, \
-             declared field-name set for index-by — so \
-             FixCarriesCandidates non_overlap_class follows the C2-\
-             outbox B `worker/outbox-ref-unknown` precedent for sorted-\
-             closed-candidate diagnostics. Third code \
-             `collection/multi-writer-without-atomics` (RFC §5.L lines \
-             2560-2562 — multi-writer codegen lowers to acquire/release \
-             atomics on head/tail; the build's `<sce:extern>` trust-\
-             surface must acknowledge atomic intrinsics) is build-wide \
-             cross-doc per user direction: pass-1 of \
-             `compile_scxml_with_imports` aggregates every parsed forge \
-             doc's `externs` into a single slice; the \
-             validator scans for any entry whose registry-resolved \
-             purpose starts with `\"atomic-\"`. NeutralOrDeterministic \
-             non_overlap_class — the C4 baseline atomic family spans \
-             100+ symbols (load/store/cas/fetch × 5 widths × multiple \
-             orderings) so a useful candidate list is impossible; author \
-             judgment chooses width + ordering + op. Cross-doc validator \
-             consumes a separate forge-doc map per Gate B finding (the \
-             `SceCrossDocRegistry` reserves SCXML-cross-reference \
-             semantics for Link / Statechart / Worker kinds, while \
-             codec / procedure participate only in forge→forge cross-\
-             references); 220 → 223. Then watching-zenoh RFC §5.L \
-             C6 Atomic γ1 bounded-collection deploy-time capacity \
-             resolution — one spec-named code from spec lines 2583-2585 \
-             + 2649 closing the codegen-time prereq C6-α deferred: \
-             `collection/capacity-unresolved` fires on the \
-             `compile_forge_with_deploy` path when `<sce:capacity \
-             source=\"deploy\" key=\"machines.<m>.limits.<k>\"/>` \
-             names a limit that is not declared under \
-             `machines.<m>.limits:` in deploy.yaml. New `MachineConfig.\
-             limits: HashMap<String, u32>` field (mirrors the \
-             `workers`/`timers` per-machine registry precedent — \
-             keyed by limit name, value is the codegen-lowered slot \
-             count). Validator silent-skips when deploy or \
-             target_machine is None (single-file compile paths) or \
-             when the key's machine segment does not equal \
-             target_machine (BC doc designed for a different machine) \
-             per the Q-η5 (a) precedent. Closed candidate set (sorted \
-             declared limit names) rides `Fix::ReplaceOneOf` ⇒ \
-             FixCarriesCandidates non_overlap_class — mirrors the \
-             `BufferPoolSectionConflict` precedent for sorted-\
-             declared-name candidate sets. γ1 deliberately defers \
-             the Handle bit-allocation contract (slot index + \
-             generation counter per spec lines 2621-2622) to γ2 \
-             alongside the first-backend (Rust) template emit per \
-             `[[feedback-silently-broken-hooks]]` — the Handle is \
-             purely codegen-time and has no in-atomic consumer at the \
-             foundation tier; 223 → 224. Then watching-zenoh RFC §5.A \
-             line 311 + §5.L lines 2611-2618 + 2642-2647 C7-lowering \
-             algorithm-over-BC dispatch — six spec-named codes wiring \
-             the `<sce:foreach in=\"<bc>\">` + `<sce:call \
-             target=\"alias.method\">` lowering surface so an algorithm \
-             body iterates a bounded-collection import and dispatches \
-             into its read-only method set. Two ride \
-             `Fix::ReplaceOneOf` ⇒ FixCarriesCandidates: \
-             `algorithm/call-target-unknown` (sorted alias roster from \
-             the algorithm doc's `<sce:import>` list) and \
-             `algorithm/call-target-method-unknown` (per-kind public-\
-             method roster — BC closed `{{find_by_index, get, \
-             get_by_slot, len, capacity}}`, algorithm singleton = the \
-             imported algorithm name itself). Four ride \
-             `NeutralOrDeterministic`: `algorithm/foreach-source-not-\
-             iterable` (multi-axis: rename source OR add BC import), \
-             `algorithm/bc-mutation-forbidden` (repair sits outside the \
-             algorithm body — algorithms are pure per RFC §5.A line \
-             333), `algorithm/foreach-source-bc-with-bytes-item-type` \
-             (deletion-style repair), and `algorithm/call-arg-count-\
-             mismatch` (numeric arity mismatch — arg expressions are \
-             author-domain, mirrors `ValidationCountMismatch` precedent). \
-             224 → 230. Then watching-zenoh RFC §5.M lines 2944-2945 \
-             land the C9-α fragment-reassembly variant parse-time \
-             structure validators — \
-             `mem/reassembly-pool-variant-missing-max-fragments` + \
-             `mem/reassembly-pool-variant-missing-timeout` fire when \
-             `<sce:variant>reassembly</sce:variant>` is declared without \
-             one of its three required sibling elements (spec line 2688 \
-             max-fragments-per-message + spec line 2689 reassembly-\
-             timeout-ms). Both ride `NeutralOrDeterministic` — repair \
-             requires authoring a concrete u32 value derived from \
-             author-domain knowledge (wire framer's per-message maximum, \
-             link latency budget) with no closed candidate set. The \
-             third reassembly-only element `<sce:per-peer-quota>` reuses \
-             the generic `ValidationError::MissingElement` rather than \
-             minting a third reassembly-specific code per spec — line \
-             2944-2945 names only these two. Cross-doc / cross-link \
-             validators that reference §5.K `links.<name>.{{mtu_bytes, \
-             expected_p99_bytes, domain_attrs.trust_class}}` (6-8 codes) \
-             defer to C9-β co-landing with C13 §5.K. Codegen-side \
-             per-slot bitmap/deadline/peer-id emission + 1 codegen-\
-             template-regression guard defer to C9-γ. Listener-link \
-             sibling-split codes (2) belong to C10/C11 per spec line \
-             2820-2824. 230 → 232. Then watching-zenoh RFC §5.K lines \
-             2232-2540 lands the C13-α-1 `links:` block schema with 9 \
-             new spec-named codes: 7 deploy-side parse-time + cross-doc \
-             validators (`deploy/link-driver-unknown` at spec line \
-             2421, `deploy/link-mtu-missing-on-fragmenting-link` at \
-             2440-2442, `deploy/link-mtu-below-driver-floor` at \
-             2443-2445, `deploy/link-expected-p99-exceeds-mtu` at \
-             2446-2448, `deploy/link-burst-absorption-insufficient` \
-             at 2489-2495, `deploy/link-rx-dispatch-worker-tick-on-\
-             high-burst` at 2496-2500, `deploy/link-burst-pps-missing-\
-             on-isr-dispatch` at 2501-2503) plus 2 cross-doc validators \
-             (Q-C13-5 a lock; `deploy/link-not-declared-in-deploy` + \
-             `deploy/link-not-declared-in-forge` pair forge link doc \
-             names against deploy.yaml `machines.<n>.links.<name>` \
-             entries). Three ride `FixCarriesCandidates` (driver-\
-             unknown closed candidate = known-driver baseline + forge \
-             link-doc names; both not-declared codes ride opposite-side \
-             link-name set per Q-C13-5 a). Four ride `NeutralOrDeterministic` \
-             (multi-axis or author-domain repairs: mtu-missing requires \
-             author concrete value, p99-exceeds-mtu has two-path repair, \
-             burst-pps-missing-on-isr-dispatch carries 2 structural \
-             fixes). 2 spec codes (`deploy/link-burst-absorption-\
-             insufficient` at 2489-2495 + `deploy/link-rx-dispatch-\
-             worker-tick-on-high-burst` at 2496-2500) defer to C13-α-2 \
-             per [[feedback-silently-broken-hooks]] — both require RX \
-             pool slot_count to be cross-doc-resolved against the \
-             forge `<sce:link>` document's `<sce:rx-pool ref=\"X\">` \
-             and the `ForgePoolRegistry` entry for `X`, infrastructure \
-             that lands in C13-α-2. 6 C9-β reassembly cross-doc codes \
-             (mem/reassembly-slot-size-below-declared-mtu + 5 \
-             reassembly/*) also defer to C13-α-2. 232 → 239. Then \
-             watching-zenoh RFC §5.M lines 2946-2995 + §5.K lines \
-             2489-2500 land the C13-α-2 cross-doc validators that \
-             consume `compile_scxml_with_imports`'s newly captured \
-             forge LinkModel + BufferPoolModel maps. 2 deploy-side codes \
-             (`deploy/link-burst-absorption-insufficient` + \
-             `deploy/link-rx-dispatch-worker-tick-on-high-burst`) ride \
-             the shared cross-doc resolver `resolve_link_rx_pool_slot_count` \
-             that joins `deploy.links.<X>` → forge `<sce:link name=X>` → \
-             `<sce:rx-pool ref=Y>` → ForgePoolRegistry's BufferPoolModel \
-             for Y; both fire when the cooperative tick window cannot \
-             drain the declared burst. 6 forge-side reassembly cross-doc \
-             codes (`mem/reassembly-slot-size-below-declared-mtu` + \
-             `reassembly/max-fragments-insufficient-for-mtu` + \
-             `reassembly/expected-fragmentation-rate-high` + \
-             `reassembly/untrusted-link-binding` + \
-             `reassembly/trust-class-missing-on-fragmenting-link` + \
-             `reassembly/stage-copy-wcet-exceeds-slot-budget`) consume \
-             the same resolver to check `BufferPoolVariant::Reassembly` \
-             bindings against link `mtu_bytes` / `expected_p99_bytes` / \
-             `domain_attrs.trust_class` / PlatformConfig WCET fields \
-             (C13-α-1 schema landed). All 8 codes ride \
-             NeutralOrDeterministic (multi-axis repair; per Q-C13-α2-7 a). \
-             239 → 247. Then watching-zenoh RFC §5.K lines 2350-2369 + \
-             2504-2519 land the C13-γ `pool_defaults.stage_copy_policy` \
-             promotion family — 3 spec-named codes: \
-             `pool/stage-copy-policy-error` (NeutralOrDeterministic — \
-             warning under `warn` promoted to hard error under `error` \
-             / `forbid`, multi-axis repair) + \
-             `pool/stage-copy-accept-rejected-under-forbid` \
-             (NeutralOrDeterministic — `forbid` rejects the per-link \
-             `<sce:accept-stage-copy-rate>` opt-out, two valid repair \
-             paths: remove opt-out vs change policy) + \
-             `deploy/stage-copy-policy-unknown` (FixCarriesCandidates \
-             over the closed-set `StageCopyPolicy::ALL` = {{warn, \
-             error, forbid}}). 247 → 250. Then watching-zenoh RFC \
-             §5.K lines 2272-2349 + 2449-2473 land the C13-β \
-             anti-flood + stateless_accept family — 5 spec-named \
-             codes (`deploy/session-arming-quota-missing` + \
-             `deploy/accept-rate-config-missing` + \
-             `deploy/session-arming-fields-on-non-arming-link` + \
-             `deploy/stateless-accept-required-on-untrusted-source` \
-             + `deploy/stateless-accept-key-rotation-shorter-than-\
-             lifetime`), all NeutralOrDeterministic. Two additional \
-             spec codes (`deploy/session-arming-quota-vs-peer-table-\
-             invariant-violated` at line 2460-2462 + \
-             `deploy/stateless-accept-extern-not-whitelisted` at \
-             line 2466-2469) defer per \
-             `[[feedback-silently-broken-hooks]]` — the former \
-             references `peer_table.capacity` + \
-             `max_handshake_time_s` schema fields the spec uses in \
-             invariants but does not declare as deploy.yaml schema \
-             entries; the latter requires cross-doc resolution \
-             against the §5.I baseline whitelist + loaded \
-             target_plugin symbols, which lives on \
-             `compile_forge_with_deploy` not parse-time. 250 → 255. \
-             Then watching-zenoh RFC §5.M lines 2976-2981 land the \
-             C9-γ codegen self-check \
-             `reassembly/peer-id-not-zid-on-established-session` — a \
-             template-regression guard fired by post-render substring \
-             inspection inside `render_buffer_pool_rust` / \
-             `render_buffer_pool_c` when the resolved variant is \
-             `BufferPoolVariant::Reassembly` and the emitted output \
-             does not contain the 16-byte ZID peer-id signature. In \
-             well-formed templates the diagnostic never fires (the \
-             cross-doc validator `reassembly/untrusted-link-binding` \
-             gates non-`established_session` bindings upstream); \
-             NeutralOrDeterministic mirrors the \
-             `mem/inter-pool-padding-not-emitted` precedent. 255 → 256. \
-             Then watching-zenoh RFC §5.K lines 2460-2462 + 2466-2469 \
-             close the two C13-β-deferred codes \
-             (`deploy/session-arming-quota-vs-peer-table-invariant-violated` \
-             + `deploy/stateless-accept-extern-not-whitelisted`) via \
-             the C13 deferred-2 atomic: the first lands the \
-             `peer_table` + `max_handshake_time_s` schema fields on \
-             the `stateless_accept` block (NeutralOrDeterministic \
-             three-axis repair); the second wires a sorted-union \
-             baseline + target-plugin allowlist check at the \
-             orchestrator level (FixCarriesCandidates over the \
-             union). 256 → 258. Then watching-zenoh RFC §5.C lines \
-             849-856 + §5.M lines 2982-2994 land the C10-α \
-             listener-link sibling-pair: two NeutralOrDeterministic \
-             codes (`link/listener-link-not-paired-with-established-\
-             sibling` codegen self-check + `reassembly/binding-on-\
-             unpaired-listener` author-facing cross-doc). The \
-             orchestrator-resolved `listener_links: BTreeSet<String>` \
-             is the single source of truth — populated by joining \
-             deploy `trust_class: session_arming` × machine source \
-             SCXML `Accepting.*` substate-present (Q-C10-5 a) and \
-             consumed by both (a) `validate_reassembly_cross_doc`'s \
-             new session-arming branch which fires `binding-on-\
-             unpaired-listener` when the link is not a listener \
-             (Q-C10-4 a, narrowing the historic \
-             `reassembly/untrusted-link-binding` to Untrusted-only \
-             after C10-α) and (b) `render_link_rust` + \
-             `render_link_c` template extensions emitting a \
-             durable-suffix Sibling half (`EstablishedSession` Rust \
-             struct / `_established_session_t` C11 typedef per \
-             Q-C10-3 + Q-C10-5). Post-render substring grep mirrors \
-             the C9-γ `reassembly/peer-id-not-zid-on-established-\
-             session` precedent (generator.rs:10225). 258 → 260. Then \
-             watching-zenoh RFC §5.N lines 3031-3062 land the C10-β \
-             multi-link concurrency contract — three \
-             NeutralOrDeterministic codes (`link/concurrent-count-\
-             exceeds-scheduler-slots` MCU-only via \
-             `floor(tick_period_us / per_link_budget_us)` slot \
-             derivation mirroring C2-γ \
-             `validate_machine_scheduler_worker_capacity`; \
-             `link/per-link-budget-exceeds-tick-period` literal \
-             code-name reading per Q-C10-β-3 a; \
-             `link/inbound-event-queue-unsized` extending \
-             `compile_scxml_with_imports` pass-2 cross-doc to verify \
-             SCXML `event_queue_capacity` OR deploy \
-             `default_event_queue_capacity` source for any link \
-             carrying inbound events per Q-C10-β-4 a). New \
-             `MachineSchedulerConfig.per_link_budget_us: Option<u32>` \
-             schema field per spec line 3056-3057 verbatim drives the \
-             first two codes; the third closes the §5.J.2 + §5.N \
-             event-queue-size axis the C3 Atomic B-γ1 field-only \
-             landing deliberately left unconnected. AP `LinkBus` + MCU \
-             round-robin templates emit per-machine sibling artifacts \
-             (Rust + C11 only, matching the C10-α link.* footprint \
-             per Q-C10-β-7 a) via a new orchestrator pipeline path \
-             that iterates `deploy.machines` and pushes \
-             `(<machine>_link_bus.rs / <machine>_scheduler.{{rs,c}}, \
-             GeneratedOutput)` entries alongside the existing \
-             basename-keyed per-doc outputs. 260 → 263. Then \
-             watching-zenoh RFC §6.2.6 B9 generated-source drift \
-             detection ForgeSourceHashMismatch — single code covers \
-             both axes (source-hash + template-hash) per Q-§6.2.6-5 \
-             lock; emitted from `sce-codegen verify` when embedded \
-             header hash diverges from recomputed state. 263 → 264. \
-             Then watching-zenoh RFC §5.O Atomic 0 IR provenance \
-             pre-emit guard TraceabilityScxmlLineRangeMissing — \
-             codegen-internal invariant firing when a node eligible \
-             for SCE-MAP marker emission carries `source_location: \
-             None`. Spec lines 3289-3290 verbatim: \"Codegen failure \
-             ... surfaced via `traceability/scxml-line-range-missing` \
-             (codegen-internal)\". NeutralOrDeterministic non_overlap_\
-             class — there is no author repair because the fix lives \
-             in the parser site that produced the IR node. The pre-\
-             emit walker that fires this code is `validate_emission_\
-             provenance` (forge/provenance.rs); it lands together \
-             with the diagnostic so the IR-field-as-only-consumer \
-             (parser-side populates) gains a consumer the same atomic \
-             ([[feedback-silently-broken-hooks]]). Atomic 0 part B \
-             will extend the validator surface alongside the per-\
-             backend marker emission templates and the forge_\
-             conformance + sce-rust-tests goldens regen. 264 → 265. \
-             Then watching-zenoh RFC §5.O Atomic 1 four codes lock the \
-             full per-symbol attribution + sourcemap JSON contract \
-             across all 6 backends. `traceability/state-id-collision` \
-             (FixCarriesCandidates over the two colliding `<file>:<line>` \
-             sites) fires when the cross-IR symbol-table walker finds \
-             two distinct nodes whose `<machine>__<state_path>__<artifact>` \
-             triples mangle to the same C identifier — typically \
-             XInclude or sce:template composition importing a state \
-             fragment whose id collides with a top-level state. \
-             `traceability/symbol-name-exceeds-c-identifier-limit` \
-             (NeutralOrDeterministic; multi-axis repair) fires when \
-             the mangled id exceeds 31 chars per C99 §5.2.4.1; default \
-             rendering is warn, escalated to hard-error by \
-             `platform.strict_c99_identifiers: true` in deploy.yaml. \
-             `traceability/sourcemap-source-hash-mismatch` \
-             (NeutralOrDeterministic; regenerate to repair) is the \
-             codegen-invariant check that the sourcemap JSON's \
-             `source_hash` field is byte-equal to the per-file §6.2.6 \
-             header's `source-hash` value (spec lines 3321-3324). \
-             `traceability/sce-map-attribute-stripped` \
-             (NeutralOrDeterministic; dual-emit fallback covers the \
-             strip) is the OQ-W16 (b) empirical preservation guard — \
-             fires from `sce-codegen addr2sce` when a rustdoc JSON dump \
-             contains no `#[doc = \"SCE-MAP: ...\"]` for a function \
-             whose sourcemap entry says one should exist. The \
-             `// SCE-MAP:` line-comment dual-emit path (default since \
-             §5.O Atomic 0c) is the fallback the diagnostic signals \
-             toward, not a hard failure. 265 → 269. Then the §5.O \
-             Atomic 1 follow-up adds the traceability ownership \
-             boundary walker: `traceability/meta-generated-source-line- \
-             marker-missing` (NeutralOrDeterministic; codegen-internal, \
-             empty fix) fires from \
-             `forge::sourcemap::validate_emitted_files_have_markers` \
-             when an SCE-emitted file (identified by a §6.2.6 drift \
-             header) carries no `SCE-MAP:` marker — the textbook \
-             boundary contract per ARCHITECTURE.md \"Traceability \
-             Ownership Boundary\" (external meta-generator output is \
-             silently out-of-scope by virtue of carrying no drift \
-             header). 269 → 270. Then watching-zenoh RFC §5.2 Round F-α \
-             lands the MCU driver/class boundary pair: \
-             `mcu/driver-header-not-found` (NeutralOrDeterministic; \
-             author-domain repair) fires at compile-model time when a \
-             `<sce:driver href=\"...\"/>` reference cannot be resolved \
-             against `deploy.yaml`'s `platform.driver_root` (or the \
-             SCXML file's parent directory as fallback). \
-             `mcu/section-attribute-on-non-mcu-target` \
-             (NeutralOrDeterministic; multi-axis repair) fires at \
-             codegen entry when `platform.c11_section_attribute` is \
-             present but the target backend is not C11 — mirrors the \
-             Q-Call-7 non-MCU reject pattern (Q-Round-F-D3). Together \
-             they pin the §5.2 driver/class boundary policy on the \
-             C11 backend: SCE emits the statechart class + reference; \
-             cross-TU signature verification stays the C compiler's \
-             job (Q-Round-F-D2). 270 → 272. Then RFC variant-default-\
-             uniformity Atomic α (claudedocs/rfc-variant-default-\
-             uniformity.md) lands the parse-time duplicate-default-arm \
-             guard: `codec/variant-duplicate-default-arm` \
-             (NeutralOrDeterministic; both offending arm values ride \
-             `key_fragments`) fires inside `parse_codec_variant` when \
-             two `<sce:arm default=\"true\"/>` are declared on the \
-             same `<sce:variant>`. Atomic α surface is schema-only — \
-             the `FlagDef.value: Option<u64>` + `VariantArm.is_default: \
-             bool` model fields are parsed but no cross-doc validation \
-             or codegen change yet; Atomic β/γ build on this baseline. \
-             274 → 275. \
-             Then RFC variant-default-uniformity Atomic γ-1 added two \
-             cross-doc validators: CodecVariantArmMidMismatch fires \
-             when an outer arm's value differs from the inner codec's \
-             matching peek-byte <sce:flag value=>, and \
-             CodecVariantArmInnerMidUndeclared fires when the inner codec \
-             selected by an arm declares no wire-MID flag at all. The \
-             checks apply to every arm — the wire-MID is intrinsic to \
-             the inner codec's identity, not gated on the arm carrying \
-             default=\"true\". Both gate emission of the β-chain Default \
-             contracts on round-trip safety for the default-trait arm \
-             and on standalone-encode correctness for the rest. 275 → 277. \
-             Then RFC variant-default-uniformity Atomic γ-3 added \
-             CodecVariantNoDefaultArm (Q-V4 (a)) requiring every \
-             `<sce:variant>` to carry a deliberate <sce:arm default=\"true\"/> \
-             marker — fires after γ-2 fixture audit migrated every \
-             SCE-internal variant. 277 → 278. Then RFC B5-ν Phase A \
-             added 4 codes for variant-parent-tag dispatch \
-             (variant-parent-tag-without-requires-parent-flags, \
-             variant-parent-tag-flag-not-declared, parent-flag-derivation-conflict, \
-             parent-tag-variant-before-carrier) and variant-default-overlay \
-             Atomic A added codec/variant-default-overlay-arm-not-declared. \
-             278 → 283. Then RFC B5-ν consumer-parity (claudedocs/rfc-b5-nu-\
-             consumer-parity.md) splits the legacy CodecParentFlagMismatch \
-             into typed chain-resolution variants: \
-             `codec/parent-flag-chain-unresolved` fires when neither the \
-             parent's own `<sce:flags>` field nor a forwarding \
-             `<sce:requires-parent-flags>` covers the body's declared \
-             carrier (inductive B5-γ × B5-ν composition path); \
-             `codec/parent-flag-chain-bit-drift` fires when the Terminal \
-             or Forwarding source has the flag at a different bit \
-             position than the body's declaration. Both ride \
-             `NeutralOrDeterministic` (deterministic structural repair). \
-             283 → 285. Then RFC B5-ν default-arm rejection (claudedocs/\
-             rfc-b5-nu-default-arm-rejection.md) adds \
-             `codec/b5-nu-dispatcher-default-arm-forbidden` — parser-time \
-             rejection of `<sce:default>` catch-all child on parent-scope \
-             dispatchers (`tag=\"parent.<flag>\"`); the carrier's flag \
-             domain is `1 << width` ≤ 256 and always practically \
-             enumerable via `<sce:arm>`, so the catch-all is structurally \
-             unreachable. NeutralOrDeterministic — author removes the \
-             `<sce:default>` element; existing \
-             `codec/variant-arm-unreachable` covers any gap in the \
-             enumeration. 285 → 286. Then RFC Axis-1 inversion Phase A \
-             (claudedocs/rfc-axis1-flag-input-binding.md) adds 6 parent- \
-             side flag-bind cross-doc validator codes: \
-             `codec/flag-bind-input-not-declared` (parent's flag-bind \
-             names an input the leaf does not declare — FixCarriesCandidates \
-             over the leaf's declared input names); \
-             `codec/flag-bind-source-not-resolved` (source resolves to \
-             neither a local carrier flag nor a parent's own flag-input); \
-             `codec/flag-bind-width-mismatch` (v1 lock-in width=1); \
-             `codec/flag-input-unbound` (leaf declares input X but parent's \
-             import supplies no flag-bind for X); \
-             `codec/flag-bind-duplicate-input` (two binds for same input \
-             per import); `codec/flag-bind-carrier-after-embed` (parent's \
-             source carrier declared after the embed). 288 → 294. \
-             Then NL→IR Mapping Roadmap Items 1 + 5 add two codes — \
-             `validation/duplicate-requirement-id` (Item 1, opaque-token \
-             duplicate on sce:req attribute) and \
-             `validation/unresolved-placeholder` (Item 5, strict-mode \
-             rejection of carried unresolved markers). Both \
-             NeutralOrDeterministic. 294 → 296. Then six more landed \
-             with the same window: RFC variant-default-uniformity / \
-             B5-ν follow-ups (CodecVariantDispatchFlagHasStaticValue, \
-             CodecVariantDispatchCarrierAfterEmbed, \
-             CodecVariantArmBodyCallerTagUnsupported, \
-             CodecVariantArmInnerMidUndeclared rebalance — already \
-             counted in 288 → 294 chain but rebucketed; Round F-α \
-             follow-up traceability gates) — see commit history for the \
-             exact six. 296 → 302. Then NL→IR Mapping Roadmap Item 2 — \
-             cross-kind typed binding adds three codes: \
-             `validation/cross-kind-field-not-found` \
-             (FixCarriesCandidates over imported kind's member surface, \
-             `did_you_mean`-style typo repair) fires when an importing \
-             kind's expression references `<alias>.<field>` where the \
-             alias resolves to a known import but the field does not; \
-             `validation/cross-kind-type-mismatch` \
-             (NeutralOrDeterministic) fires when the field resolves but \
-             its declared type is incompatible with the surrounding \
-             use-site contract (signature return type, `<sce:param \
-             type=...>`, …); `validation/cross-kind-circular-dependency` \
-             (NeutralOrDeterministic) is the defensive cycle check on \
-             the `<sce:import>` graph. Today wired only on the \
-             Forge→Forge path inside `compile_forge_from_parsed` after \
-             the existing `validate_and_enrich_imports` pass; a future \
-             Statechart→Forge binding would add the second wire site \
-             without changing the diagnostic shape. 302 → 305. \
-             Then NL→IR Mapping Roadmap Item 3 Phase A adds two codes — \
-             `scxml/unreachable-state` (state declared in the document \
-             graph but the design-time BFS over the document `initial`, \
-             compound-initial cascade, parallel-all-children entry, \
-             history default targets, and transition `target` edges \
-             cannot reach it) and `scxml/dead-transition` (transition \
-             whose source state is itself unreachable — the per- \
-             transition variant emitted in preference when an \
-             unreachable state carries one or more `<transition>` \
-             children, so the diagnostic surfaces the concrete element \
-             the author can delete or re-wire). Both \
-             NeutralOrDeterministic. 305 → 307. Then Phase B adds one \
-             code — `scxml/non-exhaustive-event-handling` (compound \
-             state's sibling children disagree on whether a given \
-             event is handled, with no parent-level fallthrough, AND \
-             the siblings share a common event vocabulary so the gap \
-             is unlikely to be a deliberate protocol-stage \
-             dispatching pattern). Author opt-out via \
-             `sce:exhaustive=\"false\"` on the parent escapes \
-             intentional gaps. NeutralOrDeterministic. 307 → 308. \
-             Then Phase C adds two codes — \
-             `scxml/always-false-guard` (transition `cond` is \
-             statically determinable as `false` so the transition \
-             can never fire — literal `false`, numeric `0`, `N==M` \
-             with differing numeric literals, `N!=N`) and \
-             `scxml/shadowed-transition` (an unconditional \
-             transition shadows a later same-event sibling per W3C \
-             SCXML §5.10 selection order, making the later one \
-             dead). Both NeutralOrDeterministic. Language-prefixed \
-             `cond` values (`cpp:`, `kotlin:`, `rust:`) stay opaque \
-             to keep the false-positive surface at zero. 308 → 310. \
-             Then NL→IR Mapping Roadmap Item C1 Path A Atomic 1 lands \
-             the Enum kind — five parse-time invariant codes: \
-             `validation/enum-no-variants` (empty variant list), \
-             `validation/enum-variant-duplicate-name` (two variants \
-             share an identifier), `validation/enum-variant-duplicate-value` \
-             (Path A bijectivity violation — two variants share a \
-             wire byte), `validation/enum-variant-value-overflows-underlying` \
-             (variant value exceeds declared `sce:underlying-type` \
-             width), `validation/enum-unsupported-underlying-type` \
-             (carrier outside the supported uint8/uint16/uint32/uint64 \
-             set). All NeutralOrDeterministic — variant names and \
-             values are author-defined so no closed `ReplaceOneOf` \
-             set fits. 310 → 315. Then Atomic 3 lands the EventSchema \
-             kind — three codes: \
-             `validation/event-schema-on-builtin-event` (DL-9'; \
-             rejects schema declarations against W3C SCXML reserved \
-             event namespaces `error.*` / `done.invoke.*` / \
-             `done.state.*`), \
-             `validation/event-payload-field-unknown` (DL-4' send-side; \
-             rejects `<send>/<param name=\"F\">` where `F` is not on \
-             the imported EventSchema — FixCarriesCandidates over the \
-             schema's declared field surface, mirroring \
-             `validation/cross-kind-field-not-found`) and \
-             `mesh/event-schema-mismatch` (DL-7' cross-machine; \
-             rejects `<send target=\"#machine_id\">` when the sender's \
-             and receiver's EventSchemas disagree on field shape — \
-             structural-hash mismatch, sender-only partial coverage, \
-             or receiver-only partial coverage — NeutralOrDeterministic, \
-             two-axis author repair). Send-side type-mismatch reuses \
-             `validation/cross-kind-type-mismatch` per Item 4 reuse \
-             precedent. Receive-side field-not-found + comparison \
-             type-mismatch reuse the existing cross-kind codes per \
-             the same precedent. 315 → 318. Then RFC \
-             `rfc-eventschema-bytes-guard.md` §3 B3 adds one code — \
-             `validation/bytes-comparison-not-equality` rejects an \
-             ordering operator (`<`/`>`/`<=`/`>=`) applied to a \
-             bytes-typed `_event.data.<field>` in a transition guard; \
-             a distinct operator-domain rule with no existing code \
-             fitting without semantic stretch. NeutralOrDeterministic. \
-             318 → 319.",
+             enum. When a commit adds or removes a variant, update this \
+             count in the same commit and follow the variant checklist: \
+             SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
+             (`acceptance_doc_covers_every_code` below pins the latter).",
         );
     }
 

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // watching-zenoh RFC §5.I `<sce:extern>` per-language sidecar emit —
-// Atomic C end-to-end fixtures. Each test exercises
+// end-to-end fixtures. Each test exercises
 // `compile_forge_with_imports` against an inline SCXML carrying one
 // or more `<sce:extern>` declarations and asserts on the emitted
 // sidecar artifact:
@@ -27,7 +27,8 @@ use sce_build::{DocumentLabel, ForgeCompileOptions};
 use std::path::Path;
 
 /// Wrap one or more `<sce:extern>` declarations in a minimal
-/// `transform` kind SCXML — same fixture shape used by atomic A/B.
+/// `transform` kind SCXML — same fixture shape used by
+/// `extern_intrinsic_registry.rs` and `extern_target_plugin.rs`.
 fn fixture_transform_with_externs(extern_decls: &str) -> String {
     format!(
         r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -151,9 +152,9 @@ fn cpp_emits_extern_c_per_decl() {
 
 #[test]
 fn no_externs_no_sidecar() {
-    // Atomic A's design lets a forge document have zero
-    // `<sce:extern>` declarations — the sidecar must not emit in
-    // that case (avoids dead-file pollution).
+    // A forge document may carry zero `<sce:extern>` declarations
+    // — the sidecar must not emit in that case (avoids dead-file
+    // pollution).
     let scxml = fixture_transform_with_externs("");
     let output = compile(&scxml, Language::Rust).expect("must compile without externs");
     assert!(
@@ -263,8 +264,8 @@ fn extern_on_python_rejected_via_mcu_class_family() {
 
 #[test]
 fn no_externs_kotlin_compiles_unchanged() {
-    // Atomic A semantics preserved on non-MCU when extern_decls is
-    // empty — the rejection gate fires only when the document
+    // Extern-free semantics preserved on non-MCU when extern_decls
+    // is empty — the rejection gate fires only when the document
     // actually carries `<sce:extern>`.
     let scxml = fixture_transform_with_externs("");
     let result = compile(&scxml, Language::Kotlin);

@@ -2448,8 +2448,8 @@ fn render_yaml_value(v: &serde_yaml_ng::Value) -> String {
 
 /// Find bindings for a machine across all devices in the topology.
 ///
-/// Phase 1: returns the first match (single-device assumption).
-/// Phase 2+: when the same machine can be deployed on multiple devices,
+/// Returns the first match (single-device assumption). When a
+/// consumer needs the same machine deployed on multiple devices,
 /// this must be extended to accept a device qualifier or return all matches.
 fn find_machine_bindings<'a>(
     deploy: &'a DeployConfig,

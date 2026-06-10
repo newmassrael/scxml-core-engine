@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` parse-time validator — watching-zenoh RFC §5.I, Atomic
-// A. Closed-set lookup over [`crate::forge::intrinsic_registry::BASELINE_SYMBOLS`]
-// per Q-Call-1 (a) lock; rejection is parse-time per Q-Call-4 (a) lock
-// (matches the `LinkLinkClassUnknown` (B6-γ) closed-enum precedent).
+// `<sce:extern>` parse-time validator — watching-zenoh RFC §5.I.
+// Closed-set lookup over [`crate::forge::intrinsic_registry::BASELINE_SYMBOLS`];
+// rejection is parse-time (matches the `LinkLinkClassUnknown`
+// closed-enum precedent).
 //
 // Returns four distinct failure shapes — one per spec diagnostic
 // (§5.I lines 1846-1850):
@@ -14,8 +14,8 @@
 //   - [`ExternFailure::SignatureMismatch`]    → `extern/signature-mismatch`
 //   - [`ExternFailure::OrderingUnspecified`]  → `extern/ordering-unspecified`
 //
-// The four failure classes name distinct repair shapes (Q-Call-5
-// rationale): NotInWhitelist + OrderingUnspecified offer name-list
+// The four failure classes name distinct repair shapes:
+// NotInWhitelist + OrderingUnspecified offer name-list
 // candidates (`Fix::ReplaceOneOf`); SignatureMismatch carries the
 // canonical sig (`Fix::Replace`); AbiMismatch picks from a closed
 // two-element set (`Fix::ReplaceOneOf {[c, rust]}`).
@@ -32,7 +32,7 @@ use crate::forge::target_plugin::PluginSymbol;
 /// `extern/<axis>` slug.
 ///
 /// String fields are owned so plugin-loaded entries
-/// (Atomic B [`crate::forge::target_plugin::PluginSymbol`]) can
+/// ([`crate::forge::target_plugin::PluginSymbol`]) can
 /// surface through the same failure axes as baseline entries —
 /// the registry source is hidden from the wire format, only the
 /// failure axis matters.
@@ -53,7 +53,7 @@ pub enum ExternFailure {
     },
     /// `<sce:extern abi="...">` does not match the registry entry's
     /// canonical ABI. `Fix::ReplaceOneOf` picks from the closed
-    /// two-element set [`c`, `rust`] (Q-Call-5 rationale).
+    /// two-element set [`c`, `rust`].
     AbiMismatch {
         /// Registry entry's canonical ABI (the one the author should
         /// have spelled).
@@ -64,7 +64,7 @@ pub enum ExternFailure {
     /// `<sce:extern sig="...">` does not match the registry entry's
     /// canonical signature. `Fix::Replace` carries the canonical sig
     /// verbatim — the registry is the source of truth for signature
-    /// shape (matches the `feedback_spec_mirror_parity.md` pattern).
+    /// shape (spec-mirror parity).
     SignatureMismatch {
         /// Registry entry's canonical signature.
         expected: String,
@@ -180,8 +180,8 @@ fn closest_baseline_or_plugin_names(target: &str, plugin: &[PluginSymbol]) -> Ve
     scored.into_iter().take(8).map(|(_, name)| name).collect()
 }
 
-/// Plugin-aware counterpart to [`validate_extern`] (Atomic B
-/// consumer). Lookup order: baseline → plugin (Q-Call-6 (a) additive
+/// Plugin-aware counterpart to [`validate_extern`].
+/// Lookup order: baseline → plugin (additive
 /// composition; baseline shadowing already ruled out at plugin LOAD
 /// time per [`crate::forge::target_plugin::parse_target_plugin_yaml`]'s
 /// `BaselineConflict` check, so a name match here is unambiguous).
@@ -364,7 +364,7 @@ mod tests {
             .any(|n| n.starts_with("sce_atomic_load_acquire_")));
     }
 
-    // ── Atomic B (plugin-aware) tests ─────────────────────────
+    // ── Plugin-aware tests ─────────────────────────
 
     fn vendor_plugin() -> Vec<PluginSymbol> {
         vec![PluginSymbol {

@@ -25,9 +25,9 @@
 // language emit surface (6 codec + 6 transform templates) would
 // triple the golden count for limited extra coverage, and the focused
 // `contains(...)` assertions below catch every regression
-// `quantity_codegen::build_accessor_payload` can introduce. Atomic B
-// (a future task) will fold these into the golden suite if a real
-// consumer demands byte-stable physical-accessor output.
+// `quantity_codegen::build_accessor_payload` can introduce. The
+// fixtures fold into the golden suite only if a real consumer
+// demands byte-stable physical-accessor output.
 
 use std::path::PathBuf;
 

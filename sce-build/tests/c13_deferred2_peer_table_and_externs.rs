@@ -2,15 +2,16 @@
 //! allowlist validators.
 //!
 //! Per watching-zenoh RFC §5.K lines 2460-2462 + 2466-2469, this
-//! atomic closes the two C13-β-deferred spec codes:
+//! file pins two spec codes:
 //!
 //!   1. `deploy/session-arming-quota-vs-peer-table-invariant-violated`
 //!      (line 2460-2462) — `session_arming_quota ×
 //!      max_handshake_time_s ≤ peer_table.capacity`. Fires when a
 //!      slow legitimate handshake can be evicted under attack. The
-//!      validator slots into `validate_links` after the C13-β
-//!      anti-flood checks; silent-skip when any of the three inputs
-//!      is absent per Q-η5 (a) discipline.
+//!      validator slots into `validate_links` after the
+//!      session-arming anti-flood checks (`c13_beta_antiflood.rs`);
+//!      silent-skip when any of the three inputs is absent, per the
+//!      shared silent-skip discipline.
 //!
 //!   2. `deploy/stateless-accept-extern-not-whitelisted` (line
 //!      2466-2469) — `hmac_extern` / `rng_extern` symbol must

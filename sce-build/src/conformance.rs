@@ -218,7 +218,7 @@ pub enum FixtureSpec {
     Interpolation {
         args: Vec<CanonicalType>,
         output: ScalarOutput,
-        /// W1 symbol-name SSOT: the per-language accessor symbol
+        /// Symbol-name SSOT: the per-language accessor symbol
         /// render_interpolation defines, derived at harness-rendering time
         /// from `forge_interpolation_symbol` (the conformance call site reads
         /// it via `f.symbol`). Like Lookup's `function`, it is never present
@@ -333,7 +333,7 @@ pub enum FixtureSpec {
         ///
         /// All backends except C11 generate uniform `validator.validate(...)`
         /// regardless of state, so the flag is unused for them. C11 needs
-        /// it because RFC §5.J.2 V2c uses a free function for stateless
+        /// it because its C11 emitter uses a free function for stateless
         /// validators (no instance to call a method on) and a state struct +
         /// pointer pass for stateful ones; the harness fragment branches
         /// on this flag to emit the matching call shape.
@@ -357,12 +357,12 @@ pub enum FixtureSpec {
     /// naming convention.
     Codec {
         fields: Vec<StructField>,
-        /// RFC §5.B B5-θ: derived at harness-rendering time from
-        /// SCXML — true iff at least one `<sce:test-vector>` element
-        /// appears under the codec root. Trunk emits the per-backend
-        /// sidecar (`<fixture>_test.{rs,h}`) on Rust + C11 only;
-        /// Cpp/Kotlin/Go/Python harnesses skip the codec sidecar
-        /// until B5-θ closures land (mirrors algorithm
+        /// RFC §5.B test-vector flag: derived at harness-rendering time
+        /// from SCXML — true iff at least one `<sce:test-vector>` element
+        /// appears under the codec root. The per-backend codec
+        /// sidecar (`<fixture>_test.{rs,h}`) is emitted on Rust + C11 only;
+        /// Cpp/Kotlin/Go/Python have no codec sidecar template, so the
+        /// flag is forced false for them (mirrors the algorithm
         /// `has_test_vectors` precedent). Empty in fixtures.json
         /// (manifest-side override is rejected); computed by
         /// `read_codec_has_test_vectors` so the SCXML stays the
@@ -556,9 +556,9 @@ pub fn c_type_for(ty: &str) -> &'static str {
 /// Format a JSON literal value (from `numerical_reference.json`) as a
 /// C11 source-level literal for the requested canonical type. Used by
 /// the C11 conformance harness to pre-bake oracle arrays at codegen
-/// time (RFC §5.J.2 F7 — C has no zero-deps JSON parser that survives
-/// the R3 lock-in, so the oracle is materialised into the harness
-/// source itself).
+/// time (C has no JSON parser compatible with the
+/// zero-runtime-dependency rule, so the oracle is materialised into
+/// the harness source itself).
 pub fn c_literal_for(value: &serde_json::Value, ty: &str) -> String {
     match (value, ty) {
         (serde_json::Value::Bool(b), _) => {
@@ -704,7 +704,7 @@ pub fn register_conformance_filters(env: &mut minijinja::Environment) {
     env.add_filter("kt_unmarshal", |raw: String, ty: String| {
         kt_unmarshal_expr(&raw, &ty)
     });
-    // C11 (RFC §5.J.2). `c_type` is the type-name mapping the harness
+    // C11: `c_type` is the type-name mapping the harness
     // template uses for pre-baked oracle struct fields. `c_literal` is
     // a binary filter that takes a JSON value and a canonical type and
     // produces the exact C11 source literal — replacing the runtime
@@ -839,7 +839,7 @@ impl Manifest {
                     fields: _,
                     has_test_vectors,
                 } => {
-                    // RFC §5.B B5-α empty-codec lift: zero-field codecs
+                    // RFC §5.B empty-codec rule: zero-field codecs
                     // (Zenoh KeepAlive et al.) are permitted. The
                     // round-trip test body still asserts encode →
                     // decode → encoded byte parity (an empty body
@@ -1320,13 +1320,13 @@ fn read_lookup_enum_values(scxml_path: &Path) -> Result<Vec<String>, String> {
 /// validator construct — rate-of-change rules retain a previous-value field
 /// across calls). Used by the C11 harness fragment to choose between the
 /// stateless free-function call shape and the stateful struct + pointer
-/// pass shape (RFC §5.J.2 V2c). Other backends emit uniform method calls
+/// pass shape. Other backends emit uniform method calls
 /// regardless of state and ignore the flag.
-/// RFC §5.B B2/B5-θ test-vector: scan an SCXML root for any
+/// RFC §5.B test-vector: scan an SCXML root for any
 /// `<sce:test-vector>` child element. The forge parser already
 /// validates the attributes and stores the parsed vectors on
-/// `AlgorithmModel.test_vectors` (B2) or `CodecModel.test_vectors`
-/// (B5-θ); this scan only needs to surface whether any are present
+/// `AlgorithmModel.test_vectors` or `CodecModel.test_vectors`;
+/// this scan only needs to surface whether any are present
 /// so the harness filter can pick the right `(kind, language)`
 /// matrix arm. Returns false when the file contains zero
 /// `<sce:test-vector>` children, matching the no-sidecar default.
@@ -1528,9 +1528,9 @@ pub fn render_harness(
             } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 let raw_output_id = read_lookup_output_id(&scxml_path)?;
-                // W1 symbol-name SSOT: lower to the exact symbol render_lookup
+                // Symbol-name SSOT: lower to the exact symbol render_lookup
                 // defines — the bare call-base plus the C11 flat prefix, via
-                // the same two helpers the codegen uses (RFC §5.J.2 §3 D1).
+                // the same two helpers the codegen uses (flat-scope naming rule).
                 let base = crate::forge::generator::forge_lookup_symbol(&raw_output_id, language);
                 *function = Some(crate::forge::generator::forge_stateless_def_symbol(
                     &fixture_name,
@@ -1549,10 +1549,10 @@ pub fn render_harness(
                 *has_state = read_validator_has_state(&scxml_path)?;
             }
             FixtureSpec::Condition { function, .. } => {
-                // W1 symbol-name SSOT: lower the manifest `function` to the
+                // Symbol-name SSOT: lower the manifest `function` to the
                 // exact symbol render_condition defines — the bare call-base
                 // plus the C11 flat prefix, via the same two helpers the
-                // codegen uses (RFC §5.J.2 §3 D1).
+                // codegen uses (flat-scope naming rule).
                 let base = crate::forge::generator::forge_condition_symbol(function, language);
                 *function = crate::forge::generator::forge_stateless_def_symbol(
                     &fixture_name,
@@ -1565,10 +1565,10 @@ pub fn render_harness(
                 compound_outputs,
                 ..
             } => {
-                // W1 symbol-name SSOT: lower each output accessor to the exact
+                // Symbol-name SSOT: lower each output accessor to the exact
                 // symbol render_transform defines — the bare call-base plus the
                 // C11 flat prefix, via the same two helpers the codegen uses
-                // (RFC §5.J.2 §3 D1). The output id is the compound `key`
+                // (flat-scope naming rule). The output id is the compound `key`
                 // directly; for the scalar output it is the `compute_`-stripped
                 // function (the inverse of render_transform's `compute_<out.id>`
                 // composition).
@@ -1596,18 +1596,17 @@ pub fn render_harness(
             FixtureSpec::Codec {
                 has_test_vectors, ..
             } => {
-                // RFC §5.B B5-θ: enrich the manifest with the SCXML-derived
-                // `<sce:test-vector>` flag so the per-language harness
-                // fragment can fold the per-fixture sidecar's failure
+                // RFC §5.B test-vector: enrich the manifest with the
+                // SCXML-derived `<sce:test-vector>` flag so the per-language
+                // harness fragment can fold the per-fixture sidecar's failure
                 // count into the global accumulator without re-scanning
-                // the SCXML at every render site. Trunk lands on Rust +
-                // C11 only — for Cpp / Kotlin / Go / Python the
+                // the SCXML at every render site. The codec sidecar ships
+                // on Rust + C11 only — for Cpp / Kotlin / Go / Python the
                 // `render_codec_test_vector_sidecar` gate returns
                 // `Ok(None)` so no sidecar file exists; the harness
                 // must therefore skip the `#include`. Force the flag
-                // false on those 4 backends until per-language B5-θ
-                // closures land (mirrors the rotating gate-rejection
-                // tests in `forge_conformance.rs`).
+                // false on those 4 backends (mirrors the rotating
+                // gate-rejection tests in `forge_conformance.rs`).
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_test_vectors = if matches!(language, Language::Rust | Language::C11) {
                     has_test_vectors_in_file(&scxml_path)?
@@ -1622,13 +1621,13 @@ pub fn render_harness(
             } => {
                 let scxml_path = resource_dir.join(format!("{}.scxml", fixture_name));
                 *has_test_vectors = has_test_vectors_in_file(&scxml_path)?;
-                // W1 symbol-name SSOT: lower the manifest's `function` to the
+                // Symbol-name SSOT: lower the manifest's `function` to the
                 // exact per-language symbol the algorithm template defines,
                 // via the one helper the product codegen and the cross-doc
                 // resolver also read. This replaces the per-language casing
                 // filter (`| to_pascal_case` / `| to_camel_case` /
                 // `| to_snake_case`) the harness fragments used to apply, so
-                // the casing rule lives in one place. RFC §7 A5/A6: the
+                // the casing rule lives in one place. RFC §7 items A5/A6: the
                 // algorithm name *is* the fixture stem in every shipped SCXML,
                 // so — unlike lookup/condition/transform on C11 — no fixture
                 // prefix is composed; `forge_algorithm_symbol` returns the
@@ -1677,13 +1676,13 @@ pub fn render_harness(
                     })
                     .collect();
                 // Populate the derived L2 flag from the SCXML so the
-                // C11 backend's per-phase fixture filter
+                // C11 backend's kind-subset fixture filter
                 // (`c11_supported_kind`) can gate by procedure level
                 // without re-parsing each candidate fixture.
                 *is_l2 = read_procedure_is_l2(&scxml_path)?;
             }
             FixtureSpec::Interpolation { symbol, .. } => {
-                // W1 symbol-name SSOT: derive the exact accessor symbol
+                // Symbol-name SSOT: derive the exact accessor symbol
                 // render_interpolation defines — the bare call-base plus the
                 // C11 flat prefix, via the same two helpers the codegen uses —
                 // so the harness call site reads the bare `f.symbol` value.
@@ -1705,11 +1704,11 @@ pub fn render_harness(
     // because the conformance fragment is co-shipped with the product
     // template — there is no fixture whose product emits but whose
     // conformance fragment is missing, so a single matrix flip closes
-    // both sides at once. C11 layers an extra phase-specific predicate
+    // both sides at once. C11 layers an extra C11-specific predicate
     // on top via `c11_supported_kind` (kept as a separate function so
-    // a future C11-internal subset stays expressible without polluting
+    // a C11-internal subset stays expressible without polluting
     // the language-agnostic matrix).
-    // Single per-fixture gate (kind-matrix + C11 phase subset +
+    // Single per-fixture gate (kind-matrix + C11 kind subset +
     // MCU-only-on-non-MCU exclusion). Mirrors the same predicate
     // applied by `sce-codegen list-fixtures --language <X>` so
     // `cargo test` and `cmake --build` see identical fixture sets.
@@ -1744,7 +1743,7 @@ pub fn render_harness(
         .iter()
         .any(|f| matches!(f.spec, FixtureSpec::Codec { .. }));
 
-    // C11 (RFC §5.J.2 F7): pre-bake the oracle into the harness source.
+    // C11: pre-bake the oracle into the harness source (no runtime JSON parser).
     // Other backends parse `numerical_reference.json` at test-runtime via
     // their language's JSON library, but C11 has no zero-deps parser
     // that survives the R3 lock-in — so we attach a `cases` array to

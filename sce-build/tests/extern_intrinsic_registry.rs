@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // watching-zenoh RFC §5.I `<sce:extern>` whitelisted intrinsic registry
-// — Atomic A end-to-end fixtures. Each test exercises
+// — end-to-end fixtures. Each test exercises
 // `parse_forge_with_imports` against an inline SCXML carrying one or
 // more `<sce:extern>` declarations and asserts the parse result:
 //

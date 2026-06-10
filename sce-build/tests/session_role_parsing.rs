@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Axis-3 inversion (RFC `claudedocs/rfc-axis3-listener-role-declarations.md`)
-// Phase A foundation test fixture. Pins the SCXML-side
+// Session-role declaration parsing. Pins the SCXML-side
 // `<sce:session-role kind="..."/>` parser path + the deploy-side
-// `LinkConfig.role:` field parser path. The orchestrator switch is
-// landed in Phase B; this atomic only proves:
+// `LinkConfig.role:` field parser path. The orchestrator join of the
+// two declarations is covered by `orchestrator_role_join.rs`; this
+// file only proves:
 //
 //   1. `<sce:session-role kind="accept-side"/>` is captured into
 //      `SCXMLModel.declared_session_roles`.
@@ -176,7 +176,7 @@ fn scxml_session_role_missing_kind_attr_rejects() {
 
 // LinkConfig parses standalone — bypasses the larger DeployConfig
 // schema (which carries platform / scheduler / memory required fields
-// orthogonal to Axis-3) and exercises just the new `role:` field.
+// orthogonal to role declarations) and exercises just the `role:` field.
 
 fn parse_link_config(
     yaml: &str,

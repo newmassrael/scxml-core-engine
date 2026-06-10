@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §5.O Atomic 0 — IR provenance pre-emit guard.
+// Watching-zenoh RFC §5.O — IR provenance pre-emit guard.
 //
 // Codegen consumes per-IR-node `source_location` to emit SCE-MAP
-// markers above every generated function header (Atomic 0a) and to
-// drive the per-symbol attribution sourcemap JSON (Atomic 1). The
+// markers above every generated function header and to drive the
+// per-symbol attribution sourcemap JSON. The
 // markers are silent when the IR field is `None`, which would
 // regress the spec contract (lines 3280-3284 + 3289-3290) without
-// any visible signal — a classic silently-broken-hook situation
-// [[feedback-silently-broken-hooks]].
+// any visible signal — a classic silently-broken-hook situation.
 //
 // This pre-emit walker is the consumer that prevents that regression.
 // It runs after analyzer and before generator. Every node eligible for
@@ -18,9 +17,9 @@
 // codegen-internal diagnostic with no author repair — the fix lives
 // in the parser site that produced the IR node).
 //
-// ## Eligibility scope (Atomic 0a)
+// ## Eligibility scope
 //
-// Atomic 0a populates the IR provenance field at four parser sites
+// The parser populates the IR provenance field at four sites
 // in `parser.rs`:
 //
 // 1. `SCXMLModel` root  — every parse goes through `parse_impl`.
@@ -37,8 +36,8 @@
 // from this walker per the inherited-content-branch carve-out
 // documented in spec line 3286-3289 ("XInclude / sce:template
 // composition MUST track per-element coordinates and attach them to
-// every IR node"). The walker covers only the four types above for
-// Atomic 0a; Atomic 0b extends to the per-action attribution emit.
+// every IR node"). The walker covers the four types above; the
+// per-action attribution emit extends coverage to statement level.
 
 use crate::forge::error::{ForgeError, Located, SourceLocation, ValidationError};
 use crate::forge::model::ForgeDocument;
@@ -76,7 +75,7 @@ pub fn validate_emission_provenance(
     //    per-state function (on_entry / on_exit). The state's own
     //    source position drives every marker that function family
     //    needs; the per-action source position (covered below) is
-    //    consumed by Atomic 0b's per-statement attribution.
+    //    consumed by the per-statement attribution emit.
     for (state_id, state) in &model.states {
         if state.source_location.is_none() {
             let kind = state_kind_label(state);
@@ -223,7 +222,7 @@ fn action_pinned_id(state_id: &str, action: &Action) -> String {
     }
 }
 
-/// Watching-zenoh RFC §5.O Atomic 0c — forge IR provenance pre-emit
+/// Watching-zenoh RFC §5.O — forge IR provenance pre-emit
 /// guard. Counterpart to [`validate_emission_provenance`] for the
 /// non-statechart kinds: each `ForgeDocument` variant lowers to a
 /// per-kind body function that carries an SCE-MAP marker driven by
@@ -323,8 +322,8 @@ fn forge_doc_provenance(doc: &ForgeDocument) -> (&'static str, &str, &Option<Sou
             &m.source_location,
         ),
         ForgeDocument::Enum(m) => ("<scxml sce:kind=\"enum\">", &m.name, &m.source_location),
-        // NL→IR Item C1 Path A: EventSchema follows the same Atomic
-        // 0c convention — the parser captures the root element's
+        // EventSchema follows the same provenance convention —
+        // the parser captures the root element's
         // source position into `source_location` for the SCE-MAP
         // marker, and this walker surfaces it to downstream consumers
         // (sourcemap, drift-guard, error anchoring).

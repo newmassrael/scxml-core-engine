@@ -176,7 +176,7 @@ fn analyze_model_features(model: &mut SCXMLModel) {
         }
     }
 
-    // watching-zenoh RFC §5.E B7-η' codegen wire-up: collect the
+    // watching-zenoh RFC §5.E sample-callback codegen wire-up: collect the
     // unique set of forge link names referenced by any
     // `<sce:on-sample link="X" .../>` block across all states.
     // Empty for documents without sample subscriptions; non-empty
@@ -629,15 +629,15 @@ fn compute_scxml_base_path(scxml_path: &str) -> String {
 /// on is met. The `Err` arm carries a typed [`ForgeError`] naming
 /// *which* precondition failed.
 ///
-/// RFC §W5 D3 refit splits the prior single-reason channel
+/// The §wire-W5 D3 refit splits the prior single-reason channel
 /// (`ValidationError::DynamicFeatures` for all three reasons) into
 /// stage-correct typed surfaces:
 ///
 /// - **Top-level `<script>` rejected (§scxml-5.8)** →
 ///   [`ScxmlSemanticError::TopLevelScriptUnloaded`]
 ///   (`scxml/top-level-script-unloaded`). Hard semantic violation;
-///   the Interpreter would also reject. Mis-classified prior to W5
-///   as `validation/dynamic-features` — corrected here.
+///   the Interpreter would also reject. Mis-classified prior to the
+///   §wire-W5 split as `validation/dynamic-features` — corrected here.
 ///
 /// - **No initial-state attribute** (runtime default resolution
 ///   required) → [`ValidationError::DynamicFeatures`]
@@ -648,7 +648,7 @@ fn compute_scxml_base_path(scxml_path: &str) -> String {
 /// - **Initial-state names undeclared state** →
 ///   [`ScxmlSemanticError::InitialStateUnknown`]
 ///   (`validation/invalid-reference`). Hard semantic violation.
-///   Mis-classified prior to W5 — corrected here.
+///   Mis-classified prior to the §wire-W5 split — corrected here.
 ///
 /// [`ForgeError`]: crate::forge::error::ForgeError
 /// [`ScxmlSemanticError::TopLevelScriptUnloaded`]: crate::scxml_semantic::ScxmlSemanticError::TopLevelScriptUnloaded
@@ -904,7 +904,7 @@ mod tests {
         assert_eq!(got, vec!["humidity_update", "temp_update"]);
     }
 
-    /// RFC §W5 D3 split, branch #2: "no initial attribute" stays
+    /// §wire-W5 D3 split, branch #2: "no initial attribute" stays
     /// classified as `ValidationError::DynamicFeatures` because the
     /// Interpreter CAN resolve via §3.3 default; only the static
     /// generator cannot. Genuine codegen limitation, not a semantic
@@ -942,9 +942,9 @@ mod tests {
         }
     }
 
-    /// RFC §W5 D3 split, branch #3: "initial names undeclared state"
+    /// §wire-W5 D3 split, branch #3: "initial names undeclared state"
     /// is a hard semantic violation — the Interpreter would also
-    /// reject. W5 corrects the prior mis-classification (was
+    /// reject. §wire-W5 corrects the prior mis-classification (was
     /// DynamicFeatures, now `ScxmlSemanticError::InitialStateUnknown`
     /// → `validation/invalid-reference`).
     #[test]
@@ -971,7 +971,7 @@ mod tests {
         }
     }
 
-    /// RFC §W5 D3 split, branch #1: top-level `<script>` rejected
+    /// §wire-W5 D3 split, branch #1: top-level `<script>` rejected
     /// per §scxml-5.8 is a hard semantic violation, not a
     /// codegen limitation. `model.document_rejected = true` is the
     /// signal `parse_global_scripts` sets when it encounters a
@@ -987,7 +987,7 @@ mod tests {
             ForgeError::Scxml(boxed) => match *boxed {
                 ScxmlSemanticError::TopLevelScriptUnloaded { index, src } => {
                     // Analyzer path doesn't have the failing script's
-                    // metadata — both fields stay None per RFC §W5 D2
+                    // metadata — both fields stay None per §wire-W5 D2
                     // payload-asymmetry note.
                     assert!(index.is_none());
                     assert!(src.is_none());
@@ -1005,7 +1005,7 @@ mod tests {
     /// variant, the resulting wire `code` MUST match what the
     /// matching forge `ValidationError` variant would emit for the
     /// same conceptual failure. Locks the cross-document-type
-    /// concept identity that motivates RFC §W5 D2 fold.
+    /// concept identity that motivates the §wire-W5 D2 fold.
     #[test]
     fn analyzer_emitted_codes_obey_fold_invariant() {
         use crate::forge::diagnostic::ToDiagnostics;

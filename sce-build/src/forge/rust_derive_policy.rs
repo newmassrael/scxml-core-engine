@@ -38,7 +38,7 @@ pub enum RustDeriveCategory {
     /// `codec.rs.jinja2` — `pub struct {{ struct_name }}`. Wire-typed
     /// payload over `SceCursor` / `SceSink`. The `Default` derive is
     /// handled separately per-instance (gated on `has_flag_default`
-    /// per RFC variant-default-uniformity Atomic β), so this slot
+    /// per the variant-default-uniformity rollup), so this slot
     /// carries the category-uniform derives only.
     CodecStruct,
     /// `codec.rs.jinja2` — `pub enum {{ struct_name }}Variant`.

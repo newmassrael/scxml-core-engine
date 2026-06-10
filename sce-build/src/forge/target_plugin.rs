@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` target-plugin loader — watching-zenoh RFC §5.I, Atomic B.
+// `<sce:extern>` target-plugin loader — watching-zenoh RFC §5.I.
 // Spec lines 1760-1787 verbatim: architectures may extend the §5.I
 // whitelist through a target plugin declared via deploy.yaml
 // (`extern_symbols.target_plugin: <path>`). The plugin file is a YAML
 // document listing additional symbols with signatures.
 //
-// Q-Call-2 (a) lock: path-pointed YAML file, single plugin per deploy.
-// Q-Call-6 (a) lock: plugin entries are *additive*; redefining a §5.I
+// Path-pointed YAML file, single plugin per deploy.
+// Plugin entries are *additive*; redefining a §5.I
 // baseline symbol surfaces as `extern/target-plugin-symbol-conflict`
 // (spec line 1852 verbatim — "target plugin redefines a core whitelist
-// symbol"). Repair shape per Q-Call-6 (a): plugin author renames the
+// symbol"). Repair shape: plugin author renames the
 // conflicting entry to a non-baseline name; SCE cannot synthesize a
 // candidate so the diagnostic carries no `Fix` payload.
 //
@@ -27,10 +27,10 @@
 //       abi: c
 //       purpose: cross-core-mutex
 //
-// Plugin-extension axes that ride later atomics (`linker_flavor`,
+// Plugin-extension axes that have no consumer yet (`linker_flavor`,
 // `fuzz_coverage_transport`, `extern/ordering-insufficient-for-cross-core`)
-// are accepted as opaque YAML keys here so a future Atomic C can lift
-// them without a schema break — `serde(deny_unknown_fields)` on
+// are accepted as opaque YAML keys here so a later change can lift
+// them into typed fields without a schema break — `serde(deny_unknown_fields)` on
 // [`TargetPluginFile`] would prevent forward-compat plugin YAML files
 // from loading on a current sce-build, so the top level intentionally
 // allows additional fields.
@@ -56,13 +56,13 @@ pub struct PluginSymbol {
     /// Canonical signature (compared exactly against `<sce:extern sig>`
     /// — same byte-equality discipline as baseline entries).
     pub sig: String,
-    /// Required ABI (closed two-element set per Q-Call-3).
+    /// Required ABI (closed two-element set).
     pub abi: Abi,
-    /// Free-form purpose tag (Q-Call-3 optional). Surfaces in
+    /// Free-form purpose tag (optional). Surfaces in
     /// diagnostic repair guidance when this symbol appears in a
     /// `Fix::ReplaceOneOf` candidate list (future atomic).
     pub purpose: Option<String>,
-    /// Crate that provides the implementation (Q-Call-3 optional).
+    /// Crate that provides the implementation (optional).
     /// `None` means the plugin author defers to the deploy's
     /// downstream Cargo.toml to resolve the symbol — typical case for
     /// vendor crates already on the dependency tree.
@@ -72,17 +72,19 @@ pub struct PluginSymbol {
 /// Top-level YAML structure emitted by a target plugin file.
 /// Forward-compat: additional keys (`linker_flavor`,
 /// `linker_fragment_path`, `fuzz_coverage_transport`) load as opaque
-/// `Value` so a future Atomic C can lift them without breaking
-/// existing v1 plugins on rotated sce-build releases.
+/// `Value` so a later change can lift them into typed fields without
+/// breaking existing plugins on rotated sce-build releases.
 #[derive(Debug, Clone, Deserialize)]
 struct TargetPluginFile {
     /// Required list of vendor-specific symbol declarations.
     symbols: Vec<PluginSymbolEntry>,
-    /// Forward-compat slot — captured but ignored by Atomic B.
-    /// Plugin-extension axes ride later atomics:
-    /// - `linker_flavor` (spec lines 1820-1854) → Atomic C
-    /// - `linker_fragment_path` → Atomic C
-    /// - `fuzz_coverage_transport` (spec lines 1856-1864) → Phase D+
+    /// Forward-compat slot — captured but not consumed. None of
+    /// these axes has a typed lift yet (not implemented until a
+    /// consumer needs them):
+    /// - `linker_flavor` (spec lines 1820-1854)
+    /// - `linker_fragment_path`
+    /// - `fuzz_coverage_transport` (spec lines 1856-1864; the spec
+    ///   itself defers the F4 transport — no implementation exists)
     #[serde(flatten, default)]
     _extras: std::collections::BTreeMap<String, serde_yaml_ng::Value>,
 }
@@ -145,7 +147,7 @@ pub enum TargetPluginLoadError {
     },
     /// Plugin entry's `name` field already exists in the §5.I baseline
     /// registry. Surfaced as `extern/target-plugin-symbol-conflict`
-    /// (spec line 1852 verbatim) — Q-Call-6 (a) additive-composition
+    /// (spec line 1852 verbatim) — additive-composition
     /// lock: plugins extend, never override.
     #[error(
         "target plugin {path} symbol `{name}` redefines a baseline whitelist \
@@ -198,7 +200,7 @@ pub fn parse_target_plugin_str(
 
     let mut symbols = Vec::with_capacity(parsed.symbols.len());
     for entry in parsed.symbols {
-        // Q-Call-3 closed-set ABI lookup (delegates to the same
+        // Closed-set ABI lookup (delegates to the same
         // registry helper the runtime `<sce:extern>` validator uses,
         // so future ABI extensions land in one place).
         let abi = Abi::from_attr(&entry.abi).ok_or_else(|| TargetPluginLoadError::UnknownAbi {
@@ -206,7 +208,7 @@ pub fn parse_target_plugin_str(
             name: entry.name.clone(),
             abi: entry.abi.clone(),
         })?;
-        // Q-Call-6 (a) lock: additive composition. A plugin entry
+        // Additive-composition lock: a plugin entry
         // whose name appears in the baseline triggers
         // `extern/target-plugin-symbol-conflict` regardless of
         // whether the sig matches — same name = redefinition per
@@ -279,7 +281,7 @@ symbols:
     #[test]
     fn baseline_conflict_rejected_same_sig() {
         // Even with the *same* sig as baseline, redefinition is
-        // disallowed per Q-Call-6 (a) additive lock.
+        // disallowed per the additive-composition lock.
         let yaml = r#"
 symbols:
   - name: sce_atomic_load_acquire_u32
