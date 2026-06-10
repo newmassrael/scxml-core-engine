@@ -18,17 +18,17 @@
 //!
 //! ## Phase 2 scope
 //!
-//! - [`conflict_resolution`]: W3C Appendix D.2 transition conflict resolution
-//! - [`state_entry`]: Deep initial state entry path calculation
-//! - [`parallel_state`]: Parallel state processing (merged 6 C++ headers)
-//! - [`history`]: History state recording and restoration
+//! - `conflict_resolution` (std-only): W3C Appendix D.2 transition conflict resolution
+//! - `state_entry` (std-only): Deep initial state entry path calculation
+//! - `parallel_state` (std-only): Parallel state processing (merged 6 C++ headers)
+//! - `history` (std-only): History state recording and restoration
 //! - [`event_matching`]: W3C 5.9.3 event descriptor matching
 //! - [`entry_exit`]: Entry/exit action block execution with error isolation
 //! - [`event_processing`]: W3C macrostep algorithm
-//! - [`event_data`]: Event data JSON construction
+//! - `event_data` (std-only): Event data JSON construction
 //! - [`event_type`]: Event type classification
 //! - [`in_predicate`]: In(stateId) predicate
-//! - [`event_metadata`]: `_event.*` field construction
+//! - `event_metadata` (std-only): `_event.*` field construction
 //! - [`string_utils`]: Platform event detection
 //! - [`unique_id_generator`]: Session/send/invoke/event ID generation
 //! - [`done_data`]: Donedata processing
@@ -37,7 +37,11 @@
 //! - [`foreach`]: Foreach iteration (static variant)
 //! - [`guard`]: Guard condition evaluation (In() predicate-based)
 //! - [`datamodel_init`]: Datamodel initialization helpers
-//! - [`url_encoding`]: RFC 3986 URL encoding/decoding
+//! - `url_encoding` (std-only): RFC 3986 URL encoding/decoding
+//!
+//! Modules marked "std-only" are `!no_std`-gated (see the `#[cfg]` rationale
+//! on each `pub mod` below); their index entries stay plain code spans because
+//! an intra-doc link to them cannot resolve in the no_std docs profile.
 
 // Phase 1 modules
 pub mod event_queue;
