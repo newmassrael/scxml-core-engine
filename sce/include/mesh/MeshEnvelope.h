@@ -8,7 +8,7 @@
 // invoke_id, qos). Wire form is canonical CBOR (RFC 8949 §4.2.1) with
 // integer keys; see MeshEnvelopeCodec for encode/decode.
 //
-// Authoritative schema and key map: SCE_MESH.md Section 13 Phase 3.5.
+// Authoritative schema and key map: SCE_MESH.md §mesh-13 "Pattern Realization".
 
 #pragma once
 

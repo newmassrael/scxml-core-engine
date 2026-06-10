@@ -24,12 +24,12 @@
 // race on arena writes even though the control ring push is atomic. The
 // debug assertion in send() catches violations.
 //
-// SPSC is sufficient for Phase 3: each SCE machine is single-threaded
+// SPSC is sufficient here: each SCE machine is single-threaded
 // per W3C RTC, and each ShmChannel is per-target (one sender SM →
 // one channel). True MPSC requires either CAS-based arena reservation
 // with ticket-ordered control ring entries, or a heap-allocated slab
-// pool (iceoryx pattern) — future work when multiple machines on the
-// same host share an outbound channel.
+// pool (iceoryx pattern) — needed only if multiple machines on the
+// same host ever share an outbound channel.
 
 #pragma once
 

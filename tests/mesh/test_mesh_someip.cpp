@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Mesh Phase 3 someip_transport compile verification test.
+// SCE Mesh someip_transport compile verification test.
 //
 // Validates that generated SOME/IP transport code compiles against
 // real vsomeip 3.7.x headers. No runtime assertions — compilation

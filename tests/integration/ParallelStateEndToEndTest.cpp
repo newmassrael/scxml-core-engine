@@ -197,34 +197,34 @@ TEST_F(ParallelStateEndToEndTest, ParallelStateTimingAndSynchronization) {
         
         <parallel id="synchronized_parallel">
             <state id="process_a">
-                <state id="phase_a1">
+                <state id="stage_a1">
                     <transition event="a1_complete" target="sync_a">
                         <script>sync_point_1 = true;</script>
                     </transition>
                 </state>
                 <state id="sync_a">
-                    <transition cond="sync_point_1 &amp;&amp; sync_point_2" target="phase_a2">
+                    <transition cond="sync_point_1 &amp;&amp; sync_point_2" target="stage_a2">
                         <script>all_synchronized = true;</script>
                     </transition>
                 </state>
-                <state id="phase_a2">
+                <state id="stage_a2">
                     <transition event="a2_complete" target="process_a_done"/>
                 </state>
                 <final id="process_a_done"/>
             </state>
             
             <state id="process_b">
-                <state id="phase_b1">
+                <state id="stage_b1">
                     <transition event="b1_complete" target="sync_b">
                         <script>sync_point_2 = true;</script>
                     </transition>
                 </state>
                 <state id="sync_b">
-                    <transition cond="sync_point_1 &amp;&amp; sync_point_2" target="phase_b2">
+                    <transition cond="sync_point_1 &amp;&amp; sync_point_2" target="stage_b2">
                         <script>all_synchronized = true;</script>
                     </transition>
                 </state>
-                <state id="phase_b2">
+                <state id="stage_b2">
                     <transition event="b2_complete" target="process_b_done"/>
                 </state>
                 <final id="process_b_done"/>

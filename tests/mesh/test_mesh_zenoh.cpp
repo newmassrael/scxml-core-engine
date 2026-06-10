@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Mesh Phase 3 zenoh_transport compile verification test.
+// SCE Mesh zenoh_transport compile verification test.
 //
 // Validates that generated Zenoh transport code compiles against
 // real zenoh-cpp headers. No runtime assertions — compilation

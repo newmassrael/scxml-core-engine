@@ -115,7 +115,7 @@ target_compile_features(sce_core INTERFACE cxx_std_17)
 # Headers: SchedulerConcepts, EventQueueBridge, ShmChannel, PatternKind,
 #          PayloadCodec, RpcStatus, MeshEnvelope, MeshEnvelopeCodec.
 # Compiled: MeshEnvelopeCodec.cpp (CBOR encode/decode using vendored tinycbor).
-# Phase 3.5 promotes this from INTERFACE to STATIC for the codec compilation
+# STATIC (not INTERFACE) because MeshEnvelopeCodec.cpp is a compiled
 # unit; consumers (generated transport routing, mesh integration tests) link
 # the static target.
 if(SCE_ENABLE_MESH)

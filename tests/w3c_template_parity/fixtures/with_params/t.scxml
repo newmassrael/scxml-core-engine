@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template parity template: port_guard.
+
+  One required `port` parameter substituted into the `cond`
+  attribute of a single `<transition>` body element. Kept
+  minimal (one declaration, one body element) so canonicalised
+  output is unambiguous and any drift isolates to the
+  substitution / splice logic.
+-->
+<sce:template xmlns:sce="http://sce.dev/ext" name="port_guard">
+  <sce:param name="port" required="true"/>
+  <transition event="check" cond="_event.data.port == {$port}" target="accept"/>
+</sce:template>

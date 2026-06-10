@@ -8,8 +8,8 @@
 // numbers. Lock-free for both producers (CAS on write position) and
 // the single consumer (non-atomic read position).
 //
-// Phase 1: complete implementation. Phase 2 (shm_transport) is the first
-// consumer — the receive-side codegen injects events through this bridge.
+// Consumer: `ShmChannel` placement-news this bridge in shared memory for
+// the shm transport's receive side.
 
 #pragma once
 

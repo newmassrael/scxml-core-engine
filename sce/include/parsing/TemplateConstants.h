@@ -8,18 +8,17 @@
 namespace SCE::parsing {
 
 // `sce:template` / `sce:use` preprocessor constants shared between
-// the C++ Interpreter runtime (Phase B, this header) and the Rust
-// AOT expander (`sce-build/src/template.rs`).
+// the C++ Interpreter runtime (this header) and the Rust AOT
+// expander (`sce-build/src/template.rs`).
 //
-// Phase B is tracked in `claudedocs/rfc-sce-template-phase-b.md`
-// and lands incrementally over M1-M5. The constants in this
-// header are pinned against their Rust counterparts by drift
-// tests in `sce-build/src/template.rs::tests`:
+// The constants in this header are pinned against their Rust
+// counterparts by drift tests in
+// `sce-build/src/template.rs::tests`:
 //
-//   - `cpp_template_depth_matches_rust` (M1) reads this header
+//   - `cpp_template_depth_matches_rust` reads this header
 //     via `include_str!` and asserts MAX_TEMPLATE_DEPTH matches
 //     `sce-build/src/template.rs::MAX_TEMPLATE_DEPTH`.
-//   - `cpp_param_name_pattern_matches_rust` (M1) reads this
+//   - `cpp_param_name_pattern_matches_rust` reads this
 //     header via `include_str!` and asserts PARAM_NAME_PATTERN
 //     matches the XSD's paramNameType pattern and the Rust
 //     regex literal on the standard corpus.

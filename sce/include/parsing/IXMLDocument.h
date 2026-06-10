@@ -37,12 +37,12 @@ public:
      * lets post-expansion diagnostics resolve to author-source
      * (file, row, col) — including bytes that originated in an
      * `xi:include`'d fragment. See
-     * `claudedocs/rfc-sce-template-phase-x.md` §3 B2.
+     * `sce/include/parsing/XIncludeExpander.h` for the contract.
      *
      * Throws on failure: `SCE::parsing::XIncludeExpansionError`
      * (typed subtypes from `sce/include/parsing/XIncludeError.h`)
      * for expansion failures, `SCE::parsing::ParseXmlFailed` for
-     * reparse failures of the spliced text. RFC §wire-W4.5 D2/D3.
+     * reparse failures of the spliced text. §wire-W4.5 D2/D3.
      */
     virtual SCE::parsing::PositionMap processXInclude() = 0;
 
@@ -54,20 +54,21 @@ public:
      *        this map into its own output so a diagnostic byte
      *        position resolves through both preprocessor stages
      *        back to the author's source file (host or
-     *        `xi:include`'d fragment), per Phase X RFC §1 Q2.
+     *        `xi:include`'d fragment).
      * @return PositionMap composing `upstream` with the
      *         template-expansion mapping
      *
      * Expands `<sce:use template="...">` against `<sce:template>` files
      * sibling to the current document. Mirrors the AOT expander
      * `sce-build/src/template.rs` so a document accepted by one path
-     * yields a byte-equivalent post-preprocessor document on the other
-     * (claudedocs/rfc-sce-template-phase-b.md §1 Q1).
+     * yields a byte-equivalent post-preprocessor document on the
+     * other; the parity harness under `tests/w3c_template_parity`
+     * asserts the equivalence fixture-by-fixture.
      *
      * Throws on failure: `SCE::parsing::TemplateError` (typed
      * subtypes from `sce/include/parsing/TemplateError.h`) for
      * expansion failures, `SCE::parsing::ParseXmlFailed` for
-     * reparse failures. RFC §wire-W4.5 D2.
+     * reparse failures. §wire-W4.5 D2.
      */
     virtual SCE::parsing::PositionMap processSceTemplate(
         const SCE::parsing::PositionMap &upstream) = 0;

@@ -20,7 +20,7 @@ namespace SCE::parsing {
 // C++ exception hierarchy for top-level SCXML parser-entry failures
 // thrown by `SCE::SCXMLParser::parseFile` / `parseContent` /
 // `parseAbstractDocument`, plus the underlying `IXMLParser`
-// implementation (`PugiXMLParser`) under RFC §wire-W4 D1-C (typed-throw,
+// implementation (`PugiXMLParser`) under §wire-W4 D1-C (typed-throw,
 // no nullptr-return + getLastError poll).
 //
 // Two of the leaves (`ParseFileNotFound`, `ParseWrongRootElement`)
@@ -32,8 +32,8 @@ namespace SCE::parsing {
 // those scenarios (Result-based, no exceptions, roxmltree always-
 // has-root). Wire-level consumers cannot distinguish the three
 // reused-code leaves from each other — only in-process C++ consumers
-// dispatch among them via `dynamic_cast`. RFC §wire-W4 α-strict per
-// `claudedocs/rfc-sce-diagnostic-wire-unification.md`.
+// dispatch among them via `dynamic_cast`. NEW wire codes exist only
+// where a matching Rust producer exists (§wire-W4).
 //
 // `ParseNullDocument` (sketched in the original starter inventory)
 // is dropped under D1-C because PugiXMLParser throws on internal
@@ -44,12 +44,12 @@ class ParseError : public std::runtime_error, public Diagnostic {
 public:
     using std::runtime_error::runtime_error;
 
-    // Reserved for future location stamping. No throw site populates
+    // Reserved for location stamping. No throw site populates
     // this today (parser-entry failures fire before sub-parsers
     // resolve a node-precise position; pugi's error offset is
     // already embedded in the message text for `ParseXmlFailed`).
-    // Mirrors `XIncludeExpansionError::setLocation` per W3 RFC's
-    // pinned design point.
+    // Mirrors `XIncludeExpansionError::setLocation` (§wire-W3
+    // design pin).
     void setLocation(SourcePos pos) {
         location_ = std::move(pos);
     }
@@ -75,7 +75,7 @@ private:
 // `sce-build/src/forge/error.rs::XmlError::FileNotFound { path }`
 // and maps 1:1 to the Rust `xml/file-not-found` `DiagnosticCode`.
 // Thrown by `PugiXMLParser::parseFile` when `std::filesystem::exists`
-// returns false (D1-C typed-throw refit per RFC §wire-W4 Stage C).
+// returns false (D1-C typed-throw refit per §wire-W4 Stage C).
 class ParseFileNotFound : public ParseError {
 public:
     using ParseError::ParseError;
@@ -113,7 +113,7 @@ public:
 // distinguishing surface. Thrown by `SCXMLParser::parseFile` /
 // `parseContent` from the catch-all `std::exception&` arm.
 //
-// Per RFC §wire-W4 D4 (α-strict): does NOT carry `typeid(ex).name()` —
+// Per §wire-W4 D4 (α-strict): does NOT carry `typeid(ex).name()` —
 // type-name is implementation-defined per `[lib.type.info]` and
 // would emit different strings on libstdc++ / libc++ / MSVC. The
 // `what()` text is the only payload.

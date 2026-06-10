@@ -5,7 +5,7 @@
 //
 // Identifies how MeshEnvelope.data bytes were encoded so the receiver can
 // dispatch to the matching decoder. Values are IMMUTABLE once shipped; see
-// SCE_MESH.md Section 13 Phase 3.5 for the two-layer wire design (CBOR
+// SCE_MESH.md §mesh-13 "Pattern Realization" for the two-layer wire design (CBOR
 // envelope + per-event payload codec). Serialized into envelope key 4 as
 // CBOR uint8. CloudEvents v1.0 'datacontenttype' equivalent.
 

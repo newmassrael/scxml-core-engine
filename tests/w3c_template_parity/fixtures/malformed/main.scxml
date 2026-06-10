@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template error-path parity fixture: malformed.
+
+  `<sce:use template="bad.scxml"/>` references a template file
+  whose root element is `<not-a-template>` rather than the
+  required `<sce:template>`. Both producers must FAIL with
+  equivalent classifications:
+    - Rust emits DiagnosticCode `xml/template-malformed` on stderr.
+    - C++ throws `SCE::parsing::TemplateMalformed`.
+
+  Malformed is the shared bucket for three repair surfaces (see
+  `sce-build/src/template.rs::TemplateError::Malformed` doc-
+  comment): (a) not well-formed XML, (b) wrong root element, and
+  (c) ill-formed `<sce:param>` declaration. This fixture covers
+  (b); (a) and (c) are exercised by the Rust unit tests in
+  `template.rs::tests` to keep the harness fixture family focused
+  on one shape per DiagnosticCode.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="s1"
+       name="malformed">
+  <state id="s1">
+    <sce:use template="bad.scxml"/>
+  </state>
+</scxml>

@@ -7,8 +7,9 @@
 // TickScheduling:        Poll-based batch scheduler (game loop, fixed-step).
 // EventDrivenScheduling: Reactive scheduler (interrupt-driven, RTOS).
 //
-// Phase 1: concept definitions only. Phase 2 (shm_transport) provides
-// concrete schedulers that satisfy these contracts.
+// Concept definitions only — consumers supply concrete schedulers
+// that satisfy these contracts (`tests/mesh/test_mesh_local.cpp`
+// exercises conforming implementations).
 
 #pragma once
 

@@ -36,10 +36,10 @@ struct XIncludeHit {
 };
 
 // True when `child` is an `<xi:include>` / `<include>` element.
-// Lenient on the namespace prefix to match the pre-Phase-X
-// pugixml runtime's local-name match and Rust
-// `collect_includes_into` namespace branch
-// (sce-build/src/xinclude.rs:384-385).
+// Lenient on the namespace prefix to match the local-name match
+// of the DOM-mutating pugixml path this expander replaced and
+// Rust `collect_includes_into`'s namespace branch
+// (sce-build/src/xinclude.rs).
 bool isIncludeElement(const pugi::xml_node &child) {
     if (child.type() != pugi::node_element) {
         return false;
@@ -181,8 +181,8 @@ RootChildrenRender renderRootChildren(std::string_view expanded,
 }
 
 // Resolve `href` against the same precedence ladder
-// `PugiXMLDocument::resolveFilePathInBase` uses (and the
-// pre-Phase-X DOM-mutation path used): absolute → base directory →
+// `PugiXMLDocument::resolveFilePathInBase` uses (and the replaced
+// DOM-mutation path used): absolute → base directory →
 // current working directory. Mirrors Rust
 // `sce-build/src/xinclude.rs::resolve_href`. On miss, populates
 // `searched` with the paths tried (so the diagnostic can show
@@ -239,9 +239,9 @@ std::string renderCycleChain(const std::vector<std::filesystem::path> &stack,
 
 // Reject XInclude features the pugixml runtime does not implement.
 // Mirrors Rust `reject_unsupported`: `parse="text"`, `xpointer=`,
-// and `<xi:fallback>` children. Phase X preserves the same
-// rejection set so AOT and Interpreter agree on which inputs are
-// accepted.
+// and `<xi:fallback>` children. The C++ expander preserves the
+// same rejection set so AOT and Interpreter agree on which inputs
+// are accepted.
 void rejectUnsupportedFeatures(const pugi::xml_node &node,
                                std::string_view href) {
     const auto parseAttr = node.attribute("parse");

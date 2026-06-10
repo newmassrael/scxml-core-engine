@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Mesh Phase 1 compile verification test.
+// SCE Mesh local_transport compile verification test.
 //
 // Validates that generated mesh transport code compiles against
 // generated state machine headers. No runtime assertions —
-// compilation success IS the test (Phase 2 adds runtime behavior).
+// compilation success IS the test (runtime behavior is covered by
+// test_mesh_local_runtime.cpp).
 
 #include "brake_sm.h"
 #include "motor_sm.h"
