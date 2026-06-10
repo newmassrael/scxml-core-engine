@@ -1,8 +1,7 @@
 # SCE Static Integration Fixture Code Generation
 #
 # Parallel to SCEStaticW3CTest.cmake but scoped to integration
-# fixtures under `integration_resources/<stem>/<stem>.scxml` (RFC
-# `claudedocs/rfc-donedata-5-backend-layout.md` Q-2). Generates C++
+# fixtures under `integration_resources/<stem>/<stem>.scxml`. Generates C++
 # state machine code (parent + synth-invoke children) at CMake
 # build time into ${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated/.
 #

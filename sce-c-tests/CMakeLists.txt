@@ -16,7 +16,7 @@
 # conformance (no in-test fixtures, no parametrised cases).
 
 include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticW3CTest.cmake)
-# Phase E: parallel CMake function for integration fixtures
+# Parallel CMake function for integration fixtures
 # (`integration_resources/<stem>/<stem>.scxml` → `<output>/<stem>_sm.{h,c}`).
 include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticIntegrationFixture.cmake)
 
@@ -145,7 +145,7 @@ sce_generate_static_w3c_c_test(436 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.4 + 
 sce_generate_static_w3c_c_test(451 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 5.9.2 + B.2: ECMAScript-syntax pure In() predicate with surrounding parens (e.g. `(In('s1'))`) routes through the same native-lower filter — the `is_pure_in_predicate` parser predicate already strips wrapping parens, and the regex `In\(['"]([^'"]+)['"]\)` matches regardless of the outer grouping, so the produced chunk is identical to test310's
 sce_generate_static_w3c_c_test(409 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 3.4 + 5.9.2: in onexit, the exiting state has already been removed from the active configuration — `<if cond="In('s011')">` reads the bitmap **after** s011 was cleared, so event1 is never raised and only the 1 s timeout fires (success path); needs polling-driven _tick (test579 pattern) because the timeout target=pass is the verdict-deciding event
 
-# 옵션 ρ free-pass batch — Phase 0 reconnaissance confirmed these 22 fixtures generate, compile (gcc -std=c11 -Wall -Wextra -Wpedantic -Werror) and run to verdict pass against the existing C11 infrastructure with no codegen change. Each below names the spec clause exercised; the path is already pinned by an earlier landing — these fixtures extend the consumer surface for the same code path.
+# Free-pass batch — reconnaissance confirmed these 22 fixtures generate, compile (gcc -std=c11 -Wall -Wextra -Wpedantic -Werror) and run to verdict pass against the existing C11 infrastructure with no codegen change. Each below names the spec clause exercised; the path is already pinned by an earlier landing — these fixtures extend the consumer surface for the same code path.
 sce_generate_static_w3c_c_test(194 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 5.10 + 6.2: !invalid send target raises error.execution and aborts the surrounding entry-action chain so the trailing send never queues; App.D.2 internal-priority drain matches the error transition before any wildcard. Same arm test159 already pins (옵션 A2.target 좁음).
 sce_generate_static_w3c_c_test(200 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 6.2: confirms the SCXMLEventProcessor type literal (`type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor"`) is supported and routes through bare-external dispatch — same send_type carve-out test348/495 already covers (옵션 ρ).
 sce_generate_static_w3c_c_test(335 "${SCE_C_GENERATED_DIR}")  # W3C SCXML 5.10.1: _event.origin is unset for internal events — process_event_queues seeds _pending_event_origin only on external pops, so internally raised events read nil and `typeof _event.origin === 'undefined'` matches pass (옵션 σ binding from 3922f9ab).
@@ -354,13 +354,13 @@ foreach(TEST_NUM ${W3C_C_AOT_TESTS})
     endif()
 endforeach()
 
-# ─── Integration fixtures (RFC Phase E) ─────────────────────────────
+# ─── Integration fixtures ────────────────────────────────────────────
 #
 # Build-time generation under SCE_C_INTEGRATION_GENERATED_DIR (no
 # committed tree — the build is the §6.2.6 freshness invariant,
 # mirroring the cpp/c11 W3C IRP pattern). The fixture closes the W3C
 # IRP gap on `<donedata>` + `<invoke>` + `done.invoke.<id>._event.data`
-# (Phase 0 grep against `resources/*/test*.txml` returned zero hits).
+# (a grep against `resources/*/test*.txml` returned zero hits).
 sce_generate_static_integration_c_test(donedata_local_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}"
     SYNTH_INVOKE_CHILDREN inv_param inv_content
 )
