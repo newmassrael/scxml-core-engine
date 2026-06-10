@@ -66,6 +66,11 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from scxml_toc_to_manifest import label_to_leaf  # noqa: E402
 
+# The synth converter owns the synth leaf policy (extractor token rule: a dot
+# survives only between digits, 5.B -> 5-B, 5.J.2 -> 5-J-2); import it so the
+# migrator and the manifest can never drift.
+from synth_rfc_to_manifest import label_to_leaf as synth_label_to_leaf  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 DEFAULT_LEDGER = os.path.join(
@@ -77,7 +82,14 @@ DEFAULT_MESH_LEDGER = os.path.join(
 DEFAULT_WIRE_LEDGER = os.path.join(
     REPO_ROOT, "docs", "sce-ledger", "wire", ".atomic", "workspace.atomic.json"
 )
-_NS_DEFAULT_LEDGER = {"mesh": DEFAULT_MESH_LEDGER, "wire": DEFAULT_WIRE_LEDGER}
+DEFAULT_SYNTH_LEDGER = os.path.join(
+    REPO_ROOT, "docs", "spec", "synth", ".atomic", "workspace.atomic.json"
+)
+_NS_DEFAULT_LEDGER = {
+    "mesh": DEFAULT_MESH_LEDGER,
+    "wire": DEFAULT_WIRE_LEDGER,
+    "synth": DEFAULT_SYNTH_LEDGER,
+}
 
 # A citation label: a numeric path (digits + dotted digits) or a lettered
 # appendix path (single uppercase letter + at least one dotted-digit group).
@@ -99,6 +111,24 @@ MESH_LABEL_RE = r"[0-9]+(?:\.[0-9]+)*"
 # it -- "RFC §W4" is the Wire RFC, not the IETF "RFC <digits>" form.
 WIRE_LABEL_RE = r"W[0-9]+(?:\.[0-9]+)?"
 
+# The synth namespace (protocol-synthesis RFC, docs/spec/synth) labels mix
+# dotted digits and single-uppercase segments: 5.B, 5.J.2, 6.2.6, 2.1, 7.
+#
+# A LETTERED label (one with a `.UPPERCASE` segment) is structurally unique
+# to this RFC across every document SCE comments cite, so it is claimable
+# bare. A NUMERIC label is not: "RFC §<n>" in this codebase names at least
+# six different internal documents (the C11-backend RFC's "§2.1 dim
+# coverage", the EventSchema RFC's "§3 B2/B3", the sce:template RFC's
+# "§6.3 Q3", the NL->IR design RFC's "§8 strict variant membership",
+# SCE_FORGE.md, SCE_ERROR_CONTRACT.md ...), and sibling-ledger exclusion
+# cannot see unregistered documents. So a numeric label is claimed ONLY
+# under a marker that names the document ("watching-zenoh RFC §7"); every
+# other numeric sighting is reported for manual review — the reviewer
+# resolves it by rewriting the confirmed-synth sites to the §synth-<id>
+# form directly (the namespace token itself names the document).
+SYNTH_LABEL_RE = r"[0-9]+(?:\.(?:[0-9]+|[A-Z]))*"
+SYNTH_DOC_MARKER_RE = re.compile(r"(?i)\bwatching-zenoh[ \t]+RFC[ \t]*§?[ \t]*$")
+
 # An external-standard marker that DIRECTLY precedes the sigil (anchored to the
 # end of the line-so-far) names a non-mesh citation the bare-sigil migrator must
 # not claim:
@@ -117,9 +147,20 @@ FOREIGN_MARKER_RE = re.compile(
 )
 
 # File extensions we know how to tokenize for comments. Rust block comments
-# nest; C/C++ ones do not.
+# nest; C/C++ ones do not. The mask family mirrors mnemosyne's
+# comment_syntax_for dispatch (Slash / Hash / whole-text) so the migrator
+# rewrites exactly what validate-code-refs will scan:
+#   slash:      C-family line+block comments
+#   hash:       `#` line comments (string literals masked)
+#   whole-text: no comment grammar (templates, XML) — the validator
+#               whole-text-scans these unknown extensions, so the migrator
+#               rewrites whole-text too (lockstep over precision).
 NESTED_BLOCK = {".rs"}
-KNOWN_EXTS = {".rs", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx", ".jinja", ".j2"}
+SLASH_EXTS = {".rs", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hxx", ".jinja", ".j2",
+              ".c", ".go", ".kt", ".kts"}
+HASH_EXTS = {".py", ".sh"}
+WHOLE_TEXT_EXTS = {".jinja2", ".scxml", ".xsd"}
+KNOWN_EXTS = SLASH_EXTS | HASH_EXTS | WHOLE_TEXT_EXTS
 
 
 def comment_mask(text, nested):
@@ -188,10 +229,65 @@ def comment_mask(text, nested):
     return mask
 
 
+def hash_comment_mask(text):
+    """True where text[i] is inside a `#` line comment (string literals
+    masked out, mirroring mnemosyne's Hash comment syntax)."""
+    mask = [False] * len(text)
+    i, n = 0, len(text)
+    NORMAL, STR1, STR2, LINE = range(4)
+    state = NORMAL
+    while i < n:
+        c = text[i]
+        if state == NORMAL:
+            if c == "#":
+                state = LINE
+                mask[i] = True
+            elif c == "'":
+                state = STR1
+            elif c == '"':
+                state = STR2
+            i += 1
+        elif state in (STR1, STR2):
+            if c == "\\":
+                i += 2
+                continue
+            if (state == STR1 and c == "'") or (state == STR2 and c == '"'):
+                state = NORMAL
+            i += 1
+        else:  # LINE
+            if c == "\n":
+                state = NORMAL
+            else:
+                mask[i] = True
+            i += 1
+    return mask
+
+
+def mask_for(path, text):
+    """Comment mask dispatch, in lockstep with mnemosyne's comment_syntax_for:
+    slash-family files get the C tokenizer, hash-family the `#` tokenizer
+    (CMakeLists.txt included), and whole-text extensions (templates, XML —
+    unknown to the validator, which whole-text-scans them) an all-True mask."""
+    if os.path.basename(path) == "CMakeLists.txt":
+        return hash_comment_mask(text)
+    ext = os.path.splitext(path)[1]
+    if ext in WHOLE_TEXT_EXTS:
+        return [True] * len(text)
+    if ext in HASH_EXTS:
+        return hash_comment_mask(text)
+    return comment_mask(text, nested=(ext in NESTED_BLOCK))
+
+
 def _leaf(label, namespace):
     """The id leaf (the part after '<ns>-'). wire keeps its wave label verbatim
-    (W4.5); scxml/mesh apply the A1 policy (numeric dots / lettered hyphens)."""
-    return label if namespace == "wire" else label_to_leaf(label)
+    (W4.5); synth applies the extractor token rule (dots survive only between
+    digits, owned by synth_rfc_to_manifest); scxml/mesh apply the A1 policy
+    (numeric dots / lettered hyphens)."""
+    if namespace == "wire":
+        return label
+    if namespace == "synth":
+        return synth_label_to_leaf(label)
+    return label_to_leaf(label)
 
 
 def label_to_id(label, namespace="scxml"):
@@ -224,10 +320,9 @@ def plan_file(path, ledger_ids, prefix="W3C SCXML", namespace="scxml", exclude_l
     exclude_ledger_ids is the sibling (scxml) ledger used by the cross-namespace
     ambiguity guard in _plan_bare.
     """
-    ext = os.path.splitext(path)[1]
     with open(path, "r", encoding="utf-8") as fh:
         text = fh.read()
-    mask = comment_mask(text, nested=(ext in NESTED_BLOCK))
+    mask = mask_for(path, text)
     line_starts, lineno = _line_offsets(text)
 
     if namespace == "scxml":
@@ -314,7 +409,10 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
     A reported (skipped) citation stays bare, which the namespace-scoped gate
     skips anyway — so leaving it is safe; the report is the manual-review surface.
     """
-    label_re = WIRE_LABEL_RE if namespace == "wire" else MESH_LABEL_RE
+    label_re = {
+        "wire": WIRE_LABEL_RE,
+        "synth": SYNTH_LABEL_RE,
+    }.get(namespace, MESH_LABEL_RE)
     chain = label_re + r"(?:/" + label_re + r")*"
     pattern = re.compile(r"§[ \t]*(?P<barechain>" + chain + r")")
     migrations, skipped = [], []
@@ -366,13 +464,28 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
                     }
                 )
             continue
+        # synth document-naming marker ("watching-zenoh RFC §8 Q8"): names
+        # the protocol-synthesis RFC explicitly, so a numeric label under it
+        # is claimable. Ledger membership still gates either way.
+        synth_doc_marked = namespace == "synth" and SYNTH_DOC_MARKER_RE.search(line_prefix)
         reasons = []
         for lbl, sid in zip(labels, ids):
             leaf = _leaf(lbl, namespace)
+            lettered = namespace == "synth" and any(ch.isupper() for ch in lbl)
             if sid not in target_ids:
                 reasons.append((lbl, sid, f"id not in {namespace} ledger (non-section)"))
-            elif ("scxml-" + leaf) in exclude_ids:
-                reasons.append((lbl, sid, "ambiguous: also a W3C section; manual review"))
+            elif namespace == "synth" and not lettered and not synth_doc_marked:
+                reasons.append(
+                    (
+                        lbl,
+                        sid,
+                        "numeric label without document-naming marker; manual review",
+                    )
+                )
+            elif not synth_doc_marked and any(
+                (ns + "-" + leaf) in exclude_ids for ns in ("scxml", "mesh")
+            ):
+                reasons.append((lbl, sid, "ambiguous: also a sibling-ledger section; manual review"))
         if not reasons:
             out.append(text[last : m.start()])
             out.append(" / ".join("§" + s for s in ids))
@@ -426,10 +539,13 @@ def iter_source_files(paths):
         elif os.path.isdir(p):
             for root, dirs, files in os.walk(p):
                 dirs[:] = [
-                    d for d in dirs if not d.startswith(".") and d not in ("target", "node_modules")
+                    d
+                    for d in dirs
+                    if not d.startswith(".")
+                    and d not in ("target", "node_modules", "build")
                 ]
                 for f in sorted(files):
-                    if os.path.splitext(f)[1] in KNOWN_EXTS:
+                    if os.path.splitext(f)[1] in KNOWN_EXTS or f == "CMakeLists.txt":
                         yield os.path.join(root, f)
 
 
@@ -441,9 +557,10 @@ def main(argv=None):
     ap.add_argument(
         "--namespace",
         default="scxml",
-        choices=["scxml", "mesh", "wire"],
+        choices=["scxml", "mesh", "wire", "synth"],
         help="scxml: W3C-marked cites (default); mesh: bare §<n> SCE_MESH.md "
-        "cites; wire: bare §W<n> Wire RFC wave cites",
+        "cites; wire: bare §W<n> Wire RFC wave cites; synth: protocol-"
+        'synthesis RFC cites ("RFC §5.B" marked + bare §5.J.2 / §6.2.6)',
     )
     ap.add_argument(
         "--ledger",
@@ -483,12 +600,20 @@ def main(argv=None):
 
     ledger_path = args.ledger or _NS_DEFAULT_LEDGER.get(args.namespace, DEFAULT_LEDGER)
     ledger_ids = load_ledger_ids(ledger_path)
-    # The cross-namespace guard only applies to mesh (whose numeric labels can
-    # collide with W3C section numbers). wire labels (W<n>) are unique, so no
-    # sibling ledger is loaded.
+    # The cross-namespace guard applies where numeric labels can collide:
+    # mesh excludes against the W3C scxml ledger; synth (whose §6.2.6 / §3 /
+    # §7 numbers exist in BOTH siblings) excludes against scxml AND mesh.
+    # wire labels (W<n>) are unique, so no sibling ledger is loaded.
     exclude_ids = set()
     if args.namespace == "mesh":
         exclude_ids = load_ledger_ids(args.exclude_ledger or DEFAULT_LEDGER)
+    elif args.namespace == "synth":
+        if args.exclude_ledger:
+            exclude_ids = load_ledger_ids(args.exclude_ledger)
+        else:
+            exclude_ids = load_ledger_ids(DEFAULT_LEDGER) | load_ledger_ids(
+                DEFAULT_MESH_LEDGER
+            )
 
     report = {"migrations": [], "skipped": [], "files_changed": 0}
     for path in iter_source_files(args.paths):
@@ -505,6 +630,32 @@ def main(argv=None):
             if args.apply:
                 with open(path, "w", encoding="utf-8") as fh:
                     fh.write(new_text)
+
+    if args.check and args.namespace != "scxml":
+        # Non-scxml form gate: a *claimable* free-text cite (one --apply
+        # would rewrite) is the violation; skipped cites are legitimately
+        # bare (sibling-namespace numbers, other documents' ids, quoted
+        # runtime strings) and stay for their own ledgers' rounds.
+        if report["migrations"]:
+            print(
+                f"ERROR: free-text {args.namespace} RFC section cite(s) in "
+                f"enrolled comments. Citations must use the §{args.namespace}- "
+                "form so validate-code-refs can gate them against the ledger:",
+                file=sys.stderr,
+            )
+            for d in sorted(report["migrations"], key=lambda d: (d["file"], d["line"])):
+                print(f"  {d['file']}:{d['line']}  §{d['label']} -> §{d['id']}", file=sys.stderr)
+            print(
+                "\nMigrate with: python3 tools/mnemosyne-adoption/"
+                f"migrate_citations.py <path> --namespace {args.namespace} --apply",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            f"citation-form check: OK — no claimable free-text {args.namespace} "
+            "section cites in enrolled comments."
+        )
+        return 0
 
     if args.check:
         # The spec is "SCXML 1.0"; "W3C SCXML 1.0" is the version, not a
