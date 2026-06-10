@@ -22,16 +22,17 @@
 //! `&mut self` (the policy) and `&mut Engine<Self>` (the engine). Each site
 //! is documented with a safety comment. Generated code never writes `unsafe`.
 //!
-//! ## Phase 1 scope
+//! ## Public surface
 //!
 //! - Lifecycle: `new`, `initialize`, `step`, `tick`, `stop`, `is_running`
 //! - State queries: `get_current_state`, `get_active_states`, `is_in_final_state`
 //! - Event submission: `raise`, `raise_external`, `process_event`
-//! - Scheduler stubs: `schedule_event`, `cancel_event`, `has_ready_events`
-//! - Hierarchical transition: `handle_hierarchical_transition` (150 lines ported from C++)
+//! - Delayed events (W3C SCXML 6.2): `schedule_event`, `cancel_event`,
+//!   `has_ready_events`, backed by [`PullScheduler`]
+//! - Hierarchical transition: `handle_hierarchical_transition`
 //!
-//! Phases 2-4 expand scheduler, HTTP send, invoke support, and the full
-//! parallel state processing machinery.
+//! HTTP send (W3C SCXML C.2, `http-send` feature) and `<invoke>` plumbing
+//! (W3C SCXML 6.4) are `!no_std`-gated.
 
 // Watching-zenoh RFC §5.J.2 (lines 1989-1994): `Arc`/`Mutex` back the
 // parent→child external event queue plumbing in `get_external_queue_handle`,
@@ -99,7 +100,7 @@ use crate::{sce_log_debug, SceString};
 /// (§6.2.4) is integer ms/s/min/h; sub-ms scheduling is out of contract.
 pub type SchedTimePoint = u64;
 
-/// Minimal scheduler stub for Phase 1.
+/// W3C SCXML 6.2: pull-style scheduler for `<send delay>` events.
 ///
 /// 1:1 API parity with C++ `SCE::PullScheduler<EventType>`. Stores delayed
 /// events with a `SchedTimePoint` ready-time and exposes pull-style queries

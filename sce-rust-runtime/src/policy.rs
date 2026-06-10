@@ -326,7 +326,7 @@ pub trait StatePolicy: Sized + 'static {
     /// - raise internal events via `engine.raise(...)`
     /// - schedule delayed sends via `engine.schedule_event(...)`
     /// - mutate datamodel variables on `self`
-    /// - defer invokes via `InvokeHelper` (Phase 4)
+    /// - defer `<invoke>` starts until the configuration is stable (W3C SCXML 6.4)
     fn execute_entry_actions(&mut self, state: Self::State, engine: &mut Engine<Self>);
 
     /// Execute `<onexit>` actions for `state` (W3C SCXML 3.8).
