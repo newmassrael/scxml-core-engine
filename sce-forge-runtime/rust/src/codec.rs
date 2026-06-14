@@ -122,100 +122,31 @@ pub fn try_project_bounded<'s, T, U, const N: usize>(
 //
 // A codec's borrowed view decodes `bytes` / `string` fields as zero-copy
 // `&'a [u8]` / `&'a str`; its lifetime-free owned mirror needs a container
-// that holds those bytes by value. The right container depends on the
-// memory model, so it resolves through one type that carries the per-slot
-// cap `N` as a type parameter rather than a `#[cfg]` scattered across every
-// generated codec:
+// that holds those bytes by value, resolving to a growable `Vec` / `String`
+// under `alloc` or a fixed `heapless` form (the C11 `char[N]` analog) on the
+// heap-free MCU tier. `N` (the field's `sce:max-size`) rides on the type so
+// a hand-assembled `{Codec}Owned` builder infers the cap from the field
+// (`SceBytes::from_slice(&v)?`) rather than hardcoding it.
 //
-//   - With `alloc`, storage is a growable `Vec<u8>` / `String`. The wire
-//     protocols SCE codecs target (e.g. Zenoh) place no ceiling on a
-//     payload, so the AP profile must not either — `N` is advisory here.
-//   - Without `alloc`, storage is the fixed-capacity `heapless::Vec<u8, N>`
-//     / `heapless::String<N>` — the Rust mirror of C11's `char[N]`. `N`
-//     (the field's `sce:max-size`, default `BYTES_DEFAULT_MAX`) is the hard
-//     capacity, so an over-`N` view surfaces `TooManyElements`.
-//
-// These are NEWTYPES, not type aliases. Under `alloc` an alias would erase
-// `N` to a bare `Vec<u8>`, so a hand-assembled `{Codec}Owned` (an encode-side
-// builder filling fields by value) could not infer `N` from the field type
-// and would have to hardcode the cap at every call site — duplicating the
-// SCXML `sce:max-size` SSOT. Carrying `N` on the type lets a downstream
-// builder write `SceBytes::from_slice(&v)?` and infer the cap from the field.
-// `from_slice` / `from_view` are the borrowed→owned scalar SSOT (the analog
-// of [`try_project_bounded`] for lists); `as_slice` / `as_str` and `Deref`
-// give the borrowed re-projection that `{Codec}Owned::as_borrowed` reuses.
+// `SceBytes<N>` is the SAME concept the statechart-emit runtime needs for
+// typed `_event.data` byte payloads, so it lives in the shared
+// `sce-portable-bytes` crate (one definition, both runtimes `pub use` it —
+// the construction logic cannot drift). Re-exported here as
+// `sce_forge_runtime::codec::SceBytes` so generated codec output spells the
+// path unchanged. Its `from_slice` raises the crate-neutral
+// [`sce_portable_bytes::CapacityExceeded`]; the `From` impl below maps that
+// into `CodecError::TooManyElements` so a generated `try_into_owned` keeps
+// threading one `?`. `SceString<N>` stays codec-local below — its emit-path
+// sibling uses a *global* cap (not per-field `N`), so there is no shared
+// definition to factor out.
+pub use sce_portable_bytes::SceBytes;
 
-/// Portable owned storage for a `bytes` codec field. Wraps a growable
-/// `Vec<u8>` under `alloc` (`N` advisory) or a fixed `heapless::Vec<u8, N>`
-/// otherwise (`N` the hard capacity). `N` rides on the type so a downstream
-/// owned-builder infers the cap from the field rather than hardcoding it.
-#[cfg(feature = "alloc")]
-#[repr(transparent)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SceBytes<const N: usize>(alloc::vec::Vec<u8>, core::marker::PhantomData<[u8; N]>);
-/// no-alloc variant of [`SceBytes`]: fixed-capacity inline storage capped at
-/// `N`, heap-free for the MCU tier.
-#[cfg(not(feature = "alloc"))]
-#[repr(transparent)]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SceBytes<const N: usize>(crate::heapless::Vec<u8, N>);
-
-impl<const N: usize> SceBytes<N> {
-    /// Copy a borrowed `&[u8]` decode view into the owned form. Infallible
-    /// heap copy under `alloc` (`N` advisory); fixed-capacity copy without
-    /// `alloc`, raising [`CodecError::TooManyElements`] past `N` — the same
-    /// bound and error the decode path enforces. Uniform `Result` so a
-    /// generated `try_into_owned` threads one `?` regardless of profile, and
-    /// `N` is inferred from the destination field's type (no turbofish).
-    #[cfg(feature = "alloc")]
-    pub fn from_slice(s: &[u8]) -> Result<Self, CodecError> {
-        Ok(Self(s.to_vec(), core::marker::PhantomData))
-    }
-    /// no-alloc counterpart: fixed-capacity copy, fallible past `N`.
-    #[cfg(not(feature = "alloc"))]
-    pub fn from_slice(s: &[u8]) -> Result<Self, CodecError> {
-        crate::heapless::Vec::from_slice(s)
-            .map(Self)
-            .map_err(|_| CodecError::TooManyElements)
-    }
-    /// Borrow the owned bytes back as a slice — the projection
-    /// `{Codec}Owned::as_borrowed` reuses.
-    pub fn as_slice(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
-impl<const N: usize> core::ops::Deref for SceBytes<N> {
-    type Target = [u8];
-    fn deref(&self) -> &[u8] {
-        self.0.as_slice()
-    }
-}
-
-// Compare against raw slices / arrays like `Vec<u8>` and `heapless::Vec` do,
-// so a consumer (or the generated round-trip sidecar) writes
-// `assert_eq!(owned.payload, b"...")` without an explicit `.as_slice()`.
-// The derived `PartialEq` covers `SceBytes<N> == SceBytes<N>`; these add the
-// byte-literal/slice right-hand sides the wrapped containers offered before
-// the newtype.
-impl<const N: usize> PartialEq<[u8]> for SceBytes<N> {
-    fn eq(&self, other: &[u8]) -> bool {
-        self.as_slice() == other
-    }
-}
-impl<const N: usize> PartialEq<&[u8]> for SceBytes<N> {
-    fn eq(&self, other: &&[u8]) -> bool {
-        self.as_slice() == *other
-    }
-}
-impl<const N: usize, const M: usize> PartialEq<[u8; M]> for SceBytes<N> {
-    fn eq(&self, other: &[u8; M]) -> bool {
-        self.as_slice() == other.as_slice()
-    }
-}
-impl<const N: usize, const M: usize> PartialEq<&[u8; M]> for SceBytes<N> {
-    fn eq(&self, other: &&[u8; M]) -> bool {
-        self.as_slice() == other.as_slice()
+impl From<sce_portable_bytes::CapacityExceeded> for CodecError {
+    /// A no-alloc `SceBytes::from_slice` past its capacity is the same
+    /// bounded-storage overflow the decode path reports — surface it as the
+    /// existing typed variant so callers match one error.
+    fn from(_: sce_portable_bytes::CapacityExceeded) -> Self {
+        CodecError::TooManyElements
     }
 }
 
@@ -224,13 +155,13 @@ impl<const N: usize, const M: usize> PartialEq<&[u8; M]> for SceBytes<N> {
 /// the type for the same downstream-inference reason as [`SceBytes`].
 #[cfg(feature = "alloc")]
 #[repr(transparent)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SceString<const N: usize>(alloc::string::String, core::marker::PhantomData<[u8; N]>);
 /// no-alloc variant of [`SceString`]: fixed-capacity inline storage capped at
 /// `N`, heap-free for the MCU tier.
 #[cfg(not(feature = "alloc"))]
 #[repr(transparent)]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SceString<const N: usize>(crate::heapless::String<N>);
 
 impl<const N: usize> SceString<N> {
@@ -265,13 +196,10 @@ impl<const N: usize> core::ops::Deref for SceString<N> {
 }
 
 // String-literal comparison parity with the wrapped `String` /
-// `heapless::String`, so `assert_eq!(owned.name, "abc")` works without an
-// explicit `.as_str()`.
-impl<const N: usize> PartialEq<str> for SceString<N> {
-    fn eq(&self, other: &str) -> bool {
-        self.as_str() == other
-    }
-}
+// `heapless::String`, so `assert_eq!(owned.locator, "abc")` works without an
+// explicit `.as_str()` (consumed by the nested owned round-trip test). Only
+// the `&str` form is kept — string literals are `&str`; the unsized `str`
+// right-hand side has no consumer.
 impl<const N: usize> PartialEq<&str> for SceString<N> {
     fn eq(&self, other: &&str) -> bool {
         self.as_str() == *other

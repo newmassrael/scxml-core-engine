@@ -81,7 +81,9 @@ fn native_action_dispatches_typed_payload_to_host_trait() {
     // Per-event typed inject (extension trait): deliver `fragment.received`
     // with a bytes payload + offset. The transition fires `append_fragment_payload`.
     engine.raise_fragment_received(StatechartNativeActionFragmentReceivedPayload {
-        payload: b"abc".to_vec(),
+        // Portable `SceBytes<64>` built via the SSOT ctor — `N` inferred from
+        // the field type (no turbofish / hardcoded cap).
+        payload: ::sce_rust_runtime::SceBytes::from_slice(b"abc").unwrap(),
         offset: 7,
     });
     engine.step();

@@ -25,8 +25,11 @@ default = []
 # Compile the procedure module (ProcedurePolicy, ProcedureServiceRequest,
 # ProcedureRunResult, run_procedure). Requires a heap allocator because
 # procedures carry owned strings, byte payloads, and a BTreeMap of donedata.
-# Consumers running on std or no_std+alloc targets opt in explicitly.
-alloc = []
+# Consumers running on std or no_std+alloc targets opt in explicitly. Also
+# selects the unbounded `Vec<u8>` form of the shared `SceBytes` (the codec
+# `{Codec}Owned` byte fields); without it `SceBytes` is the fixed
+# `heapless::Vec<u8, N>`.
+alloc = ["sce-portable-bytes/alloc"]
 
 [dependencies]
 # Bounded inline list storage for codec repeat / tlv-chain fields
@@ -37,6 +40,10 @@ alloc = []
 # output references `sce_forge_runtime::heapless::Vec` and consumers keep
 # a single dependency edge with one pinned heapless version.
 heapless.workspace = true
+# Single definition of the portable owned `bytes` storage (`SceBytes<N>`),
+# shared with the statechart-emit runtime so the construction logic never
+# drifts. Re-exported as `sce_forge_runtime::codec::SceBytes`.
+sce-portable-bytes = { path = "../../sce-portable-bytes", default-features = false }
 
 # Cross-language numerical conformance harness. build.rs invokes
 # sce_build::compile_forge_with_imports() at build time to generate
