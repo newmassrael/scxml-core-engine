@@ -2818,7 +2818,7 @@ fn codec_scalar_type(l: &LangCtx, ty: &SceType) -> String {
 /// SCXML SSOT). Returns `(owned_field_type, into_owned_expr)` where the
 /// expr deep-copies `self.<id>` (consumed by `into_owned(self)`).
 ///
-/// Scalar `Bytes` / `String` fields project to the portable runtime alias
+/// Scalar `Bytes` / `String` fields project to the portable runtime newtype
 /// `SceBytes<N>` / `SceString<N>`, so a leaf codec's owned mirror compiles
 /// on both profiles (unbounded `Vec` / `String` under `alloc`, heap-free
 /// `heapless` capped at `N` without it). Only an *unbounded* owned `Vec`
@@ -2839,12 +2839,12 @@ fn rust_owned_field_keys(
     // later opt match without clones.
     #[derive(Clone, Copy)]
     enum Conv {
-        Move,                // value already owned (Copy scalar / non-borrowed body)
-        BytesPortable(u32),  // &[u8] -> SceBytes<N>  (uniform-fallible; N = cap)
-        StringPortable(u32), // &str -> SceString<N> (uniform-fallible; N = cap)
-        IntoOwned,           // borrowed body -> {Body}Owned (fallible try_into_owned)
-        ListBorrowed,        // list of borrowed bodies -> Vec<{Body}Owned>
-        ListOwned,           // list of owned bodies     -> Vec<{Body}>
+        Move,           // value already owned (Copy scalar / non-borrowed body)
+        BytesPortable,  // &[u8] -> SceBytes<N>  (uniform-fallible; N infers)
+        StringPortable, // &str  -> SceString<N> (uniform-fallible; N infers)
+        IntoOwned,      // borrowed body -> {Body}Owned (fallible try_into_owned)
+        ListBorrowed,   // list of borrowed bodies -> Vec<{Body}Owned>
+        ListOwned,      // list of owned bodies     -> Vec<{Body}>
     }
 
     let id = l.codec_field_id(&f.id);
@@ -2876,30 +2876,32 @@ fn rust_owned_field_keys(
         }
     } else {
         // Portable owned scalar storage: a `Bytes` / `String` field's owned
-        // mirror is the runtime alias `SceBytes<N>` / `SceString<N>` (N =
-        // `resolve_bytes_max`), which resolves once in the forge runtime to
-        // an unbounded `Vec<u8>` / `String` under `alloc` (N advisory — the
-        // wire protocol places no payload ceiling, so the AP profile must
-        // not either) and to the heap-free `heapless::Vec<u8, N>` /
-        // `heapless::String<N>` (the C11 `char[N]` analog) without `alloc`.
-        // Construction goes through the runtime's uniform-fallible helper,
-        // so `try_into_owned` threads one `?` on every profile (the alloc
-        // copy never fails; the no-alloc copy enforces the `N` bound). The
-        // inverse `as_borrowed` re-projects either form via `.as_slice()` /
+        // mirror is the runtime newtype `SceBytes<N>` / `SceString<N>` (N =
+        // `resolve_bytes_max`), which wraps an unbounded `Vec<u8>` / `String`
+        // under `alloc` (N advisory — the wire protocol places no payload
+        // ceiling, so the AP profile must not either) and the heap-free
+        // `heapless::Vec<u8, N>` / `heapless::String<N>` (the C11 `char[N]`
+        // analog) without `alloc`. Construction goes through the newtype's
+        // uniform-fallible `from_slice` / `from_view`, so `try_into_owned`
+        // threads one `?` on every profile (the alloc copy never fails; the
+        // no-alloc copy enforces the `N` bound) and `N` is inferred from the
+        // destination field's type — no turbofish, so a hand-assembled
+        // `{Codec}Owned` builder never hardcodes the cap. The inverse
+        // `as_borrowed` re-projects either form via `.as_slice()` /
         // `.as_str()`, so it needs no per-profile branch.
         match f.sce_type {
             SceType::Bytes => {
                 let max = crate::forge::limits::resolve_bytes_max(f.max_size);
                 (
                     format!("::sce_forge_runtime::codec::SceBytes<{max}>"),
-                    Conv::BytesPortable(max),
+                    Conv::BytesPortable,
                 )
             }
             SceType::String => {
                 let max = crate::forge::limits::resolve_bytes_max(f.max_size);
                 (
                     format!("::sce_forge_runtime::codec::SceString<{max}>"),
-                    Conv::StringPortable(max),
+                    Conv::StringPortable,
                 )
             }
             _ => (l.type_name(&f.sce_type).to_string(), Conv::Move),
@@ -2907,19 +2909,17 @@ fn rust_owned_field_keys(
     };
 
     // Single-call portable conversions (bytes / string) expose a point-free
-    // function path. With an explicit `N` (the `alloc` alias `SceBytes<N>`
-    // erases to `Vec<u8>`, so the const param is not inferable from the
-    // return type — the codegen pins it from the resolved cap), the scalar
-    // case calls it (`F(v)?`) and the `Option` case maps it (`.map(F)`),
-    // never a redundant closure (`clippy::redundant_closure`). The path is
-    // spelled once here so both arms stay in lockstep.
+    // constructor path. `N` is inferred from the destination field's type
+    // (the `SceBytes<N>` / `SceString<N>` newtype carries it), so no
+    // turbofish: the scalar case calls it (`F(v)?`) and the `Option` case
+    // maps it (`.map(F)`), never a redundant closure
+    // (`clippy::redundant_closure`). The path is spelled once here so both
+    // arms stay in lockstep.
     let call_path: Option<String> = match conv {
-        Conv::BytesPortable(n) => Some(format!(
-            "::sce_forge_runtime::codec::sce_bytes_from_slice::<{n}>"
-        )),
-        Conv::StringPortable(n) => Some(format!(
-            "::sce_forge_runtime::codec::sce_string_from_view::<{n}>"
-        )),
+        Conv::BytesPortable => Some("::sce_forge_runtime::codec::SceBytes::from_slice".to_string()),
+        Conv::StringPortable => {
+            Some("::sce_forge_runtime::codec::SceString::from_view".to_string())
+        }
         _ => None,
     };
 
@@ -2938,7 +2938,7 @@ fn rust_owned_field_keys(
                 true,
             ),
             Conv::ListOwned => (format!("{e}.into_iter().collect()"), false),
-            Conv::BytesPortable(_) | Conv::StringPortable(_) => {
+            Conv::BytesPortable | Conv::StringPortable => {
                 unreachable!("portable bytes/string convs project through call_path")
             }
         }

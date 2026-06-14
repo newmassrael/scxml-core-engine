@@ -118,7 +118,7 @@ impl<'a> CodecTail<'a> {
 // elements by value — call `.try_into_owned()` for this lifetime-free
 // `CodecTailOwned`. The rkyv-style Archived(borrowed) ↔ native
 // (owned) split, both generated from the one SCXML source (SSOT).
-// `String` / `Bytes` fields project to the portable runtime aliases
+// `String` / `Bytes` fields project to the portable runtime newtypes
 // `SceString<N>` / `SceBytes<N>`: an unbounded `String` / `Vec<u8>` under
 // `alloc` (the on-wire protocol caps no payload, so the AP profile must
 // not either — `N` is advisory) and the heap-free `heapless::String<N>` /
@@ -152,7 +152,7 @@ impl<'a> CodecTail<'a> {
         Ok(CodecTailOwned {
             msg_id: self.msg_id,
             status: self.status,
-            payload: ::sce_forge_runtime::codec::sce_bytes_from_slice::<32>(self.payload)?,
+            payload: ::sce_forge_runtime::codec::SceBytes::from_slice(self.payload)?,
         })
     }
 }

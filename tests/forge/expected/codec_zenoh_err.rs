@@ -245,7 +245,7 @@ impl<'a> CodecZenohErr<'a> {
 // elements by value — call `.try_into_owned()` for this lifetime-free
 // `CodecZenohErrOwned`. The rkyv-style Archived(borrowed) ↔ native
 // (owned) split, both generated from the one SCXML source (SSOT).
-// `String` / `Bytes` fields project to the portable runtime aliases
+// `String` / `Bytes` fields project to the portable runtime newtypes
 // `SceString<N>` / `SceBytes<N>`: an unbounded `String` / `Vec<u8>` under
 // `alloc` (the on-wire protocol caps no payload, so the AP profile must
 // not either — `N` is advisory) and the heap-free `heapless::String<N>` /
@@ -315,7 +315,7 @@ impl<'a> CodecZenohErr<'a> {
             encoding: self.encoding.map(|_v| _v.try_into_owned()).transpose()?,
             extensions: self.extensions.map(|_v| _v.into_iter().map(|_e| _e.try_into_owned()).collect::<Result<_, _>>()).transpose()?,
             payload_len: self.payload_len,
-            payload: ::sce_forge_runtime::codec::sce_bytes_from_slice::<256>(self.payload)?,
+            payload: ::sce_forge_runtime::codec::SceBytes::from_slice(self.payload)?,
         })
     }
 }
