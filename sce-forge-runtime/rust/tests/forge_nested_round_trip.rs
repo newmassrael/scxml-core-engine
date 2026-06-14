@@ -110,7 +110,10 @@ fn nested_projection_rejects_overflowing_list() {
             n: 1,
             locs: vec![CodecZenohLocatorOwned {
                 locator_len: 1,
-                locator: sce_forge_runtime::heapless::String::try_from("a").unwrap(),
+                // Owned `locator` is the portable `SceString<128>` — build it
+                // through the same SSOT helper codegen emits (profile-agnostic:
+                // `String` under alloc, `heapless::String<128>` without it).
+                locator: sce_forge_runtime::codec::sce_string_from_view::<128>("a").unwrap(),
             }],
         }
     }

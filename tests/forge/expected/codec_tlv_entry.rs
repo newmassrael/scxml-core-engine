@@ -124,25 +124,29 @@ impl<'a> CodecTlvEntry<'a> {
     }
 }
 
-// ── Owned projection (no-alloc bounded-inline native form) ────────────
+// ── Owned projection (portable native form) ───────────────────────────
 // `CodecTlvEntry<'a>` above is a zero-copy view borrowing the decode
 // buffer. Consumers that persist a decoded value beyond the buffer's
 // lifetime — including the self-contained bounded-collection that stores
 // elements by value — call `.try_into_owned()` for this lifetime-free
 // `CodecTlvEntryOwned`. The rkyv-style Archived(borrowed) ↔ native
-// (owned) split, both generated from the one SCXML source (SSOT). Bounded
-// `String` / `Bytes` fields project to `heapless::String<N>` /
-// `heapless::Vec<u8, N>` (the Rust mirror of C11's `char[N]`), so a leaf
-// codec's owned form is fully no-alloc; only an unbounded owned `Vec`
-// (list / embed / variant body) keeps the `alloc` gate. Construction from
-// the unbounded `&str` / `&[u8]` view re-checks the decode bound, so
-// `try_into_owned` is the fallible direction and `as_borrowed`
-// (same `N`) the infallible inverse.
+// (owned) split, both generated from the one SCXML source (SSOT).
+// `String` / `Bytes` fields project to the portable runtime aliases
+// `SceString<N>` / `SceBytes<N>`: an unbounded `String` / `Vec<u8>` under
+// `alloc` (the on-wire protocol caps no payload, so the AP profile must
+// not either — `N` is advisory) and the heap-free `heapless::String<N>` /
+// `heapless::Vec<u8, N>` (the C11 `char[N]` analog) without it, where `N`
+// is the hard capacity. A leaf codec's owned form therefore still compiles
+// on a no-alloc MCU; only an unbounded owned `Vec` (list / embed / variant
+// body) keeps the `alloc` gate. `try_into_owned` stays the fallible
+// direction (one `?` per profile: the `alloc` copy cannot fail, the
+// no-alloc copy enforces `N`); `as_borrowed` re-borrows either
+// form infallibly via `.as_slice()` / `.as_str()`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecTlvEntryOwned {
     pub entry_type: u8,
     pub entry_len: u8,
-    pub entry_body: ::sce_forge_runtime::heapless::Vec<u8, 32>,
+    pub entry_body: ::sce_forge_runtime::codec::SceBytes<32>,
 }
 
 impl<'a> CodecTlvEntry<'a> {
@@ -150,16 +154,18 @@ impl<'a> CodecTlvEntry<'a> {
     /// [`CodecTlvEntryOwned`]. Call at a decode boundary when the
     /// decoded value must outlive the input buffer — stored in a long-lived
     /// enum, moved across an async task, or inserted by value into a
-    /// bounded-collection. Bounded `String` / `Bytes` fields copy into
-    /// `heapless::String<N>` / `heapless::Vec<u8, N>`; that copy re-checks
-    /// the decode bound, so the method is fallible
-    /// (`CodecError::TooManyElements` past `N` — the bound and error decode
-    /// enforces). The borrowed zero-copy path is unaffected.
+    /// bounded-collection. `String` / `Bytes` fields copy into the portable
+    /// `SceString<N>` / `SceBytes<N>`: an unbounded heap copy under `alloc`
+    /// (`N` advisory), else a fixed `heapless` copy capped at `N`. The
+    /// method is fallible for profile uniformity — without `alloc` an
+    /// over-`N` view raises `CodecError::TooManyElements` (the same bound
+    /// and error decode enforces); under `alloc` the copy never fails. The
+    /// borrowed zero-copy path is unaffected.
     pub fn try_into_owned(self) -> Result<CodecTlvEntryOwned, CodecError> {
         Ok(CodecTlvEntryOwned {
             entry_type: self.entry_type,
             entry_len: self.entry_len,
-            entry_body: ::sce_forge_runtime::heapless::Vec::from_slice(self.entry_body).map_err(|_| CodecError::TooManyElements)?,
+            entry_body: ::sce_forge_runtime::codec::sce_bytes_from_slice::<32>(self.entry_body)?,
         })
     }
 }
