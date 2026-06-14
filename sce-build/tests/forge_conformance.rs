@@ -12071,6 +12071,48 @@ fn forge_codec_length_ref_multibyte_round_trip_runtime() {
     .expect("multi-byte length-ref fixtures must round-trip via cargo test");
 }
 
+/// `sce:max-size` is the no-alloc inline capacity, NOT a wire ceiling:
+/// under `alloc` a codec's `{Codec}Owned` form must hold a payload that
+/// exceeds the declared cap. End-to-end guard — decode a tail frame whose
+/// payload (100 B) is longer than `codec_tail`'s `sce:max-size="32"`, then
+/// `try_into_owned` it, asserting the owned `payload` carries all 100
+/// bytes. Before the portable `SceBytes`/`SceString` owned projection the
+/// owned field was `heapless::Vec<u8, 32>` and this raised
+/// `TooManyElements`. The harness temp crate is `default = ["alloc"]`, so
+/// this runs on the AP profile watching-zenoh ships.
+#[test]
+fn forge_codec_owned_bytes_unbounded_under_alloc() {
+    const HARNESS: &str = r#"// Injected by forge_codec_owned_bytes_unbounded_under_alloc.
+#[cfg(test)]
+mod tests {
+    use crate::codec_tail::CodecTail;
+    use ::sce_forge_runtime::codec::SceCursor;
+
+    #[test]
+    fn tail_owned_holds_payload_over_max_size() {
+        // msg_id, status, then 100 payload bytes (> sce:max-size 32).
+        let mut frame = vec![0x01u8, 0x02];
+        frame.extend(std::iter::repeat(0xABu8).take(100));
+        let mut cursor = SceCursor::new(&frame);
+        let view = CodecTail::decode(&mut cursor).expect("decode tail frame");
+        assert_eq!(view.payload.len(), 100);
+        let owned = view
+            .try_into_owned()
+            .expect("alloc owned form is unbounded (N advisory)");
+        assert_eq!(owned.payload.len(), 100);
+        assert!(owned.payload.iter().all(|&b| b == 0xAB));
+    }
+}
+"#;
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        &["codec_tail.scxml"],
+        &[("owned_unbounded.rs", HARNESS)],
+        "codec_owned_unbounded_alloc",
+    )
+    .expect("> max-size tail payload must decode + try_into_owned under alloc");
+}
+
 // Plain-id `sce:length-field` sibling-shape validator (parser-time
 // rejection). Covers the three reachable failure modes:
 //   (1) Fixed sibling with bit-size ∉ {8, 16, 24, 32} — uint64 is

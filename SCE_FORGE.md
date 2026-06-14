@@ -775,6 +775,8 @@ Byte-level encode/decode. Bit position, size, endianness.
 
 Codegen generates bounds checking for all variable-length fields: frame length is validated against `sce:byte` offset + `sce:max-size` before access. Decode returns an error/empty result for truncated frames.
 
+**`sce:max-size` and the Rust owned form**: `sce:max-size` (default 256, `BYTES_DEFAULT_MAX`) sizes the encode buffer and the no-alloc inline storage; it is *not* an on-wire ceiling. The Rust borrowed view is always a zero-copy `&[u8]` / `&str` of any length. The lifetime-free owned mirror (`{Codec}Owned`) stores `bytes` / `string` fields in the portable runtime aliases `SceBytes<N>` / `SceString<N>`: under the `alloc` feature these resolve to an unbounded `Vec<u8>` / `String` (the on-wire protocol caps no payload, so `N` is advisory and `try_into_owned` cannot overflow), and without `alloc` to the heap-free `heapless::Vec<u8, N>` / `heapless::String<N>` where `N` is the hard inline capacity (an over-`N` view raises `CodecError::TooManyElements` at `try_into_owned`).
+
 ```xml
 <scxml sce:kind="codec" sce:default-endian="big">
   <datamodel>
