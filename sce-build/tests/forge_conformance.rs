@@ -10795,10 +10795,17 @@ warnings = "deny"
     std::fs::write(proj_dir.join("src/lib.rs"), lib_rs)
         .map_err(|e| format!("write lib.rs: {e}"))?;
 
-    // Share the workspace's cargo target dir to avoid re-downloading /
-    // re-building sce-forge-runtime for every test invocation. CARGO
-    // creates a sibling subdir under target/sce_rustc_check_<id> so
-    // concurrent test runs don't collide.
+    // One cargo target dir shared across all harness invocations, to
+    // amortize the sce-forge-runtime (path dep) build rather than rebuild
+    // it per test. Concurrent harness tests invoke cargo against this dir
+    // simultaneously; collision-safety is NOT per-test isolation (there is
+    // no per-id target dir) but two real mechanisms: (1) cargo's
+    // target-dir lock serializes concurrent builds — a dirty path dep is
+    // rebuilt once while the others wait; (2) each test's unique package
+    // name `sce_rustc_check_{test_id}` gets its own fingerprint/output
+    // subdir within the shared target. Verified stable under max-contention
+    // stress (dirty path dep + cold target, repeated) — the serialization
+    // only costs wall-clock, never correctness.
     let workspace_target = std::path::Path::new(manifest_dir)
         .join("..")
         .join("target")
