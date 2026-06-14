@@ -10,6 +10,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "sce-portable-bytes",
     "sce-rust-runtime",
     "sce-rust-lua",
     "sce-rust-tests",

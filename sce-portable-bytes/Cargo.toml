@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
+
+[package]
+name = "sce-portable-bytes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Profile-portable owned bytes storage (SceBytes<N>) shared by the codec and statechart-emit runtimes: unbounded Vec<u8> under the `alloc` feature, fixed heapless::Vec<u8, N> without it. One definition so the construction logic never drifts between the two consumers."
+
+[lib]
+name = "sce_portable_bytes"
+path = "src/lib.rs"
+
+[features]
+# Baseline is pure `no_std` + no allocator (the MCU tier): SceBytes is the
+# fixed-capacity `heapless::Vec<u8, N>`. Consumers on std / no_std+alloc opt
+# into `alloc` to get the unbounded `Vec<u8>` form.
+default = []
+alloc = []
+
+[dependencies]
+# Fixed-capacity inline storage for the no-alloc form. Workspace-pinned so
+# every SCE crate links one heapless version.
+heapless.workspace = true
+
+[lints]
+workspace = true

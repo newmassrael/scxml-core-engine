@@ -18,7 +18,7 @@ description = "SCXML Core Engine — Rust runtime (policy trait, Engine<P>, help
 # engine injection that mechanism is gone — consumers pick an engine
 # crate (`sce-rust-lua`, future `sce-rust-quickjs`) by depending on it
 # and constructing an instance.
-default = ["http-send"]
+default = ["http-send", "sce-portable-bytes/alloc"]
 
 # HTTP send callback wiring (W3C SCXML C.2 BasicHTTPEventProcessor)
 http-send = []
@@ -61,6 +61,13 @@ thiserror = { version = "2.0", default-features = false }
 # Fixed-capacity collections for the `no_std` feature variant.
 # Optional + gated by `no_std` so std builds never link it.
 heapless = { workspace = true, optional = true }
+# Single definition of the portable owned `bytes` storage (`SceBytes<N>`),
+# shared with the codec runtime so the construction logic never drifts.
+# Re-exported as `sce_rust_runtime::SceBytes`. The `alloc` form (unbounded
+# `Vec<u8>`) is selected through this crate's `default` features; the
+# `--no-default-features --features=no_std` MCU build drops it, leaving the
+# heap-free `heapless::Vec<u8, N>` form.
+sce-portable-bytes = { path = "../sce-portable-bytes", default-features = false }
 # Portable 64-bit atomics for MCU targets without native u64 atomic
 # instructions (Cortex-M4 `thumbv7em-none-eabihf`). On host targets this
 # crate re-exports the native `core::sync::atomic` types (zero overhead);

@@ -238,28 +238,28 @@ pub type SceString = ::heapless::String<MAX_EVENT_STRING_LEN>;
 /// Owned byte-sequence type for typed `_event.data` payload fields whose
 /// `sce:type="bytes"` carries a per-field `sce:max-size` bound.
 ///
-/// The const parameter `N` is the field's declared `sce:max-size` (defaulted to
-/// the codegen `BYTES_DEFAULT_MAX` when the author omits it). Unlike the
-/// global collection caps ([`StateChain`](crate::helpers::hierarchy::StateChain)
-/// bakes [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`], the transition
-/// buffers bake [`MAX_ENABLED_TRANSITIONS`]), a bytes bound is per-field, so it
-/// is carried as a generic const rather than baked into the alias.
+/// This is the SAME concept the codec runtime needs for `{Codec}Owned` byte
+/// fields, so the definition lives once in the shared `sce-portable-bytes`
+/// crate and is re-exported here — `sce_rust_runtime::SceBytes` and
+/// `sce_forge_runtime::codec::SceBytes` are now literally the same type, and
+/// the construction logic (the fallible no-alloc copy) cannot drift between
+/// the two runtimes.
 ///
-/// - std build: [`std::vec::Vec<u8>`] (unbounded, heap-allocated). `N` is
-///   advisory — the AP profile grows freely, exactly as [`SceString`] is
-///   unbounded under std.
-/// - no_std build: `heapless::Vec<u8, N>` (stack-allocated, capacity exactly
-///   the author's bound). Overflow fails loud at the push site.
+/// The const parameter `N` is the field's declared `sce:max-size` (defaulted
+/// to the codegen `BYTES_DEFAULT_MAX` when the author omits it). Because `N`
+/// rides on the newtype rather than being erased to a bare `Vec<u8>` alias,
+/// a consumer hand-assembling a typed payload (`raise_<event>(payload)`)
+/// infers the cap from the field — `SceBytes::from_slice(&v)?` — instead of
+/// hardcoding it.
 ///
-/// Both spellings deref to `[u8]`, so `&payload.<field>` coerces to the `&[u8]`
-/// a generated `Actions` trait method takes regardless of profile.
-#[cfg(not(feature = "no_std"))]
-pub type SceBytes<const N: usize> = ::std::vec::Vec<u8>;
-/// no_std variant of [`SceBytes`]: stack-allocated `heapless::Vec<u8, N>` capped
-/// at the field's `sce:max-size`. See the std-variant doc-comment above for the
-/// full contract.
-#[cfg(feature = "no_std")]
-pub type SceBytes<const N: usize> = ::heapless::Vec<u8, N>;
+/// - std / `alloc`: wraps `Vec<u8>` (unbounded, `N` advisory).
+/// - `no_std` build (`--no-default-features --features=no_std`, which drops
+///   the `sce-portable-bytes/alloc` default): wraps `heapless::Vec<u8, N>`,
+///   capacity exactly the author's bound; `from_slice` is fallible past `N`.
+///
+/// Derefs to `[u8]`, so `&payload.<field>` coerces to the `&[u8]` a generated
+/// `Actions` trait method takes regardless of profile.
+pub use sce_portable_bytes::SceBytes;
 
 /// Convert a borrowed `&str` into an owned [`SceString`].
 ///

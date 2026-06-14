@@ -1652,12 +1652,20 @@ version = "0.1.0"
 dependencies = [
  "heapless",
  "sce-build",
+ "sce-portable-bytes",
  "serde_json",
 ]
 
 [[package]]
 name = "sce-link-runtime"
 version = "0.1.0"
+
+[[package]]
+name = "sce-portable-bytes"
+version = "0.1.0"
+dependencies = [
+ "heapless",
+]
 
 [[package]]
 name = "sce-rust-lua"
@@ -1677,6 +1685,7 @@ dependencies = [
  "heapless",
  "log",
  "portable-atomic",
+ "sce-portable-bytes",
  "thiserror",
 ]
 

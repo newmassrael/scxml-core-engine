@@ -77,8 +77,12 @@ fn bytes_payload_guard_fires_on_match() {
     engine.initialize();
     assert_eq!(engine.get_current_state(), StatechartBytesState::Waiting);
 
+    // Hand-assembled typed payload: `raw` is the portable `SceBytes<8>`, built
+    // through the SSOT ctor with `N` inferred from the field type (no `::<8>`
+    // turbofish, no hardcoded cap) — the property the N-preserving newtype
+    // gives the emit-side inject seam, identical to the codec encode side.
     engine.raise_signal_received(StatechartBytesSignalReceivedPayload {
-        raw: b"ack".to_vec(),
+        raw: ::sce_rust_runtime::SceBytes::from_slice(b"ack").unwrap(),
     });
     engine.step();
 
@@ -95,7 +99,7 @@ fn bytes_payload_guard_misses_on_nonmatch() {
     engine.initialize();
 
     engine.raise_signal_received(StatechartBytesSignalReceivedPayload {
-        raw: b"no".to_vec(),
+        raw: ::sce_rust_runtime::SceBytes::from_slice(b"no").unwrap(),
     });
     engine.step();
 
