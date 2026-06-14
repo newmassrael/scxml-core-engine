@@ -126,6 +126,9 @@ fn nested_projection_rejects_overflowing_list() {
         // 5 elements exceed the borrowed `heapless::Vec<_, 4>` capacity.
         body_list: (0..5).map(|_| owned_body()).collect(),
     };
+    // Owned `SceString<N>` compares against a `&str` literal directly (no
+    // `.as_str()`) — exercises the codec runtime's `SceString: PartialEq<&str>`.
+    assert_eq!(owned.required_body.locs[0].locator, "a");
     assert!(
         matches!(owned.try_as_borrowed(), Err(CodecError::TooManyElements)),
         "body_list of 5 exceeds max-count 4 -> try_as_borrowed must reject",
