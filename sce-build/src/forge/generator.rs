@@ -2812,19 +2812,23 @@ fn codec_scalar_type(l: &LangCtx, ty: &SceType) -> String {
     }
 }
 
-/// Owned-projection mapping for one codec field — the alloc-gated
-/// `{Codec}Owned` mirror (consumer-requested owned round; the rkyv-style
+/// Owned-projection mapping for one codec field — the `{Codec}Owned`
+/// mirror (consumer-requested owned round; the rkyv-style
 /// Archived(borrowed) ↔ native(owned) split, both generated from the one
 /// SCXML SSOT). Returns `(owned_field_type, into_owned_expr)` where the
 /// expr deep-copies `self.<id>` (consumed by `into_owned(self)`).
 ///
-/// Owned containers (`Vec` / `String`) are alloc, so the whole mirror is
-/// `#[cfg(feature = "alloc")]`; the borrowed no-alloc path is untouched.
-/// Rust-only. Borrowed-ness of nested / element / embed bodies is read
-/// from the enrichment-populated `ImportContext::codec_is_borrowed`
-/// flags (`import_codec_borrowed`) — a borrowed body has its own
-/// `{Body}Owned` mirror + `into_owned`; a non-borrowed body is already
-/// owned and moves through unchanged.
+/// Scalar `Bytes` / `String` fields project to the portable runtime alias
+/// `SceBytes<N>` / `SceString<N>`, so a leaf codec's owned mirror compiles
+/// on both profiles (unbounded `Vec` / `String` under `alloc`, heap-free
+/// `heapless` capped at `N` without it). Only an *unbounded* owned `Vec`
+/// (list / embed / variant body) forces the whole mirror behind
+/// `#[cfg(feature = "alloc")]` (`owned_needs_alloc`); the borrowed no-alloc
+/// path is untouched either way. Rust-only. Borrowed-ness of nested /
+/// element / embed bodies is read from the enrichment-populated
+/// `ImportContext::codec_is_borrowed` flags (`import_codec_borrowed`) — a
+/// borrowed body has its own `{Body}Owned` mirror + `into_owned`; a
+/// non-borrowed body is already owned and moves through unchanged.
 fn rust_owned_field_keys(
     f: &CodecField,
     codec_name: &str,
@@ -2835,12 +2839,12 @@ fn rust_owned_field_keys(
     // later opt match without clones.
     #[derive(Clone, Copy)]
     enum Conv {
-        Move,          // value already owned (Copy scalar / non-borrowed body)
-        BytesBounded,  // &[u8] -> heapless::Vec<u8, N>   (fallible try_into_owned)
-        StringBounded, // &str  -> heapless::String<N>    (fallible try_into_owned)
-        IntoOwned,     // borrowed body -> {Body}Owned (fallible try_into_owned)
-        ListBorrowed,  // list of borrowed bodies -> Vec<{Body}Owned>
-        ListOwned,     // list of owned bodies     -> Vec<{Body}>
+        Move,                // value already owned (Copy scalar / non-borrowed body)
+        BytesPortable(u32),  // &[u8] -> SceBytes<N>  (uniform-fallible; N = cap)
+        StringPortable(u32), // &str -> SceString<N> (uniform-fallible; N = cap)
+        IntoOwned,           // borrowed body -> {Body}Owned (fallible try_into_owned)
+        ListBorrowed,        // list of borrowed bodies -> Vec<{Body}Owned>
+        ListOwned,           // list of owned bodies     -> Vec<{Body}>
     }
 
     let id = l.codec_field_id(&f.id);
@@ -2871,72 +2875,96 @@ fn rust_owned_field_keys(
             (body_type, Conv::Move)
         }
     } else {
-        // No-alloc bounded-inline owned storage (RFC c7-wildcard W3): a
-        // bounded `String` / `Bytes` field's owned mirror is the
-        // `heapless::String<N>` / `heapless::Vec<u8, N>` form (N =
-        // `resolve_bytes_max`), the exact analog of C11's `char[N]` and the
-        // representation the no-alloc, self-contained bounded-collection
-        // stores. Construction from the borrowed `&str` / `&[u8]` view is
-        // fallible (the view is not length-bounded at the type level — the
-        // decode bound is enforced again here), so `into_owned` is the
-        // fallible `try_into_owned -> Result` direction; `as_borrowed`
-        // (same `N`) stays infallible.
+        // Portable owned scalar storage: a `Bytes` / `String` field's owned
+        // mirror is the runtime alias `SceBytes<N>` / `SceString<N>` (N =
+        // `resolve_bytes_max`), which resolves once in the forge runtime to
+        // an unbounded `Vec<u8>` / `String` under `alloc` (N advisory — the
+        // wire protocol places no payload ceiling, so the AP profile must
+        // not either) and to the heap-free `heapless::Vec<u8, N>` /
+        // `heapless::String<N>` (the C11 `char[N]` analog) without `alloc`.
+        // Construction goes through the runtime's uniform-fallible helper,
+        // so `try_into_owned` threads one `?` on every profile (the alloc
+        // copy never fails; the no-alloc copy enforces the `N` bound). The
+        // inverse `as_borrowed` re-projects either form via `.as_slice()` /
+        // `.as_str()`, so it needs no per-profile branch.
         match f.sce_type {
             SceType::Bytes => {
                 let max = crate::forge::limits::resolve_bytes_max(f.max_size);
                 (
-                    format!("::sce_forge_runtime::heapless::Vec<u8, {max}>"),
-                    Conv::BytesBounded,
+                    format!("::sce_forge_runtime::codec::SceBytes<{max}>"),
+                    Conv::BytesPortable(max),
                 )
             }
             SceType::String => {
                 let max = crate::forge::limits::resolve_bytes_max(f.max_size);
                 (
-                    format!("::sce_forge_runtime::heapless::String<{max}>"),
-                    Conv::StringBounded,
+                    format!("::sce_forge_runtime::codec::SceString<{max}>"),
+                    Conv::StringPortable(max),
                 )
             }
             _ => (l.type_name(&f.sce_type).to_string(), Conv::Move),
         }
     };
 
-    // Returns `(expr, fallible)`: for a fallible conv `expr` is a
-    // `Result<_, CodecError>` the caller threads through `?` (scalar) or
-    // `.transpose()?` (Option); for an infallible conv `expr` is the value.
+    // Single-call portable conversions (bytes / string) expose a point-free
+    // function path. With an explicit `N` (the `alloc` alias `SceBytes<N>`
+    // erases to `Vec<u8>`, so the const param is not inferable from the
+    // return type — the codegen pins it from the resolved cap), the scalar
+    // case calls it (`F(v)?`) and the `Option` case maps it (`.map(F)`),
+    // never a redundant closure (`clippy::redundant_closure`). The path is
+    // spelled once here so both arms stay in lockstep.
+    let call_path: Option<String> = match conv {
+        Conv::BytesPortable(n) => Some(format!(
+            "::sce_forge_runtime::codec::sce_bytes_from_slice::<{n}>"
+        )),
+        Conv::StringPortable(n) => Some(format!(
+            "::sce_forge_runtime::codec::sce_string_from_view::<{n}>"
+        )),
+        _ => None,
+    };
+
+    // Expression-template conversions (everything else): `apply(e)` splices
+    // the value expression `e` and reports whether it is fallible. Returns
+    // `(expr, fallible)`: a fallible `expr` is a `Result<_, CodecError>` the
+    // caller threads through `?` (scalar) / `.transpose()?` (Option); an
+    // infallible `expr` is the value. The portable single-call convs go
+    // through `call_path`, not here.
     let apply = |e: &str| -> (String, bool) {
         match conv {
             Conv::Move => (e.to_string(), false),
-            Conv::BytesBounded => (
-                format!(
-                    "::sce_forge_runtime::heapless::Vec::from_slice({e}).map_err(|_| CodecError::TooManyElements)"
-                ),
-                true,
-            ),
-            Conv::StringBounded => (
-                format!(
-                    "::sce_forge_runtime::heapless::String::try_from({e}).map_err(|_| CodecError::TooManyElements)"
-                ),
-                true,
-            ),
             Conv::IntoOwned => (format!("{e}.try_into_owned()"), true),
             Conv::ListBorrowed => (
                 format!("{e}.into_iter().map(|_e| _e.try_into_owned()).collect::<Result<_, _>>()"),
                 true,
             ),
             Conv::ListOwned => (format!("{e}.into_iter().collect()"), false),
+            Conv::BytesPortable(_) | Conv::StringPortable(_) => {
+                unreachable!("portable bytes/string convs project through call_path")
+            }
         }
     };
 
     let self_ref = format!("self.{id}");
     if opt {
-        let (inner_expr, fallible) = apply("_v");
-        let expr = match conv {
-            // Option<Copy/owned scalar> moves wholesale — no per-element map.
-            Conv::Move => self_ref,
-            _ if fallible => format!("{self_ref}.map(|_v| {inner_expr}).transpose()?"),
-            _ => format!("{self_ref}.map(|_v| {inner_expr})"),
+        let expr = if let Some(path) = &call_path {
+            format!("{self_ref}.map({path}).transpose()?")
+        } else {
+            match conv {
+                // Option<Copy/owned scalar> moves wholesale — no per-element map.
+                Conv::Move => self_ref,
+                _ => {
+                    let (inner_expr, fallible) = apply("_v");
+                    if fallible {
+                        format!("{self_ref}.map(|_v| {inner_expr}).transpose()?")
+                    } else {
+                        format!("{self_ref}.map(|_v| {inner_expr})")
+                    }
+                }
+            }
         };
         Ok((format!("Option<{inner_ty}>"), expr))
+    } else if let Some(path) = &call_path {
+        Ok((inner_ty, format!("{path}({self_ref})?")))
     } else {
         let (val_expr, fallible) = apply(&self_ref);
         let expr = if fallible {

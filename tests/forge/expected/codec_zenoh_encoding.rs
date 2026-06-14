@@ -162,25 +162,29 @@ impl<'a> CodecZenohEncoding<'a> {
     }
 }
 
-// ── Owned projection (no-alloc bounded-inline native form) ────────────
+// ── Owned projection (portable native form) ───────────────────────────
 // `CodecZenohEncoding<'a>` above is a zero-copy view borrowing the decode
 // buffer. Consumers that persist a decoded value beyond the buffer's
 // lifetime — including the self-contained bounded-collection that stores
 // elements by value — call `.try_into_owned()` for this lifetime-free
 // `CodecZenohEncodingOwned`. The rkyv-style Archived(borrowed) ↔ native
-// (owned) split, both generated from the one SCXML source (SSOT). Bounded
-// `String` / `Bytes` fields project to `heapless::String<N>` /
-// `heapless::Vec<u8, N>` (the Rust mirror of C11's `char[N]`), so a leaf
-// codec's owned form is fully no-alloc; only an unbounded owned `Vec`
-// (list / embed / variant body) keeps the `alloc` gate. Construction from
-// the unbounded `&str` / `&[u8]` view re-checks the decode bound, so
-// `try_into_owned` is the fallible direction and `as_borrowed`
-// (same `N`) the infallible inverse.
+// (owned) split, both generated from the one SCXML source (SSOT).
+// `String` / `Bytes` fields project to the portable runtime aliases
+// `SceString<N>` / `SceBytes<N>`: an unbounded `String` / `Vec<u8>` under
+// `alloc` (the on-wire protocol caps no payload, so the AP profile must
+// not either — `N` is advisory) and the heap-free `heapless::String<N>` /
+// `heapless::Vec<u8, N>` (the C11 `char[N]` analog) without it, where `N`
+// is the hard capacity. A leaf codec's owned form therefore still compiles
+// on a no-alloc MCU; only an unbounded owned `Vec` (list / embed / variant
+// body) keeps the `alloc` gate. `try_into_owned` stays the fallible
+// direction (one `?` per profile: the `alloc` copy cannot fail, the
+// no-alloc copy enforces `N`); `as_borrowed` re-borrows either
+// form infallibly via `.as_slice()` / `.as_str()`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CodecZenohEncodingOwned {
     pub packed_id: u32,
     pub schema_len: Option<u64>,
-    pub schema: Option<::sce_forge_runtime::heapless::String<128>>,
+    pub schema: Option<::sce_forge_runtime::codec::SceString<128>>,
 }
 
 #[allow(dead_code)]
@@ -201,16 +205,18 @@ impl<'a> CodecZenohEncoding<'a> {
     /// [`CodecZenohEncodingOwned`]. Call at a decode boundary when the
     /// decoded value must outlive the input buffer — stored in a long-lived
     /// enum, moved across an async task, or inserted by value into a
-    /// bounded-collection. Bounded `String` / `Bytes` fields copy into
-    /// `heapless::String<N>` / `heapless::Vec<u8, N>`; that copy re-checks
-    /// the decode bound, so the method is fallible
-    /// (`CodecError::TooManyElements` past `N` — the bound and error decode
-    /// enforces). The borrowed zero-copy path is unaffected.
+    /// bounded-collection. `String` / `Bytes` fields copy into the portable
+    /// `SceString<N>` / `SceBytes<N>`: an unbounded heap copy under `alloc`
+    /// (`N` advisory), else a fixed `heapless` copy capped at `N`. The
+    /// method is fallible for profile uniformity — without `alloc` an
+    /// over-`N` view raises `CodecError::TooManyElements` (the same bound
+    /// and error decode enforces); under `alloc` the copy never fails. The
+    /// borrowed zero-copy path is unaffected.
     pub fn try_into_owned(self) -> Result<CodecZenohEncodingOwned, CodecError> {
         Ok(CodecZenohEncodingOwned {
             packed_id: self.packed_id,
             schema_len: self.schema_len,
-            schema: self.schema.map(|_v| ::sce_forge_runtime::heapless::String::try_from(_v).map_err(|_| CodecError::TooManyElements)).transpose()?,
+            schema: self.schema.map(::sce_forge_runtime::codec::sce_string_from_view::<128>).transpose()?,
         })
     }
 }

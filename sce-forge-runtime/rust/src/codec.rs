@@ -118,6 +118,79 @@ pub fn try_project_bounded<'s, T, U, const N: usize>(
     Ok(out)
 }
 
+// ── Portable owned scalar storage (the `{Codec}Owned` byte/string carrier) ──
+//
+// A codec's borrowed view decodes `bytes` / `string` fields as zero-copy
+// `&'a [u8]` / `&'a str`; its lifetime-free owned mirror needs a container
+// that holds those bytes by value. The right container depends on the
+// memory model, so it resolves through one alias rather than a `#[cfg]`
+// scattered across every generated codec:
+//
+//   - With `alloc`, storage is a growable `Vec<u8>` / `String`. The wire
+//     protocols SCE codecs target (e.g. Zenoh) place no ceiling on a
+//     payload, so the AP profile must not either — the per-slot `N` is
+//     advisory here, exactly as `sce-rust-runtime::SceBytes<N>` treats it
+//     on the statechart emit path.
+//   - Without `alloc`, storage is the fixed-capacity `heapless::Vec<u8, N>`
+//     / `heapless::String<N>` — the Rust mirror of C11's `char[N]`. `N`
+//     (the field's `sce:max-size`, default `BYTES_DEFAULT_MAX`) is the hard
+//     capacity, so an over-`N` view surfaces `TooManyElements` rather than
+//     allocating.
+//
+// `as_borrowed` re-projects either form through `.as_slice()` / `.as_str()`,
+// so only construction differs by profile — and that difference is absorbed
+// by [`sce_bytes_from_slice`] / [`sce_string_from_view`] below, the
+// borrowed→owned scalar SSOT (the bytes/string analog of
+// [`try_project_bounded`] for lists).
+
+/// Portable owned storage for a `bytes` codec field. `Vec<u8>` under
+/// `alloc` (`N` advisory), `heapless::Vec<u8, N>` otherwise (`N` is the
+/// hard capacity).
+#[cfg(feature = "alloc")]
+pub type SceBytes<const N: usize> = alloc::vec::Vec<u8>;
+/// no-alloc variant of [`SceBytes`]: fixed-capacity inline storage capped
+/// at `N` (the field's `sce:max-size`), heap-free for the MCU tier.
+#[cfg(not(feature = "alloc"))]
+pub type SceBytes<const N: usize> = crate::heapless::Vec<u8, N>;
+
+/// Portable owned storage for a `string` codec field. `String` under
+/// `alloc` (`N` advisory), `heapless::String<N>` otherwise.
+#[cfg(feature = "alloc")]
+pub type SceString<const N: usize> = alloc::string::String;
+/// no-alloc variant of [`SceString`]: fixed-capacity inline storage capped
+/// at `N` (the field's `sce:max-size`), heap-free for the MCU tier.
+#[cfg(not(feature = "alloc"))]
+pub type SceString<const N: usize> = crate::heapless::String<N>;
+
+/// Copy a borrowed `&[u8]` decode view into the portable owned
+/// [`SceBytes`]. Under `alloc` this is an infallible heap copy with `N`
+/// advisory; without `alloc` it copies into the fixed `heapless::Vec<u8, N>`
+/// and raises [`CodecError::TooManyElements`] past `N` — the same bound and
+/// error the decode path enforces. The uniform `Result` return lets a
+/// generated `try_into_owned` thread one `?` regardless of profile, so the
+/// emitted codec carries no `#[cfg]` of its own.
+#[cfg(feature = "alloc")]
+pub fn sce_bytes_from_slice<const N: usize>(s: &[u8]) -> Result<SceBytes<N>, CodecError> {
+    Ok(s.to_vec())
+}
+/// no-alloc counterpart: fixed-capacity copy, fallible past `N`.
+#[cfg(not(feature = "alloc"))]
+pub fn sce_bytes_from_slice<const N: usize>(s: &[u8]) -> Result<SceBytes<N>, CodecError> {
+    crate::heapless::Vec::from_slice(s).map_err(|_| CodecError::TooManyElements)
+}
+
+/// Copy a borrowed `&str` decode view into the portable owned
+/// [`SceString`]. Profile semantics mirror [`sce_bytes_from_slice`].
+#[cfg(feature = "alloc")]
+pub fn sce_string_from_view<const N: usize>(s: &str) -> Result<SceString<N>, CodecError> {
+    Ok(alloc::string::String::from(s))
+}
+/// no-alloc counterpart: fixed-capacity copy, fallible past `N`.
+#[cfg(not(feature = "alloc"))]
+pub fn sce_string_from_view<const N: usize>(s: &str) -> Result<SceString<N>, CodecError> {
+    crate::heapless::String::try_from(s).map_err(|_| CodecError::TooManyElements)
+}
+
 /// Read-only cursor over a borrowed input slice. Decode bodies use
 /// `peek_slice` to bounds-check + read fixed-offset bytes positionally,
 /// then `advance` after the construction succeeds.
