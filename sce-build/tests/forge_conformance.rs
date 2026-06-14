@@ -12073,20 +12073,26 @@ fn forge_codec_length_ref_multibyte_round_trip_runtime() {
 
 /// `sce:max-size` is the no-alloc inline capacity, NOT a wire ceiling:
 /// under `alloc` a codec's `{Codec}Owned` form must hold a payload that
-/// exceeds the declared cap. End-to-end guard — decode a tail frame whose
-/// payload (100 B) is longer than `codec_tail`'s `sce:max-size="32"`, then
-/// `try_into_owned` it, asserting the owned `payload` carries all 100
-/// bytes. Before the portable `SceBytes`/`SceString` owned projection the
-/// owned field was `heapless::Vec<u8, 32>` and this raised
-/// `TooManyElements`. The harness temp crate is `default = ["alloc"]`, so
-/// this runs on the AP profile watching-zenoh ships.
+/// exceeds the declared cap. Two end-to-end guards against `codec_tail`
+/// (`sce:max-size="32"`), compiled in the `default = ["alloc"]` temp crate
+/// (the AP profile watching-zenoh ships):
+///   1. decode path — decode a 100 B tail frame, `try_into_owned`, assert
+///      the owned `payload` carries all 100 bytes (pre-portable this raised
+///      `TooManyElements` from `heapless::Vec<u8, 32>`).
+///   2. hand-assemble path — build `CodecTailOwned` by hand (the encode-side
+///      builder pattern), constructing the `payload` field via the SSOT
+///      `SceBytes::from_slice`. `N` is inferred from the field's
+///      `SceBytes<32>` type with NO turbofish and NO hardcoded cap — the
+///      property the N-preserving newtype exists for (a bare type alias
+///      erased `N` to `Vec<u8>`, forcing downstream builders to duplicate
+///      the SCXML `sce:max-size` SSOT).
 #[test]
 fn forge_codec_owned_bytes_unbounded_under_alloc() {
     const HARNESS: &str = r#"// Injected by forge_codec_owned_bytes_unbounded_under_alloc.
 #[cfg(test)]
 mod tests {
-    use crate::codec_tail::CodecTail;
-    use ::sce_forge_runtime::codec::SceCursor;
+    use crate::codec_tail::{CodecTail, CodecTailOwned};
+    use ::sce_forge_runtime::codec::{SceBytes, SceCursor};
 
     #[test]
     fn tail_owned_holds_payload_over_max_size() {
@@ -12102,6 +12108,25 @@ mod tests {
         assert_eq!(owned.payload.len(), 100);
         assert!(owned.payload.iter().all(|&b| b == 0xAB));
     }
+
+    #[test]
+    fn tail_owned_hand_assembled_infers_cap() {
+        // Encode-side builder: assemble the owned struct by hand and build
+        // the bytes field via the SSOT ctor. `N` infers from the field's
+        // `SceBytes<32>` type — no `::<32>` turbofish, no duplicated cap.
+        let data = [0xCDu8; 50];
+        let owned = CodecTailOwned {
+            msg_id: 7,
+            status: 9,
+            payload: SceBytes::from_slice(&data).expect("alloc copy is unbounded"),
+        };
+        assert_eq!(owned.payload.len(), 50);
+        assert_eq!(owned.payload, b"\xcd".repeat(50).as_slice());
+        // Re-borrow + encode round-trips through the borrowed view.
+        let borrowed = owned.as_borrowed();
+        assert_eq!(borrowed.payload.len(), 50);
+        assert_eq!(borrowed.encode_to_vec().len(), 52);
+    }
 }
 "#;
     rustc_test_codec_set_with_extra(
@@ -12110,7 +12135,7 @@ mod tests {
         &[("owned_unbounded.rs", HARNESS)],
         "codec_owned_unbounded_alloc",
     )
-    .expect("> max-size tail payload must decode + try_into_owned under alloc");
+    .expect("> max-size tail payload must decode/build + round-trip under alloc");
 }
 
 // Plain-id `sce:length-field` sibling-shape validator (parser-time
