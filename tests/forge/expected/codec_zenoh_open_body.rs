@@ -169,7 +169,7 @@ impl<'a> CodecZenohOpenBody<'a> {
 // elements by value — call `.try_into_owned()` for this lifetime-free
 // `CodecZenohOpenBodyOwned`. The rkyv-style Archived(borrowed) ↔ native
 // (owned) split, both generated from the one SCXML source (SSOT).
-// `String` / `Bytes` fields project to the portable runtime aliases
+// `String` / `Bytes` fields project to the portable runtime newtypes
 // `SceString<N>` / `SceBytes<N>`: an unbounded `String` / `Vec<u8>` under
 // `alloc` (the on-wire protocol caps no payload, so the AP profile must
 // not either — `N` is advisory) and the heap-free `heapless::String<N>` /
@@ -205,7 +205,7 @@ impl<'a> CodecZenohOpenBody<'a> {
             lease: self.lease,
             initial_sn: self.initial_sn,
             cookie_len: self.cookie_len,
-            cookie: self.cookie.map(::sce_forge_runtime::codec::sce_bytes_from_slice::<128>).transpose()?,
+            cookie: self.cookie.map(::sce_forge_runtime::codec::SceBytes::from_slice).transpose()?,
         })
     }
 }
