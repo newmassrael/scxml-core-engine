@@ -22,7 +22,7 @@ fun algorithmCrc16Table(data: ByteArray): UShort {
     for (__raw_b in data) {
         val b: UByte = __raw_b.toUByte()
         var idx: UShort = (crc.toInt() shr 8 xor b.toInt() and 0xFF).toUShort()
-        crc = (crc.toInt() shl 8 xor CRC16_TABLE[idx.toInt()].toInt()).toUShort()
+        crc = (crc.toInt() shl 8 xor CRC16_TABLE[(idx).toInt()].toInt()).toUShort()
     }
     return crc
 }
