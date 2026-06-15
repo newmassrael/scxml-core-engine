@@ -111,13 +111,13 @@ impl<'a> CodecFixedAfterLengthref<'a> {
         // dedicated helpers; everything else uses `present_if_encode_block`
         // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
         w.write_u8(self.header)?;
-        w.write_u8(self.payload_len as u8)?;
-        w.write_u8((self.payload_len >> 8) as u8)?;
+        w.write_u8((self.payload_len & 0xFF) as u8)?;
+        w.write_u8((self.payload_len >> 8 & 0xFF) as u8)?;
         w.write_bytes(self.payload)?;
-        w.write_u8(self.crc32 as u8)?;
-        w.write_u8((self.crc32 >> 8) as u8)?;
-        w.write_u8((self.crc32 >> 16) as u8)?;
-        w.write_u8((self.crc32 >> 24) as u8)?;
+        w.write_u8((self.crc32 & 0xFF) as u8)?;
+        w.write_u8((self.crc32 >> 8 & 0xFF) as u8)?;
+        w.write_u8((self.crc32 >> 16 & 0xFF) as u8)?;
+        w.write_u8((self.crc32 >> 24 & 0xFF) as u8)?;
         Ok(())
     }
 

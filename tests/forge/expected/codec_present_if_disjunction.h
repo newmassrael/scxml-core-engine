@@ -110,8 +110,8 @@ struct CodecPresentIfDisjunction {
         if (auto _e = w.write_u8(flags); _e) return _e;
         if (seq.has_value()) {
             auto _v = *seq;
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v >> 8)); _e) return _e;
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v)); _e) return _e;
+            if (auto _e = w.write_u8(static_cast<uint8_t>((_v >> 8) & 0xFF)); _e) return _e;
+            if (auto _e = w.write_u8(static_cast<uint8_t>(_v & 0xFF)); _e) return _e;
         }
         return std::nullopt;
     }

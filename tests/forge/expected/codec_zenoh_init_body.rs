@@ -180,8 +180,8 @@ impl<'a> CodecZenohInitBody<'a> {
             w.write_u8(_v)?;
         }
         if let Some(_v) = self.batch_size {
-            w.write_u8(_v as u8)?;
-            w.write_u8((_v >> 8) as u8)?;
+            w.write_u8((_v & 0xFF) as u8)?;
+            w.write_u8((_v >> 8 & 0xFF) as u8)?;
         }
         if let Some(_v) = self.cookie_len {
         {

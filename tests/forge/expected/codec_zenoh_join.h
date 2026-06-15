@@ -180,8 +180,8 @@ struct CodecZenohJoin {
         }
         if (batch_size.has_value()) {
             auto _v = *batch_size;
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v)); _e) return _e;
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v >> 8)); _e) return _e;
+            if (auto _e = w.write_u8(static_cast<uint8_t>(_v & 0xFF)); _e) return _e;
+            if (auto _e = w.write_u8(static_cast<uint8_t>((_v >> 8) & 0xFF)); _e) return _e;
         }
         {
             std::uint64_t _w = static_cast<std::uint64_t>(lease);

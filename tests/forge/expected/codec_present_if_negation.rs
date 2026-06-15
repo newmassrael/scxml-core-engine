@@ -115,8 +115,8 @@ impl CodecPresentIfNegation {
         // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
         w.write_u8(self.flags)?;
         if let Some(_v) = self.seq {
-            w.write_u8((_v >> 8) as u8)?;
-            w.write_u8(_v as u8)?;
+            w.write_u8((_v >> 8 & 0xFF) as u8)?;
+            w.write_u8((_v & 0xFF) as u8)?;
         }
         Ok(())
     }
