@@ -3226,6 +3226,17 @@ fn render_codec(
     let has_present_if_fields = m.has_present_if_fields();
     let has_repeat_fields = m.has_repeat_fields();
 
+    // SSOT for "this codec must use the streaming cursor path rather than
+    // the positional (`raw[byte_off]`) path", as the negation of the
+    // allowlist `positional_layout_is_valid` (see model.rs). Computed once
+    // and threaded to BOTH the per-field decode/encode-stmt builder and the
+    // template's single `needs_streaming` branch flag, so the path decision
+    // lives in exactly one place. (`has_present_if_fields` /
+    // `has_repeat_fields` / `has_vle_fields` remain as separate locals for
+    // their non-selection template uses — struct field optionality, import
+    // emission, etc.)
+    let needs_streaming_path = !m.positional_layout_is_valid();
+
     // RFC §synth-5-B parent-tag carriers — compute derivations BEFORE the field-meta
     // builder so per-field encode blocks can append the `| _derived_<carrier>`
     // suffix at the carrier field. The locals block lives in the codec
@@ -4009,7 +4020,7 @@ fn render_codec(
                 "has_present_if".into(),
                 f.present_if.is_some().into(),
             );
-            if has_present_if_fields || has_repeat_fields || m.has_tlv_chain_fields() || m.has_embed_fields() || has_vle_fields || m.has_string_fields() {
+            if needs_streaming_path {
                 obj.insert(
                     "present_if_decode_stmt".into(),
                     present_if_streaming_decode_stmt(
@@ -4326,6 +4337,11 @@ fn render_codec(
     };
     ctx.insert("max_bytes".into(), max_bytes.into());
     ctx.insert("has_variable_fields".into(), m.has_variable_fields().into());
+    // Single SSOT flag the decode/encode templates branch on to choose the
+    // streaming cursor body over the positional `raw[byte_off]` body. One
+    // streaming branch consumes it (rather than a denylist of per-feature
+    // flags), so the path decision is not duplicated across the template.
+    ctx.insert("needs_streaming".into(), needs_streaming_path.into());
     ctx.insert("has_vle_fields".into(), has_vle_fields.into());
     // C11 codec.h.jinja2 condition for `<string.h>` include: true when
     // any field's decode/encode body uses `memcpy` — every variable
@@ -5119,13 +5135,12 @@ fn render_codec(
         // byte-stable. First consumer = codec_zenoh_oam (header carrier
         // + VLE u16 id + Z-gated tlv-chain + variant body on
         // header.enc).
-        let has_streaming_prefix = peek_mode
-            || has_vle_fields
-            || has_present_if_fields
-            || has_repeat_fields
-            || m.has_tlv_chain_fields()
-            || m.has_embed_fields()
-            || m.has_string_fields();
+        // `needs_streaming_path` already rolls up every streaming-forcing
+        // condition (present-if / VLE / repeat / tlv-chain / embed / string)
+        // plus a variable prefix field followed by another prefix field —
+        // the variant-prefix form of the positional-layout bug. Peek-byte
+        // mode forces streaming independently of the prefix fields.
+        let has_streaming_prefix = peek_mode || needs_streaming_path;
         variant_obj.insert("has_streaming_prefix".into(), has_streaming_prefix.into());
         ctx.insert("has_variant".into(), true.into());
         ctx.insert("variant".into(), serde_json::Value::Object(variant_obj));
@@ -10831,10 +10846,10 @@ fn present_if_encode_vle(
 
 /// RHS expression that decodes `n` bytes from a freshly-peeked
 /// `raw[0..n]` slice into the field's natural carrier type. For
-/// 8-bit fields this is just `raw[0]`; multi-byte fields fold byte
-/// shifts in the field's effective endianness. Mirrors
-/// `decode_multibyte_unified` but operates on a 0-based slice
-/// instead of `raw[byte_offset]`.
+/// 8-bit fields this is just `raw[0]`; multi-byte fields delegate to
+/// the shared endianness byte-fold ([`decode_multibyte_unified`]) at
+/// `byte_off = 0` — the streaming peek base — so the per-language
+/// shift/cast rules are defined in exactly one place.
 fn streaming_fixed_field_body(
     field: &CodecField,
     default_endian: Endian,
@@ -10844,176 +10859,23 @@ fn streaming_fixed_field_body(
     use crate::generator::Language;
     let endian = field.effective_endian(default_endian);
 
-    // Python: `bytes`/`bytearray` indexed positionally returns `int`
-    // (Python ints are unbounded so no width casts are needed). n=1
-    // is just `raw[0]`; multi-byte folds through `(raw[i] << shift)`.
-    // Mirrors the existing `decode_multibyte_unified` Python arm on
-    // a 0-based slice.
-    if matches!(lang, Language::Python) {
-        if n == 1 {
-            return "raw[0]".into();
-        }
-        let shifts: Vec<String> = (0..n)
-            .map(|i| {
-                let shift = match endian {
-                    Endian::Little => i * 8,
-                    Endian::Big | Endian::Native => (n - 1 - i) * 8,
-                };
-                if shift == 0 {
-                    format!("raw[{i}]")
-                } else {
-                    format!("(raw[{i}] << {shift})")
-                }
-            })
-            .collect();
-        return shifts.join(" | ");
-    }
-
-    // C11: `const uint8_t *raw` indexed positionally. n=1 returns
-    // `raw[0]` (uint8_t directly assignable to the carrier struct
-    // member). Multi-byte folds through `(target_t)raw[i] << shift`
-    // — symmetric with the existing `decode_multibyte_unified` C11
-    // arm on a 0-based slice.
-    if matches!(lang, Language::C11) {
-        if n == 1 {
-            return "raw[0]".into();
-        }
-        let target = match n {
-            2 => "uint16_t",
-            3 | 4 => "uint32_t",
-            _ => "uint64_t",
-        };
-        let shifts: Vec<String> = (0..n)
-            .map(|i| {
-                let shift = match endian {
-                    Endian::Little => i * 8,
-                    Endian::Big | Endian::Native => (n - 1 - i) * 8,
-                };
-                if shift == 0 {
-                    format!("raw[{i}]")
-                } else {
-                    format!("(({target})raw[{i}] << {shift})")
-                }
-            })
-            .collect();
-        return shifts.join(" | ");
-    }
-
-    // Go: `[]byte`'s `[i]` is `byte` (== `uint8`); multi-byte fields
-    // widen through the carrier-typed `target(raw[i])` cast and fold
-    // via the bitwise `|`. n=1 returns `raw[0]` directly which is
-    // assignable to a `var x uint8` carrier. Mirrors the existing
-    // `decode_multibyte_unified` Go arm on a 0-based slice.
-    if matches!(lang, Language::Go) {
-        if n == 1 {
-            return "raw[0]".into();
-        }
-        let target = match n {
-            2 => "uint16",
-            3 | 4 => "uint32",
-            _ => "uint64",
-        };
-        let shifts: Vec<String> = (0..n)
-            .map(|i| {
-                let shift = match endian {
-                    Endian::Little => i * 8,
-                    Endian::Big | Endian::Native => (n - 1 - i) * 8,
-                };
-                if shift == 0 {
-                    format!("{target}(raw[{i}])")
-                } else {
-                    format!("{target}(raw[{i}])<<{shift}")
-                }
-            })
-            .collect();
-        return shifts.join(" | ");
-    }
-
-    // Kotlin: ByteArray's `[i]` returns a signed `Byte`, and the carrier
-    // is one of `UByte/UShort/UInt/ULong`. The body widens through
-    // `Int` (n ≤ 4) or `Long` (n ≥ 5), folds the per-byte shifts via the
-    // infix `or`, then narrows back to the carrier via the natural
-    // `toU<W>()` constructor — symmetric with the existing
-    // `decode_multibyte_unified` Kotlin arm but on a 0-based slice.
-    if matches!(lang, Language::Kotlin) {
-        if n == 1 {
-            return "raw[0].toUByte()".into();
-        }
-        let (int_view, mask, to_type) = match n {
-            2 => ("toInt", "0xFF", "toUShort"),
-            3 | 4 => ("toInt", "0xFF", "toUInt"),
-            _ => ("toLong", "0xFFL", "toULong"),
-        };
-        let shifts: Vec<String> = (0..n)
-            .map(|i| {
-                let shift = match endian {
-                    Endian::Little => i * 8,
-                    Endian::Big | Endian::Native => (n - 1 - i) * 8,
-                };
-                if shift == 0 {
-                    format!("(raw[{i}].{int_view}() and {mask})")
-                } else {
-                    format!("((raw[{i}].{int_view}() and {mask}) shl {shift})")
-                }
-            })
-            .collect();
-        return format!("({}).{}()", shifts.join(" or "), to_type);
-    }
-
+    // Single-byte fields read the peeked byte directly. Kotlin's
+    // `ByteArray[i]` yields a signed `Byte`, so it narrows to the
+    // unsigned carrier through `toUByte()`; every other backend assigns
+    // `raw[0]` straight into its carrier.
     if n == 1 {
         return match lang {
-            Language::Cpp => "raw[0]".into(),
+            Language::Kotlin => "raw[0].toUByte()".into(),
             _ => "raw[0]".into(),
         };
     }
-    let target = match (lang, n) {
-        (Language::Rust, 2) => "u16",
-        (Language::Rust, 3 | 4) => "u32",
-        (Language::Rust, _) => "u64",
-        (Language::Cpp, 2) => "uint16_t",
-        (Language::Cpp, 3 | 4) => "uint32_t",
-        (Language::Cpp, _) => "uint64_t",
-        _ => "u64",
-    };
-    let shifts: Vec<String> = (0..n)
-        .map(|i| {
-            let shift = match endian {
-                Endian::Little => i * 8,
-                Endian::Big | Endian::Native => (n - 1 - i) * 8,
-            };
-            match lang {
-                Language::Cpp => {
-                    if shift == 0 {
-                        format!("raw[{i}]")
-                    } else {
-                        format!("(static_cast<{target}>(raw[{i}]) << {shift})")
-                    }
-                }
-                _ => {
-                    if shift == 0 {
-                        format!("raw[{i}] as {target}")
-                    } else {
-                        format!("((raw[{i}] as {target}) << {shift})")
-                    }
-                }
-            }
-        })
-        .collect();
-    let joined = shifts.join(" | ");
-    // C++ integer promotion: even when each operand is `{target}_t`,
-    // `<<` and `|` promote operands narrower than `int` to `int`,
-    // so the resulting expression has type `int` and assignment
-    // back into a {target}_t carrier triggers `-Wnarrowing`. The
-    // single outer cast neutralises the warning without changing
-    // semantics (the value is already in range by construction —
-    // we only OR'd `n * 8` bits' worth of bytes). Other languages
-    // (Rust) preserve the operand type through `<<`/`|` so no
-    // outer cast is needed.
-    if matches!(lang, Language::Cpp) {
-        format!("static_cast<{target}>({joined})")
-    } else {
-        joined
-    }
+
+    // Multi-byte assembly is the positional path's endianness fold,
+    // only indexed from the peek base (offset 0) instead of an absolute
+    // `byte_offset`. Delegate to the SSOT so the per-language shift /
+    // cast / integer-promotion rules live in exactly one place
+    // (`decode_multibyte_unified`) rather than being mirrored here.
+    decode_multibyte_unified(0, n, endian, lang)
 }
 
 /// Encode block for a non-gated fixed field — Rust. Reads `self.<id>`
@@ -12109,8 +11971,10 @@ fn decode_multibyte_unified(
         // Rust/Go/C11/Python preserve the operand type through `<<`/`|`
         // (Rust strict typing, Go explicit conversions, Python wide
         // ints, C11 only emits this in contexts that already cast),
-        // so they don't need the wrap. Mirrors the parity fix in
-        // `streaming_fixed_field_body`.
+        // so they don't need the wrap. This function is the SSOT for the
+        // endianness byte-fold: the streaming decode path
+        // (`streaming_fixed_field_body`) calls it with `byte_off = 0` so
+        // the per-language shift/cast rules are not mirrored.
         let target = match byte_count {
             2 => "uint16_t",
             3 | 4 => "uint32_t",

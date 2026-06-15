@@ -25,13 +25,19 @@ class CodecInitSynBody:
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §synth-5-B present-if primitive: streaming decode
-        # advances the cursor per field. Per-field statements live
-        # inside one outer `try:` block so the first peek/advance
-        # failure unwinds to a single `except NeedMoreBytes`. Per-
-        # field `is_repeat` routes Repeat fields to the dedicated
-        # helper. Branch fires before has_vle_fields so a codec mixing
-        # VLE + present-if uses the unified streaming path.
+        # Streaming cursor decode (SSOT selection: `needs_streaming`).
+        # The positional `raw[byte_off]` path is valid only when every
+        # field's absolute offset is fixed at codegen time; this branch
+        # handles every codec where it is not — present-if-gated fields
+        # (runtime presence), VLE / repeat / TLV-chain / embed fields
+        # (runtime width), string fields (UTF-8 decode), and a fixed field
+        # after a variable-length payload (offset depends on the payload
+        # length). Each field reads its own bytes and advances past what it
+        # consumed, all inside one outer `try:`. The `except` catches the
+        # base `CodecError` so a peek/advance `NeedMoreBytes` and a VLE
+        # field's `VleWidthOverflow` both unwind to a single `return None`
+        # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
+        # subclass, so this is behaviour-identical for them).
         try:
             raw = cursor.peek_slice(1)
             version = raw[0]
@@ -50,7 +56,7 @@ class CodecInitSynBody:
                 batch_size = _v
             else:
                 batch_size = None
-        except NeedMoreBytes:
+        except CodecError:
             return None
         return cls(
             version=version,
@@ -64,7 +70,14 @@ class CodecInitSynBody:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §synth-5-B present-if encode.
+        # Streaming cursor encode (SSOT selection: `needs_streaming`).
+        # Mirrors the streaming decode: every field appends its own bytes
+        # in declaration order through the per-field encode blocks, so a
+        # gated field skips its append when absent, and a fixed field after
+        # a variable-length payload lands after the payload (the positional
+        # path appends variable fields last, placing it ahead on the wire).
+        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        # dedicated helpers; everything else uses `present_if_encode_block`.
         w.write_u8(self.version & 0xFF)
         if self.sn_res is not None:
             w.write_u8(self.sn_res & 0xFF)

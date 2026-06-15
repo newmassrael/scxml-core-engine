@@ -117,7 +117,10 @@ static inline int test_vector_{{ name }}(void) {
                     fprintf(stderr,
                         "FAIL: {{ name }} test_vector @SCXML L{{ tv.source_line }}: "
                         "field `{{ f.name_snake }}` expected empty bytes, got len=%zu\n",
-                        decoded.{{ f.name_snake }}_len);
+                        /* The length companion is `size_t` for a tail field but
+                         * the (possibly narrower) wire length-field for a
+                         * length-ref payload — cast so `%zu` is always valid. */
+                        (size_t)decoded.{{ f.name_snake }}_len);
                     ++failures;
                 }
 {% endif %}

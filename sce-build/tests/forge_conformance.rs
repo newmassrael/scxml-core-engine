@@ -11955,6 +11955,169 @@ fn forge_codec_length_ref_uint16_le_python_no_sidecar_until_closure() {
     );
 }
 
+// ── codec_fixed_after_lengthref: a fixed field AFTER a length-ref
+// payload. Routes through the streaming `has_field_after_variable`
+// branch instead of the positional path, which would have placed the
+// trailing `crc32` ahead of `payload` on encode and read it at the
+// constant offset 4 on decode. Product goldens pin the per-language
+// shape; the runtime round-trip below is the load-bearing proof.
+
+#[test]
+fn forge_codec_fixed_after_lengthref_cpp() {
+    assert_standalone_forge(
+        "codec_fixed_after_lengthref",
+        "codec_fixed_after_lengthref.h",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_fixed_after_lengthref() {
+    assert_standalone_forge_kotlin("codec_fixed_after_lengthref", "CodecFixedAfterLengthref.kt");
+}
+
+#[test]
+fn forge_rust_codec_fixed_after_lengthref() {
+    assert_standalone_forge_rust(
+        "codec_fixed_after_lengthref",
+        "codec_fixed_after_lengthref.rs",
+    );
+}
+
+#[test]
+fn forge_go_codec_fixed_after_lengthref() {
+    assert_standalone_forge_go(
+        "codec_fixed_after_lengthref",
+        "codec_fixed_after_lengthref.go",
+    );
+}
+
+#[test]
+fn forge_python_codec_fixed_after_lengthref() {
+    assert_standalone_forge_python(
+        "codec_fixed_after_lengthref",
+        "codec_fixed_after_lengthref.py",
+    );
+}
+
+#[test]
+fn forge_c11_codec_fixed_after_lengthref() {
+    assert_standalone_forge_c(
+        "codec_fixed_after_lengthref",
+        "codec_fixed_after_lengthref.c.h",
+    );
+}
+
+#[test]
+fn forge_rust_codec_fixed_after_lengthref_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_fixed_after_lengthref",
+        "codec_fixed_after_lengthref_test.rs",
+        sce_build::generator::Language::Rust,
+    );
+}
+
+#[test]
+fn forge_c11_codec_fixed_after_lengthref_test_vector_sidecar() {
+    assert_sidecar_forge_lang(
+        "codec_fixed_after_lengthref",
+        "codec_fixed_after_lengthref_test.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+#[test]
+fn forge_codec_fixed_after_lengthref_cpp_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_fixed_after_lengthref",
+        sce_build::generator::Language::Cpp,
+    );
+}
+
+#[test]
+fn forge_codec_fixed_after_lengthref_kotlin_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_fixed_after_lengthref",
+        sce_build::generator::Language::Kotlin,
+    );
+}
+
+#[test]
+fn forge_codec_fixed_after_lengthref_go_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_fixed_after_lengthref",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_codec_fixed_after_lengthref_python_no_sidecar_until_closure() {
+    assert_no_codec_sidecar_until_closure(
+        "codec_fixed_after_lengthref",
+        sce_build::generator::Language::Python,
+    );
+}
+
+// Runtime round-trip gate: compile + execute the generated codec and
+// its `<sce:test-vector>`-driven sidecar. With the pre-fix positional
+// emit, encode placed `crc32` ahead of `payload` and decode read it at
+// the constant offset 4 — every vector here carries `payload_len != 1`,
+// so a constant offset-4 read cannot coincidentally round-trip.
+#[test]
+fn forge_codec_fixed_after_lengthref_round_trip_runtime() {
+    rustc_test_codec_set(
+        &resource_dir(),
+        &["codec_fixed_after_lengthref.scxml"],
+        "fixed_after_lengthref_round_trip",
+    )
+    .expect("fixed-field-after-length-ref codec must round-trip via cargo test");
+}
+
+// The byte-compared C11 golden does not prove the header compiles; the
+// streaming branch emits per-field `peek`/`advance` locals that a stale
+// positional emit would not. Compile it under gcc -Werror so an unused
+// or shadowed local is caught here, not downstream on the MCU.
+#[test]
+fn forge_codec_fixed_after_lengthref_c11_compiles() {
+    compile_codec_set_c11(
+        &resource_dir(),
+        &["codec_fixed_after_lengthref.scxml"],
+        "fixed_after_lengthref_c11",
+    )
+    .expect("fixed-field-after-length-ref C11 codec must compile under gcc -Werror");
+}
+
+// Counterpart to the length-ref case: a `tail` payload consumes the rest
+// of the frame, so a field declared after it is unreachable. Unlike a
+// bounded length-ref (routed to the streaming path), this layout is never
+// well-formed and is rejected at parse time. Inline SCXML keeps the
+// malformed shape out of the fixture corpus.
+#[test]
+fn forge_codec_field_after_tail_rejected() {
+    let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="codec_field_after_tail">
+  <datamodel>
+    <sce:field id="header"  sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="payload" sce:type="bytes" sce:byte="1" sce:bit-size="tail" sce:max-size="32"/>
+    <sce:field id="crc"     sce:type="uint8" sce:byte="2" sce:bit-size="8"/>
+  </datamodel>
+</scxml>"#;
+    let result = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("codec_field_after_tail"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    );
+    let err = match result {
+        Ok(_) => panic!("a fixed field after a tail field must be rejected at parse time"),
+        Err(e) => format!("{e:?}"),
+    };
+    assert!(
+        err.contains("tail") && err.contains("last field"),
+        "rejection must explain the tail-must-be-last rule; got: {err}"
+    );
+}
+
 #[test]
 fn forge_rust_codec_length_ref_uint16_be_test_vector_sidecar() {
     assert_sidecar_forge_lang(

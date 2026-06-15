@@ -30,13 +30,18 @@ typedef struct {
  * declared minimum frame (RFC §synth-5-B L494-519). VLE codecs may also
  * return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW. */
 static inline sce_forge_codec_status_t codec_until_eof_basic_decode(sce_forge_cursor_t *cursor, codec_until_eof_basic_t *out) {
-    /* RFC §synth-5-B B2 repeat / B3 TLV chain primitives: streaming decode
-     * mixes plain fixed-width reads with bounded-iteration loops over
-     * imported codec entries. Repeat: bounded by `out-><len_field>`
-     * (length-field) or until cursor exhaustion (until-eof); MAX_COUNT
-     * overflow → NEED_MORE_BYTES. TLV chain: bounded by `max_depth`
-     * with on-overflow check (reject → SCE_FORGE_CODEC_TLV_CHAIN_OVERFLOW
-     * when residual bytes after cap; truncate → silent). */
+    /* Streaming cursor decode (SSOT selection: `needs_streaming`).
+     * The positional `raw[byte_off]` path is valid only when every
+     * field's absolute offset is fixed at codegen time; this branch
+     * handles every codec where it is not — present-if-gated fields
+     * (runtime presence; C11 stores plain `T` with `_len = 0` for absent
+     * bytes, the carrier flag bit being the truth), VLE / repeat /
+     * TLV-chain / embed fields (runtime width), and a fixed field after a
+     * variable-length payload (offset depends on the payload length).
+     * Each field reads its own bytes and advances past what it consumed.
+     * Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+     * dedicated helpers; every other field flows through
+     * `present_if_decode_stmt`. */
     {
         out->msgs_len = 0;
         while (sce_forge_cursor_remaining(cursor) > 0) {
@@ -56,10 +61,15 @@ static inline sce_forge_codec_status_t codec_until_eof_basic_decode(sce_forge_cu
  * `codec_until_eof_basic_encode_to_buf` (below), or run the writer themselves
  * for coalesced-send paths. */
 static inline sce_forge_codec_status_t codec_until_eof_basic_encode(const codec_until_eof_basic_t *self, sce_forge_writer_t *w) {
-    /* RFC §synth-5-B B2 / B3 encode: fixed prefix appends byte-by-byte;
-     * list fields walk an in-place writer loop. Author keeps count
-     * field (repeat) / `<id>_len` ≤ max_depth (tlv-chain) consistent
-     * with the in-struct entry count (trust contract). */
+    /* Streaming cursor encode (SSOT selection: `needs_streaming`).
+     * Mirrors the streaming decode: every field appends its own bytes in
+     * declaration order through the per-field encode blocks, so a gated
+     * field skips its append when the carrier flag bit is clear, and a
+     * fixed field after a variable-length payload lands after the payload
+     * (the positional path appends variable fields last, placing it ahead
+     * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
+     * route to their dedicated helpers; everything else uses
+     * `present_if_encode_block`. */
     for (size_t _ri = 0; _ri < self->msgs_len; ++_ri) {
         SCE_FORGE_TRY_WRITE(codec_repeat_elem_encode(&self->msgs[_ri], w));
     }

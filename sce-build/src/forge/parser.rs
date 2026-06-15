@@ -1261,6 +1261,11 @@ fn parse_codec(
     // codegen-time lookup).
     validate_codec_length_field_refs(&fields, label, &datamodel)?;
 
+    // A `tail` field consumes the rest of the frame by definition, so no
+    // field may follow it. Reject the contradictory layout at parse time
+    // rather than emitting a codec that silently fails to decode.
+    validate_codec_tail_is_last(&fields, label, &datamodel)?;
+
     // RFC §synth-5-B bounded embed — `<sce:embed sce:length-from="<id>"/>` must
     // reference a sibling field declared earlier in the same codec
     // whose decoded value is an integer (so the inner cursor scope
@@ -3750,6 +3755,47 @@ fn parse_codec_embed_from_node(
 /// the repair is attribute-text-level (pick a different sibling,
 /// declare it earlier, widen/narrow the bit-size, switch to
 /// dotted form). No new diagnostic.
+/// SCE Forge layout rule: a `<sce:field sce:bit-size="tail">` consumes
+/// every remaining frame byte by definition, so no field can follow it on
+/// the wire — a trailing field is unreachable because the tail's decode
+/// has already eaten its bytes. Reject the contradictory layout at parse
+/// time with a clear diagnostic.
+///
+/// This is the tail counterpart to the path-selection allowlist
+/// [`crate::forge::model::CodecModel::positional_layout_is_valid`]: a
+/// `length-ref` payload has a bounded length and *may* be followed by
+/// further fields (that shape is routed to the streaming cursor path and is
+/// valid), whereas a `tail` followed by anything is never well-formed.
+fn validate_codec_tail_is_last(
+    fields: &[CodecField],
+    label: DocumentLabel<'_>,
+    datamodel: &roxmltree::Node,
+) -> Result<(), Located<ForgeError>> {
+    let last = fields.len().saturating_sub(1);
+    for (i, field) in fields.iter().enumerate() {
+        if matches!(field.bit_size, BitSize::Tail) && i < last {
+            let next = &fields[i + 1];
+            return Err(located(
+                datamodel,
+                label.diagnostic_label,
+                ValidationError::InvalidAttribute {
+                    element: format!("field '{}' in codec '{}'", field.id, label.identifier),
+                    attr: "sce:bit-size".into(),
+                    value: "tail".into(),
+                    expected: format!(
+                        "a tail field consumes the rest of the frame, so it must be the \
+                         last field in the codec; '{}' is declared after it. Use \
+                         sce:bit-size=\"length-ref\" if the payload has a bounded length \
+                         that a trailing field follows",
+                        next.id
+                    ),
+                },
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_codec_length_field_refs(
     fields: &[CodecField],
     label: DocumentLabel<'_>,

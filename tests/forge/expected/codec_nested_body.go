@@ -23,14 +23,17 @@ type CodecNestedBody struct {
 // is shorter than the declared minimum frame (RFC §synth-5-B L494-519).
 // VLE codecs may also return `codec.ErrVLEWidthOverflow`.
 func DecodeCodecNestedBody(cursor *codec.SceCursor) (*CodecNestedBody, error) {
-	// RFC §synth-5-B B2 repeat primitive: streaming decode mixes plain
-	// fixed-width reads (per-field via the present-if helper's
-	// non-gated arm) with `make([]T, 0, N)` + `append` loops that
-	// iterate the imported codec's `Decode<T>(cursor)` either
-	// `int(N)` times (length-field) or until `cursor.Remaining() == 0`
-	// (until-eof). Element bodies recurse into their own decoder —
-	// each may itself surface `codec.ErrNeedMoreBytes`, unwinding
-	// the partial frame.
+	// Streaming cursor decode (SSOT selection: `needs_streaming`).
+	// The positional `raw[byte_off]` path is valid only when every
+	// field's absolute offset is fixed at codegen time; this branch
+	// handles every codec where it is not — present-if-gated fields
+	// (runtime presence; `*T` / nil `[]byte`), VLE / repeat / TLV-chain /
+	// embed fields (runtime width), string fields (UTF-8 decode), and a
+	// fixed field after a variable-length payload (offset depends on the
+	// payload length). Each field reads its own bytes from the cursor and
+	// advances past what it consumed. Per-field `is_repeat` /
+	// `is_tlv_chain` / `is_embed` route to their dedicated helpers; every
+	// other field flows through `present_if_decode_stmt`.
 	var N uint8
 	{
 		raw, err := cursor.PeekSlice(1)
@@ -61,8 +64,14 @@ func DecodeCodecNestedBody(cursor *codec.SceCursor) (*CodecNestedBody, error) {
 // when the destination has insufficient remaining capacity; growable
 // sinks (e.g. BytesSink) are effectively infallible.
 func (s *CodecNestedBody) Encode(w codec.SceSink) error {
-	// RFC §synth-5-B B2 encode: list fields range over s.<Pascal> and
-	// write each element through the same sink.
+	// Streaming cursor encode (SSOT selection: `needs_streaming`).
+	// Mirrors the streaming decode: every field appends its own bytes in
+	// declaration order through the per-field encode blocks, so a gated
+	// field skips its append when absent, and a fixed field after a
+	// variable-length payload lands after the payload (the positional path
+	// appends variable fields last, placing it ahead on the wire).
+	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+	// dedicated helpers; everything else uses `present_if_encode_block`.
 	if err := w.WriteBytes([]byte{ s.N }); err != nil {
 		return err
 	}

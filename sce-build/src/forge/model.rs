@@ -1922,6 +1922,53 @@ impl CodecModel {
         self.fields.iter().any(|f| f.is_variable_length())
     }
 
+    /// SSOT for codec path selection: whether the positional codec path
+    /// can correctly express this codec's wire layout. Its negation is
+    /// "this codec must use the streaming cursor path".
+    ///
+    /// The positional path (`generate_decode_expr` / `generate_encode_exprs`)
+    /// reads every field at a compile-time-fixed `raw[byte_off]` and appends
+    /// the single variable-length field last. That is correct only for the
+    /// exact shape below; everything else streams.
+    ///
+    /// Stated as an *allowlist of what positional supports* rather than a
+    /// denylist of streaming-forcing features. This is deliberate and
+    /// fail-safe: a `BitSize` added to the enum later defaults to the
+    /// streaming path (the general, always-correct one) unless it is
+    /// explicitly proven positional-expressible here — so a new variant
+    /// cannot silently fall through to a positional emit that mis-places
+    /// it. (The two historical mis-routings this guards against —
+    /// `sce:type="string"` length-ref payloads and a fixed field after a
+    /// length-ref payload — were both denylist omissions.)
+    pub fn positional_layout_is_valid(&self) -> bool {
+        // The positional path has no conditional read (present-if) and no
+        // UTF-8 decode (string); both require the streaming form.
+        if self.has_present_if_fields() || self.has_string_fields() {
+            return false;
+        }
+        let last = self.fields.len().saturating_sub(1);
+        self.fields
+            .iter()
+            .enumerate()
+            .all(|(i, f)| match f.bit_size {
+                // Fixed fields have a statically-known offset and width.
+                BitSize::Fixed { .. } => true,
+                // The positional path implements only `tail` / `length-ref`
+                // among the variable bit-sizes, and only as the final field
+                // (a field after a variable payload has a runtime offset).
+                // `tail` not-last is rejected upstream
+                // (`validate_codec_tail_is_last`); the bound here keeps the
+                // predicate self-contained.
+                BitSize::Tail | BitSize::LengthRef => i == last,
+                // VLE / repeat / TLV-chain / embed have no positional form at
+                // all — they always stream.
+                BitSize::Vle { .. }
+                | BitSize::Repeat { .. }
+                | BitSize::TlvChain { .. }
+                | BitSize::Embed => false,
+            })
+    }
+
     /// Borrowed zero-copy round — SSOT for "does this codec's generated
     /// Rust struct need a `<'a>` lifetime parameter?". True iff it holds
     /// a scalar `Bytes` / `String` field (decoded as a zero-copy

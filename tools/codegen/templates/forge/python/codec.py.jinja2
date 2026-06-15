@@ -177,38 +177,20 @@ class {{ struct_name }}:
 {% endfor %}
             body=body,
         )
-{% elif has_present_if_fields %}
-        # RFC §synth-5-B present-if primitive: streaming decode
-        # advances the cursor per field. Per-field statements live
-        # inside one outer `try:` block so the first peek/advance
-        # failure unwinds to a single `except NeedMoreBytes`. Per-
-        # field `is_repeat` routes Repeat fields to the dedicated
-        # helper. Branch fires before has_vle_fields so a codec mixing
-        # VLE + present-if uses the unified streaming path.
-        try:
-{% for field in fields %}
-{% if field.is_repeat %}
-            {{ field.repeat_decode_stmt }}
-{% elif field.is_tlv_chain %}
-            {{ field.tlv_chain_decode_stmt }}
-{% elif field.is_embed %}
-            {{ field.embed_decode_stmt }}
-{% else %}
-            {{ field.present_if_decode_stmt }}
-{% endif %}
-{% endfor %}
-        except NeedMoreBytes:
-            return None
-        return cls(
-{% for field in fields %}
-            {{ field.id }}={{ field.id }},
-{% endfor %}
-        )
-{% elif has_vle_fields %}
-        # RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
-        # LengthRef siblings of VLE fields through
-        # `present_if_decode_stmt` (predicate=None arms). Pure-VLE
-        # codecs stay byte-stable.
+{% elif needs_streaming %}
+        # Streaming cursor decode (SSOT selection: `needs_streaming`).
+        # The positional `raw[byte_off]` path is valid only when every
+        # field's absolute offset is fixed at codegen time; this branch
+        # handles every codec where it is not — present-if-gated fields
+        # (runtime presence), VLE / repeat / TLV-chain / embed fields
+        # (runtime width), string fields (UTF-8 decode), and a fixed field
+        # after a variable-length payload (offset depends on the payload
+        # length). Each field reads its own bytes and advances past what it
+        # consumed, all inside one outer `try:`. The `except` catches the
+        # base `CodecError` so a peek/advance `NeedMoreBytes` and a VLE
+        # field's `VleWidthOverflow` both unwind to a single `return None`
+        # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
+        # subclass, so this is behaviour-identical for them).
         try:
 {% for field in fields %}
 {% if field.is_repeat %}
@@ -222,33 +204,6 @@ class {{ struct_name }}:
 {% endif %}
 {% endfor %}
         except CodecError:
-            return None
-        return cls(
-{% for field in fields %}
-            {{ field.id }}={{ field.id }},
-{% endfor %}
-        )
-{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        # RFC §synth-5-B B2 repeat primitive: streaming decode mixes plain
-        # fixed-width reads (per-field via the present-if helper's
-        # non-gated arm) with `for _ in range(N)` / `while
-        # cursor.remaining() > 0` loops that iterate the imported
-        # codec's `decode()`. Element bodies recurse and may surface
-        # `None`, which propagates up via early `return None` from
-        # this outer `try:` block.
-        try:
-{% for field in fields %}
-{% if field.is_repeat %}
-            {{ field.repeat_decode_stmt }}
-{% elif field.is_tlv_chain %}
-            {{ field.tlv_chain_decode_stmt }}
-{% elif field.is_embed %}
-            {{ field.embed_decode_stmt }}
-{% else %}
-            {{ field.present_if_decode_stmt }}
-{% endif %}
-{% endfor %}
-        except NeedMoreBytes:
             return None
         return cls(
 {% for field in fields %}
@@ -405,35 +360,15 @@ class {{ struct_name }}:
         elif self.body.kind == "{{ variant.default_arm.variant_name }}":
             self.body.{{ variant.default_arm.c_union_field }}.encode(w{{ variant.default_arm.body_encode_args_with_leading_comma }})
 {% endif %}
-{% elif has_present_if_fields %}
-        # RFC §synth-5-B present-if encode.
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-{% elif has_vle_fields %}
-        # RFC §synth-5-B B4: per-field bit-size dispatch.
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        # RFC §synth-5-B B2 encode: list fields iterate ``self.<id>`` and
-        # write each element through the same sink.
+{% elif needs_streaming %}
+        # Streaming cursor encode (SSOT selection: `needs_streaming`).
+        # Mirrors the streaming decode: every field appends its own bytes
+        # in declaration order through the per-field encode blocks, so a
+        # gated field skips its append when absent, and a fixed field after
+        # a variable-length payload lands after the payload (the positional
+        # path appends variable fields last, placing it ahead on the wire).
+        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        # dedicated helpers; everything else uses `present_if_encode_block`.
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}

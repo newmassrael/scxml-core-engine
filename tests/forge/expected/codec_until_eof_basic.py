@@ -24,13 +24,19 @@ class CodecUntilEofBasic:
         (RFC §synth-5-B L494-519); on success the cursor advances past the
         consumed bytes. VLE codecs also return ``None`` on
         ``VleWidthOverflow``."""
-        # RFC §synth-5-B B2 repeat primitive: streaming decode mixes plain
-        # fixed-width reads (per-field via the present-if helper's
-        # non-gated arm) with `for _ in range(N)` / `while
-        # cursor.remaining() > 0` loops that iterate the imported
-        # codec's `decode()`. Element bodies recurse and may surface
-        # `None`, which propagates up via early `return None` from
-        # this outer `try:` block.
+        # Streaming cursor decode (SSOT selection: `needs_streaming`).
+        # The positional `raw[byte_off]` path is valid only when every
+        # field's absolute offset is fixed at codegen time; this branch
+        # handles every codec where it is not — present-if-gated fields
+        # (runtime presence), VLE / repeat / TLV-chain / embed fields
+        # (runtime width), string fields (UTF-8 decode), and a fixed field
+        # after a variable-length payload (offset depends on the payload
+        # length). Each field reads its own bytes and advances past what it
+        # consumed, all inside one outer `try:`. The `except` catches the
+        # base `CodecError` so a peek/advance `NeedMoreBytes` and a VLE
+        # field's `VleWidthOverflow` both unwind to a single `return None`
+        # (non-VLE codecs only ever raise `NeedMoreBytes`, a `CodecError`
+        # subclass, so this is behaviour-identical for them).
         try:
             msgs = []
             while cursor.remaining() > 0:
@@ -38,7 +44,7 @@ class CodecUntilEofBasic:
                 if _elem is None:
                     return None
                 msgs.append(_elem)
-        except NeedMoreBytes:
+        except CodecError:
             return None
         return cls(
             msgs=msgs,
@@ -50,8 +56,14 @@ class CodecUntilEofBasic:
         :class:`BufferOverflow` from a bounded sink when the destination
         has insufficient remaining capacity; growable sinks (e.g.
         :class:`BytearraySink`) are effectively infallible."""
-        # RFC §synth-5-B B2 encode: list fields iterate ``self.<id>`` and
-        # write each element through the same sink.
+        # Streaming cursor encode (SSOT selection: `needs_streaming`).
+        # Mirrors the streaming decode: every field appends its own bytes
+        # in declaration order through the per-field encode blocks, so a
+        # gated field skips its append when absent, and a fixed field after
+        # a variable-length payload lands after the payload (the positional
+        # path appends variable fields last, placing it ahead on the wire).
+        # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        # dedicated helpers; everything else uses `present_if_encode_block`.
         for _e in self.msgs:
             _e.encode(w)
 

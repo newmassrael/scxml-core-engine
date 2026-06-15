@@ -29,11 +29,17 @@ struct CodecTlvChainBasic {
     /// `NeedMoreBytes` boundary; later phases attach a typed error via
     /// `cursor.last_error()`.
     static std::optional<CodecTlvChainBasic> decode(::SCE::Forge::SceCursor& cursor) {
-        // RFC §synth-5-B B2 repeat (trunk): per-field cursor advance. Fixed
-        // prefix fields read via the present-if helper's non-gated
-        // branch; repeat fields run a count-driven or until-eof loop
-        // over the imported codec's decode(). Element NeedMoreBytes
-        // unwinds the partial frame via std::nullopt.
+        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // The positional `raw[byte_off]` path is valid only when every
+        // field's absolute offset is fixed at codegen time; this branch
+        // handles every codec where it is not — present-if-gated fields
+        // (runtime presence), VLE / repeat / TLV-chain / embed fields
+        // (runtime width), string fields (UTF-8 decode), and a fixed field
+        // after a variable-length payload (offset depends on the payload
+        // length). Each field reads its own bytes from the cursor and
+        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
+        // every other field flows through `present_if_decode_stmt`.
         uint8_t header_flags;
         {
             const std::uint8_t* raw = cursor.peek_slice(1);
@@ -67,10 +73,14 @@ struct CodecTlvChainBasic {
     /// destination has insufficient remaining capacity; growable sinks
     /// (e.g. `VectorSink`) are effectively infallible.
     [[nodiscard]] std::optional<::SCE::Forge::CodecError> encode(::SCE::Forge::SceSink& w) const noexcept {
-        // RFC §synth-5-B B2 encode: fixed prefix appends byte-by-byte;
-        // repeat fields iterate the host vector and splice each
-        // element's encode() into the parent buffer. Author keeps
-        // count field == list length (trust contract).
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when absent, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`.
         if (auto _e = w.write_u8(header_flags); _e) return _e;
         for (const auto& _e : extensions) {
             if (auto _se = _e.encode(w); _se) return _se;

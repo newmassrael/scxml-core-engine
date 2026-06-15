@@ -51,14 +51,18 @@ impl CodecRepeatBasic {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        // RFC §synth-5-B B2 repeat / B3 TLV chain primitives: streaming
-        // decode mixes plain fixed-width reads (per-field via the
-        // present-if helper's non-gated arm) with repeat loops that
-        // iterate the imported codec's `decode()`. Repeat: bounded by
-        // `count_ref` (length-field) or cursor exhaustion (until-eof).
-        // TLV chain: bounded by `max_depth` with on-overflow check.
-        // Element bodies recurse into their own codec — each may
-        // itself surface NeedMoreBytes, unwinding the partial frame.
+        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // The positional `raw[byte_off]` path is valid only when every
+        // field's absolute offset is fixed at codegen time; this branch
+        // handles every codec where it is not — present-if-gated fields
+        // (runtime presence), VLE / repeat / TLV-chain / embed fields
+        // (runtime width), string fields (UTF-8 decode), and a fixed field
+        // after a variable-length payload (offset depends on the payload
+        // length). Each field reads its own bytes from the cursor and
+        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
+        // every other field flows through `present_if_decode_stmt`, whose
+        // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let num_frags = {
             let raw = cursor.peek_slice(1)?;
             let _v = raw[0];
@@ -90,12 +94,15 @@ impl CodecRepeatBasic {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // RFC §synth-5-B B2 repeat / B3 TLV chain encode: fixed prefix
-        // fields append byte-by-byte; list fields iterate the host-
-        // language list and splice each element's encode() into the
-        // parent buffer. Author keeps the count field (repeat) /
-        // chain length (tlv-chain) consistent with the list length
-        // (same trust contract as variant tag/body).
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when absent, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`
+        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
         w.write_u8(self.num_frags)?;
         for _e in &self.frags {
             _e.encode(w)?;
