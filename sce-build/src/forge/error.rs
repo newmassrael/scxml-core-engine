@@ -596,6 +596,25 @@ pub enum ValidationError {
         expected: usize,
     },
 
+    /// SCE byte-buffer-build (SCE_FORGE.md §4.12): `<sce:append target="X">`
+    /// where `X` is not a declared `<sce:var type="bytes">` buffer local
+    /// (a scalar, a parameter, the foreach item, or an undeclared name).
+    /// `candidates` is the sorted list of visible bytes-buffer names so the
+    /// authoring loop can retarget.
+    #[error("algorithm: <sce:append target=\"{target}\">: '{target}' is not a declared bytes buffer (declare it with <sce:var type=\"bytes\" capacity=\"N\"/>)")]
+    AlgorithmAppendTargetNotBuffer {
+        target: String,
+        candidates: Vec<String>,
+    },
+
+    /// SCE byte-buffer-build (SCE_FORGE.md §4.12): the static type of an
+    /// `<sce:append expr>` is neither `uint8` (single-byte push) nor `bytes`
+    /// (extend). Appending a wider integer would silently truncate, so the
+    /// author must narrow it to a `uint8` first. `got` names the inferred
+    /// type.
+    #[error("algorithm: <sce:append target=\"{target}\">: expr must be uint8 or bytes, got {got}")]
+    AlgorithmAppendTypeMismatch { target: String, got: String },
+
     /// RFC §synth-5-B variant primitive: the variant's enumerated
     /// arms don't cover the tag field's value domain AND no
     /// `<sce:default>` arm catches the unenumerated values. At least

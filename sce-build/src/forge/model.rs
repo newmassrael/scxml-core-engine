@@ -2649,6 +2649,13 @@ pub struct AlgorithmSignature {
     pub params: Vec<AlgorithmParam>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub return_type: Option<SceType>,
+    /// Cap on the bytes a `return_type = bytes` algorithm may produce,
+    /// declared via `sce:returns-max-size="N"` on the `<sce:signature>`.
+    /// Required when `return_type` is `bytes` (the output buffer's fixed
+    /// capacity on the no-alloc profile); ignored otherwise. Mirrors
+    /// [`ProcedureHelper::returns_max_size`]. `None` ⇒ non-bytes return.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub returns_max_size: Option<u32>,
 }
 
 /// Type carried by an `<sce:const>` declaration. Scalar form is the
@@ -2797,18 +2804,36 @@ fn is_false(b: &bool) -> bool {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "stmt", rename_all = "snake_case")]
 pub enum AlgorithmStmt {
-    /// `<sce:var name=... type=... init=.../>` — local mutable binding.
+    /// `<sce:var name=... type=... init=... capacity=.../>` — local mutable
+    /// binding. `capacity` is the fixed buffer bound, in bytes, and is
+    /// required for — and only meaningful on — `type="bytes"` locals: the
+    /// growable byte buffer that `<sce:append>` ([`AlgorithmStmt::Append`])
+    /// fills (SCE byte-buffer-build, SCE_FORGE.md §4.12). It is `None` for
+    /// scalar locals.
     Var {
         name: String,
         #[serde(rename = "type")]
         sce_type: SceType,
         init: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        capacity: Option<u32>,
     },
-    /// `<sce:assign target="lvalue" expr=".../>"` — mutates an existing
-    /// l-value. v1 l-values are identifier, member access, or index
-    /// (RFC §synth-5-A "LValue scope v1"). Stored as raw string and validated
-    /// by the parser.
+    /// `<sce:assign target="lvalue" expr="..."/>` — mutates an existing
+    /// l-value. SCE's `validate_lvalue_shape` accepts an identifier or a
+    /// one-level member access only; a computed index (`buf[i]`) is rejected
+    /// because it is not a statically-known storage location. Byte buffers are
+    /// built forward-only via `<sce:append>` ([`AlgorithmStmt::Append`]), never
+    /// index writes. Stored as a raw string and validated by the parser.
     Assign { target: String, expr: String },
+    /// `<sce:append target="buf" expr="..."/>` — append to a `bytes` local
+    /// buffer (SCE byte-buffer-build, SCE_FORGE.md §4.12). `target` is the
+    /// identifier of a `type="bytes"` local; `expr` lowers by its static type:
+    /// a `uint8` appends one byte, a `bytes` value extends the buffer. The
+    /// append is bounds-checked against the buffer's declared `capacity`;
+    /// overflow surfaces fallibly (the codec's `CapacityExceeded` model),
+    /// never silent truncation. This is the only buffer-mutation statement —
+    /// index writes are deliberately excluded (see `Assign`).
+    Append { target: String, expr: String },
     /// `<sce:if cond="..."> ... <sce:else>...</sce:else></sce:if>`.
     If {
         cond: String,

@@ -19570,6 +19570,9 @@ fn collect_algorithm_local_types(
                 }
                 out.push((name.clone(), sce_type.clone()));
             }
+            // `<sce:append>` mutates an existing buffer; it declares no new
+            // local, so it contributes nothing to the type table here.
+            AlgorithmStmt::Append { .. } => {}
             AlgorithmStmt::Foreach { item, body, .. } => {
                 if !seen.insert(item.clone()) {
                     return Err(
@@ -19669,6 +19672,7 @@ fn collect_bc_foreach_member_types(
             }
             AlgorithmStmt::Var { .. }
             | AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Append { .. }
             | AlgorithmStmt::Return { .. }
             | AlgorithmStmt::Call { .. } => {}
         }
@@ -19679,6 +19683,51 @@ fn collect_bc_foreach_member_types(
 /// target language. Each statement consumes the type context built by
 /// `collect_algorithm_local_types`; nested blocks reuse the same flat
 /// context (shadowing is forbidden, so flat is sufficient).
+/// SCE byte-buffer-build (§4.12): collect the declared `capacity` of every
+/// `<sce:var type="bytes" capacity="N">` buffer local in an algorithm body,
+/// keyed by the SCXML name. The C11 append lowering reads it to bound the
+/// result struct's `bytes[N]` array. Recurses into block statements so a
+/// buffer declared at any nesting depth is registered.
+fn collect_bytes_buffer_caps(
+    stmts: &[AlgorithmStmt],
+    out: &mut std::collections::HashMap<String, u32>,
+) {
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Var {
+                name,
+                sce_type,
+                capacity,
+                ..
+            } => {
+                if matches!(sce_type, SceType::Bytes) {
+                    if let Some(cap) = capacity {
+                        out.insert(name.clone(), *cap);
+                    }
+                }
+            }
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_bytes_buffer_caps(then_body, out);
+                if let Some(eb) = else_body {
+                    collect_bytes_buffer_caps(eb, out);
+                }
+            }
+            AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
+                collect_bytes_buffer_caps(body, out);
+            }
+            AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Return { .. }
+            | AlgorithmStmt::Call { .. } => {}
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn lower_algorithm_body(
     stmts: &[AlgorithmStmt],
     lang: crate::generator::Language,
@@ -19687,6 +19736,8 @@ fn lower_algorithm_body(
     indent: usize,
     return_ty: crate::forge::types::InferredType,
     imports: &[ImportContext],
+    bytes_buffer_caps: &std::collections::HashMap<String, u32>,
+    c11_result_type: Option<&str>,
 ) -> Result<String, ForgeError> {
     let mut out = String::new();
     let pad = "    ".repeat(indent);
@@ -19709,6 +19760,8 @@ fn lower_algorithm_body(
         assigned: &assigned,
         return_ty,
         imports,
+        bytes_buffer_caps,
+        c11_result_type,
     };
     for s in stmts {
         lower_algorithm_stmt(s, &ctx, &pad, indent, &mut out)?;
@@ -19717,18 +19770,20 @@ fn lower_algorithm_body(
 }
 
 /// Walk an algorithm body and collect every identifier that appears as
-/// the root of an `<sce:assign target>` lvalue. RFC §synth-5-A v1 lvalues are
-/// identifier, member access (`obj.field`), and index (`arr[i]`) — the
-/// root in every case is the leading identifier, which we extract with
-/// a simple character scan. Subsequent passes use this set to decide
-/// `let` vs `let mut` per Rust's deny(unused_mut) workspace lint.
+/// the root of a mutation target — both `<sce:assign target>` lvalues
+/// (identifier or one-level member access `obj.field`; index writes are
+/// rejected, see [`AlgorithmStmt::Assign`]) and `<sce:append target>` buffer
+/// appends. The root in every case is the leading identifier, which we
+/// extract with a simple character scan. Subsequent passes use this set to
+/// decide `let` vs `let mut` per Rust's deny(unused_mut) workspace lint — a
+/// byte buffer that only ever gets `<sce:append>`ed still needs `let mut`.
 fn collect_algorithm_assigned_roots(
     stmts: &[AlgorithmStmt],
     out: &mut std::collections::HashSet<String>,
 ) {
     for s in stmts {
         match s {
-            AlgorithmStmt::Assign { target, .. } => {
+            AlgorithmStmt::Assign { target, .. } | AlgorithmStmt::Append { target, .. } => {
                 let root: String = target
                     .chars()
                     .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
@@ -19773,6 +19828,40 @@ struct AlgorithmLowerCtx<'a> {
     assigned: &'a std::collections::HashSet<String>,
     return_ty: crate::forge::types::InferredType,
     imports: &'a [ImportContext],
+    /// SCE byte-buffer-build (§4.12): declared capacity of every
+    /// `<sce:var type="bytes" capacity="N">` local, keyed by the SCXML name.
+    /// The C11 backend reads it to bound the result struct's `bytes[N]`
+    /// array on each `<sce:append>`; Rust bakes the bound into
+    /// `SceBytes<N>` so it never consults this map.
+    bytes_buffer_caps: &'a std::collections::HashMap<String, u32>,
+    /// SCE byte-buffer-build (§4.12): the C11 result-struct typedef name
+    /// (`<symbol>_result_t`) when the algorithm returns `bytes`, else `None`.
+    /// The bytes `<sce:var>` lowers to a by-value local of this type (the
+    /// no-malloc carrier that doubles as the return value). Other backends
+    /// use a language-native growable buffer and ignore this.
+    c11_result_type: Option<&'a str>,
+}
+
+/// Human-readable name for an inferred type, used by the byte-buffer-build
+/// `algorithm/append-type-mismatch` diagnostic's `{got}` slot.
+fn describe_inferred_type(ty: crate::forge::types::InferredType) -> String {
+    use crate::forge::types::InferredType;
+    match ty {
+        InferredType::Int {
+            signed: false,
+            bits,
+        } => format!("uint{bits}"),
+        InferredType::Int { signed: true, bits } => format!("int{bits}"),
+        InferredType::Float { bits } => format!("float{bits}"),
+        InferredType::UntypedInt => "integer literal".into(),
+        InferredType::UntypedFloat => "float literal".into(),
+        InferredType::Bool => "bool".into(),
+        InferredType::Str => "string".into(),
+        InferredType::Bytes => "bytes".into(),
+        InferredType::Null => "null".into(),
+        InferredType::Unknown => "unknown".into(),
+        InferredType::Quantity { .. } => "quantity".into(),
+    }
 }
 
 fn lower_algorithm_stmt(
@@ -19792,13 +19881,63 @@ fn lower_algorithm_stmt(
         assigned,
         return_ty,
         imports,
+        bytes_buffer_caps,
+        c11_result_type,
     } = ctx;
     match s {
         AlgorithmStmt::Var {
             name,
             sce_type,
             init,
+            capacity,
         } => {
+            // SCE byte-buffer-build (§4.12): a `type="bytes"` local is a
+            // growable output buffer seeded empty and filled forward-only via
+            // `<sce:append>` — it carries `capacity`, not `init`. Each backend
+            // declares its native growable byte container (Rust no-alloc
+            // `SceBytes<N>`, C/C++/Kotlin/Go/Python stdlib growable, C11 the
+            // by-value result struct). Scalars keep the existing init path.
+            if matches!(sce_type, SceType::Bytes) {
+                let local = l.local_id(name);
+                let cap = capacity.ok_or_else(|| {
+                    GenerateError::InvalidConfig(format!(
+                        "algorithm bytes buffer '{name}' has no `capacity` — the \
+                         byte-buffer-build validator must reject this before codegen"
+                    ))
+                })?;
+                // A buffer is always appended to, so Rust needs `let mut`;
+                // `assigned` already includes `<sce:append>` targets.
+                let rust_mut = if assigned.contains(name.as_str()) {
+                    "mut "
+                } else {
+                    ""
+                };
+                let line = match lang {
+                    Language::Rust => {
+                        format!("{pad}let {rust_mut}{local}: SceBytes<{cap}> = SceBytes::new();\n")
+                    }
+                    Language::Cpp => {
+                        format!("{pad}std::vector<std::uint8_t> {local};\n")
+                    }
+                    Language::C11 => {
+                        let result_ty = c11_result_type.ok_or_else(|| {
+                            GenerateError::InvalidConfig(format!(
+                                "algorithm bytes buffer '{name}' lowered for C11 with no \
+                                 result-struct type — the algorithm must declare a `bytes` \
+                                 return (byte-buffer-build validator gates this)"
+                            ))
+                        })?;
+                        format!("{pad}{result_ty} {local} = {{ .len = 0u, .ok = true }};\n")
+                    }
+                    Language::Go => format!("{pad}{local} := []byte{{}}\n"),
+                    Language::Python => format!("{pad}{local} = bytearray()\n"),
+                    Language::Kotlin => {
+                        format!("{pad}val {local} = mutableListOf<Byte>()\n")
+                    }
+                };
+                out.push_str(&line);
+                return Ok(());
+            }
             let init_lowered = expr::transpile_typed(
                 init,
                 l.expr_target(),
@@ -19856,6 +19995,113 @@ fn lower_algorithm_stmt(
                 ";"
             };
             out.push_str(&format!("{pad}{lhs} = {rhs_lowered}{semi}\n"));
+        }
+        AlgorithmStmt::Append { target, expr: rhs } => {
+            // SCE byte-buffer-build (§4.12): forward-only append to a `bytes`
+            // buffer local. The RHS static type selects the operation — a
+            // `bytes` value extends the buffer, any integer value pushes one
+            // byte. Overflow is fallible on the bounded backends (Rust `?` on
+            // `SceBytes::push` / `extend_from_slice`; C11 flips the result
+            // struct's `ok` to false past the fixed `bytes[N]`), while the
+            // heap backends (Cpp/Go/Python/Kotlin) grow on demand.
+            let target_key = target.trim();
+            // The target must be a declared `<sce:var type="bytes">` buffer.
+            // Codegen-time check (mirrors the foreach-source-not-iterable
+            // precedent — fires from the same lowering pass that has the
+            // buffer table). C11 then bounds every append against the
+            // buffer's declared capacity; the other backends carry the
+            // bound in the buffer type itself.
+            let cap_n = match bytes_buffer_caps.get(target_key) {
+                Some(n) => *n,
+                None => {
+                    let mut candidates: Vec<String> = bytes_buffer_caps.keys().cloned().collect();
+                    candidates.sort();
+                    return Err(
+                        crate::forge::error::ValidationError::AlgorithmAppendTargetNotBuffer {
+                            target: target.clone(),
+                            candidates,
+                        }
+                        .into(),
+                    );
+                }
+            };
+            let local = l.local_id(target_key);
+            // The RHS static type selects the operation: a `bytes` value
+            // extends the buffer, a `uint8` value pushes one byte. A wider
+            // integer would silently truncate, so it is rejected — the author
+            // narrows it explicitly. (An untyped integer literal coerces to a
+            // byte and is accepted.)
+            let rhs_ty = expr::infer_expr_type(rhs, type_ctx)?;
+            let rhs_is_bytes = matches!(rhs_ty, InferredType::Bytes);
+            let rhs_is_byte = matches!(rhs_ty, InferredType::UntypedInt)
+                || matches!(rhs_ty, InferredType::Int { bits, .. } if bits <= 8);
+            if !rhs_is_bytes && !rhs_is_byte {
+                return Err(
+                    crate::forge::error::ValidationError::AlgorithmAppendTypeMismatch {
+                        target: target.clone(),
+                        got: describe_inferred_type(rhs_ty),
+                    }
+                    .into(),
+                );
+            }
+            let line = if rhs_is_bytes {
+                let e = expr::transpile_typed(
+                    rhs,
+                    l.expr_target(),
+                    type_ctx,
+                    renames,
+                    InferredType::Bytes,
+                )?;
+                match lang {
+                    Language::Rust => format!("{pad}{local}.extend_from_slice({e})?;\n"),
+                    Language::Cpp => {
+                        format!("{pad}{local}.insert({local}.end(), {e}.begin(), {e}.end());\n")
+                    }
+                    Language::Go => format!("{pad}{local} = append({local}, {e}...)\n"),
+                    Language::Python => format!("{pad}{local}.extend({e})\n"),
+                    Language::Kotlin => format!("{pad}{local}.addAll({e}.toList())\n"),
+                    Language::C11 => {
+                        let n = cap_n;
+                        // Hoist the source view so a compound RHS evaluates once.
+                        format!(
+                            "{pad}{{\n\
+                             {pad}    sce_forge_bytes_view_t __src = {e};\n\
+                             {pad}    for (size_t __k = 0; __k < __src.len; ++__k) {{\n\
+                             {pad}        if ({local}.len < {n}u) {{ {local}.bytes[{local}.len++] = __src.data[__k]; }}\n\
+                             {pad}        else {{ {local}.ok = false; }}\n\
+                             {pad}    }}\n\
+                             {pad}}}\n"
+                        )
+                    }
+                }
+            } else {
+                let e = expr::transpile_typed(
+                    rhs,
+                    l.expr_target(),
+                    type_ctx,
+                    renames,
+                    InferredType::Int {
+                        signed: false,
+                        bits: 8,
+                    },
+                )?;
+                match lang {
+                    Language::Rust => format!("{pad}{local}.push({e})?;\n"),
+                    Language::Cpp => {
+                        format!("{pad}{local}.push_back(static_cast<std::uint8_t>({e}));\n")
+                    }
+                    Language::Go => format!("{pad}{local} = append({local}, byte({e}))\n"),
+                    Language::Python => format!("{pad}{local}.append({e})\n"),
+                    Language::Kotlin => format!("{pad}{local}.add(({e}).toByte())\n"),
+                    Language::C11 => {
+                        let n = cap_n;
+                        format!(
+                            "{pad}if ({local}.len < {n}u) {{ {local}.bytes[{local}.len++] = (uint8_t)({e}); }} else {{ {local}.ok = false; }}\n"
+                        )
+                    }
+                }
+            };
+            out.push_str(&line);
         }
         AlgorithmStmt::If {
             cond,
@@ -20231,10 +20477,30 @@ fn lower_algorithm_stmt(
                     // every emitter route through its own coerce path.
                     let lowered =
                         expr::transpile_typed(rhs, l.expr_target(), type_ctx, renames, return_ty)?;
-                    match lang {
-                        Language::Python => format!("{pad}return {lowered}\n"),
-                        Language::Kotlin => format!("{pad}return {lowered}\n"),
-                        _ => format!("{pad}return {lowered};\n"),
+                    if matches!(return_ty, InferredType::Bytes) {
+                        // SCE byte-buffer-build (§4.12): wrap the finished
+                        // buffer into the backend's return shape — Rust the
+                        // fallible `Ok(..)`; C11 the by-value result struct
+                        // (returned verbatim, its `ok` flag already set);
+                        // Python/Kotlin a conversion from the working buffer to
+                        // the immutable byte type; Cpp/Go the buffer directly.
+                        match lang {
+                            Language::Rust => format!("{pad}return Ok({lowered});\n"),
+                            Language::Python => format!("{pad}return bytes({lowered})\n"),
+                            Language::Kotlin => {
+                                format!("{pad}return {lowered}.toByteArray()\n")
+                            }
+                            Language::Cpp | Language::C11 => {
+                                format!("{pad}return {lowered};\n")
+                            }
+                            Language::Go => format!("{pad}return {lowered}\n"),
+                        }
+                    } else {
+                        match lang {
+                            Language::Python => format!("{pad}return {lowered}\n"),
+                            Language::Kotlin => format!("{pad}return {lowered}\n"),
+                            _ => format!("{pad}return {lowered};\n"),
+                        }
                     }
                 }
                 None => match lang {
@@ -20775,22 +21041,80 @@ fn render_algorithm(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let return_type = match &m.signature.return_type {
-        Some(t) => l.type_name(t).to_string(),
-        None => match lang {
-            Language::Cpp | Language::C11 | Language::Rust => "()".to_string(), // overridden below
-            Language::Go => "".to_string(),
-            Language::Kotlin => "Unit".to_string(),
-            Language::Python => "None".to_string(),
-        },
-    };
-    // C/Cpp use literal `void`; Rust uses `()`; the above default for
-    // Cpp/C11/Rust collapses to `()` which Rust accepts but C/C++ do not.
+    // SCE byte-buffer-build (§4.12): a `bytes` return lowers to a per-backend
+    // growable/owned byte type rather than the borrowed view used for `bytes`
+    // *parameters*. The bounded backends carry the fixed cap `N`
+    // (`sce:returns-max-size`): Rust as `SceBytes<N>` inside a fallible
+    // `Result`, C11 as a by-value `<symbol>_result_t` struct (`uint8_t
+    // bytes[N]` + len + ok). The heap backends ignore `N` and return their
+    // native owned byte type. C/Cpp use literal `void` for no return; Rust
+    // `()`.
+    let primary_symbol = forge_algorithm_symbol(&m.name, lang);
+    let bytes_return_cap = m.signature.returns_max_size;
     let return_type = match (&m.signature.return_type, lang) {
+        (Some(SceType::Bytes), _) => {
+            let n = bytes_return_cap.ok_or_else(|| {
+                GenerateError::InvalidConfig(format!(
+                    "algorithm '{}' returns `bytes` but declares no \
+                     `sce:returns-max-size` — required for the output buffer's \
+                     fixed capacity (byte-buffer-build validator gates this)",
+                    m.name
+                ))
+            })?;
+            match lang {
+                Language::Rust => format!("Result<SceBytes<{n}>, CapacityExceeded>"),
+                Language::C11 => format!("{primary_symbol}_result_t"),
+                Language::Cpp => "std::vector<std::uint8_t>".to_string(),
+                Language::Go => "[]byte".to_string(),
+                Language::Python => "bytes".to_string(),
+                Language::Kotlin => "ByteArray".to_string(),
+            }
+        }
+        (Some(t), _) => l.type_name(t).to_string(),
         (None, Language::Cpp) | (None, Language::C11) => "void".to_string(),
         (None, Language::Rust) => "()".to_string(),
-        _ => return_type,
+        (None, Language::Go) => String::new(),
+        (None, Language::Kotlin) => "Unit".to_string(),
+        (None, Language::Python) => "None".to_string(),
     };
+
+    // SCE byte-buffer-build (§4.12): per-buffer capacity table (for the C11
+    // append bound) and the C11 result-struct type name. Empty / `None` for
+    // every algorithm that declares no `bytes` buffer, so non-bytes
+    // algorithms stay byte-identical.
+    let mut bytes_buffer_caps: std::collections::HashMap<String, u32> =
+        std::collections::HashMap::new();
+    collect_bytes_buffer_caps(&m.body, &mut bytes_buffer_caps);
+    let c11_result_type = match (&m.signature.return_type, lang) {
+        (Some(SceType::Bytes), Language::C11) => Some(format!("{primary_symbol}_result_t")),
+        _ => None,
+    };
+    // SCE byte-buffer-build (§4.12): the C++ buffer/return lower to
+    // `std::vector<std::uint8_t>`, which needs `<vector>`. Gate the include so
+    // algorithms without a byte buffer keep their previous header surface
+    // byte-equivalent.
+    let needs_vector =
+        matches!(&m.signature.return_type, Some(SceType::Bytes)) || !bytes_buffer_caps.is_empty();
+
+    // SCE byte-buffer-build (§4.12): a `bytes`-returning algorithm is no
+    // longer self-contained — Rust imports the shared owned-bytes type from
+    // the leaf SSOT crate `sce-portable-bytes`; C11 emits the by-value
+    // result-struct typedef ahead of the function. Both land in the
+    // pre-function prelude slot so the templates stay untouched. Non-bytes
+    // algorithms keep an empty preamble (byte-identical output).
+    let buffer_build_preamble = match (&m.signature.return_type, lang) {
+        (Some(SceType::Bytes), Language::Rust) => {
+            "use sce_portable_bytes::{SceBytes, CapacityExceeded};\n\n".to_string()
+        }
+        (Some(SceType::Bytes), Language::C11) => {
+            let n = bytes_return_cap.expect("checked when building return_type");
+            format!(
+                "typedef struct {{\n    uint8_t bytes[{n}];\n    size_t len;\n    bool ok;\n}} {primary_symbol}_result_t;\n\n"
+            )
+        }
+        _ => String::new(),
+    };
+    let consts_prelude = format!("{buffer_build_preamble}{consts_prelude}");
 
     // RFC §synth-5-F: const names are emitted at SCREAMING_SNAKE_CASE in
     // every backend; without a rename here, the per-language
@@ -20835,6 +21159,8 @@ fn render_algorithm(
         1,
         return_ty_inferred,
         imports,
+        &bytes_buffer_caps,
+        c11_result_type.as_deref(),
     )?;
 
     let needs_span = m
@@ -20846,10 +21172,7 @@ fn render_algorithm(
     // W1 symbol-name SSOT: the function declaration reads `primary_symbol`
     // instead of selecting a casing per backend. The module identity vars
     // (`namespace` / `package`) come from `base_context` and are unaffected.
-    ctx.insert(
-        "primary_symbol".into(),
-        forge_algorithm_symbol(&m.name, lang).into(),
-    );
+    ctx.insert("primary_symbol".into(), primary_symbol.into());
     ctx.insert("params_str".into(), params_str.into());
     ctx.insert("return_type".into(), return_type.into());
     // RFC §synth-5-A line 311 (item C7 lowering, 2026-05-13):
@@ -20890,6 +21213,7 @@ fn render_algorithm(
     // array tables). Empty string when the algorithm has no consts.
     ctx.insert("consts_prelude".into(), consts_prelude.into());
     ctx.insert("needs_std_array".into(), needs_std_array.into());
+    ctx.insert("needs_vector".into(), needs_vector.into());
     ctx.insert(
         "kotlin_needs_opt_in_unsigned".into(),
         kotlin_needs_opt_in_unsigned.into(),

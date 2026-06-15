@@ -19,7 +19,8 @@
 {% if needs_std_array %}#include <array>
 {% endif %}#include <cstddef>
 #include <cstdint>
-{% if needs_span %}#include <span>
+{% if needs_vector %}#include <vector>
+{% endif %}{% if needs_span %}#include <span>
 {% endif %}{% if all_imports %}{% for imp in all_imports %}{{ imp.include_stmt }}
 {% endfor %}{% endif %}
 namespace SCE::Generated::{{ namespace }} {

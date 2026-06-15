@@ -1152,6 +1152,47 @@ private:
 
 `SCE::Forge::ThresholdState` (a `bool` wrapper exposing `enterIf`/`leaveIf`), `SCE::Forge::EventQueue<D>` (a fixed-capacity queue parameterized by domain), and the `Event<D>` tagged type all live in `sce_forge_runtime`. The hysteresis state-transition logic exists in exactly one place per language; the generated file contains only the per-monitor thresholds and the per-domain event tags. See §2.1.
 
+### 4.12 algorithm
+
+A pure synchronous function — bounded loops, language-native locals, no I/O, no allocation on the no-alloc profile. An `<sce:signature>` declares the parameters and return type; an `<sce:body>` holds the statement list (`<sce:var>`, `<sce:assign>`, `<sce:append>`, `<sce:if>`/`<sce:else>`, `<sce:while>`, `<sce:foreach>`, `<sce:return>`, `<sce:call>`). The kind's full surface is specified by watching-zenoh RFC §synth-5-A; this section documents the SCE-owned **byte-buffer-build** primitive.
+
+#### Byte-buffer-build
+
+Some transforms are runtime, data-dependent `bytes -> bytes` functions whose output length depends on the input values (framing, escaping, run-length encodings). They are not fixed-shape codecs. Byte-buffer-build expresses them with three primitives — a bounded growable output buffer, a forward-only append, and a fallible `bytes` return — and **no index writes** (`buf[i] = x` remains rejected; a byte buffer is built forward-only).
+
+- **`<sce:var name="out" type="bytes" capacity="N"/>`** — a growable byte buffer. It is seeded **empty** (no `init=`; a stray `init` on a bytes local is rejected) and filled only via `<sce:append>`. `capacity` is the fixed upper bound, in bytes, and is **required** on a bytes local (and forbidden on a scalar local).
+- **`<sce:append target="out" expr="..."/>`** — append to a bytes buffer. The expression's **static type** selects the operation: a `uint8` value pushes one byte, a `bytes` value extends the buffer. A wider integer is rejected rather than silently truncated — narrow it to a `uint8` first.
+- **`<sce:return type="bytes" returns-max-size="N"/>`** — a `bytes` return requires `returns-max-size`, the output buffer's fixed capacity on the no-alloc profile (mirrors `<sce:helper returns-max-size>`).
+
+**v1 scope.** An algorithm declares exactly one bytes buffer, which is the returned value, with `capacity == returns-max-size`. The validator rejects multiple bytes buffers, a bytes buffer with a non-`bytes` return, and a capacity that disagrees with `returns-max-size`. Intermediate (non-returned) bytes buffers are not supported until a consumer needs them.
+
+**Overflow is fallible**, never silent truncation and never a panic. On the bounded backends a full buffer surfaces as an error; the heap backends grow on demand:
+
+| Backend | Output buffer | Append overflow | Return shape |
+|---------|---------------|-----------------|--------------|
+| Rust | `SceBytes<N>` (no-alloc `heapless::Vec<u8, N>`; `alloc` = `Vec<u8>`, `N` advisory) | `?` on `push` / `extend_from_slice` → `CapacityExceeded` | `Result<SceBytes<N>, CapacityExceeded>` |
+| C11 | by-value `<symbol>_result_t { uint8_t bytes[N]; size_t len; bool ok; }` (no malloc) | bounds-check sets `ok = false` past `N` | the result struct (caller reads `ok`) |
+| C++ | `std::vector<std::uint8_t>` | grows | `std::vector<std::uint8_t>` |
+| Go | `[]byte` | grows | `[]byte` |
+| Python | `bytearray` | grows | `bytes` |
+| Kotlin | `MutableList<Byte>` | grows | `ByteArray` |
+
+Rust imports `SceBytes` / `CapacityExceeded` from the shared `sce-portable-bytes` crate — the same owned-bytes type the codec kind uses — so a `bytes`-returning algorithm is no longer self-contained (it carries that one dependency, by design: SSOT over self-containment).
+
+#### Example — COBS encode
+
+[Consistent Overhead Byte Stuffing](https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing) is the canonical byte-buffer-build transform: split the input into groups of up to 254 non-zero bytes (terminated by a zero byte, the 254-byte limit, or end-of-input) and emit `(group_length + 1)` followed by the group's bytes. Two forward scan pointers over the read-only input and a single append-only output buffer suffice — see `tests/forge/resources/algorithm_cobs_encode.scxml`. Reference vectors: `[] -> 01`, `00 -> 01 01`, `11 22 00 33 -> 03 11 22 02 33`, `11 00 00 -> 02 11 01 01`.
+
+#### Rejections
+
+| Code | Stage | Condition |
+|------|-------|-----------|
+| `validation/missing-attribute` | Validation | bytes buffer without `capacity`; bytes return without `returns-max-size` |
+| `validation/invalid-attribute` | Validation | `capacity` on a scalar local; `capacity != returns-max-size` |
+| `validation/incompatible-attributes` | Validation | more than one bytes buffer; bytes buffer with a non-`bytes` return |
+| `algorithm/append-target-not-buffer` | Validation | `<sce:append target>` is not a declared bytes buffer |
+| `algorithm/append-type-mismatch` | Validation | `<sce:append expr>` is neither `uint8` nor `bytes` |
+
 ---
 
 ## 5. Kind Composition

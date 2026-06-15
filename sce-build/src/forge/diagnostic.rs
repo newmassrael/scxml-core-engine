@@ -534,6 +534,21 @@ pub enum DiagnosticCode {
     #[serde(rename = "algorithm/call-arg-count-mismatch")]
     AlgorithmCallArgCountMismatch,
 
+    // ── Byte-buffer-build (SCE byte-buffer-build, SCE_FORGE.md §4.12). The
+    //    `<sce:append>` statement's two semantic failures: a target that is
+    //    not a declared `bytes` buffer (rides `FixCarriesCandidates` — the
+    //    visible buffer names) and an RHS whose static type is neither
+    //    `uint8` nor `bytes` (rides `ExpectedIsMetadata` — expected = the
+    //    accepted type set). Attribute-shape rules (capacity required on a
+    //    bytes buffer / forbidden on a scalar, returns-max-size required on a
+    //    bytes return, capacity == returns-max-size) reuse the generic
+    //    `validation/missing-attribute` / `validation/invalid-attribute`
+    //    codes. ───────────────────────────────────────────────────────────
+    #[serde(rename = "algorithm/append-target-not-buffer")]
+    AlgorithmAppendTargetNotBuffer,
+    #[serde(rename = "algorithm/append-type-mismatch")]
+    AlgorithmAppendTypeMismatch,
+
     // ── SCXML semantic-validation (§wire-W5). Three of the four
     //    SCXML semantic failures fold into existing `validation/*`
     //    codes per the W4 D4 fold precedent — concept identity:
@@ -2535,6 +2550,9 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         AlgorithmBcMutationForbidden,
         AlgorithmForeachSourceBcWithBytesItemType,
         AlgorithmCallArgCountMismatch,
+        // Byte-buffer-build (SCE_FORGE.md §4.12)
+        AlgorithmAppendTargetNotBuffer,
+        AlgorithmAppendTypeMismatch,
         // SCXML semantic (§wire-W5)
         ScxmlTopLevelScriptUnloaded,
         // NL→IR Mapping Roadmap Item 3 — Statechart graph reachability
@@ -2991,6 +3009,11 @@ impl DiagnosticCode {
             | AlgorithmBcMutationForbidden
             | AlgorithmForeachSourceBcWithBytesItemType
             | AlgorithmCallArgCountMismatch => Some("watching-zenoh RFC §5.A + §5.L"),
+
+            // ── Algorithm byte-buffer-build (SCE-owned, SCE_FORGE.md §4.12) ─
+            AlgorithmAppendTargetNotBuffer | AlgorithmAppendTypeMismatch => {
+                Some("SCE Forge §4.12")
+            }
 
             // ── Algorithm §synth-5-F build-time const-fold ─────────────
             AlgorithmConstNotFoldable
@@ -3572,6 +3595,8 @@ impl DiagnosticCode {
                 "algorithm/foreach-source-bc-with-bytes-item-type"
             }
             AlgorithmCallArgCountMismatch => "algorithm/call-arg-count-mismatch",
+            AlgorithmAppendTargetNotBuffer => "algorithm/append-target-not-buffer",
+            AlgorithmAppendTypeMismatch => "algorithm/append-type-mismatch",
             ScxmlTopLevelScriptUnloaded => "scxml/top-level-script-unloaded",
             ScxmlUnreachableState => "scxml/unreachable-state",
             ScxmlDeadTransition => "scxml/dead-transition",
@@ -4908,6 +4933,35 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
             actual: None,
             fix: None,
             key_fragments: vec![target.clone(), actual.to_string(), expected.to_string()],
+        },
+        ValidationError::AlgorithmAppendTargetNotBuffer { target, candidates } => {
+            DiagnosticPayload {
+                code: DiagnosticCode::AlgorithmAppendTargetNotBuffer,
+                stage: Stage::Validation,
+                // Multi-axis repair (declare a `<sce:var type="bytes">` OR
+                // retarget an existing buffer); the visible buffer-name
+                // union rides `key_fragments` for content-hash stability,
+                // no single `Fix::Replace`. Mirrors
+                // `AlgorithmForeachSourceNotIterable`.
+                expected: None,
+                actual: Some(target.clone()),
+                fix: None,
+                key_fragments: {
+                    let mut k = vec![target.clone()];
+                    k.extend(candidates.iter().cloned());
+                    k
+                },
+            }
+        }
+        ValidationError::AlgorithmAppendTypeMismatch { target, got } => DiagnosticPayload {
+            code: DiagnosticCode::AlgorithmAppendTypeMismatch,
+            stage: Stage::Validation,
+            // The accepted RHS type set is fixed metadata, not a
+            // structured repair candidate; narrowing is author-domain.
+            expected: Some(vec!["uint8".into(), "bytes".into()]),
+            actual: Some(got.clone()),
+            fix: None,
+            key_fragments: vec![target.clone(), got.clone()],
         },
         ValidationError::CodecVariantArmUnreachable {
             codec,
@@ -9381,6 +9435,25 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:bd464011584cd3c9","code":"algorithm/call-arg-count-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.find_by_index\">: argument count 2 does not match callable's arity 1"}"#,
             ),
+            // ── Byte-buffer-build (SCE-owned, SCE_FORGE.md §4.12) ─
+            (
+                "forge/algorithm-append-target-not-buffer",
+                ValidationError::AlgorithmAppendTargetNotBuffer {
+                    target: "scratch".into(),
+                    candidates: vec!["out".into()],
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:43e6bffa846c22db","code":"algorithm/append-target-not-buffer","stage":"validation","spec":"SCE Forge §4.12","message":"algorithm: <sce:append target=\"scratch\">: 'scratch' is not a declared bytes buffer (declare it with <sce:var type=\"bytes\" capacity=\"N\"/>)","actual":"scratch"}"#,
+            ),
+            (
+                "forge/algorithm-append-type-mismatch",
+                ValidationError::AlgorithmAppendTypeMismatch {
+                    target: "out".into(),
+                    got: "uint16".into(),
+                }
+                .into(),
+                r#"{"v":1,"id":"fnv1a:e63c3542ddb12c1f","code":"algorithm/append-type-mismatch","stage":"validation","spec":"SCE Forge §4.12","message":"algorithm: <sce:append target=\"out\">: expr must be uint8 or bytes, got uint16","expected":["uint8","bytes"],"actual":"uint16"}"#,
+            ),
             // ── §synth-5-F build-time const-fold (watching-zenoh RFC §synth-5-F) ─
             (
                 "forge/algorithm-const-not-foldable",
@@ -11802,7 +11875,12 @@ mod tests {
             | ValidationEventPayloadFieldUnknown => FixCarriesCandidates,
 
             // ── `expected` carries non-repair metadata ────────
-            ExpressionParseMismatch | MeshExternalAmbiguousEventGroup => ExpectedIsMetadata,
+            // `algorithm/append-type-mismatch`: `expected` is the fixed
+            // accepted RHS type set ("uint8 or bytes"); the narrowing
+            // repair is author-domain, no structured `Fix`.
+            ExpressionParseMismatch
+            | MeshExternalAmbiguousEventGroup
+            | AlgorithmAppendTypeMismatch => ExpectedIsMetadata,
 
             // ── Deterministic fix or no fix; expected=None ────
             XmlParse
@@ -12018,6 +12096,11 @@ mod tests {
             | AlgorithmBcMutationForbidden
             | AlgorithmForeachSourceBcWithBytesItemType
             | AlgorithmCallArgCountMismatch
+            // `algorithm/append-target-not-buffer`: multi-axis repair
+            // (declare a bytes buffer OR retarget an existing one); the
+            // visible buffer-name union rides `key_fragments`, no
+            // single `Fix::Replace`. Mirrors `AlgorithmForeachSourceNotIterable`.
+            | AlgorithmAppendTargetNotBuffer
             | ScxmlTopLevelScriptUnloaded
             | ScxmlOnSampleInvalidParent
             | ScxmlOnSampleLinkDuplicateInState
@@ -12628,6 +12711,8 @@ mod tests {
                 | AlgorithmBcMutationForbidden
                 | AlgorithmForeachSourceBcWithBytesItemType
                 | AlgorithmCallArgCountMismatch
+                | AlgorithmAppendTargetNotBuffer
+                | AlgorithmAppendTypeMismatch
                 | ScxmlTopLevelScriptUnloaded
                 | ScxmlUnreachableState
                 | ScxmlDeadTransition
@@ -12884,9 +12969,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            322,
+            324,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 322 distinct variants to match the DiagnosticCode \
+             expected 324 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
