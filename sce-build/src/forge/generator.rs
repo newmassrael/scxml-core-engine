@@ -10878,33 +10878,120 @@ fn streaming_fixed_field_body(
     decode_multibyte_unified(0, n, endian, lang)
 }
 
+/// Encode-side SSOT for multi-byte byte-extraction — the mirror of
+/// [`decode_multibyte_unified`]. Given a `value_ref` source expression and a
+/// width of `n` bytes (n >= 2), returns the `n` per-byte narrowing
+/// expressions in wire order for `endian`. Both the positional encode path
+/// ([`encode_single_field_unified`]) and every streaming encode wrapper
+/// ([`streaming_fixed_field_encode_rust`] et al.) call this, so the
+/// per-language shift / mask / narrow rules live in exactly one place rather
+/// than being re-implemented at each call site.
+///
+/// Each expression masks with `& 0xFF` before the language's byte narrow. The
+/// mask is redundant where the narrow already truncates (Rust `as u8`, C/C++
+/// casts, Go `byte()`, Kotlin `toByte()`) but is the canonical form the
+/// positional path already emits for every backend, and is required for
+/// Python (unbounded ints, no truncating cast). Keeping the one masked form
+/// across both paths is what makes the streaming wrappers' "delegates to the
+/// encode SSOT" contract enforceable instead of drift-prone.
+fn encode_multibyte_unified(
+    value_ref: &str,
+    n: u32,
+    endian: Endian,
+    lang: crate::generator::Language,
+) -> Vec<String> {
+    use crate::generator::Language;
+
+    let make = |le: bool| -> Vec<String> {
+        (0..n)
+            .map(|i| {
+                let shift = if le { i * 8 } else { (n - 1 - i) * 8 };
+                match lang {
+                    Language::Rust => {
+                        if shift == 0 {
+                            format!("({value_ref} & 0xFF) as u8")
+                        } else {
+                            format!("({value_ref} >> {shift} & 0xFF) as u8")
+                        }
+                    }
+                    Language::Cpp => {
+                        if shift == 0 {
+                            format!("static_cast<uint8_t>({value_ref} & 0xFF)")
+                        } else {
+                            format!("static_cast<uint8_t>(({value_ref} >> {shift}) & 0xFF)")
+                        }
+                    }
+                    Language::Go => {
+                        if shift == 0 {
+                            format!("byte({value_ref} & 0xFF)")
+                        } else {
+                            format!("byte({value_ref} >> {shift} & 0xFF)")
+                        }
+                    }
+                    Language::C11 => {
+                        if shift == 0 {
+                            format!("(uint8_t)({value_ref} & 0xFF)")
+                        } else {
+                            format!("(uint8_t)(({value_ref} >> {shift}) & 0xFF)")
+                        }
+                    }
+                    Language::Python => {
+                        if shift == 0 {
+                            format!("{value_ref} & 0xFF")
+                        } else {
+                            format!("({value_ref} >> {shift}) & 0xFF")
+                        }
+                    }
+                    Language::Kotlin => {
+                        // Widths > 4 bytes overflow Kotlin's 32-bit Int, so
+                        // they read through Long; <= 4 stays on Int to match the
+                        // positional path (which never exceeds a 32-bit field).
+                        let (view, mask) = if n > 4 {
+                            ("toLong", "0xFFL")
+                        } else {
+                            ("toInt", "0xFF")
+                        };
+                        if shift == 0 {
+                            format!("({value_ref}.{view}() and {mask}).toByte()")
+                        } else {
+                            format!("({value_ref}.{view}() ushr {shift} and {mask}).toByte()")
+                        }
+                    }
+                }
+            })
+            .collect()
+    };
+
+    match endian {
+        Endian::Big | Endian::Native => make(false),
+        Endian::Little => make(true),
+    }
+}
+
 /// Encode block for a non-gated fixed field — Rust. Reads `self.<id>`
-/// and pushes `n` bytes in the field's effective endianness.
+/// and writes `n` bytes in the field's effective endianness via the shared
+/// byte-extraction SSOT ([`encode_multibyte_unified`]).
 fn streaming_fixed_field_encode_rust(field: &CodecField, default_endian: Endian, n: u32) -> String {
     // Rust struct fields are snake_case (see `LangCtx::codec_field_id`),
     // so `self.<id>` must read through the snake-cased name. A camelCase
     // `<sce:field id>` declared by the author becomes `pub opt_n` at
     // struct-decl time; the encode read here must use the same casing.
-    let id_owned = filters::to_snake_case(field.id.clone());
-    let id = id_owned.as_str();
+    let id = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
-    for i in 0..n {
-        let shift = match endian {
-            Endian::Little => i * 8,
-            Endian::Big | Endian::Native => (n - 1 - i) * 8,
-        };
-        if n == 1 {
-            lines.push_str(&format!("        w.write_u8(self.{id})?;\n"));
-        } else if shift == 0 {
-            lines.push_str(&format!("        w.write_u8(self.{id} as u8)?;\n"));
-        } else {
-            lines.push_str(&format!(
-                "        w.write_u8((self.{id} >> {shift}) as u8)?;\n"
-            ));
-        }
+    if n == 1 {
+        // Single-byte carrier writes directly — no shift/mask needed.
+        return format!("        w.write_u8(self.{id})?;");
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified(
+        &format!("self.{id}"),
+        n,
+        endian,
+        crate::generator::Language::Rust,
+    )
+    .into_iter()
+    .map(|e| format!("        w.write_u8({e})?;"))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// Encode block for a gated fixed field — Rust. Reads from `_v` (the
@@ -10916,53 +11003,34 @@ fn streaming_fixed_field_encode_rust_from_local(
     n: u32,
 ) -> String {
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
-    for i in 0..n {
-        let shift = match endian {
-            Endian::Little => i * 8,
-            Endian::Big | Endian::Native => (n - 1 - i) * 8,
-        };
-        if n == 1 {
-            lines.push_str("            w.write_u8(_v)?;\n");
-        } else if shift == 0 {
-            lines.push_str("            w.write_u8(_v as u8)?;\n");
-        } else {
-            lines.push_str(&format!(
-                "            w.write_u8((_v >> {shift}) as u8)?;\n"
-            ));
-        }
+    if n == 1 {
+        return "            w.write_u8(_v)?;".to_string();
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified("_v", n, endian, crate::generator::Language::Rust)
+        .into_iter()
+        .map(|e| format!("            w.write_u8({e})?;"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-/// Cpp encode counterpart — non-gated.
+/// Cpp encode counterpart — non-gated. Delegates the byte-extraction to the
+/// encode SSOT ([`encode_multibyte_unified`]); the cast spelling (bare
+/// `uint8_t`) and `& 0xFF` mask match both the positional path and the
+/// decode fold, which also emit bare `uint16_t`/`uint32_t`.
 fn streaming_fixed_field_encode_cpp(field: &CodecField, default_endian: Endian, n: u32) -> String {
     let id = field.id.as_str();
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
-    for i in 0..n {
-        let shift = match endian {
-            Endian::Little => i * 8,
-            Endian::Big | Endian::Native => (n - 1 - i) * 8,
-        };
-        if n == 1 {
-            // Single-byte uint8 carrier: no narrowing cast needed; the
-            // value already fits write_u8's parameter type. Keeps the
-            // parent-tag injection needle simple (`w.write_u8({id})`).
-            lines.push_str(&format!(
-                "        if (auto _e = w.write_u8({id}); _e) return _e;\n"
-            ));
-        } else if shift == 0 {
-            lines.push_str(&format!(
-                "        if (auto _e = w.write_u8(static_cast<std::uint8_t>({id})); _e) return _e;\n"
-            ));
-        } else {
-            lines.push_str(&format!(
-                "        if (auto _e = w.write_u8(static_cast<std::uint8_t>({id} >> {shift})); _e) return _e;\n"
-            ));
-        }
+    if n == 1 {
+        // Single-byte uint8 carrier: no narrowing cast needed; the value
+        // already fits write_u8's parameter type. Keeps the parent-tag
+        // injection needle simple (`w.write_u8({id})`).
+        return format!("        if (auto _e = w.write_u8({id}); _e) return _e;");
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified(id, n, endian, crate::generator::Language::Cpp)
+        .into_iter()
+        .map(|e| format!("        if (auto _e = w.write_u8({e}); _e) return _e;"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Cpp encode counterpart — gated, reads from `_v` local.
@@ -10972,33 +11040,21 @@ fn streaming_fixed_field_encode_cpp_from_local(
     n: u32,
 ) -> String {
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
-    for i in 0..n {
-        let shift = match endian {
-            Endian::Little => i * 8,
-            Endian::Big | Endian::Native => (n - 1 - i) * 8,
-        };
-        if n == 1 {
-            lines.push_str("            if (auto _e = w.write_u8(_v); _e) return _e;\n");
-        } else if shift == 0 {
-            lines.push_str(
-                "            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v)); _e) return _e;\n",
-            );
-        } else {
-            lines.push_str(&format!(
-                "            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_v >> {shift})); _e) return _e;\n"
-            ));
-        }
+    if n == 1 {
+        return "            if (auto _e = w.write_u8(_v); _e) return _e;".to_string();
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified("_v", n, endian, crate::generator::Language::Cpp)
+        .into_iter()
+        .map(|e| format!("            if (auto _e = w.write_u8({e}); _e) return _e;"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-/// Kotlin encode counterpart — non-gated. Mirrors the Cpp/Rust shape:
-/// reads `this.<id>` and appends `n` bytes in the field's effective
-/// endianness. Multi-byte fields widen through `Int` (n ≤ 4) or `Long`
-/// (n ≥ 5), match `encode_single_field_unified` for the byte-extraction
-/// idiom — `ushr` for unsigned shift-right + `and 0xFF` mask + final
-/// `toByte()` narrow.
+/// Kotlin encode counterpart — non-gated. Reads `this.<id>` and appends `n`
+/// bytes in the field's effective endianness, delegating the byte-extraction
+/// idiom (`ushr` unsigned shift + `and 0xFF` mask + final `toByte()` narrow,
+/// widening through `Int` for n ≤ 4 or `Long` for n ≥ 5) to the encode SSOT
+/// ([`encode_multibyte_unified`]).
 fn streaming_fixed_field_encode_kotlin(
     field: &CodecField,
     default_endian: Endian,
@@ -11006,37 +11062,21 @@ fn streaming_fixed_field_encode_kotlin(
 ) -> String {
     let id = field.id.as_str();
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
     if n == 1 {
         // Bare carrier path — Kotlin Byte fits write_u8 directly.
         // Keeps parent-tag injection needle simple (`writeU8(this.<id>.toByte())`).
-        lines.push_str(&format!(
-            "        w.writeU8(this.{id}.toByte())?.let {{ return it }}\n"
-        ));
-    } else {
-        let use_long = n > 4;
-        let (view, mask) = if use_long {
-            ("toLong", "0xFFL")
-        } else {
-            ("toInt", "0xFF")
-        };
-        for i in 0..n {
-            let shift = match endian {
-                Endian::Little => i * 8,
-                Endian::Big | Endian::Native => (n - 1 - i) * 8,
-            };
-            if shift == 0 {
-                lines.push_str(&format!(
-                    "        w.writeU8((this.{id}.{view}() and {mask}).toByte())?.let {{ return it }}\n"
-                ));
-            } else {
-                lines.push_str(&format!(
-                    "        w.writeU8((this.{id}.{view}() ushr {shift} and {mask}).toByte())?.let {{ return it }}\n"
-                ));
-            }
-        }
+        return format!("        w.writeU8(this.{id}.toByte())?.let {{ return it }}");
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified(
+        &format!("this.{id}"),
+        n,
+        endian,
+        crate::generator::Language::Kotlin,
+    )
+    .into_iter()
+    .map(|e| format!("        w.writeU8({e})?.let {{ return it }}"))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// Go encode counterpart — non-gated. Mirrors `encode_single_field_unified`
@@ -11044,33 +11084,25 @@ fn streaming_fixed_field_encode_kotlin(
 /// `byte(s.<Id> >> shift)` in the field's effective endianness. Tab
 /// indentation matches the surrounding `Encode()` method body.
 fn streaming_fixed_field_encode_go(field: &CodecField, default_endian: Endian, n: u32) -> String {
-    let id = field.id.as_str();
-    let go_id = filters::to_pascal_case(id.to_string());
+    let go_id = filters::to_pascal_case(field.id.to_string());
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
     let emit = |buf: &str| -> String {
-        format!(
-            "\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\treturn err\n\t}}\n"
-        )
+        format!("\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\treturn err\n\t}}")
     };
     if n == 1 {
         // Bare carrier path keeps parent-tag injection needle simple.
-        lines.push_str(&emit(&format!("s.{go_id}")));
-    } else {
-        for i in 0..n {
-            let shift = match endian {
-                Endian::Little => i * 8,
-                Endian::Big | Endian::Native => (n - 1 - i) * 8,
-            };
-            let b = if shift == 0 {
-                format!("byte(s.{go_id})")
-            } else {
-                format!("byte(s.{go_id}>>{shift})")
-            };
-            lines.push_str(&emit(&b));
-        }
+        return emit(&format!("s.{go_id}"));
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified(
+        &format!("s.{go_id}"),
+        n,
+        endian,
+        crate::generator::Language::Go,
+    )
+    .into_iter()
+    .map(|e| emit(&e))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// C11 encode counterpart — non-gated. Mirrors `encode_single_field_unified`
@@ -11081,29 +11113,19 @@ fn streaming_fixed_field_encode_go(field: &CodecField, default_endian: Endian, n
 fn streaming_fixed_field_encode_c11(field: &CodecField, default_endian: Endian, n: u32) -> String {
     let id_snake = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!(
-            "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->{id_snake}));\n"
-        ));
-    } else {
-        for i in 0..n {
-            let shift = match endian {
-                Endian::Little => i * 8,
-                Endian::Big | Endian::Native => (n - 1 - i) * 8,
-            };
-            if shift == 0 {
-                lines.push_str(&format!(
-                    "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->{id_snake} & 0xFF)));\n"
-                ));
-            } else {
-                lines.push_str(&format!(
-                    "    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->{id_snake} >> {shift}) & 0xFF)));\n"
-                ));
-            }
-        }
+        return format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->{id_snake}));");
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified(
+        &format!("self->{id_snake}"),
+        n,
+        endian,
+        crate::generator::Language::C11,
+    )
+    .into_iter()
+    .map(|e| format!("    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// C11 encode inner body — same per-byte writes as the non-gated form
@@ -11117,29 +11139,21 @@ fn streaming_fixed_field_encode_c11_inner(
 ) -> String {
     let id_snake = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!(
-            "        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->{id_snake}));\n"
-        ));
-    } else {
-        for i in 0..n {
-            let shift = match endian {
-                Endian::Little => i * 8,
-                Endian::Big | Endian::Native => (n - 1 - i) * 8,
-            };
-            if shift == 0 {
-                lines.push_str(&format!(
-                    "        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)(self->{id_snake} & 0xFF)));\n"
-                ));
-            } else {
-                lines.push_str(&format!(
-                    "        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((self->{id_snake} >> {shift}) & 0xFF)));\n"
-                ));
-            }
-        }
+        return format!(
+            "        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->{id_snake}));"
+        );
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified(
+        &format!("self->{id_snake}"),
+        n,
+        endian,
+        crate::generator::Language::C11,
+    )
+    .into_iter()
+    .map(|e| format!("        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, {e}));"))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// Python encode counterpart — non-gated. Mirrors `encode_single_field_unified`
@@ -11154,25 +11168,19 @@ fn streaming_fixed_field_encode_python(
 ) -> String {
     let py_id = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!("        w.write_u8(self.{py_id} & 0xFF)\n"));
-    } else {
-        for i in 0..n {
-            let shift = match endian {
-                Endian::Little => i * 8,
-                Endian::Big | Endian::Native => (n - 1 - i) * 8,
-            };
-            if shift == 0 {
-                lines.push_str(&format!("        w.write_u8(self.{py_id} & 0xFF)\n"));
-            } else {
-                lines.push_str(&format!(
-                    "        w.write_u8((self.{py_id} >> {shift}) & 0xFF)\n"
-                ));
-            }
-        }
+        return format!("        w.write_u8(self.{py_id} & 0xFF)");
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified(
+        &format!("self.{py_id}"),
+        n,
+        endian,
+        crate::generator::Language::Python,
+    )
+    .into_iter()
+    .map(|e| format!("        w.write_u8({e})"))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// Python encode counterpart — gated, indented one level deeper so
@@ -11187,25 +11195,19 @@ fn streaming_fixed_field_encode_python_inner(
 ) -> String {
     let py_id = filters::to_snake_case(field.id.clone());
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
     if n == 1 {
-        lines.push_str(&format!("            w.write_u8(self.{py_id} & 0xFF)\n"));
-    } else {
-        for i in 0..n {
-            let shift = match endian {
-                Endian::Little => i * 8,
-                Endian::Big | Endian::Native => (n - 1 - i) * 8,
-            };
-            if shift == 0 {
-                lines.push_str(&format!("            w.write_u8(self.{py_id} & 0xFF)\n"));
-            } else {
-                lines.push_str(&format!(
-                    "            w.write_u8((self.{py_id} >> {shift}) & 0xFF)\n"
-                ));
-            }
-        }
+        return format!("            w.write_u8(self.{py_id} & 0xFF)");
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified(
+        &format!("self.{py_id}"),
+        n,
+        endian,
+        crate::generator::Language::Python,
+    )
+    .into_iter()
+    .map(|e| format!("            w.write_u8({e})"))
+    .collect::<Vec<_>>()
+    .join("\n")
 }
 
 /// Go encode counterpart — gated, reads from `_v` local. The caller
@@ -11217,29 +11219,17 @@ fn streaming_fixed_field_encode_go_from_local(
     n: u32,
 ) -> String {
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
     let emit = |buf: &str| -> String {
-        format!(
-            "\t\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\t\treturn err\n\t\t}}\n"
-        )
+        format!("\t\tif err := w.WriteBytes([]byte{{ {buf} }}); err != nil {{\n\t\t\treturn err\n\t\t}}")
     };
     if n == 1 {
-        lines.push_str(&emit("_v"));
-    } else {
-        for i in 0..n {
-            let shift = match endian {
-                Endian::Little => i * 8,
-                Endian::Big | Endian::Native => (n - 1 - i) * 8,
-            };
-            let b = if shift == 0 {
-                "byte(_v)".to_string()
-            } else {
-                format!("byte(_v>>{shift})")
-            };
-            lines.push_str(&emit(&b));
-        }
+        return emit("_v");
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified("_v", n, endian, crate::generator::Language::Go)
+        .into_iter()
+        .map(|e| emit(&e))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Kotlin encode counterpart — gated, reads from `_v` local.
@@ -11251,33 +11241,14 @@ fn streaming_fixed_field_encode_kotlin_from_local(
     n: u32,
 ) -> String {
     let endian = field.effective_endian(default_endian);
-    let mut lines = String::new();
     if n == 1 {
-        lines.push_str("            w.writeU8(_v.toByte())?.let { return it }\n");
-    } else {
-        let use_long = n > 4;
-        let (view, mask) = if use_long {
-            ("toLong", "0xFFL")
-        } else {
-            ("toInt", "0xFF")
-        };
-        for i in 0..n {
-            let shift = match endian {
-                Endian::Little => i * 8,
-                Endian::Big | Endian::Native => (n - 1 - i) * 8,
-            };
-            if shift == 0 {
-                lines.push_str(&format!(
-                    "            w.writeU8((_v.{view}() and {mask}).toByte())?.let {{ return it }}\n"
-                ));
-            } else {
-                lines.push_str(&format!(
-                    "            w.writeU8((_v.{view}() ushr {shift} and {mask}).toByte())?.let {{ return it }}\n"
-                ));
-            }
-        }
+        return "            w.writeU8(_v.toByte())?.let { return it }".to_string();
     }
-    lines.trim_end().to_string()
+    encode_multibyte_unified("_v", n, endian, crate::generator::Language::Kotlin)
+        .into_iter()
+        .map(|e| format!("            w.writeU8({e})?.let {{ return it }}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Resolves a present-if predicate into a build-time literal bit-test
@@ -12684,58 +12655,13 @@ fn encode_single_field_unified(
             exprs.push(l.codec_to_byte(&inner));
         }
         Some(byte_count @ (16 | 24 | 32)) => {
-            let n_bytes = byte_count / 8;
-            let shifts: Vec<u32> = match endian {
-                Endian::Big | Endian::Native => (0..n_bytes).rev().collect(),
-                Endian::Little => (0..n_bytes).collect(),
-            };
-            for shift_byte in shifts {
-                let shift = shift_byte * 8;
-                let expr = match lang {
-                    Language::Cpp => {
-                        if shift == 0 {
-                            format!("static_cast<uint8_t>({field_ref} & 0xFF)")
-                        } else {
-                            format!("static_cast<uint8_t>(({field_ref} >> {shift}) & 0xFF)")
-                        }
-                    }
-                    Language::Kotlin => {
-                        if shift == 0 {
-                            format!("({field_ref}.toInt() and 0xFF).toByte()")
-                        } else {
-                            format!("({field_ref}.toInt() ushr {shift} and 0xFF).toByte()")
-                        }
-                    }
-                    Language::Rust => {
-                        if shift == 0 {
-                            format!("(self.{name} & 0xFF) as u8")
-                        } else {
-                            format!("(self.{name} >> {shift} & 0xFF) as u8")
-                        }
-                    }
-                    Language::Go => {
-                        if shift == 0 {
-                            format!("byte(s.{name} & 0xFF)")
-                        } else {
-                            format!("byte(s.{name} >> {shift} & 0xFF)")
-                        }
-                    }
-                    Language::Python => {
-                        if shift == 0 {
-                            format!("self.{name} & 0xFF")
-                        } else {
-                            format!("(self.{name} >> {shift}) & 0xFF")
-                        }
-                    }
-                    Language::C11 => {
-                        if shift == 0 {
-                            format!("(uint8_t)(self->{name} & 0xFF)")
-                        } else {
-                            format!("(uint8_t)((self->{name} >> {shift}) & 0xFF)")
-                        }
-                    }
-                };
-                exprs.push(expr);
+            // Multi-byte fixed field: delegate to the encode byte-extraction
+            // SSOT (the mirror of `decode_multibyte_unified`). `field_ref`
+            // already carries the per-language receiver prefix, so the same
+            // shift / mask / narrow rules serve both this positional path and
+            // the streaming `streaming_fixed_field_encode_*` wrappers.
+            for e in encode_multibyte_unified(&field_ref, byte_count / 8, endian, lang) {
+                exprs.push(e);
             }
         }
         _ => exprs.push(l.codec_comment(&format!("encode {name}"))),

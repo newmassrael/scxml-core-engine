@@ -98,13 +98,13 @@ struct CodecFixedAfterLengthref {
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
         if (auto _e = w.write_u8(header); _e) return _e;
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(payload_len)); _e) return _e;
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(payload_len >> 8)); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<uint8_t>(payload_len & 0xFF)); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<uint8_t>((payload_len >> 8) & 0xFF)); _e) return _e;
         if (auto _e = w.write_bytes(payload.data(), payload.size()); _e) return _e;
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(crc32)); _e) return _e;
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(crc32 >> 8)); _e) return _e;
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(crc32 >> 16)); _e) return _e;
-        if (auto _e = w.write_u8(static_cast<std::uint8_t>(crc32 >> 24)); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<uint8_t>(crc32 & 0xFF)); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<uint8_t>((crc32 >> 8) & 0xFF)); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<uint8_t>((crc32 >> 16) & 0xFF)); _e) return _e;
+        if (auto _e = w.write_u8(static_cast<uint8_t>((crc32 >> 24) & 0xFF)); _e) return _e;
         return std::nullopt;
     }
 

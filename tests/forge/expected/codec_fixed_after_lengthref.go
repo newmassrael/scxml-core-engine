@@ -104,25 +104,25 @@ func (s *CodecFixedAfterLengthref) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
 		return err
 	}
-	if err := w.WriteBytes([]byte{ byte(s.PayloadLen) }); err != nil {
+	if err := w.WriteBytes([]byte{ byte(s.PayloadLen & 0xFF) }); err != nil {
 		return err
 	}
-	if err := w.WriteBytes([]byte{ byte(s.PayloadLen>>8) }); err != nil {
+	if err := w.WriteBytes([]byte{ byte(s.PayloadLen >> 8 & 0xFF) }); err != nil {
 		return err
 	}
 	if err := w.WriteBytes(s.Payload); err != nil {
 		return err
 	}
-	if err := w.WriteBytes([]byte{ byte(s.Crc32) }); err != nil {
+	if err := w.WriteBytes([]byte{ byte(s.Crc32 & 0xFF) }); err != nil {
 		return err
 	}
-	if err := w.WriteBytes([]byte{ byte(s.Crc32>>8) }); err != nil {
+	if err := w.WriteBytes([]byte{ byte(s.Crc32 >> 8 & 0xFF) }); err != nil {
 		return err
 	}
-	if err := w.WriteBytes([]byte{ byte(s.Crc32>>16) }); err != nil {
+	if err := w.WriteBytes([]byte{ byte(s.Crc32 >> 16 & 0xFF) }); err != nil {
 		return err
 	}
-	if err := w.WriteBytes([]byte{ byte(s.Crc32>>24) }); err != nil {
+	if err := w.WriteBytes([]byte{ byte(s.Crc32 >> 24 & 0xFF) }); err != nil {
 		return err
 	}
 	return nil
