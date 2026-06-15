@@ -1082,6 +1082,11 @@
            rejects `<sce:return type expr/>` collisions. -->
       <xs:attribute name="type" type="sce:sceType"/>
       <xs:attribute name="expr" type="xs:string"/>
+      <!-- SCE byte-buffer-build (SCE_FORGE.md §4.12): fixed output-buffer
+           capacity for a `type="bytes"` return. Required by the parser when
+           the return type is `bytes` (the no-alloc profile's bound); ignored
+           otherwise. Mirrors `<sce:helper returns-max-size>`. -->
+      <xs:attribute name="returns-max-size" type="xs:positiveInteger"/>
     </xs:complexType>
   </xs:element>
 
@@ -1094,15 +1099,40 @@
     </xs:complexType>
   </xs:element>
 
+  <!--
+    Local binding. A scalar local carries `init=` (required by the parser).
+
+    SCE byte-buffer-build (SCE_FORGE.md §4.12): a `type="bytes"` local is a
+    growable output buffer instead — it carries `capacity=` (the fixed bound)
+    and NO `init=` (it starts empty and is filled forward-only via
+    `<sce:append>`). `init` is therefore relaxed from `use="required"` to
+    optional at schema level; the parser enforces "scalar ⇒ init, bytes ⇒
+    capacity, no init" with a precise structural diagnostic.
+  -->
   <xs:element name="var">
     <xs:complexType>
       <xs:attribute name="name" type="xs:NCName" use="required"/>
       <xs:attribute name="type" type="sce:sceType" use="required"/>
-      <xs:attribute name="init" type="xs:string" use="required"/>
+      <xs:attribute name="init" type="xs:string"/>
+      <xs:attribute name="capacity" type="xs:positiveInteger"/>
     </xs:complexType>
   </xs:element>
 
   <xs:element name="assign">
+    <xs:complexType>
+      <xs:attribute name="target" type="xs:string" use="required"/>
+      <xs:attribute name="expr" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    SCE byte-buffer-build (SCE_FORGE.md §4.12): forward-only append to a
+    `type="bytes"` buffer local. `target` is the buffer's name; `expr` lowers
+    by its static type — a `uint8` value pushes one byte, a `bytes` value
+    extends the buffer. Index writes (`buf[i]=x`) are deliberately excluded;
+    `<sce:append>` is the only buffer-mutation statement.
+  -->
+  <xs:element name="append">
     <xs:complexType>
       <xs:attribute name="target" type="xs:string" use="required"/>
       <xs:attribute name="expr" type="xs:string" use="required"/>

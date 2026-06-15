@@ -469,6 +469,27 @@ fn walk_algorithm_stmt(
                 check_expression(arg, surface, importing_kind, importing_name, location, None)?;
             }
         }
+        AlgorithmStmt::Append { target, expr } => {
+            // `target` is the buffer local; `expr` may reference an imported
+            // member (`alias.field`), so both pass through the same check as
+            // `<sce:assign>`.
+            check_expression(
+                target,
+                surface,
+                importing_kind,
+                importing_name,
+                location,
+                None,
+            )?;
+            check_expression(
+                expr,
+                surface,
+                importing_kind,
+                importing_name,
+                location,
+                None,
+            )?;
+        }
     }
     Ok(())
 }

@@ -316,6 +316,15 @@
               "type": "null"
             }
           ]
+        },
+        "returns_max_size": {
+          "description": "Cap on the bytes a `return_type = bytes` algorithm may produce, declared via `sce:returns-max-size=\"N\"` on the `<sce:signature>`. Required when `return_type` is `bytes` (the output buffer's fixed capacity on the no-alloc profile); ignored otherwise. Mirrors [`ProcedureHelper::returns_max_size`]. `None` ⇒ non-bytes return.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
         }
       },
       "required": [
@@ -327,8 +336,16 @@
       "description": "One statement in an algorithm body. Lowered to language-idiomatic constructs by each backend (RFC §synth-5-J-5 emitter table).",
       "oneOf": [
         {
-          "description": "`<sce:var name=... type=... init=.../>` — local mutable binding.",
+          "description": "`<sce:var name=... type=... init=... capacity=.../>` — local mutable binding. `capacity` is the fixed buffer bound, in bytes, and is required for — and only meaningful on — `type=\"bytes\"` locals: the growable byte buffer that `<sce:append>` ([`AlgorithmStmt::Append`]) fills (SCE byte-buffer-build, SCE_FORGE.md §4.12). It is `None` for scalar locals.",
           "properties": {
+            "capacity": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
             "init": {
               "type": "string"
             },
@@ -354,7 +371,7 @@
           "type": "object"
         },
         {
-          "description": "`<sce:assign target=\"lvalue\" expr=\".../>\"` — mutates an existing l-value. v1 l-values are identifier, member access, or index (RFC §synth-5-A \"LValue scope v1\"). Stored as raw string and validated by the parser.",
+          "description": "`<sce:assign target=\"lvalue\" expr=\"...\"/>` — mutates an existing l-value. SCE's `validate_lvalue_shape` accepts an identifier or a one-level member access only; a computed index (`buf[i]`) is rejected because it is not a statically-known storage location. Byte buffers are built forward-only via `<sce:append>` ([`AlgorithmStmt::Append`]), never index writes. Stored as a raw string and validated by the parser.",
           "properties": {
             "expr": {
               "type": "string"
@@ -362,6 +379,29 @@
             "stmt": {
               "enum": [
                 "assign"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "expr",
+            "stmt",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`<sce:append target=\"buf\" expr=\"...\"/>` — append to a `bytes` local buffer (SCE byte-buffer-build, SCE_FORGE.md §4.12). `target` is the identifier of a `type=\"bytes\"` local; `expr` lowers by its static type: a `uint8` appends one byte, a `bytes` value extends the buffer. The append is bounds-checked against the buffer's declared `capacity`; overflow surfaces fallibly (the codec's `CapacityExceeded` model), never silent truncation. This is the only buffer-mutation statement — index writes are deliberately excluded (see `Assign`).",
+          "properties": {
+            "expr": {
+              "type": "string"
+            },
+            "stmt": {
+              "enum": [
+                "append"
               ],
               "type": "string"
             },

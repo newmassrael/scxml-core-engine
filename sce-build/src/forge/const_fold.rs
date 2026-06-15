@@ -483,6 +483,7 @@ fn eval_stmt(
             name,
             sce_type,
             init,
+            ..
         } => {
             let value = eval_expr_typed(init, scope, sce_type)?;
             scope.declare(name, value);
@@ -567,6 +568,11 @@ fn eval_stmt(
             "<sce:call target=\"{target}\"> is forbidden inside a fold body \
              (RFC §5.F bound 3 — host interpreter is pure; cross-algorithm \
              calls require runtime resolution)"
+        ))),
+        AlgorithmStmt::Append { target, .. } => Err(ConstFoldKind::NotFoldable(format!(
+            "<sce:append target=\"{target}\"> is forbidden inside a fold body \
+             (fold scope contains only scalar locals; building a runtime byte \
+             buffer is not a fold-time value)"
         ))),
     }
 }
@@ -958,6 +964,7 @@ mod tests {
                 name: "doubled".into(),
                 sce_type: SceType::Uint16,
                 init: "i + i".into(),
+                capacity: None,
             }],
             yield_expr: "doubled".into(),
         };
@@ -990,11 +997,13 @@ mod tests {
                     name: "c".into(),
                     sce_type: SceType::Uint16,
                     init: "i << 8".into(),
+                    capacity: None,
                 },
                 AlgorithmStmt::Var {
                     name: "bit".into(),
                     sce_type: SceType::Uint16,
                     init: "0".into(),
+                    capacity: None,
                 },
                 AlgorithmStmt::While {
                     cond: "bit < 8".into(),

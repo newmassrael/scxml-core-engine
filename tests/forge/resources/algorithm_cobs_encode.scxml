@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  COBS (Consistent Overhead Byte Stuffing) encode — SCE byte-buffer-build
+  exemplar (SCE_FORGE.md §4.12). A runtime, data-dependent bytes -> bytes
+  transform: the output length and contents depend on where the input's
+  zero bytes fall, so it cannot be a fixed-shape codec. It is expressible
+  with the byte-buffer-build primitives alone — a bounded output buffer
+  (`<sce:var type="bytes" capacity="N">`), forward-only `<sce:append>`, and
+  a fallible `bytes` return — with no index writes and no scratch buffer.
+
+  Encoding (two forward scan pointers over the read-only input, single
+  append-only output buffer):
+    - A "group" is a maximal run of up to 254 non-zero bytes, terminated by
+      a zero byte, the 254-byte limit, or end-of-input.
+    - Each group emits one code byte `(run_length + 1)` followed by the
+      group's bytes. A code of 0xFF (254 + 1) marks a full 254-byte group
+      with no implicit trailing zero; the next group continues without
+      consuming a byte.
+    - A zero byte that terminates a group is implicit (consumed, not
+      emitted). A trailing zero at end-of-input emits a final 0x01 group.
+
+  Reference vectors (canonical COBS, verified across all six backends):
+    []                 -> 01
+    00                 -> 01 01
+    11 22 00 33        -> 03 11 22 02 33
+    11 00 00           -> 02 11 01 01
+    11 22 33           -> 04 11 22 33
+  The Rust compile+run gate `algorithm_cobs_encode.rs` pins these at runtime;
+  the per-backend goldens pin the emitted source. (`<sce:test-vector>` is not
+  used here — its sidecar binds a scalar return value, not a `bytes` output.)
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+       sce:kind="algorithm"
+       version="1.0">
+  <sce:signature>
+    <sce:param name="data" type="bytes"/>
+    <sce:return type="bytes" returns-max-size="32"/>
+  </sce:signature>
+  <sce:body>
+    <sce:var name="n" type="uint16" init="len(data)"/>
+    <sce:var name="out" type="bytes" capacity="32"/>
+    <sce:var name="p" type="uint16" init="0"/>
+    <sce:var name="done" type="bool" init="false"/>
+    <sce:while cond="done === false">
+      <!-- Scan a group: q advances over up to 254 non-zero bytes from p. -->
+      <sce:var name="q" type="uint16" init="p"/>
+      <sce:while cond="(q &lt; n) &amp;&amp; ((q - p) &lt; 254) &amp;&amp; (data[q] !== 0)">
+        <sce:assign target="q" expr="q + 1"/>
+      </sce:while>
+      <!-- Emit the code byte then the group's bytes. -->
+      <sce:var name="run" type="uint16" init="q - p"/>
+      <sce:var name="code" type="uint8" init="run + 1"/>
+      <sce:append target="out" expr="code"/>
+      <sce:var name="k" type="uint16" init="p"/>
+      <sce:while cond="k &lt; q">
+        <sce:append target="out" expr="data[k]"/>
+        <sce:assign target="k" expr="k + 1"/>
+      </sce:while>
+      <!-- Advance past the group; consume a terminating zero; handle the
+           254-overflow and trailing-zero edges. -->
+      <sce:if cond="q &gt;= n">
+        <sce:assign target="done" expr="true"/>
+        <sce:else>
+          <sce:if cond="run &lt; 254">
+            <sce:assign target="p" expr="q + 1"/>
+            <sce:if cond="p &gt;= n">
+              <sce:var name="last" type="uint8" init="1"/>
+              <sce:append target="out" expr="last"/>
+              <sce:assign target="done" expr="true"/>
+            </sce:if>
+            <sce:else>
+              <sce:assign target="p" expr="q"/>
+            </sce:else>
+          </sce:if>
+        </sce:else>
+      </sce:if>
+    </sce:while>
+    <sce:return expr="out"/>
+  </sce:body>
+</scxml>

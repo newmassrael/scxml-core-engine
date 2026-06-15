@@ -171,6 +171,24 @@ pub fn transpile_typed(
     }
 }
 
+/// Infer the static [`InferredType`] of an expression without emitting any
+/// target code. The algorithm kind's `<sce:append target expr>` lowering
+/// dispatches on this: a `bytes` value extends the buffer, any other
+/// (integer) value pushes a single byte (SCE byte-buffer-build,
+/// SCE_FORGE.md §4.12). Runs the same tokenize → parse → [`infer_types`]
+/// pipeline as [`transpile_typed`] but stops at the typed-AST root instead
+/// of emitting, so the dispatch sees exactly the type the emitter would.
+pub fn infer_expr_type(expr: &str, ctx: &TypeCtx<'_>) -> Result<InferredType, ExprError> {
+    let expr = expr.trim();
+    if expr.is_empty() {
+        return Err(ExprError::Empty { what: "expression" });
+    }
+    let tokens = tokenize(expr)?;
+    let mut ast = Parser::new(&tokens).parse_expression()?;
+    infer_types(&mut ast, ctx);
+    Ok(ast.ty)
+}
+
 /// Per-import lowering descriptor consumed by [`transpile_typed_with_import_lowering`].
 ///
 /// The C11 codec template emits its API as a typedef'd struct + free
