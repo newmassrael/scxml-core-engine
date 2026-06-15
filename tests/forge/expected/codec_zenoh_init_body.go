@@ -181,10 +181,10 @@ func (s *CodecZenohInitBody) Encode(w codec.SceSink, S byte, A byte) error {
 	}
 	if s.BatchSize != nil {
 		_v := *s.BatchSize
-		if err := w.WriteBytes([]byte{ byte(_v) }); err != nil {
+		if err := w.WriteBytes([]byte{ byte(_v & 0xFF) }); err != nil {
 			return err
 		}
-		if err := w.WriteBytes([]byte{ byte(_v>>8) }); err != nil {
+		if err := w.WriteBytes([]byte{ byte(_v >> 8 & 0xFF) }); err != nil {
 			return err
 		}
 	}

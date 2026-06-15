@@ -110,10 +110,10 @@ func (s *CodecPresentIfDisjunction) Encode(w codec.SceSink) error {
 	}
 	if s.Seq != nil {
 		_v := *s.Seq
-		if err := w.WriteBytes([]byte{ byte(_v>>8) }); err != nil {
+		if err := w.WriteBytes([]byte{ byte(_v >> 8 & 0xFF) }); err != nil {
 			return err
 		}
-		if err := w.WriteBytes([]byte{ byte(_v) }); err != nil {
+		if err := w.WriteBytes([]byte{ byte(_v & 0xFF) }); err != nil {
 			return err
 		}
 	}
