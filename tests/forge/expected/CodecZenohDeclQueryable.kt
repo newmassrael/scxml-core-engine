@@ -29,11 +29,14 @@ data class CodecZenohDeclQueryable(
     /// sinks (e.g. `MutableListSink`) are effectively infallible.
     @Suppress("UNUSED_PARAMETER")
     fun encode(w: SceSink, N: UByte, Z: UByte): CodecError? {
-        // RFC §synth-5-B present-if encode: per-field byte
-        // append. Gated fields skip the append when the optional is
-        // null. Per-field `is_repeat` routes Repeat fields to the
-        // dedicated helper. Branch fires before has_vle_fields so a
-        // codec mixing VLE + present-if uses the unified encode path.
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when null, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`.
         run {
             var _vle: ULong = (id).toULong()
             while (_vle >= 0x80UL) {
@@ -76,14 +79,18 @@ data class CodecZenohDeclQueryable(
         /// (RFC §synth-5-B L494-519).
         @Suppress("UNUSED_PARAMETER")
         fun decode(cursor: SceCursor, N: UByte, Z: UByte): CodecZenohDeclQueryable? {
-            // RFC §synth-5-B present-if primitive: streaming
-            // decode advances the cursor per field. Gated fields wrap
-            // their read inside an `if predicate ... else null` block.
-            // Gating extends to Tail / LengthRef / Vle bit-sizes
-            // via dispatch inside `present_if_decode_stmt`. Per-field
-            // `is_repeat` routes Repeat fields to the dedicated
-            // helper. Branch fires before has_vle_fields so a codec
-            // mixing VLE + present-if uses the unified streaming path.
+            // Streaming cursor decode (SSOT selection: `needs_streaming`).
+            // The positional `raw[byte_off]` path is valid only when every
+            // field's absolute offset is fixed at codegen time; this branch
+            // handles every codec where it is not — present-if-gated fields
+            // (runtime presence), VLE / repeat / TLV-chain / embed fields
+            // (runtime width), string fields (UTF-8 decode), and a fixed
+            // field after a variable-length payload (offset depends on the
+            // payload length). Each field reads its own bytes from the
+            // cursor and advances past what it consumed. Per-field
+            // `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+            // dedicated helpers; every other field flows through
+            // `present_if_decode_stmt`.
             val id = cursor.readVleU32() ?: return null
             val wireexpr = CodecZenohWireexpr.decode(cursor, N) ?: return null
             val ext_type = if ((Z.toInt() and 0x01) != 0) {

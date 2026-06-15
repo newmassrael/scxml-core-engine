@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: a fixed-width field declared AFTER a
+     length-ref payload. The positional codec path reads every fixed
+     field at its static `byte_offset` and appends the variable-length
+     field last, so before the streaming-route fix it mis-generated this
+     shape: encode emitted `crc32` ahead of `payload`, and decode read
+     `crc32` at the constant offset 4 instead of `3 + payload_len`. The
+     codec still compiled, so the defect was silent until byte parity
+     failed. This fixture locks the regression — it routes through the
+     streaming cursor branch (`has_field_after_variable`), and the
+     round-trip vectors below all carry `payload_len != 1` so a constant
+     offset-4 read cannot coincidentally pass.
+
+     Wire shape (zenoh-pico serial frame, little-endian):
+       byte 0      : header      (uint8)
+       byte 1..2   : payload_len (uint16 LE)
+       byte 3..    : payload     (bytes, length = payload_len)
+       after       : crc32       (uint32 LE) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="codec_fixed_after_lengthref">
+  <datamodel>
+    <sce:field id="header"      sce:type="uint8"  sce:byte="0" sce:bit-size="8"/>
+    <sce:field id="payload_len" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+    <sce:field id="payload"     sce:type="bytes"  sce:byte="3" sce:bit-size="length-ref"
+               sce:length-field="payload_len" sce:max-size="1500"/>
+    <sce:field id="crc32"       sce:type="uint32" sce:byte="4" sce:bit-size="32"/>
+  </datamodel>
+  <!-- payload_len = 3: crc32 sits at offset 6, not the static offset 4. -->
+  <sce:test-vector hex="aa0300deadbe44332211">
+    <sce:decoded field="header" value="0xAA"/>
+    <sce:decoded field="payload_len" value="3"/>
+    <sce:decoded field="payload" hex="deadbe"/>
+    <sce:decoded field="crc32" value="0x11223344"/>
+  </sce:test-vector>
+  <!-- payload_len = 0: crc32 sits at offset 3 (empty payload boundary). -->
+  <sce:test-vector hex="010000bebafeca">
+    <sce:decoded field="header" value="0x01"/>
+    <sce:decoded field="payload_len" value="0"/>
+    <sce:decoded field="payload" hex=""/>
+    <sce:decoded field="crc32" value="0xCAFEBABE"/>
+  </sce:test-vector>
+  <!-- payload_len = 5: crc32 sits at offset 8. -->
+  <sce:test-vector hex="ff0500010203040501000000">
+    <sce:decoded field="header" value="0xFF"/>
+    <sce:decoded field="payload_len" value="5"/>
+    <sce:decoded field="payload" hex="0102030405"/>
+    <sce:decoded field="crc32" value="0x00000001"/>
+  </sce:test-vector>
+</scxml>
