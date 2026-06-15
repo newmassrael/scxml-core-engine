@@ -55,7 +55,10 @@ static inline int test_vector_codec_zenoh_fragment(void) {
                     fprintf(stderr,
                         "FAIL: codec_zenoh_fragment test_vector @SCXML L35: "
                         "field `payload` expected empty bytes, got len=%zu\n",
-                        decoded.payload_len);
+                        /* The length companion is `size_t` for a tail field but
+                         * the (possibly narrower) wire length-field for a
+                         * length-ref payload — cast so `%zu` is always valid. */
+                        (size_t)decoded.payload_len);
                     ++failures;
                 }
             }

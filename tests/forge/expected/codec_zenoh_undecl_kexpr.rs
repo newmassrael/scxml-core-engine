@@ -42,14 +42,18 @@ impl CodecZenohUndeclKexpr {
     /// is left untouched so the caller can resume after appending more
     /// bytes (RFC §synth-5-B L494-519).
     pub fn decode(cursor: &mut SceCursor<'_>) -> Result<Self, CodecError> {
-        // Streaming codec: each field reads its own bytes from the
-        // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
-        // a fixed window; cursor advances per-field. RFC §synth-5-B B4:
-        // per-field bit-size dispatch routes Fixed / LengthRef
-        // siblings of VLE fields through `present_if_decode_stmt`
-        // (predicate=None arms) — pure-VLE codecs stay byte-stable
-        // because the non-gated VLE arm there reuses
-        // `vle_decode_stmt` verbatim.
+        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // The positional `raw[byte_off]` path is valid only when every
+        // field's absolute offset is fixed at codegen time; this branch
+        // handles every codec where it is not — present-if-gated fields
+        // (runtime presence), VLE / repeat / TLV-chain / embed fields
+        // (runtime width), string fields (UTF-8 decode), and a fixed field
+        // after a variable-length payload (offset depends on the payload
+        // length). Each field reads its own bytes from the cursor and
+        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
+        // every other field flows through `present_if_decode_stmt`, whose
+        // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
         let id = cursor.read_vle_u16()?;
         Ok(Self {
             id,
@@ -67,12 +71,15 @@ impl CodecZenohUndeclKexpr {
     /// destination has insufficient remaining capacity; growable
     /// sinks (e.g. `VecSink`) are effectively infallible.
     pub fn encode<S: SceSink>(&self, w: &mut S) -> Result<(), CodecError> {
-        // RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
-        // LengthRef / Tail siblings of VLE fields through
-        // `present_if_encode_block` (predicate=None arms). Pure-VLE
-        // codecs stay byte-stable: the non-gated VLE arm there reuses
-        // `vle_encode_block` with the language-appropriate self/
-        // struct prefix.
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when absent, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`
+        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
         {
             let mut _vle = self.id as u64;
             while _vle >= 0x80 {

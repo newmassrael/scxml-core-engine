@@ -246,68 +246,19 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endfor %}
             body,
         })
-{% elif has_present_if_fields %}
-        // RFC §synth-5-B present-if primitive: streaming decode
-        // advances the cursor per field. Gated fields wrap their
-        // read inside an `if predicate { Some(...) } else { None }`
-        // block computed at codegen time from the carrier field's
-        // flag bit. Gating extends to Tail / LengthRef /
-        // Vle bit-sizes via dispatch inside `present_if_decode_stmt`.
-        // Per-field `is_repeat` / `is_tlv_chain` route Repeat / TLV
-        // chain fields to their dedicated helpers since present-if
-        // isn't allowed on `<sce:repeat>` / `<sce:tlv-chain>`.
-        // Note: this branch fires before has_vle_fields so a codec
-        // mixing VLE + present-if uses the unified streaming path.
-{% for field in fields %}
-{% if field.is_repeat %}
-        {{ field.repeat_decode_stmt }}
-{% elif field.is_tlv_chain %}
-        {{ field.tlv_chain_decode_stmt }}
-{% elif field.is_embed %}
-        {{ field.embed_decode_stmt }}
-{% else %}
-        {{ field.present_if_decode_stmt }}
-{% endif %}
-{% endfor %}
-        Ok(Self {
-{% for field in fields %}
-            {{ field.id }},
-{% endfor %}
-        })
-{% elif has_vle_fields %}
-        // Streaming codec: each field reads its own bytes from the
-        // cursor (VLE = base-128 1..=ceil(N/7) bytes). No pre-peek of
-        // a fixed window; cursor advances per-field. RFC §synth-5-B B4:
-        // per-field bit-size dispatch routes Fixed / LengthRef
-        // siblings of VLE fields through `present_if_decode_stmt`
-        // (predicate=None arms) — pure-VLE codecs stay byte-stable
-        // because the non-gated VLE arm there reuses
-        // `vle_decode_stmt` verbatim.
-{% for field in fields %}
-{% if field.is_repeat %}
-        {{ field.repeat_decode_stmt }}
-{% elif field.is_tlv_chain %}
-        {{ field.tlv_chain_decode_stmt }}
-{% elif field.is_embed %}
-        {{ field.embed_decode_stmt }}
-{% else %}
-        {{ field.present_if_decode_stmt }}
-{% endif %}
-{% endfor %}
-        Ok(Self {
-{% for field in fields %}
-            {{ field.id }},
-{% endfor %}
-        })
-{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        // RFC §synth-5-B B2 repeat / B3 TLV chain primitives: streaming
-        // decode mixes plain fixed-width reads (per-field via the
-        // present-if helper's non-gated arm) with repeat loops that
-        // iterate the imported codec's `decode()`. Repeat: bounded by
-        // `count_ref` (length-field) or cursor exhaustion (until-eof).
-        // TLV chain: bounded by `max_depth` with on-overflow check.
-        // Element bodies recurse into their own codec — each may
-        // itself surface NeedMoreBytes, unwinding the partial frame.
+{% elif needs_streaming %}
+        // Streaming cursor decode (SSOT selection: `needs_streaming`).
+        // The positional `raw[byte_off]` path is valid only when every
+        // field's absolute offset is fixed at codegen time; this branch
+        // handles every codec where it is not — present-if-gated fields
+        // (runtime presence), VLE / repeat / TLV-chain / embed fields
+        // (runtime width), string fields (UTF-8 decode), and a fixed field
+        // after a variable-length payload (offset depends on the payload
+        // length). Each field reads its own bytes from the cursor and
+        // advances past exactly what it consumed. Per-field `is_repeat` /
+        // `is_tlv_chain` / `is_embed` route to their dedicated helpers;
+        // every other field flows through `present_if_decode_stmt`, whose
+        // non-gated arm covers plain fixed / tail / length-ref / VLE reads.
 {% for field in fields %}
 {% if field.is_repeat %}
         {{ field.repeat_decode_stmt }}
@@ -498,54 +449,16 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% endif %}
         }
         Ok(())
-{% elif has_present_if_fields %}
-        // RFC §synth-5-B present-if encode: every field appends
-        // its bytes via a per-field block; gated fields skip the
-        // append when the optional is None. Per-field `is_repeat` /
-        // `is_tlv_chain` route Repeat / TLV chain fields to their
-        // dedicated helpers. Author keeps the carrier's flag bit and
-        // the optional's truth value in sync (trust contract, mirrors
-        // the variant primitive). Note: this branch fires before
-        // has_vle_fields so a codec mixing VLE + present-if uses the
-        // unified encode path.
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-        Ok(())
-{% elif has_vle_fields %}
-        // RFC §synth-5-B B4: per-field bit-size dispatch routes Fixed /
-        // LengthRef / Tail siblings of VLE fields through
-        // `present_if_encode_block` (predicate=None arms). Pure-VLE
-        // codecs stay byte-stable: the non-gated VLE arm there reuses
-        // `vle_encode_block` with the language-appropriate self/
-        // struct prefix.
-{% for field in fields %}
-{% if field.is_repeat %}
-{{ field.repeat_encode_block }}
-{% elif field.is_tlv_chain %}
-{{ field.tlv_chain_encode_block }}
-{% elif field.is_embed %}
-{{ field.embed_encode_block }}
-{% else %}
-{{ field.present_if_encode_block }}
-{% endif %}
-{% endfor %}
-        Ok(())
-{% elif has_repeat_fields or has_tlv_chain_fields or has_embed_fields or has_string_fields %}
-        // RFC §synth-5-B B2 repeat / B3 TLV chain encode: fixed prefix
-        // fields append byte-by-byte; list fields iterate the host-
-        // language list and splice each element's encode() into the
-        // parent buffer. Author keeps the count field (repeat) /
-        // chain length (tlv-chain) consistent with the list length
-        // (same trust contract as variant tag/body).
+{% elif needs_streaming %}
+        // Streaming cursor encode (SSOT selection: `needs_streaming`).
+        // Mirrors the streaming decode: every field appends its own bytes
+        // in declaration order through the per-field encode blocks, so a
+        // gated field skips its append when absent, and a fixed field after
+        // a variable-length payload lands after the payload (the positional
+        // path appends variable fields last, placing it ahead on the wire).
+        // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
+        // dedicated helpers; everything else uses `present_if_encode_block`
+        // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
 {% for field in fields %}
 {% if field.is_repeat %}
 {{ field.repeat_encode_block }}
