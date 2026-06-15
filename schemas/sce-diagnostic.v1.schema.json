@@ -82,6 +82,8 @@
         "algorithm/bc-mutation-forbidden",
         "algorithm/foreach-source-bc-with-bytes-item-type",
         "algorithm/call-arg-count-mismatch",
+        "algorithm/append-target-not-buffer",
+        "algorithm/append-type-mismatch",
         "scxml/top-level-script-unloaded",
         "scxml/unreachable-state",
         "scxml/dead-transition",

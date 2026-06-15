@@ -5981,6 +5981,13 @@ fn parse_algorithm(
         ));
     }
 
+    // SCE byte-buffer-build (SCE_FORGE.md §4.12): cross-cutting buffer rules
+    // (capacity required on a bytes buffer / forbidden on a scalar,
+    // returns-max-size required on a bytes return, the buffer is the returned
+    // output, capacity == returns-max-size). Runs once at parse time so the
+    // diagnostic is backend-independent.
+    validate_byte_buffer_build(&signature, &body, &body_node, label.diagnostic_label)?;
+
     let test_vectors = parse_test_vectors(root, &signature, label.diagnostic_label)?;
 
     // RFC §synth-5-A line 274 example + item C7 keyexpr fixture
@@ -6211,6 +6218,7 @@ fn parse_algorithm_signature(
 ) -> Result<AlgorithmSignature, Located<ForgeError>> {
     let mut params = Vec::new();
     let mut return_type: Option<SceType> = None;
+    let mut returns_max_size: Option<u32> = None;
     let mut seen_return = false;
 
     for child in node.children().filter(|n| n.is_element()) {
@@ -6284,6 +6292,11 @@ fn parse_algorithm_signature(
                     })?;
                     return_type = Some(sce_type);
                 }
+                // Cap on a `bytes` return's output buffer (the no-alloc
+                // profile's fixed capacity). Mirrors the `<sce:helper
+                // returns-max-size>` attribute. Validated against
+                // `return_type == bytes` in the validation stage.
+                returns_max_size = child.attribute("returns-max-size").and_then(parse_int);
             }
             _ => {}
         }
@@ -6292,6 +6305,7 @@ fn parse_algorithm_signature(
     Ok(AlgorithmSignature {
         params,
         return_type,
+        returns_max_size,
     })
 }
 
@@ -6692,17 +6706,47 @@ fn parse_algorithm_stmt(
                     },
                 )
             })?;
-            let init = require_attr(node, "init", "<sce:var>", doc_name)?;
+            let capacity = node.attribute("capacity").and_then(parse_int);
+            // A `bytes` local is a growable buffer seeded empty and filled
+            // via `<sce:append>`; it takes `capacity`, not `init`. Reject a
+            // stray `init` rather than silently dropping it. Scalars keep the
+            // required `init`. (`capacity` presence rules are checked in the
+            // validation stage so the diagnostic carries the kind context.)
+            let init = if matches!(sce_type, SceType::Bytes) {
+                if let Some(stray) = node.attribute("init") {
+                    return Err(located(
+                        node,
+                        doc_name,
+                        ValidationError::InvalidAttribute {
+                            element: format!("<sce:var name=\"{name}\">"),
+                            attr: "init".into(),
+                            value: stray.into(),
+                            expected:
+                                "no init — a bytes buffer starts empty and is filled via <sce:append>"
+                                    .into(),
+                        },
+                    ));
+                }
+                String::new()
+            } else {
+                require_attr(node, "init", "<sce:var>", doc_name)?
+            };
             Ok(AlgorithmStmt::Var {
                 name,
                 sce_type,
                 init,
+                capacity,
             })
         }
         "assign" => {
             let target = require_attr(node, "target", "<sce:assign>", doc_name)?;
             let expr = require_attr(node, "expr", "<sce:assign>", doc_name)?;
             Ok(AlgorithmStmt::Assign { target, expr })
+        }
+        "append" => {
+            let target = require_attr(node, "target", "<sce:append>", doc_name)?;
+            let expr = require_attr(node, "expr", "<sce:append>", doc_name)?;
+            Ok(AlgorithmStmt::Append { target, expr })
         }
         "if" => {
             let cond = require_attr(node, "cond", "<sce:if>", doc_name)?;
@@ -6786,6 +6830,169 @@ fn parse_algorithm_stmt(
 /// in v1. Walks the body recursively. Anchors at `body_node` because
 /// the offending `<sce:assign>` may be deeply nested; the body is the
 /// nearest container element the diagnostic can point to without
+/// SCE byte-buffer-build (SCE_FORGE.md §4.12): collect every `<sce:var>`
+/// shape relevant to the buffer rules in one walk — `bytes` buffers paired
+/// with their declared `capacity`, plus the name of the first scalar local
+/// that carries a (meaningless) `capacity`. Recurses into block statements so
+/// a buffer declared at any nesting depth is seen.
+fn collect_var_capacity_shapes(
+    stmts: &[AlgorithmStmt],
+    bytes_buffers: &mut Vec<(String, Option<u32>)>,
+    scalar_with_capacity: &mut Option<String>,
+) {
+    for s in stmts {
+        match s {
+            AlgorithmStmt::Var {
+                name,
+                sce_type,
+                capacity,
+                ..
+            } => {
+                if matches!(sce_type, SceType::Bytes) {
+                    bytes_buffers.push((name.clone(), *capacity));
+                } else if capacity.is_some() && scalar_with_capacity.is_none() {
+                    *scalar_with_capacity = Some(name.clone());
+                }
+            }
+            AlgorithmStmt::If {
+                then_body,
+                else_body,
+                ..
+            } => {
+                collect_var_capacity_shapes(then_body, bytes_buffers, scalar_with_capacity);
+                if let Some(eb) = else_body {
+                    collect_var_capacity_shapes(eb, bytes_buffers, scalar_with_capacity);
+                }
+            }
+            AlgorithmStmt::While { body, .. } | AlgorithmStmt::Foreach { body, .. } => {
+                collect_var_capacity_shapes(body, bytes_buffers, scalar_with_capacity);
+            }
+            AlgorithmStmt::Assign { .. }
+            | AlgorithmStmt::Append { .. }
+            | AlgorithmStmt::Return { .. }
+            | AlgorithmStmt::Call { .. } => {}
+        }
+    }
+}
+
+/// SCE byte-buffer-build (SCE_FORGE.md §4.12): enforce the cross-cutting
+/// buffer rules at parse time. See [`collect_var_capacity_shapes`] for the
+/// shapes consumed. v1 accepts a single `bytes` buffer that is the
+/// algorithm's returned output, declared with `capacity == returns-max-size`.
+fn validate_byte_buffer_build(
+    sig: &AlgorithmSignature,
+    body: &[AlgorithmStmt],
+    body_node: &roxmltree::Node,
+    doc_name: &str,
+) -> Result<(), Located<ForgeError>> {
+    let mut bytes_buffers: Vec<(String, Option<u32>)> = Vec::new();
+    let mut scalar_with_capacity: Option<String> = None;
+    collect_var_capacity_shapes(body, &mut bytes_buffers, &mut scalar_with_capacity);
+
+    // A scalar local must not carry `capacity` — it is only meaningful on a
+    // bytes buffer. Reject rather than silently drop the attribute.
+    if let Some(name) = scalar_with_capacity {
+        return Err(located(
+            body_node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:var name=\"{name}\">"),
+                attr: "capacity".into(),
+                value: "(present)".into(),
+                expected: "omitted — capacity is only valid on a type=\"bytes\" buffer".into(),
+            },
+        ));
+    }
+
+    let returns_bytes = matches!(sig.return_type, Some(SceType::Bytes));
+
+    // A `bytes` return must declare its fixed output-buffer capacity.
+    if returns_bytes && sig.returns_max_size.is_none() {
+        return Err(located(
+            body_node,
+            doc_name,
+            ValidationError::MissingAttribute {
+                element: "<sce:return type=\"bytes\">".into(),
+                attr: "returns-max-size".into(),
+            },
+        ));
+    }
+
+    if bytes_buffers.is_empty() {
+        return Ok(());
+    }
+
+    // v1 supports a single bytes buffer — the returned output buffer.
+    if bytes_buffers.len() > 1 {
+        return Err(located(
+            body_node,
+            doc_name,
+            ValidationError::IncompatibleAttributes {
+                element: "<sce:body>".into(),
+                detail: format!(
+                    "{} bytes buffers declared; byte-buffer-build v1 supports exactly one \
+                     (the returned output buffer) — SCE_FORGE.md §4.12",
+                    bytes_buffers.len()
+                ),
+            },
+        ));
+    }
+
+    let (buf_name, buf_cap) = &bytes_buffers[0];
+
+    // A bytes buffer must declare a fixed capacity.
+    let buf_cap = match buf_cap {
+        Some(c) => *c,
+        None => {
+            return Err(located(
+                body_node,
+                doc_name,
+                ValidationError::MissingAttribute {
+                    element: format!("<sce:var name=\"{buf_name}\" type=\"bytes\">"),
+                    attr: "capacity".into(),
+                },
+            ));
+        }
+    };
+
+    // The buffer is the algorithm's output — the signature must return bytes.
+    if !returns_bytes {
+        return Err(located(
+            body_node,
+            doc_name,
+            ValidationError::IncompatibleAttributes {
+                element: "<sce:body>".into(),
+                detail: format!(
+                    "bytes buffer '{buf_name}' is declared but the signature does not return \
+                     `bytes`; byte-buffer-build v1 requires the buffer to be the returned value \
+                     — SCE_FORGE.md §4.12"
+                ),
+            },
+        ));
+    }
+
+    // Capacity and returns-max-size describe the same buffer from two angles
+    // (the `<sce:var>` bound and the function contract); the Rust `SceBytes<N>`
+    // type and the C11 result struct's `bytes[N]` array must agree.
+    let rms = sig
+        .returns_max_size
+        .expect("returns_bytes is true ⇒ returns_max_size present (checked above)");
+    if buf_cap != rms {
+        return Err(located(
+            body_node,
+            doc_name,
+            ValidationError::InvalidAttribute {
+                element: format!("<sce:var name=\"{buf_name}\" type=\"bytes\">"),
+                attr: "capacity".into(),
+                value: buf_cap.to_string(),
+                expected: format!("to equal the signature's returns-max-size ({rms})"),
+            },
+        ));
+    }
+
+    Ok(())
+}
+
 /// re-threading nodes through the IR.
 fn reject_param_assignment(
     stmts: &[AlgorithmStmt],
@@ -6795,7 +7002,7 @@ fn reject_param_assignment(
 ) -> Result<(), Located<ForgeError>> {
     for s in stmts {
         match s {
-            AlgorithmStmt::Assign { target, .. } => {
+            AlgorithmStmt::Assign { target, .. } | AlgorithmStmt::Append { target, .. } => {
                 let head = target.split(['.', '[']).next().unwrap_or(target).trim();
                 if sig.params.iter().any(|p| p.name == head) {
                     return Err(located(

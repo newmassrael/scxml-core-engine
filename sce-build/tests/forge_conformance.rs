@@ -730,6 +730,140 @@ fn forge_c11_algorithm_bytes_equal() {
     );
 }
 
+// ── SCE byte-buffer-build (SCE_FORGE.md §4.12): COBS encode ──
+// `algorithm_cobs_encode` exercises the byte-buffer-build primitives on all
+// six backends — a bounded `<sce:var type="bytes" capacity>` output buffer,
+// `<sce:append>` of single bytes (the code byte + each data byte), and a
+// fallible `bytes` return. The Rust compile+run gate
+// `algorithm_cobs_encode.rs` pins the COBS reference vectors at runtime; these
+// goldens pin the emitted source per backend.
+
+#[test]
+fn forge_cpp_algorithm_cobs_encode() {
+    assert_standalone_forge("algorithm_cobs_encode", "algorithm_cobs_encode.h");
+}
+
+#[test]
+fn forge_rust_algorithm_cobs_encode() {
+    assert_standalone_forge_rust("algorithm_cobs_encode", "algorithm_cobs_encode.rs");
+}
+
+#[test]
+fn forge_kotlin_algorithm_cobs_encode() {
+    assert_standalone_forge_kotlin("algorithm_cobs_encode", "AlgorithmCobsEncode.kt");
+}
+
+#[test]
+fn forge_go_algorithm_cobs_encode() {
+    assert_standalone_forge_lang(
+        "algorithm_cobs_encode",
+        "algorithm_cobs_encode.go",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_python_algorithm_cobs_encode() {
+    assert_standalone_forge_lang(
+        "algorithm_cobs_encode",
+        "algorithm_cobs_encode.py",
+        sce_build::generator::Language::Python,
+    );
+}
+
+#[test]
+fn forge_c11_algorithm_cobs_encode() {
+    assert_standalone_forge_lang(
+        "algorithm_cobs_encode",
+        "algorithm_cobs_encode.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+/// SCE byte-buffer-build (SCE_FORGE.md §4.12): Rust compile+run gate for the
+/// COBS encode fixture. Builds the generated `bytes`-returning algorithm in a
+/// standalone Cargo project — proving the `sce-portable-bytes` dependency and
+/// the fallible `Result<SceBytes<N>, CapacityExceeded>` signature link — and
+/// asserts the canonical COBS reference vectors at runtime. Byte goldens alone
+/// would not catch a miscompiled buffer-build body
+/// (`feedback_byte_goldens_not_compile`).
+#[test]
+fn forge_rust_algorithm_cobs_encode_runtime() {
+    const HARNESS: &str = r#"
+#[cfg(test)]
+mod tests {
+    use crate::algorithm_cobs_encode::algorithm_cobs_encode as cobs;
+
+    fn ck(input: &[u8], want: &[u8]) {
+        let got = cobs(input).expect("COBS output fits the 32-byte buffer");
+        assert_eq!(got.as_slice(), want, "COBS({input:02x?})");
+    }
+
+    #[test]
+    fn cobs_reference_vectors() {
+        ck(&[], &[0x01]);
+        ck(&[0x00], &[0x01, 0x01]);
+        ck(&[0x11, 0x22, 0x00, 0x33], &[0x03, 0x11, 0x22, 0x02, 0x33]);
+        ck(&[0x11, 0x00, 0x00], &[0x02, 0x11, 0x01, 0x01]);
+        ck(&[0x11, 0x22, 0x33], &[0x04, 0x11, 0x22, 0x33]);
+    }
+}
+"#;
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        &["algorithm_cobs_encode.scxml"],
+        &[("cobs_vectors.rs", HARNESS)],
+        "algorithm_cobs_encode_runtime",
+    )
+    .expect("COBS encode must compile against sce-portable-bytes and match the reference vectors");
+}
+
+// Per-backend compile gates for the COBS byte-buffer-build fixture. The
+// generated source must actually compile, not merely byte-match a golden
+// (`feedback_byte_goldens_not_compile`). C++ is golden-only here for the same
+// reason every algorithm fixture is — its `bytes` params lower to
+// `std::span` (C++20), while the shared codec compile gate is `-std=c++17`.
+
+#[test]
+fn forge_c11_algorithm_cobs_encode_compiles() {
+    compile_codec_set_c11(
+        &resource_dir(),
+        &["algorithm_cobs_encode.scxml"],
+        "algorithm_cobs_encode_c11",
+    )
+    .expect("COBS encode C11 output must compile");
+}
+
+#[test]
+fn forge_go_algorithm_cobs_encode_compiles() {
+    compile_codec_set_go(
+        &resource_dir(),
+        &["algorithm_cobs_encode.scxml"],
+        "algorithm_cobs_encode_go",
+    )
+    .expect("COBS encode Go output must compile");
+}
+
+#[test]
+fn forge_python_algorithm_cobs_encode_compiles() {
+    compile_codec_set_python(
+        &resource_dir(),
+        &["algorithm_cobs_encode.scxml"],
+        "algorithm_cobs_encode_python",
+    )
+    .expect("COBS encode Python output must compile");
+}
+
+#[test]
+fn forge_kotlin_algorithm_cobs_encode_compiles() {
+    compile_codec_set_kotlin(
+        &resource_dir(),
+        &["algorithm_cobs_encode.scxml"],
+        "algorithm_cobs_encode_kotlin",
+    )
+    .expect("COBS encode Kotlin output must compile");
+}
+
 // ── RFC §synth-5-B codec test-vector sidecars (Rust + C11 trunk) ───
 //
 // 3 fixtures × 2 backends = 6 positive sidecar emissions; each row
@@ -10703,6 +10837,15 @@ fn rustc_run_codec_set(
         .join("rust")
         .canonicalize()
         .map_err(|e| format!("canonicalize sce-forge-runtime: {e}"))?;
+    // SCE byte-buffer-build (SCE_FORGE.md §4.12): a `bytes`-returning algorithm
+    // imports `SceBytes` / `CapacityExceeded` from the shared leaf crate, so
+    // the harness project must depend on it directly. Harmless for fixtures
+    // that don't use it (an unused dependency is not a compile error).
+    let portable_bytes = std::path::Path::new(manifest_dir)
+        .join("..")
+        .join("sce-portable-bytes")
+        .canonicalize()
+        .map_err(|e| format!("canonicalize sce-portable-bytes: {e}"))?;
 
     let cargo_toml = format!(
         r#"[package]
@@ -10725,6 +10868,7 @@ alloc = []
 
 [dependencies]
 sce-forge-runtime = {{ path = "{}", default-features = false, features = ["alloc"] }}
+sce-portable-bytes = {{ path = "{}", default-features = false, features = ["alloc"] }}
 
 [workspace]
 
@@ -10737,6 +10881,7 @@ sce-forge-runtime = {{ path = "{}", default-features = false, features = ["alloc
 warnings = "deny"
 "#,
         forge_runtime.display(),
+        portable_bytes.display(),
     );
     std::fs::write(proj_dir.join("Cargo.toml"), cargo_toml)
         .map_err(|e| format!("write Cargo.toml: {e}"))?;

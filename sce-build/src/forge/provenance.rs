@@ -573,6 +573,7 @@ mod tests {
                 signature: AlgorithmSignature {
                     params: Vec::new(),
                     return_type: Some(SceType::Uint8),
+                    returns_max_size: None,
                 },
                 consts: Vec::new(),
                 body: Vec::new(),
