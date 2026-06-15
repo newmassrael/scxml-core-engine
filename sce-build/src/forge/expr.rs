@@ -2460,7 +2460,12 @@ fn kotlin_emit_node(expr: &TypedExpr) -> String {
                     signed: true,
                     bits: 32,
                 } => idx_raw,
-                InferredType::Int { .. } => format!("{idx_raw}.toInt()"),
+                // Parenthesize before `.toInt()`: a compound index
+                // (`data[i + run]`) emits as `i.toUInt() + run.toUInt()`, so a
+                // bare `.toInt()` would bind to the trailing operand only
+                // (`... + run.toUInt().toInt()` = `UInt + Int`, a type error).
+                // The wrap is harmless on a single-token index.
+                InferredType::Int { .. } => format!("({idx_raw}).toInt()"),
                 _ => idx_raw,
             };
             // A `bytes` operand is a `ByteArray`; `[i]` yields a signed

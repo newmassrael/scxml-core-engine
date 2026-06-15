@@ -20,7 +20,7 @@ fun bytesEqual(a: ByteArray, b: ByteArray): Boolean {
     }
     var i: UInt = 0.toUInt()
     while (i < (a).size.toUInt()) {
-        if (a[i.toInt()].toUByte() != b[i.toInt()].toUByte()) {
+        if (a[(i).toInt()].toUByte() != b[(i).toInt()].toUByte()) {
             return false
         }
         i = i + 1.toUInt()

@@ -21,7 +21,7 @@ fun algorithmCobsEncode(data: ByteArray): ByteArray {
     var done: Boolean = false
     while (done == false) {
         var q: UShort = p
-        while (q < n && (q.toUInt() - p.toUInt()).toUShort() < 254.toUShort() && data[q.toInt()].toUByte() != 0.toUByte()) {
+        while (q < n && (q.toUInt() - p.toUInt()).toUShort() < 254.toUShort() && data[(q).toInt()].toUByte() != 0.toUByte()) {
             q = (q.toUInt() + 1.toUInt()).toUShort()
         }
         var run: UShort = (q.toUInt() - p.toUInt()).toUShort()
@@ -29,7 +29,7 @@ fun algorithmCobsEncode(data: ByteArray): ByteArray {
         out.add((code).toByte())
         var k: UShort = p
         while (k < q) {
-            out.add((data[k.toInt()].toUByte()).toByte())
+            out.add((data[(k).toInt()].toUByte()).toByte())
             k = (k.toUInt() + 1.toUInt()).toUShort()
         }
         if (q >= n) {
