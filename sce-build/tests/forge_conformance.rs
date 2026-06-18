@@ -864,6 +864,204 @@ fn forge_kotlin_algorithm_cobs_encode_compiles() {
     .expect("COBS encode Kotlin output must compile");
 }
 
+// ── RFC §synth-5-B gated repeat with an UNCONDITIONAL borrowed count ──
+//
+// `codec_repeat_unconditional_count` is the minimal demo of a gated
+// `<sce:repeat>` whose element count is borrowed from an unconditional
+// sibling (`links_len`), mirroring zenoh `LinkState.link_weights`
+// (count = `links.len()`, gated on the WGT bit, no own length). The
+// co-gating validator now accepts an unconditional count (strictly safer
+// than co-gating — the count is always read first and is not an Option),
+// and the gated decode reads it with a plain load in Rust/Cpp/Kotlin/Go
+// (`count_is_gated` branch); C11/Python were already plain.
+//
+// Coverage mirrors the COBS precedent: per-backend byte goldens (source
+// stability + reviewable cross-language output), a Rust compile+RUN
+// round-trip over BOTH flag values (byte goldens alone would not catch a
+// miscompiled count-read — `feedback_byte_goldens_not_compile`), and
+// per-backend compile gates so all six emitted arms (4 modified + 2
+// unchanged) build.
+
+#[test]
+fn forge_cpp_codec_repeat_unconditional_count() {
+    assert_standalone_forge(
+        "codec_repeat_unconditional_count",
+        "codec_repeat_unconditional_count.h",
+    );
+}
+
+#[test]
+fn forge_rust_codec_repeat_unconditional_count() {
+    assert_standalone_forge_rust(
+        "codec_repeat_unconditional_count",
+        "codec_repeat_unconditional_count.rs",
+    );
+}
+
+#[test]
+fn forge_kotlin_codec_repeat_unconditional_count() {
+    assert_standalone_forge_kotlin(
+        "codec_repeat_unconditional_count",
+        "CodecRepeatUnconditionalCount.kt",
+    );
+}
+
+#[test]
+fn forge_go_codec_repeat_unconditional_count() {
+    assert_standalone_forge_lang(
+        "codec_repeat_unconditional_count",
+        "codec_repeat_unconditional_count.go",
+        sce_build::generator::Language::Go,
+    );
+}
+
+#[test]
+fn forge_python_codec_repeat_unconditional_count() {
+    assert_standalone_forge_lang(
+        "codec_repeat_unconditional_count",
+        "codec_repeat_unconditional_count.py",
+        sce_build::generator::Language::Python,
+    );
+}
+
+#[test]
+fn forge_c11_codec_repeat_unconditional_count() {
+    assert_standalone_forge_lang(
+        "codec_repeat_unconditional_count",
+        "codec_repeat_unconditional_count.c.h",
+        sce_build::generator::Language::C11,
+    );
+}
+
+/// Rust compile+run: decode → re-encode byte-exact for flag=0 (weights
+/// absent) and flag=1 (weights present, count borrowed from the
+/// unconditional `links_len`), proving the gated repeat drives its loop
+/// off the plain count local with no Option unwrap.
+#[test]
+fn forge_rust_codec_repeat_unconditional_count_runtime() {
+    const HARNESS: &str = r#"// Injected by forge_rust_codec_repeat_unconditional_count_runtime.
+#[cfg(test)]
+mod tests {
+    use crate::codec_repeat_unconditional_count::CodecRepeatUnconditionalCount as Ls;
+    use ::sce_forge_runtime::codec::SceCursor;
+
+    fn roundtrip(frame: &[u8]) -> Ls {
+        let mut cursor = SceCursor::new(frame);
+        let view = Ls::decode(&mut cursor).expect("decode linkstate frame");
+        assert_eq!(
+            view.encode_to_vec().as_slice(),
+            frame,
+            "re-encode must be byte-exact"
+        );
+        view
+    }
+
+    #[test]
+    fn weights_absent_when_flag_clear() {
+        // options.H=0, links_len=2: links present, weights off the wire.
+        let frame = [0x00u8, 0x02, 0xCA, 0xFE, 0xBE, 0xEF];
+        let ls = roundtrip(&frame);
+        assert_eq!(ls.links_len, 2);
+        assert_eq!(ls.links.len(), 2);
+        assert!(ls.weights.is_none(), "weights absent when options.H clear");
+    }
+
+    #[test]
+    fn weights_borrow_unconditional_count_when_flag_set() {
+        // options.H=1: the unconditional links_len=2 drives BOTH links and
+        // the gated weights (no own count on the wire).
+        let frame = [
+            0x01u8, 0x02, 0xCA, 0xFE, 0xBE, 0xEF, 0x11, 0x11, 0x22, 0x22,
+        ];
+        let ls = roundtrip(&frame);
+        assert_eq!(ls.links_len, 2);
+        assert_eq!(ls.links.len(), 2);
+        let weights = ls.weights.expect("weights present when options.H set");
+        assert_eq!(
+            weights.len(),
+            2,
+            "weights count borrowed from unconditional links_len"
+        );
+    }
+}
+"#;
+    rustc_test_codec_set_with_extra(
+        &resource_dir(),
+        &[
+            "codec_repeat_unconditional_count.scxml",
+            "codec_repeat_elem.scxml",
+        ],
+        &[("ls_roundtrip.rs", HARNESS)],
+        "codec_repeat_unconditional_count_runtime",
+    )
+    .expect("gated repeat over an unconditional count must round-trip byte-exact for both flags");
+}
+
+#[test]
+fn forge_cpp_codec_repeat_unconditional_count_compiles() {
+    compile_codec_set_cpp(
+        &resource_dir(),
+        &[
+            "codec_repeat_unconditional_count.scxml",
+            "codec_repeat_elem.scxml",
+        ],
+        "codec_repeat_unconditional_count_cpp",
+    )
+    .expect("unconditional-count gated repeat C++ output must compile");
+}
+
+#[test]
+fn forge_c11_codec_repeat_unconditional_count_compiles() {
+    compile_codec_set_c11(
+        &resource_dir(),
+        &[
+            "codec_repeat_unconditional_count.scxml",
+            "codec_repeat_elem.scxml",
+        ],
+        "codec_repeat_unconditional_count_c11",
+    )
+    .expect("unconditional-count gated repeat C11 output must compile");
+}
+
+#[test]
+fn forge_go_codec_repeat_unconditional_count_compiles() {
+    compile_codec_set_go(
+        &resource_dir(),
+        &[
+            "codec_repeat_unconditional_count.scxml",
+            "codec_repeat_elem.scxml",
+        ],
+        "codec_repeat_unconditional_count_go",
+    )
+    .expect("unconditional-count gated repeat Go output must compile");
+}
+
+#[test]
+fn forge_python_codec_repeat_unconditional_count_compiles() {
+    compile_codec_set_python(
+        &resource_dir(),
+        &[
+            "codec_repeat_unconditional_count.scxml",
+            "codec_repeat_elem.scxml",
+        ],
+        "codec_repeat_unconditional_count_python",
+    )
+    .expect("unconditional-count gated repeat Python output must compile");
+}
+
+#[test]
+fn forge_kotlin_codec_repeat_unconditional_count_compiles() {
+    compile_codec_set_kotlin(
+        &resource_dir(),
+        &[
+            "codec_repeat_unconditional_count.scxml",
+            "codec_repeat_elem.scxml",
+        ],
+        "codec_repeat_unconditional_count_kotlin",
+    )
+    .expect("unconditional-count gated repeat Kotlin output must compile");
+}
+
 // ── RFC §synth-5-B codec test-vector sidecars (Rust + C11 trunk) ───
 //
 // 3 fixtures × 2 backends = 6 positive sidecar emissions; each row
@@ -3401,24 +3599,28 @@ fn forge_codec_repeat_forward_count_rejects() {
     );
 }
 
-/// RFC §synth-5-B co-gating contract — repeat-with-present-if (Wire
-/// repeat-with-present-if). When `<sce:repeat sce:count="X"
-/// sce:present-if="P"/>` is gated, the count source field `X` MUST
-/// also carry the IDENTICAL predicate `P`. Wire semantics: when the
-/// gate fires off, the count byte(s) are absent — the streaming
-/// decoder cannot read `X` to drive the repeat loop. Validator emits
-/// `validation/invalid-attribute` with both predicate strings + the
-/// repair hint naming both fields.
+/// RFC §synth-5-B co-gating contract — repeat-with-present-if. A gated
+/// `<sce:repeat sce:count="X" sce:present-if="P"/>` requires the count
+/// source `X` to be readable wherever the repeat runs, which holds in
+/// two accepted cases: `X` co-gated with the IDENTICAL predicate `P`, OR
+/// `X` unconditional (always on the wire, decoded before the repeat — the
+/// ordering validator enforces count-before-repeat). A count gated by a
+/// DIFFERENT predicate than the repeat is rejected with
+/// `validation/invalid-attribute`.
 ///
-/// Case 1: count field has NO present-if (predicate mismatch via
-/// missing predicate on count side).
+/// Case 1: count field has NO present-if (unconditional) — ACCEPTED.
+/// The count is always on the wire and read before the gated repeat, so
+/// the decoder drives the loop off a plain count load (no Option unwrap).
+/// Mirrors zenoh `LinkState.link_weights` (count borrowed from the
+/// unconditional `links`). Was rejected before the unconditional-count
+/// lift; the `codec_repeat_unconditional_count` fixture is the full
+/// round-trip companion.
 #[test]
-fn forge_codec_repeat_present_if_count_missing_predicate_rejects() {
-    use sce_build::forge::error::{ForgeError, ValidationError};
+fn forge_codec_repeat_present_if_unconditional_count_accepts() {
     let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
-       sce:kind="codec" sce:default-endian="big" name="cogating_missing">
+       sce:kind="codec" sce:default-endian="big" name="cogating_unconditional">
   <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
   <datamodel>
     <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
@@ -3430,24 +3632,14 @@ fn forge_codec_repeat_present_if_count_missing_predicate_rejects() {
                 sce:present-if="carrier.has_list"/>
   </datamodel>
 </scxml>"#;
-    let err = sce_build::compile_forge_with_imports(
+    sce_build::compile_forge_with_imports(
         scxml,
-        sce_build::DocumentLabel::symmetric("cogating_missing"),
+        sce_build::DocumentLabel::symmetric("cogating_unconditional"),
         sce_build::generator::Language::Rust,
         &resource_dir(),
         &sce_build::ForgeCompileOptions::default(),
     )
-    .err()
-    .expect("must reject co-gating contract violation");
-    assert!(
-        matches!(
-            err.error,
-            ForgeError::Validation(ref boxed)
-                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "sce:present-if")
-        ),
-        "must surface as InvalidAttribute on sce:present-if; got: {:?}",
-        err.error
-    );
+    .expect("an unconditional count source for a gated repeat must be accepted");
 }
 
 /// Case 2: count field has a DIFFERENT present-if predicate

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: gated <sce:repeat> whose element count is
+     borrowed from an UNCONDITIONAL sibling field (RFC §synth-5-B
+     repeat-with-present-if, unconditional-count case).
+
+     Motivating wire protocol: zenoh `LinkState.link_weights`
+     (zenoh/src/net/codec/linkstate.rs). The `links` array is always
+     present and its length is written once; the `link_weights` array is
+     gated on the WGT option bit and carries NO length of its own — its
+     element count is borrowed from `links.len()`. This fixture is the
+     minimal primitive demo of that shape; it is NOT the full LinkState
+     struct.
+
+     The count source `links_len` is UNCONDITIONAL (no present-if): it is
+     always on the wire and `validate_codec_repeat_count_refs` forces it
+     to precede both repeats, so the streaming decoder has always read
+     the loop driver before the gated `weights` repeat runs. The
+     co-gating validator accepts this (count co-gated OR unconditional);
+     the gated decode reads `links_len` with a plain load — no Option
+     unwrap — selected by the generator's `count_is_gated` branch
+     (Rust/Cpp/Kotlin/Go); C11/Python read the count plainly in both
+     cases (struct member / bare local).
+
+     Wire shape (2 + 2*N, or 2 + 2*N + 2*N bytes):
+       byte 0   : options    (uint8 flags: H = has_weights at bit 0)
+       byte 1   : links_len   (uint8, ALWAYS present)
+       bytes 2..: links       (repeat<codec_repeat_elem>; count = links_len)
+       options.H: weights     (repeat<codec_repeat_elem>; count = links_len;
+                               absent if options.H = 0; NO own count)
+
+     Round-trip oracles (codec_repeat_elem = uint16 BE seq):
+       H=0, N=2: [0x00, 0x02, 0xCA,0xFE, 0xBE,0xEF]
+       H=1, N=2: [0x01, 0x02, 0xCA,0xFE, 0xBE,0xEF, 0x11,0x11, 0x22,0x22] -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="codec_repeat_unconditional_count">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:flags id="options" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="H" bit="0"/>
+    </sce:flags>
+    <sce:field id="links_len" sce:type="uint8" sce:byte="1" sce:bit-size="8"/>
+    <sce:repeat id="links" type="codec_repeat_elem" sce:byte="2"
+                count="links_len" max-count="64"/>
+    <sce:repeat id="weights" type="codec_repeat_elem" sce:byte="3"
+                count="links_len" max-count="64"
+                sce:present-if="options.H"/>
+  </datamodel>
+</scxml>

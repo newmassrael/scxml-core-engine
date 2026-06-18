@@ -7563,9 +7563,12 @@ struct RepeatDecodeGated<'a> {
 /// `repeat_streaming_decode_stmt` body with a per-language predicate
 /// test so a `parent.L`-style flag toggles the entire count + repeat
 /// block on/off the wire. The co-gating validator
-/// (`validate_codec_repeat_present_if_co_gating`) guarantees the
-/// count source field carries the IDENTICAL predicate, making
-/// `count.unwrap()` safe inside the True arm.
+/// (`validate_codec_repeat_present_if_co_gating`) guarantees the count
+/// source is readable before the gated repeat — either co-gated (same
+/// predicate, read via `count.unwrap()`) or unconditional (always on the
+/// wire, read with a plain load). `count_is_gated` selects between the
+/// two in the Rust/Cpp/Kotlin/Go count-read; C11 and Python read the
+/// count field plainly in both cases (struct member / bare local).
 ///
 /// Per-language wrap shape:
 ///   - Rust:    `let id = if test { Some(<built-vec>) } else { None };`
@@ -7593,16 +7596,34 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
     let id = id_owned.as_str();
     let test = present_if_test_literal(fields, pred, lang);
 
+    // The count source is either co-gated with this repeat (an Option /
+    // nullable / pointer that must be unwrapped in the True arm) or
+    // unconditional (a plain local always decoded before the repeat —
+    // `validate_codec_repeat_present_if_co_gating` accepts both). Select the
+    // count-read form accordingly; C11 and Python read the count plainly in
+    // both cases (struct member / bare local) so their arms are unchanged.
+    let count_is_gated = match count_ref {
+        CountRef::LengthField(len_field) => sibling_field_gated(fields, len_field.as_str()),
+        CountRef::UntilEof => false,
+    };
+
     match (lang, count_ref) {
-        // Rust: bind `_n` from `count.unwrap()` inside the True arm —
-        // single unwrap site keeps the loop bound and capacity hint in
-        // sync. UntilEof has no count field so the wrap reduces to
-        // `if test { Some(<until-eof body>) } else { None }`.
+        // Rust: bind `_n` from the count source inside the True arm —
+        // single read site keeps the loop bound and capacity hint in sync.
+        // Co-gated count is `Option<_>` (unwrap via `.expect`); unconditional
+        // count is a plain local (read directly). UntilEof has no count field
+        // so the wrap reduces to `if test { Some(<until-eof body>) } else
+        // { None }`.
         (Language::Rust, CountRef::LengthField(len_field)) => {
             let len_field_snake = filters::to_snake_case(len_field.clone());
+            let count_read = if count_is_gated {
+                format!("{len_field_snake}.expect(\"co-gating: count present-if matches repeat\")")
+            } else {
+                len_field_snake.clone()
+            };
             format!(
                 "let {id} = if {test} {{\n            \
-                     let _n = {len_field_snake}.expect(\"co-gating: count present-if matches repeat\");\n            \
+                     let _n = {count_read};\n            \
                      let mut _vec: HeaplessVec<{body_type}{body_lt}, {max_count}> = HeaplessVec::new();\n            \
                      for _ in 0.._n {{\n                \
                          _vec.push({body_type}::decode(cursor)?)\n                    \
@@ -7627,13 +7648,20 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
              }};"
         ),
         // Cpp: pre-declare std::optional<vector>, populate inside the
-        // True arm. `count.value()` is the std::optional unwrap (sound
-        // by validator). `_elem.has_value()` early-returns std::nullopt
-        // on element decode truncation, mirroring the non-gated path.
-        (Language::Cpp, CountRef::LengthField(len_field)) => format!(
+        // True arm. Co-gated count unwraps via `.value()` (sound by
+        // validator); unconditional count is read directly.
+        // `_elem.has_value()` early-returns std::nullopt on element decode
+        // truncation, mirroring the non-gated path.
+        (Language::Cpp, CountRef::LengthField(len_field)) => {
+            let count_read = if count_is_gated {
+                format!("{len_field}.value()")
+            } else {
+                len_field.clone()
+            };
+            format!(
             "std::optional<std::vector<{body_type}>> {id};\n        \
              if ({test}) {{\n            \
-                 auto _n = {len_field}.value();\n            \
+                 auto _n = {count_read};\n            \
                  std::vector<{body_type}> _list;\n            \
                  _list.reserve(_n);\n            \
                  for (auto _i = decltype(_n){{0}}; _i < _n; ++_i) {{\n                \
@@ -7643,7 +7671,8 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
                  }}\n            \
                  {id} = std::move(_list);\n        \
              }}"
-        ),
+            )
+        }
         (Language::Cpp, CountRef::UntilEof) => format!(
             "std::optional<std::vector<{body_type}>> {id};\n        \
              if ({test}) {{\n            \
@@ -7657,24 +7686,32 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
              }}"
         ),
         // Kotlin: nullable `MutableList<T>?` — `if test { build } else null`
-        // mirrors the non-gated build shape inside the True arm. The
-        // count field is `T?` (gated), `!!` is sound by validator.
+        // mirrors the non-gated build shape inside the True arm. A co-gated
+        // count field is `T?` (`!!` is sound by validator); an unconditional
+        // count is a non-null local read directly.
         // 12-space indent context (companion.decode body); inner lines
         // render at 16 spaces, closing brace at 12.
         // `apply` (not `also`) keeps the list as `this` across the
         // inner `repeat`/`while` block — `it` would otherwise rebind to
         // the iteration index inside `repeat(N) { ... }` and shadow the
         // outer list reference.
-        (Language::Kotlin, CountRef::LengthField(len_field)) => format!(
+        (Language::Kotlin, CountRef::LengthField(len_field)) => {
+            let count_read = if count_is_gated {
+                format!("{len_field}!!")
+            } else {
+                len_field.clone()
+            };
+            format!(
             "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
-                 val _n = {len_field}!!\n                \
+                 val _n = {count_read}\n                \
                  mutableListOf<{body_type}>().apply {{\n                    \
                      repeat(_n.toInt()) {{\n                        \
                          add({body_type}.decode(cursor) ?: return null)\n                    \
                      }}\n                \
                  }}\n            \
              }} else null"
-        ),
+            )
+        }
         (Language::Kotlin, CountRef::UntilEof) => format!(
             "val {id}: MutableList<{body_type}>? = if ({test}) {{\n                \
                  mutableListOf<{body_type}>().apply {{\n                    \
@@ -7685,15 +7722,21 @@ fn repeat_streaming_decode_stmt_gated(ctx: RepeatDecodeGated<'_>) -> String {
              }} else null"
         ),
         // Go: bare slice nilness as presence — pre-declare `var Id []T`,
-        // populate only inside the True arm. The count field is `*T`
-        // (gated), deref via `*<Pascal>` is sound by validator.
+        // populate only inside the True arm. A co-gated count field is `*T`
+        // (deref via `*<Pascal>`, sound by validator); an unconditional count
+        // is a plain value read directly.
         (Language::Go, CountRef::LengthField(len_field)) => {
             let go_id = filters::to_pascal_case(id.to_string());
             let go_len = filters::to_pascal_case(len_field.clone());
+            let count_read = if count_is_gated {
+                format!("*{go_len}")
+            } else {
+                go_len.clone()
+            };
             format!(
                 "var {go_id} []{body_type}\n\t\
                  if {test} {{\n\t\t\
-                     _n := *{go_len}\n\t\t\
+                     _n := {count_read}\n\t\t\
                      {go_id} = make([]{body_type}, 0, _n)\n\t\t\
                      for _i := 0; _i < int(_n); _i++ {{\n\t\t\t\
                          _elem, err := {body_decoder}(cursor)\n\t\t\t\
@@ -9393,10 +9436,7 @@ fn present_if_decode_length_ref(
         .length_field
         .as_deref()
         .expect("LengthRef bit_size requires sce:length-field attribute");
-    let sibling_gated = fields
-        .iter()
-        .find(|x| x.id == len_field)
-        .is_some_and(|x| x.present_if.is_some());
+    let sibling_gated = sibling_field_gated(fields, len_field);
     let arith = field.length_arith.unwrap_or(0);
     // RFC §synth-5-B — `sce:type="string"` UTF-8 decode.
     // Wire shape is identical to a length-prefixed bytes field, but
@@ -9869,6 +9909,22 @@ fn present_if_decode_string_length_ref(
 /// Parser (`validate_codec_length_field_refs`) guarantees the dotted
 /// form's carrier exists, is flags-bearing, and the named flag has
 /// width > 1 — so callers `.expect` the lookups.
+/// SSOT for "is the named sibling length/count field gated?" — i.e. does
+/// it carry an `sce:present-if`, so codegen emitted it as an
+/// Option/nullable/pointer that a reader must unwrap, rather than an
+/// unconditional plain field read directly. Shared by the length-ref
+/// payload decode (`compute_n_*` → `peek_slice` size) and the repeat
+/// decode (`repeat_streaming_decode_stmt_gated` → loop bound) so both
+/// derive "unwrap vs plain" from the same predicate. Returns false for an
+/// unknown id; the count / length-ref validators reject a missing sibling
+/// before codegen, so that branch is unreachable for valid input.
+fn sibling_field_gated(fields: &[CodecField], id: &str) -> bool {
+    fields
+        .iter()
+        .find(|f| f.id.as_str() == id)
+        .is_some_and(|f| f.present_if.is_some())
+}
+
 fn compute_n_rust(
     len_field: &str,
     fields: &[CodecField],
