@@ -4049,13 +4049,20 @@ fn validate_codec_repeat_count_refs(
 }
 
 /// RFC §synth-5-B — repeat-with-present-if co-gating validator.
-/// When `<sce:repeat sce:count="X" sce:present-if="P"/>`
-/// is gated, the count source field `X` MUST carry the IDENTICAL
-/// predicate `P`. Wire semantics: when the gate fires off the count
-/// bytes are absent, so the streaming decoder cannot read `X` to
-/// drive the repeat loop unless both share the same predicate. The
-/// True-arm of the repeat then reads `X.unwrap()` (or per-language
-/// equivalent) safely — the validator is the proof.
+/// When `<sce:repeat sce:count="X" sce:present-if="P"/>` is gated, the
+/// count source `X` must already be readable wherever the gated repeat
+/// runs. That holds in exactly two accepted cases:
+///   1. `X` carries the IDENTICAL predicate `P` (co-gated) — count and
+///      repeat appear/vanish together; the True-arm reads `X.unwrap()`
+///      (or per-language equivalent) safely.
+///   2. `X` is UNCONDITIONAL (no present-if) — the count bytes are
+///      always on the wire, and `validate_codec_repeat_count_refs`
+///      forces `X` to precede the repeat, so the loop driver is always
+///      read first. Strictly safer than case 1 (no Option to unwrap);
+///      the decoder loads `X` plainly (generator `count_is_gated`).
+///
+/// A count gated by a DIFFERENT predicate than the repeat stays rejected
+/// — the count bytes could vanish while the repeat is present.
 ///
 /// `CountRef::UntilEof` skips this check (no count target). Non-gated
 /// repeat skips (back-compat — item B2 trunk shape). Predicate identity
@@ -4083,28 +4090,14 @@ fn validate_codec_repeat_present_if_co_gating(
             .expect("validate_codec_repeat_count_refs ensured target exists");
         let count_pred = match &count_field.present_if {
             Some(p) => p,
-            None => {
-                return Err(located(
-                    datamodel,
-                    label.diagnostic_label,
-                    ValidationError::InvalidAttribute {
-                        element: format!(
-                            "<sce:repeat id='{}'> in codec '{}'",
-                            field.id, label.identifier
-                        ),
-                        attr: "sce:present-if".into(),
-                        value: format_present_if_predicate_for_diag(repeat_pred),
-                        expected: format!(
-                            "co-gating contract: count source field '{}' must \
-                             carry the IDENTICAL sce:present-if predicate so \
-                             the count byte(s) and repeat block share the same \
-                             wire-presence gate; '{}' currently has no \
-                             present-if",
-                            target, target
-                        ),
-                    },
-                ));
-            }
+            // Unconditional count source: the count bytes are always on the
+            // wire and `validate_codec_repeat_count_refs` enforces that the
+            // count field precedes the repeat, so the streaming decoder has
+            // already read the loop driver before the gated repeat runs. This
+            // is strictly safer than co-gating (the count is not an Option to
+            // unwrap); the decoder loads it plainly (generator's
+            // `count_is_gated` branch). Accept it.
+            None => continue,
         };
         if count_pred != repeat_pred {
             return Err(located(
