@@ -356,16 +356,25 @@ pub struct Engine<P: StatePolicy> {
     /// instead; a future no_std-compatible completion ABI (extern "C" fn +
     /// userdata) lands when a consumer demands it. Mirrors the gate applied to
     /// `helpers::entry_exit::execute_*_blocks` in B-γ2d-2.
+    ///
+    /// The `+ Send` bound keeps `Engine<P>: Send` for any `P: Send`, so a host
+    /// may move an engine onto a worker thread (a boxed closure with no
+    /// auto-trait bound would otherwise make the whole struct `!Send`). The
+    /// regression guard is `engine_is_send` in `tests/hello_world.rs`.
     #[cfg(not(feature = "no_std"))]
-    pub(crate) completion_callback: Option<Box<dyn FnMut()>>,
+    pub(crate) completion_callback: Option<Box<dyn FnMut() + Send>>,
     /// W3C SCXML C.2: HTTP send dispatch callback.
     ///
     /// Watching-zenoh RFC §synth-5-J-2: HTTP is rejected upstream under `--no-std`
     /// via `codegen/no-std-http-not-supported`, so the callback field + setter +
     /// dispatcher are all gated to `!no_std`. Generated no_std code never
     /// emits a `perform_http_send` call site.
+    ///
+    /// Carries the same `+ Send` bound as `completion_callback` so the engine
+    /// stays host-movable; see that field for the rationale.
     #[cfg(not(feature = "no_std"))]
-    pub(crate) on_http_send: Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse>>>,
+    pub(crate) on_http_send:
+        Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
     /// W3C SCXML 6.2: Delayed event scheduler.
     ///
     /// The per-entry cancel-key storage is supplied by the policy via
@@ -1011,7 +1020,7 @@ impl<P: StatePolicy> Engine<P> {
     /// B-γ2d-2). Embedded consumers poll [`is_in_final_state`](Self::is_in_final_state)
     /// instead.
     #[cfg(not(feature = "no_std"))]
-    pub fn set_completion_callback<F: FnMut() + 'static>(&mut self, callback: F) {
+    pub fn set_completion_callback<F: FnMut() + Send + 'static>(&mut self, callback: F) {
         self.completion_callback = Some(Box::new(callback));
     }
 
@@ -1028,7 +1037,7 @@ impl<P: StatePolicy> Engine<P> {
     #[cfg(not(feature = "no_std"))]
     pub fn set_http_send_callback<F>(&mut self, callback: F)
     where
-        F: FnMut(HttpSendRequest) -> Option<HttpSendResponse> + 'static,
+        F: FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send + 'static,
     {
         self.on_http_send = Some(Box::new(callback));
     }
