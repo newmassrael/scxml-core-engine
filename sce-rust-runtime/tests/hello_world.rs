@@ -182,6 +182,20 @@ impl StatePolicy for HwPolicy {
 // Tests
 // ──────────────────────────────────────────────
 
+// Compile-time regression guard: `Engine<P>` must stay `Send` whenever
+// `P: Send`, so a host can move an engine across a thread boundary (e.g. into a
+// worker spawned with `thread::spawn(move || ...)`). The boxed completion /
+// HTTP-send callbacks carry a `+ Send` bound for exactly this reason; dropping
+// it would make `Engine<P>` unconditionally `!Send` and fail this assertion at
+// compile time. `HwPolicy` is `Send` (plain enum/bool fields), so the only way
+// this stops compiling is an engine field losing `Send`.
+#[test]
+fn engine_is_send() {
+    fn assert_send<T: Send>() {}
+    assert_send::<HwPolicy>();
+    assert_send::<Engine<HwPolicy>>();
+}
+
 #[test]
 fn initial_state_is_stopped() {
     let engine = Engine::<HwPolicy>::new(HwPolicy::new());
