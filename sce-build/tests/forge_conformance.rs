@@ -3686,6 +3686,50 @@ fn forge_codec_repeat_present_if_count_predicate_mismatch_rejects() {
     );
 }
 
+/// Case 3: the repeat is UNCONDITIONAL but its count source is gated. An
+/// always-present repeat would be decoded with no count when the gate is
+/// off — the inverse of the accepted unconditional-count shape. Without
+/// this check the decoder would read the gated count (an Option) as a
+/// plain value and emit code that fails downstream
+/// (`feedback_byte_goldens_not_compile`); reject it at codegen time.
+#[test]
+fn forge_codec_repeat_unconditional_with_gated_count_rejects() {
+    use sce_build::forge::error::{ForgeError, ValidationError};
+    let scxml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="gated_count_ungated_repeat">
+  <sce:import src="codec_repeat_elem.scxml" kind="codec" as="codec_repeat_elem"/>
+  <datamodel>
+    <sce:flags id="carrier" sce:type="uint8" sce:byte="0" sce:bit-size="8">
+      <sce:flag name="has_count" bit="0"/>
+    </sce:flags>
+    <sce:field id="num_elems" sce:type="uint8" sce:byte="1" sce:bit-size="8"
+               sce:present-if="carrier.has_count"/>
+    <sce:repeat id="elems" type="codec_repeat_elem" sce:byte="2"
+                count="num_elems" max-count="32"/>
+  </datamodel>
+</scxml>"#;
+    let err = sce_build::compile_forge_with_imports(
+        scxml,
+        sce_build::DocumentLabel::symmetric("gated_count_ungated_repeat"),
+        sce_build::generator::Language::Rust,
+        &resource_dir(),
+        &sce_build::ForgeCompileOptions::default(),
+    )
+    .err()
+    .expect("an unconditional repeat with a gated count must be rejected");
+    assert!(
+        matches!(
+            err.error,
+            ForgeError::Validation(ref boxed)
+                if matches!(**boxed, ValidationError::InvalidAttribute { ref attr, .. } if attr == "sce:present-if")
+        ),
+        "must surface as InvalidAttribute on sce:present-if; got: {:?}",
+        err.error
+    );
+}
+
 // ── RFC §synth-5-B dotted-path length-field parser-validation rejects ──
 //
 // Mirrors present-if's reject coverage (forward-reference,

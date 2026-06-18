@@ -4049,35 +4049,33 @@ fn validate_codec_repeat_count_refs(
 }
 
 /// RFC §synth-5-B — repeat-with-present-if co-gating validator.
-/// When `<sce:repeat sce:count="X" sce:present-if="P"/>` is gated, the
-/// count source `X` must already be readable wherever the gated repeat
-/// runs. That holds in exactly two accepted cases:
-///   1. `X` carries the IDENTICAL predicate `P` (co-gated) — count and
-///      repeat appear/vanish together; the True-arm reads `X.unwrap()`
-///      (or per-language equivalent) safely.
-///   2. `X` is UNCONDITIONAL (no present-if) — the count bytes are
-///      always on the wire, and `validate_codec_repeat_count_refs`
-///      forces `X` to precede the repeat, so the loop driver is always
-///      read first. Strictly safer than case 1 (no Option to unwrap);
-///      the decoder loads `X` plainly (generator `count_is_gated`).
+/// A `<sce:repeat sce:count="X"/>` requires its count source `X` to be
+/// readable on the wire WHENEVER the repeat is decoded. Field presence is
+/// governed by at most one `sce:present-if` predicate, so the rule reduces
+/// to a presence-set containment check on `X` vs the repeat:
+///   - `X` UNCONDITIONAL — always on the wire, and
+///     `validate_codec_repeat_count_refs` forces `X` to precede the
+///     repeat, so the loop driver is always read first. Safe for ANY
+///     repeat (gated or not); the decoder loads `X` plainly (generator
+///     `count_is_gated`).
+///   - `X` gated by `Q` — `X` vanishes when `Q` is off, so the repeat
+///     MUST be gated by the IDENTICAL `Q` (they appear/vanish together;
+///     the True-arm reads `X.unwrap()`). Two shapes are rejected:
+///       * repeat UNCONDITIONAL — an always-present repeat would be
+///         decoded with no count when `Q` is off.
+///       * repeat gated by `P != Q` — the count could be absent while the
+///         repeat is present.
 ///
-/// A count gated by a DIFFERENT predicate than the repeat stays rejected
-/// — the count bytes could vanish while the repeat is present.
-///
-/// `CountRef::UntilEof` skips this check (no count target). Non-gated
-/// repeat skips (back-compat — item B2 trunk shape). Predicate identity
-/// compares all four fields of `PresentIfPredicate` (scope, field_id,
-/// flag_name, negate); any drift folds into `validation/invalid-
-/// attribute` with a precise repair hint naming both fields.
+/// `CountRef::UntilEof` skips this check (no count target). Predicate
+/// identity compares all four fields of `PresentIfPredicate` (scope,
+/// field_id, flag_name, negate); any drift folds into `validation/
+/// invalid-attribute` with a precise repair hint naming both fields.
 fn validate_codec_repeat_present_if_co_gating(
     fields: &[CodecField],
     label: DocumentLabel<'_>,
     datamodel: &roxmltree::Node,
 ) -> Result<(), Located<ForgeError>> {
     for field in fields {
-        let Some(repeat_pred) = &field.present_if else {
-            continue;
-        };
         let BitSize::Repeat {
             count_ref: CountRef::LengthField(target),
         } = &field.bit_size
@@ -4088,18 +4086,44 @@ fn validate_codec_repeat_present_if_co_gating(
             .iter()
             .find(|f| f.id.as_str() == target.as_str())
             .expect("validate_codec_repeat_count_refs ensured target exists");
-        let count_pred = match &count_field.present_if {
-            Some(p) => p,
-            // Unconditional count source: the count bytes are always on the
-            // wire and `validate_codec_repeat_count_refs` enforces that the
-            // count field precedes the repeat, so the streaming decoder has
-            // already read the loop driver before the gated repeat runs. This
-            // is strictly safer than co-gating (the count is not an Option to
-            // unwrap); the decoder loads it plainly (generator's
-            // `count_is_gated` branch). Accept it.
-            None => continue,
+        // Unconditional count source: always read before the repeat, so safe
+        // for any repeat (gated or not). The decoder loads it plainly.
+        let Some(count_pred) = &count_field.present_if else {
+            continue;
         };
-        if count_pred != repeat_pred {
+        // Gated count: the repeat must carry the IDENTICAL predicate so the
+        // count is present exactly when the repeat is.
+        let reject = match &field.present_if {
+            Some(repeat_pred) if repeat_pred == count_pred => None,
+            Some(repeat_pred) => Some((
+                format!(
+                    "repeat='{}' vs count='{}'",
+                    format_present_if_predicate_for_diag(repeat_pred),
+                    format_present_if_predicate_for_diag(count_pred)
+                ),
+                format!(
+                    "co-gating contract: count source field '{}' MUST carry \
+                     the IDENTICAL sce:present-if predicate as the repeat — \
+                     scope, field_id, flag_name, and negate must match",
+                    target
+                ),
+            )),
+            None => Some((
+                format!(
+                    "repeat unconditional, count='{}' gated on '{}'",
+                    target,
+                    format_present_if_predicate_for_diag(count_pred)
+                ),
+                format!(
+                    "co-gating contract: an unconditional <sce:repeat> is \
+                     always on the wire, so its count source '{}' must also be \
+                     unconditional — gate the repeat with the same \
+                     sce:present-if as '{}', or drop the present-if on '{}'",
+                    target, target, target
+                ),
+            )),
+        };
+        if let Some((value, expected)) = reject {
             return Err(located(
                 datamodel,
                 label.diagnostic_label,
@@ -4109,17 +4133,8 @@ fn validate_codec_repeat_present_if_co_gating(
                         field.id, label.identifier
                     ),
                     attr: "sce:present-if".into(),
-                    value: format!(
-                        "repeat='{}' vs count='{}'",
-                        format_present_if_predicate_for_diag(repeat_pred),
-                        format_present_if_predicate_for_diag(count_pred)
-                    ),
-                    expected: format!(
-                        "co-gating contract: count source field '{}' MUST carry \
-                         the IDENTICAL sce:present-if predicate as the repeat — \
-                         scope, field_id, flag_name, and negate must match",
-                        target
-                    ),
+                    value,
+                    expected,
                 },
             ));
         }
