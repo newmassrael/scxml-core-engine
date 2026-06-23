@@ -57,17 +57,21 @@ data class CodecZenohSourceInfo(
         w.writeBytes(this.zid)?.let { return it }
         run {
             var _vle: ULong = (eid).toULong()
-            while (_vle >= 0x80UL) {
+            var _vn = 0
+            while (_vle >= 0x80UL && _vn < 4) {
                 w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
                 _vle = _vle shr 7
+                _vn++
             }
             w.writeU8(_vle.toByte())?.let { return it }
         }
         run {
             var _vle: ULong = (sn).toULong()
-            while (_vle >= 0x80UL) {
+            var _vn = 0
+            while (_vle >= 0x80UL && _vn < 4) {
                 w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
                 _vle = _vle shr 7
+                _vn++
             }
             w.writeU8(_vle.toByte())?.let { return it }
         }

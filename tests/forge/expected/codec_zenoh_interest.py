@@ -132,9 +132,11 @@ class CodecZenohInterest:
         # dedicated helpers; everything else uses `present_if_encode_block`.
         w.write_u8(self.header & 0xFF)
         _vle = int(self.id)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 8:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
         if self.body is not None:
             self.body.encode(w)

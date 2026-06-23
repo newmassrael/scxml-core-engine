@@ -90,14 +90,18 @@ class CodecZenohSourceInfo:
         w.write_u8(self.header & 0xFF)
         w.write_bytes(self.zid)
         _vle = int(self.eid)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 4:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
         _vle = int(self.sn)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 4:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
 
     def encode_to_bytes(self) -> bytes:

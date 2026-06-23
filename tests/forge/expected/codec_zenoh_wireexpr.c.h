@@ -15,7 +15,7 @@
 #include "sce/forge/codec.h"
 
 #define CODEC_ZENOH_WIREEXPR_MIN_BYTES 0
-#define CODEC_ZENOH_WIREEXPR_MAX_BYTES 148
+#define CODEC_ZENOH_WIREEXPR_MAX_BYTES 146
 
 typedef struct {
     uint64_t id;
@@ -101,18 +101,22 @@ static inline sce_forge_codec_status_t codec_zenoh_wireexpr_encode(const codec_z
      * `present_if_encode_block`. */
     {
         uint64_t _vle = (uint64_t)(self->id);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     if ((n & 0x01) != 0) {
     {
         uint64_t _vle = (uint64_t)(self->suffix_len);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

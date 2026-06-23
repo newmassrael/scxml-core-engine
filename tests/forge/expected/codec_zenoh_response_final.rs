@@ -138,7 +138,7 @@ impl<'a> CodecZenohResponseFinal<'a> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 183;
+    pub const MAX_ENCODED_BYTES: usize = 178;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
@@ -157,9 +157,11 @@ impl<'a> CodecZenohResponseFinal<'a> {
         w.write_u8(self.header)?;
         {
             let mut _vle = self.request_id;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 8 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }

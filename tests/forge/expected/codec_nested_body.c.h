@@ -16,7 +16,7 @@
 #include "codec_zenoh_locator.h"
 
 #define CODEC_NESTED_BODY_MIN_BYTES 1
-#define CODEC_NESTED_BODY_MAX_BYTES 553
+#define CODEC_NESTED_BODY_MAX_BYTES 549
 
 typedef struct {
     uint8_t n;

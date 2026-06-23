@@ -150,7 +150,7 @@ func (s *CodecNestedParent) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly
 // against a caller-owned sink (e.g. BoundedSink over a stack buffer).
 func (s *CodecNestedParent) EncodeToBytes() []byte {
-	_dst := make([]byte, 0, 2726)
+	_dst := make([]byte, 0, 2710)
 	_ = s.Encode(codec.NewBytesSink(&_dst))
 	return _dst
 }

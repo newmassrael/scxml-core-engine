@@ -68,14 +68,18 @@ class CodecZenohTimestamp:
         # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         # dedicated helpers; everything else uses `present_if_encode_block`.
         _vle = int(self.time)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 8:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
         _vle = int(self.zid_len)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 8:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
         w.write_bytes(self.zid)
 

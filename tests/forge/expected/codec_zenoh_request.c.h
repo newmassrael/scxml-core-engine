@@ -20,7 +20,7 @@
 #include "codec_zenoh_query.h"
 
 #define CODEC_ZENOH_REQUEST_MIN_BYTES 1
-#define CODEC_ZENOH_REQUEST_MAX_BYTES 1218
+#define CODEC_ZENOH_REQUEST_MAX_BYTES 1212
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
@@ -163,9 +163,11 @@ static inline sce_forge_codec_status_t codec_zenoh_request_encode(const codec_ze
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
     {
         uint64_t _vle = (uint64_t)(self->rid);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

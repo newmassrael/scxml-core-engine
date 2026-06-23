@@ -80,11 +80,13 @@ func (s *CodecZenohOpenBody) Encode(w codec.SceSink, A byte) error {
 	// dedicated helpers; everything else uses `present_if_encode_block`.
 	{
 		_vle := uint64(s.Lease)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 8 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err
@@ -92,11 +94,13 @@ func (s *CodecZenohOpenBody) Encode(w codec.SceSink, A byte) error {
 	}
 	{
 		_vle := uint64(s.InitialSn)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 8 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err
@@ -106,11 +110,13 @@ func (s *CodecZenohOpenBody) Encode(w codec.SceSink, A byte) error {
 		_v := *s.CookieLen
 	{
 		_vle := uint64(_v)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 8 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err
@@ -130,7 +136,7 @@ func (s *CodecZenohOpenBody) Encode(w codec.SceSink, A byte) error {
 // Callers targeting zero-alloc hot paths should call Encode directly
 // against a caller-owned sink (e.g. BoundedSink over a stack buffer).
 func (s *CodecZenohOpenBody) EncodeToBytes(A byte) []byte {
-	_dst := make([]byte, 0, 158)
+	_dst := make([]byte, 0, 155)
 	_ = s.Encode(codec.NewBytesSink(&_dst), A)
 	return _dst
 }

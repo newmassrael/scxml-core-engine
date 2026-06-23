@@ -1254,8 +1254,10 @@ pub enum BitSize {
     /// Size determined by another field's value (see CodecField::length_field).
     LengthRef,
     /// Variable-length encoded integer (RFC §synth-5-B Appendix B). The
-    /// `width_bits` cap (16/32/64) names the value-type max width;
-    /// wire bytes consumed is `1..=ceil(width_bits / 7)`. Canonical
+    /// `width_bits` cap (16/32/64) names the value-type max width; the
+    /// wire occupies at most `ceil((width_bits - 1) / 7)` bytes — the
+    /// canonical Zenoh ZInt cap, in which the final byte carries a full
+    /// 8 data bits so a u64 tops out at 9 bytes (not 10). Canonical
     /// Zenoh ZInt is `Vle { width_bits: 64 }`.
     Vle { width_bits: u32 },
     /// RFC §synth-5-B B2 repeat primitive — list of imported-codec elements.
@@ -1303,6 +1305,19 @@ pub enum BitSize {
     /// (decl_keyexpr, decl_subscriber, decl_queryable, decl_token)
     /// embed `codec_zenoh_wireexpr` after a VLE id field.
     Embed,
+}
+
+/// Canonical Zenoh ZInt byte cap for a `width_bits`-wide VLE field: the
+/// final byte carries a full 8 data bits (the continuation flag is
+/// reused as the high data bit), so a W-bit value occupies at most
+/// `ceil((W - 1) / 7)` bytes — one fewer than naive base-128 when `W`
+/// is a multiple of 8. u64 -> 9 (not 10), u32 -> 5, u16 -> 3 (RFC
+/// §synth-5-B App. B). The single byte-count SSOT shared by
+/// [`CodecModel::max_frame_bytes`] (worst-case encode-buffer sizing)
+/// and the generator's VLE encode/`vle_max_bytes` emission, so worst-
+/// case sizing and the emitted continuation-loop bound never diverge.
+pub(crate) fn vle_cap_bytes(width_bits: u32) -> u32 {
+    (width_bits - 1).div_ceil(7)
 }
 
 /// A single named bit-range on a `<sce:flags>` carrier field — RFC §synth-5-B
@@ -1891,8 +1906,9 @@ impl CodecModel {
     /// resolved per-field cap of every variable-length field. Caps:
     ///   - `tail` / `length-ref`: `sce:max-size`, fallback to
     ///     [`crate::forge::limits::BYTES_DEFAULT_MAX`].
-    ///   - `vle { width_bits }`: `ceil(width_bits / 7)` (3 / 5 / 10 for
-    ///     u16 / u32 / u64) — base-128 worst case from RFC §synth-5-B App. B.
+    ///   - `vle { width_bits }`: [`vle_cap_bytes`] (3 / 5 / 9 for
+    ///     u16 / u32 / u64) — canonical Zenoh ZInt cap from RFC
+    ///     §synth-5-B App. B (the u64 final byte carries 8 data bits).
     ///   - `repeat { count_ref }` (RFC §synth-5-B B2): contributes 0 here —
     ///     the per-element body size lives on the imported codec and
     ///     is only available after import enrichment, so the generator
@@ -1907,7 +1923,7 @@ impl CodecModel {
             .iter()
             .filter(|f| f.is_variable_length())
             .map(|f| match &f.bit_size {
-                BitSize::Vle { width_bits } => width_bits.div_ceil(7),
+                BitSize::Vle { width_bits } => vle_cap_bytes(*width_bits),
                 BitSize::Repeat { .. } | BitSize::TlvChain { .. } => 0,
                 _ => crate::forge::limits::resolve_bytes_max(f.max_size),
             })

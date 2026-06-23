@@ -116,9 +116,11 @@ impl<'a> CodecInitCookieBody<'a> {
         if let Some(_v) = self.cookie_size {
         {
             let mut _vle = _v as u64;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 2 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }

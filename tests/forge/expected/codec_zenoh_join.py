@@ -130,19 +130,25 @@ class CodecZenohJoin:
             w.write_u8(self.batch_size & 0xFF)
             w.write_u8((self.batch_size >> 8) & 0xFF)
         _vle = int(self.lease)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 8:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
         _vle = int(self.next_sn_reliable)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 8:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
         _vle = int(self.next_sn_best_effort)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 8:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
 
     def encode_to_bytes(self, s: int) -> bytes:

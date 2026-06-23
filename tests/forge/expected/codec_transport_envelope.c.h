@@ -21,7 +21,7 @@
 #include "codec_zenoh_join.h"
 
 #define CODEC_TRANSPORT_ENVELOPE_MIN_BYTES 1
-#define CODEC_TRANSPORT_ENVELOPE_MAX_BYTES 65547
+#define CODEC_TRANSPORT_ENVELOPE_MAX_BYTES 65546
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`

@@ -142,7 +142,7 @@ impl<'a> CodecZenohJoin<'a> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 52;
+    pub const MAX_ENCODED_BYTES: usize = 49;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
@@ -173,25 +173,31 @@ impl<'a> CodecZenohJoin<'a> {
         }
         {
             let mut _vle = self.lease;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 8 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }
         {
             let mut _vle = self.next_sn_reliable;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 8 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }
         {
             let mut _vle = self.next_sn_best_effort;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 8 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }

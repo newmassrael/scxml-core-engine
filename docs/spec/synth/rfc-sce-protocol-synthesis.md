@@ -575,7 +575,7 @@ Legal positions for `dma-burst-align`:
   above)
 
 Illegal positions (build error):
-- A field after a `vle_*` field (variable 1–10 bytes)
+- A field after a `vle_*` field (variable 1–9 bytes)
 - A field after `sce:len-prefix=` byte string of runtime length
 - A field after `<sce:repeat count="n">` where `n` is not
   build-time-known
@@ -3957,19 +3957,31 @@ diverges.
     <sce:return type="Result"/>
   </sce:signature>
   <sce:body>
-    <sce:while cond="v > 0x7F" max-iter="10">
+    <!-- At most VLE_LEN-1 = 8 continuation bytes (7 data bits + flag
+         each); the 9th byte then carries a full 8 data bits with no
+         continuation flag, so bit 63 never spills into a 10th byte. -->
+    <sce:assign target="n" expr="0"/>
+    <sce:while cond="v > 0x7F &amp;&amp; n &lt; 8" max-iter="8">
       <sce:call target="cursor.write_u8" args="(v &amp; 0x7F) | 0x80"/>
       <sce:assign target="v" expr="v >> 7"/>
+      <sce:assign target="n" expr="n + 1"/>
     </sce:while>
-    <sce:call target="cursor.write_u8" args="v &amp; 0x7F"/>
+    <sce:call target="cursor.write_u8" args="v &amp; 0xFF"/>
     <sce:return expr="Ok"/>
   </sce:body>
 </scxml>
 ```
 
-The `max-iter="10"` makes the bound explicit — a u64 VLE is at most
-10 bytes. On MCU this becomes a `_Static_assert` friend; the generator
-can unroll or keep the loop based on a size-vs-speed attribute.
+The continuation loop is bounded at `VLE_LEN - 1 = 8` bytes for a u64;
+the trailing `write_u8` then emits the remaining value as one full
+8-bit byte with no continuation flag. A u64 VLE is therefore at most
+`ceil((64 - 1) / 7) = 9` bytes — the canonical Zenoh ZInt form, in which
+bit 63 rides in the 9th byte's high bit rather than spilling into a 10th
+byte (matching `zenoh` and `zenoh-pico`). The decoder mirrors this: it
+reads the byte at shift `7 * (VLE_LEN - 1)` as a full 8 data bits with
+no continuation check. On MCU the `max-iter` bound becomes a
+`_Static_assert` friend; the generator can unroll or keep the loop based
+on a size-vs-speed attribute.
 
 ---
 

@@ -68,9 +68,11 @@ class CodecZenohUndeclToken:
         # Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         # dedicated helpers; everything else uses `present_if_encode_block`.
         _vle = int(self.id)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 4:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
         if self.ext_keyexpr is not None:
             self.ext_keyexpr.encode(w)

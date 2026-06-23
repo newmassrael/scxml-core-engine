@@ -91,7 +91,7 @@ impl<'a> CodecZenohOpenBody<'a> {
     /// against which `VecSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SliceSink` allocations.
-    pub const MAX_ENCODED_BYTES: usize = 158;
+    pub const MAX_ENCODED_BYTES: usize = 155;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
@@ -112,26 +112,32 @@ impl<'a> CodecZenohOpenBody<'a> {
         // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
         {
             let mut _vle = self.lease;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 8 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }
         {
             let mut _vle = self.initial_sn;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 8 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }
         if let Some(_v) = self.cookie_len {
         {
             let mut _vle = _v;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 8 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }

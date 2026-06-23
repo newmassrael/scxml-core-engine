@@ -161,11 +161,13 @@ func (s *CodecZenohDeclare) Encode(w codec.SceSink) error {
 		_v := *s.InterestId
 	{
 		_vle := uint64(_v)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 4 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err
@@ -188,7 +190,7 @@ func (s *CodecZenohDeclare) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly
 // against a caller-owned sink (e.g. BoundedSink over a stack buffer).
 func (s *CodecZenohDeclare) EncodeToBytes() []byte {
-	_dst := make([]byte, 0, 434)
+	_dst := make([]byte, 0, 430)
 	_ = s.Encode(codec.NewBytesSink(&_dst))
 	return _dst
 }

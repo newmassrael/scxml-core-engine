@@ -17,7 +17,7 @@
 #include "codec_zenoh_push_body.h"
 
 #define CODEC_ZENOH_REPLY_MIN_BYTES 2
-#define CODEC_ZENOH_REPLY_MAX_BYTES 430
+#define CODEC_ZENOH_REPLY_MAX_BYTES 426
 
 typedef struct {
     uint8_t header;
