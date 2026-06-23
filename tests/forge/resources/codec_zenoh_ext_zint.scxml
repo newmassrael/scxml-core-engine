@@ -4,7 +4,7 @@
 
      Mirrors zenoh-pico `_z_msg_ext_encode_zint` / `_z_msg_ext_decode_zint`
      (src/protocol/codec/ext.c lines 46-60): the ZInt-encoded extension
-     body is a single base-128 VLE u64 value, consuming 1..=10 wire
+     body is a single base-128 VLE u64 value, consuming 1..=9 wire
      bytes per the RFC §synth-5-B Appendix B continuation chain.
 
      Used as the `enc=0x01` arm of `codec_zenoh_ext_entry`. -->

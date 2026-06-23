@@ -2441,7 +2441,7 @@
     },
     "codec_vle_zint_u64": {
       "fixture": "CodecVleZintU64",
-      "signature": "base-128 LSB-first VLE; bit 7 = continuation",
+      "signature": "base-128 LSB-first VLE (canonical Zenoh ZInt); bit 7 = continuation except the final byte carries 8 data bits — u64 caps at 9 bytes",
       "cases": [
         {
           "decoded": {
@@ -2514,6 +2514,57 @@
         },
         {
           "decoded": {
+            "value": 72057594037927936
+          },
+          "encoded": [
+            128,
+            128,
+            128,
+            128,
+            128,
+            128,
+            128,
+            128,
+            1
+          ],
+          "note": "2^56: first 9-byte value (8 continuation bytes + 1 data bit in the 9th)"
+        },
+        {
+          "decoded": {
+            "value": 9223372036854775807
+          },
+          "encoded": [
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            255,
+            127
+          ],
+          "note": "2^63 - 1: last value whose 9th byte fits 7 bits (bit 7 clear)"
+        },
+        {
+          "decoded": {
+            "value": 9223372036854775808
+          },
+          "encoded": [
+            128,
+            128,
+            128,
+            128,
+            128,
+            128,
+            128,
+            128,
+            128
+          ],
+          "note": "2^63: first value with bit 63 set \u2014 9th byte reuses bit 7 as data (was 10 bytes pre-cap)"
+        },
+        {
+          "decoded": {
             "value": 18446744073709551615
           },
           "encoded": [
@@ -2525,10 +2576,9 @@
             255,
             255,
             255,
-            255,
-            1
+            255
           ],
-          "note": "u64::MAX \u2192 10 bytes"
+          "note": "u64::MAX \u2192 9 bytes (canonical Zenoh ZInt cap; 10 bytes would desync zenoh/zenoh-pico)"
         }
       ]
     },

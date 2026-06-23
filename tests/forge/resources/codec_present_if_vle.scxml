@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: present-if + VLE integer (RFC §synth-5-B present-if-gating).
      uint8 carrier `flags` gates an `optional_id` field encoded as a
-     base-128 VLE uint64 (1..=10 bytes on the wire). When `has_id` is
+     base-128 VLE uint64 (1..=9 bytes on the wire). When `has_id` is
      clear, the encoded frame is exactly 1 byte (just the carrier);
      when set, the frame grows by the actual VLE byte count. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

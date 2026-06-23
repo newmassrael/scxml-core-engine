@@ -18,7 +18,7 @@
 #include "codec_zenoh_err.h"
 
 #define CODEC_ZENOH_RESPONSE_MIN_BYTES 1
-#define CODEC_ZENOH_RESPONSE_MAX_BYTES 977
+#define CODEC_ZENOH_RESPONSE_MAX_BYTES 970
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
@@ -184,26 +184,32 @@ static inline sce_forge_codec_status_t codec_zenoh_response_encode(const codec_z
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
     {
         uint64_t _vle = (uint64_t)(self->request_id);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     {
         uint64_t _vle = (uint64_t)(self->key_id);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 4u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     if ((self->header & 0x20) != 0) {
     {
         uint64_t _vle = (uint64_t)(self->suffix_len);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

@@ -16,7 +16,7 @@
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_QUERY_MIN_BYTES 2
-#define CODEC_ZENOH_QUERY_MAX_BYTES 612
+#define CODEC_ZENOH_QUERY_MAX_BYTES 603
 
 typedef struct {
     uint8_t header;
@@ -131,9 +131,11 @@ static inline sce_forge_codec_status_t codec_zenoh_query_encode(const codec_zeno
     if ((self->header & 0x40) != 0) {
     {
         uint64_t _vle = (uint64_t)(self->parameters_len);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

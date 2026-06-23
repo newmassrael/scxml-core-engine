@@ -15,7 +15,7 @@
 #include "sce/forge/codec.h"
 
 #define CODEC_ZENOH_EXT_ZBUF_MIN_BYTES 0
-#define CODEC_ZENOH_EXT_ZBUF_MAX_BYTES 42
+#define CODEC_ZENOH_EXT_ZBUF_MAX_BYTES 41
 
 typedef struct {
     uint64_t value_len;
@@ -77,9 +77,11 @@ static inline sce_forge_codec_status_t codec_zenoh_ext_zbuf_encode(const codec_z
      * `present_if_encode_block`. */
     {
         uint64_t _vle = (uint64_t)(self->value_len);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

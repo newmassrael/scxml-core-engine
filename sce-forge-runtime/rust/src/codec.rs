@@ -251,40 +251,47 @@ impl<'a> SceCursor<'a> {
     }
 
     /// Read a base-128 variable-length encoded unsigned value of up to
-    /// `max_bits` payload width. Each byte carries 7 data bits in its
-    /// low 7; bit 7 is the continuation flag (1 = more bytes follow).
-    /// LSB-first byte order — the first byte's payload occupies the
-    /// low 7 bits of the result. Mirrors the Zenoh ZInt wire format
-    /// (RFC §synth-5-B Appendix B).
+    /// `max_bits` payload width. The leading bytes carry 7 data bits in
+    /// their low 7 with bit 7 as the continuation flag (1 = more bytes
+    /// follow); the final byte (at shift `7 * (VLE_LEN - 1)`) carries a
+    /// full 8 data bits with no continuation flag. LSB-first byte order.
+    /// This is the canonical Zenoh ZInt wire format (RFC §synth-5-B
+    /// Appendix B): a W-bit value occupies at most `ceil((W-1)/7)` bytes,
+    /// so a u64 caps at 9 bytes — bit 63 rides in the 9th byte's high
+    /// bit rather than spilling into a 10th byte, matching `zenoh` /
+    /// `zenoh-pico`.
     ///
-    /// Returns `VleWidthOverflow` when the continuation chain implies
-    /// a value wider than `max_bits` (either the wire is corrupt or
-    /// the codec author chose a too-narrow `vle_u<N>` type).
+    /// Returns `VleWidthOverflow` when the final byte of a sub-octet
+    /// width (the u16 / u32 tail) carries more bits than `max_bits`
+    /// allows (the wire is corrupt or a too-narrow `vle_u<N>` was used).
     fn read_vle_inner(&mut self, max_bits: u32) -> Result<u64, CodecError> {
-        let max_bytes = max_bits.div_ceil(7);
+        let vle_len = (max_bits - 1).div_ceil(7);
+        let final_shift = 7 * (vle_len - 1);
         let mut value: u64 = 0;
         let mut shift: u32 = 0;
-        for _ in 0..max_bytes {
+        for _ in 0..vle_len {
             let b = self.peek_slice(1)?[0];
             self.advance(1)?;
-            let payload = (b & 0x7F) as u64;
-            // On the final byte the type's max_bits may permit only a
-            // partial 7 bits; refuse payloads that would overflow it.
-            if shift + 7 > max_bits {
+            if shift == final_shift {
+                // Final byte: 8 data bits, the continuation bit reused as
+                // data. For a width narrower than the byte (u16 / u32
+                // tail) refuse a value that would overflow the remaining
+                // bits.
                 let allowed = max_bits - shift;
-                let max_payload = (1u64 << allowed) - 1;
-                if payload > max_payload {
+                if allowed < 8 && (b as u64) > (1u64 << allowed) - 1 {
                     return Err(CodecError::VleWidthOverflow);
                 }
+                value |= (b as u64) << shift;
+                return Ok(value);
             }
-            value |= payload << shift;
+            value |= ((b & 0x7F) as u64) << shift;
             if (b & 0x80) == 0 {
                 return Ok(value);
             }
             shift += 7;
         }
-        // Read max_bytes bytes but the last byte still set the
-        // continuation flag — value would not fit max_bits.
+        // The loop's final iteration always satisfies `shift ==
+        // final_shift` and returns; defensive unreachable for the type.
         Err(CodecError::VleWidthOverflow)
     }
 
@@ -298,7 +305,7 @@ impl<'a> SceCursor<'a> {
         self.read_vle_inner(32).map(|v| v as u32)
     }
 
-    /// Read a `vle_u64` field (1-10 wire bytes). Canonical Zenoh ZInt.
+    /// Read a `vle_u64` field (1-9 wire bytes). Canonical Zenoh ZInt.
     pub fn read_vle_u64(&mut self) -> Result<u64, CodecError> {
         self.read_vle_inner(64)
     }

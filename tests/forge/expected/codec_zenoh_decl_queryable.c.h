@@ -15,7 +15,7 @@
 #include "codec_zenoh_wireexpr.h"
 
 #define CODEC_ZENOH_DECL_QUERYABLE_MIN_BYTES 3
-#define CODEC_ZENOH_DECL_QUERYABLE_MAX_BYTES 274
+#define CODEC_ZENOH_DECL_QUERYABLE_MAX_BYTES 273
 
 typedef struct {
     uint32_t id;
@@ -100,9 +100,11 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode(const c
      * `present_if_encode_block`. */
     {
         uint64_t _vle = (uint64_t)(self->id);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 4u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
@@ -113,9 +115,11 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_queryable_encode(const c
     if ((z & 0x01) != 0) {
     {
         uint64_t _vle = (uint64_t)(self->ext_value);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

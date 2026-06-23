@@ -15,7 +15,7 @@
 #include "sce/forge/codec.h"
 
 #define CODEC_ZENOH_OPEN_BODY_MIN_BYTES 0
-#define CODEC_ZENOH_OPEN_BODY_MAX_BYTES 158
+#define CODEC_ZENOH_OPEN_BODY_MAX_BYTES 155
 
 typedef struct {
     uint64_t lease;
@@ -103,26 +103,32 @@ static inline sce_forge_codec_status_t codec_zenoh_open_body_encode(const codec_
      * `present_if_encode_block`. */
     {
         uint64_t _vle = (uint64_t)(self->lease);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     {
         uint64_t _vle = (uint64_t)(self->initial_sn);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }
     if ((a & 0x01) == 0) {
     {
         uint64_t _vle = (uint64_t)(self->cookie_len);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

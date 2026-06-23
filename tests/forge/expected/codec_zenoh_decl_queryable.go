@@ -87,11 +87,13 @@ func (s *CodecZenohDeclQueryable) Encode(w codec.SceSink, N byte, Z byte) error 
 	// dedicated helpers; everything else uses `present_if_encode_block`.
 	{
 		_vle := uint64(s.Id)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 4 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err
@@ -110,11 +112,13 @@ func (s *CodecZenohDeclQueryable) Encode(w codec.SceSink, N byte, Z byte) error 
 		_v := *s.ExtValue
 	{
 		_vle := uint64(_v)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 8 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err
@@ -129,7 +133,7 @@ func (s *CodecZenohDeclQueryable) Encode(w codec.SceSink, N byte, Z byte) error 
 // Callers targeting zero-alloc hot paths should call Encode directly
 // against a caller-owned sink (e.g. BoundedSink over a stack buffer).
 func (s *CodecZenohDeclQueryable) EncodeToBytes(N byte, Z byte) []byte {
-	_dst := make([]byte, 0, 274)
+	_dst := make([]byte, 0, 273)
 	_ = s.Encode(codec.NewBytesSink(&_dst), N, Z)
 	return _dst
 }

@@ -118,17 +118,21 @@ impl<'a> CodecZenohSourceInfo<'a> {
         w.write_bytes(self.zid)?;
         {
             let mut _vle = self.eid as u64;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 4 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }
         {
             let mut _vle = self.sn as u64;
-            while _vle >= 0x80 {
+            let mut _vn = 0u32;
+            while _vle >= 0x80 && _vn < 4 {
                 w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
                 _vle >>= 7;
+                _vn += 1;
             }
             w.write_u8(_vle as u8)?;
         }

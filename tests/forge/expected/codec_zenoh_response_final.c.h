@@ -16,7 +16,7 @@
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_RESPONSE_FINAL_MIN_BYTES 1
-#define CODEC_ZENOH_RESPONSE_FINAL_MAX_BYTES 183
+#define CODEC_ZENOH_RESPONSE_FINAL_MAX_BYTES 178
 
 typedef struct {
     uint8_t header;
@@ -102,9 +102,11 @@ static inline sce_forge_codec_status_t codec_zenoh_response_final_encode(const c
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
     {
         uint64_t _vle = (uint64_t)(self->request_id);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

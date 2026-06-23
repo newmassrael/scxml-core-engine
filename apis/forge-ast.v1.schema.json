@@ -645,7 +645,7 @@
           "type": "object"
         },
         {
-          "description": "Variable-length encoded integer (RFC §synth-5-B Appendix B). The `width_bits` cap (16/32/64) names the value-type max width; wire bytes consumed is `1..=ceil(width_bits / 7)`. Canonical Zenoh ZInt is `Vle { width_bits: 64 }`.",
+          "description": "Variable-length encoded integer (RFC §synth-5-B Appendix B). The `width_bits` cap (16/32/64) names the value-type max width; the wire occupies at most `ceil((width_bits - 1) / 7)` bytes — the canonical Zenoh ZInt cap, in which the final byte carries a full 8 data bits so a u64 tops out at 9 bytes (not 10). Canonical Zenoh ZInt is `Vle { width_bits: 64 }`.",
           "properties": {
             "type": {
               "enum": [

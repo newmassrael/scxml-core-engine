@@ -80,7 +80,7 @@ struct CodecPresentIfVle {
     /// against which `VectorSink::new` reserves capacity in the
     /// `encode_to_vec` facade, and the natural reserve hint for
     /// caller-owned `SpanSink` allocations.
-    static constexpr std::size_t MAX_ENCODED_BYTES = 11;
+    static constexpr std::size_t MAX_ENCODED_BYTES = 10;
 
     /// Encode `self` into the caller-owned sink. Returns
     /// `CodecError::BufferOverflow` from a bounded sink when the
@@ -100,9 +100,11 @@ struct CodecPresentIfVle {
             auto _v = *optional_id;
         {
             std::uint64_t _w = static_cast<std::uint64_t>(_v);
-            while (_w >= 0x80) {
+            std::uint32_t _vn = 0;
+            while (_w >= 0x80 && _vn < 8) {
                 if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
                 _w >>= 7;
+                ++_vn;
             }
             if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
         }

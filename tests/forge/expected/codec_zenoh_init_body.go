@@ -192,11 +192,13 @@ func (s *CodecZenohInitBody) Encode(w codec.SceSink, S byte, A byte) error {
 		_v := *s.CookieLen
 	{
 		_vle := uint64(_v)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 8 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err
@@ -216,7 +218,7 @@ func (s *CodecZenohInitBody) Encode(w codec.SceSink, S byte, A byte) error {
 // Callers targeting zero-alloc hot paths should call Encode directly
 // against a caller-owned sink (e.g. BoundedSink over a stack buffer).
 func (s *CodecZenohInitBody) EncodeToBytes(S byte, A byte) []byte {
-	_dst := make([]byte, 0, 160)
+	_dst := make([]byte, 0, 159)
 	_ = s.Encode(codec.NewBytesSink(&_dst), S, A)
 	return _dst
 }

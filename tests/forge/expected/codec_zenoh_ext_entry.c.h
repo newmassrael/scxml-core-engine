@@ -17,7 +17,7 @@
 #include "codec_zenoh_ext_zbuf.h"
 
 #define CODEC_ZENOH_EXT_ENTRY_MIN_BYTES 1
-#define CODEC_ZENOH_EXT_ENTRY_MAX_BYTES 43
+#define CODEC_ZENOH_EXT_ENTRY_MAX_BYTES 42
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`

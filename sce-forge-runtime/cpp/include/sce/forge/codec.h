@@ -86,12 +86,14 @@ public:
     }
 
     /// Read a base-128 variable-length encoded unsigned value of up to
-    /// `max_bits` payload width. Each byte carries 7 data bits in its
-    /// low 7; bit 7 is the continuation flag. LSB-first byte order.
-    /// Returns `std::nullopt` on `NeedMoreBytes` and signals
-    /// `VleWidthOverflow` via `last_vle_overflow()` flag — split from
-    /// the std::optional return to keep the hot decode path branch-light.
-    /// Mirrors the Zenoh ZInt wire format (RFC §synth-5-B Appendix B).
+    /// `max_bits` payload width. The leading bytes carry 7 data bits in
+    /// their low 7 with bit 7 as the continuation flag; the final byte
+    /// (at shift `7 * (VLE_LEN - 1)`) carries a full 8 data bits with no
+    /// continuation flag. LSB-first byte order. Returns `std::nullopt`
+    /// on `NeedMoreBytes` and signals `VleWidthOverflow` via
+    /// `last_vle_overflow()` flag — split from the std::optional return
+    /// to keep the hot decode path branch-light. Canonical Zenoh ZInt
+    /// wire format (RFC §synth-5-B Appendix B): a u64 caps at 9 bytes.
     std::optional<std::uint64_t> read_vle_u16() noexcept { return read_vle_inner(16); }
     std::optional<std::uint64_t> read_vle_u32() noexcept { return read_vle_inner(32); }
     std::optional<std::uint64_t> read_vle_u64() noexcept { return read_vle_inner(64); }
@@ -101,23 +103,29 @@ public:
 private:
     std::optional<std::uint64_t> read_vle_inner(std::uint32_t max_bits) noexcept {
         vle_overflow_ = false;
-        const std::uint32_t max_bytes = (max_bits + 6) / 7;
+        // Canonical Zenoh ZInt: ceil((W-1)/7) bytes (u64 -> 9, not 10);
+        // the final byte carries a full 8 data bits, no continuation.
+        const std::uint32_t vle_len = (max_bits - 1 + 6) / 7;
+        const std::uint32_t final_shift = 7 * (vle_len - 1);
         std::uint64_t value = 0;
         std::uint32_t shift = 0;
-        for (std::uint32_t i = 0; i < max_bytes; ++i) {
+        for (std::uint32_t i = 0; i < vle_len; ++i) {
             const std::uint8_t* p = peek_slice(1);
             if (p == nullptr) return std::nullopt;
             (void)advance(1);
-            const std::uint64_t payload = static_cast<std::uint64_t>(*p & 0x7F);
-            if (shift + 7 > max_bits) {
+            if (shift == final_shift) {
+                // Final byte: 8 data bits, continuation bit reused as
+                // data. For a sub-octet tail (u16 / u32) refuse a value
+                // that would overflow the remaining bits.
                 const std::uint32_t allowed = max_bits - shift;
-                const std::uint64_t max_payload = (1ULL << allowed) - 1ULL;
-                if (payload > max_payload) {
+                if (allowed < 8 && static_cast<std::uint64_t>(*p) > (1ULL << allowed) - 1ULL) {
                     vle_overflow_ = true;
                     return std::nullopt;
                 }
+                value |= static_cast<std::uint64_t>(*p) << shift;
+                return value;
             }
-            value |= payload << shift;
+            value |= static_cast<std::uint64_t>(*p & 0x7F) << shift;
             if ((*p & 0x80) == 0) {
                 return value;
             }
