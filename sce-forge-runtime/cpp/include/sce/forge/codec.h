@@ -273,6 +273,33 @@ public:
         };
         return write_bytes(buf, 8);
     }
+
+    /// Append `value` as a base-128 VLE of `max_bits` payload width. The
+    /// write-side counterpart of SceCursor::read_vle_inner: leading
+    /// bytes carry 7 data bits + a continuation flag; the final byte
+    /// (after at most VLE_LEN-1 continuation bytes) carries a full 8 data
+    /// bits with no flag, so a u64 caps at 9 bytes — canonical Zenoh
+    /// ZInt (RFC §synth-5-B Appendix B). VLE_LEN = ceil((max_bits-1)/7).
+    [[nodiscard]] std::optional<CodecError> write_vle_inner(std::uint64_t value, std::uint32_t max_bits) noexcept {
+        const std::uint32_t cont_max = (max_bits - 1 + 6) / 7 - 1;
+        std::uint64_t v = value;
+        std::uint32_t n = 0;
+        while (v >= 0x80 && n < cont_max) {
+            if (auto _e = write_u8(static_cast<std::uint8_t>((v & 0x7F) | 0x80))) return _e;
+            v >>= 7;
+            ++n;
+        }
+        return write_u8(static_cast<std::uint8_t>(v));
+    }
+    [[nodiscard]] std::optional<CodecError> write_vle_u16(std::uint16_t v) noexcept {
+        return write_vle_inner(v, 16);
+    }
+    [[nodiscard]] std::optional<CodecError> write_vle_u32(std::uint32_t v) noexcept {
+        return write_vle_inner(v, 32);
+    }
+    [[nodiscard]] std::optional<CodecError> write_vle_u64(std::uint64_t v) noexcept {
+        return write_vle_inner(v, 64);
+    }
 };
 
 /// Heap-backed sink over a caller-owned `std::vector<uint8_t>&`. The

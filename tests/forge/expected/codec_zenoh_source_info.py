@@ -89,20 +89,8 @@ class CodecZenohSourceInfo:
         # dedicated helpers; everything else uses `present_if_encode_block`.
         w.write_u8(self.header & 0xFF)
         w.write_bytes(self.zid)
-        _vle = int(self.eid)
-        _vn = 0
-        while _vle >= 0x80 and _vn < 4:
-            w.write_u8((_vle & 0x7F) | 0x80)
-            _vle >>= 7
-            _vn += 1
-        w.write_u8(_vle)
-        _vle = int(self.sn)
-        _vn = 0
-        while _vle >= 0x80 and _vn < 4:
-            w.write_u8((_vle & 0x7F) | 0x80)
-            _vle >>= 7
-            _vn += 1
-        w.write_u8(_vle)
+        w.write_vle_u32(self.eid)
+        w.write_vle_u32(self.sn)
 
     def encode_to_bytes(self) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

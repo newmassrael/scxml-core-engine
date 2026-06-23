@@ -181,20 +181,8 @@ class CodecZenohResponse:
         # RFC §synth-5-B peek-byte / streaming-prefix:
         # streaming prefix encode.
         w.write_u8(self.header & 0xFF)
-        _vle = int(self.request_id)
-        _vn = 0
-        while _vle >= 0x80 and _vn < 8:
-            w.write_u8((_vle & 0x7F) | 0x80)
-            _vle >>= 7
-            _vn += 1
-        w.write_u8(_vle)
-        _vle = int(self.key_id)
-        _vn = 0
-        while _vle >= 0x80 and _vn < 4:
-            w.write_u8((_vle & 0x7F) | 0x80)
-            _vle >>= 7
-            _vn += 1
-        w.write_u8(_vle)
+        w.write_vle_u64(self.request_id)
+        w.write_vle_u32(self.key_id)
         if self.suffix_len is not None:
             _vle = int(self.suffix_len)
             while _vle >= 0x80:

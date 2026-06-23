@@ -178,16 +178,7 @@ impl<'a> CodecZenohDeclare<'a> {
         // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
         w.write_u8(self.header)?;
         if let Some(_v) = self.interest_id {
-        {
-            let mut _vle = _v as u64;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 4 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
+        w.write_vle_u32(_v)?;
         }
         if let Some(_list) = &self.extensions {
             for _e in _list {

@@ -217,19 +217,8 @@ func (s *CodecZenohRequest) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.Header }); err != nil {
 		return err
 	}
-	{
-		_vle := uint64(s.Rid)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 8 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU64(w, uint64(s.Rid)); err != nil {
+		return err
 	}
 	if err := s.Keyexpr.Encode(w, byte((s.Header >> 5) & 0x1)); err != nil {
 		return err

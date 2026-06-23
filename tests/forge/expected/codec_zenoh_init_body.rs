@@ -184,16 +184,7 @@ impl<'a> CodecZenohInitBody<'a> {
             w.write_u8((_v >> 8 & 0xFF) as u8)?;
         }
         if let Some(_v) = self.cookie_len {
-        {
-            let mut _vle = _v;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 8 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
+        w.write_vle_u64(_v)?;
         }
         if let Some(_v) = &self.cookie {
             w.write_bytes(_v)?;

@@ -92,16 +92,7 @@ impl<'a> CodecZenohTimestampExt<'a> {
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`
         // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
-        {
-            let mut _vle = self.ext_size;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 8 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
+        w.write_vle_u64(self.ext_size)?;
         self.ts.encode(w)?;
         Ok(())
     }

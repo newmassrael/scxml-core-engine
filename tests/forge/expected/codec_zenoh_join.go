@@ -178,47 +178,14 @@ func (s *CodecZenohJoin) Encode(w codec.SceSink, S byte) error {
 			return err
 		}
 	}
-	{
-		_vle := uint64(s.Lease)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 8 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU64(w, uint64(s.Lease)); err != nil {
+		return err
 	}
-	{
-		_vle := uint64(s.NextSnReliable)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 8 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU64(w, uint64(s.NextSnReliable)); err != nil {
+		return err
 	}
-	{
-		_vle := uint64(s.NextSnBestEffort)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 8 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU64(w, uint64(s.NextSnBestEffort)); err != nil {
+		return err
 	}
 	return nil
 }

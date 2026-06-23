@@ -148,6 +148,37 @@ func (c *SceCursor) ReadVLEU64() (uint64, error) {
 	return c.readVLEInner(64)
 }
 
+// writeVLEInner appends value to w as a base-128 VLE of maxBits payload
+// width. The write-side counterpart of (*SceCursor).readVLEInner:
+// leading bytes carry 7 data bits + a continuation flag; the final byte
+// (after at most VLE_LEN-1 continuation bytes) carries a full 8 data
+// bits with no flag, so a u64 caps at 9 bytes — canonical Zenoh ZInt
+// (RFC §synth-5-B Appendix B). VLE_LEN = ceil((maxBits-1)/7). The sink
+// is an interface (no concrete cursor to hang a method on), so the VLE
+// writers are package functions over it, mirroring the ReadVLE* methods.
+func writeVLEInner(w SceSink, value uint64, maxBits uint32) error {
+	contMax := (maxBits-1+6)/7 - 1
+	v := value
+	var n uint32
+	for v >= 0x80 && n < contMax {
+		if err := w.WriteBytes([]byte{byte(v&0x7F) | 0x80}); err != nil {
+			return err
+		}
+		v >>= 7
+		n++
+	}
+	return w.WriteBytes([]byte{byte(v)})
+}
+
+// WriteVLEU16 appends a vle_u16 field (1-3 wire bytes).
+func WriteVLEU16(w SceSink, v uint16) error { return writeVLEInner(w, uint64(v), 16) }
+
+// WriteVLEU32 appends a vle_u32 field (1-5 wire bytes).
+func WriteVLEU32(w SceSink, v uint32) error { return writeVLEInner(w, uint64(v), 32) }
+
+// WriteVLEU64 appends a vle_u64 field (1-9 wire bytes). Canonical Zenoh ZInt.
+func WriteVLEU64(w SceSink, v uint64) error { return writeVLEInner(w, v, 64) }
+
 // ── Write-side sink ──────────────────────────────────────────────
 
 // SceSink is the write-side cursor for codec emit. Generated `Encode`

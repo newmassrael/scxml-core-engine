@@ -242,37 +242,10 @@ impl<'a> CodecZenohResponse<'a> {
         // variant): the carrier is part of the prefix fields and emits
         // through the same per-field path.
         w.write_u8(self.header)?;
-        {
-            let mut _vle = self.request_id;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 8 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
-        {
-            let mut _vle = self.key_id as u64;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 4 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
+        w.write_vle_u64(self.request_id)?;
+        w.write_vle_u32(self.key_id)?;
         if let Some(_v) = self.suffix_len {
-        {
-            let mut _vle = _v;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 8 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
+        w.write_vle_u64(_v)?;
         }
         if let Some(_v) = &self.suffix {
             w.write_bytes(_v.as_bytes())?;

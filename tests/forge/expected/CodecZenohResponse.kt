@@ -105,37 +105,10 @@ data class CodecZenohResponse(
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
         w.writeU8(this.header.toByte())?.let { return it }
-        run {
-            var _vle: ULong = (request_id).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 8) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
-        run {
-            var _vle: ULong = (key_id).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 4) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
+        w.writeVleU64((request_id).toULong())?.let { return it }
+        w.writeVleU32((key_id).toUInt())?.let { return it }
         this.suffix_len?.let { _v ->
-        run {
-            var _vle: ULong = (_v).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 8) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
+        w.writeVleU64((_v).toULong())?.let { return it }
         }
         this.suffix?.let { _v ->
             w.writeBytes(_v.toByteArray(Charsets.UTF_8))?.let { return it }

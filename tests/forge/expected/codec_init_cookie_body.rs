@@ -114,16 +114,7 @@ impl<'a> CodecInitCookieBody<'a> {
         // (its non-gated arm covers plain fixed / tail / length-ref / VLE).
         w.write_u8(self.version)?;
         if let Some(_v) = self.cookie_size {
-        {
-            let mut _vle = _v as u64;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 2 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
+        w.write_vle_u16(_v)?;
         }
         if let Some(_v) = &self.cookie {
             w.write_bytes(_v)?;

@@ -190,6 +190,35 @@ class SceSink(_abc.ABC):
         """Append a single byte (``0 ≤ v < 256``)."""
         self.write_bytes(bytes((v & 0xFF,)))
 
+    def _write_vle_inner(self, value: int, max_bits: int) -> None:
+        """Append ``value`` as a base-128 VLE of ``max_bits`` payload
+        width. The write-side counterpart of
+        :meth:`SceCursor._read_vle_inner`: leading bytes carry 7 data
+        bits + a continuation flag; the final byte (after at most
+        VLE_LEN-1 continuation bytes) carries a full 8 data bits with no
+        flag, so a u64 caps at 9 bytes — canonical Zenoh ZInt (RFC
+        §synth-5-B Appendix B). VLE_LEN = ceil((max_bits-1)/7)."""
+        cont_max = (max_bits - 1 + 6) // 7 - 1
+        v = value
+        n = 0
+        while v >= 0x80 and n < cont_max:
+            self.write_u8((v & 0x7F) | 0x80)
+            v >>= 7
+            n += 1
+        self.write_u8(v)
+
+    def write_vle_u16(self, v: int) -> None:
+        """Append a vle_u16 field (1-3 wire bytes)."""
+        self._write_vle_inner(v, 16)
+
+    def write_vle_u32(self, v: int) -> None:
+        """Append a vle_u32 field (1-5 wire bytes)."""
+        self._write_vle_inner(v, 32)
+
+    def write_vle_u64(self, v: int) -> None:
+        """Append a vle_u64 field (1-9 wire bytes). Canonical Zenoh ZInt."""
+        self._write_vle_inner(v, 64)
+
     def write_u16_le(self, v: int) -> None:
         self.write_bytes(bytes(((v & 0xFF), ((v >> 8) & 0xFF))))
 
