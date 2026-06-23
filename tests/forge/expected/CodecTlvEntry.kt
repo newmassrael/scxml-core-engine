@@ -54,13 +54,14 @@ data class CodecTlvEntry(
             val entry_type = raw[0].toUByte()
             val entry_len = raw[1].toUByte()
             val entry_body = raw.copyOfRange(2, 2 + entry_len.toInt())
-            val value = CodecTlvEntry(
+            if (!cursor.advance(frameLen)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecTlvEntry(
                 entry_type = entry_type,
                 entry_len = entry_len,
                 entry_body = entry_body
             )
-            if (!cursor.advance(frameLen)) return null
-            return value
         }
     }
 }

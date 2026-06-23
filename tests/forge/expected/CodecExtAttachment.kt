@@ -51,12 +51,13 @@ data class CodecExtAttachment(
             val raw = cursor.peekSlice(frameLen) ?: return null
             val length = raw[0].toUByte()
             val body = raw.copyOfRange(1, 1 + length.toInt())
-            val value = CodecExtAttachment(
+            if (!cursor.advance(frameLen)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecExtAttachment(
                 length = length,
                 body = body
             )
-            if (!cursor.advance(frameLen)) return null
-            return value
         }
     }
 }

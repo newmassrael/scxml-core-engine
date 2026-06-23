@@ -46,11 +46,12 @@ data class CodecVariantSessionClose(
         fun decode(cursor: SceCursor): CodecVariantSessionClose? {
             val raw = cursor.peekSlice(1) ?: return null
             val reason = raw[0].toUByte()
-            val value = CodecVariantSessionClose(
+            if (!cursor.advance(1)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecVariantSessionClose(
                 reason = reason
             )
-            if (!cursor.advance(1)) return null
-            return value
         }
     }
 }

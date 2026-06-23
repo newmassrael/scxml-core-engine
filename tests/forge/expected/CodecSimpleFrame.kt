@@ -53,13 +53,14 @@ data class CodecSimpleFrame(
             val msgId = raw[0].toUByte()
             val length = raw[1].toUByte()
             val payload = (((raw[2].toInt() and 0xFF) shl 8) or (raw[3].toInt() and 0xFF)).toUShort()
-            val value = CodecSimpleFrame(
+            if (!cursor.advance(4)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecSimpleFrame(
                 msgId = msgId,
                 length = length,
                 payload = payload
             )
-            if (!cursor.advance(4)) return null
-            return value
         }
     }
 }

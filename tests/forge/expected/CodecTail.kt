@@ -54,13 +54,14 @@ data class CodecTail(
             val msgId = raw[0].toUByte()
             val status = raw[1].toUByte()
             val payload = raw.copyOfRange(2, raw.size)
-            val value = CodecTail(
+            if (!cursor.advance(frameLen)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecTail(
                 msgId = msgId,
                 status = status,
                 payload = payload
             )
-            if (!cursor.advance(frameLen)) return null
-            return value
         }
     }
 }

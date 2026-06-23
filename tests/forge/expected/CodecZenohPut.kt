@@ -46,11 +46,12 @@ data class CodecZenohPut(
         fun decode(cursor: SceCursor): CodecZenohPut? {
             val raw = cursor.peekSlice(1) ?: return null
             val payload = raw[0].toUByte()
-            val value = CodecZenohPut(
+            if (!cursor.advance(1)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecZenohPut(
                 payload = payload
             )
-            if (!cursor.advance(1)) return null
-            return value
         }
     }
 }
