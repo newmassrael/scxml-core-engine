@@ -78,9 +78,11 @@ static inline sce_forge_codec_status_t codec_zenoh_undecl_subscriber_encode(cons
      * `present_if_encode_block`. */
     {
         uint64_t _vle = (uint64_t)(self->id);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 4u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

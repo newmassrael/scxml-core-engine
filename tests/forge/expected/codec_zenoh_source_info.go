@@ -107,11 +107,13 @@ func (s *CodecZenohSourceInfo) Encode(w codec.SceSink) error {
 	}
 	{
 		_vle := uint64(s.Eid)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 4 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err
@@ -119,11 +121,13 @@ func (s *CodecZenohSourceInfo) Encode(w codec.SceSink) error {
 	}
 	{
 		_vle := uint64(s.Sn)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 4 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err

@@ -16,7 +16,7 @@
 #include "codec_zenoh_ext_entry.h"
 
 #define CODEC_ZENOH_EXT_ENVELOPE_MIN_BYTES 1
-#define CODEC_ZENOH_EXT_ENVELOPE_MAX_BYTES 345
+#define CODEC_ZENOH_EXT_ENVELOPE_MAX_BYTES 337
 
 typedef struct {
     uint8_t header_flags;

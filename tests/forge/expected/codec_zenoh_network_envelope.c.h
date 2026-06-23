@@ -21,7 +21,7 @@
 #include "codec_zenoh_oam.h"
 
 #define CODEC_ZENOH_NETWORK_ENVELOPE_MIN_BYTES 0
-#define CODEC_ZENOH_NETWORK_ENVELOPE_MAX_BYTES 1218
+#define CODEC_ZENOH_NETWORK_ENVELOPE_MAX_BYTES 1212
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`

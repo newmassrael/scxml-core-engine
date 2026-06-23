@@ -19,7 +19,7 @@
 #include "codec_zenoh_ext_zbuf.h"
 
 #define CODEC_ZENOH_OAM_MIN_BYTES 1
-#define CODEC_ZENOH_OAM_MAX_BYTES 46
+#define CODEC_ZENOH_OAM_MAX_BYTES 45
 
 /* RFC §synth-5-B variant primitive: tagged-union body for the codec's
  * tag-field suffix. `kind` discriminates the active arm; `default_tag`
@@ -151,9 +151,11 @@ static inline sce_forge_codec_status_t codec_zenoh_oam_encode(const codec_zenoh_
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
     {
         uint64_t _vle = (uint64_t)(self->id);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 2u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

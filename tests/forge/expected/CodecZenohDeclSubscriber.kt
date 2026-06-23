@@ -37,9 +37,11 @@ data class CodecZenohDeclSubscriber(
         // dedicated helpers; everything else uses `present_if_encode_block`.
         run {
             var _vle: ULong = (id).toULong()
-            while (_vle >= 0x80UL) {
+            var _vn = 0
+            while (_vle >= 0x80UL && _vn < 4) {
                 w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
                 _vle = _vle shr 7
+                _vn++
             }
             w.writeU8(_vle.toByte())?.let { return it }
         }

@@ -106,24 +106,30 @@ class SceCursor:
 
     def _read_vle_inner(self, max_bits: int) -> int:
         """Read a base-128 variable-length encoded unsigned value of up
-        to ``max_bits`` payload width. LSB-first byte order; bit 7 is
-        the continuation flag. Mirrors Zenoh ZInt (RFC §5.B Appendix B).
+        to ``max_bits`` payload width. LSB-first byte order; leading
+        bytes use bit 7 as the continuation flag, while the final byte
+        (at shift ``7 * (VLE_LEN - 1)``) carries a full 8 data bits with
+        no flag. Canonical Zenoh ZInt (RFC §5.B Appendix B):
+        ceil((W-1)/7) bytes max, so a u64 caps at 9 bytes, not 10.
         """
-        max_bytes = (max_bits + 6) // 7
+        vle_len = (max_bits - 1 + 6) // 7
+        final_shift = 7 * (vle_len - 1)
         value = 0
         shift = 0
-        for _ in range(max_bytes):
+        for _ in range(vle_len):
             if self.remaining() < 1:
                 raise NeedMoreBytes()
             b = self._buf[self._pos]
             self._pos += 1
-            payload = b & 0x7F
-            if shift + 7 > max_bits:
+            if shift == final_shift:
+                # Final byte: 8 data bits, continuation bit reused as
+                # data. For a sub-octet tail (u16 / u32) refuse overflow.
                 allowed = max_bits - shift
-                max_payload = (1 << allowed) - 1
-                if payload > max_payload:
+                if allowed < 8 and b > (1 << allowed) - 1:
                     raise VleWidthOverflow()
-            value |= payload << shift
+                value |= b << shift
+                return value
+            value |= (b & 0x7F) << shift
             if (b & 0x80) == 0:
                 return value
             shift += 7
@@ -138,7 +144,7 @@ class SceCursor:
         return self._read_vle_inner(32)
 
     def read_vle_u64(self) -> int:
-        """Read a vle_u64 field (1-10 wire bytes). Canonical Zenoh ZInt."""
+        """Read a vle_u64 field (1-9 wire bytes). Canonical Zenoh ZInt."""
         return self._read_vle_inner(64)
 
 

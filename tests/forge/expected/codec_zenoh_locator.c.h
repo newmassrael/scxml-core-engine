@@ -15,7 +15,7 @@
 #include "sce/forge/codec.h"
 
 #define CODEC_ZENOH_LOCATOR_MIN_BYTES 0
-#define CODEC_ZENOH_LOCATOR_MAX_BYTES 138
+#define CODEC_ZENOH_LOCATOR_MAX_BYTES 137
 
 typedef struct {
     uint64_t locator_len;
@@ -82,9 +82,11 @@ static inline sce_forge_codec_status_t codec_zenoh_locator_encode(const codec_ze
      * `present_if_encode_block`. */
     {
         uint64_t _vle = (uint64_t)(self->locator_len);
-        while (_vle >= 0x80u) {
+        uint32_t _vn = 0u;
+        while (_vle >= 0x80u && _vn < 8u) {
             SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
             _vle >>= 7;
+            _vn++;
         }
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
     }

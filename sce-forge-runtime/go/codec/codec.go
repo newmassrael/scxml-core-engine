@@ -96,27 +96,33 @@ func (c *SceCursor) Advance(n int) error {
 }
 
 // readVLEInner reads a base-128 variable-length encoded unsigned value
-// of up to maxBits payload width. LSB-first byte order; bit 7 is the
-// continuation flag. Mirrors Zenoh ZInt (RFC §synth-5-B Appendix B).
+// of up to maxBits payload width. LSB-first byte order; leading bytes
+// use bit 7 as the continuation flag, while the final byte (at shift
+// 7*(VLE_LEN-1)) carries a full 8 data bits with no flag. Canonical
+// Zenoh ZInt (RFC §synth-5-B Appendix B): ceil((W-1)/7) bytes max, so a
+// u64 caps at 9 bytes, not 10.
 func (c *SceCursor) readVLEInner(maxBits uint32) (uint64, error) {
-	maxBytes := (maxBits + 6) / 7
+	vleLen := (maxBits - 1 + 6) / 7
+	finalShift := 7 * (vleLen - 1)
 	var value uint64
 	var shift uint32
-	for i := uint32(0); i < maxBytes; i++ {
+	for i := uint32(0); i < vleLen; i++ {
 		if c.Remaining() < 1 {
 			return 0, ErrNeedMoreBytes
 		}
 		b := c.buf[c.pos]
 		c.pos++
-		payload := uint64(b & 0x7F)
-		if shift+7 > maxBits {
+		if shift == finalShift {
+			// Final byte: 8 data bits, continuation bit reused as data.
+			// For a sub-octet tail (u16 / u32) refuse overflow.
 			allowed := maxBits - shift
-			maxPayload := (uint64(1) << allowed) - 1
-			if payload > maxPayload {
+			if allowed < 8 && uint64(b) > (uint64(1)<<allowed)-1 {
 				return 0, ErrVLEWidthOverflow
 			}
+			value |= uint64(b) << shift
+			return value, nil
 		}
-		value |= payload << shift
+		value |= uint64(b&0x7F) << shift
 		if (b & 0x80) == 0 {
 			return value, nil
 		}
@@ -137,7 +143,7 @@ func (c *SceCursor) ReadVLEU32() (uint32, error) {
 	return uint32(v), err
 }
 
-// ReadVLEU64 reads a vle_u64 field (1-10 wire bytes). Canonical Zenoh ZInt.
+// ReadVLEU64 reads a vle_u64 field (1-9 wire bytes). Canonical Zenoh ZInt.
 func (c *SceCursor) ReadVLEU64() (uint64, error) {
 	return c.readVLEInner(64)
 }

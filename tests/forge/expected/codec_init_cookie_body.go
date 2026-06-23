@@ -90,11 +90,13 @@ func (s *CodecInitCookieBody) Encode(w codec.SceSink, A byte) error {
 		_v := *s.CookieSize
 	{
 		_vle := uint64(_v)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 2 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err

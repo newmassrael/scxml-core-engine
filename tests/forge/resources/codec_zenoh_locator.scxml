@@ -20,7 +20,7 @@
      surface for `<sce:field sce:type="string">`.
 
      Wire shape:
-       byte 0+ : locator_len  (VLE u64, 1..=10 bytes, max-size 128)
+       byte 0+ : locator_len  (VLE u64, 1..=9 bytes, max-size 128)
        bytes   : locator      (UTF-8 string, length=locator_len, max 128) -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"

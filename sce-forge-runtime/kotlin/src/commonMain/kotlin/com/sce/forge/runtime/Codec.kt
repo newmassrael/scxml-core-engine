@@ -61,9 +61,11 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
     }
 
     /// Read a base-128 variable-length encoded unsigned value of up to
-    /// `maxBits` payload width. LSB-first byte order; bit 7 is the
-    /// continuation flag. Mirrors the Zenoh ZInt wire format
-    /// (RFC §synth-5-B Appendix B).
+    /// `maxBits` payload width. LSB-first byte order; leading bytes use
+    /// bit 7 as the continuation flag, while the final byte (at shift
+    /// `7 * (VLE_LEN - 1)`) carries a full 8 data bits with no flag.
+    /// Canonical Zenoh ZInt wire format (RFC §synth-5-B Appendix B):
+    /// ceil((W-1)/7) bytes max, so a u64 caps at 9 bytes, not 10.
     ///
     /// Returns the decoded value as `Long` (Kotlin lacks unsigned long
     /// in the common API surface — caller casts to ULong as needed).
@@ -78,23 +80,26 @@ class SceCursor(private val buf: ByteArray, private var pos: Int = 0) {
 
     private fun readVleInner(maxBits: Int): Long? {
         lastVleOverflow = false
-        val maxBytes = (maxBits + 6) / 7
+        val vleLen = (maxBits - 1 + 6) / 7
+        val finalShift = 7 * (vleLen - 1)
         var value: Long = 0
         var shift = 0
-        for (i in 0 until maxBytes) {
+        for (i in 0 until vleLen) {
             if (remaining() < 1) return null
             val b = buf[pos].toInt() and 0xFF
             pos += 1
-            val payload = (b and 0x7F).toLong()
-            if (shift + 7 > maxBits) {
+            if (shift == finalShift) {
+                // Final byte: 8 data bits, continuation bit reused as
+                // data. For a sub-octet tail (u16 / u32) refuse overflow.
                 val allowed = maxBits - shift
-                val maxPayload = (1L shl allowed) - 1L
-                if (payload > maxPayload) {
+                if (allowed < 8 && b.toLong() > (1L shl allowed) - 1L) {
                     lastVleOverflow = true
                     return null
                 }
+                value = value or (b.toLong() shl shift)
+                return value
             }
-            value = value or (payload shl shift)
+            value = value or ((b and 0x7F).toLong() shl shift)
             if ((b and 0x80) == 0) {
                 return value
             }

@@ -173,9 +173,11 @@ class CodecZenohRequest:
         # streaming prefix encode.
         w.write_u8(self.header & 0xFF)
         _vle = int(self.rid)
-        while _vle >= 0x80:
+        _vn = 0
+        while _vle >= 0x80 and _vn < 8:
             w.write_u8((_vle & 0x7F) | 0x80)
             _vle >>= 7
+            _vn += 1
         w.write_u8(_vle)
         self.keyexpr.encode(w, ((self.header >> 5) & 0x1))
         if self.extensions is not None:

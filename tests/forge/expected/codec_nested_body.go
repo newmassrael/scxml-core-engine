@@ -88,7 +88,7 @@ func (s *CodecNestedBody) Encode(w codec.SceSink) error {
 // Callers targeting zero-alloc hot paths should call Encode directly
 // against a caller-owned sink (e.g. BoundedSink over a stack buffer).
 func (s *CodecNestedBody) EncodeToBytes() []byte {
-	_dst := make([]byte, 0, 553)
+	_dst := make([]byte, 0, 549)
 	_ = s.Encode(codec.NewBytesSink(&_dst))
 	return _dst
 }

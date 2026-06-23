@@ -65,11 +65,13 @@ func (s *CodecZenohDeclSubscriber) Encode(w codec.SceSink, N byte) error {
 	// dedicated helpers; everything else uses `present_if_encode_block`.
 	{
 		_vle := uint64(s.Id)
-		for _vle >= 0x80 {
+		_vn := 0
+		for _vle >= 0x80 && _vn < 4 {
 			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
 				return err
 			}
 			_vle >>= 7
+			_vn++
 		}
 		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
 			return err

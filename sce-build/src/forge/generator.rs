@@ -3317,7 +3317,11 @@ fn render_codec(
             if f.is_variable_length() {
                 if let BitSize::Vle { width_bits } = &f.bit_size {
                     obj.insert("vle_width_bits".into(), (*width_bits).into());
-                    obj.insert("vle_max_bytes".into(), width_bits.div_ceil(7).into());
+                    // Canonical Zenoh ZInt caps a W-bit VLE at
+                    // ceil((W-1)/7) bytes — the final byte carries a full
+                    // 8 data bits (no continuation flag), so a u64 never
+                    // spills into a 10th byte (RFC §synth-5-B App. B).
+                    obj.insert("vle_max_bytes".into(), vle_cap_bytes(*width_bits).into());
                     obj.insert("bit_size_kind".into(), "vle".into());
                     obj.insert(
                         "vle_decode_stmt".into(),
@@ -11617,8 +11621,15 @@ fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Lang
 
 /// Per-language VLE encode block: emits the base-128 byte loop into the
 /// language's encode buffer accumulator (`r` for Rust/Cpp/Kotlin/Go,
-/// bytearray for Python, `r.bytes[pos++]` for C11). Width is captured
-/// only for cast/type names — the loop logic is identical across widths.
+/// bytearray for Python, `r.bytes[pos++]` for C11).
+///
+/// Canonical Zenoh ZInt form (RFC §synth-5-B App. B): at most
+/// [`vle_cap_bytes`] bytes are written. The loop emits at most
+/// `VLE_LEN - 1` continuation bytes (7 data bits + flag each); the
+/// trailing `write_u8` then writes the remaining value as one full
+/// 8-bit byte with no continuation flag. For u64 this caps the wire at
+/// 9 bytes — the value's bit 63 rides in the 9th byte's high bit rather
+/// than spilling into a 10th byte, matching `zenoh` / `zenoh-pico`.
 ///
 /// `value_expr` is the per-language read expression for the source
 /// value: typically `self.<id>` (or `s.<Id>` for Go, `self-><id>` for
@@ -11628,6 +11639,9 @@ fn vle_decode_stmt(field_id: &str, width_bits: u32, lang: crate::generator::Lang
 /// re-prefixing `self.` (which would double-deref the optional).
 fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::Language) -> String {
     use crate::generator::Language;
+    // Continuation-byte budget: every byte before the full-width final
+    // byte. For u64 this is 8 (8 × 7 = 56 data bits) + the 9th full byte.
+    let cont_max = vle_cap_bytes(width_bits) - 1;
     match lang {
         Language::Rust => {
             // The VLE accumulator is u64; a u64 source needs no widening cast
@@ -11637,9 +11651,11 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
             format!(
                 "        {{\n            \
                      let mut _vle = {value_expr}{widen};\n            \
-                     while _vle >= 0x80 {{\n                \
+                     let mut _vn = 0u32;\n            \
+                     while _vle >= 0x80 && _vn < {cont_max} {{\n                \
                          w.write_u8((_vle as u8 & 0x7F) | 0x80)?;\n                \
-                         _vle >>= 7;\n            \
+                         _vle >>= 7;\n                \
+                         _vn += 1;\n            \
                      }}\n            \
                      w.write_u8(_vle as u8)?;\n        \
                  }}"
@@ -11648,9 +11664,11 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
         Language::Cpp => format!(
             "        {{\n            \
                  std::uint64_t _w = static_cast<std::uint64_t>({value_expr});\n            \
-                 while (_w >= 0x80) {{\n                \
+                 std::uint32_t _vn = 0;\n            \
+                 while (_w >= 0x80 && _vn < {cont_max}) {{\n                \
                      if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;\n                \
-                     _w >>= 7;\n            \
+                     _w >>= 7;\n                \
+                     ++_vn;\n            \
                  }}\n            \
                  if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;\n        \
              }}"
@@ -11658,9 +11676,11 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
         Language::C11 => format!(
             "    {{\n        \
                  uint64_t _vle = (uint64_t)({value_expr});\n        \
-                 while (_vle >= 0x80u) {{\n            \
+                 uint32_t _vn = 0u;\n        \
+                 while (_vle >= 0x80u && _vn < {cont_max}u) {{\n            \
                      SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));\n            \
-                     _vle >>= 7;\n        \
+                     _vle >>= 7;\n            \
+                     _vn++;\n        \
                  }}\n        \
                  SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));\n    \
              }}"
@@ -11668,9 +11688,11 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
         Language::Kotlin => format!(
             "        run {{\n            \
                  var _vle: ULong = ({value_expr}).toULong()\n            \
-                 while (_vle >= 0x80UL) {{\n                \
+                 var _vn = 0\n            \
+                 while (_vle >= 0x80UL && _vn < {cont_max}) {{\n                \
                      w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let {{ return it }}\n                \
-                     _vle = _vle shr 7\n            \
+                     _vle = _vle shr 7\n                \
+                     _vn++\n            \
                  }}\n            \
                  w.writeU8(_vle.toByte())?.let {{ return it }}\n        \
              }}"
@@ -11678,11 +11700,13 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
         Language::Go => format!(
             "\t{{\n\t\t\
                  _vle := uint64({value_expr})\n\t\t\
-                 for _vle >= 0x80 {{\n\t\t\t\
+                 _vn := 0\n\t\t\
+                 for _vle >= 0x80 && _vn < {cont_max} {{\n\t\t\t\
                      if err := w.WriteBytes([]byte{{ byte(_vle&0x7F) | 0x80 }}); err != nil {{\n\t\t\t\t\
                          return err\n\t\t\t\
                      }}\n\t\t\t\
-                     _vle >>= 7\n\t\t\
+                     _vle >>= 7\n\t\t\t\
+                     _vn++\n\t\t\
                  }}\n\t\t\
                  if err := w.WriteBytes([]byte{{ byte(_vle) }}); err != nil {{\n\t\t\t\
                      return err\n\t\t\
@@ -11691,9 +11715,11 @@ fn vle_encode_block(value_expr: &str, width_bits: u32, lang: crate::generator::L
         ),
         Language::Python => format!(
             "        _vle = int({value_expr})\n        \
-             while _vle >= 0x80:\n            \
+             _vn = 0\n        \
+             while _vle >= 0x80 and _vn < {cont_max}:\n            \
                  w.write_u8((_vle & 0x7F) | 0x80)\n            \
-                 _vle >>= 7\n        \
+                 _vle >>= 7\n            \
+                 _vn += 1\n        \
              w.write_u8(_vle)"
         ),
         #[allow(unreachable_patterns)]

@@ -110,29 +110,38 @@ static inline bool sce_forge_cursor_advance(sce_forge_cursor_t *c, size_t n) {
 }
 
 /* Read a base-128 variable-length encoded unsigned value of up to
- * `max_bits` payload width into *out. Each byte carries 7 data bits
- * in its low 7; bit 7 is the continuation flag. LSB-first byte order.
- * Mirrors the Zenoh ZInt wire format (RFC §synth-5-B Appendix B).
+ * `max_bits` payload width into *out. The leading bytes carry 7 data
+ * bits in their low 7 with bit 7 as the continuation flag; the final
+ * byte (at shift 7*(VLE_LEN-1)) carries a full 8 data bits with no
+ * continuation flag. LSB-first byte order. Canonical Zenoh ZInt wire
+ * format (RFC §synth-5-B Appendix B): ceil((W-1)/7) bytes max, so a
+ * u64 caps at 9 bytes, not 10.
  *
  * Returns SCE_FORGE_CODEC_OK on success, SCE_FORGE_CODEC_NEED_MORE_BYTES
- * on truncation, SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW when the
- * continuation chain implies a value wider than max_bits. */
+ * on truncation, SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW when the final byte
+ * of a sub-octet tail (u16 / u32) overflows max_bits. */
 static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_inner(
     sce_forge_cursor_t *c, uint32_t max_bits, uint64_t *out) {
-    uint32_t max_bytes = (max_bits + 6u) / 7u;
+    uint32_t vle_len = (max_bits - 1u + 6u) / 7u;
+    uint32_t final_shift = 7u * (vle_len - 1u);
     uint64_t value = 0;
     uint32_t shift = 0;
-    for (uint32_t i = 0; i < max_bytes; ++i) {
+    for (uint32_t i = 0; i < vle_len; ++i) {
         const uint8_t *p = sce_forge_cursor_peek(c, 1);
         if (p == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
         (void)sce_forge_cursor_advance(c, 1);
-        uint64_t payload = (uint64_t)(*p & 0x7Fu);
-        if (shift + 7u > max_bits) {
+        if (shift == final_shift) {
+            /* Final byte: 8 data bits, continuation bit reused as data.
+             * For a sub-octet tail (u16 / u32) refuse overflow. */
             uint32_t allowed = max_bits - shift;
-            uint64_t max_payload = ((uint64_t)1 << allowed) - 1u;
-            if (payload > max_payload) return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW;
+            if (allowed < 8u && (uint64_t)(*p) > (((uint64_t)1 << allowed) - 1u)) {
+                return SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW;
+            }
+            value |= (uint64_t)(*p) << shift;
+            *out = value;
+            return SCE_FORGE_CODEC_OK;
         }
-        value |= payload << shift;
+        value |= (uint64_t)(*p & 0x7Fu) << shift;
         if ((*p & 0x80u) == 0u) {
             *out = value;
             return SCE_FORGE_CODEC_OK;
