@@ -347,25 +347,27 @@ data class {{ struct_name }}(
 {% for field in fields %}
             val {{ field.id }} = {{ field.decode_expr }}
 {% endfor %}
-            val value = {{ struct_name }}(
+            if (!cursor.advance(frameLen)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return {{ struct_name }}(
 {% for field in fields %}
                 {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
             )
-            if (!cursor.advance(frameLen)) return null
-            return value
 {% else %}
             val raw = cursor.peekSlice({{ min_bytes }}) ?: return null
 {% for field in fields %}
             val {{ field.id }} = {{ field.decode_expr }}
 {% endfor %}
-            val value = {{ struct_name }}(
+            if (!cursor.advance({{ min_bytes }})) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return {{ struct_name }}(
 {% for field in fields %}
                 {{ field.id }} = {{ field.id }}{{ "," if not loop.last else "" }}
 {% endfor %}
             )
-            if (!cursor.advance({{ min_bytes }})) return null
-            return value
 {% endif %}
         }
     }

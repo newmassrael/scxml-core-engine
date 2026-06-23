@@ -47,11 +47,12 @@ data class CodecRepeatElem(
         fun decode(cursor: SceCursor): CodecRepeatElem? {
             val raw = cursor.peekSlice(2) ?: return null
             val seq = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
-            val value = CodecRepeatElem(
+            if (!cursor.advance(2)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecRepeatElem(
                 seq = seq
             )
-            if (!cursor.advance(2)) return null
-            return value
         }
     }
 }

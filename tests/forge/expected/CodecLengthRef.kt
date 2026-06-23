@@ -54,13 +54,14 @@ data class CodecLengthRef(
             val msgId = raw[0].toUByte()
             val len = raw[1].toUByte()
             val payload = raw.copyOfRange(2, 2 + len.toInt())
-            val value = CodecLengthRef(
+            if (!cursor.advance(frameLen)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecLengthRef(
                 msgId = msgId,
                 len = len,
                 payload = payload
             )
-            if (!cursor.advance(frameLen)) return null
-            return value
         }
     }
 }
