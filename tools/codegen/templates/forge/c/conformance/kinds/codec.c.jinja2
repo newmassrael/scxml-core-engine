@@ -93,7 +93,12 @@ static void test_{{ f.name }}(void) {
         val.{{ field.name | to_snake_case }} = cases[i].input_{{ field.name | to_snake_case }};
 {% endif %}
 {% endfor %}
-        uint8_t encoded_buf[{{ f.name | to_upper_snake_case }}_MAX_BYTES];
+{% set max_macro = (f.name | to_upper_snake_case) ~ "_MAX_BYTES" %}
+        /* C11 §6.7.6.2: an array size must be non-zero. Empty-body codecs
+         * report MAX_BYTES == 0, so floor the encode scratch buffer at 1
+         * byte (the encoder writes 0 bytes into it). Mirrors the codec
+         * struct's `_reserved` placeholder for the same C11 constraint. */
+        uint8_t encoded_buf[{{ max_macro }} > 0u ? {{ max_macro }} : 1u];
         size_t encoded_len = 0;
         sce_forge_codec_status_t _enc_st = {{ f.name }}_encode_to_buf(&val, encoded_buf, sizeof(encoded_buf), &encoded_len);
         if (_enc_st != SCE_FORGE_CODEC_OK ||
