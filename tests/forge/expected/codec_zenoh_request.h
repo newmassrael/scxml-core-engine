@@ -217,16 +217,7 @@ struct CodecZenohRequest {
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
         if (auto _e = w.write_u8(header); _e) return _e;
-        {
-            std::uint64_t _w = static_cast<std::uint64_t>(rid);
-            std::uint32_t _vn = 0;
-            while (_w >= 0x80 && _vn < 8) {
-                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
-                _w >>= 7;
-                ++_vn;
-            }
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
-        }
+        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(rid)); _e) return _e;
         if (auto _e = keyexpr.encode(w, static_cast<std::uint8_t>((this->header >> 5) & 0x1)); _e) return _e;
         if (this->extensions.has_value()) {
             for (const auto& _e : *this->extensions) {

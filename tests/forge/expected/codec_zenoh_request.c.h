@@ -161,16 +161,7 @@ static inline sce_forge_codec_status_t codec_zenoh_request_encode(const codec_ze
      * carrier is part of the prefix fields and emits via the same
      * per-field path. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    {
-        uint64_t _vle = (uint64_t)(self->rid);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 8u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->rid)));
     SCE_FORGE_TRY_WRITE(codec_zenoh_wireexpr_encode(&self->keyexpr, w, (uint8_t)((self->header >> 5) & 0x1)));
     if ((self->header & 0x80) != 0) {
         for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {

@@ -233,6 +233,38 @@ static inline sce_forge_codec_status_t sce_forge_writer_write_u8(
     return SCE_FORGE_CODEC_OK;
 }
 
+/* Append `value` as a base-128 VLE of `max_bits` payload width. The
+ * write-side counterpart of sce_forge_cursor_read_vle_inner: leading
+ * bytes carry 7 data bits + a continuation flag; the final byte (after
+ * at most VLE_LEN-1 continuation bytes) carries a full 8 data bits with
+ * no flag, so a u64 caps at 9 bytes — canonical Zenoh ZInt (RFC
+ * §synth-5-B Appendix B). VLE_LEN = ceil((max_bits-1)/7). */
+static inline sce_forge_codec_status_t sce_forge_writer_write_vle_inner(
+    sce_forge_writer_t *w, uint64_t value, uint32_t max_bits) {
+    uint32_t cont_max = (max_bits - 1u + 6u) / 7u - 1u;
+    uint64_t v = value;
+    uint32_t n = 0u;
+    while (v >= 0x80u && n < cont_max) {
+        sce_forge_codec_status_t st = sce_forge_writer_write_u8(w, (uint8_t)((v & 0x7Fu) | 0x80u));
+        if (st != SCE_FORGE_CODEC_OK) return st;
+        v >>= 7;
+        n++;
+    }
+    return sce_forge_writer_write_u8(w, (uint8_t)v);
+}
+static inline sce_forge_codec_status_t sce_forge_writer_write_vle_u16(
+    sce_forge_writer_t *w, uint16_t v) {
+    return sce_forge_writer_write_vle_inner(w, (uint64_t)v, 16u);
+}
+static inline sce_forge_codec_status_t sce_forge_writer_write_vle_u32(
+    sce_forge_writer_t *w, uint32_t v) {
+    return sce_forge_writer_write_vle_inner(w, (uint64_t)v, 32u);
+}
+static inline sce_forge_codec_status_t sce_forge_writer_write_vle_u64(
+    sce_forge_writer_t *w, uint64_t v) {
+    return sce_forge_writer_write_vle_inner(w, v, 64u);
+}
+
 /* Multi-byte helpers — explicit endianness, no host-byte-order
  * dependence. Forwards to `write_bytes` so the bounded check fires
  * once per call. */

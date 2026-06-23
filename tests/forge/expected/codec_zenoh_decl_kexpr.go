@@ -63,19 +63,8 @@ func (s *CodecZenohDeclKexpr) Encode(w codec.SceSink, N byte) error {
 	// appends variable fields last, placing it ahead on the wire).
 	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
 	// dedicated helpers; everything else uses `present_if_encode_block`.
-	{
-		_vle := uint64(s.Id)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 2 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU16(w, uint16(s.Id)); err != nil {
+		return err
 	}
 	if err := s.Wireexpr.Encode(w, N); err != nil {
 		return err

@@ -80,36 +80,9 @@ data class CodecZenohJoin(
             w.writeU8((_v.toInt() and 0xFF).toByte())?.let { return it }
             w.writeU8((_v.toInt() ushr 8 and 0xFF).toByte())?.let { return it }
         }
-        run {
-            var _vle: ULong = (lease).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 8) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
-        run {
-            var _vle: ULong = (next_sn_reliable).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 8) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
-        run {
-            var _vle: ULong = (next_sn_best_effort).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 8) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
+        w.writeVleU64((lease).toULong())?.let { return it }
+        w.writeVleU64((next_sn_reliable).toULong())?.let { return it }
+        w.writeVleU64((next_sn_best_effort).toULong())?.let { return it }
         return null
     }
 

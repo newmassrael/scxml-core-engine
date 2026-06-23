@@ -93,27 +93,9 @@ static inline sce_forge_codec_status_t codec_zenoh_encoding_encode(const codec_z
      * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
-    {
-        uint64_t _vle = (uint64_t)(self->packed_id);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 4u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->packed_id)));
     if ((self->packed_id & 0x00000001) != 0) {
-    {
-        uint64_t _vle = (uint64_t)(self->schema_len);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 8u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->schema_len)));
     }
     if ((self->packed_id & 0x00000001) != 0) {
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->schema, self->schema_len));

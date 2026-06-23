@@ -182,6 +182,28 @@ interface SceSink {
         (v.toLong() ushr 8).toByte(),
         v.toByte(),
     ), 0, 8)
+
+    /// Append `value` as a base-128 VLE of `maxBits` payload width. The
+    /// write-side counterpart of `SceCursor.readVleInner`: leading bytes
+    /// carry 7 data bits + a continuation flag; the final byte (after at
+    /// most VLE_LEN-1 continuation bytes) carries a full 8 data bits with
+    /// no flag, so a u64 caps at 9 bytes — canonical Zenoh ZInt (RFC
+    /// §synth-5-B Appendix B). VLE_LEN = ceil((maxBits-1)/7).
+    fun writeVleInner(value: ULong, maxBits: Int): CodecError? {
+        val contMax = (maxBits - 1 + 6) / 7 - 1
+        var v = value
+        var n = 0
+        while (v >= 0x80UL && n < contMax) {
+            writeU8((v.toLong() and 0x7F or 0x80).toByte())?.let { return it }
+            v = v shr 7
+            n++
+        }
+        return writeU8(v.toByte())
+    }
+
+    fun writeVleU16(v: UShort): CodecError? = writeVleInner(v.toULong(), 16)
+    fun writeVleU32(v: UInt): CodecError? = writeVleInner(v.toULong(), 32)
+    fun writeVleU64(v: ULong): CodecError? = writeVleInner(v, 64)
 }
 
 /// Growable sink backed by a caller-owned `MutableList<Byte>`. Infallible

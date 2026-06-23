@@ -63,16 +63,7 @@ static inline sce_forge_codec_status_t codec_vle_zint_u64_encode(const codec_vle
      * on the wire). Per-field `is_repeat` / `is_tlv_chain` / `is_embed`
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
-    {
-        uint64_t _vle = (uint64_t)(self->value);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 8u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->value)));
     return SCE_FORGE_CODEC_OK;
 }
 

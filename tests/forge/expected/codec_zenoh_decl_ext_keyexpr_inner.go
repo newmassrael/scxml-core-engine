@@ -112,19 +112,8 @@ func (s *CodecZenohDeclExtKeyexprInner) Encode(w codec.SceSink) error {
 	if err := w.WriteBytes([]byte{ s.InnerHeader }); err != nil {
 		return err
 	}
-	{
-		_vle := uint64(s.Id)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 8 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU64(w, uint64(s.Id)); err != nil {
+		return err
 	}
 	if s.Suffix != nil {
 		if err := w.WriteBytes(s.Suffix); err != nil {

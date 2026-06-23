@@ -136,16 +136,7 @@ static inline sce_forge_codec_status_t codec_zenoh_msg_put_encode(const codec_ze
             SCE_FORGE_TRY_WRITE(codec_zenoh_ext_entry_encode(&self->extensions[_ti], w));
         }
     }
-    {
-        uint64_t _vle = (uint64_t)(self->payload_len);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 8u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->payload_len)));
     {
         size_t _n = self->payload_len;
         if (_n > self->payload_len) _n = self->payload_len;

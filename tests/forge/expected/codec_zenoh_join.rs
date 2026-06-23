@@ -171,36 +171,9 @@ impl<'a> CodecZenohJoin<'a> {
             w.write_u8((_v & 0xFF) as u8)?;
             w.write_u8((_v >> 8 & 0xFF) as u8)?;
         }
-        {
-            let mut _vle = self.lease;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 8 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
-        {
-            let mut _vle = self.next_sn_reliable;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 8 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
-        {
-            let mut _vle = self.next_sn_best_effort;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 8 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
+        w.write_vle_u64(self.lease)?;
+        w.write_vle_u64(self.next_sn_reliable)?;
+        w.write_vle_u64(self.next_sn_best_effort)?;
         Ok(())
     }
 

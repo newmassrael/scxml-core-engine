@@ -55,26 +55,8 @@ data class CodecZenohSourceInfo(
         // dedicated helpers; everything else uses `present_if_encode_block`.
         w.writeU8(this.header.toByte())?.let { return it }
         w.writeBytes(this.zid)?.let { return it }
-        run {
-            var _vle: ULong = (eid).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 4) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
-        run {
-            var _vle: ULong = (sn).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 4) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
+        w.writeVleU32((eid).toUInt())?.let { return it }
+        w.writeVleU32((sn).toUInt())?.let { return it }
         return null
     }
 

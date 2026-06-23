@@ -375,6 +375,40 @@ pub trait SceSink {
     fn write_u64_be(&mut self, v: u64) -> Result<(), CodecError> {
         self.write_bytes(&v.to_be_bytes())
     }
+
+    /// Append `value` as a base-128 VLE of `max_bits` payload width.
+    /// The write-side counterpart of [`SceCursor::read_vle_inner`]: the
+    /// leading bytes carry 7 data bits with bit 7 as the continuation
+    /// flag, and the final byte (after at most `VLE_LEN - 1`
+    /// continuation bytes) carries a full 8 data bits with no flag, so a
+    /// u64 caps at 9 bytes — the canonical Zenoh ZInt form (RFC
+    /// §synth-5-B Appendix B). `VLE_LEN = ceil((max_bits - 1) / 7)`.
+    fn write_vle_inner(&mut self, value: u64, max_bits: u32) -> Result<(), CodecError> {
+        let cont_max = (max_bits - 1).div_ceil(7) - 1;
+        let mut v = value;
+        let mut n = 0u32;
+        while v >= 0x80 && n < cont_max {
+            self.write_u8((v as u8 & 0x7F) | 0x80)?;
+            v >>= 7;
+            n += 1;
+        }
+        self.write_u8(v as u8)
+    }
+
+    /// Append a `vle_u16` field (1-3 wire bytes).
+    fn write_vle_u16(&mut self, v: u16) -> Result<(), CodecError> {
+        self.write_vle_inner(v as u64, 16)
+    }
+
+    /// Append a `vle_u32` field (1-5 wire bytes).
+    fn write_vle_u32(&mut self, v: u32) -> Result<(), CodecError> {
+        self.write_vle_inner(v as u64, 32)
+    }
+
+    /// Append a `vle_u64` field (1-9 wire bytes). Canonical Zenoh ZInt.
+    fn write_vle_u64(&mut self, v: u64) -> Result<(), CodecError> {
+        self.write_vle_inner(v, 64)
+    }
 }
 
 /// Bounded sink over a caller-owned `&mut [u8]`. Raises

@@ -158,16 +158,7 @@ struct CodecZenohDeclExtKeyexpr {
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
         if (auto _e = w.write_u8(outer_header); _e) return _e;
-        {
-            std::uint64_t _w = static_cast<std::uint64_t>(total_length);
-            std::uint32_t _vn = 0;
-            while (_w >= 0x80 && _vn < 8) {
-                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
-                _w >>= 7;
-                ++_vn;
-            }
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
-        }
+        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(total_length)); _e) return _e;
         if (auto _e = inner.encode(w); _e) return _e;
         return std::nullopt;
     }

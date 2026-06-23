@@ -94,38 +94,11 @@ struct CodecZenohOpenBody {
         // path appends variable fields last, placing it ahead on the wire).
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
-        {
-            std::uint64_t _w = static_cast<std::uint64_t>(lease);
-            std::uint32_t _vn = 0;
-            while (_w >= 0x80 && _vn < 8) {
-                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
-                _w >>= 7;
-                ++_vn;
-            }
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
-        }
-        {
-            std::uint64_t _w = static_cast<std::uint64_t>(initial_sn);
-            std::uint32_t _vn = 0;
-            while (_w >= 0x80 && _vn < 8) {
-                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
-                _w >>= 7;
-                ++_vn;
-            }
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
-        }
+        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(lease)); _e) return _e;
+        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(initial_sn)); _e) return _e;
         if (cookie_len.has_value()) {
             auto _v = *cookie_len;
-        {
-            std::uint64_t _w = static_cast<std::uint64_t>(_v);
-            std::uint32_t _vn = 0;
-            while (_w >= 0x80 && _vn < 8) {
-                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
-                _w >>= 7;
-                ++_vn;
-            }
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
-        }
+        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(_v)); _e) return _e;
         }
         if (cookie.has_value()) {
             if (auto _e = w.write_bytes(cookie->data(), cookie->size()); _e) return _e;

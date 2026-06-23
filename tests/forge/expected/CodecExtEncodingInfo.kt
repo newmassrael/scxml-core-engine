@@ -50,16 +50,7 @@ data class CodecExtEncodingInfo(
         // path appends variable fields last, placing it ahead on the wire).
         // Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
         // dedicated helpers; everything else uses `present_if_encode_block`.
-        run {
-            var _vle: ULong = (combined_id).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 4) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
+        w.writeVleU32((combined_id).toUInt())?.let { return it }
         w.writeU8(this.schema_size.toByte())?.let { return it }
         this.schema?.let { _v ->
             w.writeBytes(_v)?.let { return it }
