@@ -106,11 +106,12 @@ data class CodecQosByte(
         fun decode(cursor: SceCursor): CodecQosByte? {
             val raw = cursor.peekSlice(1) ?: return null
             val qos = raw[0].toUByte()
-            val value = CodecQosByte(
+            if (!cursor.advance(1)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecQosByte(
                 qos = qos
             )
-            if (!cursor.advance(1)) return null
-            return value
         }
     }
 }

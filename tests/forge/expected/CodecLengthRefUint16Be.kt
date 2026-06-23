@@ -52,12 +52,13 @@ data class CodecLengthRefUint16Be(
             val raw = cursor.peekSlice(frameLen) ?: return null
             val payload_len = (((raw[0].toInt() and 0xFF) shl 8) or (raw[1].toInt() and 0xFF)).toUShort()
             val payload = raw.copyOfRange(2, 2 + payload_len.toInt())
-            val value = CodecLengthRefUint16Be(
+            if (!cursor.advance(frameLen)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecLengthRefUint16Be(
                 payload_len = payload_len,
                 payload = payload
             )
-            if (!cursor.advance(frameLen)) return null
-            return value
         }
     }
 }

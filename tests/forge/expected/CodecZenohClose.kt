@@ -46,11 +46,12 @@ data class CodecZenohClose(
         fun decode(cursor: SceCursor): CodecZenohClose? {
             val raw = cursor.peekSlice(1) ?: return null
             val reason = raw[0].toUByte()
-            val value = CodecZenohClose(
+            if (!cursor.advance(1)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecZenohClose(
                 reason = reason
             )
-            if (!cursor.advance(1)) return null
-            return value
         }
     }
 }

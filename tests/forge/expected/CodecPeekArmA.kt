@@ -65,12 +65,13 @@ data class CodecPeekArmA(
             val raw = cursor.peekSlice(2) ?: return null
             val header = raw[0].toUByte()
             val payload = raw[1].toUByte()
-            val value = CodecPeekArmA(
+            if (!cursor.advance(2)) return null
+            // Construct in the `return` (no intermediate local) so a field
+            // literally named `value` cannot shadow a result-struct local.
+            return CodecPeekArmA(
                 header = header,
                 payload = payload
             )
-            if (!cursor.advance(2)) return null
-            return value
         }
     }
 }
