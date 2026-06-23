@@ -181,16 +181,7 @@ struct CodecZenohQuery {
         }
         if (parameters_len.has_value()) {
             auto _v = *parameters_len;
-        {
-            std::uint64_t _w = static_cast<std::uint64_t>(_v);
-            std::uint32_t _vn = 0;
-            while (_w >= 0x80 && _vn < 8) {
-                if (auto _e = w.write_u8(static_cast<std::uint8_t>((_w & 0x7F) | 0x80)); _e) return _e;
-                _w >>= 7;
-                ++_vn;
-            }
-            if (auto _e = w.write_u8(static_cast<std::uint8_t>(_w)); _e) return _e;
-        }
+        if (auto _e = w.write_vle_u64(static_cast<std::uint64_t>(_v)); _e) return _e;
         }
         if (parameters.has_value()) {
             if (auto _e = w.write_bytes(parameters->data(), parameters->size()); _e) return _e;

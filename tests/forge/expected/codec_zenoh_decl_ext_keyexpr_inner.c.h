@@ -86,16 +86,7 @@ static inline sce_forge_codec_status_t codec_zenoh_decl_ext_keyexpr_inner_encode
      * route to their dedicated helpers; everything else uses
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->inner_header));
-    {
-        uint64_t _vle = (uint64_t)(self->id);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 8u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->id)));
     if ((self->inner_header & 0x01) != 0) {
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, self->suffix, self->suffix_len));
     }

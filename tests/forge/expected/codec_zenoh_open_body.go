@@ -78,49 +78,16 @@ func (s *CodecZenohOpenBody) Encode(w codec.SceSink, A byte) error {
 	// appends variable fields last, placing it ahead on the wire).
 	// Per-field `is_repeat` / `is_tlv_chain` / `is_embed` route to their
 	// dedicated helpers; everything else uses `present_if_encode_block`.
-	{
-		_vle := uint64(s.Lease)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 8 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU64(w, uint64(s.Lease)); err != nil {
+		return err
 	}
-	{
-		_vle := uint64(s.InitialSn)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 8 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU64(w, uint64(s.InitialSn)); err != nil {
+		return err
 	}
 	if s.CookieLen != nil {
 		_v := *s.CookieLen
-	{
-		_vle := uint64(_v)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 8 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
+		return err
 	}
 	}
 	if s.Cookie != nil {

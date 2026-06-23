@@ -193,19 +193,8 @@ func (s *CodecZenohQuery) Encode(w codec.SceSink) error {
 	}
 	if s.ParametersLen != nil {
 		_v := *s.ParametersLen
-	{
-		_vle := uint64(_v)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 8 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU64(w, uint64(_v)); err != nil {
+		return err
 	}
 	}
 	if s.Parameters != nil {

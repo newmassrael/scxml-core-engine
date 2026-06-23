@@ -182,37 +182,10 @@ static inline sce_forge_codec_status_t codec_zenoh_response_encode(const codec_z
      * carrier is part of the prefix fields and emits via the same
      * per-field path. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
-    {
-        uint64_t _vle = (uint64_t)(self->request_id);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 8u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
-    {
-        uint64_t _vle = (uint64_t)(self->key_id);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 4u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->request_id)));
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->key_id)));
     if ((self->header & 0x20) != 0) {
-    {
-        uint64_t _vle = (uint64_t)(self->suffix_len);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 8u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u64(w, (uint64_t)(self->suffix_len)));
     }
     if ((self->header & 0x20) != 0) {
         SCE_FORGE_TRY_WRITE(sce_forge_writer_write_bytes(w, (const uint8_t*)self->suffix, self->suffix_len));

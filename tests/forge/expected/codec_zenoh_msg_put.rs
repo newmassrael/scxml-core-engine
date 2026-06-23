@@ -218,16 +218,7 @@ impl<'a> CodecZenohMsgPut<'a> {
                 _e.encode(w)?;
             }
         }
-        {
-            let mut _vle = self.payload_len;
-            let mut _vn = 0u32;
-            while _vle >= 0x80 && _vn < 8 {
-                w.write_u8((_vle as u8 & 0x7F) | 0x80)?;
-                _vle >>= 7;
-                _vn += 1;
-            }
-            w.write_u8(_vle as u8)?;
-        }
+        w.write_vle_u64(self.payload_len)?;
         w.write_bytes(self.payload)?;
         Ok(())
     }

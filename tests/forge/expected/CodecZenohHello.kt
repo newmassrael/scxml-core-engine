@@ -72,16 +72,7 @@ data class CodecZenohHello(
         w.writeU8(this.cbyte.toByte())?.let { return it }
         w.writeBytes(this.zid)?.let { return it }
         this.num_locators?.let { _v ->
-        run {
-            var _vle: ULong = (_v).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 8) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
+        w.writeVleU64((_v).toULong())?.let { return it }
         }
         this.locators?.let { _list ->
             for (_e in _list) {

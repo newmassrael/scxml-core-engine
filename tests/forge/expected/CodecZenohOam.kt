@@ -96,16 +96,7 @@ data class CodecZenohOam(
         // carrier is part of the prefix fields and emits via the same
         // per-field path.
         w.writeU8(this.header.toByte())?.let { return it }
-        run {
-            var _vle: ULong = (id).toULong()
-            var _vn = 0
-            while (_vle >= 0x80UL && _vn < 2) {
-                w.writeU8((_vle.toLong() and 0x7F or 0x80).toByte())?.let { return it }
-                _vle = _vle shr 7
-                _vn++
-            }
-            w.writeU8(_vle.toByte())?.let { return it }
-        }
+        w.writeVleU16((id).toUShort())?.let { return it }
         this.extensions?.let { _list ->
             for (_e in _list) {
                 _e.encode(w)?.let { return it }

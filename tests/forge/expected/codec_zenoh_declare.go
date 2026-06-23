@@ -159,19 +159,8 @@ func (s *CodecZenohDeclare) Encode(w codec.SceSink) error {
 	}
 	if s.InterestId != nil {
 		_v := *s.InterestId
-	{
-		_vle := uint64(_v)
-		_vn := 0
-		for _vle >= 0x80 && _vn < 4 {
-			if err := w.WriteBytes([]byte{ byte(_vle&0x7F) | 0x80 }); err != nil {
-				return err
-			}
-			_vle >>= 7
-			_vn++
-		}
-		if err := w.WriteBytes([]byte{ byte(_vle) }); err != nil {
-			return err
-		}
+	if err := codec.WriteVLEU32(w, uint32(_v)); err != nil {
+		return err
 	}
 	}
 	for _i := range s.Extensions {

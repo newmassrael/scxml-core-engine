@@ -112,16 +112,7 @@ static inline sce_forge_codec_status_t codec_zenoh_declare_encode(const codec_ze
      * `present_if_encode_block`. */
     SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, self->header));
     if ((self->header & 0x20) != 0) {
-    {
-        uint64_t _vle = (uint64_t)(self->interest_id);
-        uint32_t _vn = 0u;
-        while (_vle >= 0x80u && _vn < 4u) {
-            SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)((_vle & 0x7Fu) | 0x80u)));
-            _vle >>= 7;
-            _vn++;
-        }
-        SCE_FORGE_TRY_WRITE(sce_forge_writer_write_u8(w, (uint8_t)_vle));
-    }
+    SCE_FORGE_TRY_WRITE(sce_forge_writer_write_vle_u32(w, (uint32_t)(self->interest_id)));
     }
     if ((self->header & 0x80) != 0) {
         for (size_t _ti = 0; _ti < self->extensions_len; ++_ti) {

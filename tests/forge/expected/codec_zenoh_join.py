@@ -129,27 +129,9 @@ class CodecZenohJoin:
         if self.batch_size is not None:
             w.write_u8(self.batch_size & 0xFF)
             w.write_u8((self.batch_size >> 8) & 0xFF)
-        _vle = int(self.lease)
-        _vn = 0
-        while _vle >= 0x80 and _vn < 8:
-            w.write_u8((_vle & 0x7F) | 0x80)
-            _vle >>= 7
-            _vn += 1
-        w.write_u8(_vle)
-        _vle = int(self.next_sn_reliable)
-        _vn = 0
-        while _vle >= 0x80 and _vn < 8:
-            w.write_u8((_vle & 0x7F) | 0x80)
-            _vle >>= 7
-            _vn += 1
-        w.write_u8(_vle)
-        _vle = int(self.next_sn_best_effort)
-        _vn = 0
-        while _vle >= 0x80 and _vn < 8:
-            w.write_u8((_vle & 0x7F) | 0x80)
-            _vle >>= 7
-            _vn += 1
-        w.write_u8(_vle)
+        w.write_vle_u64(self.lease)
+        w.write_vle_u64(self.next_sn_reliable)
+        w.write_vle_u64(self.next_sn_best_effort)
 
     def encode_to_bytes(self, s: int) -> bytes:
         """Heap-backed convenience facade. Runs :meth:`encode` over a

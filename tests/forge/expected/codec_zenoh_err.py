@@ -142,13 +142,7 @@ class CodecZenohErr:
         if self.extensions is not None:
             for _e in self.extensions:
                 _e.encode(w)
-        _vle = int(self.payload_len)
-        _vn = 0
-        while _vle >= 0x80 and _vn < 8:
-            w.write_u8((_vle & 0x7F) | 0x80)
-            _vle >>= 7
-            _vn += 1
-        w.write_u8(_vle)
+        w.write_vle_u64(self.payload_len)
         w.write_bytes(self.payload)
 
     def encode_to_bytes(self) -> bytes:
