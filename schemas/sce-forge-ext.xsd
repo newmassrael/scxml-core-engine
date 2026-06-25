@@ -1022,15 +1022,19 @@
        files themselves are not routed through this XSD in the build flow
        (the expander parses them directly).
 
-       Content model: zero or more <sce:param> declarations followed by
-       body content (xs:any lax). XSD 1.0 cannot express both (a) "params
-       must precede body" and (b) "body may contain any sce:* element"
-       without ambiguity; the sequence here enforces (a), which matches
-       the canonical authoring convention in RFC §3.1. -->
+       Content model: a single lax wildcard. The authoring shape is "zero or
+       more <sce:param> declarations followed by body content" (RFC §3.1),
+       but that ordering — and the <sce:param> grammar itself — is enforced
+       by the expander (sce-build/src/template.rs), the sole SSOT for
+       template structure. The XSD does NOT re-encode it: a named
+       <sce:param> particle ahead of an `##any` wildcard makes the content
+       model non-deterministic (XSD 1.0 Unique Particle Attribution
+       violation), which strict schema processors (libxml2 >= 2.15) reject at
+       schema-compile time. A lone wildcard is unambiguous, still admits any
+       sce:* body element, and matches the algorithm-body elements below. -->
   <xs:element name="template">
     <xs:complexType>
       <xs:sequence>
-        <xs:element ref="sce:param" minOccurs="0" maxOccurs="unbounded"/>
         <xs:any namespace="##any" processContents="lax"
                 minOccurs="0" maxOccurs="unbounded"/>
       </xs:sequence>
