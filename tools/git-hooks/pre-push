@@ -21,6 +21,16 @@
 #   4.  cargo test --workspace --release     — Rust unit + integration suite
 #                                              (covers forge goldens, mesh,
 #                                              diagnostic contract tests)
+#   4b. cargo test -p sce-build --features    — B9 §6.2.6 drift gate +
+#       cli (drift + sourcemap suites)          §5.O sourcemap; mirrors
+#                                              drift-verify.yml. Stage 4's
+#                                              --workspace run omits
+#                                              --features cli, so these
+#                                              required-features=["cli"]
+#                                              targets are SILENTLY skipped
+#                                              by cargo — the gap that let a
+#                                              committed-tree template-hash
+#                                              drift reach CI red unseen here
 #   5.  Go forge conformance regen + build   — catches Go codegen drift
 #                                              (crossfile package-alias bug)
 #   6.  C++ forge conformance build          — catches C++ codegen drift
@@ -289,6 +299,24 @@ cargo test --workspace --release \
 # stages so a stuck node process cannot survive into Stages 3-5.
 kill "${HTTP_SERVER_PID}" 2>/dev/null || true
 HTTP_SERVER_PID=""
+
+# ── Stage 4b: cli-gated drift + sourcemap suites ──────────────────
+# Stage 4's `cargo test --workspace` runs with default features, and
+# `cli` is not a default feature of sce-build (nor enabled by any other
+# workspace member). Cargo SILENTLY excludes a test target whose
+# `required-features` are unmet — no warning, no compile — so
+# b9_drift_detection (and the other cli-gated integration tests) never
+# ran here. That is why a §6.2.6 template-hash drift across the
+# committed generated trees sailed past this hook and only failed in
+# the dedicated drift-verify.yml CI lane. Mirror that lane explicitly,
+# with --features cli, so the drift gate fails locally as intended.
+# --test-threads=1 matches drift-verify.yml (real-tree verify steps
+# invoke the freshly built binary and must not race).
+log_step "Stage 4b/8 — cli-gated B9 drift + §5.O sourcemap suites"
+cargo test -p sce-build --features cli --test b9_drift_detection -- --test-threads=1 \
+    || fail_step "Stage 4b (b9_drift_detection — committed-tree §6.2.6 drift)"
+cargo test -p sce-build --features cli --test sourcemap_addr2sce \
+    || fail_step "Stage 4b (sourcemap_addr2sce — §5.O traceability drift)"
 
 # ── Stage 3: Go forge conformance ─────────────────────────────────
 # generate.sh already runs `go build ./conformance/...` as a smoke check,
