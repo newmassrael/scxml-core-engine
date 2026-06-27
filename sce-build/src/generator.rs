@@ -444,6 +444,20 @@ fn render_cpp(
     let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
 
+    // Suite namespace: when set, this is the ready-to-prepend `<prefix>::`
+    // segment (empty when unset) that nests the emitted machine namespace
+    // under `SCE::Generated::<prefix>::<name>` so identically-named
+    // machines from different catalogs coexist in one binary. Computed
+    // once here and prepended at every `::SCE::Generated::` site (the `.h`
+    // declarations and the `.inl` invoke/child-send refs) — the same
+    // Rust-computed-prepend shape as the C11 backend's `csym_prefix`,
+    // rather than a conditional repeated at each template site. Empty =
+    // the historical un-nested shape (byte-identical).
+    let cpp_ns_prefix = match cpp_namespace_prefix {
+        Some(p) if !p.is_empty() => format!("{p}::"),
+        _ => String::new(),
+    };
+
     let header_ctx = minijinja::context! {
         model => &model_val,
         base_path => &base_path,
@@ -454,22 +468,17 @@ fn render_cpp(
         event_payload_active => payload.active,
         event_payload_policy_members => &payload.policy_members,
         event_payload_inject_methods => &payload.inject_methods,
-        // Suite namespace: when set, nests the emitted machine namespace under
-        // SCE::Generated::<prefix>::<name> so identically-named machines from
-        // different catalogs (suites) coexist in one binary. Empty = the
-        // historical SCE::Generated::<name> shape (byte-identical).
-        cpp_namespace_prefix => cpp_namespace_prefix.unwrap_or(""),
+        cpp_ns_prefix => &cpp_ns_prefix,
     };
     let inl_ctx = minijinja::context! {
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
-        // Suite namespace, mirrored from the .h context: the `.inl` carries no
-        // namespace of its own, but its invoke/child-send bodies reference
-        // sibling machines via `::SCE::Generated::<child>` — those refs must
-        // carry the same prefix as the `.h`'s child-member declarations or the
-        // declaration/definition types diverge. Empty = historical shape.
-        cpp_namespace_prefix => cpp_namespace_prefix.unwrap_or(""),
+        // Mirrored from the .h context: the `.inl` carries no namespace of
+        // its own, but its invoke/child-send bodies reference sibling
+        // machines via `::SCE::Generated::<child>` and must carry the same
+        // prefix as the `.h`'s child-member declarations.
+        cpp_ns_prefix => &cpp_ns_prefix,
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;
