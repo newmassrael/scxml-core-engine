@@ -378,12 +378,14 @@ std::unordered_map<std::string, std::string> collectUseBindings(
 
 std::filesystem::path resolveTemplatePath(
     std::string_view templateHref, const std::filesystem::path &baseDir,
+    const std::vector<std::string> &includeDirs,
     std::vector<std::string> &searched) {
     // Mirrors `sce-build/src/template.rs::resolve_template_path`:
-    // absolute → base directory → current working directory. Every
-    // branch that checks `exists()` appends the candidate to
-    // `searched` on miss so the `TemplateNotFound` diagnostic renders
-    // the same trail the Rust side emits.
+    // absolute → base directory → operator-configured include
+    // directories → current working directory. Every branch that
+    // checks `exists()` appends the candidate to `searched` on miss so
+    // the `TemplateNotFound` diagnostic renders the same trail the Rust
+    // side emits.
     std::filesystem::path path(std::string{templateHref});
     if (path.is_absolute()) {
         if (std::filesystem::exists(path)) {
@@ -394,6 +396,13 @@ std::filesystem::path resolveTemplatePath(
     }
     if (!baseDir.empty()) {
         const auto candidate = baseDir / path;
+        if (std::filesystem::exists(candidate)) {
+            return std::filesystem::absolute(candidate);
+        }
+        searched.push_back(candidate.string());
+    }
+    for (const auto &dir : includeDirs) {
+        const auto candidate = std::filesystem::path(dir) / path;
         if (std::filesystem::exists(candidate)) {
             return std::filesystem::absolute(candidate);
         }
@@ -706,6 +715,7 @@ namespace {
 // identity input map before calling into this function.
 TemplateExpandResult expandImpl(std::string_view content,
                                 const std::filesystem::path &baseDir,
+                                const std::vector<std::string> &includeDirs,
                                 std::uint32_t depth,
                                 std::vector<std::filesystem::path> &stack,
                                 const PositionMap &inputMap) {
@@ -806,7 +816,7 @@ TemplateExpandResult expandImpl(std::string_view content,
 
         std::vector<std::string> tried;
         const auto resolvedPath =
-            resolveTemplatePath(templateHref, baseDir, tried);
+            resolveTemplatePath(templateHref, baseDir, includeDirs, tried);
         if (resolvedPath.empty()) {
             std::string trail;
             for (const auto &entry : tried) {
@@ -864,7 +874,8 @@ TemplateExpandResult expandImpl(std::string_view content,
         TemplateExpandResult nested;
         try {
             nested = expandImpl(substitution.substituted, nestedBase,
-                                 depth + 1, stack, substitution.positions);
+                                 includeDirs, depth + 1, stack,
+                                 substitution.positions);
         } catch (TemplateError &e) {
             stack.pop_back();
             // Depth-1 collapse (RFC §6.3 Q3): every nested-template
@@ -911,6 +922,7 @@ TemplateExpandResult expandImpl(std::string_view content,
 TemplateExpandResult expandString(std::string_view content,
                                   std::string_view selfPath,
                                   std::string_view baseDir,
+                                  const std::vector<std::string> &includeDirs,
                                   const PositionMap &upstream) {
     // Fast path — mirrors Rust `expand`'s `if !content.contains("sce:use")`.
     // Output is byte-identical to `content`, so `upstream` already
@@ -932,7 +944,8 @@ TemplateExpandResult expandString(std::string_view content,
         stack.push_back(ec ? selfFile : canon);
     }
 
-    return detail::expandImpl(content, baseFile, /*depth=*/0, stack, upstream);
+    return detail::expandImpl(content, baseFile, includeDirs, /*depth=*/0, stack,
+                              upstream);
 }
 
 }  // namespace SCE::parsing

@@ -78,7 +78,7 @@ private:
 // ── Identity short-circuit: no "include" substring ──────────────────
 TEST(XIncludeExpander, PassthroughWhenNoIncludeSubstring) {
     const std::string src = R"(<root><state id="s1"/></root>)";
-    const auto result = expandStringX(src, "inline", "");
+    const auto result = expandStringX(src, "inline", "", {});
     EXPECT_EQ(result.expanded_text, src);
     EXPECT_TRUE(result.positions.is_identity());
 }
@@ -91,7 +91,7 @@ TEST(XIncludeExpander, PassthroughWhenNoIncludeSubstring) {
 // `passthrough_when_include_substring_but_no_element`.
 TEST(XIncludeExpander, PassthroughWhenIncludeSubstringButNoElement) {
     const std::string src = R"(<root description="please include docs"/>)";
-    const auto result = expandStringX(src, "inline", "");
+    const auto result = expandStringX(src, "inline", "", {});
     EXPECT_EQ(result.expanded_text, src);
     EXPECT_TRUE(result.positions.is_identity());
 }
@@ -106,7 +106,7 @@ TEST(XIncludeExpander, ExpandsSingleInclude) {
     const auto mainPath = tmp.write("main.xml", mainSrc);
 
     const auto result = expandStringX(mainSrc, mainPath.string(),
-                                       tmp.root().string());
+                                       tmp.root().string(), {});
 
     // Children of <fragment> spliced in; <fragment> wrapper dropped;
     // xi:include element gone.
@@ -138,7 +138,7 @@ TEST(XIncludeExpander, OuterPrefixAndSuffixResolveToHost) {
     const auto mainPath = tmp.write("main.xml", mainSrc);
 
     const auto result = expandStringX(mainSrc, mainPath.string(),
-                                       tmp.root().string());
+                                       tmp.root().string(), {});
 
     // Prefix: the leading '<' of '<root>' must resolve to main.xml.
     const SourcePos prefix = result.positions.lookup(0);
@@ -166,7 +166,7 @@ TEST(XIncludeExpander, NestedExpansionComposesMaps) {
     const auto mainPath = tmp.write("main.xml", mainSrc);
 
     const auto result = expandStringX(mainSrc, mainPath.string(),
-                                       tmp.root().string());
+                                       tmp.root().string(), {});
 
     EXPECT_NE(result.expanded_text.find(R"(<state id="leafonly"/>)"),
               std::string::npos);
@@ -185,14 +185,14 @@ TEST(XIncludeExpander, NestedExpansionComposesMaps) {
 TEST(XIncludeExpander, MissingHrefThrows) {
     const std::string src =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/></root>)";
-    EXPECT_THROW(expandStringX(src, "inline", ""), XIncludeExpansionError);
+    EXPECT_THROW(expandStringX(src, "inline", "", {}), XIncludeExpansionError);
 }
 
 // ── Empty href throws ───────────────────────────────────────────────
 TEST(XIncludeExpander, EmptyHrefThrows) {
     const std::string src =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href=""/></root>)";
-    EXPECT_THROW(expandStringX(src, "inline", ""), XIncludeExpansionError);
+    EXPECT_THROW(expandStringX(src, "inline", "", {}), XIncludeExpansionError);
 }
 
 // ── Not-found includes search trail in message ──────────────────────
@@ -202,7 +202,7 @@ TEST(XIncludeExpander, NotFoundThrowsWithSearchTrail) {
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="ghost.xml"/></root>)";
     try {
         expandStringX(src, (tmp.root() / "main.xml").string(),
-                       tmp.root().string());
+                       tmp.root().string(), {});
         FAIL() << "expandStringX must throw on unresolvable href";
     } catch (const XIncludeExpansionError &e) {
         const std::string what = e.what();
@@ -226,7 +226,7 @@ TEST(XIncludeExpander, CycleDetected) {
     const auto mainPath = tmp.write("main.xml", mainSrc);
 
     try {
-        expandStringX(mainSrc, mainPath.string(), tmp.root().string());
+        expandStringX(mainSrc, mainPath.string(), tmp.root().string(), {});
         FAIL() << "expandStringX must throw on a → b → a cycle";
     } catch (const XIncludeExpansionError &e) {
         const std::string what = e.what();
@@ -242,7 +242,7 @@ TEST(XIncludeExpander, UnsupportedParseTextThrows) {
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.txt" parse="text"/></root>)";
     try {
         expandStringX(src, (tmp.root() / "main.xml").string(),
-                       tmp.root().string());
+                       tmp.root().string(), {});
         FAIL() << "parse=\"text\" must be rejected";
     } catch (const XIncludeExpansionError &e) {
         const std::string what = e.what();
@@ -314,7 +314,7 @@ TEST(XIncludeExpander, UnsupportedFallbackThrows) {
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="ghost.xml"><xi:fallback><state id="alt"/></xi:fallback></xi:include></root>)";
     try {
         expandStringX(src, (tmp.root() / "main.xml").string(),
-                       tmp.root().string());
+                       tmp.root().string(), {});
         FAIL() << "<xi:fallback> must be rejected";
     } catch (const XIncludeExpansionError &e) {
         const std::string what = e.what();

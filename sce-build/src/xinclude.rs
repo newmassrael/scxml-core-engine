@@ -150,7 +150,10 @@ pub struct XIncludeLocation {
 /// should pass a stable label such as the `DocumentLabel`
 /// diagnostic string. `base_dir` is the directory
 /// `<xi:include href="relative/...">` is resolved against —
-/// typically `Path::new(self_path).parent()`.
+/// typically `Path::new(self_path).parent()`. `extra_dirs` is the
+/// operator-configured `--include-dir` search path tried after
+/// `base_dir` and before the cwd fallback (see [`resolve_href`]); it
+/// stays constant across the whole recursive expansion.
 ///
 /// Returns the expanded document as an owned `String` suitable
 /// for handing to `roxmltree::Document::parse`, plus a
@@ -173,6 +176,7 @@ pub fn expand(
     content: &str,
     self_path: &str,
     base_dir: Option<&Path>,
+    extra_dirs: &[PathBuf],
 ) -> Result<(String, PositionMap, Vec<PathBuf>), (XIncludeError, XIncludeLocation)> {
     let self_file = PathBuf::from(self_path);
     if !content.contains("include") {
@@ -195,7 +199,9 @@ pub fn expand(
     // prerequisites recorded in `--write-deps` output are the SCE
     // jinja2 templates and the host SCXML — fragments are invisible.
     let mut deps: Vec<PathBuf> = Vec::new();
-    let (out, map) = expand_impl(content, &self_file, base_dir, 0, &mut stack, &mut deps)?;
+    let (out, map) = expand_impl(
+        content, &self_file, base_dir, extra_dirs, 0, &mut stack, &mut deps,
+    )?;
     Ok((out, map, deps))
 }
 
@@ -203,6 +209,7 @@ fn expand_impl(
     content: &str,
     content_file: &Path,
     base_dir: Option<&Path>,
+    extra_dirs: &[PathBuf],
     depth: u32,
     stack: &mut Vec<PathBuf>,
     deps: &mut Vec<PathBuf>,
@@ -280,7 +287,7 @@ fn expand_impl(
             .filter(|v| !v.is_empty())
             .ok_or((XIncludeError::MissingHref, loc))?;
 
-        let resolved = resolve_href(href, base_dir).map_err(|e| (e, loc))?;
+        let resolved = resolve_href(href, base_dir, extra_dirs).map_err(|e| (e, loc))?;
 
         // Cycle detection: a canonicalised path that is already on
         // the active expansion stack would re-enter its own
@@ -321,6 +328,7 @@ fn expand_impl(
             &raw,
             &resolved,
             nested_base.as_deref(),
+            extra_dirs,
             depth + 1,
             stack,
             deps,
@@ -453,11 +461,22 @@ fn reject_unsupported(
 }
 
 /// Resolve `href` to an absolute path using the same precedence
-/// as `PugiXMLDocument::resolveFilePath`: absolute → base
-/// directory → current working directory. Returns `NotFound` with
-/// the search trail on failure so the operator can see which
-/// paths were tried.
-fn resolve_href(href: &str, base_dir: Option<&Path>) -> Result<PathBuf, XIncludeError> {
+/// as `PugiXMLDocument::resolveFilePathInBase`: absolute → base
+/// directory → operator-configured include directories → current
+/// working directory. Returns `NotFound` with the search trail on
+/// failure so the operator can see which paths were tried.
+///
+/// `extra_dirs` is the `--include-dir` search path, tried in
+/// declaration order after the including file's directory but before
+/// the implicit cwd fallback (matching
+/// [`crate::template::resolve_template_path`]). Empty in the common
+/// case, so builds that pass no include directories resolve exactly
+/// as `absolute → base → cwd`.
+fn resolve_href(
+    href: &str,
+    base_dir: Option<&Path>,
+    extra_dirs: &[PathBuf],
+) -> Result<PathBuf, XIncludeError> {
     let href_path = Path::new(href);
     let mut tried: Vec<String> = Vec::new();
 
@@ -469,6 +488,13 @@ fn resolve_href(href: &str, base_dir: Option<&Path>) -> Result<PathBuf, XInclude
     } else {
         if let Some(base) = base_dir {
             let candidate = base.join(href_path);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+            tried.push(candidate.display().to_string());
+        }
+        for dir in extra_dirs {
+            let candidate = dir.join(href_path);
             if candidate.exists() {
                 return Ok(candidate);
             }
@@ -595,7 +621,7 @@ mod tests {
     #[test]
     fn passthrough_when_no_include_substring() {
         let src = "<root><state id=\"s1\"/></root>";
-        let (out, map, _deps) = expand(src, "inline", None).expect("no includes");
+        let (out, map, _deps) = expand(src, "inline", None, &[]).expect("no includes");
         assert_eq!(out, src);
         assert!(map.is_identity());
     }
@@ -607,7 +633,7 @@ mod tests {
         // the document to tell, and must pass it through
         // unchanged.
         let src = "<root description=\"please include docs\"/>";
-        let (out, map, _deps) = expand(src, "inline", None).expect("no include elements");
+        let (out, map, _deps) = expand(src, "inline", None, &[]).expect("no include elements");
         assert_eq!(out, src);
         assert!(map.is_identity());
     }
@@ -626,8 +652,13 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let (out, map, _deps) = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path()))
-            .expect("expansion succeeds");
+        let (out, map, _deps) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &[],
+        )
+        .expect("expansion succeeds");
         // The children of `<fragment>` must be spliced in place
         // of the `<xi:include>` element, dropping the wrapper.
         assert!(out.contains("<state id=\"s1\"/>"));
@@ -654,16 +685,85 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let (out, _map, _deps) =
-            expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let (out, _map, _deps) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &[],
+        )
+        .unwrap();
         assert!(out.contains("<x/>"));
         assert!(!out.contains("<include"));
     }
 
     #[test]
+    fn resolves_href_via_include_dir() {
+        // `href` names a fragment that does NOT live next to the
+        // including file: it resolves only because the fragment's
+        // directory is supplied as an `--include-dir`. Proves the
+        // search path is consulted after `base_dir` misses.
+        let main_dir = TempDir::new().unwrap();
+        let inc_dir = TempDir::new().unwrap();
+        let frag = write(inc_dir.path(), "frag.xml", r#"<f><x id="from_inc"/></f>"#);
+        let main_src = format!(
+            r#"<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="{}"/></root>"#,
+            frag.file_name().unwrap().to_str().unwrap()
+        );
+        let main_path = write(main_dir.path(), "main.xml", &main_src);
+
+        // Without the include dir, resolution fails: the fragment is
+        // neither next to main.xml nor in cwd.
+        let miss = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(main_dir.path()),
+            &[],
+        );
+        assert!(matches!(miss, Err((XIncludeError::NotFound { .. }, _))));
+
+        // With the fragment's directory on the search path it resolves
+        // and splices.
+        let extra = [inc_dir.path().to_path_buf()];
+        let (out, _map, _deps) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(main_dir.path()),
+            &extra,
+        )
+        .expect("include-dir resolution succeeds");
+        assert!(out.contains(r#"<x id="from_inc"/>"#));
+        assert!(!out.contains("<xi:include"));
+    }
+
+    #[test]
+    fn base_dir_wins_over_include_dir() {
+        // A fragment of the same name exists both next to the
+        // including file and in an include dir. The including file's
+        // own directory must win (precedence: base_dir before
+        // extra_dirs), so the local copy is spliced.
+        let main_dir = TempDir::new().unwrap();
+        let inc_dir = TempDir::new().unwrap();
+        write(main_dir.path(), "frag.xml", r#"<f><x id="local"/></f>"#);
+        write(inc_dir.path(), "frag.xml", r#"<f><x id="shadowed"/></f>"#);
+        let main_src = r#"<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.xml"/></root>"#;
+        let main_path = write(main_dir.path(), "main.xml", main_src);
+
+        let extra = [inc_dir.path().to_path_buf()];
+        let (out, _map, _deps) = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(main_dir.path()),
+            &extra,
+        )
+        .expect("expansion succeeds");
+        assert!(out.contains(r#"<x id="local"/>"#));
+        assert!(!out.contains("shadowed"));
+    }
+
+    #[test]
     fn missing_href_is_hard_error() {
         let src = r#"<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/></root>"#;
-        let err = expand(src, "inline", None).unwrap_err();
+        let err = expand(src, "inline", None, &[]).unwrap_err();
         assert!(matches!(err.0, XIncludeError::MissingHref));
     }
 
@@ -671,7 +771,7 @@ mod tests {
     fn empty_href_is_hard_error() {
         let src =
             r#"<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href=""/></root>"#;
-        let err = expand(src, "inline", None).unwrap_err();
+        let err = expand(src, "inline", None, &[]).unwrap_err();
         assert!(matches!(err.0, XIncludeError::MissingHref));
     }
 
@@ -680,7 +780,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let main_src = r#"<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="missing.xml"/></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap_err();
+        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()), &[]).unwrap_err();
         match err.0 {
             XIncludeError::NotFound { href, searched } => {
                 assert_eq!(href, "missing.xml");
@@ -707,7 +807,7 @@ mod tests {
         )
         .unwrap();
         let main_src = fs::read_to_string(&a_path).unwrap();
-        let err = expand(&main_src, a_path.to_str().unwrap(), Some(tmp.path())).unwrap_err();
+        let err = expand(&main_src, a_path.to_str().unwrap(), Some(tmp.path()), &[]).unwrap_err();
         assert!(matches!(err.0, XIncludeError::Cycle { .. }));
     }
 
@@ -729,8 +829,13 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let (out, _map, _deps) =
-            expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let (out, _map, _deps) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &[],
+        )
+        .unwrap();
         assert!(out.contains("<leaf/>"));
         assert!(!out.contains("<xi:include"));
         assert!(!out.contains("<mid"));
@@ -753,8 +858,13 @@ mod tests {
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
 
-        let (out, _map, _deps) =
-            expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap();
+        let (out, _map, _deps) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &[],
+        )
+        .unwrap();
         // Both splice points must have been replaced.
         assert_eq!(out.matches("<x/>").count(), 2);
         assert!(!out.contains("<xi:include"));
@@ -769,7 +879,13 @@ mod tests {
             frag.file_name().unwrap().to_str().unwrap()
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
-        let err = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap_err();
+        let err = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &[],
+        )
+        .unwrap_err();
         assert!(matches!(err.0, XIncludeError::Unsupported { .. }));
     }
 
@@ -782,7 +898,13 @@ mod tests {
             frag.file_name().unwrap().to_str().unwrap()
         );
         let main_path = write(tmp.path(), "main.xml", &main_src);
-        let err = expand(&main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap_err();
+        let err = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(tmp.path()),
+            &[],
+        )
+        .unwrap_err();
         assert!(matches!(err.0, XIncludeError::Unsupported { .. }));
     }
 
@@ -791,7 +913,7 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let main_src = r#"<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="missing.xml"><xi:fallback xmlns:xi="http://www.w3.org/2001/XInclude"><nope/></xi:fallback></xi:include></root>"#;
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap_err();
+        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()), &[]).unwrap_err();
         assert!(matches!(err.0, XIncludeError::Unsupported { .. }));
     }
 
@@ -803,7 +925,7 @@ mod tests {
         let main_src =
             "<root>\n    <xi:include xmlns:xi=\"http://www.w3.org/2001/XInclude\"/>\n</root>";
         let main_path = write(tmp.path(), "main.xml", main_src);
-        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path())).unwrap_err();
+        let err = expand(main_src, main_path.to_str().unwrap(), Some(tmp.path()), &[]).unwrap_err();
         assert_eq!(err.1.row, 2);
     }
 
@@ -822,8 +944,9 @@ mod tests {
     ///     string-typed named `expanded_text` (mirrors Rust's
     ///     `String`), one `PositionMap`-typed named `positions`.
     ///   * The `expandStringX` free function declaration names its
-    ///     three parameters (`content`, `selfPath`, `baseDir`)
-    ///     mirroring Rust's `expand(content, self_path, base_dir)`.
+    ///     four parameters (`content`, `selfPath`, `baseDir`,
+    ///     `includeDirs`) mirroring Rust's
+    ///     `expand(content, self_path, base_dir, extra_dirs)`.
     ///
     /// What this test does NOT pin: parameter types (so a
     /// `string_view` ↔ `string` swap stays allowed), member-init
@@ -884,10 +1007,11 @@ mod tests {
         // ── Entry-point declaration: parameter names ────────────
         // Loose match on parameter types so `std::string_view` →
         // `std::string` portability swaps do not red the test.
-        // Strict match on the three names: `content`, `selfPath`,
-        // `baseDir` — those name the Rust-side contract bytes.
+        // Strict match on the four names: `content`, `selfPath`,
+        // `baseDir`, `includeDirs` — those name the Rust-side
+        // contract bytes plus the `--include-dir` search path.
         let entry_re = regex::Regex::new(
-            r"XIncludeExpandResult\s+expandStringX\s*\([^)]*\bcontent\b[^)]*\bselfPath\b[^)]*\bbaseDir\b[^)]*\)\s*;",
+            r"XIncludeExpandResult\s+expandStringX\s*\([^)]*\bcontent\b[^)]*\bselfPath\b[^)]*\bbaseDir\b[^)]*\bincludeDirs\b[^)]*\)\s*;",
         )
         .expect("expandStringX regex must compile");
 
@@ -895,10 +1019,10 @@ mod tests {
             entry_re.is_match(hdr),
             "sce/include/parsing/XIncludeExpander.h must declare \
              `XIncludeExpandResult expandStringX(... content ..., \
-             ... selfPath ..., ... baseDir ...);` mirroring Rust's \
-             `expand(content, self_path, base_dir)` call shape. If \
-             the parameter names changed, update this drift test in \
-             the same commit."
+             ... selfPath ..., ... baseDir ..., ... includeDirs ...);` \
+             mirroring Rust's `expand(content, self_path, base_dir, \
+             extra_dirs)` call shape. If the parameter names changed, \
+             update this drift test in the same commit."
         );
     }
 

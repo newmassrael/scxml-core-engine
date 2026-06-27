@@ -90,8 +90,13 @@ struct XIncludeExpandResult {
 // (row, col) of the offending `<xi:include>` is currently embedded
 // in the message text only; typed location stamping is deferred
 // behind a separate consumer signal.
+// `includeDirs` is the operator-configured `--include-dir` search
+// path, tried after `baseDir` and before the cwd fallback (mirrors
+// the Rust `extra_dirs` parameter of `xinclude::expand`). Pass an
+// empty vector to resolve exactly as `absolute → base → cwd`.
 XIncludeExpandResult expandStringX(std::string_view content,
                                    std::string_view selfPath,
-                                   std::string_view baseDir);
+                                   std::string_view baseDir,
+                                   const std::vector<std::string> &includeDirs);
 
 }  // namespace SCE::parsing

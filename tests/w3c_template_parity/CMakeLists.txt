@@ -188,3 +188,16 @@ add_template_parity_fixture(coord_xinclude_fragment CoordXIncludeFragment)
 # proves the full xinclude_map → substitution.positions → inner
 # expandImpl composition chain agrees across producers.
 add_template_parity_fixture(coord_xinclude_template_combined CoordXIncludeTemplateCombined)
+
+# Success-path fixture — `<sce:use template="guard.sce-template.xml">`
+# resolves its template by BARE name against the sibling `_inc/`
+# directory supplied as an `--include-dir`. Proves the search-path
+# precedence (base -> include dir -> cwd) is byte-identical between
+# `sce-codegen expand --include-dir` and `setIncludeDirs` +
+# `processSceTemplate`.
+add_template_parity_fixture(include_dir_template IncludeDirTemplate)
+
+# Success-path fixture — same proof for the XInclude resolver:
+# `<xi:include href="frag.xml">` resolves its fragment by bare name
+# against the `_inc/` include directory on both producers.
+add_template_parity_fixture(include_dir_xinclude IncludeDirXInclude)

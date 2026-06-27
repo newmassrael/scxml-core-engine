@@ -42,6 +42,7 @@
 #include <string>
 #include <string_view>
 #include <typeinfo>
+#include <vector>
 
 namespace {
 
@@ -51,12 +52,17 @@ namespace {
 // so the harness does not hardcode a workspace-relative path and
 // works equally well under CI, local cmake --build, or install-tree
 // testing.
-std::string runSceCodegenExpand(const std::string &sceCodegenBin, const std::string &scxmlPath) {
+std::string runSceCodegenExpand(const std::string &sceCodegenBin, const std::string &scxmlPath,
+                                const std::vector<std::string> &includeDirs = {}) {
     // Quote both arguments to survive shell metacharacters. The
     // inner paths come from CMake / the fixture tree and are not
     // attacker-controlled; quoting here is hygiene, not a security
     // boundary.
-    std::string cmd = "\"" + sceCodegenBin + "\" expand \"" + scxmlPath + "\" 2>/dev/null";
+    std::string cmd = "\"" + sceCodegenBin + "\" expand";
+    for (const auto &dir : includeDirs) {
+        cmd += " --include-dir \"" + dir + "\"";
+    }
+    cmd += " \"" + scxmlPath + "\" 2>/dev/null";
     std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
     if (!pipe) {
         return {};
@@ -278,7 +284,8 @@ std::string canonicaliseDocument(const pugi::xml_document &doc) {
 // can re-serialise it after preprocessing without adding a
 // serialise() method to the production interface for a single
 // test consumer.
-std::string runCppPreprocessors(const std::string &scxmlPath) {
+std::string runCppPreprocessors(const std::string &scxmlPath,
+                                const std::vector<std::string> &includeDirs = {}) {
     // Read the file into a buffer so the `PugiXMLDocument` wrapper
     // can stash the exact bytes pugixml parsed — `processSceTemplate`
     // needs a stable view of the author's source text to build a
@@ -316,6 +323,10 @@ std::string runCppPreprocessors(const std::string &scxmlPath) {
     }
     sceDoc->setSourcePath(scxmlPath);
     sceDoc->setSourceText(sourceText);
+    // Mirror the `--include-dir` search path the Rust side receives so
+    // both producers resolve bare `href` / `template` names against the
+    // same directory list.
+    sceDoc->setIncludeDirs(includeDirs);
 
     // §wire-W4.5 D1: process*() return PositionMap directly.
     const auto xPositions = sceDoc->processXInclude();
@@ -368,10 +379,67 @@ void runParityFixture(const std::string &fixtureName) {
            "this harness exists to close.";
 }
 
+// Parity check for a fixture whose `<xi:include>` / `<sce:use>`
+// fragments resolve by bare name against an `--include-dir` search
+// path rather than a relative path. `relIncludeDirs` are resolved
+// against the fixture's own directory and handed to BOTH producers —
+// `sce-codegen expand --include-dir ...` on the Rust side and
+// `PugiXMLDocument::setIncludeDirs(...)` on the C++ side — so the
+// comparison proves the two engines apply the same search-path
+// precedence (absolute -> base -> include dirs -> cwd).
+void runParityFixtureWithIncludeDirs(const std::string &fixtureName,
+                                     const std::vector<std::string> &relIncludeDirs) {
+    const char *bin = std::getenv("SCE_CODEGEN_BIN");
+    ASSERT_NE(bin, nullptr) << "SCE_CODEGEN_BIN env var must be set by CMake "
+                               "add_test ENVIRONMENT";
+    const char *root = std::getenv("SCE_TEMPLATE_PARITY_FIXTURES_ROOT");
+    ASSERT_NE(root, nullptr) << "SCE_TEMPLATE_PARITY_FIXTURES_ROOT env var must "
+                                "be set by CMake add_test ENVIRONMENT";
+
+    const std::string fixturePath = resolveFixture(fixtureName.c_str());
+    ASSERT_FALSE(fixturePath.empty());
+
+    const std::string fixtureDir = std::string(root) + "/" + fixtureName;
+    std::vector<std::string> includeDirs;
+    includeDirs.reserve(relIncludeDirs.size());
+    for (const auto &rel : relIncludeDirs) {
+        includeDirs.push_back(fixtureDir + "/" + rel);
+    }
+
+    const std::string rustText = runSceCodegenExpand(bin, fixturePath, includeDirs);
+    ASSERT_FALSE(rustText.empty()) << "sce-codegen expand produced no output "
+                                      "for include-dir fixture: "
+                                   << fixturePath;
+
+    const std::string rustCanonical = canonicalise(rustText);
+    const std::string cppCanonical = runCppPreprocessors(fixturePath, includeDirs);
+
+    ASSERT_EQ(rustCanonical, cppCanonical)
+        << "Template parity violation on include-dir fixture '" << fixtureName
+        << "': Rust-canonical and C++-canonical expansion outputs diverge. "
+           "The `--include-dir` search path resolved differently between "
+           "`sce-codegen expand` and `PugiXMLDocument::setIncludeDirs` + "
+           "`processXInclude`/`processSceTemplate`.";
+}
+
 // Fixture — no `<sce:use>` in the document, both producers
 // return the input unchanged.
 TEST(TemplateParity, PassthroughNoUse) {
     runParityFixture("passthrough_no_use");
+}
+
+// Fixture — `<sce:use>` resolves a template by bare name against an
+// `--include-dir` (the template lives in a sibling `_inc/` directory,
+// not next to the caller). Proves the search-path precedence is
+// byte-identical across both engines.
+TEST(TemplateParity, IncludeDirTemplate) {
+    runParityFixtureWithIncludeDirs("include_dir_template", {"_inc"});
+}
+
+// Fixture — `<xi:include>` resolves a fragment by bare name against an
+// `--include-dir`. Same proof for the XInclude resolver.
+TEST(TemplateParity, IncludeDirXInclude) {
+    runParityFixtureWithIncludeDirs("include_dir_xinclude", {"_inc"});
 }
 
 // Fixture — single `<sce:use>` with one required parameter
@@ -636,7 +704,7 @@ void runCoordinateLookupFixture(const std::string &fixtureName,
     try {
         const auto upstream =
             SCE::parsing::PositionMap::identity(fixturePath, source);
-        result = SCE::parsing::expandString(source, fixturePath, baseDir,
+        result = SCE::parsing::expandString(source, fixturePath, baseDir, {},
                                              upstream);
     } catch (const std::exception &ex) {
         FAIL() << "Fixture '" << fixtureName

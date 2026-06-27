@@ -375,7 +375,8 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
         }
 
         SCE::parsing::XIncludeExpandResult expanded =
-            SCE::parsing::expandStringX(content, sourcePath_, basePath_);
+            SCE::parsing::expandStringX(content, sourcePath_, basePath_,
+                                        includeDirs_);
 
         // Reparse into the same shared_ptr'd document so every
         // `IXMLElement` the caller has already retrieved continues
@@ -495,7 +496,8 @@ SCE::parsing::PositionMap PugiXMLDocument::processSceTemplate(
     }
 
     auto expanded =
-        SCE::parsing::expandString(content, sourcePath_, basePath_, upstream);
+        SCE::parsing::expandString(content, sourcePath_, basePath_, includeDirs_,
+                                   upstream);
 
     // Reparse into the same shared_ptr'd document so every
     // `IXMLElement` the caller has already retrieved continues to
