@@ -179,7 +179,11 @@ struct ParamDecl {
 /// Callers that have no filesystem identity (in-memory documents)
 /// should pass a stable label. `base_dir` is the directory
 /// `<sce:use template="relative/...">` is resolved against —
-/// typically `Path::new(self_path).parent()`.
+/// typically `Path::new(self_path).parent()`. `extra_dirs` is the
+/// operator-configured `--include-dir` search path tried after
+/// `base_dir` and before the cwd fallback (see
+/// [`resolve_template_path`]); it stays constant across the whole
+/// recursive expansion.
 ///
 /// `input_map` is the [`PositionMap`] keyed by `content`'s bytes,
 /// produced by the preprocessor stage immediately upstream — at
@@ -204,6 +208,7 @@ pub fn expand(
     content: &str,
     self_path: &str,
     base_dir: Option<&Path>,
+    extra_dirs: &[PathBuf],
     input_map: &PositionMap,
 ) -> Result<(String, PositionMap, Vec<PathBuf>), (TemplateError, TemplateLocation)> {
     if !content.contains("sce:use") {
@@ -225,15 +230,17 @@ pub fn expand(
     // edits as silent no-ops — see tc8-harness feedback report.
     let mut deps: Vec<PathBuf> = Vec::new();
     let (out, map) = expand_impl(
-        content, &self_file, base_dir, 0, &mut stack, input_map, &mut deps,
+        content, &self_file, base_dir, extra_dirs, 0, &mut stack, input_map, &mut deps,
     )?;
     Ok((out, map, deps))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn expand_impl(
     content: &str,
     content_file: &Path,
     base_dir: Option<&Path>,
+    extra_dirs: &[PathBuf],
     depth: u32,
     stack: &mut Vec<PathBuf>,
     input_map: &PositionMap,
@@ -301,7 +308,8 @@ fn expand_impl(
             .filter(|v| !v.is_empty())
             .ok_or((TemplateError::MissingTemplateAttribute, loc))?;
 
-        let resolved = resolve_template_path(template_attr, base_dir).map_err(|e| (e, loc))?;
+        let resolved =
+            resolve_template_path(template_attr, base_dir, extra_dirs).map_err(|e| (e, loc))?;
 
         // Cycle detection via canonicalised path. Also deduplicates
         // aliased forms (`./foo.xml`, `foo.xml`, `../dir/foo.xml`).
@@ -366,6 +374,7 @@ fn expand_impl(
             &substituted,
             &resolved,
             nested_base.as_deref(),
+            extra_dirs,
             depth + 1,
             stack,
             &intermediate_map,
@@ -437,11 +446,20 @@ fn collect_uses_into<'a, 'input>(
 
 /// Resolve `template` to an absolute path using the same precedence
 /// as [`crate::xinclude::resolve_href`]: absolute → base directory →
-/// current working directory. Returns `NotFound` with the search
-/// trail on failure so the operator can see which paths were tried.
+/// operator-configured include directories → current working
+/// directory. Returns `NotFound` with the search trail on failure so
+/// the operator can see which paths were tried.
+///
+/// `extra_dirs` is the `--include-dir` search path: an ordered list of
+/// directories tried (in declaration order) after the including file's
+/// directory but before the implicit cwd fallback, so an explicit
+/// search path always wins over the cwd guess. Empty in the common
+/// case, so builds that pass no include directories resolve exactly as
+/// `absolute → base → cwd`.
 fn resolve_template_path(
     template: &str,
     base_dir: Option<&Path>,
+    extra_dirs: &[PathBuf],
 ) -> Result<PathBuf, TemplateError> {
     let path = Path::new(template);
     let mut tried: Vec<String> = Vec::new();
@@ -454,6 +472,13 @@ fn resolve_template_path(
     } else {
         if let Some(base) = base_dir {
             let candidate = base.join(path);
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+            tried.push(candidate.display().to_string());
+        }
+        for dir in extra_dirs {
+            let candidate = dir.join(path);
             if candidate.exists() {
                 return Ok(candidate);
             }
@@ -969,7 +994,7 @@ mod tests {
     fn passthrough_when_no_sce_use_substring() {
         let src = "<root><state id=\"s1\"/></root>";
         let input_map = PositionMap::identity("inline", src);
-        let (out, map, _deps) = expand(src, "inline", None, &input_map).expect("no sce:use");
+        let (out, map, _deps) = expand(src, "inline", None, &[], &input_map).expect("no sce:use");
         assert_eq!(out, src);
         // Short-circuit path must hand the upstream map through
         // untouched — no splices happened.
@@ -983,7 +1008,7 @@ mod tests {
         let src = "<root description=\"how to sce:use this\"/>";
         let input_map = PositionMap::identity("inline", src);
         let (out, map, _deps) =
-            expand(src, "inline", None, &input_map).expect("no sce:use elements");
+            expand(src, "inline", None, &[], &input_map).expect("no sce:use elements");
         assert_eq!(out, src);
         assert!(map.is_identity());
     }
@@ -1010,6 +1035,7 @@ mod tests {
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .expect("expansion succeeds");
@@ -1020,6 +1046,87 @@ mod tests {
         // copy of any single file, so the returned map must carry
         // entries beyond identity.
         assert!(!map.is_identity());
+    }
+
+    #[test]
+    fn resolves_template_via_include_dir() {
+        // The template fragment does NOT live next to the caller; it
+        // resolves only because its directory is on the
+        // `--include-dir` search path. Mirrors the consumer's
+        // out-of-tree `_templates/` layout where a case writes a bare
+        // template name instead of a `../../_templates/` relative path.
+        let main_dir = TempDir::new().unwrap();
+        let inc_dir = TempDir::new().unwrap();
+        let tpl = write(
+            inc_dir.path(),
+            "guard.sce-template.xml",
+            r#"<sce:template xmlns:sce="http://sce.dev/ext" name="guard">
+  <sce:param name="port" required="true"/>
+  <transition cond="_event.port == {$port}" target="accept"/>
+</sce:template>"#,
+        );
+        let main_src = format!(
+            r#"<scxml xmlns:sce="http://sce.dev/ext"><sce:use template="{}" port="80"/></scxml>"#,
+            tpl.file_name().unwrap().to_str().unwrap()
+        );
+        let main_path = write(main_dir.path(), "main.scxml", &main_src);
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), &main_src);
+
+        // Without the include dir, resolution fails.
+        let miss = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(main_dir.path()),
+            &[],
+            &input_map,
+        );
+        assert!(matches!(miss, Err((TemplateError::NotFound { .. }, _))));
+
+        // With the fragment's directory on the search path it resolves.
+        let extra = [inc_dir.path().to_path_buf()];
+        let (out, _map, _deps) = expand(
+            &main_src,
+            main_path.to_str().unwrap(),
+            Some(main_dir.path()),
+            &extra,
+            &input_map,
+        )
+        .expect("include-dir resolution succeeds");
+        assert!(out.contains("_event.port == 80"));
+        assert!(!out.contains("<sce:use"));
+    }
+
+    #[test]
+    fn base_dir_wins_over_include_dir() {
+        // A template of the same name exists both next to the caller
+        // and in an include dir. The caller's own directory must win
+        // (precedence: base_dir before extra_dirs).
+        let main_dir = TempDir::new().unwrap();
+        let inc_dir = TempDir::new().unwrap();
+        let tpl_body = |marker: &str| {
+            format!(
+                r#"<sce:template xmlns:sce="http://sce.dev/ext" name="g">
+  <transition target="{marker}"/>
+</sce:template>"#
+            )
+        };
+        write(main_dir.path(), "g.sce-template.xml", &tpl_body("local"));
+        write(inc_dir.path(), "g.sce-template.xml", &tpl_body("shadowed"));
+        let main_src = r#"<scxml xmlns:sce="http://sce.dev/ext"><sce:use template="g.sce-template.xml"/></scxml>"#;
+        let main_path = write(main_dir.path(), "main.scxml", main_src);
+        let input_map = PositionMap::identity(main_path.to_str().unwrap(), main_src);
+
+        let extra = [inc_dir.path().to_path_buf()];
+        let (out, _map, _deps) = expand(
+            main_src,
+            main_path.to_str().unwrap(),
+            Some(main_dir.path()),
+            &extra,
+            &input_map,
+        )
+        .expect("expansion succeeds");
+        assert!(out.contains(r#"target="local""#));
+        assert!(!out.contains("shadowed"));
     }
 
     #[test]
@@ -1043,6 +1150,7 @@ mod tests {
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap();
@@ -1073,6 +1181,7 @@ mod tests {
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap();
@@ -1091,6 +1200,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap_err();
@@ -1107,6 +1217,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap_err();
@@ -1134,6 +1245,7 @@ mod tests {
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap_err();
@@ -1164,6 +1276,7 @@ mod tests {
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap_err();
@@ -1188,6 +1301,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap_err();
@@ -1210,6 +1324,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap_err();
@@ -1234,6 +1349,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap_err();
@@ -1267,6 +1383,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap_err();
@@ -1297,6 +1414,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap();
@@ -1326,6 +1444,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap();
@@ -1356,6 +1475,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap();
@@ -1375,6 +1495,7 @@ mod tests {
             main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .unwrap_err();
@@ -1452,6 +1573,7 @@ mod tests {
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .expect("expansion succeeds even when the result is empty");

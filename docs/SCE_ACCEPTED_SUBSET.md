@@ -221,9 +221,14 @@ is discarded, so authors bundle N top-level fragments under any
 XML wrapper (e.g. `<fragment>…</fragment>`) without affecting
 SCXML validity, and a single `<xi:include>` composes them all.
 `href` resolves absolute-first, then relative to the including
-file, then relative to the current working directory; recursion
+file, then against any operator-configured include directories
+(the repeatable `--include-dir` / `-I` flag, in declaration
+order), then relative to the current working directory; recursion
 is bounded by a documented depth limit (mirrored from the
-runtime), and cycles are detected.
+runtime), and cycles are detected. The include-directory search
+path lets a fragment be referenced by bare name independent of
+the including file's directory depth; the C++ runtime mirrors the
+same precedence via `PugiXMLDocument::setIncludeDirs`.
 
 Unsupported W3C XInclude features are rejected explicitly rather
 than silently ignored — accepting them at build time would
@@ -386,10 +391,14 @@ Expansion semantics (RFC §3):
   children form the template body.
 - `<sce:use template="relative/path.xml" ...>` at the call site
   resolves the template file with XInclude precedence
-  (absolute-first, then base-directory, then cwd), binds every
-  non-reserved attribute as a parameter value, and splices the
-  rendered body in place of the `<sce:use>` node. Attributes named
-  `template` are reserved.
+  (absolute-first, then base-directory, then operator-configured
+  include directories via `--include-dir` / `-I`, then cwd), binds
+  every non-reserved attribute as a parameter value, and splices
+  the rendered body in place of the `<sce:use>` node. Attributes
+  named `template` are reserved. With an include directory on the
+  search path a case file can reference a shared template by bare
+  name (`template="guard.sce-template.xml"`) instead of a
+  depth-coupled relative path.
 - `{$name}` tokens inside the template body (attribute values and
   text nodes) are replaced by the parameter's bound string in a
   single lexical pass. Substitution does not cascade — a bound

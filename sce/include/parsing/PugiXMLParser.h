@@ -98,6 +98,17 @@ public:
         return sourceText_;
     }
 
+    // Internal: Set the `--include-dir` search path threaded into
+    // `<xi:include>` / `<sce:use>` resolution. Directories are tried
+    // in declaration order after the including file's own directory
+    // and before the cwd fallback (mirrors the Rust `extra_dirs`
+    // parameter of `parser::expand_preprocessors`). Empty by default,
+    // so documents resolve fragments exactly as `absolute → base →
+    // cwd` unless an embedder supplies a search path.
+    void setIncludeDirs(const std::vector<std::string> &includeDirs) {
+        includeDirs_ = includeDirs;
+    }
+
 private:
     // Resolve an `<sce:use template="href">` value against an explicit
     // base directory. Mirrors `resolveFilePath` but takes baseDir as a
@@ -124,6 +135,7 @@ private:
     std::string basePath_;
     std::string sourcePath_;
     std::string sourceText_;
+    std::vector<std::string> includeDirs_;
 };
 
 /**

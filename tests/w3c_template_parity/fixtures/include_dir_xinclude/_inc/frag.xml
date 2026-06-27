@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  XInclude'd fragment for the include_dir_xinclude fixture, resolved
+  via the sibling `_inc/` include directory (NOT next to the caller).
+  The root `<wrap>` is stripped by the render-root-children rule
+  (Rust + C++ mirror), so the splice output is just the inner
+  `<state>` element.
+-->
+<wrap>
+  <state id="from_inc"/>
+</wrap>

@@ -162,7 +162,7 @@ TEST(TemplateExpander, ExpandStringNoSceUseReturnsIdentity) {
     const std::string source = R"(<root><state id="s1"/></root>)";
     const auto upstream =
         SCE::parsing::PositionMap::identity("main.scxml", source);
-    const auto result = expandString(source, "main.scxml", ".", upstream);
+    const auto result = expandString(source, "main.scxml", ".", {}, upstream);
     EXPECT_EQ(result.expanded_text, source);
     EXPECT_TRUE(result.positions.is_identity());
 }
@@ -328,7 +328,7 @@ TEST(TemplateExpander, ExpandStringSimpleSubstitution) {
         (tmpDir / "caller.scxml").string(), caller);
     const auto result =
         expandString(caller, (tmpDir / "caller.scxml").string(),
-                     tmpDir.string(), upstream);
+                     tmpDir.string(), {}, upstream);
     EXPECT_FALSE(result.positions.is_identity());
     EXPECT_NE(result.expanded_text.find("<state id=\"S1\"/>"),
               std::string::npos);
@@ -366,7 +366,7 @@ TEST(TemplateExpander, ExpandStringMissingRequiredParamThrows) {
         (tmpDir / "caller.scxml").string(), caller);
     EXPECT_THROW(
         expandString(caller, (tmpDir / "caller.scxml").string(),
-                     tmpDir.string(), upstream),
+                     tmpDir.string(), {}, upstream),
         SCE::parsing::TemplateMissingParam);
     std::filesystem::remove_all(tmpDir);
 }
@@ -387,7 +387,7 @@ TEST(TemplateExpander, ExpandStringUnknownBindingThrows) {
         (tmpDir / "caller.scxml").string(), caller);
     EXPECT_THROW(
         expandString(caller, (tmpDir / "caller.scxml").string(),
-                     tmpDir.string(), upstream),
+                     tmpDir.string(), {}, upstream),
         SCE::parsing::TemplateUnknownParam);
     std::filesystem::remove_all(tmpDir);
 }
@@ -399,7 +399,7 @@ TEST(TemplateExpander, ExpandStringNotFoundThrows) {
     const auto upstream =
         SCE::parsing::PositionMap::identity("/tmp/caller.scxml", caller);
     EXPECT_THROW(
-        expandString(caller, "/tmp/caller.scxml", "/tmp", upstream),
+        expandString(caller, "/tmp/caller.scxml", "/tmp", {}, upstream),
         SCE::parsing::TemplateNotFound);
 }
 
@@ -452,7 +452,7 @@ TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
     const auto upstream =
         SCE::parsing::PositionMap::identity(callerPath, callerSource);
     try {
-        expandString(callerSource, callerPath, "/tmp", upstream);
+        expandString(callerSource, callerPath, "/tmp", {}, upstream);
         FAIL() << "expected TemplateNotFound";
     } catch (const SCE::parsing::TemplateNotFound &e) {
         const auto &loc = e.location();

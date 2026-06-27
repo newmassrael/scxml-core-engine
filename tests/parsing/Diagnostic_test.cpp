@@ -301,7 +301,7 @@ TEST(XIncludeErrorWire, MissingHrefCarriesActionableFragmentInMessage) {
     const std::string src =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/></root>)";
     try {
-        SCE::parsing::expandStringX(src, "inline", "");
+        SCE::parsing::expandStringX(src, "inline", "", {});
         FAIL() << "expandStringX must throw on missing href";
     } catch (const SCE::parsing::XIncludeExpansionError &e) {
         const std::string what = e.what();
@@ -315,7 +315,7 @@ TEST(XIncludeErrorWire, EmptyHrefCarriesActionableFragmentInMessage) {
     const std::string src =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href=""/></root>)";
     try {
-        SCE::parsing::expandStringX(src, "inline", "");
+        SCE::parsing::expandStringX(src, "inline", "", {});
         FAIL() << "expandStringX must throw on empty href";
     } catch (const SCE::parsing::XIncludeExpansionError &e) {
         const std::string what = e.what();

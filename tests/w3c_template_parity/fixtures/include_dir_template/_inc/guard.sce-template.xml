@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template fragment for the include_dir_template fixture, resolved via
+  the sibling `_inc/` include directory (NOT next to the caller). One
+  required `port` parameter substituted into a single `<transition>`
+  body element — kept minimal so canonicalised output is unambiguous
+  and any drift isolates to the resolution / substitution logic.
+-->
+<sce:template xmlns:sce="http://sce.dev/ext" name="port_guard">
+  <sce:param name="port" required="true"/>
+  <transition event="check" cond="_event.data.port == {$port}" target="accept"/>
+</sce:template>
