@@ -60,7 +60,7 @@ endif()
 include(${CMAKE_CURRENT_LIST_DIR}/SCEClangFormat.cmake)
 
 #[=============================================================================[
-sce_add_state_machine(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir] [LANGUAGE lang])
+sce_add_state_machine(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir] [LANGUAGE lang] [CPP_NAMESPACE_PREFIX prefix])
 
 Generates state machine code from SCXML and adds to target.
 
@@ -70,6 +70,11 @@ Arguments:
   OUTPUT_DIR  - Output directory for generated files (optional, defaults to
                 ${CMAKE_CURRENT_BINARY_DIR}/generated)
   LANGUAGE    - Target language: cpp (default), rust, kotlin, or go
+  CPP_NAMESPACE_PREFIX - Nest the emitted C++ namespace under
+                SCE::Generated::<prefix>::<machine> instead of the default
+                SCE::Generated::<machine>, so a separate catalog can reuse
+                in-tree machine names without an ODR clash (optional, cpp only;
+                ignored for other languages and when unset)
 
 Example:
   add_executable(my_app main.cpp)
@@ -81,7 +86,7 @@ Example:
   target_link_libraries(my_app PRIVATE SCE::sce_base)
 #]=============================================================================]
 function(sce_add_state_machine)
-    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE" "" ${ARGN})
+    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE;CPP_NAMESPACE_PREFIX" "" ${ARGN})
 
     # Validate required arguments
     if(NOT SCE_TARGET)
@@ -134,6 +139,14 @@ function(sce_add_state_machine)
         "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
         -l "${SCE_LANGUAGE}"
         --write-deps "${_SCE_DEPFILE}")
+    # Optional C++ namespace nesting: SCE::Generated::<prefix>::<machine>.
+    # Lets a separate catalog reuse in-tree machine names without an ODR clash
+    # when both link into one binary. cpp-only (mirrors sce-codegen's
+    # --cpp-namespace-prefix, which is meaningful only with -l cpp); skipped
+    # for other languages and when unset, leaving the command byte-identical.
+    if(SCE_CPP_NAMESPACE_PREFIX AND SCE_LANGUAGE STREQUAL "cpp")
+        list(APPEND _SCE_CODEGEN_CMD --cpp-namespace-prefix "${SCE_CPP_NAMESPACE_PREFIX}")
+    endif()
     if(SCE_TEMPLATE_DIR)
         set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
     endif()
@@ -175,7 +188,7 @@ function(sce_add_state_machine)
 endfunction()
 
 #[=============================================================================[
-sce_add_state_machines_from_dir(TARGET target SCXML_DIR dir [OUTPUT_DIR dir])
+sce_add_state_machines_from_dir(TARGET target SCXML_DIR dir [OUTPUT_DIR dir] [LANGUAGE lang] [CPP_NAMESPACE_PREFIX prefix])
 
 Finds all *.scxml files in directory and generates state machines.
 
@@ -183,6 +196,10 @@ Arguments:
   TARGET      - CMake target to add generated code to (required)
   SCXML_DIR   - Directory containing SCXML files (required)
   OUTPUT_DIR  - Output directory for generated files (optional)
+  LANGUAGE    - Target language: cpp (default), rust, kotlin, or go
+                (forwarded to each per-file sce_add_state_machine call)
+  CPP_NAMESPACE_PREFIX - Forwarded to each per-file sce_add_state_machine call
+                (optional, cpp only; see sce_add_state_machine)
 
 NOTE: This function uses file(GLOB) which only runs at configure time.
       If you add new SCXML files to the directory, you must reconfigure
@@ -194,7 +211,7 @@ Example:
   sce_add_state_machines_from_dir(TARGET my_app SCXML_DIR ${CMAKE_SOURCE_DIR}/scxml)
 #]=============================================================================]
 function(sce_add_state_machines_from_dir)
-    cmake_parse_arguments(SCE "" "TARGET;SCXML_DIR;OUTPUT_DIR;LANGUAGE" "" ${ARGN})
+    cmake_parse_arguments(SCE "" "TARGET;SCXML_DIR;OUTPUT_DIR;LANGUAGE;CPP_NAMESPACE_PREFIX" "" ${ARGN})
 
     # Validate required arguments
     if(NOT SCE_TARGET)
@@ -230,6 +247,7 @@ function(sce_add_state_machines_from_dir)
             SCXML_FILE ${SCXML_FILE}
             OUTPUT_DIR ${SCE_OUTPUT_DIR}
             LANGUAGE ${SCE_LANGUAGE}
+            CPP_NAMESPACE_PREFIX "${SCE_CPP_NAMESPACE_PREFIX}"
         )
     endforeach()
 
