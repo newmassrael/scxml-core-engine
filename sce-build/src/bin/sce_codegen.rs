@@ -1010,55 +1010,7 @@ fn main() {
         let _ = WORKSPACE_ROOT_OVERRIDE.set(p);
     }
     match cli.command {
-        Commands::Generate(args) => {
-            let GenerateArgs {
-                scxml,
-                language,
-                output_dir,
-                as_child,
-                parent_stem,
-                write_deps,
-                go_module_prefix,
-                format_style,
-                no_format,
-                deploy,
-                transport_only,
-                partition,
-                const_fold_budget,
-                no_std,
-                input_root,
-                emit_ast,
-                kotlin_package_prefix,
-                cpp_namespace_prefix,
-                c_symbol_prefix,
-                strict_unresolved,
-                include_dir,
-            } = *args;
-            cmd_generate(
-                &scxml,
-                &language,
-                &output_dir,
-                as_child,
-                parent_stem.as_deref(),
-                write_deps.as_deref(),
-                go_module_prefix.as_deref(),
-                format_style.as_deref(),
-                no_format,
-                deploy.as_deref(),
-                transport_only,
-                partition.as_deref(),
-                const_fold_budget,
-                no_std,
-                input_root.as_deref(),
-                emit_ast.as_deref(),
-                kotlin_package_prefix.as_deref(),
-                cpp_namespace_prefix.as_deref(),
-                c_symbol_prefix.as_deref(),
-                strict_unresolved,
-                &include_dir,
-                error_format,
-            )
-        }
+        Commands::Generate(args) => cmd_generate(*args, error_format),
         Commands::Orchestrate {
             scxml,
             forge,
@@ -1392,31 +1344,49 @@ fn emit_orchestrate_asts(
 
 // ── Subcommand: generate ────────────────────────────────────────
 
-#[allow(clippy::too_many_arguments)]
-fn cmd_generate(
-    scxml_path: &str,
-    language: &str,
-    output_dir: &str,
-    as_child: bool,
-    parent_stem: Option<&str>,
-    depfile_path: Option<&str>,
-    go_module_prefix: Option<&str>,
-    format_style: Option<&str>,
-    no_format: bool,
-    deploy_path: Option<&str>,
-    transport_only: bool,
-    for_partition: Option<&str>,
-    const_fold_budget: Option<u64>,
-    no_std: bool,
-    input_root_override: Option<&str>,
-    emit_ast_path: Option<&str>,
-    kotlin_package_prefix: Option<&str>,
-    cpp_namespace_prefix: Option<&str>,
-    c_symbol_prefix: Option<&str>,
-    strict_unresolved: bool,
-    include_dirs: &[String],
-    error_format: ErrorFormat,
-) {
+fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
+    // Unpack the CLI args struct into the internal borrowed names the
+    // body uses. `args` owns the data for the whole function, so the
+    // `&` / `as_deref()` borrows below stay valid for every use.
+    let GenerateArgs {
+        scxml,
+        language,
+        output_dir,
+        as_child,
+        parent_stem,
+        write_deps,
+        go_module_prefix,
+        format_style,
+        no_format,
+        deploy,
+        transport_only,
+        partition,
+        const_fold_budget,
+        no_std,
+        input_root,
+        emit_ast,
+        kotlin_package_prefix,
+        cpp_namespace_prefix,
+        c_symbol_prefix,
+        strict_unresolved,
+        include_dir,
+    } = args;
+    let scxml_path: &str = &scxml;
+    let language: &str = &language;
+    let output_dir: &str = &output_dir;
+    let parent_stem = parent_stem.as_deref();
+    let depfile_path = write_deps.as_deref();
+    let go_module_prefix = go_module_prefix.as_deref();
+    let format_style = format_style.as_deref();
+    let deploy_path = deploy.as_deref();
+    let for_partition = partition.as_deref();
+    let input_root_override = input_root.as_deref();
+    let emit_ast_path = emit_ast.as_deref();
+    let kotlin_package_prefix = kotlin_package_prefix.as_deref();
+    let cpp_namespace_prefix = cpp_namespace_prefix.as_deref();
+    let c_symbol_prefix = c_symbol_prefix.as_deref();
+    let include_dirs: &[String] = &include_dir;
+
     let lang: Language = language.parse().unwrap_or_else(|_| {
         error_format.emit_and_exit(
             &CliError::UnknownLanguage {
