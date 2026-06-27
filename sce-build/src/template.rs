@@ -215,11 +215,14 @@ pub fn expand(
         return Ok((content.to_string(), input_map.clone(), Vec::new()));
     }
     let self_file = PathBuf::from(self_path);
-    let mut stack: Vec<PathBuf> = Vec::new();
+    let mut acc = ExpandAcc {
+        stack: Vec::new(),
+        deps: Vec::new(),
+    };
     if let Ok(abs) = std::fs::canonicalize(self_path) {
-        stack.push(abs);
+        acc.stack.push(abs);
     } else {
-        stack.push(self_file.clone());
+        acc.stack.push(self_file.clone());
     }
     // Every `<sce:use template="...">` fragment we successfully open
     // feeds this collector; the parse-boundary call site
@@ -228,23 +231,28 @@ pub fn expand(
     // fragment changes. Without this list the depfile only carries
     // the SCE jinja2 templates and the host SCXML, leaving fragment
     // edits as silent no-ops — see tc8-harness feedback report.
-    let mut deps: Vec<PathBuf> = Vec::new();
     let (out, map) = expand_impl(
-        content, &self_file, base_dir, extra_dirs, 0, &mut stack, input_map, &mut deps,
+        content, &self_file, base_dir, extra_dirs, 0, &mut acc, input_map,
     )?;
-    Ok((out, map, deps))
+    Ok((out, map, acc.deps))
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Mutable state threaded through `expand_impl`'s recursion: the cycle-
+/// detection `stack` and the depfile `deps` collector. Grouping the two
+/// accumulators keeps the recursive signature within the argument budget.
+struct ExpandAcc {
+    stack: Vec<PathBuf>,
+    deps: Vec<PathBuf>,
+}
+
 fn expand_impl(
     content: &str,
     content_file: &Path,
     base_dir: Option<&Path>,
     extra_dirs: &[PathBuf],
     depth: u32,
-    stack: &mut Vec<PathBuf>,
+    acc: &mut ExpandAcc,
     input_map: &PositionMap,
-    deps: &mut Vec<PathBuf>,
 ) -> Result<(String, PositionMap), (TemplateError, TemplateLocation)> {
     if depth >= MAX_TEMPLATE_DEPTH {
         return Err((
@@ -322,8 +330,8 @@ fn expand_impl(
         // Cycle detection via canonicalised path. Also deduplicates
         // aliased forms (`./foo.xml`, `foo.xml`, `../dir/foo.xml`).
         let canon = std::fs::canonicalize(&resolved).unwrap_or_else(|_| resolved.clone());
-        if stack.contains(&canon) {
-            let chain = render_chain(stack, &canon);
+        if acc.stack.contains(&canon) {
+            let chain = render_chain(&acc.stack, &canon);
             return Err((
                 TemplateError::Cycle {
                     template: template_attr.to_string(),
@@ -347,7 +355,7 @@ fn expand_impl(
         // bytes. Cycle/depth pre-checks above can short-circuit before
         // the file is actually consumed, so pushing earlier would put
         // unread paths into the depfile.
-        deps.push(canon.clone());
+        acc.deps.push(canon.clone());
 
         let params_bound = collect_use_bindings(&node);
         // Substitute `{$name}` tokens inside the template body only —
@@ -376,7 +384,7 @@ fn expand_impl(
         // call inherits `intermediate_map` as its `input_map`, so
         // its output map threads caller→template→nested-template
         // origins all the way down.
-        stack.push(canon);
+        acc.stack.push(canon);
         let nested_base = resolved.parent().map(|p| p.to_path_buf());
         let (expanded_template, expanded_map) = expand_impl(
             &substituted,
@@ -384,12 +392,11 @@ fn expand_impl(
             nested_base.as_deref(),
             extra_dirs,
             depth + 1,
-            stack,
+            acc,
             &intermediate_map,
-            deps,
         )
         .map_err(|(err, _)| (remap_nested(err, template_attr), loc))?;
-        stack.pop();
+        acc.stack.pop();
 
         // Extract body (children of `<sce:template>` minus
         // `<sce:param>`) from the fully-expanded template and splice
