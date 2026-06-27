@@ -1,23 +1,28 @@
 <?xml version="1.0"?>
 <!--
-  Regression fixture for the cpp-namespace-prefix flag of
-  `sce-codegen generate -l cpp`.
+  Shared regression fixture for the suite-prefix flags that nest emitted
+  symbols so identically-named machines from different catalogs link into
+  one binary: the cpp-namespace-prefix (C++) and c-symbol-prefix (C11)
+  flags of `sce-codegen generate`.
 
-  The prefix nests the emitted machine namespace from
-  `SCE::Generated::<machine>` to `SCE::Generated::<prefix>::<machine>`. The
-  parent's child-machine *declaration* lives in the `.h`
-  (state_machine.jinja2), while the *definitions* that reference the same
-  child namespace live in the `.inl` (invoke_methods.jinja2 `make_shared`
-  and actions/send.jinja2 `ChildEvent`). If the prefix reaches the `.h` but
-  not the `.inl`, the declared and defined types diverge and the unit fails
-  to compile — the exact bug this fixture guards.
+  Both backends split the parent's child-machine reference across two
+  translation units, so the prefix must reach BOTH or the references
+  diverge and the unit fails to compile — the exact bug this fixture
+  guards:
+    - C++: the child `shared_ptr` *declaration* is in the `.h`
+      (state_machine.jinja2) while its *definitions* are in the `.inl`
+      (invoke_methods.jinja2 `make_shared`, actions/send.jinja2
+      `ChildEvent`). The `.h` and `.inl` use separate render contexts.
+    - C11: every symbol is `<name>_…` (no namespace); the child symbol
+      refs span the `.h` and `.c`, and the suite prefix must nest them
+      while leaving the `#include` filename and SCE-MAP markers alone.
 
-  Shape requirements to exercise both `.inl` sites:
+  Shape requirements to exercise both child-ref sites:
     - an inline `<content>` `<invoke>` (co-emitted as a template sibling, so
       the suite compiles standalone — unlike a `src=` external child), with
       an `id` so it is addressable, and
     - an `<onentry>` `<send target="#_<invokeid>">` to that child, which
-      emits the `using ChildEvent = ::SCE::Generated::<...>::Event` block.
+      emits the child-event send block.
 
   The inline child carries no `name=`: sce-codegen derives the child slug
   from the parent plus a synth suffix (cf. invoke_inline_content.scxml).

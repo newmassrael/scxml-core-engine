@@ -321,10 +321,10 @@
         if (luaL_dostring(sm->L,
             "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
-            {{ model.name }}_event_with_meta_t _err_evt;
+            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
             memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ model.name }}_raise(sm, &_err_evt);
+            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
         }
         {% elif var.content %}
         {% if (var.content | trim) is startingwith('<') %}
@@ -407,10 +407,10 @@
         if (luaL_dostring(sm->L,
             "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
             lua_pop(sm->L, 1);
-            {{ model.name }}_event_with_meta_t _err_evt;
+            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
             memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ model.name }}_raise(sm, &_err_evt);
+            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
         }
         {% elif var.content %}
         {% if (var.content | trim) is startingwith('<') %}
@@ -467,10 +467,10 @@
         if (luaL_dostring(sm->L,
             "{{ script.content | to_lua_script | escape_c }}") != 0) {
             lua_pop(sm->L, 1);
-            {{ model.name }}_event_with_meta_t _err_evt;
+            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
             memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ model.name }}_raise(sm, &_err_evt);
+            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
         }
         {% endfor %}
         {% endif %}
@@ -507,10 +507,10 @@
     if (luaL_dostring(sm->L,
         "{{ var.id }} = ({{ var.expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
-        {{ model.name }}_event_with_meta_t _err_evt;
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
         memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ model.name }}_raise(sm, &_err_evt);
+        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
     }
     {% elif var.content %}
     {% if (var.content | trim) is startingwith('<') %}
@@ -570,10 +570,10 @@
     if (luaL_dostring(sm->L,
         "{{ loc }} = ({{ expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
-        {{ model.name }}_event_with_meta_t _err_evt;
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
         memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ model.name }}_raise(sm, &_err_evt);
+        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
     }
 {% endmacro %}
 
@@ -623,10 +623,10 @@
         lua_pop(sm->L, 1);
     } else {
         lua_pop(sm->L, 1);
-        {{ model.name }}_event_with_meta_t _err_evt;
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
         memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ model.name }}_raise(sm, &_err_evt);
+        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
     }
 {% endmacro %}
 
@@ -698,10 +698,10 @@
             _i + 1{% if index %}, _i{% endif %});
         if (luaL_dostring(sm->L, _sce_buf) != 0) {
             lua_pop(sm->L, 1);
-            {{ model.name }}_event_with_meta_t _err_evt;
+            {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
             memset(&_err_evt, 0, sizeof(_err_evt));
-            _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-            {{ model.name }}_raise(sm, &_err_evt);
+            _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+            {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
             break;
         }
     }
@@ -727,10 +727,10 @@
         "_pending_donedata = ({{ expr | to_lua_expr | escape_c }})") != 0) {
         lua_pop(sm->L, 1);
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
-        {{ model.name }}_event_with_meta_t _err_evt;
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
         memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ model.name }}_raise(sm, &_err_evt);
+        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
     }
 {% endmacro %}
 
@@ -821,10 +821,10 @@
           "_pending_donedata.{{ param_name }} = ({{ chosen_expr | to_lua_expr | escape_c }}) "
         "end") != 0) {
         lua_pop(sm->L, 1);
-        {{ model.name }}_event_with_meta_t _err_evt;
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
         memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ model.name }}_raise(sm, &_err_evt);
+        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
     }
 {% endmacro %}
 
@@ -854,10 +854,10 @@
         "end") != 0) {
         lua_pop(sm->L, 1);
         (void)luaL_dostring(sm->L, "_pending_donedata = nil");
-        {{ model.name }}_event_with_meta_t _err_evt;
+        {{ csym_prefix }}{{ model.name }}_event_with_meta_t _err_evt;
         memset(&_err_evt, 0, sizeof(_err_evt));
-        _err_evt.event = {{ model.name | upper }}_EVENT_ERROR_EXECUTION;
-        {{ model.name }}_raise(sm, &_err_evt);
+        _err_evt.event = {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_ERROR_EXECUTION;
+        {{ csym_prefix }}{{ model.name }}_raise(sm, &_err_evt);
         return;
     }
 {% endmacro %}
