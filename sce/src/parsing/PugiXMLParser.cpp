@@ -516,46 +516,6 @@ SCE::parsing::PositionMap PugiXMLDocument::processSceTemplate(
     return std::move(expanded.positions);
 }
 
-std::string PugiXMLDocument::resolveFilePathInBase(const std::string &href,
-                                                    const std::string &baseDir) {
-    std::vector<std::string> discarded;
-    return resolveFilePathInBase(href, baseDir, discarded);
-}
-
-std::string PugiXMLDocument::resolveFilePathInBase(const std::string &href,
-                                                    const std::string &baseDir,
-                                                    std::vector<std::string> &searched) {
-    // Mirrors `sce-build/src/template.rs::resolve_template_path`: each
-    // branch that checks `exists()` appends the candidate to
-    // `searched` on miss, so the NotFound diagnostic carries the same
-    // trail the Rust side emits (absolute → base → cwd).
-    std::filesystem::path hrefPath(href);
-    if (hrefPath.is_absolute()) {
-        if (std::filesystem::exists(hrefPath)) {
-            return hrefPath.string();
-        }
-        searched.push_back(hrefPath.string());
-        return "";
-    }
-
-    // Try relative to base directory
-    if (!baseDir.empty()) {
-        std::filesystem::path fullPath = std::filesystem::path(baseDir) / href;
-        if (std::filesystem::exists(fullPath)) {
-            return std::filesystem::absolute(fullPath).string();
-        }
-        searched.push_back(fullPath.string());
-    }
-
-    // Try current directory
-    if (std::filesystem::exists(href)) {
-        return std::filesystem::absolute(href).string();
-    }
-    searched.push_back(href);
-
-    return "";
-}
-
 bool PugiXMLDocument::isValid() const {
     return doc_ != nullptr && doc_->document_element();
 }

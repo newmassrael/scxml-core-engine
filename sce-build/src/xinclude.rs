@@ -152,8 +152,9 @@ pub struct XIncludeLocation {
 /// `<xi:include href="relative/...">` is resolved against —
 /// typically `Path::new(self_path).parent()`. `extra_dirs` is the
 /// operator-configured `--include-dir` search path tried after
-/// `base_dir` and before the cwd fallback (see [`resolve_href`]); it
-/// stays constant across the whole recursive expansion.
+/// `base_dir` and before the cwd fallback (see
+/// [`crate::resolve::resolve_fragment`]); it stays constant across the
+/// whole recursive expansion.
 ///
 /// Returns the expanded document as an owned `String` suitable
 /// for handing to `roxmltree::Document::parse`, plus a
@@ -287,7 +288,16 @@ fn expand_impl(
             .filter(|v| !v.is_empty())
             .ok_or((XIncludeError::MissingHref, loc))?;
 
-        let resolved = resolve_href(href, base_dir, extra_dirs).map_err(|e| (e, loc))?;
+        let resolved =
+            crate::resolve::resolve_fragment(href, base_dir, extra_dirs).map_err(|tried| {
+                (
+                    XIncludeError::NotFound {
+                        href: href.to_string(),
+                        searched: tried.join(", "),
+                    },
+                    loc,
+                )
+            })?;
 
         // Cycle detection: a canonicalised path that is already on
         // the active expansion stack would re-enter its own
@@ -458,58 +468,6 @@ fn reject_unsupported(
         }
     }
     Ok(())
-}
-
-/// Resolve `href` to an absolute path using the same precedence
-/// as `PugiXMLDocument::resolveFilePathInBase`: absolute → base
-/// directory → operator-configured include directories → current
-/// working directory. Returns `NotFound` with the search trail on
-/// failure so the operator can see which paths were tried.
-///
-/// `extra_dirs` is the `--include-dir` search path, tried in
-/// declaration order after the including file's directory but before
-/// the implicit cwd fallback (matching
-/// [`crate::template::resolve_template_path`]). Empty in the common
-/// case, so builds that pass no include directories resolve exactly
-/// as `absolute → base → cwd`.
-fn resolve_href(
-    href: &str,
-    base_dir: Option<&Path>,
-    extra_dirs: &[PathBuf],
-) -> Result<PathBuf, XIncludeError> {
-    let href_path = Path::new(href);
-    let mut tried: Vec<String> = Vec::new();
-
-    if href_path.is_absolute() {
-        if href_path.exists() {
-            return Ok(href_path.to_path_buf());
-        }
-        tried.push(href_path.display().to_string());
-    } else {
-        if let Some(base) = base_dir {
-            let candidate = base.join(href_path);
-            if candidate.exists() {
-                return Ok(candidate);
-            }
-            tried.push(candidate.display().to_string());
-        }
-        for dir in extra_dirs {
-            let candidate = dir.join(href_path);
-            if candidate.exists() {
-                return Ok(candidate);
-            }
-            tried.push(candidate.display().to_string());
-        }
-        if href_path.exists() {
-            return Ok(href_path.to_path_buf());
-        }
-        tried.push(href_path.display().to_string());
-    }
-
-    Err(XIncludeError::NotFound {
-        href: href.to_string(),
-        searched: tried.join(", "),
-    })
 }
 
 /// Render the children of the included document's root element

@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 #include "parsing/TemplateExpander.h"
+#include "parsing/FragmentResolver.h"
 #include "parsing/TemplateConstants.h"
 
 #include <pugixml.hpp>
@@ -374,45 +375,6 @@ std::unordered_map<std::string, std::string> collectUseBindings(
         bindings.emplace(attrName, attr.value());
     }
     return bindings;
-}
-
-std::filesystem::path resolveTemplatePath(
-    std::string_view templateHref, const std::filesystem::path &baseDir,
-    const std::vector<std::string> &includeDirs,
-    std::vector<std::string> &searched) {
-    // Mirrors `sce-build/src/template.rs::resolve_template_path`:
-    // absolute → base directory → operator-configured include
-    // directories → current working directory. Every branch that
-    // checks `exists()` appends the candidate to `searched` on miss so
-    // the `TemplateNotFound` diagnostic renders the same trail the Rust
-    // side emits.
-    std::filesystem::path path(std::string{templateHref});
-    if (path.is_absolute()) {
-        if (std::filesystem::exists(path)) {
-            return path;
-        }
-        searched.push_back(path.string());
-        return {};
-    }
-    if (!baseDir.empty()) {
-        const auto candidate = baseDir / path;
-        if (std::filesystem::exists(candidate)) {
-            return std::filesystem::absolute(candidate);
-        }
-        searched.push_back(candidate.string());
-    }
-    for (const auto &dir : includeDirs) {
-        const auto candidate = std::filesystem::path(dir) / path;
-        if (std::filesystem::exists(candidate)) {
-            return std::filesystem::absolute(candidate);
-        }
-        searched.push_back(candidate.string());
-    }
-    if (std::filesystem::exists(path)) {
-        return std::filesystem::absolute(path);
-    }
-    searched.push_back(path.string());
-    return {};
 }
 
 namespace {
@@ -816,7 +778,7 @@ TemplateExpandResult expandImpl(std::string_view content,
 
         std::vector<std::string> tried;
         const auto resolvedPath =
-            resolveTemplatePath(templateHref, baseDir, includeDirs, tried);
+            resolveFragment(templateHref, baseDir, includeDirs, tried);
         if (resolvedPath.empty()) {
             std::string trail;
             for (const auto &entry : tried) {

@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
 #include "parsing/XIncludeExpander.h"
+#include "parsing/FragmentResolver.h"
 #include "parsing/TemplateExpander.h"
 
 #include <pugixml.hpp>
@@ -180,52 +181,6 @@ RootChildrenRender renderRootChildren(std::string_view expanded,
         std::string(expanded.substr(start, end - start)), start, end};
 }
 
-// Resolve `href` against the same precedence ladder
-// `PugiXMLDocument::resolveFilePathInBase` uses (and the replaced
-// DOM-mutation path used): absolute → base directory →
-// operator-configured include directories → current working
-// directory. Mirrors Rust `sce-build/src/xinclude.rs::resolve_href`.
-// `includeDirs` is the `--include-dir` search path, tried in
-// declaration order after `baseDir`. On miss, populates `searched`
-// with the paths tried (so the diagnostic can show where the operator
-// should put the file) and returns an empty path.
-std::filesystem::path resolveHref(std::string_view href,
-                                  const std::filesystem::path &baseDir,
-                                  const std::vector<std::string> &includeDirs,
-                                  std::vector<std::string> &searched) {
-    namespace fs = std::filesystem;
-    fs::path hrefPath(std::string{href});
-
-    std::error_code ec;
-    if (hrefPath.is_absolute()) {
-        if (fs::exists(hrefPath, ec)) {
-            return hrefPath;
-        }
-        searched.push_back(hrefPath.string());
-        return {};
-    }
-
-    if (!baseDir.empty()) {
-        const fs::path candidate = baseDir / hrefPath;
-        if (fs::exists(candidate, ec)) {
-            return candidate;
-        }
-        searched.push_back(candidate.string());
-    }
-    for (const auto &dir : includeDirs) {
-        const fs::path candidate = fs::path(dir) / hrefPath;
-        if (fs::exists(candidate, ec)) {
-            return candidate;
-        }
-        searched.push_back(candidate.string());
-    }
-    if (fs::exists(hrefPath, ec)) {
-        return hrefPath;
-    }
-    searched.push_back(hrefPath.string());
-    return {};
-}
-
 // Render the cycle chain for a `Cycle` diagnostic. Joins the live
 // stack plus the offending next entry with U+2192 ` → ` separators
 // — same shape as Rust `render_chain`
@@ -369,7 +324,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
         rejectUnsupportedFeatures(node, href);
 
         std::vector<std::string> searched;
-        const auto resolved = resolveHref(href, baseDir, includeDirs, searched);
+        const auto resolved = resolveFragment(href, baseDir, includeDirs, searched);
         if (resolved.empty()) {
             std::string trail;
             for (const auto &entry : searched) {
