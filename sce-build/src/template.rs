@@ -182,8 +182,8 @@ struct ParamDecl {
 /// typically `Path::new(self_path).parent()`. `extra_dirs` is the
 /// operator-configured `--include-dir` search path tried after
 /// `base_dir` and before the cwd fallback (see
-/// [`resolve_template_path`]); it stays constant across the whole
-/// recursive expansion.
+/// [`crate::resolve::resolve_fragment`]); it stays constant across the
+/// whole recursive expansion.
 ///
 /// `input_map` is the [`PositionMap`] keyed by `content`'s bytes,
 /// produced by the preprocessor stage immediately upstream — at
@@ -308,8 +308,16 @@ fn expand_impl(
             .filter(|v| !v.is_empty())
             .ok_or((TemplateError::MissingTemplateAttribute, loc))?;
 
-        let resolved =
-            resolve_template_path(template_attr, base_dir, extra_dirs).map_err(|e| (e, loc))?;
+        let resolved = crate::resolve::resolve_fragment(template_attr, base_dir, extra_dirs)
+            .map_err(|tried| {
+                (
+                    TemplateError::NotFound {
+                        template: template_attr.to_string(),
+                        searched: tried.join(", "),
+                    },
+                    loc,
+                )
+            })?;
 
         // Cycle detection via canonicalised path. Also deduplicates
         // aliased forms (`./foo.xml`, `foo.xml`, `../dir/foo.xml`).
@@ -442,58 +450,6 @@ fn collect_uses_into<'a, 'input>(
             collect_uses_into(&child, out);
         }
     }
-}
-
-/// Resolve `template` to an absolute path using the same precedence
-/// as [`crate::xinclude::resolve_href`]: absolute → base directory →
-/// operator-configured include directories → current working
-/// directory. Returns `NotFound` with the search trail on failure so
-/// the operator can see which paths were tried.
-///
-/// `extra_dirs` is the `--include-dir` search path: an ordered list of
-/// directories tried (in declaration order) after the including file's
-/// directory but before the implicit cwd fallback, so an explicit
-/// search path always wins over the cwd guess. Empty in the common
-/// case, so builds that pass no include directories resolve exactly as
-/// `absolute → base → cwd`.
-fn resolve_template_path(
-    template: &str,
-    base_dir: Option<&Path>,
-    extra_dirs: &[PathBuf],
-) -> Result<PathBuf, TemplateError> {
-    let path = Path::new(template);
-    let mut tried: Vec<String> = Vec::new();
-
-    if path.is_absolute() {
-        if path.exists() {
-            return Ok(path.to_path_buf());
-        }
-        tried.push(path.display().to_string());
-    } else {
-        if let Some(base) = base_dir {
-            let candidate = base.join(path);
-            if candidate.exists() {
-                return Ok(candidate);
-            }
-            tried.push(candidate.display().to_string());
-        }
-        for dir in extra_dirs {
-            let candidate = dir.join(path);
-            if candidate.exists() {
-                return Ok(candidate);
-            }
-            tried.push(candidate.display().to_string());
-        }
-        if path.exists() {
-            return Ok(path.to_path_buf());
-        }
-        tried.push(path.display().to_string());
-    }
-
-    Err(TemplateError::NotFound {
-        template: template.to_string(),
-        searched: tried.join(", "),
-    })
 }
 
 /// Parse a template file, validate its structure, bind call-site

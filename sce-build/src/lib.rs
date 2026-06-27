@@ -45,6 +45,11 @@ pub mod provenance;
 /// Drives the `sce-codegen requirements` CLI subcommand for
 /// downstream req-coverage tooling.
 pub mod requirements_report;
+/// Single source of truth for `<xi:include>` / `<sce:use>` fragment
+/// path resolution — the search-path precedence shared by
+/// [`xinclude`] and [`template`] and mirrored by the C++ runtime's
+/// `FragmentResolver.h`.
+pub mod resolve;
 pub mod script_engine_analyzer;
 /// Event-set exhaustiveness
 /// validator. Flags compound `<state>` parents whose sibling children
