@@ -262,7 +262,7 @@ if (child_{{ field_suffix }}_) {
     // `::P_<part>` form. No cross-partition invoke consumer today;
     // a future consumer threads `child_partition` through the
     // model + gates a `::P_<part>` segment here.
-    using ChildEvent = ::SCE::Generated::{{ child_name }}::Event;
+    using ChildEvent = ::SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ child_name }}::Event;
     AOT_DEBUG("Sending event {{ action.event }} to child {{ invoke_id }}");
     child_{{ field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
     AOT_DEBUG("Processing child {{ invoke_id }} event queues");
@@ -289,7 +289,7 @@ if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
             // W3C SCXML 6.4: Send event to child using child's Event enum.
             // SCE_MESH §14 arch-debt #4 caveat: partition-naive ref —
             // see the sibling targeted-send site above for the lift path.
-            using ChildEvent = ::SCE::Generated::{{ invoke.child_name }}::Event;
+            using ChildEvent = ::SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ invoke.child_name }}::Event;
             AOT_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
             child_{{ invoke.field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
             AOT_DEBUG("Processing child {} event queues", invokeId);
@@ -302,7 +302,7 @@ if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
 {% else %}
     } else if (invokeId == "{{ invoke.invoke_id }}") {
         if (child_{{ invoke.field_suffix }}_) {
-            using ChildEvent = ::SCE::Generated::{{ invoke.child_name }}::Event;
+            using ChildEvent = ::SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ invoke.child_name }}::Event;
             AOT_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
             child_{{ invoke.field_suffix }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
             child_{{ invoke.field_suffix }}_->step();

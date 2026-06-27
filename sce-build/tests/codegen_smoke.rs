@@ -201,6 +201,150 @@ fn smoke_cpp() {
     );
 }
 
+/// Regression guard for `sce-codegen generate -l cpp
+/// --cpp-namespace-prefix <NAME>`.
+///
+/// The flag nests the emitted machine namespace under
+/// `SCE::Generated::<prefix>::<machine>`. The child-machine *declaration*
+/// is rendered into the `.h` (state_machine.jinja2) while the matching
+/// *definitions* — `make_shared` (invoke_methods.jinja2) and the
+/// `using ChildEvent` send alias (actions/send.jinja2) — are rendered into
+/// the `.inl`. The two render contexts are separate; an earlier revision
+/// threaded the prefix into the `.h` context only, so a prefixed
+/// invoke-bearing machine declared `shared_ptr<...prefix::child...>` but
+/// defined `make_shared<...child...>` and failed to compile.
+///
+/// This test compiles a fixture that has both an inline `<invoke>` and a
+/// targeted child `<send>`, once with the prefix and once without, and
+/// asserts:
+///   - prefixed output compiles (the core guard), and the prefixed
+///     namespace reaches the `.inl` (not just the `.h`);
+///   - unset output compiles and contains neither the prefix token nor a
+///     stray empty `::::` segment (byte-shape preserved when unset).
+#[test]
+fn smoke_cpp_namespace_prefix() {
+    const FIXTURE: &str = "cpp_namespace_prefix_invoke";
+    const PREFIX: &str = "ScePrefixTest";
+
+    let Some(gpp) = resolve_tool("g++") else {
+        eprintln!("SKIP smoke_cpp_namespace_prefix: g++ not on PATH");
+        return;
+    };
+    let scratch = reset_scratch("cpp_ns_prefix");
+    let fx_path = fixtures_dir().join(format!("{FIXTURE}.scxml"));
+
+    let include_roots: Vec<PathBuf> = vec![
+        repo_root().join("sce/include"),
+        repo_root().join("third_party/spdlog/include"),
+        repo_root().join("third_party/nlohmann_json/include"),
+    ];
+
+    // Generate `FIXTURE` into a fresh sub-dir, optionally with the prefix
+    // flag. Returns the out-dir so the caller can collect headers.
+    let generate = |out_dir: &Path, prefix: Option<&str>| {
+        std::fs::create_dir_all(out_dir).expect("create out dir");
+        let mut cmd = Command::new(sce_codegen_bin());
+        cmd.args(["generate", "-l", "cpp", "-o"]).arg(out_dir);
+        if let Some(p) = prefix {
+            cmd.args(["--cpp-namespace-prefix", p]);
+        }
+        cmd.arg(&fx_path);
+        let output = cmd.output().expect("spawn sce-codegen");
+        assert!(
+            output.status.success(),
+            "sce-codegen generate (prefix={prefix:?}) failed (exit {:?})\nstderr: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    };
+
+    // Compile every `_sm.h` in `out_dir` as one translation unit. The
+    // inline-content child is co-emitted as a template sibling, so the
+    // whole suite is self-contained. Returns the g++ stderr on failure.
+    let compile = |out_dir: &Path| -> Result<(), String> {
+        let headers: Vec<String> = find_by_ext(out_dir, "h")
+            .into_iter()
+            .filter_map(|h| h.file_name().and_then(|s| s.to_str()).map(String::from))
+            .filter(|n| n.ends_with("_sm.h"))
+            .collect();
+        assert!(
+            !headers.is_empty(),
+            "no _sm.h artefacts under {}",
+            out_dir.display(),
+        );
+        let stub = out_dir.join("stub.cpp");
+        let src: String = headers
+            .iter()
+            .map(|h| format!("#include \"{h}\"\n"))
+            .collect();
+        std::fs::write(&stub, &src).expect("write stub");
+
+        let mut cmd = Command::new(&gpp);
+        cmd.args(["-std=c++20", "-fsyntax-only"]);
+        for dir in &include_roots {
+            cmd.arg("-I").arg(dir);
+        }
+        cmd.arg("-I").arg(out_dir);
+        cmd.arg(&stub).stdout(Stdio::piped()).stderr(Stdio::piped());
+        let output = cmd.output().expect("run g++");
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).into_owned())
+        }
+    };
+
+    // Concatenate every generated body of one extension under a dir.
+    // Kept per-extension so the `.inl` (definitions) can be asserted on
+    // independently of the `.h` (declarations) — the bug was the prefix
+    // reaching the latter but not the former.
+    let read_ext = |out_dir: &Path, ext: &str| -> String {
+        find_by_ext(out_dir, ext)
+            .iter()
+            .map(|f| std::fs::read_to_string(f).expect("read source"))
+            .collect()
+    };
+
+    // --- prefixed: the core regression guard -------------------------
+    let pref_dir = scratch.join("prefixed");
+    generate(&pref_dir, Some(PREFIX));
+    if let Err(stderr) = compile(&pref_dir) {
+        panic!("prefixed g++ -fsyntax-only failed (the decl/def namespace bug):\n{stderr}");
+    }
+    // The prefixed namespace must reach the `.inl` definitions, not only
+    // the `.h` declarations. The qualified name may be wrapped across
+    // lines by the formatter, so assert on the namespace token alone
+    // rather than a contiguous `make_shared<...>` span. `make_shared` and
+    // `ChildEvent` confirm the two distinct definition sites are present
+    // in this fixture; the `PREFIX::` token confirms both are nested.
+    let pref_inl = read_ext(&pref_dir, "inl");
+    let ns_token = format!("SCE::Generated::{PREFIX}::");
+    assert!(
+        pref_inl.contains("make_shared") && pref_inl.contains(&ns_token),
+        "prefixed make_shared (.inl) does not carry the namespace prefix {PREFIX:?}",
+    );
+    assert!(
+        pref_inl.contains("using ChildEvent") && pref_inl.contains(&ns_token),
+        "prefixed ChildEvent send alias (.inl) does not carry the namespace prefix {PREFIX:?}",
+    );
+
+    // --- unset: byte-shape preserved ---------------------------------
+    let unset_dir = scratch.join("unset");
+    generate(&unset_dir, None);
+    if let Err(stderr) = compile(&unset_dir) {
+        panic!("unset g++ -fsyntax-only failed:\n{stderr}");
+    }
+    let unset_src: String = [read_ext(&unset_dir, "h"), read_ext(&unset_dir, "inl")].concat();
+    assert!(
+        !unset_src.contains(PREFIX),
+        "unset output unexpectedly contains the prefix token {PREFIX:?}",
+    );
+    assert!(
+        !unset_src.contains("::::"),
+        "unset output has a stray empty `::::` namespace segment",
+    );
+}
+
 #[test]
 fn smoke_rust() {
     // `syn::parse_file` runs in-process — no external toolchain, so

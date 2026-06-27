@@ -233,7 +233,7 @@
    same machine can be ODR-co-included in one binary (e.g. the §16.8
    single-runner shape). The non-partition path keeps the flat
    `SCE::Generated::<machine>` shape used by every existing consumer. #}
-namespace SCE::Generated::{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %} {
+namespace SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %} {
 
 {# Forward declaration #}
 {% if _has_sm_tpl %}
@@ -287,8 +287,8 @@ struct TransitionInfo {
 template <{{ _tpl_params | join(', ') }}>
 {% endif %}
 struct {{ model.name }}Policy {
-    using State = ::SCE::Generated::{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}::State;
-    using Event = ::SCE::Generated::{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}::Event;
+    using State = ::SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}::State;
+    using Event = ::SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}::Event;
 {% for ctx in model.context_objects %}
     using {{ ctx.id | capitalize }}Type = {{ ctx.cpp_type if ctx.cpp_type else (ctx.id | capitalize + 'T') }};
 {% endfor %}
@@ -416,10 +416,10 @@ struct {{ model.name }}Policy {
     mutable ::SCE::Core::EventMetadata currentEventMetadata_;
     // W3C SCXML 6.4: Invoke child state machines (static and hybrid, all pure AOT)
     {% for invoke_info in model.invokes | scxml %}
-    mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;
+    mutable std::shared_ptr<::SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;
     {% endfor %}
     {% for invoke_info in model.invokes | hybrid %}
-    mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;
+    mutable std::shared_ptr<::SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.field_suffix }}_;
     {% endfor %}
     {% endif %}
 
@@ -911,4 +911,4 @@ static_assert(::SCE::Core::ParallelStatePolicy<{{ model.name }}Policy>,
 #endif
 {% endif %}
 
-} // namespace SCE::Generated::{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}
+} // namespace SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ model.name }}{% if model.partition_self_name %}::P_{{ model.partition_self_name }}{% endif %}

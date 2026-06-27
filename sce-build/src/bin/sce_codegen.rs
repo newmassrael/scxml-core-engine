@@ -490,6 +490,15 @@ SCE_ERROR_CONTRACT.md §10) rides there regardless of this flag.
     command: Commands,
 }
 
+// `Generate` carries ~20 clap arg fields, so it dwarfs the other
+// subcommand variants and trips `large_enum_variant`. This enum is a
+// clap `Subcommand` parsed exactly once at process startup; the size
+// disparity the lint guards against (wasted stack/heap on the smaller
+// variants) is irrelevant for a single short-lived dispatch value, and
+// boxing the individual args would obscure the derive-driven CLI surface
+// for no runtime gain. Same wide-CLI rationale as the
+// `too_many_arguments` allow on `cmd_generate`.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 enum Commands {
     /// Generate code from a single SCXML file
@@ -651,6 +660,14 @@ enum Commands {
         /// language targets.
         #[arg(long)]
         kotlin_package_prefix: Option<String>,
+        /// Nest the emitted C++ namespace under
+        /// `SCE::Generated::<prefix>::<machine>` instead of the default
+        /// `SCE::Generated::<machine>`. Lets a separate catalog (suite) reuse
+        /// the same machine names as the in-tree catalog without an ODR clash
+        /// when both link into one binary. Empty/unset = the historical
+        /// un-namespaced shape (byte-identical). Only meaningful with `-l cpp`.
+        #[arg(long)]
+        cpp_namespace_prefix: Option<String>,
         /// Reject the build when the
         /// document carries any `<sce:unresolved>` placeholder
         /// (attribute or element form). Default builds let the
@@ -1002,6 +1019,7 @@ fn main() {
             input_root,
             emit_ast,
             kotlin_package_prefix,
+            cpp_namespace_prefix,
             strict_unresolved,
             include_dir,
         } => cmd_generate(
@@ -1022,6 +1040,7 @@ fn main() {
             input_root.as_deref(),
             emit_ast.as_deref(),
             kotlin_package_prefix.as_deref(),
+            cpp_namespace_prefix.as_deref(),
             strict_unresolved,
             &include_dir,
             error_format,
@@ -1378,6 +1397,7 @@ fn cmd_generate(
     input_root_override: Option<&str>,
     emit_ast_path: Option<&str>,
     kotlin_package_prefix: Option<&str>,
+    cpp_namespace_prefix: Option<&str>,
     strict_unresolved: bool,
     include_dirs: &[String],
     error_format: ErrorFormat,
@@ -1980,8 +2000,10 @@ fn cmd_generate(
                         ..Default::default()
                     }
                 }
-                Language::Cpp => sce_build::generator::generate_cpp(m, &template_dir, stem)
-                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
+                Language::Cpp => {
+                    sce_build::generator::generate_cpp(m, &template_dir, stem, cpp_namespace_prefix)
+                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)))
+                }
                 Language::Kotlin => {
                     let mut code = sce_build::generator::generate_kotlin(
                         m,
@@ -3855,7 +3877,7 @@ impl W3cBackend for CppBackend {
         model: &SCXMLModel,
         input_stem: &str,
     ) -> Result<Vec<(String, String)>, ForgeError> {
-        let output = sce_build::generator::generate_cpp(model, &self.tmpl_dir, input_stem)?;
+        let output = sce_build::generator::generate_cpp(model, &self.tmpl_dir, input_stem, None)?;
         Ok(output.files)
     }
 

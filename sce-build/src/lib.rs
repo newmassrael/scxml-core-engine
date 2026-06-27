@@ -656,7 +656,7 @@ pub fn compile_scxml_lang_typed_with_section(
                 deps: Vec::new(),
             }
         }
-        generator::Language::Cpp => generator::generate_cpp(&model, template_dir, input_stem)
+        generator::Language::Cpp => generator::generate_cpp(&model, template_dir, input_stem, None)
             .map_err(|e| locate_codegen_error(e, scxml_path))?,
         generator::Language::Kotlin => {
             let code = generator::generate_kotlin(&model, template_dir, None)
