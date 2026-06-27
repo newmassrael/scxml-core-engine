@@ -682,7 +682,7 @@ pub fn compile_scxml_lang_typed_with_section(
                 deps: Vec::new(),
             }
         }
-        generator::Language::C11 => generator::generate_c11(&model, template_dir, input_stem)
+        generator::Language::C11 => generator::generate_c11(&model, template_dir, input_stem, None)
             .map_err(|e| locate_codegen_error(e, scxml_path))?,
     };
     output.deps = preprocessor_deps;

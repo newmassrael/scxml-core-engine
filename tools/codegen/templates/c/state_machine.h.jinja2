@@ -19,8 +19,8 @@
 
 {{ sce_map.source_marker(model.source_location, "c", module_level=true) }}
 
-#ifndef SCE_GENERATED_{{ model.name | upper }}_SM_H
-#define SCE_GENERATED_{{ model.name | upper }}_SM_H
+#ifndef SCE_GENERATED_{{ csym_prefix | upper }}{{ model.name | upper }}_SM_H
+#define SCE_GENERATED_{{ csym_prefix | upper }}{{ model.name | upper }}_SM_H
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -82,13 +82,13 @@ extern "C" {
    past the last real state and is the array dimension for any future
    per-state codegen-time table; today it gates the 32-state bitmap
    width via _Static_assert at the bottom of this header.                #}
-enum {{ model.name }}_state_e {
+enum {{ csym_prefix }}{{ model.name }}_state_e {
     {% for state_name in model.states | sort %}
-    {{ model.name | upper }}_STATE_{{ state_name | upper | replace('-', '_') | replace('.', '_') }},
+    {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_{{ state_name | upper | replace('-', '_') | replace('.', '_') }},
     {% endfor %}
-    {{ model.name | upper }}_STATE_COUNT
+    {{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT
 };
-typedef enum {{ model.name }}_state_e {{ model.name }}_state_t;
+typedef enum {{ csym_prefix }}{{ model.name }}_state_e {{ csym_prefix }}{{ model.name }}_state_t;
 
 {% if model.has_history_states %}
 /* ── W3C SCXML 3.10: History pseudo-state enumeration ─────────────── */
@@ -99,13 +99,13 @@ typedef enum {{ model.name }}_state_e {{ model.name }}_state_t;
    field, but only history-targeted transitions set it to a non-NONE
    value. Mirrors the per-history `history_<id>: Option<Vec<State>>`
    shape used by the Rust backend (state_machine.rs.jinja2:163). #}
-enum {{ model.name }}_history_e {
-    {{ model.name | upper }}_HIST_NONE,
+enum {{ csym_prefix }}{{ model.name }}_history_e {
+    {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_NONE,
     {% for hid, _ in model.history_states | dictsort %}
-    {{ model.name | upper }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }},
+    {{ csym_prefix | upper }}{{ model.name | upper }}_HIST_{{ hid | upper | replace('-', '_') | replace('.', '_') }},
     {% endfor %}
 };
-typedef enum {{ model.name }}_history_e {{ model.name }}_history_t;
+typedef enum {{ csym_prefix }}{{ model.name }}_history_e {{ csym_prefix }}{{ model.name }}_history_t;
 
 {% endif %}
 /* ── W3C SCXML 6.2: Event enumeration ─────────────────────────────── */
@@ -113,13 +113,13 @@ typedef enum {{ model.name }}_history_e {{ model.name }}_history_t;
    the underlying integer is 0, matching the C++ `Event::NONE` semantics
    (`process_transition.jinja2` peers compare against the unset event with
    the zero literal). #}
-enum {{ model.name }}_event_e {
-    {{ model.name | upper }}_EVENT_NONE{{ "," if model.events }}
+enum {{ csym_prefix }}{{ model.name }}_event_e {
+    {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE{{ "," if model.events }}
     {% for event_name in model.events | sort %}
-    {{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ "," if not loop.last }}
+    {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ event_name | upper | replace('.', '_') | replace('-', '_') }}{{ "," if not loop.last }}
     {% endfor %}
 };
-typedef enum {{ model.name }}_event_e {{ model.name }}_event_t;
+typedef enum {{ csym_prefix }}{{ model.name }}_event_e {{ csym_prefix }}{{ model.name }}_event_t;
 
 {% if event_payload_active %}
 /* ── NL→IR Item C1 Path A: typed `_event.data` payload channel ─────── */
@@ -129,8 +129,8 @@ typedef enum {{ model.name }}_event_e {{ model.name }}_event_t;
 {# Mirrors `StaticExecutionEngine<P>::EventWithMetadata` (sce/include/static).
    Strings are bounded char arrays sized via `sce/types.h` so the entire
    event record is value-typed and queue storage is statically reservable. #}
-typedef struct {{ model.name }}_event_with_meta {
-    {{ model.name }}_event_t event;
+typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
+    {{ csym_prefix }}{{ model.name }}_event_t event;
     char data[SCE_MAX_DATA_LEN];
     char origin[SCE_MAX_ID_LEN];
     char send_id[SCE_MAX_ID_LEN];
@@ -146,7 +146,7 @@ typedef struct {{ model.name }}_event_with_meta {
        transition guards simply fail. */
     {{ event_payload_type }} payload;
 {% endif %}
-} {{ model.name }}_event_with_meta_t;
+} {{ csym_prefix }}{{ model.name }}_event_with_meta_t;
 
 /* ── W3C SCXML Appendix D.2: Optimal enabled transition set ───────── */
 {# Mirrors the C++ `TransitionInfo` struct defined inside the generated
@@ -165,25 +165,25 @@ typedef struct {{ model.name }}_event_with_meta {
      - handle_microstep: reads (source, target, index, flags) for the
        exit/body/entry sequence
    #}
-typedef struct {{ model.name }}_transition_info {
-    {{ model.name }}_state_t source;       /* W3C 3.13: source state of transition */
-    {{ model.name }}_state_t target;       /* W3C 3.13: target state (== source when targetless) */
+typedef struct {{ csym_prefix }}{{ model.name }}_transition_info {
+    {{ csym_prefix }}{{ model.name }}_state_t source;       /* W3C 3.13: source state of transition */
+    {{ csym_prefix }}{{ model.name }}_state_t target;       /* W3C 3.13: target state (== source when targetless) */
     uint16_t index;                        /* W3C 3.13: per-source-state transition index for execute_transition_actions */
     bool is_internal;                      /* W3C 3.13: type="internal" (analyzer.rs has already collapsed not-proper-descendant cases to external) */
     bool is_targetless;                    /* W3C 5.9.2: no target — body fires, no state change */
     uint32_t exit_set;                     /* W3C App.D.2: states this transition would exit (computed at collect time) */
 {% if model.has_history_states %}
-    {{ model.name }}_history_t history_target;  /* W3C 3.10: HIST_NONE for plain transitions; non-NONE = enter via enter_history_state (snapshot or default) */
+    {{ csym_prefix }}{{ model.name }}_history_t history_target;  /* W3C 3.10: HIST_NONE for plain transitions; non-NONE = enter via enter_history_state (snapshot or default) */
 {% endif %}
-} {{ model.name }}_transition_info_t;
+} {{ csym_prefix }}{{ model.name }}_transition_info_t;
 
 /* ── Internal/external event queues — circular buffer ─────────────── */
-typedef struct {{ model.name }}_event_queue {
-    {{ model.name }}_event_with_meta_t buf[SCE_MAX_EVENTS];
+typedef struct {{ csym_prefix }}{{ model.name }}_event_queue {
+    {{ csym_prefix }}{{ model.name }}_event_with_meta_t buf[SCE_MAX_EVENTS];
     uint16_t head;
     uint16_t tail;
     uint16_t count;
-} {{ model.name }}_event_queue_t;
+} {{ csym_prefix }}{{ model.name }}_event_queue_t;
 
 {% if model.needs_event_scheduler %}
 /* ── W3C SCXML 6.2: Delayed-send queue entry ──────────────────────── */
@@ -196,9 +196,9 @@ typedef struct {{ model.name }}_event_queue {
    by `fire_time_ms` so `_tick` can early-exit at the first not-yet-
    ready entry; insertion is O(n) per event which is the same shape as
    the cpp `std::map<OrderKey, …>` for the small N we expect on MCU. #}
-typedef struct {{ model.name }}_scheduled_entry {
+typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_entry {
     uint64_t fire_time_ms;
-    {{ model.name }}_event_t event;
+    {{ csym_prefix }}{{ model.name }}_event_t event;
     char send_id[SCE_MAX_ID_LEN];
 {% if model.needs_script_engine %}
     /* W3C SCXML 5.10: per-entry payload reference into the lua registry.
@@ -224,17 +224,17 @@ typedef struct {{ model.name }}_scheduled_entry {
        `_tick`'s `is_in_final_state` early-return drops the pending entry
        silently — same observable as cpp's per-child `parentSendScheduler_`
        destructor cleaning up its std::map. The `event` enum slot stays
-       zero-initialised (`{{ model.name | upper }}_EVENT_NONE`) for these
+       zero-initialised (`{{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_NONE`) for these
        entries; only `to_parent_event` carries routing information. */
     bool to_parent;
     char to_parent_event[SCE_MAX_ID_LEN];
 {% endif %}
-} {{ model.name }}_scheduled_entry_t;
+} {{ csym_prefix }}{{ model.name }}_scheduled_entry_t;
 
-typedef struct {{ model.name }}_scheduled_queue {
-    {{ model.name }}_scheduled_entry_t buf[SCE_MAX_SCHEDULED];
+typedef struct {{ csym_prefix }}{{ model.name }}_scheduled_queue {
+    {{ csym_prefix }}{{ model.name }}_scheduled_entry_t buf[SCE_MAX_SCHEDULED];
     uint8_t count;
-} {{ model.name }}_scheduled_queue_t;
+} {{ csym_prefix }}{{ model.name }}_scheduled_queue_t;
 {% endif %}
 
 /* ── Policy state (datamodel + transition tracking) ───────────────── */
@@ -242,13 +242,13 @@ typedef struct {{ model.name }}_scheduled_queue {
    transition-tracking trio that `AOT_EXECUTE_TRANSITION` always writes.
    Datamodel variables, history slots, invoke tables, and parallel
    active-state vectors join in E2-E5 as their owning fixture lands. #}
-typedef struct {{ model.name }}_policy {
-    {{ model.name }}_state_t last_transition_source_state;
+typedef struct {{ csym_prefix }}{{ model.name }}_policy {
+    {{ csym_prefix }}{{ model.name }}_state_t last_transition_source_state;
     /* W3C SCXML 3.13: Target captured at process_transition match time so
        handle_hierarchical_transition can run exit→body→entry without
        requiring a separate `current_state` shadow (active configuration
        lives in the bitmap `active`). Unused when last_transition_is_targetless. */
-    {{ model.name }}_state_t last_transition_target_state;
+    {{ csym_prefix }}{{ model.name }}_state_t last_transition_target_state;
     bool last_transition_is_internal;
     bool last_transition_is_targetless;
     /* W3C SCXML 3.13: Transition body actions are deferred to
@@ -271,7 +271,7 @@ typedef struct {{ model.name }}_policy {
     bool history_{{ hid }}_recorded;
     {% endfor %}
 {% endif %}
-} {{ model.name }}_policy_t;
+} {{ csym_prefix }}{{ model.name }}_policy_t;
 
 {% if inline_kind_code %}
 /* ── SCE Forge: Inline kind declarations ──────────────────────────── */
@@ -293,7 +293,7 @@ typedef struct {{ model.name }}_policy {
    in C11 the engine and policy fields are flattened into a single
    instance struct (the C++ template instantiates a per-fixture base
    class anyway, so there is no shared base layout to share).             #}
-typedef struct {{ model.name }} {
+typedef struct {{ csym_prefix }}{{ model.name }} {
     /* W3C SCXML 3.2: configuration bitmap. Bit N (1u << N) corresponds
        to STATE_N in the enum above; entry sets the bit, exit clears it.
        Compound state entry sets both the parent ancestors and the
@@ -313,12 +313,12 @@ typedef struct {{ model.name }} {
        policy's `pending_payload` field. */
     {{ event_payload_type }} pending_payload;
 {% endif %}
-    {{ model.name }}_event_queue_t internal_queue;   /* W3C 3.12.1: high-priority FIFO */
-    {{ model.name }}_event_queue_t external_queue;   /* W3C 3.12.1: low-priority FIFO  */
+    {{ csym_prefix }}{{ model.name }}_event_queue_t internal_queue;   /* W3C 3.12.1: high-priority FIFO */
+    {{ csym_prefix }}{{ model.name }}_event_queue_t external_queue;   /* W3C 3.12.1: low-priority FIFO  */
 {% if model.needs_event_scheduler %}
-    {{ model.name }}_scheduled_queue_t scheduled_queue;  /* W3C 6.2: delayed <send> queue, drained by _tick */
+    {{ csym_prefix }}{{ model.name }}_scheduled_queue_t scheduled_queue;  /* W3C 6.2: delayed <send> queue, drained by _tick */
 {% endif %}
-    {{ model.name }}_policy_t policy;
+    {{ csym_prefix }}{{ model.name }}_policy_t policy;
     bool is_running;
     bool transition_taken;
     char current_event_invoke_id[SCE_MAX_ID_LEN];
@@ -333,7 +333,7 @@ typedef struct {{ model.name }} {
        cancel. */
     sce_invoke_pending_queue_t pending_invokes;
     {% for invoke_info in model.invokes | scxml %}
-    {{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
+    {{ csym_prefix }}{{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
     bool child_{{ invoke_info.field_suffix }}_active;
     /* W3C SCXML 6.4 / 6.3.1: spawn-time invoke id stamped from
        `sce_invoke_pending_t::invoke_id` so `_drive_active_children`
@@ -349,7 +349,7 @@ typedef struct {{ model.name }} {
        `execute_pending_invokes` (cpp `test216_sm.inl:166-176` mirror).
        The child SM is the trivial immediate-final stub that sce-build
        writes via `generate_hybrid_child_scxmls`. */
-    {{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
+    {{ csym_prefix }}{{ invoke_info.child_name }}_t child_{{ invoke_info.field_suffix }};
     bool child_{{ invoke_info.field_suffix }}_active;
     char child_{{ invoke_info.field_suffix }}_invoke_id[SCE_MAX_ID_LEN];
     {% endfor %}
@@ -382,14 +382,14 @@ typedef struct {{ model.name }} {
     void (*parent_dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data);
     char invoke_id[SCE_MAX_ID_LEN];
     {% endif %}
-} {{ model.name }}_t;
+} {{ csym_prefix }}{{ model.name }}_t;
 
 /* ── Public API ───────────────────────────────────────────────────── */
 
 {% if not model.has_parent_communication %}
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
-   Must be called once before {{ model.name }}_step / {{ model.name }}_run. */
-void {{ model.name }}_init({{ model.name }}_t *sm);
+   Must be called once before {{ csym_prefix }}{{ model.name }}_step / {{ csym_prefix }}{{ model.name }}_run. */
+void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm);
 {% else %}
 /* W3C SCXML 6.4: Initialize an invoked-child SM with parent-routing
    wired BEFORE the configuration entry walk runs. The parent's
@@ -404,7 +404,7 @@ void {{ model.name }}_init({{ model.name }}_t *sm);
    `<send target="#_parent">` are exclusively invoked as children, so
    the plain `_init` symbol is not emitted for them — the only call site
    is the parent's invoke helper. */
-void {{ model.name }}_init_with_parent({{ model.name }}_t *sm,
+void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,
                                        void (*dispatch)(void *parent_sm, const char *event_name, const char *invoke_id, const char *event_data),
                                        const char *invoke_id);
@@ -415,13 +415,13 @@ void {{ model.name }}_init_with_parent({{ model.name }}_t *sm,
    instance as bump-allocated. NULL-safe inside (lua_State* is checked).
    Always present in the public API so callers can call uniformly across
    datamodel-using and datamodel-less fixtures. */
-void {{ model.name }}_destroy({{ model.name }}_t *sm);
+void {{ csym_prefix }}{{ model.name }}_destroy({{ csym_prefix }}{{ model.name }}_t *sm);
 
 /* W3C SCXML 6.2: Single macrostep — drain queues, run eventless E* loop. */
-void {{ model.name }}_step({{ model.name }}_t *sm);
+void {{ csym_prefix }}{{ model.name }}_step({{ csym_prefix }}{{ model.name }}_t *sm);
 
 /* W3C SCXML 6.2: Drive the SM until a top-level final state is reached. */
-void {{ model.name }}_run({{ model.name }}_t *sm);
+void {{ csym_prefix }}{{ model.name }}_run({{ csym_prefix }}{{ model.name }}_t *sm);
 
 {% if model.needs_event_scheduler %}
 /* W3C SCXML 6.2: Promote any scheduled events whose fire time has elapsed
@@ -431,16 +431,16 @@ void {{ model.name }}_run({{ model.name }}_t *sm);
    on MCU). Mirrors cpp `StaticExecutionEngine::tick()` which calls
    `scheduler_.popReadyEvent()` in a loop. The caller drives the macrostep
    in its own loop: `while (!_is_in_final) { _tick(sm); _step(sm); }`. */
-void {{ model.name }}_tick({{ model.name }}_t *sm);
+void {{ csym_prefix }}{{ model.name }}_tick({{ csym_prefix }}{{ model.name }}_t *sm);
 {% endif %}
 
 /* W3C SCXML 5.3: Enqueue an event onto the internal (high-priority) queue. */
-void {{ model.name }}_raise({{ model.name }}_t *sm,
-                            const {{ model.name }}_event_with_meta_t *evt);
+void {{ csym_prefix }}{{ model.name }}_raise({{ csym_prefix }}{{ model.name }}_t *sm,
+                            const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt);
 
 /* W3C SCXML 6.2: Enqueue an event onto the external (low-priority) queue. */
-void {{ model.name }}_raise_external({{ model.name }}_t *sm,
-                                     const {{ model.name }}_event_with_meta_t *evt);
+void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.name }}_t *sm,
+                                     const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt);
 
 {% if event_payload_active %}
 /* NL→IR Item C1 Path A: per-event typed-payload inject
@@ -463,7 +463,7 @@ void {{ model.name }}_raise_external({{ model.name }}_t *sm,
    absent from the SM's enum silently drop (the parent's send had no
    matching transition shape — same observable as cpp's SendHelper for
    unknown event targets). */
-void {{ model.name }}_raise_external_by_name({{ model.name }}_t *sm, const char *event_name);
+void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_prefix }}{{ model.name }}_t *sm, const char *event_name);
 
 /* W3C SCXML 6.4 / 3.4 (test236): natural-termination exit walk.
    Runs `<onexit>` on every active state so a `<final>` state with an
@@ -472,7 +472,7 @@ void {{ model.name }}_raise_external_by_name({{ model.name }}_t *sm, const char 
    `done.invoke`. Called only on the natural-final path; the cancel
    path NULLs the parent dispatch instead so any in-flight sends drop
    (W3C 6.4 cancellation drop semantics, test252). */
-void {{ model.name }}_finalize_session({{ model.name }}_t *sm);
+void {{ csym_prefix }}{{ model.name }}_finalize_session({{ csym_prefix }}{{ model.name }}_t *sm);
 {% endif %}
 
 /* W3C SCXML 3.2: configuration query helpers. `_active_states` exposes
@@ -480,13 +480,13 @@ void {{ model.name }}_finalize_session({{ model.name }}_t *sm);
    iff s is in the active configuration). `_get_current_state` is gone
    on purpose — single-leaf semantics break for <parallel> where the
    configuration spans multiple leaves simultaneously. */
-uint32_t {{ model.name }}_active_states(const {{ model.name }}_t *sm);
-bool {{ model.name }}_in_state(const {{ model.name }}_t *sm, {{ model.name }}_state_t s);
-bool {{ model.name }}_is_in_final_state(const {{ model.name }}_t *sm);
+uint32_t {{ csym_prefix }}{{ model.name }}_active_states(const {{ csym_prefix }}{{ model.name }}_t *sm);
+bool {{ csym_prefix }}{{ model.name }}_in_state(const {{ csym_prefix }}{{ model.name }}_t *sm, {{ csym_prefix }}{{ model.name }}_state_t s);
+bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}{{ model.name }}_t *sm);
 
 /* W3C SCXML 3.3: Compile-time policy queries (mirror C++ `*Policy::*`). */
-{{ model.name }}_state_t {{ model.name }}_initial_state(void);
-bool {{ model.name }}_is_final_state({{ model.name }}_state_t s);
+{{ csym_prefix }}{{ model.name }}_state_t {{ csym_prefix }}{{ model.name }}_initial_state(void);
+bool {{ csym_prefix }}{{ model.name }}_is_final_state({{ csym_prefix }}{{ model.name }}_state_t s);
 
 {% if model.on_sample_links %}
 /* watching-zenoh RFC §synth-5-E sample-callback codegen wire-up — per-link Sample
@@ -503,8 +503,8 @@ bool {{ model.name }}_is_final_state({{ model.name }}_state_t s);
    responsibility per the `sce_sub_callback_t` contract in
    `<sce/sample.h>`. */
 {% for link in model.on_sample_links %}
-void {{ model.name }}_deliver_link_{{ link | to_snake_case }}_sample(
-    {{ model.name }}_t *sm,
+void {{ csym_prefix }}{{ model.name }}_deliver_link_{{ link | to_snake_case }}_sample(
+    {{ csym_prefix }}{{ model.name }}_t *sm,
     const sce_sample_t *sample);
 {% endfor %}
 
@@ -512,11 +512,11 @@ void {{ model.name }}_deliver_link_{{ link | to_snake_case }}_sample(
 /* ── Compile-time invariants ──────────────────────────────────────── */
 _Static_assert(SCE_MAX_EVENTS >= 1u, "SCE_MAX_EVENTS must be >= 1");
 _Static_assert(SCE_MAX_ID_LEN >= 16u, "SCE_MAX_ID_LEN too small for W3C event names");
-_Static_assert((unsigned){{ model.name | upper }}_STATE_COUNT <= 32u,
+_Static_assert((unsigned){{ csym_prefix | upper }}{{ model.name | upper }}_STATE_COUNT <= 32u,
                "Configuration bitmap is uint32_t; multi-word array lands when a fixture exceeds 32 states");
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  /* SCE_GENERATED_{{ model.name | upper }}_SM_H */
+#endif  /* SCE_GENERATED_{{ csym_prefix | upper }}{{ model.name | upper }}_SM_H */

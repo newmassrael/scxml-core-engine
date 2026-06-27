@@ -502,11 +502,12 @@ pub fn generate_c11(
     model: &SCXMLModel,
     template_dir: &Path,
     input_stem: &str,
+    c_symbol_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_c11_filters(&mut env);
-    render_c11(&mut env, model, input_stem)
+    render_c11(&mut env, model, input_stem, c_symbol_prefix)
 }
 
 /// Generate C11 code using pre-loaded template strings (WASM-compatible).
@@ -518,13 +519,14 @@ pub fn generate_c11_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_c11_filters(&mut env);
-    render_c11(&mut env, model, input_stem)
+    render_c11(&mut env, model, input_stem, None)
 }
 
 fn render_c11(
     env: &mut Environment,
     model: &SCXMLModel,
     input_stem: &str,
+    c_symbol_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "C11")?;
     reject_native_actions_in_unsupported_lang(model, "C11")?;
@@ -573,6 +575,19 @@ fn render_c11(
     let model_val = minijinja::Value::from_serialize(&model_lowered);
     let license_val = minijinja::Value::from_serialize(license_config());
 
+    // Suite symbol prefix: C has no namespace, so every emitted symbol is
+    // `<name>_…`. When set, this is the ready-to-prepend `<prefix>_` string
+    // (empty when unset) that nests every self/child symbol — including the
+    // struct tag and UPPER macro/enum names — under the suite prefix so
+    // identically-named machines from different catalogs link into one
+    // binary without an ODR clash. The C11 peer of `--cpp-namespace-prefix`.
+    // Empty = the historical un-prefixed shape (byte-identical). Filenames,
+    // SCE-MAP markers, and the Lua session-id string keep the logical name.
+    let csym_prefix = match c_symbol_prefix {
+        Some(p) if !p.is_empty() => format!("{p}_"),
+        _ => String::new(),
+    };
+
     let header_ctx = minijinja::context! {
         model => &model_val,
         base_path => &base_path,
@@ -582,6 +597,7 @@ fn render_c11(
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
         event_payload_entry_decls => &payload.entry_decls,
+        csym_prefix => &csym_prefix,
     };
     let source_ctx = minijinja::context! {
         model => &model_val,
@@ -590,6 +606,7 @@ fn render_c11(
         event_payload_type => &payload.type_name,
         event_payload_active => payload.active,
         event_payload_entry_defs => &payload.entry_defs,
+        csym_prefix => &csym_prefix,
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;

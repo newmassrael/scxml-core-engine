@@ -668,6 +668,16 @@ enum Commands {
         /// un-namespaced shape (byte-identical). Only meaningful with `-l cpp`.
         #[arg(long)]
         cpp_namespace_prefix: Option<String>,
+        /// Prefix every emitted C symbol with `<prefix>_` (C has no
+        /// namespace, so the suite prefix nests each `<machine>_…` symbol —
+        /// struct tag, enum/macro names, and child-machine refs included).
+        /// Lets a separate catalog (suite) reuse the same machine names as
+        /// the in-tree catalog without an ODR clash when both link into one
+        /// binary. The C11 peer of `--cpp-namespace-prefix`. Empty/unset =
+        /// the historical un-prefixed shape (byte-identical). Only
+        /// meaningful with `-l c11`.
+        #[arg(long)]
+        c_symbol_prefix: Option<String>,
         /// Reject the build when the
         /// document carries any `<sce:unresolved>` placeholder
         /// (attribute or element form). Default builds let the
@@ -1020,6 +1030,7 @@ fn main() {
             emit_ast,
             kotlin_package_prefix,
             cpp_namespace_prefix,
+            c_symbol_prefix,
             strict_unresolved,
             include_dir,
         } => cmd_generate(
@@ -1041,6 +1052,7 @@ fn main() {
             emit_ast.as_deref(),
             kotlin_package_prefix.as_deref(),
             cpp_namespace_prefix.as_deref(),
+            c_symbol_prefix.as_deref(),
             strict_unresolved,
             &include_dir,
             error_format,
@@ -1398,6 +1410,7 @@ fn cmd_generate(
     emit_ast_path: Option<&str>,
     kotlin_package_prefix: Option<&str>,
     cpp_namespace_prefix: Option<&str>,
+    c_symbol_prefix: Option<&str>,
     strict_unresolved: bool,
     include_dirs: &[String],
     error_format: ErrorFormat,
@@ -2060,8 +2073,10 @@ fn cmd_generate(
                         ..Default::default()
                     }
                 }
-                Language::C11 => sce_build::generator::generate_c11(m, &template_dir, stem)
-                    .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e))),
+                Language::C11 => {
+                    sce_build::generator::generate_c11(m, &template_dir, stem, c_symbol_prefix)
+                        .unwrap_or_else(|e| error_format.emit_forge_and_exit(&locate_codegen(e)))
+                }
             }
         };
 

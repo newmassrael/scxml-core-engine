@@ -223,7 +223,7 @@ fn smoke_cpp() {
 ///     stray empty `::::` segment (byte-shape preserved when unset).
 #[test]
 fn smoke_cpp_namespace_prefix() {
-    const FIXTURE: &str = "cpp_namespace_prefix_invoke";
+    const FIXTURE: &str = "namespace_prefix_invoke";
     const PREFIX: &str = "ScePrefixTest";
 
     let Some(gpp) = resolve_tool("g++") else {
@@ -342,6 +342,118 @@ fn smoke_cpp_namespace_prefix() {
     assert!(
         !unset_src.contains("::::"),
         "unset output has a stray empty `::::` namespace segment",
+    );
+}
+
+/// Regression guard for `sce-codegen generate -l c11 --c-symbol-prefix
+/// <NAME>` — the C11 peer of `smoke_cpp_namespace_prefix`.
+///
+/// C has no namespace, so every emitted symbol is `<machine>_…`. The suite
+/// prefix nests each symbol (struct tag, enum/macro names, and child refs)
+/// across the `.h`/`.c` split. The two C templates render from separate
+/// contexts, so a prefix that reaches one but not the other diverges the
+/// declaration from the definition and fails to link/compile. The output
+/// FILENAMES and SCE-MAP markers must keep the logical (un-prefixed) name —
+/// the prefix nests symbols, not files.
+///
+/// Generates the shared invoke+child-send fixture with and without the
+/// prefix, compiles each translation unit, and asserts:
+///   - prefixed `.c` carries the prefixed child symbol (the bug site), and
+///     the child `#include` filename is NOT prefixed;
+///   - unset output compiles and contains neither the prefix token nor a
+///     stray double-underscore artefact at the symbol root.
+#[test]
+fn smoke_c_symbol_prefix() {
+    const FIXTURE: &str = "namespace_prefix_invoke";
+    const PREFIX: &str = "ScePrefixTest";
+
+    let Some(gcc) = resolve_tool("gcc").or_else(|| resolve_tool("cc")) else {
+        eprintln!("SKIP smoke_c_symbol_prefix: gcc/cc not on PATH");
+        return;
+    };
+    let scratch = reset_scratch("c_sym_prefix");
+    let fx_path = fixtures_dir().join(format!("{FIXTURE}.scxml"));
+    let runtime_inc = repo_root().join("sce-c-runtime/include");
+
+    let generate = |out_dir: &Path, prefix: Option<&str>| {
+        std::fs::create_dir_all(out_dir).expect("create out dir");
+        let mut cmd = Command::new(sce_codegen_bin());
+        cmd.args(["generate", "-l", "c11", "-o"]).arg(out_dir);
+        if let Some(p) = prefix {
+            cmd.args(["--c-symbol-prefix", p]);
+        }
+        cmd.arg(&fx_path);
+        let output = cmd.output().expect("spawn sce-codegen");
+        assert!(
+            output.status.success(),
+            "sce-codegen generate -l c11 (prefix={prefix:?}) failed (exit {:?})\nstderr: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    };
+
+    // Compile every generated `.c` translation unit with `-fsyntax-only`.
+    // The inline-content child is co-emitted, so the suite is self-contained.
+    let compile = |out_dir: &Path| -> Result<(), String> {
+        let units = find_by_ext(out_dir, "c");
+        assert!(
+            !units.is_empty(),
+            "no .c emitted under {}",
+            out_dir.display()
+        );
+        for c in &units {
+            let mut cmd = Command::new(&gcc);
+            cmd.args(["-std=c11", "-fsyntax-only"]);
+            cmd.arg("-I").arg(&runtime_inc);
+            cmd.arg("-I").arg(out_dir);
+            cmd.arg(c).stdout(Stdio::piped()).stderr(Stdio::piped());
+            let output = cmd.output().expect("run gcc");
+            if !output.status.success() {
+                return Err(format!(
+                    "{}: {}",
+                    c.display(),
+                    String::from_utf8_lossy(&output.stderr),
+                ));
+            }
+        }
+        Ok(())
+    };
+
+    let read_ext = |out_dir: &Path, ext: &str| -> String {
+        find_by_ext(out_dir, ext)
+            .iter()
+            .map(|f| std::fs::read_to_string(f).expect("read source"))
+            .collect()
+    };
+
+    // --- prefixed: the core regression guard -------------------------
+    let pref_dir = scratch.join("prefixed");
+    generate(&pref_dir, Some(PREFIX));
+    if let Err(stderr) = compile(&pref_dir) {
+        panic!("prefixed gcc -fsyntax-only failed (the decl/def symbol bug):\n{stderr}");
+    }
+    let pref_src = read_ext(&pref_dir, "c") + &read_ext(&pref_dir, "h");
+    assert!(
+        pref_src.contains(&format!("{PREFIX}_")),
+        "prefixed C output carries no `{PREFIX}_` symbol prefix",
+    );
+    // The child `#include` references a stem-derived filename, never the
+    // symbol prefix — guard the exact bug fixed in state_machine.c.jinja2.
+    assert!(
+        !pref_src.contains(&format!("#include \"{PREFIX}_")),
+        "an `#include` filename was wrongly symbol-prefixed",
+    );
+
+    // --- unset: byte-shape preserved ---------------------------------
+    let unset_dir = scratch.join("unset");
+    generate(&unset_dir, None);
+    if let Err(stderr) = compile(&unset_dir) {
+        panic!("unset gcc -fsyntax-only failed:\n{stderr}");
+    }
+    let unset_src = read_ext(&unset_dir, "c") + &read_ext(&unset_dir, "h");
+    assert!(
+        !unset_src.contains(PREFIX),
+        "unset C output unexpectedly contains the prefix token {PREFIX:?}",
     );
 }
 
