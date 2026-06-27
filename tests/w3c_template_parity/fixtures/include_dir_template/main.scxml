@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Template parity fixture: include_dir_template.
+
+  The `<sce:use>` references its template by BARE name
+  (`guard.sce-template.xml`) — the file does NOT live next to this
+  caller. It resolves only because the harness passes the sibling
+  `_inc/` directory as an include directory (`-I` on the Rust
+  `sce-codegen expand` side, `setIncludeDirs` on the C++
+  `PugiXMLDocument` side). Proves both producers
+  apply the same search-path precedence: base dir (this dir, miss) ->
+  include dir (`_inc/`, hit). Drift fails the CTest entry
+  `template_parity_include_dir_template`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       initial="idle">
+  <state id="idle">
+    <sce:use template="guard.sce-template.xml" port="80"/>
+  </state>
+  <state id="accept"/>
+</scxml>

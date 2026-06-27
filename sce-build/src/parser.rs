@@ -94,6 +94,15 @@ pub struct SCXMLParser {
     /// Cleared at the start of every `parse_file` so successive parses
     /// do not accumulate stale entries.
     preprocessor_deps: Vec<PathBuf>,
+    /// Operator-configured `--include-dir` search path threaded into
+    /// the XInclude / `sce:use` resolvers by [`parse_file`] (see
+    /// [`expand_preprocessors`]). Empty by default, so `new()` parsers
+    /// resolve fragments exactly as `absolute → base → cwd`. Set via
+    /// [`SCXMLParser::with_include_dirs`]. `parse_string` ignores it
+    /// (no fs access).
+    ///
+    /// [`parse_file`]: SCXMLParser::parse_file
+    include_dirs: Vec<PathBuf>,
 }
 
 /// Run the XInclude + `sce:template` preprocessors on raw SCXML
@@ -116,10 +125,18 @@ pub struct SCXMLParser {
 /// This SSOT guarantee holds at the Rust-side boundary; the
 /// cross-language SSOT guarantee is enforced by the C++ harness
 /// driver diffing canonicalised outputs.
+///
+/// `extra_dirs` is the operator-configured `--include-dir` search
+/// path, threaded unchanged into both expanders so `<xi:include>` and
+/// `<sce:use>` resolve fragments by name against a shared directory
+/// list instead of only a depth-coupled relative path. The C++
+/// runtime mirrors the same precedence (see
+/// `PugiXMLDocument::setIncludeDirs`).
 pub fn expand_preprocessors(
     content: &str,
     scxml_path: &str,
     base_dir: Option<&Path>,
+    extra_dirs: &[PathBuf],
 ) -> Result<
     (String, crate::position_map::PositionMap, Vec<PathBuf>),
     crate::forge::error::Located<crate::forge::error::ForgeError>,
@@ -140,16 +157,18 @@ pub fn expand_preprocessors(
     // Expander-internal errors (MissingHref, NotFound, ...)
     // already report positions in the pre-expansion outer file,
     // so they wrap directly without going through the map.
-    let (included, xinclude_map, xinclude_deps) =
-        crate::xinclude::expand(content, scxml_path, base_dir).map_err(|(err, loc)| {
-            use crate::forge::error::{ForgeError, Located, XmlError};
-            Located::new(
-                ForgeError::Xml(XmlError::XInclude(err)),
-                scxml_path,
-                Some(loc.row),
-                Some(loc.col),
-            )
-        })?;
+    let (included, xinclude_map, xinclude_deps) = crate::xinclude::expand(
+        content, scxml_path, base_dir, extra_dirs,
+    )
+    .map_err(|(err, loc)| {
+        use crate::forge::error::{ForgeError, Located, XmlError};
+        Located::new(
+            ForgeError::Xml(XmlError::XInclude(err)),
+            scxml_path,
+            Some(loc.row),
+            Some(loc.col),
+        )
+    })?;
 
     // `sce:template` expansion runs immediately after XInclude
     // so templates see a post-XInclude document. The C++
@@ -165,8 +184,8 @@ pub fn expand_preprocessors(
     // emitted byte, wherever it came from, traces back to a
     // source file the author can open.
     let (expanded, final_map, template_deps) =
-        crate::template::expand(&included, scxml_path, base_dir, &xinclude_map).map_err(
-            |(err, loc)| {
+        crate::template::expand(&included, scxml_path, base_dir, extra_dirs, &xinclude_map)
+            .map_err(|(err, loc)| {
                 use crate::forge::error::{ForgeError, Located, XmlError};
                 // The template expander stamps `loc` against `included`
                 // (the post-XInclude bytes). Resolving the byte through
@@ -190,8 +209,7 @@ pub fn expand_preprocessors(
                     Some(origin.row),
                     Some(origin.col),
                 )
-            },
-        )?;
+            })?;
 
     // Concatenate xinclude → template open order so the depfile
     // mirrors the actual preprocessor pipeline order. Both expanders
@@ -441,7 +459,24 @@ impl SCXMLParser {
             send_counter: 0,
             invoke_ids_seen: BTreeSet::new(),
             preprocessor_deps: Vec::new(),
+            include_dirs: Vec::new(),
         }
+    }
+
+    /// Configure the `--include-dir` search path used to resolve
+    /// `<xi:include href="...">` and `<sce:use template="...">`
+    /// fragments by name. Directories are tried in declaration order
+    /// after the including file's own directory and before the cwd
+    /// fallback (see [`expand_preprocessors`]). Consumes and returns
+    /// `self` so it chains off [`SCXMLParser::new`]:
+    ///
+    /// ```ignore
+    /// let mut parser = SCXMLParser::new().with_include_dirs(dirs);
+    /// let model = parser.parse_file(path)?;
+    /// ```
+    pub fn with_include_dirs(mut self, dirs: Vec<PathBuf>) -> Self {
+        self.include_dirs = dirs;
+        self
     }
 
     /// Canonical paths of every external file consumed by the most
@@ -520,8 +555,12 @@ impl SCXMLParser {
         // before driving the preprocessors — `preprocessor_deps`
         // describes the *current* file's transitive inputs only.
         self.preprocessor_deps.clear();
+        // Clone the configured search path so the `&self` borrow ends
+        // before `parse_impl` takes `&mut self` below; the list is tiny
+        // (operator-supplied include dirs) and cloned once per parse.
+        let extra_dirs = self.include_dirs.clone();
         let (expanded, final_map, deps) =
-            expand_preprocessors(&content, scxml_path, base_dir.as_deref())?;
+            expand_preprocessors(&content, scxml_path, base_dir.as_deref(), &extra_dirs)?;
         self.preprocessor_deps = deps;
 
         self.parse_impl(
@@ -6585,6 +6624,7 @@ mod tests {
             &main_src,
             main_path.to_str().unwrap(),
             Some(tmp.path()),
+            &[],
             &input_map,
         )
         .expect("template expansion succeeds");

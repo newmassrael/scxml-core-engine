@@ -660,6 +660,21 @@ enum Commands {
         /// gates cannot merge IR with open decisions.
         #[arg(long)]
         strict_unresolved: bool,
+        /// Additional directories searched (in declaration order) to
+        /// resolve `<xi:include href="...">` and
+        /// `<sce:use template="...">` fragments by name. Tried after
+        /// the including file's own directory and before the cwd
+        /// fallback, so an explicit search path wins over the implicit
+        /// cwd guess. Repeatable: `-I dir_a -I dir_b`. Decouples a
+        /// fragment reference from the includer's directory depth and
+        /// the fragment's on-disk location — a case file can write
+        /// `<sce:use template="foo.sce-template.xml">` instead of
+        /// `<sce:use template="../../_templates/foo.sce-template.xml">`.
+        ///
+        /// Applies to the SCXML preprocessing pipeline only; forge
+        /// `<sce:import>` resolution is unaffected.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
     },
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
@@ -834,6 +849,14 @@ enum Commands {
     Expand {
         /// Input SCXML file path
         scxml: String,
+        /// Additional directories searched (in declaration order) to
+        /// resolve `<xi:include href="...">` and
+        /// `<sce:use template="...">` fragments by name — same
+        /// semantics as `generate --include-dir`. Lets the parity
+        /// harness drive include-dir resolution through both engines
+        /// with a matching search path.
+        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+        include_dir: Vec<String>,
     },
     /// Print the conformance fixture name list from a manifest. Build
     /// systems consume this so they don't need a native JSON parser
@@ -980,6 +1003,7 @@ fn main() {
             emit_ast,
             kotlin_package_prefix,
             strict_unresolved,
+            include_dir,
         } => cmd_generate(
             &scxml,
             &language,
@@ -999,6 +1023,7 @@ fn main() {
             emit_ast.as_deref(),
             kotlin_package_prefix.as_deref(),
             strict_unresolved,
+            &include_dir,
             error_format,
         ),
         Commands::Orchestrate {
@@ -1062,7 +1087,7 @@ fn main() {
             has_test_vectors,
             resource_dir.as_deref(),
         ),
-        Commands::Expand { scxml } => cmd_expand(&scxml),
+        Commands::Expand { scxml, include_dir } => cmd_expand(&scxml, &include_dir),
         Commands::Verify {
             out_dir,
             input_root,
@@ -1354,6 +1379,7 @@ fn cmd_generate(
     emit_ast_path: Option<&str>,
     kotlin_package_prefix: Option<&str>,
     strict_unresolved: bool,
+    include_dirs: &[String],
     error_format: ErrorFormat,
 ) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
@@ -1518,7 +1544,12 @@ fn cmd_generate(
 
     let template_dir = sce_build::find_template_dir_for(lang);
 
-    let mut parser = SCXMLParser::new();
+    // The `--include-dir` search path lets `<xi:include>` / `<sce:use>`
+    // resolve fragments by name; empty in the common case, so the
+    // parser resolves exactly as `absolute → base → cwd` when no
+    // include dirs are passed.
+    let mut parser =
+        SCXMLParser::new().with_include_dirs(include_dirs.iter().map(PathBuf::from).collect());
     // Typed parser failures (XML/XSD/validation) flow straight to the
     // unified diagnostic emitter — the old CliError::ScxmlParse
     // wrapper collapsed forge codes into cli/scxml-parse, losing the
@@ -4335,7 +4366,7 @@ fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &st
 
 // ── Subcommand: expand ─────────────────────────────────────────
 
-fn cmd_expand(scxml_path: &str) {
+fn cmd_expand(scxml_path: &str, include_dirs: &[String]) {
     let content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
         cli_exit(CliError::ReadInput {
             path: scxml_path.to_string(),
@@ -4343,10 +4374,12 @@ fn cmd_expand(scxml_path: &str) {
         })
     });
     let base_dir = Path::new(scxml_path).parent();
-    let (expanded, _map, _deps) = sce_build::parser::expand_preprocessors(
-        &content, scxml_path, base_dir,
-    )
-    .unwrap_or_else(|err| current_error_format().emit_and_exit(&err, "Preprocessor error: "));
+    let extra_dirs: Vec<PathBuf> = include_dirs.iter().map(PathBuf::from).collect();
+    let (expanded, _map, _deps) =
+        sce_build::parser::expand_preprocessors(&content, scxml_path, base_dir, &extra_dirs)
+            .unwrap_or_else(|err| {
+                current_error_format().emit_and_exit(&err, "Preprocessor error: ")
+            });
     // Write raw bytes to stdout without trailing newline so the
     // template parity harness can byte-compare against the C++
     // pugixml canonicalisation without newline handling quirks.

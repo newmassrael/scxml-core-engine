@@ -70,9 +70,14 @@ struct TemplateExpandResult {
 // Failure modes throw one of the `TemplateError` subtypes defined
 // in `parsing/TemplateError.h`; each subtype maps 1:1 to a Rust
 // `xml/template-*` `DiagnosticCode`.
+// `includeDirs` is the operator-configured `--include-dir` search
+// path, tried after `baseDir` and before the cwd fallback (mirrors
+// the Rust `extra_dirs` parameter of `template::expand`). Pass an
+// empty vector to resolve exactly as `absolute → base → cwd`.
 TemplateExpandResult expandString(std::string_view content,
                                   std::string_view selfPath,
                                   std::string_view baseDir,
+                                  const std::vector<std::string> &includeDirs,
                                   const PositionMap &upstream);
 
 namespace detail {
@@ -200,13 +205,16 @@ SubstituteIntoTemplateResult substituteIntoTemplateWithMap(
 
 // Resolve `templateHref` relative to `baseDir`. Mirrors
 // `sce-build/src/template.rs::resolve_template_path`: absolute →
-// base directory → current working directory. Returns the resolved
-// absolute path on hit; on miss, `searched` receives the paths
-// tried (for the `TemplateNotFound` diagnostic) and the function
-// returns an empty path.
+// base directory → operator-configured include directories →
+// current working directory. `includeDirs` is the `--include-dir`
+// search path, tried in declaration order after `baseDir`. Returns
+// the resolved absolute path on hit; on miss, `searched` receives the
+// paths tried (for the `TemplateNotFound` diagnostic) and the
+// function returns an empty path.
 std::filesystem::path resolveTemplatePath(
     std::string_view templateHref,
     const std::filesystem::path &baseDir,
+    const std::vector<std::string> &includeDirs,
     std::vector<std::string> &searched);
 
 // Find the byte offset one-past the closing `>` of the XML element

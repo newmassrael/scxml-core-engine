@@ -183,13 +183,15 @@ RootChildrenRender renderRootChildren(std::string_view expanded,
 // Resolve `href` against the same precedence ladder
 // `PugiXMLDocument::resolveFilePathInBase` uses (and the replaced
 // DOM-mutation path used): absolute → base directory →
-// current working directory. Mirrors Rust
-// `sce-build/src/xinclude.rs::resolve_href`. On miss, populates
-// `searched` with the paths tried (so the diagnostic can show
-// where the operator should put the file) and returns an empty
-// path.
+// operator-configured include directories → current working
+// directory. Mirrors Rust `sce-build/src/xinclude.rs::resolve_href`.
+// `includeDirs` is the `--include-dir` search path, tried in
+// declaration order after `baseDir`. On miss, populates `searched`
+// with the paths tried (so the diagnostic can show where the operator
+// should put the file) and returns an empty path.
 std::filesystem::path resolveHref(std::string_view href,
                                   const std::filesystem::path &baseDir,
+                                  const std::vector<std::string> &includeDirs,
                                   std::vector<std::string> &searched) {
     namespace fs = std::filesystem;
     fs::path hrefPath(std::string{href});
@@ -205,6 +207,13 @@ std::filesystem::path resolveHref(std::string_view href,
 
     if (!baseDir.empty()) {
         const fs::path candidate = baseDir / hrefPath;
+        if (fs::exists(candidate, ec)) {
+            return candidate;
+        }
+        searched.push_back(candidate.string());
+    }
+    for (const auto &dir : includeDirs) {
+        const fs::path candidate = fs::path(dir) / hrefPath;
         if (fs::exists(candidate, ec)) {
             return candidate;
         }
@@ -294,6 +303,7 @@ std::string readFragmentText(const std::filesystem::path &path,
 XIncludeExpandResult expandImpl(std::string_view content,
                                 const std::filesystem::path &contentFile,
                                 const std::filesystem::path &baseDir,
+                                const std::vector<std::string> &includeDirs,
                                 unsigned depth,
                                 std::vector<std::filesystem::path> &stack) {
     if (depth >= MAX_XINCLUDE_DEPTH) {
@@ -359,7 +369,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
         rejectUnsupportedFeatures(node, href);
 
         std::vector<std::string> searched;
-        const auto resolved = resolveHref(href, baseDir, searched);
+        const auto resolved = resolveHref(href, baseDir, includeDirs, searched);
         if (resolved.empty()) {
             std::string trail;
             for (const auto &entry : searched) {
@@ -396,7 +406,8 @@ XIncludeExpandResult expandImpl(std::string_view content,
         XIncludeExpandResult nested;
         try {
             const std::filesystem::path nestedBase = resolved.parent_path();
-            nested = expandImpl(raw, resolved, nestedBase, depth + 1, stack);
+            nested =
+                expandImpl(raw, resolved, nestedBase, includeDirs, depth + 1, stack);
         } catch (...) {
             stack.pop_back();
             throw;
@@ -431,7 +442,8 @@ XIncludeExpandResult expandImpl(std::string_view content,
 
 XIncludeExpandResult expandStringX(std::string_view content,
                                    std::string_view selfPath,
-                                   std::string_view baseDir) {
+                                   std::string_view baseDir,
+                                   const std::vector<std::string> &includeDirs) {
     // Fast path: a document with no "include" substring cannot
     // contain `<xi:include>` or `<include>`, so the output is the
     // identity. Mirrors Rust `expand` at
@@ -453,7 +465,8 @@ XIncludeExpandResult expandStringX(std::string_view content,
         stack.push_back(ec ? selfFile : canon);
     }
 
-    return expandImpl(content, selfFile, baseFile, /*depth=*/0, stack);
+    return expandImpl(content, selfFile, baseFile, includeDirs, /*depth=*/0,
+                      stack);
 }
 
 }  // namespace SCE::parsing

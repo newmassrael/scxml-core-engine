@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  XInclude parity fixture: include_dir_xinclude.
+
+  The `<xi:include>` references its fragment by BARE name
+  (`frag.xml`) — the file does NOT live next to this caller. It
+  resolves only because the harness passes the sibling `_inc/`
+  directory as an include directory (`-I` on the Rust side,
+  `setIncludeDirs` on the C++ side).
+  Proves the XInclude resolver applies the same search-path
+  precedence on both producers. Drift fails the CTest entry
+  `template_parity_include_dir_xinclude`.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:xi="http://www.w3.org/2001/XInclude"
+       version="1.0"
+       initial="s1"
+       name="include_dir_xinclude">
+  <state id="s1">
+    <xi:include href="frag.xml"/>
+  </state>
+</scxml>
