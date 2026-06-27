@@ -698,6 +698,38 @@ struct GenerateArgs {
     include_dir: Vec<String>,
 }
 
+/// CLI arguments for the `generate-w3c` subcommand. Extracted into an
+/// `Args` struct (mirroring `GenerateArgs`) so `cmd_generate_w3c` takes
+/// one parameter instead of eight, free of a `too_many_arguments` allow.
+#[derive(clap::Args)]
+struct GenerateW3cArgs {
+    /// Target language (rust, cpp, kotlin, go, c11).
+    #[arg(short, long)]
+    language: String,
+    /// Path to tests/CMakeLists.txt (test registry)
+    #[arg(long)]
+    registry: Option<String>,
+    /// Path to resources directory
+    #[arg(long)]
+    resources: Option<String>,
+    /// Generate single test by ID
+    #[arg(short, long)]
+    test: Option<String>,
+    /// Remove all generated files
+    #[arg(long)]
+    clean: bool,
+    /// List tests without generating
+    #[arg(long)]
+    list: bool,
+    /// Path to a .clang-format file for C++ output formatting.
+    /// When omitted, the built-in default style is used.
+    #[arg(long)]
+    format_style: Option<String>,
+    /// Disable clang-format post-processing on C++ output.
+    #[arg(long)]
+    no_format: bool,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Generate code from a single SCXML file
@@ -755,33 +787,7 @@ enum Commands {
         emit_ast_dir: Option<String>,
     },
     /// Batch generate W3C test state machines and test classes
-    GenerateW3c {
-        /// Target language (rust, cpp, kotlin, go, c11).
-        #[arg(short, long)]
-        language: String,
-        /// Path to tests/CMakeLists.txt (test registry)
-        #[arg(long)]
-        registry: Option<String>,
-        /// Path to resources directory
-        #[arg(long)]
-        resources: Option<String>,
-        /// Generate single test by ID
-        #[arg(short, long)]
-        test: Option<String>,
-        /// Remove all generated files
-        #[arg(long)]
-        clean: bool,
-        /// List tests without generating
-        #[arg(long)]
-        list: bool,
-        /// Path to a .clang-format file for C++ output formatting.
-        /// When omitted, the built-in default style is used.
-        #[arg(long)]
-        format_style: Option<String>,
-        /// Disable clang-format post-processing on C++ output.
-        #[arg(long)]
-        no_format: bool,
-    },
+    GenerateW3c(Box<GenerateW3cArgs>),
     /// Batch generate integration-fixture state machines for the four
     /// sce-codegen-driven backends (Rust / Kotlin / Go / Python) from
     /// canonical fixtures under `integration_resources/<stem>/<stem>.scxml`.
@@ -1027,25 +1033,7 @@ fn main() {
             emit_ast_dir.as_deref(),
             error_format,
         ),
-        Commands::GenerateW3c {
-            language,
-            registry,
-            resources,
-            test,
-            clean,
-            list,
-            format_style,
-            no_format,
-        } => cmd_generate_w3c(
-            &language,
-            registry.as_deref(),
-            resources.as_deref(),
-            test.as_deref(),
-            clean,
-            list,
-            format_style.as_deref(),
-            no_format,
-        ),
+        Commands::GenerateW3c(args) => cmd_generate_w3c(*args),
         Commands::GenerateIntegration { language, stem } => {
             cmd_generate_integration(&language, stem.as_deref(), error_format)
         }
@@ -2440,19 +2428,41 @@ struct TestMetadata {
     specnum: String,
 }
 
-// CLI command dispatcher: the parameters mirror the `generate-w3c` subcommand
-// flags 1:1, so a params struct would only re-wrap the parsed CLI surface.
-#[allow(clippy::too_many_arguments)]
-fn cmd_generate_w3c(
-    language: &str,
-    registry: Option<&str>,
-    resources: Option<&str>,
-    single_test: Option<&str>,
-    clean: bool,
-    list: bool,
-    format_style: Option<&str>,
-    no_format: bool,
-) {
+/// The fixed per-test codegen surface passed to `generate_test_file` — a
+/// parameter object grouping the test's id, stems, target state, feature
+/// flags, and metadata so the trait method takes one argument instead of
+/// eight (replacing the `too_many_arguments` allow).
+#[derive(Clone, Copy)]
+struct TestFileSpec<'a> {
+    test_id: &'a str,
+    input_stem: &'a str,
+    machine_name: &'a str,
+    pass_state: &'a str,
+    needs_script: bool,
+    uses_http: bool,
+    test_type: &'a str,
+    metadata: &'a TestMetadata,
+}
+
+// CLI command dispatcher for `generate-w3c`. Takes the parsed
+// `GenerateW3cArgs` and unpacks it into the borrowed names the body uses.
+fn cmd_generate_w3c(args: GenerateW3cArgs) {
+    let GenerateW3cArgs {
+        language,
+        registry,
+        resources,
+        test,
+        clean,
+        list,
+        format_style,
+        no_format,
+    } = args;
+    let language: &str = &language;
+    let registry = registry.as_deref();
+    let resources = resources.as_deref();
+    let single_test = test.as_deref();
+    let format_style = format_style.as_deref();
+
     let lang: Language = language.parse().unwrap_or_else(|_| {
         cli_exit(CliError::UnknownLanguage {
             lang: language.to_string(),
@@ -2713,21 +2723,10 @@ trait W3cBackend {
     }
 
     /// Generate test file content. Default returns empty (C++ uses CMake-managed test headers).
-    // Trait method shared by every backend; the parameter set is the fixed
-    // per-test codegen surface (id, stems, dirs, metadata), not a refactorable
-    // local helper.
-    #[allow(clippy::too_many_arguments)]
-    fn generate_test_file(
-        &self,
-        _test_id: &str,
-        _input_stem: &str,
-        _machine_name: &str,
-        _pass_state: &str,
-        _needs_script: bool,
-        _uses_http: bool,
-        _test_type: &str,
-        _metadata: &TestMetadata,
-    ) -> String {
+    // Trait method shared by every backend; the per-test codegen surface
+    // is grouped into `TestFileSpec`. Default is a no-op — backends that
+    // emit test files override it.
+    fn generate_test_file(&self, _spec: &TestFileSpec) -> String {
         String::new()
     }
 
@@ -3043,16 +3042,16 @@ fn generate_w3c_unified(
                                 let uses_http = model_uses_http_send(&model);
                                 let needs_script = model.needs_script_engine;
 
-                                let test_code = backend.generate_test_file(
+                                let test_code = backend.generate_test_file(&TestFileSpec {
                                     test_id,
                                     input_stem,
-                                    &machine,
-                                    pass,
+                                    machine_name: &machine,
+                                    pass_state: pass,
                                     needs_script,
                                     uses_http,
                                     test_type,
-                                    &metadata,
-                                );
+                                    metadata: &metadata,
+                                });
                                 let test_filename = backend.test_filename(test_id, input_stem);
                                 let test_file_dir = if backend.test_in_sm_dir() {
                                     &test_mod_dir
@@ -3337,17 +3336,17 @@ impl W3cBackend for RustBackend {
         }
     }
 
-    fn generate_test_file(
-        &self,
-        test_id: &str,
-        input_stem: &str,
-        machine_name: &str,
-        pass_state: &str,
-        needs_script: bool,
-        uses_http: bool,
-        test_type: &str,
-        _metadata: &TestMetadata,
-    ) -> String {
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            machine_name,
+            pass_state,
+            needs_script,
+            uses_http,
+            test_type,
+            ..
+        } = *spec;
         let timeout_secs = if test_type == "SCHEDULED" || test_type == "HTTP" {
             5
         } else {
@@ -3520,17 +3519,17 @@ impl W3cBackend for GoBackend {
         write_if_changed_drift_aware(&child_file, &fixed_code, drift_ctx);
     }
 
-    fn generate_test_file(
-        &self,
-        test_id: &str,
-        input_stem: &str,
-        machine_name: &str,
-        pass_state: &str,
-        needs_script: bool,
-        uses_http: bool,
-        test_type: &str,
-        metadata: &TestMetadata,
-    ) -> String {
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            machine_name,
+            pass_state,
+            needs_script,
+            uses_http,
+            test_type,
+            metadata,
+        } = *spec;
         let is_http = test_type == "HTTP" && uses_http;
         let timeout = if test_type == "SCHEDULED" {
             "5 * time.Second"
@@ -3705,17 +3704,17 @@ impl W3cBackend for KotlinBackend {
         write_if_changed_drift_aware(&child_sm_file, &stub, drift_ctx);
     }
 
-    fn generate_test_file(
-        &self,
-        test_id: &str,
-        input_stem: &str,
-        _machine_name: &str,
-        pass_state: &str,
-        needs_script: bool,
-        uses_http: bool,
-        test_type: &str,
-        metadata: &TestMetadata,
-    ) -> String {
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            pass_state,
+            needs_script,
+            uses_http,
+            test_type,
+            metadata,
+            ..
+        } = *spec;
         let sm_class = format!("Test{}", to_pascal_case(test_id));
         let sm_package = format!("test{test_id}");
 
@@ -3972,17 +3971,16 @@ impl W3cBackend for PythonBackend {
         true
     }
 
-    fn generate_test_file(
-        &self,
-        test_id: &str,
-        input_stem: &str,
-        _machine_name: &str,
-        pass_state: &str,
-        _needs_script: bool,
-        uses_http: bool,
-        test_type: &str,
-        metadata: &TestMetadata,
-    ) -> String {
+    fn generate_test_file(&self, spec: &TestFileSpec) -> String {
+        let TestFileSpec {
+            test_id,
+            input_stem,
+            pass_state,
+            uses_http,
+            test_type,
+            metadata,
+            ..
+        } = *spec;
         // §scxml-6.2 — `<send delay="…">` fixtures arm scheduled
         // events the engine drains only via `advance_time(ms)`. We
         // advance in 50 ms ticks (the tightest of the spec's

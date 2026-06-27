@@ -19744,21 +19744,28 @@ fn collect_bytes_buffer_caps(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Lowering configuration for [`lower_algorithm_body`] — every invariant
+/// input except the statements and indent, grouped so the function stays
+/// within the argument budget. Mirrors the borrowed fields of
+/// [`AlgorithmLowerCtx`], which it is used to build.
+struct AlgorithmBodyCfg<'a> {
+    lang: crate::generator::Language,
+    type_ctx: &'a crate::forge::types::TypeCtx<'a>,
+    renames: &'a std::collections::HashMap<&'a str, &'a str>,
+    return_ty: crate::forge::types::InferredType,
+    imports: &'a [ImportContext],
+    bytes_buffer_caps: &'a std::collections::HashMap<String, u32>,
+    c11_result_type: Option<&'a str>,
+}
+
 fn lower_algorithm_body(
     stmts: &[AlgorithmStmt],
-    lang: crate::generator::Language,
-    type_ctx: &crate::forge::types::TypeCtx<'_>,
-    renames: &std::collections::HashMap<&str, &str>,
+    cfg: &AlgorithmBodyCfg,
     indent: usize,
-    return_ty: crate::forge::types::InferredType,
-    imports: &[ImportContext],
-    bytes_buffer_caps: &std::collections::HashMap<String, u32>,
-    c11_result_type: Option<&str>,
 ) -> Result<String, ForgeError> {
     let mut out = String::new();
     let pad = "    ".repeat(indent);
-    let l = LangCtx::new(lang);
+    let l = LangCtx::new(cfg.lang);
     // Pre-pass: collect every local that an `<sce:assign target>` targets
     // anywhere in the body so the Var arm can choose `let` vs `let mut`
     // on Rust without triggering `unused_mut` under workspace
@@ -19770,15 +19777,15 @@ fn lower_algorithm_body(
     let mut assigned: std::collections::HashSet<String> = std::collections::HashSet::new();
     collect_algorithm_assigned_roots(stmts, &mut assigned);
     let ctx = AlgorithmLowerCtx {
-        lang,
-        type_ctx,
+        lang: cfg.lang,
+        type_ctx: cfg.type_ctx,
         l: &l,
-        renames,
+        renames: cfg.renames,
         assigned: &assigned,
-        return_ty,
-        imports,
-        bytes_buffer_caps,
-        c11_result_type,
+        return_ty: cfg.return_ty,
+        imports: cfg.imports,
+        bytes_buffer_caps: cfg.bytes_buffer_caps,
+        c11_result_type: cfg.c11_result_type,
     };
     for s in stmts {
         lower_algorithm_stmt(s, &ctx, &pad, indent, &mut out)?;
@@ -21170,14 +21177,16 @@ fn render_algorithm(
         .map_or(InferredType::Unknown, InferredType::from_sce_type);
     let body = lower_algorithm_body(
         &m.body,
-        lang,
-        &type_ctx,
-        &const_renames,
+        &AlgorithmBodyCfg {
+            lang,
+            type_ctx: &type_ctx,
+            renames: &const_renames,
+            return_ty: return_ty_inferred,
+            imports,
+            bytes_buffer_caps: &bytes_buffer_caps,
+            c11_result_type: c11_result_type.as_deref(),
+        },
         1,
-        return_ty_inferred,
-        imports,
-        &bytes_buffer_caps,
-        c11_result_type.as_deref(),
     )?;
 
     let needs_span = m
