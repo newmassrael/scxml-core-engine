@@ -490,219 +490,218 @@ SCE_ERROR_CONTRACT.md §10) rides there regardless of this flag.
     command: Commands,
 }
 
-// `Generate` carries ~20 clap arg fields, so it dwarfs the other
-// subcommand variants and trips `large_enum_variant`. This enum is a
-// clap `Subcommand` parsed exactly once at process startup; the size
-// disparity the lint guards against (wasted stack/heap on the smaller
-// variants) is irrelevant for a single short-lived dispatch value, and
-// boxing the individual args would obscure the derive-driven CLI surface
-// for no runtime gain. Same wide-CLI rationale as the
-// `too_many_arguments` allow on `cmd_generate`.
-#[allow(clippy::large_enum_variant)]
+/// CLI arguments for the `generate` subcommand. Extracted into a
+/// dedicated `Args` struct (rather than inline enum-variant fields) so
+/// the wide `Generate` surface does not dwarf the other `Commands`
+/// variants; the enum holds it boxed, keeping every variant pointer-sized
+/// and the `Subcommand` derive free of a `large_enum_variant` allow.
+#[derive(clap::Args)]
+struct GenerateArgs {
+    /// Input SCXML file path
+    scxml: String,
+    /// Target language (rust, cpp, kotlin, go, c11).
+    #[arg(short, long, default_value = "cpp")]
+    language: String,
+    /// Output directory
+    #[arg(short, long, default_value = ".")]
+    output_dir: String,
+    /// Generate as child state machine (C++ invoke support)
+    #[arg(long)]
+    as_child: bool,
+    /// Parent machine stem for Kotlin/Go child emission. When supplied
+    /// with `--as-child`, the child's `package com.sce.generated.<child>`
+    /// (Kotlin) or `package <child>` (Go) header is rewritten to the
+    /// parent's package, matching the layout `generate-w3c` produces
+    /// via its internal `process_child` hook. Without this flag a
+    /// single-file `--as-child` invocation leaves the child in its
+    /// own derived package and the parent's unqualified reference to
+    /// the child `StateMachine` class fails to resolve.
+    ///
+    /// C++ and Rust children already compile cleanly without the flag
+    /// (C++ resolves via `-I`, Rust via the parent's `mod.rs`) — the
+    /// flag is a no-op for those languages.
+    #[arg(long)]
+    parent_stem: Option<String>,
+    /// Write CMake DEPFILE for incremental builds
+    #[arg(long)]
+    write_deps: Option<String>,
+    /// Go module path hosting the generated forge packages, e.g.
+    /// `github.com/acme/proj/generated`. When set, each Go
+    /// `<sce:import>` emits `import "{prefix}/{snake}"` instead of
+    /// the bare `"{snake}"` form (invalid outside GOPATH). Required
+    /// for any Go crossfile fixture; ignored for other languages.
+    #[arg(long)]
+    go_module_prefix: Option<String>,
+    /// Path to a .clang-format file for C++ output formatting.
+    /// When omitted, the built-in default style is used.
+    #[arg(long)]
+    format_style: Option<String>,
+    /// Disable clang-format post-processing on C++ output.
+    #[arg(long)]
+    no_format: bool,
+    /// Path to deploy.yaml for SCE Mesh transport codegen.
+    /// When provided, generates transport routing code alongside
+    /// the state machine code. SM output remains identical.
+    #[arg(long)]
+    deploy: Option<String>,
+    /// Emit only the mesh transport header — skip the state-machine
+    /// backend code generation entirely. Requires `--deploy`. Used
+    /// by CMake fixtures that want transport regeneration without
+    /// the rebuild churn from re-emitting `<name>_sm.{h,rs,kt,go,py}`
+    /// on every transport-touching change. The state-machine output
+    /// must be produced by a separate `generate` invocation without
+    /// `--transport-only` (typically a sibling `add_custom_command`).
+    ///
+    /// Closes mesh_open_issues.md Issue 2 — Pattern Realization
+    /// completed 2026-04-16 (Session C), making the deferred
+    /// rationale moot.
+    #[arg(long, requires = "deploy")]
+    transport_only: bool,
+    /// Partition identity for `<parallel>` rule-12 role assignment
+    /// (SCE_MESH.md §14 rule 12, §16.5). When supplied together
+    /// with `--deploy`, the generated SM code branches per
+    /// `<parallel>` on this partition's role (Root / NonRoot /
+    /// SinglePartition). Ignored without `--deploy`. Omitting the
+    /// flag preserves P0 behaviour — all parallels render via the
+    /// legacy single-partition path.
+    #[arg(long)]
+    partition: Option<String>,
+    /// RFC §synth-5-F build-time const-fold iteration budget.
+    ///
+    /// Caps the total iteration count across every `<sce:fold>`
+    /// body in the document — every fold tick and every nested
+    /// while/foreach iteration decrements one shared counter so
+    /// pathological const-fold bodies cannot turn `sce-build`
+    /// into a general-purpose compute platform. Omit to use the
+    /// SSoT default (1_000_000); set higher for legitimate large
+    /// tables, lower for tighter CI budgets.
+    #[arg(long)]
+    const_fold_budget: Option<u64>,
+    /// Watching-zenoh RFC §synth-5-J-2: target the
+    /// `sce-rust-runtime` no_std variant.
+    ///
+    /// Only meaningful with `-l rust`; ignored for other
+    /// language targets. When set, validates that the SCXML
+    /// document does not use constructs that require a
+    /// std-coupled runtime (script engines, BasicHTTP send) —
+    /// the no_std variant cannot link Lua / QuickJS / tokio /
+    /// reqwest. Author-side violations fire
+    /// `codegen/no-std-script-not-supported` /
+    /// `codegen/no-std-http-not-supported`.
+    ///
+    /// Emission: `--no-std` produces allocator-free code —
+    /// `#![no_std]`, `core::time::Duration`, `NoOpHal` as the
+    /// default `Hal`, and elision of the invoke/script-engine
+    /// machinery (`session_id` / `invoke_id` / parent queue).
+    /// Every owned collection names a profile-resolving runtime
+    /// alias — `SceString` / `SceBytes` for payload fields,
+    /// `StateChain` / `SceTransitionBuf` / `SceIndexBuf` /
+    /// `SceDedupSet` for the microstep buffers — so the runtime
+    /// owns the std-vs-heapless choice and ONE emission compiles
+    /// against BOTH runtime profiles: the no_std runtime
+    /// (`thumbv7em-none-eabihf`, no global allocator) and the std
+    /// runtime (the AP profile). Parallel states and typed
+    /// bytes/string payloads are included; the
+    /// sce-portable-emit-probe crate gates both directions.
+    #[arg(long)]
+    no_std: bool,
+    /// Override the directory used for the §synth-6.2.6 `source-hash`
+    /// computation. Defaults to the SCXML file's parent
+    /// directory (the typical `resources/<num>/` test layout
+    /// where every input the codegen consumed lives next to the
+    /// driver file).
+    ///
+    /// Authoring workflows that stage the input file into a
+    /// temporary directory before generation (e.g.
+    /// `scripts/regen_donedata_local_invoke.sh`, which copies a
+    /// tracked fixture into `mktemp -d` so synth-invoke children
+    /// don't pollute the source tree) must point this back at
+    /// the canonical input root, otherwise the embedded
+    /// `source-hash` reflects the transient staging directory
+    /// and `sce-codegen verify` cannot reproduce it from the
+    /// repo.
+    #[arg(long)]
+    input_root: Option<String>,
+    /// Emit the parsed document as JSON to `<path>` before
+    /// codegen runs. The envelope shape is `apis/forge-ast.v1.schema.json`;
+    /// see `docs/SCE_FORGE_AST.md` for the consumer contract.
+    ///
+    /// Covers every kind in the v1 envelope: 15 forge kinds plus
+    /// `statechart` (the `oneOf` discriminator distinguishes them
+    /// via `ast.document.kind`). Statechart documents flow through
+    /// the SCXML pipeline and are emitted post-analyzer, before
+    /// any deploy-time mutations or codegen prep.
+    ///
+    /// Codegen still runs after the emit — `--emit-ast` is an
+    /// addition to the pipeline, not a replacement. Documents
+    /// rejected by §scxml-5.8 (`document_rejected`) skip the
+    /// emit and continue to the existing rejection-stub codegen
+    /// path; the absence of `<path>` is the consumer signal.
+    #[arg(long)]
+    emit_ast: Option<String>,
+    /// Override the Kotlin `package` header prefix on emitted
+    /// `*Sm.kt` files. Defaults to `com.sce.generated` (every W3C
+    /// IRP fixture emits there). Non-W3C consumers — integration
+    /// fixtures under `integration_resources/<stem>/`, custom test
+    /// fixtures — pass a different prefix (e.g. `com.sce.integration`)
+    /// so the emitted tree lives under
+    /// `src/main/kotlin/com/sce/integration/<stem>/` rather than
+    /// `src/main/kotlin/com/sce/generated/<stem>/`, keeping the W3C
+    /// and integration directory trees disjoint at the package
+    /// level.
+    ///
+    /// Only meaningful with `-l kotlin`; ignored for other
+    /// language targets.
+    #[arg(long)]
+    kotlin_package_prefix: Option<String>,
+    /// Nest the emitted C++ namespace under
+    /// `SCE::Generated::<prefix>::<machine>` instead of the default
+    /// `SCE::Generated::<machine>`. Lets a separate catalog (suite) reuse
+    /// the same machine names as the in-tree catalog without an ODR clash
+    /// when both link into one binary. Empty/unset = the historical
+    /// un-namespaced shape (byte-identical). Only meaningful with `-l cpp`.
+    #[arg(long)]
+    cpp_namespace_prefix: Option<String>,
+    /// Prefix every emitted C symbol with `<prefix>_` (C has no
+    /// namespace, so the suite prefix nests each `<machine>_…` symbol —
+    /// struct tag, enum/macro names, and child-machine refs included).
+    /// Lets a separate catalog (suite) reuse the same machine names as
+    /// the in-tree catalog without an ODR clash when both link into one
+    /// binary. The C11 peer of `--cpp-namespace-prefix`. Empty/unset =
+    /// the historical un-prefixed shape (byte-identical). Only
+    /// meaningful with `-l c11`.
+    #[arg(long)]
+    c_symbol_prefix: Option<String>,
+    /// Reject the build when the
+    /// document carries any `<sce:unresolved>` placeholder
+    /// (attribute or element form). Default builds let the
+    /// marker survive in the model + the `sce-codegen
+    /// unresolved` NDJSON report; this flag lifts the marker to
+    /// `validation/unresolved-placeholder` so production CI
+    /// gates cannot merge IR with open decisions.
+    #[arg(long)]
+    strict_unresolved: bool,
+    /// Additional directories searched (in declaration order) to
+    /// resolve `<xi:include href="...">` and
+    /// `<sce:use template="...">` fragments by name. Tried after
+    /// the including file's own directory and before the cwd
+    /// fallback, so an explicit search path wins over the implicit
+    /// cwd guess. Repeatable: `-I dir_a -I dir_b`. Decouples a
+    /// fragment reference from the includer's directory depth and
+    /// the fragment's on-disk location — a case file can write
+    /// `<sce:use template="foo.sce-template.xml">` instead of
+    /// `<sce:use template="../../_templates/foo.sce-template.xml">`.
+    ///
+    /// Applies to the SCXML preprocessing pipeline only; forge
+    /// `<sce:import>` resolution is unaffected.
+    #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
+    include_dir: Vec<String>,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Generate code from a single SCXML file
-    Generate {
-        /// Input SCXML file path
-        scxml: String,
-        /// Target language (rust, cpp, kotlin, go, c11).
-        #[arg(short, long, default_value = "cpp")]
-        language: String,
-        /// Output directory
-        #[arg(short, long, default_value = ".")]
-        output_dir: String,
-        /// Generate as child state machine (C++ invoke support)
-        #[arg(long)]
-        as_child: bool,
-        /// Parent machine stem for Kotlin/Go child emission. When supplied
-        /// with `--as-child`, the child's `package com.sce.generated.<child>`
-        /// (Kotlin) or `package <child>` (Go) header is rewritten to the
-        /// parent's package, matching the layout `generate-w3c` produces
-        /// via its internal `process_child` hook. Without this flag a
-        /// single-file `--as-child` invocation leaves the child in its
-        /// own derived package and the parent's unqualified reference to
-        /// the child `StateMachine` class fails to resolve.
-        ///
-        /// C++ and Rust children already compile cleanly without the flag
-        /// (C++ resolves via `-I`, Rust via the parent's `mod.rs`) — the
-        /// flag is a no-op for those languages.
-        #[arg(long)]
-        parent_stem: Option<String>,
-        /// Write CMake DEPFILE for incremental builds
-        #[arg(long)]
-        write_deps: Option<String>,
-        /// Go module path hosting the generated forge packages, e.g.
-        /// `github.com/acme/proj/generated`. When set, each Go
-        /// `<sce:import>` emits `import "{prefix}/{snake}"` instead of
-        /// the bare `"{snake}"` form (invalid outside GOPATH). Required
-        /// for any Go crossfile fixture; ignored for other languages.
-        #[arg(long)]
-        go_module_prefix: Option<String>,
-        /// Path to a .clang-format file for C++ output formatting.
-        /// When omitted, the built-in default style is used.
-        #[arg(long)]
-        format_style: Option<String>,
-        /// Disable clang-format post-processing on C++ output.
-        #[arg(long)]
-        no_format: bool,
-        /// Path to deploy.yaml for SCE Mesh transport codegen.
-        /// When provided, generates transport routing code alongside
-        /// the state machine code. SM output remains identical.
-        #[arg(long)]
-        deploy: Option<String>,
-        /// Emit only the mesh transport header — skip the state-machine
-        /// backend code generation entirely. Requires `--deploy`. Used
-        /// by CMake fixtures that want transport regeneration without
-        /// the rebuild churn from re-emitting `<name>_sm.{h,rs,kt,go,py}`
-        /// on every transport-touching change. The state-machine output
-        /// must be produced by a separate `generate` invocation without
-        /// `--transport-only` (typically a sibling `add_custom_command`).
-        ///
-        /// Closes mesh_open_issues.md Issue 2 — Pattern Realization
-        /// completed 2026-04-16 (Session C), making the deferred
-        /// rationale moot.
-        #[arg(long, requires = "deploy")]
-        transport_only: bool,
-        /// Partition identity for `<parallel>` rule-12 role assignment
-        /// (SCE_MESH.md §14 rule 12, §16.5). When supplied together
-        /// with `--deploy`, the generated SM code branches per
-        /// `<parallel>` on this partition's role (Root / NonRoot /
-        /// SinglePartition). Ignored without `--deploy`. Omitting the
-        /// flag preserves P0 behaviour — all parallels render via the
-        /// legacy single-partition path.
-        #[arg(long)]
-        partition: Option<String>,
-        /// RFC §synth-5-F build-time const-fold iteration budget.
-        ///
-        /// Caps the total iteration count across every `<sce:fold>`
-        /// body in the document — every fold tick and every nested
-        /// while/foreach iteration decrements one shared counter so
-        /// pathological const-fold bodies cannot turn `sce-build`
-        /// into a general-purpose compute platform. Omit to use the
-        /// SSoT default (1_000_000); set higher for legitimate large
-        /// tables, lower for tighter CI budgets.
-        #[arg(long)]
-        const_fold_budget: Option<u64>,
-        /// Watching-zenoh RFC §synth-5-J-2: target the
-        /// `sce-rust-runtime` no_std variant.
-        ///
-        /// Only meaningful with `-l rust`; ignored for other
-        /// language targets. When set, validates that the SCXML
-        /// document does not use constructs that require a
-        /// std-coupled runtime (script engines, BasicHTTP send) —
-        /// the no_std variant cannot link Lua / QuickJS / tokio /
-        /// reqwest. Author-side violations fire
-        /// `codegen/no-std-script-not-supported` /
-        /// `codegen/no-std-http-not-supported`.
-        ///
-        /// Emission: `--no-std` produces allocator-free code —
-        /// `#![no_std]`, `core::time::Duration`, `NoOpHal` as the
-        /// default `Hal`, and elision of the invoke/script-engine
-        /// machinery (`session_id` / `invoke_id` / parent queue).
-        /// Every owned collection names a profile-resolving runtime
-        /// alias — `SceString` / `SceBytes` for payload fields,
-        /// `StateChain` / `SceTransitionBuf` / `SceIndexBuf` /
-        /// `SceDedupSet` for the microstep buffers — so the runtime
-        /// owns the std-vs-heapless choice and ONE emission compiles
-        /// against BOTH runtime profiles: the no_std runtime
-        /// (`thumbv7em-none-eabihf`, no global allocator) and the std
-        /// runtime (the AP profile). Parallel states and typed
-        /// bytes/string payloads are included; the
-        /// sce-portable-emit-probe crate gates both directions.
-        #[arg(long)]
-        no_std: bool,
-        /// Override the directory used for the §synth-6.2.6 `source-hash`
-        /// computation. Defaults to the SCXML file's parent
-        /// directory (the typical `resources/<num>/` test layout
-        /// where every input the codegen consumed lives next to the
-        /// driver file).
-        ///
-        /// Authoring workflows that stage the input file into a
-        /// temporary directory before generation (e.g.
-        /// `scripts/regen_donedata_local_invoke.sh`, which copies a
-        /// tracked fixture into `mktemp -d` so synth-invoke children
-        /// don't pollute the source tree) must point this back at
-        /// the canonical input root, otherwise the embedded
-        /// `source-hash` reflects the transient staging directory
-        /// and `sce-codegen verify` cannot reproduce it from the
-        /// repo.
-        #[arg(long)]
-        input_root: Option<String>,
-        /// Emit the parsed document as JSON to `<path>` before
-        /// codegen runs. The envelope shape is `apis/forge-ast.v1.schema.json`;
-        /// see `docs/SCE_FORGE_AST.md` for the consumer contract.
-        ///
-        /// Covers every kind in the v1 envelope: 15 forge kinds plus
-        /// `statechart` (the `oneOf` discriminator distinguishes them
-        /// via `ast.document.kind`). Statechart documents flow through
-        /// the SCXML pipeline and are emitted post-analyzer, before
-        /// any deploy-time mutations or codegen prep.
-        ///
-        /// Codegen still runs after the emit — `--emit-ast` is an
-        /// addition to the pipeline, not a replacement. Documents
-        /// rejected by §scxml-5.8 (`document_rejected`) skip the
-        /// emit and continue to the existing rejection-stub codegen
-        /// path; the absence of `<path>` is the consumer signal.
-        #[arg(long)]
-        emit_ast: Option<String>,
-        /// Override the Kotlin `package` header prefix on emitted
-        /// `*Sm.kt` files. Defaults to `com.sce.generated` (every W3C
-        /// IRP fixture emits there). Non-W3C consumers — integration
-        /// fixtures under `integration_resources/<stem>/`, custom test
-        /// fixtures — pass a different prefix (e.g. `com.sce.integration`)
-        /// so the emitted tree lives under
-        /// `src/main/kotlin/com/sce/integration/<stem>/` rather than
-        /// `src/main/kotlin/com/sce/generated/<stem>/`, keeping the W3C
-        /// and integration directory trees disjoint at the package
-        /// level.
-        ///
-        /// Only meaningful with `-l kotlin`; ignored for other
-        /// language targets.
-        #[arg(long)]
-        kotlin_package_prefix: Option<String>,
-        /// Nest the emitted C++ namespace under
-        /// `SCE::Generated::<prefix>::<machine>` instead of the default
-        /// `SCE::Generated::<machine>`. Lets a separate catalog (suite) reuse
-        /// the same machine names as the in-tree catalog without an ODR clash
-        /// when both link into one binary. Empty/unset = the historical
-        /// un-namespaced shape (byte-identical). Only meaningful with `-l cpp`.
-        #[arg(long)]
-        cpp_namespace_prefix: Option<String>,
-        /// Prefix every emitted C symbol with `<prefix>_` (C has no
-        /// namespace, so the suite prefix nests each `<machine>_…` symbol —
-        /// struct tag, enum/macro names, and child-machine refs included).
-        /// Lets a separate catalog (suite) reuse the same machine names as
-        /// the in-tree catalog without an ODR clash when both link into one
-        /// binary. The C11 peer of `--cpp-namespace-prefix`. Empty/unset =
-        /// the historical un-prefixed shape (byte-identical). Only
-        /// meaningful with `-l c11`.
-        #[arg(long)]
-        c_symbol_prefix: Option<String>,
-        /// Reject the build when the
-        /// document carries any `<sce:unresolved>` placeholder
-        /// (attribute or element form). Default builds let the
-        /// marker survive in the model + the `sce-codegen
-        /// unresolved` NDJSON report; this flag lifts the marker to
-        /// `validation/unresolved-placeholder` so production CI
-        /// gates cannot merge IR with open decisions.
-        #[arg(long)]
-        strict_unresolved: bool,
-        /// Additional directories searched (in declaration order) to
-        /// resolve `<xi:include href="...">` and
-        /// `<sce:use template="...">` fragments by name. Tried after
-        /// the including file's own directory and before the cwd
-        /// fallback, so an explicit search path wins over the implicit
-        /// cwd guess. Repeatable: `-I dir_a -I dir_b`. Decouples a
-        /// fragment reference from the includer's directory depth and
-        /// the fragment's on-disk location — a case file can write
-        /// `<sce:use template="foo.sce-template.xml">` instead of
-        /// `<sce:use template="../../_templates/foo.sce-template.xml">`.
-        ///
-        /// Applies to the SCXML preprocessing pipeline only; forge
-        /// `<sce:import>` resolution is unaffected.
-        #[arg(short = 'I', long = "include-dir", value_name = "DIR")]
-        include_dir: Vec<String>,
-    },
+    Generate(Box<GenerateArgs>),
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
     /// (watching-zenoh RFC §synth-5-D).
@@ -1011,52 +1010,55 @@ fn main() {
         let _ = WORKSPACE_ROOT_OVERRIDE.set(p);
     }
     match cli.command {
-        Commands::Generate {
-            scxml,
-            language,
-            output_dir,
-            as_child,
-            parent_stem,
-            write_deps,
-            go_module_prefix,
-            format_style,
-            no_format,
-            deploy,
-            transport_only,
-            partition,
-            const_fold_budget,
-            no_std,
-            input_root,
-            emit_ast,
-            kotlin_package_prefix,
-            cpp_namespace_prefix,
-            c_symbol_prefix,
-            strict_unresolved,
-            include_dir,
-        } => cmd_generate(
-            &scxml,
-            &language,
-            &output_dir,
-            as_child,
-            parent_stem.as_deref(),
-            write_deps.as_deref(),
-            go_module_prefix.as_deref(),
-            format_style.as_deref(),
-            no_format,
-            deploy.as_deref(),
-            transport_only,
-            partition.as_deref(),
-            const_fold_budget,
-            no_std,
-            input_root.as_deref(),
-            emit_ast.as_deref(),
-            kotlin_package_prefix.as_deref(),
-            cpp_namespace_prefix.as_deref(),
-            c_symbol_prefix.as_deref(),
-            strict_unresolved,
-            &include_dir,
-            error_format,
-        ),
+        Commands::Generate(args) => {
+            let GenerateArgs {
+                scxml,
+                language,
+                output_dir,
+                as_child,
+                parent_stem,
+                write_deps,
+                go_module_prefix,
+                format_style,
+                no_format,
+                deploy,
+                transport_only,
+                partition,
+                const_fold_budget,
+                no_std,
+                input_root,
+                emit_ast,
+                kotlin_package_prefix,
+                cpp_namespace_prefix,
+                c_symbol_prefix,
+                strict_unresolved,
+                include_dir,
+            } = *args;
+            cmd_generate(
+                &scxml,
+                &language,
+                &output_dir,
+                as_child,
+                parent_stem.as_deref(),
+                write_deps.as_deref(),
+                go_module_prefix.as_deref(),
+                format_style.as_deref(),
+                no_format,
+                deploy.as_deref(),
+                transport_only,
+                partition.as_deref(),
+                const_fold_budget,
+                no_std,
+                input_root.as_deref(),
+                emit_ast.as_deref(),
+                kotlin_package_prefix.as_deref(),
+                cpp_namespace_prefix.as_deref(),
+                c_symbol_prefix.as_deref(),
+                strict_unresolved,
+                &include_dir,
+                error_format,
+            )
+        }
         Commands::Orchestrate {
             scxml,
             forge,
