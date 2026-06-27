@@ -203,20 +203,6 @@ SubstituteIntoTemplateResult substituteIntoTemplateWithMap(
     const std::filesystem::path &callerFile, std::uint32_t callerRow,
     std::uint32_t callerCol);
 
-// Resolve `templateHref` relative to `baseDir`. Mirrors
-// `sce-build/src/template.rs::resolve_template_path`: absolute →
-// base directory → operator-configured include directories →
-// current working directory. `includeDirs` is the `--include-dir`
-// search path, tried in declaration order after `baseDir`. Returns
-// the resolved absolute path on hit; on miss, `searched` receives the
-// paths tried (for the `TemplateNotFound` diagnostic) and the
-// function returns an empty path.
-std::filesystem::path resolveTemplatePath(
-    std::string_view templateHref,
-    const std::filesystem::path &baseDir,
-    const std::vector<std::string> &includeDirs,
-    std::vector<std::string> &searched);
-
 // Find the byte offset one-past the closing `>` of the XML element
 // starting at `start` in `source`. `tagName` is the element's full
 // prefixed local name (e.g. `"sce:use"`). Handles self-closing
