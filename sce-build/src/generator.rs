@@ -371,11 +371,12 @@ pub fn generate_cpp(
     model: &SCXMLModel,
     template_dir: &Path,
     input_stem: &str,
+    cpp_namespace_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_cpp_filters(&mut env);
-    render_cpp(&mut env, model, input_stem)
+    render_cpp(&mut env, model, input_stem, cpp_namespace_prefix)
 }
 
 /// Generate C++ code using pre-loaded template strings (WASM-compatible).
@@ -387,13 +388,14 @@ pub fn generate_cpp_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_cpp_filters(&mut env);
-    render_cpp(&mut env, model, input_stem)
+    render_cpp(&mut env, model, input_stem, None)
 }
 
 fn render_cpp(
     env: &mut Environment,
     model: &SCXMLModel,
     input_stem: &str,
+    cpp_namespace_prefix: Option<&str>,
 ) -> Result<GeneratedOutput, GenerateError> {
     reject_barrier_timeout_without_handler(model)?;
     reject_liveliness_without_handler(model)?;
@@ -452,11 +454,22 @@ fn render_cpp(
         event_payload_active => payload.active,
         event_payload_policy_members => &payload.policy_members,
         event_payload_inject_methods => &payload.inject_methods,
+        // Suite namespace: when set, nests the emitted machine namespace under
+        // SCE::Generated::<prefix>::<name> so identically-named machines from
+        // different catalogs (suites) coexist in one binary. Empty = the
+        // historical SCE::Generated::<name> shape (byte-identical).
+        cpp_namespace_prefix => cpp_namespace_prefix.unwrap_or(""),
     };
     let inl_ctx = minijinja::context! {
         model => &model_val,
         base_path => &base_path,
         license_config => &license_val,
+        // Suite namespace, mirrored from the .h context: the `.inl` carries no
+        // namespace of its own, but its invoke/child-send bodies reference
+        // sibling machines via `::SCE::Generated::<child>` — those refs must
+        // carry the same prefix as the `.h`'s child-member declarations or the
+        // declaration/definition types diverge. Empty = historical shape.
+        cpp_namespace_prefix => cpp_namespace_prefix.unwrap_or(""),
     };
 
     let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;
@@ -1636,7 +1649,7 @@ mod tests {
             .join("tools")
             .join("codegen")
             .join("templates");
-        let out = generate_cpp(&model, &template_dir, "pf_fixture").expect("render");
+        let out = generate_cpp(&model, &template_dir, "pf_fixture", None).expect("render");
         out.files
             .into_iter()
             .map(|(_, body)| body)
@@ -1689,7 +1702,7 @@ mod tests {
             .join("tools")
             .join("codegen")
             .join("templates");
-        let out = generate_cpp(&model, &template_dir, "pf_fixture").expect("render");
+        let out = generate_cpp(&model, &template_dir, "pf_fixture", None).expect("render");
         out.files
             .into_iter()
             .map(|(_, body)| body)
@@ -1920,7 +1933,7 @@ mod tests {
             .join("tools")
             .join("codegen")
             .join("templates");
-        let res = generate_cpp(&model, &template_dir, "pf_fixture");
+        let res = generate_cpp(&model, &template_dir, "pf_fixture", None);
         let err = match res {
             Ok(_) => panic!("barrier_timeout_ms without error.communication handler must reject"),
             Err(e) => e,
@@ -1979,7 +1992,7 @@ mod tests {
                 .join("tools")
                 .join("codegen")
                 .join("templates");
-            let res = generate_cpp(&model, &template_dir, "pf_fixture");
+            let res = generate_cpp(&model, &template_dir, "pf_fixture", None);
             let err = match res {
                 Ok(_) => panic!(
                     "machine_liveliness_opt_in without error.communication handler must reject \

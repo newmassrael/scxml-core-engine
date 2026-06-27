@@ -101,7 +101,7 @@
                         // arrives, thread `invoke_info.child_partition`
                         // through the model and gate the `::P_<part>`
                         // segment here.
-                        child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
+                        child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
 
                         // W3C SCXML B.1: Forward the build-configured script engine
                         // to the child BEFORE namelist/params evaluation. The
@@ -255,7 +255,7 @@
                         // namespace ref — see the sibling create-child site
                         // above for the lift path when a partitioned child
                         // becomes a consumer.
-                        child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
+                        child_{{ invoke_info.field_suffix }}_ = std::make_shared<::SCE::Generated::{% if cpp_namespace_prefix %}{{ cpp_namespace_prefix }}::{% endif %}{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
 
                         // W3C SCXML B.1: Forward the build-configured script
                         // engine to the child before initialize() — generated
