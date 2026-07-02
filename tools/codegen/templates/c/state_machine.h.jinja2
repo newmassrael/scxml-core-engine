@@ -7,7 +7,7 @@
      - enum class State                  →  enum {name}_state_e + UPPER_SNAKE constants
      - template<Policy> + base class     →  flat struct + free functions
      - std::vector / std::optional / std::string  →  static arrays + bool out-params + char[N]
-   Capacity defaults come from sce-c-runtime/include/sce/types.h
+   Capacity defaults come from backends/c/runtime/include/sce/types.h
    (overridable per fixture via -DSCE_MAX_*=N).                              #}
 
 {% include 'license_header.jinja2' %}
@@ -37,7 +37,7 @@
 {% endif %}
 
 {% if (model.invokes | scxml_family) %}
-/* W3C SCXML 6.4: invoke types + helpers (sce-c-runtime/include/sce/invoke.h).
+/* W3C SCXML 6.4: invoke types + helpers (backends/c/runtime/include/sce/invoke.h).
    Header-only — types and `static inline` helpers (jinja2-inline
    contract, no shared .c). cpp's `core/InvokeHelper.h` template class is the equivalent
    shape. */

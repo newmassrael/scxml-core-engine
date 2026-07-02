@@ -292,7 +292,7 @@ fn c11_field_match_multi_file_compiles_werror() {
     )
     .expect("write driver");
 
-    let runtime_inc = repo_root().join("sce-forge-runtime/c/include");
+    let runtime_inc = repo_root().join("backends/c/forge-runtime/include");
     let output = Command::new(&cc)
         .args(["-std=c11", "-c", "-Wall", "-Wextra", "-Werror"])
         .arg("-I")
@@ -670,7 +670,7 @@ fn cpp_field_match_multi_file_compiles_werror() {
     )
     .expect("write driver");
 
-    let runtime_inc = repo_root().join("sce-forge-runtime/cpp/include");
+    let runtime_inc = repo_root().join("backends/cpp/forge-runtime/include");
     let output = Command::new(&cxx)
         .args(["-std=c++20", "-c", "-Wall", "-Wextra", "-Werror"])
         .arg("-I")
@@ -754,7 +754,7 @@ fn rust_field_match_multi_file_compiles() {
     let lib_rs: String = modules.iter().map(|m| format!("pub mod {m};\n")).collect();
     fs::write(src_dir.join("lib.rs"), lib_rs).expect("write lib.rs");
 
-    let runtime_path = repo_root().join("sce-forge-runtime/rust");
+    let runtime_path = repo_root().join("backends/rust/forge-runtime");
     let cargo_toml = format!(
         "[package]\n\
          name = \"kxfm_compile_gate\"\n\
@@ -840,7 +840,7 @@ fn go_field_match_multi_file_compiles() {
     // module pulls it in by a `replace` directive onto the in-repo runtime.
     let out_dir = dir.path().join("go_out");
     fs::create_dir_all(&out_dir).expect("create out dir");
-    let runtime_go = repo_root().join("sce-forge-runtime/go");
+    let runtime_go = repo_root().join("backends/go/forge-runtime");
     fs::write(
         out_dir.join("go.mod"),
         format!(
@@ -906,10 +906,9 @@ fn kotlin_field_match_multi_file_compiles() {
             sources.push(path);
         }
     }
-    sources.push(
-        repo_root()
-            .join("sce-forge-runtime/kotlin/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt"),
-    );
+    sources.push(repo_root().join(
+        "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
+    ));
 
     let output = Command::new(&kotlinc)
         .args(&sources)
@@ -957,7 +956,7 @@ fn python_field_match_multi_file_imports_and_calls() {
         }
     }
 
-    let runtime_py = repo_root().join("sce-forge-runtime/python");
+    let runtime_py = repo_root().join("backends/python/forge-runtime");
     let driver = "\
 from fmpkg import keyexpr_field_match as m\n\
 from fmpkg.local_keyexpr_table import LocalKeyexprTable\n\

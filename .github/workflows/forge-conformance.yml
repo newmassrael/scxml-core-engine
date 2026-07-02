@@ -15,7 +15,7 @@ on:
     paths:
       - 'tests/forge/**'
       - 'sce-build/**'
-      - 'sce-forge-runtime/**'
+      - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/**'
       - 'tools/codegen/templates/_macros/**'
       - 'Cargo.lock'
@@ -26,7 +26,7 @@ on:
     paths:
       - 'tests/forge/**'
       - 'sce-build/**'
-      - 'sce-forge-runtime/**'
+      - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/**'
       - 'tools/codegen/templates/_macros/**'
       - 'Cargo.lock'
@@ -186,7 +186,7 @@ jobs:
 
     - name: Run Python Conformance Harness
       run: |
-        cd sce-forge-runtime/python
+        cd backends/python/forge-runtime
         PYTHONPATH=tests python3 -m unittest tests.test_numerical_conformance 2>&1 | tee ../../python_conformance.log
 
     - name: Summarize
@@ -236,7 +236,7 @@ jobs:
       with:
         go-version: '1.22'
         cache-dependency-path: |
-          sce-forge-runtime/go/go.sum
+          backends/go/forge-runtime/go.sum
 
     - name: Drift Guard — generated Go files must stay gitignored
       # The conformance harness and fixture modules are regenerated on every
@@ -244,7 +244,7 @@ jobs:
       # tests path strings against .gitignore rules without requiring the
       # path to exist, so we probe one representative path under each rule.
       run: |
-        cd sce-forge-runtime/go/conformance
+        cd backends/go/forge-runtime/conformance
         git check-ignore -q numerical_conformance_test.go \
           || { echo "Drift: numerical_conformance_test.go is no longer gitignored"; exit 1; }
         git check-ignore -q generated/any.go \
@@ -252,7 +252,7 @@ jobs:
 
     - name: Run Go Conformance Harness
       run: |
-        cd sce-forge-runtime/go
+        cd backends/go/forge-runtime
         go generate ./conformance/...
         go test ./conformance/ -count=1 -v 2>&1 | tee ../../go_conformance.log
 
@@ -267,7 +267,7 @@ jobs:
       # landed]]`. Refresh of the committed tree is `52e6d6f5` + the
       # test API migration is `cb53dd3c`.
       run: |
-        cd sce-forge-runtime/go
+        cd backends/go/forge-runtime
         go test ./round_trip/ -count=1 -v 2>&1 | tee -a ../../go_conformance.log
 
     - name: Summarize
@@ -338,7 +338,7 @@ jobs:
       if: always()
       run: |
         echo "## Kotlin Forge Conformance" >> $GITHUB_STEP_SUMMARY
-        REPORT_DIR="sce-forge-runtime/kotlin/build/test-results"
+        REPORT_DIR="backends/kotlin/forge-runtime/build/test-results"
         if [ -d "$REPORT_DIR" ]; then
           total=$(grep -rohE 'tests="[0-9]+"' "$REPORT_DIR" | grep -oE '[0-9]+' | paste -sd+ | bc)
           failed=$(grep -rohE 'failures="[0-9]+"' "$REPORT_DIR" | grep -oE '[0-9]+' | paste -sd+ | bc)
@@ -358,11 +358,11 @@ jobs:
       if: failure()
       with:
         name: forge-conformance-kotlin-reports
-        path: sce-forge-runtime/kotlin/build/reports/tests/
+        path: backends/kotlin/forge-runtime/build/reports/tests/
         retention-days: 14
 
   # ============================================================
-  # C++ — standalone CMake project under sce-forge-runtime/cpp/tests
+  # C++ — standalone CMake project under backends/cpp/forge-runtime/tests
   # ============================================================
   conformance-cpp:
     name: C++ Forge Conformance
@@ -396,7 +396,7 @@ jobs:
 
     - name: Configure and Build C++ Conformance
       run: |
-        cmake -S sce-forge-runtime/cpp/tests/conformance \
+        cmake -S backends/cpp/forge-runtime/tests/conformance \
               -B build_forge_conformance \
               -G Ninja \
               -DCMAKE_BUILD_TYPE=RelWithDebInfo

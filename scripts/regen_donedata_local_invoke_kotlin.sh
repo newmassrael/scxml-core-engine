@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate sce-kotlin-tests/src/main/kotlin/com/sce/integration/donedata_local_invoke/
+# Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/donedata_local_invoke/
 # from the canonical fixture at
 # integration_resources/donedata_local_invoke/donedata_local_invoke.scxml.
 #
@@ -36,7 +36,7 @@ cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
 FIXTURE="integration_resources/donedata_local_invoke/donedata_local_invoke.scxml"
-GENERATED_DIR="sce-kotlin-tests/src/main/kotlin/com/sce/integration/donedata_local_invoke"
+GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/donedata_local_invoke"
 STEM="donedata_local_invoke"
 INPUT_ROOT="integration_resources/donedata_local_invoke"
 PACKAGE_PREFIX="com.sce.integration"

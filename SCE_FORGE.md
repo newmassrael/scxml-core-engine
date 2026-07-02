@@ -1177,7 +1177,7 @@ Some transforms are runtime, data-dependent `bytes -> bytes` functions whose out
 | Python | `bytearray` | grows | `bytes` |
 | Kotlin | `MutableList<Byte>` | grows | `ByteArray` |
 
-Rust imports `SceBytes` / `CapacityExceeded` from the shared `sce-portable-bytes` crate — the same owned-bytes type the codec kind uses — so a `bytes`-returning algorithm is no longer self-contained (it carries that one dependency, by design: SSOT over self-containment).
+Rust imports `SceBytes` / `CapacityExceeded` from the shared `backends/rust/portable-bytes` crate — the same owned-bytes type the codec kind uses — so a `bytes`-returning algorithm is no longer self-contained (it carries that one dependency, by design: SSOT over self-containment).
 
 #### Example — COBS encode
 

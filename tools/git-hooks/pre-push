@@ -149,8 +149,8 @@ check_mod_tree() {
 
 drift_count=0
 for mod_file in \
-    sce-rust-tests/src/generated/mod.rs \
-    sce-rust-tests/src/integration/mod.rs; do
+    backends/rust/tests/src/generated/mod.rs \
+    backends/rust/tests/src/integration/mod.rs; do
     check_mod_tree "$mod_file" || drift_count=$((drift_count + 1))
 done
 (( drift_count == 0 )) || fail_step "Stage 1b ($drift_count mod.rs drift)"
@@ -208,10 +208,10 @@ cargo clippy -p sce-rust-runtime --no-default-features --features=no_std \
     --target=thumbv7em-none-eabihf -- -D warnings \
     || fail_step "Stage 2b (no_std runtime clippy)"
 "$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
-    -l rust --no-std --output-dir sce-nostd-build-probe/src \
+    -l rust --no-std --output-dir backends/rust/probes/nostd-build/src \
     sce-build/tests/fixtures/no_std/parallel_history_probe.scxml >/dev/null 2>&1 \
     || fail_step "Stage 2b (no_std probe generation)"
-cargo build --manifest-path sce-nostd-build-probe/Cargo.toml \
+cargo build --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || fail_step "Stage 2b (no_std probe compile)"
 # Single-emit portability (mirror sce-rust-runtime-no-std.yml): ONE --no-std
@@ -219,12 +219,12 @@ cargo build --manifest-path sce-nostd-build-probe/Cargo.toml \
 # no_std runtime (thumb, MCU profile). Regression gate for the bytes-field
 # `E0433: cannot find heapless in sce_rust_runtime` against the std runtime.
 "$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
-    -l rust --no-std --output-dir sce-portable-emit-probe/src \
+    -l rust --no-std --output-dir backends/rust/probes/portable-emit/src \
     sce-build/tests/fixtures/no_std/portable_probe.scxml >/dev/null 2>&1 \
     || fail_step "Stage 2b (portability probe generation)"
-cargo build --manifest-path sce-portable-emit-probe/Cargo.toml \
+cargo build --manifest-path backends/rust/probes/portable-emit/Cargo.toml \
     || fail_step "Stage 2b (portability probe — std runtime, host)"
-cargo build --manifest-path sce-portable-emit-probe/Cargo.toml \
+cargo build --manifest-path backends/rust/probes/portable-emit/Cargo.toml \
     --target=thumbv7em-none-eabihf --features mcu \
     || fail_step "Stage 2b (portability probe — no_std runtime, thumb)"
 # Per-machine event-queue sizing (mirror sce-rust-runtime-no-std.yml): a
@@ -234,10 +234,10 @@ cargo build --manifest-path sce-portable-emit-probe/Cargo.toml \
 # (depth-64) form — which a plain compile gate misses, since the bare form
 # still compiles. This is watching-zenoh's MCU SRAM blocker class.
 "$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
-    -l rust --no-std --output-dir sce-nostd-queue-size-probe/machine/src \
+    -l rust --no-std --output-dir backends/rust/probes/nostd-queue-size/machine/src \
     sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml >/dev/null 2>&1 \
     || fail_step "Stage 2b (queue-size probe generation)"
-cargo build --manifest-path sce-nostd-queue-size-probe/Cargo.toml \
+cargo build --manifest-path backends/rust/probes/nostd-queue-size/Cargo.toml \
     --target=thumbv7em-none-eabihf \
     || fail_step "Stage 2b (queue-size gate — const size assertion)"
 
@@ -323,7 +323,7 @@ cargo test -p sce-build --features cli --test sourcemap_addr2sce \
 # so a codegen drift that produces uncompilable Go (the package-alias bug
 # this hook was born to catch) surfaces right here.
 log_step "Stage 5/8 — Go forge conformance regenerate + go build"
-( cd sce-forge-runtime/go/conformance && bash generate.sh ) \
+( cd backends/go/forge-runtime/conformance && bash generate.sh ) \
     || fail_step "Stage 5 (Go forge conformance)"
 
 # ── Stage 4: C++ forge conformance build ──────────────────────────
@@ -332,7 +332,7 @@ log_step "Stage 5/8 — Go forge conformance regenerate + go build"
 # -DSCE_CODEGEN so CMake cannot quietly pick up a stale binary.
 log_step "Stage 6/8 — C++ forge conformance build"
 BUILD_DIR="$(mktemp -d)"
-cmake -S sce-forge-runtime/cpp/tests/conformance \
+cmake -S backends/cpp/forge-runtime/tests/conformance \
       -B "$BUILD_DIR" \
       -DSCE_CODEGEN="$REPO_ROOT/target/release/sce-codegen" \
       -Wno-dev >/dev/null \

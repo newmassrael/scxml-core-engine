@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "source_hash": "f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9",
+  "template_hash": "b5e91c83753cb468c86997c5541ac646288562f682111eb4bbd825060d84bc2e",
+  "symbols": {
+    "test436_____machine": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        3,
+        3
+      ],
+      "kind": "machine"
+    },
+    "test436__fail___state_body": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "fail",
+      "scxml_xpath": "//state[@id='fail']",
+      "line_range": [
+        20,
+        20
+      ],
+      "kind": "state"
+    },
+    "test436__p___state_body": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "p",
+      "scxml_xpath": "//state[@id='p']",
+      "line_range": [
+        6,
+        6
+      ],
+      "kind": "state"
+    },
+    "test436__pass___state_body": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "pass",
+      "scxml_xpath": "//state[@id='pass']",
+      "line_range": [
+        19,
+        19
+      ],
+      "kind": "state"
+    },
+    "test436__ps0___state_body": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "ps0",
+      "scxml_xpath": "//state[@id='ps0']",
+      "line_range": [
+        8,
+        8
+      ],
+      "kind": "state"
+    },
+    "test436__ps0___transition_0": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "ps0",
+      "scxml_xpath": "//state[@id='ps0']/transition[1]",
+      "line_range": [
+        9,
+        9
+      ],
+      "kind": "transition"
+    },
+    "test436__ps0___transition_1": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "ps0",
+      "scxml_xpath": "//state[@id='ps0']/transition[2]",
+      "line_range": [
+        10,
+        10
+      ],
+      "kind": "transition"
+    },
+    "test436__ps0___transition_2": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "ps0",
+      "scxml_xpath": "//state[@id='ps0']/transition[3]",
+      "line_range": [
+        11,
+        11
+      ],
+      "kind": "transition"
+    },
+    "test436__ps1___state_body": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "ps1",
+      "scxml_xpath": "//state[@id='ps1']",
+      "line_range": [
+        14,
+        14
+      ],
+      "kind": "state"
+    },
+    "test436__s1___state_body": {
+      "scxml_file": "test436.scxml",
+      "scxml_state_path": "s1",
+      "scxml_xpath": "//state[@id='s1']",
+      "line_range": [
+        17,
+        17
+      ],
+      "kind": "state"
+    }
+  }
+}

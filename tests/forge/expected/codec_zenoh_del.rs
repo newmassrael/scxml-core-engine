@@ -8,7 +8,7 @@
 use sce_forge_runtime::codec::{CodecError, SceCursor, SceSink};
 // RFC §synth-5-B: `VecSink` and the heap-backed `encode_to_vec` facade
 // are gated on the `alloc` feature (see
-// `sce-forge-runtime/rust/src/codec.rs`). MCU / `no_std` consumers see
+// `backends/rust/forge-runtime/src/codec.rs`). MCU / `no_std` consumers see
 // only the sink-based primary `encode` + `SliceSink` paths.
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -76,7 +76,7 @@ impl CodecZenohDel {
     /// against a caller-owned sink.
     ///
     /// Gated on the `alloc` feature — `VecSink` lives behind the
-    /// same gate (see `sce-forge-runtime/rust/src/codec.rs`). MCU /
+    /// same gate (see `backends/rust/forge-runtime/src/codec.rs`). MCU /
     /// `no_std` builds without `alloc` only see the sink-based
     /// primary `encode`.
     #[cfg(feature = "alloc")]

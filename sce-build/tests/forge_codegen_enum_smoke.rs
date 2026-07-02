@@ -214,7 +214,7 @@ fn smoke_go() {
 }
 
 fn find_kotlin_runtime_jar() -> Option<PathBuf> {
-    let libs = repo_root().join("sce-kotlin-runtime/build/libs");
+    let libs = repo_root().join("backends/kotlin/runtime/build/libs");
     let entries = std::fs::read_dir(&libs).ok()?;
     let mut candidates: Vec<PathBuf> = entries
         .flatten()
@@ -242,7 +242,7 @@ fn smoke_kotlin() {
     // sce-kotlin-runtime jar carries the right Kotlin stdlib version.
     let Some(jar) = find_kotlin_runtime_jar() else {
         eprintln!(
-            "SKIP smoke_kotlin: runtime jar missing under sce-kotlin-runtime/build/libs \
+            "SKIP smoke_kotlin: runtime jar missing under backends/kotlin/runtime/build/libs \
              (run `./gradlew :sce-kotlin-runtime:assemble`)",
         );
         return;

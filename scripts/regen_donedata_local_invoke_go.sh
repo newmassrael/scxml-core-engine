@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate sce-go-tests/integration/donedata_local_invoke/{donedata_local_invoke,
+# Regenerate backends/go/tests/integration/donedata_local_invoke/{donedata_local_invoke,
 # donedata_local_invoke__sce_synth_invoke__inv_*}_sm.go from the
 # canonical fixture at
 # integration_resources/donedata_local_invoke/donedata_local_invoke.scxml.
@@ -14,8 +14,8 @@
 # hand-authored `donedata_local_invoke_test.go` next to the generated
 # files is never touched.
 #
-# The generated tree lives under `sce-go-tests/integration/<stem>/`
-# rather than `sce-go-tests/<stem>/` so the W3C IRP and integration
+# The generated tree lives under `backends/go/tests/integration/<stem>/`
+# rather than `backends/go/tests/<stem>/` so the W3C IRP and integration
 # trees stay disjoint at the directory level.
 #
 # Usage (from repo root):
@@ -36,7 +36,7 @@ cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
 FIXTURE="integration_resources/donedata_local_invoke/donedata_local_invoke.scxml"
-GENERATED_DIR="sce-go-tests/integration/donedata_local_invoke"
+GENERATED_DIR="backends/go/tests/integration/donedata_local_invoke"
 STEM="donedata_local_invoke"
 INPUT_ROOT="integration_resources/donedata_local_invoke"
 

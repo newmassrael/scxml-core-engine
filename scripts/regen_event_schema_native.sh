@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate sce-rust-tests/src/integration/event_schema_native/ from the
+# Regenerate backends/rust/tests/src/integration/event_schema_native/ from the
 # canonical EventSchema native-lowering fixture at
 # sce-build/tests/fixtures/event_schema/statechart_minimal.scxml.
 #
@@ -34,7 +34,7 @@ cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
 FIXTURE="sce-build/tests/fixtures/event_schema/statechart_minimal.scxml"
-GENERATED_DIR="sce-rust-tests/src/integration/event_schema_native"
+GENERATED_DIR="backends/rust/tests/src/integration/event_schema_native"
 
 if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build

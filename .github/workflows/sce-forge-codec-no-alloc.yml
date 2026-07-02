@@ -22,7 +22,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'sce-forge-runtime/**'
+      - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
       - 'tools/codegen/templates/_macros/forge_rust_flag_accessors.jinja2'
       - 'sce-build/src/forge/generator.rs'
@@ -33,7 +33,7 @@ on:
   pull_request:
     branches: [ main ]
     paths:
-      - 'sce-forge-runtime/**'
+      - 'backends/*/forge-runtime/**'
       - 'tools/codegen/templates/forge/rust/codec.rs.jinja2'
       - 'tools/codegen/templates/_macros/forge_rust_flag_accessors.jinja2'
       - 'sce-build/src/forge/generator.rs'

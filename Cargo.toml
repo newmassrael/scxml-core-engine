@@ -10,13 +10,13 @@
 [workspace]
 resolver = "2"
 members = [
-    "sce-portable-bytes",
-    "sce-rust-runtime",
-    "sce-rust-lua",
-    "sce-rust-tests",
+    "backends/rust/portable-bytes",
+    "backends/rust/runtime",
+    "backends/rust/lua",
+    "backends/rust/tests",
     "sce-build",
-    "sce-forge-runtime/rust",
-    "sce-link-runtime",
+    "backends/rust/forge-runtime",
+    "backends/rust/link-runtime",
 ]
 
 [workspace.package]

@@ -29,7 +29,7 @@
 {% if var.src %}
         // W3C SCXML 5.2.2: Load variable '{{ var.id }}' from src ({{ state_id }})
         {
-            let base_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../{{ model.scxml_base_path }}/");
+            let base_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../{{ model.scxml_base_path }}/");
             if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_src(
                 se, &sid, "{{ var.id }}", "{{ var.src }}", base_path) {
                 log::error!("Failed to init '{{ var.id }}' from src in {{ state_id }}: {}", e);

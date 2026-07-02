@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate sce-python-tests/integration/donedata_local_invoke/*_sm.py
+# Regenerate backends/python/tests/integration/donedata_local_invoke/*_sm.py
 # from the canonical fixture at
 # integration_resources/donedata_local_invoke/donedata_local_invoke.scxml.
 #
@@ -13,9 +13,9 @@
 #
 # Unlike the Rust / Kotlin / Go regen scripts, the Python generated
 # tree is `.gitignored` (mirroring the W3C IRP Python pattern under
-# `sce-python-tests/generated/`) — CI runs this script before pytest
+# `backends/python/tests/generated/`) — CI runs this script before pytest
 # so the committed source tree never carries the SCE-GENERATED Python
-# files. The pybind11 channel test at `sce-python/tests/test_donedata_local_invoke.py`
+# files. The pybind11 channel test at `backends/python/bindings/tests/test_donedata_local_invoke.py`
 # stays untouched (dual-channel: pybind11 → C++ Interpreter +
 # Python AOT codegen).
 #
@@ -32,7 +32,7 @@ cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
 FIXTURE="integration_resources/donedata_local_invoke/donedata_local_invoke.scxml"
-GENERATED_DIR="sce-python-tests/integration/donedata_local_invoke"
+GENERATED_DIR="backends/python/tests/integration/donedata_local_invoke"
 STEM="donedata_local_invoke"
 INPUT_ROOT="integration_resources/donedata_local_invoke"
 

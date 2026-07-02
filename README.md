@@ -95,7 +95,7 @@ sce-codegen generate traffic_light.scxml -o ./generated/ -l rust
 - **W3C SCXML 1.0 compliant**: 202/202 W3C tests passing
 - **Lua 5.4 scripting**: Via mlua (vendored build, same as C++ default)
 - **Zero duplication**: json_builtins.lua shared with C++/Kotlin via `include_str!`
-- **Cargo workspace**: `sce-rust-runtime`, `sce-rust-lua`, `sce-rust-tests`
+- **Cargo workspace**: `backends/rust/runtime`, `backends/rust/lua`, `backends/rust/tests`
 
 ### 🐹 Go AOT Backend
 
@@ -110,7 +110,7 @@ sce-codegen generate --scxml traffic_light.scxml --language go --output-dir ./ge
 - **W3C SCXML 1.0 compliant**: 202/202 W3C tests passing
 - **Generics**: `Engine[S comparable, E comparable]` with `StatePolicy[S, E]` interface
 - **Pure Go Lua**: Shopify/go-lua (no CGo, no C compiler required)
-- **Go modules**: `sce-go-runtime`, `sce-go-lua`, `sce-go-tests`
+- **Go modules**: `backends/go/runtime`, `backends/go/lua`, `backends/go/tests`
 
 ### ☕ Kotlin/JVM & Spring Boot Support
 
@@ -189,7 +189,7 @@ cmake .. -DBUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release \
 cmake --build . --target _sce
 
 # Use
-PYTHONPATH=build_python/sce-python:sce-python/python python3 -c "
+PYTHONPATH=build_python/backends/python/bindings:backends/python/bindings/python python3 -c "
 import sce
 engine = sce.Engine.from_file('traffic_light.scxml')
 engine.start()
@@ -213,7 +213,7 @@ cargo test --release -p sce-rust-tests
 sce-codegen generate --scxml traffic_light.scxml --language go --output-dir ./generated/
 
 # Run W3C conformance tests
-cd sce-go-tests && go test ./...
+cd backends/go/tests && go test ./...
 ```
 
 ### Kotlin/JVM & Spring Boot
@@ -707,26 +707,26 @@ sce-build/               # Code generator (Rust + minijinja)
 tools/codegen/templates/ # Shared Jinja2 templates (C++/Kotlin/Rust/Go)
 
 # Python Bindings (pybind11):
-sce-python/              # Python bindings module
+backends/python/bindings/              # Python bindings module
 ├── src/bindings.cpp     # pybind11 wrapper (PyEngine)
 ├── python/sce/          # Python package (Engine, Statistics)
 ├── tests/test_w3c.py    # W3C conformance tests (202/202)
 └── pyproject.toml       # scikit-build-core wheel config
 
 # Rust Backend (Cargo workspace):
-sce-rust-runtime/        # Core runtime (engine, event, policy, invoke)
-sce-rust-lua/            # Lua 5.4 script engine (mlua)
-sce-rust-tests/          # W3C conformance tests (202/202)
+backends/rust/runtime/        # Core runtime (engine, event, policy, invoke)
+backends/rust/lua/            # Lua 5.4 script engine (mlua)
+backends/rust/tests/          # W3C conformance tests (202/202)
 
 # Kotlin/JVM Modules (Gradle):
-sce-kotlin-runtime/      # ScxmlScriptEngine interface (multiplatform)
-sce-kotlin-rhino/        # Rhino ECMAScript engine (pure JVM)
-sce-kotlin-lua/          # Lua 5.4 engine (JNI native)
-sce-kotlin-quickjs/      # QuickJS engine (JNI native)
-sce-spring-boot-starter/ # Spring Boot auto-configuration
-sce-kotlin-tests/        # W3C conformance tests (202/202)
-sce-kotlin-benchmark/    # JMH performance benchmarks
-sce-android-app/         # Android benchmark app (Compose UI)
+backends/kotlin/runtime/      # ScxmlScriptEngine interface (multiplatform)
+backends/kotlin/rhino/        # Rhino ECMAScript engine (pure JVM)
+backends/kotlin/lua/          # Lua 5.4 engine (JNI native)
+backends/kotlin/quickjs/      # QuickJS engine (JNI native)
+backends/kotlin/spring-boot-starter/ # Spring Boot auto-configuration
+backends/kotlin/tests/        # W3C conformance tests (202/202)
+backends/kotlin/benchmark/    # JMH performance benchmarks
+backends/kotlin/android-app/         # Android benchmark app (Compose UI)
 
 tests/
 ├── w3c/                 # W3C conformance tests (202 tests)
@@ -1230,12 +1230,12 @@ cd build
 
 ```bash
 # Run all 202 W3C tests (including HTTP)
-SPDLOG_LEVEL=off PYTHONPATH=build_python/sce-python:sce-python/python \
-    python3 sce-python/tests/test_w3c.py
+SPDLOG_LEVEL=off PYTHONPATH=build_python/backends/python/bindings:backends/python/bindings/python \
+    python3 backends/python/bindings/tests/test_w3c.py
 
 # Skip HTTP tests (faster)
-SPDLOG_LEVEL=off PYTHONPATH=build_python/sce-python:sce-python/python \
-    python3 sce-python/tests/test_w3c.py --skip-http
+SPDLOG_LEVEL=off PYTHONPATH=build_python/backends/python/bindings:backends/python/bindings/python \
+    python3 backends/python/bindings/tests/test_w3c.py --skip-http
 ```
 
 ### Rust Tests
