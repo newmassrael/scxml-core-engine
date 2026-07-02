@@ -241,31 +241,31 @@ endif()
 # Local Visualizer Deployment
 # =============================================================================
 # Deploy visualizer to project root matching GitHub Pages structure
-# Automatic deployment: Runs during build if visualizer/ doesn't exist
+# Automatic deployment: Runs during build if web/visualizer/ doesn't exist
 # Manual deployment: cmake --build build --target deploy-visualizer-local
 
 # Automatic deployment strategy:
 # EMSCRIPTEN builds always deploy WASM files after visualizer target builds
-if(NOT EXISTS "${CMAKE_SOURCE_DIR}/visualizer")
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/web/visualizer")
     if(EMSCRIPTEN)
         message(STATUS "Visualizer directory not found, will create during EMSCRIPTEN build")
     else()
-        message(STATUS "Visualizer deployment skipped: visualizer/ source directory not found")
+        message(STATUS "Visualizer deployment skipped: web/visualizer/ source directory not found")
     endif()
 else()
     if(EMSCRIPTEN)
-        message(STATUS "WASM files will be automatically deployed to visualizer/ after build")
+        message(STATUS "WASM files will be automatically deployed to web/visualizer/ after build")
     endif()
 endif()
 
-# Deployment target: Copy WASM build outputs to visualizer/ source directory
-# visualizer/ contains both source files (tracked in git) and build outputs (gitignored)
-set(VISUALIZER_DIR "${CMAKE_SOURCE_DIR}/visualizer")
+# Deployment target: Copy WASM build outputs to web/visualizer/ source directory
+# web/visualizer/ contains both source files (tracked in git) and build outputs (gitignored)
+set(VISUALIZER_DIR "${CMAKE_SOURCE_DIR}/web/visualizer")
 set(VISUALIZER_WASM_FILE "${VISUALIZER_DIR}/visualizer.wasm")
 set(VISUALIZER_JS_FILE "${VISUALIZER_DIR}/visualizer.js")
 
 if(EMSCRIPTEN)
-    # EMSCRIPTEN: Build WASM and copy directly to visualizer/
+    # EMSCRIPTEN: Build WASM and copy directly to web/visualizer/
     # Manual deployment target (always available)
     add_custom_target(deploy-visualizer-local
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -279,7 +279,7 @@ if(EMSCRIPTEN)
                 ${VISUALIZER_DIR}/index.html
         DEPENDS visualizer
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Deploying WASM files to visualizer/"
+        COMMENT "Deploying WASM files to web/visualizer/"
         VERBATIM
     )
 else()

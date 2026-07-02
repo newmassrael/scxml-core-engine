@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 """
-Generate visualizer/test-list.js from tests/CMakeLists.txt
+Generate web/visualizer/test-list.js from tests/CMakeLists.txt
 
 Zero Duplication: CMakeLists.txt W3C_AOT_TESTS is the single source of truth.
 This script automatically generates the JavaScript test list for the visualizer.
@@ -12,7 +12,7 @@ Usage:
     python3 tools/generate_test_list.py [cmake_file] [output_file]
 
 Default:
-    python3 tools/generate_test_list.py tests/CMakeLists.txt visualizer/test-list.js
+    python3 tools/generate_test_list.py tests/CMakeLists.txt web/visualizer/test-list.js
 """
 
 import re
@@ -257,7 +257,7 @@ def main():
     """Main entry point"""
     # Parse arguments
     cmake_file = Path(sys.argv[1]) if len(sys.argv) > 1 else Path('tests/CMakeLists.txt')
-    output_file = Path(sys.argv[2]) if len(sys.argv) > 2 else Path('visualizer/test-list.js')
+    output_file = Path(sys.argv[2]) if len(sys.argv) > 2 else Path('web/visualizer/test-list.js')
 
     # Validate input file exists
     if not cmake_file.exists():
