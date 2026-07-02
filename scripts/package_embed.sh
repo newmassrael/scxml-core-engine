@@ -201,7 +201,7 @@ ${SRCS_FORMATTED}    ],
 BZLEOF
 
 # Bazel repository rule for consumers referencing SCE source tree directly
-cp "${SCE_ROOT}/bazel/sce_repo.bzl" "${OUTPUT_DIR}/"
+cp "${SCE_ROOT}/scripts/sce_repo.bzl" "${OUTPUT_DIR}/"
 
 # ============================================================================
 # 4b. Codegen assets from SSOT (sce/sce_codegen_assets.cmake)
