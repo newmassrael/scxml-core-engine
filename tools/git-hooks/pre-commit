@@ -3,16 +3,19 @@
 #
 # SCE pre-commit hook: run cheap mechanical checks that should fail at
 # commit time rather than at push time, so the offending content never
-# lands in the local history. Today the single gate is rustfmt — moved
-# down from the pre-push hook Stage 0 (2026-05-23) so a developer who
-# commits before running `cargo fmt --all` learns immediately, not at
-# `git push` time after every other check has already run.
+# lands in the local history. The rustfmt gate moved down from the
+# pre-push hook Stage 0 (2026-05-23) so a developer who commits before
+# running `cargo fmt --all` learns immediately, not at `git push` time
+# after every other check has already run.
 #
 # Gates:
 #   0. cargo fmt --all --check               — mirrors CI rustfmt gate
 #                                              (reproduces the 2026-05-20
 #                                              fmt-drift CI fail-mode)
-#   1. commit-audit backstop                 — re-runs .claude/hooks/
+#   1. clang-format staged C/C++ check       — mirrors CI clang-format
+#                                              gate via the shared
+#                                              scripts/check_clang_format.sh
+#   2. commit-audit backstop                 — re-runs .claude/hooks/
 #                                              commit_audit.sh at the git
 #                                              layer (see below)
 #
@@ -53,18 +56,40 @@ fail_step() { printf '\nERROR pre-commit: %s FAILED — commit aborted.\n  Run `
 # past the hook because no previous stage exercised rustfmt; running
 # at commit time means fmt-only fix-up commits never land in local
 # history.
-log_step "Stage 0/1 — cargo fmt --all -- --check (mirrors CI fmt gate)"
+log_step "Stage 0/2 — cargo fmt --all -- --check (mirrors CI fmt gate)"
 cargo fmt --all -- --check \
     || fail_step "Stage 0 (cargo fmt --all --check)"
 
-# ── Stage 1: commit-audit backstop ────────────────────────────────
+# ── Stage 1: clang-format on staged C/C++ files ───────────────────
+# Mirror CI's clang-format-check.yml at commit time, scoped to the
+# staged C/C++ files so a drifted-but-untouched file elsewhere never
+# blocks an unrelated commit. Enumeration and the generated-source
+# skip policy live in scripts/check_clang_format.sh (shared with CI —
+# single source of truth). Skipped with a diagnostic when clang-format
+# is not installed; the CI gate stays the authoritative enforcement
+# point, matching the rustfmt doctrine above.
+log_step "Stage 1/2 — clang-format --dry-run on staged C/C++ files"
+mapfile -t staged_cxx < <(git diff --cached --name-only --diff-filter=ACMR \
+    -- '*.c' '*.cc' '*.cpp' '*.h' '*.hpp')
+if [[ ${#staged_cxx[@]} -eq 0 ]]; then
+    echo "pre-commit: no staged C/C++ files — clang-format check skipped." >&2
+elif ! command -v clang-format >/dev/null 2>&1; then
+    echo "pre-commit: clang-format not on PATH; skipping (CI gate still runs)." >&2
+else
+    if ! "$REPO_ROOT/scripts/check_clang_format.sh" "${staged_cxx[@]}"; then
+        printf '\nERROR pre-commit: Stage 1 (clang-format) FAILED — commit aborted.\n  Run `clang-format -i` on the files above, re-stage, and retry.\n  Bypass with SKIP_PRECOMMIT=1 for emergencies.\n' >&2
+        exit 1
+    fi
+fi
+
+# ── Stage 2: commit-audit backstop ────────────────────────────────
 # Re-run the Claude Code commit-audit hook at the git layer so a commit
 # can never land without its audit-answer file even when the PreToolUse
 # layer is skipped (piped/compound `git commit`). Reuses the exact same
 # script — no logic duplication. The synthesized payload carries a bare
 # `git commit` command (no -m), so message-based checks self-skip while
 # the diff/state/audit-file gates run against the real staged index.
-log_step "Stage 1/1 — commit-audit backstop (.claude/hooks/commit_audit.sh)"
+log_step "Stage 2/2 — commit-audit backstop (.claude/hooks/commit_audit.sh)"
 AUDIT_HOOK="$REPO_ROOT/.claude/hooks/commit_audit.sh"
 if [[ -x "$AUDIT_HOOK" ]]; then
     AUDIT_PAYLOAD="$(REPO_ROOT="$REPO_ROOT" python3 -c \
