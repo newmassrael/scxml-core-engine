@@ -124,9 +124,8 @@ protected:
         std::string sessionId = generateUniqueSessionId();
 
         StateMachineBuilder builder;
-        auto sm = builder.withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
-                      .withSessionId(sessionId)
-                      .build();
+        auto sm =
+            builder.withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine()).withSessionId(sessionId).build();
 
         if (sm && sm->loadSCXMLFromString(scxmlContent) && sm->start()) {
             return sm;

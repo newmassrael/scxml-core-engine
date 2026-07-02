@@ -73,11 +73,15 @@ int run_test() {
     struct EnginePump {
         std::atomic<bool> running{true};
         std::thread t;
+
         ~EnginePump() {
             running.store(false, std::memory_order_release);
-            if (t.joinable()) t.join();
+            if (t.joinable()) {
+                t.join();
+            }
         }
     } pump;
+
     pump.t = std::thread([&motor, &pump] {
         while (pump.running.load(std::memory_order_acquire)) {
             motor.step();
@@ -93,16 +97,16 @@ int run_test() {
         brake_router.motor_app_->register_availability_handler(
             brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
             [&](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
-                if (!is_available) return;
+                if (!is_available) {
+                    return;
+                }
                 std::lock_guard<std::mutex> lock(availability_m);
                 service_available = true;
                 availability_cv.notify_all();
             });
 
         std::unique_lock<std::mutex> lock(availability_m);
-        MESH_TEST_REQUIRE(availability_cv.wait_for(
-                              lock, std::chrono::seconds(10),
-                              [&] { return service_available; }),
+        MESH_TEST_REQUIRE(availability_cv.wait_for(lock, std::chrono::seconds(10), [&] { return service_available; }),
                           "vsomeip service motor_control did not become "
                           "available within 10s");
     }
@@ -122,26 +126,24 @@ int run_test() {
         constexpr vsomeip::event_t kSpeedEventId = 0x8002;
         constexpr vsomeip::eventgroup_t kSpeedEventgroupId = 0x0002;
         brake_router.motor_app_->register_message_handler(
-            brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
-            kSpeedEventId,
-            [&notify_events](const std::shared_ptr<vsomeip::message>& msg) {
+            brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR, kSpeedEventId,
+            [&notify_events](const std::shared_ptr<vsomeip::message> &msg) {
                 auto pl = msg->get_payload();
-                if (!pl) return;
+                if (!pl) {
+                    return;
+                }
                 SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) return;
-                notify_events.push({env.type,
-                                    std::string(env.data.begin(), env.data.end())});
+                if (!SCE::Mesh::decodeEnvelope(pl->get_data(), pl->get_length(), env)) {
+                    return;
+                }
+                notify_events.push({env.type, std::string(env.data.begin(), env.data.end())});
             });
 
         // Request + subscribe to the eventgroup.
-        brake_router.motor_app_->request_event(
-            brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
-            kSpeedEventId,
-            {kSpeedEventgroupId},
-            vsomeip::event_type_e::ET_EVENT);
-        brake_router.motor_app_->subscribe(
-            brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
-            kSpeedEventgroupId);
+        brake_router.motor_app_->request_event(brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
+                                               kSpeedEventId, {kSpeedEventgroupId}, vsomeip::event_type_e::ET_EVENT);
+        brake_router.motor_app_->subscribe(brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
+                                           kSpeedEventgroupId);
 
         // Allow subscription to settle.
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -161,12 +163,11 @@ int run_test() {
         trigger.datacontenttype = SCE::Mesh::PayloadCodec::None;
         (void)motor_router.dispatchToSession(trigger, 0);
 
-        MESH_TEST_REQUIRE(notify_events.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "field.notify.vehicle_speed";
-                }),
-                "eventgroup notification not received — regression in "
-                "spontaneous raise→injected-send→publishEventgroupNotify chain");
+        MESH_TEST_REQUIRE(notify_events.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "field.notify.vehicle_speed";
+        }),
+                          "eventgroup notification not received — regression in "
+                          "spontaneous raise→injected-send→publishEventgroupNotify chain");
     }
 
     // Stop the pump eagerly so shutdown observes a quiet engine.
@@ -183,7 +184,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

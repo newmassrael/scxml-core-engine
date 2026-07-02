@@ -90,24 +90,21 @@ namespace detail {
 /// don't, so the wire-21 arm falls through to "return false" (drop) for
 /// them — the envelope would have arrived in error anyway (no claimant
 /// partition configured).
-template <typename Engine, typename = void>
-struct HasParallelRegionDoneHook : std::false_type {};
+template <typename Engine, typename = void> struct HasParallelRegionDoneHook : std::false_type {};
 
 template <typename Engine>
-struct HasParallelRegionDoneHook<Engine, std::void_t<decltype(
-    std::declval<Engine&>().onParallelRegionDone(std::declval<const MeshEnvelope&>()))>>
+struct HasParallelRegionDoneHook<
+    Engine, std::void_t<decltype(std::declval<Engine &>().onParallelRegionDone(std::declval<const MeshEnvelope &>()))>>
     : std::true_type {};
 
 template <typename Engine>
-bool tryDeliverParallelRegionDone(const MeshEnvelope& env, Engine& engine,
-                                  std::true_type /*has_hook*/) {
+bool tryDeliverParallelRegionDone(const MeshEnvelope &env, Engine &engine, std::true_type /*has_hook*/) {
     engine.onParallelRegionDone(env);
     return true;
 }
 
 template <typename Engine>
-bool tryDeliverParallelRegionDone(const MeshEnvelope& /*env*/, Engine& /*engine*/,
-                                  std::false_type /*has_hook*/) {
+bool tryDeliverParallelRegionDone(const MeshEnvelope & /*env*/, Engine & /*engine*/, std::false_type /*has_hook*/) {
     return false;
 }
 
@@ -115,47 +112,41 @@ bool tryDeliverParallelRegionDone(const MeshEnvelope& /*env*/, Engine& /*engine*
 /// `onInvokeStarted(const MeshEnvelope&)`? Only parent engines that host at
 /// least one `<invoke type="scxml">` targeting a mesh peer emit the hook;
 /// machines without authored invokes drop the wire-15 envelope.
-template <typename Engine, typename = void>
-struct HasInvokeStartedHook : std::false_type {};
+template <typename Engine, typename = void> struct HasInvokeStartedHook : std::false_type {};
 
 template <typename Engine>
-struct HasInvokeStartedHook<Engine, std::void_t<decltype(
-    std::declval<Engine&>().onInvokeStarted(std::declval<const MeshEnvelope&>()))>>
+struct HasInvokeStartedHook<
+    Engine, std::void_t<decltype(std::declval<Engine &>().onInvokeStarted(std::declval<const MeshEnvelope &>()))>>
     : std::true_type {};
 
 template <typename Engine>
-bool tryDeliverInvokeStarted(const MeshEnvelope& env, Engine& engine,
-                             std::true_type /*has_hook*/) {
+bool tryDeliverInvokeStarted(const MeshEnvelope &env, Engine &engine, std::true_type /*has_hook*/) {
     engine.onInvokeStarted(env);
     return true;
 }
 
 template <typename Engine>
-bool tryDeliverInvokeStarted(const MeshEnvelope& /*env*/, Engine& /*engine*/,
-                             std::false_type /*has_hook*/) {
+bool tryDeliverInvokeStarted(const MeshEnvelope & /*env*/, Engine & /*engine*/, std::false_type /*has_hook*/) {
     return false;
 }
 
 /// SFINAE probe: does `Engine` expose
 /// `onInvokeDone(const MeshEnvelope&)`? Symmetric to `HasInvokeStartedHook`.
-template <typename Engine, typename = void>
-struct HasInvokeDoneHook : std::false_type {};
+template <typename Engine, typename = void> struct HasInvokeDoneHook : std::false_type {};
 
 template <typename Engine>
-struct HasInvokeDoneHook<Engine, std::void_t<decltype(
-    std::declval<Engine&>().onInvokeDone(std::declval<const MeshEnvelope&>()))>>
+struct HasInvokeDoneHook<
+    Engine, std::void_t<decltype(std::declval<Engine &>().onInvokeDone(std::declval<const MeshEnvelope &>()))>>
     : std::true_type {};
 
 template <typename Engine>
-bool tryDeliverInvokeDone(const MeshEnvelope& env, Engine& engine,
-                          std::true_type /*has_hook*/) {
+bool tryDeliverInvokeDone(const MeshEnvelope &env, Engine &engine, std::true_type /*has_hook*/) {
     engine.onInvokeDone(env);
     return true;
 }
 
 template <typename Engine>
-bool tryDeliverInvokeDone(const MeshEnvelope& /*env*/, Engine& /*engine*/,
-                          std::false_type /*has_hook*/) {
+bool tryDeliverInvokeDone(const MeshEnvelope & /*env*/, Engine & /*engine*/, std::false_type /*has_hook*/) {
     return false;
 }
 
@@ -177,19 +168,15 @@ bool tryDeliverInvokeDone(const MeshEnvelope& /*env*/, Engine& /*engine*/,
 /// @tparam Policy  Receiver's generated StatePolicy (provides getEventFromName)
 /// @tparam Engine  StaticExecutionEngine<Policy>
 /// @return true if the event was dispatched to the engine
-template <typename Policy, typename Engine>
-bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
+template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnvelope &env, Engine &engine) {
     if (env.pattern == PatternKind::ParallelRegionDone) {
-        return detail::tryDeliverParallelRegionDone(
-            env, engine, detail::HasParallelRegionDoneHook<Engine>{});
+        return detail::tryDeliverParallelRegionDone(env, engine, detail::HasParallelRegionDoneHook<Engine>{});
     }
     if (env.pattern == PatternKind::InvokeStarted) {
-        return detail::tryDeliverInvokeStarted(
-            env, engine, detail::HasInvokeStartedHook<Engine>{});
+        return detail::tryDeliverInvokeStarted(env, engine, detail::HasInvokeStartedHook<Engine>{});
     }
     if (env.pattern == PatternKind::InvokeDone) {
-        return detail::tryDeliverInvokeDone(
-            env, engine, detail::HasInvokeDoneHook<Engine>{});
+        return detail::tryDeliverInvokeDone(env, engine, detail::HasInvokeDoneHook<Engine>{});
     }
     switch (env.pattern) {
     case PatternKind::FireForget:
@@ -214,7 +201,9 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     case PatternKind::FieldRead:
     case PatternKind::FieldWrite: {
         auto ev = Policy::getEventFromName(env.type.c_str());
-        if (!ev) return false;
+        if (!ev) {
+            return false;
+        }
         typename Engine::EventWithMetadata meta;
         meta.event = *ev;
         meta.data = std::string(env.data.begin(), env.data.end());
@@ -238,7 +227,9 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     // code paths (`childSession.sessionId == meta.origin` match) unchanged.
     case PatternKind::ChildEvent: {
         auto ev = Policy::getEventFromName(env.type.c_str());
-        if (!ev) return false;
+        if (!ev) {
+            return false;
+        }
         typename Engine::EventWithMetadata meta;
         meta.event = *ev;
         meta.data = std::string(env.data.begin(), env.data.end());
@@ -265,7 +256,9 @@ bool dispatchEnvelope(const MeshEnvelope& env, Engine& engine) {
     // landing at §mesh-10.7.1 once an SCXML consumer exists.
     case PatternKind::InvokeError: {
         auto ev = Policy::getEventFromName("error.execution");
-        if (!ev) return false;
+        if (!ev) {
+            return false;
+        }
         typename Engine::EventWithMetadata meta;
         meta.event = *ev;
         if (env.rpc_error_message) {

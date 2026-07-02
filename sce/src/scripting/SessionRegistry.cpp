@@ -43,8 +43,7 @@ void SessionRegistry::registerInvokeMapping(const std::string &parentSessionId, 
                   invokeId, childSessionId);
 }
 
-std::string SessionRegistry::getInvokeSessionId(const std::string &parentSessionId,
-                                                 const std::string &invokeId) const {
+std::string SessionRegistry::getInvokeSessionId(const std::string &parentSessionId, const std::string &invokeId) const {
     std::lock_guard<std::mutex> lock(invokeMappingsMutex_);
 
     auto parentIt = invokeMappings_.find(parentSessionId);

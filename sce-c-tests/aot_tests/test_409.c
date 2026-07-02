@@ -33,8 +33,7 @@ int main(void) {
 
     while (!test409_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test409: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test409_active_states(&sm));
+            fprintf(stderr, "test409: TIMEOUT — active = 0x%08x\n", (unsigned)test409_active_states(&sm));
             test409_destroy(&sm);
             return 1;
         }
@@ -44,8 +43,7 @@ int main(void) {
 
     int rc = test409_in_state(&sm, TEST409_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test409: FAIL — active = 0x%08x\n",
-                (unsigned)test409_active_states(&sm));
+        fprintf(stderr, "test409: FAIL — active = 0x%08x\n", (unsigned)test409_active_states(&sm));
     }
     test409_destroy(&sm);
     return rc;

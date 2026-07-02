@@ -19,16 +19,16 @@ namespace SCE::Mesh {
 struct QosHints {
     enum class Reliability : uint8_t {
         BestEffort = 0,
-        Reliable   = 1,
+        Reliable = 1,
     };
 
     enum class Ordering : uint8_t {
         Unordered = 0,
-        Ordered   = 1,
+        Ordered = 1,
     };
 
     Reliability reliability = Reliability::BestEffort;
-    Ordering    ordering    = Ordering::Unordered;
+    Ordering ordering = Ordering::Unordered;
 
     bool operator==(const QosHints &other) const noexcept {
         return reliability == other.reliability && ordering == other.ordering;
@@ -36,8 +36,8 @@ struct QosHints {
 };
 
 static_assert(static_cast<uint8_t>(QosHints::Reliability::BestEffort) == 0, "QosHints wire value changed");
-static_assert(static_cast<uint8_t>(QosHints::Reliability::Reliable)   == 1, "QosHints wire value changed");
-static_assert(static_cast<uint8_t>(QosHints::Ordering::Unordered)     == 0, "QosHints wire value changed");
-static_assert(static_cast<uint8_t>(QosHints::Ordering::Ordered)       == 1, "QosHints wire value changed");
+static_assert(static_cast<uint8_t>(QosHints::Reliability::Reliable) == 1, "QosHints wire value changed");
+static_assert(static_cast<uint8_t>(QosHints::Ordering::Unordered) == 0, "QosHints wire value changed");
+static_assert(static_cast<uint8_t>(QosHints::Ordering::Ordered) == 1, "QosHints wire value changed");
 
 }  // namespace SCE::Mesh

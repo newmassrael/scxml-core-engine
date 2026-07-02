@@ -31,7 +31,7 @@
 
 namespace gen = SCE::Generated::motor_partition::P_motor_right;
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     if (argc < 2) {
         std::fprintf(stderr, "right_proc: usage: %s <silent|sends>\n", argv[0]);
         return 64;
@@ -64,9 +64,7 @@ int main(int argc, char* argv[]) {
     // timer fire (silent mode) or the convergence (sends mode).
     std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 
-    std::printf("barrier_timeout right (%s): PASS%s\n",
-                mode.c_str(),
-                sends ? " — wire-21 envelope dispatched"
-                      : " — channel held open, no envelope sent");
+    std::printf("barrier_timeout right (%s): PASS%s\n", mode.c_str(),
+                sends ? " — wire-21 envelope dispatched" : " — channel held open, no envelope sent");
     return 0;
 }

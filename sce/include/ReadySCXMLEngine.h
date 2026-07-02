@@ -122,7 +122,9 @@ public:
     /**
      * @brief Route const char* to the string overload (prevents implicit bool conversion)
      */
-    bool setVariable(const std::string &name, const char *value) { return setVariable(name, std::string(value)); }
+    bool setVariable(const std::string &name, const char *value) {
+        return setVariable(name, std::string(value));
+    }
 
     /**
      * @brief Set a boolean variable in the state machine's data model

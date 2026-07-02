@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/HttpResponseUtils.h"
-#include "runtime/JsonUtils.h"
 #include "core/LogMacros.h"
 #include "events/IEventBridge.h"  // For HttpResponse struct
+#include "runtime/JsonUtils.h"
 
 namespace SCE {
 

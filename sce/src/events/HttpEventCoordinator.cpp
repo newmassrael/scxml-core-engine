@@ -128,7 +128,7 @@ std::future<SendResult> HttpEventCoordinator::sendEvent(const EventDescriptor &e
             auto result = sendFuture.get();
 
             SCE_LOG_DEBUG("HttpEventCoordinator: HTTP send result: success={}, sendId='{}'", result.isSuccess,
-                      result.sendId);
+                          result.sendId);
 
             return result;
 
@@ -275,7 +275,7 @@ void HttpEventCoordinator::setEventLoopback(bool enabled, const std::string &eve
     config_.loopbackEventPrefix = eventPrefix;
 
     SCE_LOG_DEBUG("HttpEventCoordinator: Event loopback {} with prefix '{}'", enabled ? "enabled" : "disabled",
-              eventPrefix);
+                  eventPrefix);
 }
 
 bool HttpEventCoordinator::handleIncomingEvent(const EventDescriptor &event) {

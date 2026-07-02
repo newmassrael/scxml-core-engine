@@ -82,7 +82,8 @@ TEST(PositionMap, MultiLineFileLookup) {
 // the byte *after* "한", not at byte 3. Byte counting would report
 // col 4 and silently skew every multibyte diagnostic.
 TEST(PositionMap, UnicodeScalarColumn) {
-    const std::string text = "\xED\x95\x9C" "abc";  // "한abc"
+    const std::string text = "\xED\x95\x9C"
+                             "abc";  // "한abc"
     auto map = PositionMap::identity("main.scxml", text);
 
     const size_t byte_offset = 3;  // Length of "한" in UTF-8.
@@ -136,18 +137,15 @@ TEST(PositionMap, SingleAppendMappedSubstringFileOrigin) {
 TEST(PositionMap, CompositionFileAndCallSite) {
     PositionMap outer;
     outer.register_file(std::filesystem::path("caller.scxml"), "<a/>");
-    outer.register_file(std::filesystem::path("template.scxml"),
-                        "body-before\nbody-after");
+    outer.register_file(std::filesystem::path("template.scxml"), "body-before\nbody-after");
 
     // [0, 6): body-before bytes from template.scxml[0..6]
     //         = "body-b" → template row 1.
     outer.push_entry(0, 6, FileOrigin{std::filesystem::path("template.scxml"), 0});
     // [6, 16): 10 bytes of substituted value from caller row 5 col 9.
-    outer.push_entry(6, 16,
-                     CallSiteOrigin{std::filesystem::path("caller.scxml"), 5, 9});
+    outer.push_entry(6, 16, CallSiteOrigin{std::filesystem::path("caller.scxml"), 5, 9});
     // [16, 22): 6 bytes from template.scxml[16..22] = "-after".
-    outer.push_entry(16, 22,
-                     FileOrigin{std::filesystem::path("template.scxml"), 16});
+    outer.push_entry(16, 22, FileOrigin{std::filesystem::path("template.scxml"), 16});
 
     // File-prefix: offset 0 → template.scxml (1, 1).
     SourcePos pos = outer.lookup(0);
@@ -181,8 +179,7 @@ TEST(PositionMap, CompositionFileAndCallSite) {
 // at source_offset 0 is identity; anything else is not.
 TEST(PositionMap, IsIdentityPredicate) {
     // Happy path: identity factory.
-    auto identity_map =
-        PositionMap::identity(std::filesystem::path("x.scxml"), "<a/>");
+    auto identity_map = PositionMap::identity(std::filesystem::path("x.scxml"), "<a/>");
     EXPECT_TRUE(identity_map.is_identity());
 
     // Multi-entry map, even with both FileOrigin: not identity.
@@ -201,7 +198,6 @@ TEST(PositionMap, IsIdentityPredicate) {
     // Single CallSite entry: not identity (wrong variant).
     PositionMap callsite_only;
     callsite_only.register_file(std::filesystem::path("x.scxml"), "<a/>");
-    callsite_only.push_entry(
-        0, 4, CallSiteOrigin{std::filesystem::path("x.scxml"), 1, 1});
+    callsite_only.push_entry(0, 4, CallSiteOrigin{std::filesystem::path("x.scxml"), 1, 1});
     EXPECT_FALSE(callsite_only.is_identity());
 }

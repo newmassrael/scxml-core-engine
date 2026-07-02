@@ -36,8 +36,7 @@ constexpr const char *SCXML_NS = "http://www.w3.org/2005/07/scxml";
 
 // ── Helper: parse `xml` and return the named child element ─────────
 
-std::shared_ptr<SCE::IXMLElement> parseAndFindChild(const std::string &xml,
-                                                   const std::string &childName) {
+std::shared_ptr<SCE::IXMLElement> parseAndFindChild(const std::string &xml, const std::string &childName) {
     SCE::PugiXMLParser parser;
     auto doc = parser.parseContent(xml);
     EXPECT_TRUE(doc) << "parser must accept the fixture document";
@@ -51,9 +50,8 @@ std::shared_ptr<SCE::IXMLElement> parseAndFindChild(const std::string &xml,
     }
     // DFS descent — the W3C test fixtures place `<content>` at
     // root→state→invoke→content, so a fixed-depth scan misses it.
-    std::function<std::shared_ptr<SCE::IXMLElement>(const std::shared_ptr<SCE::IXMLElement> &)>
-        find = [&](const std::shared_ptr<SCE::IXMLElement> &node)
-        -> std::shared_ptr<SCE::IXMLElement> {
+    std::function<std::shared_ptr<SCE::IXMLElement>(const std::shared_ptr<SCE::IXMLElement> &)> find =
+        [&](const std::shared_ptr<SCE::IXMLElement> &node) -> std::shared_ptr<SCE::IXMLElement> {
         if (!node) {
             return nullptr;
         }
@@ -172,9 +170,10 @@ TEST(SerializeChildContentXmlns, ChildWithOwnXmlnsIsLeftAlone) {
         ++count;
         pos += needle.size();
     }
-    EXPECT_EQ(count, 1u)
-        << "child element that already declares xmlns must not get a "
-           "second injection; got " << count << " in:\n" << serialized;
+    EXPECT_EQ(count, 1u) << "child element that already declares xmlns must not get a "
+                            "second injection; got "
+                         << count << " in:\n"
+                         << serialized;
 }
 
 // Foreign-namespace prefixed children must also be left alone — the
@@ -239,9 +238,7 @@ TEST(SerializeChildContentXmlns, TextOnlyDataContentDoesNotMutate) {
     // Trim and compare — pugixml may keep surrounding whitespace.
     auto start = serialized.find_first_not_of(" \t\n\r");
     auto end = serialized.find_last_not_of(" \t\n\r");
-    std::string trimmed = (start == std::string::npos)
-                              ? std::string()
-                              : serialized.substr(start, end - start + 1);
+    std::string trimmed = (start == std::string::npos) ? std::string() : serialized.substr(start, end - start + 1);
     EXPECT_EQ(trimmed, std::string("hello world"))
         << "text-only content must round-trip verbatim; got: '" << serialized << "'";
     EXPECT_EQ(serialized.find("xmlns="), std::string::npos)

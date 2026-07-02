@@ -3,12 +3,12 @@
 
 #include "events/InvokeEventTarget.h"
 #include "common/EventDataHelper.h"
-#include "runtime/JsonUtils.h"
-#include "core/LogMacros.h"
 #include "common/SCXMLConstants.h"
+#include "core/LogMacros.h"
 #include "events/EventRaiserService.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
+#include "runtime/JsonUtils.h"
 #include "scripting/SessionRegistry.h"
 #include <sstream>
 
@@ -24,12 +24,13 @@ InvokeEventTarget::InvokeEventTarget(const std::string &invokeId, const std::str
         throw std::invalid_argument("InvokeEventTarget: Parent session ID cannot be empty");
     }
 
-    SCE_LOG_DEBUG("InvokeEventTarget: Created for invoke ID '{}' from parent session '{}'", invokeId_, parentSessionId_);
+    SCE_LOG_DEBUG("InvokeEventTarget: Created for invoke ID '{}' from parent session '{}'", invokeId_,
+                  parentSessionId_);
 }
 
 std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
     SCE_LOG_DEBUG("InvokeEventTarget::send() - ENTRY: event='{}', target='{}', invokeId='{}'", event.eventName,
-              event.target, invokeId_);
+                  event.target, invokeId_);
 
     std::promise<SendResult> resultPromise;
     auto resultFuture = resultPromise.get_future();
@@ -37,11 +38,11 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
     try {
         // [EVENT ROUTING] Step 1: Find child session ID using JSEngine invoke mapping
         SCE_LOG_INFO("[EVENT ROUTING] InvokeEventTarget looking up child session: parent='{}', invokeId='{}'",
-                 parentSessionId_, invokeId_);
+                     parentSessionId_, invokeId_);
         std::string childSessionId = SessionRegistry::instance().getInvokeSessionId(parentSessionId_, invokeId_);
         if (childSessionId.empty()) {
-            SCE_LOG_ERROR("[EVENT ROUTING] ❌ FAILED: No child session found for invoke ID '{}' in parent '{}'", invokeId_,
-                      parentSessionId_);
+            SCE_LOG_ERROR("[EVENT ROUTING] ❌ FAILED: No child session found for invoke ID '{}' in parent '{}'",
+                          invokeId_, parentSessionId_);
             resultPromise.set_value(SendResult::error("No child session found for invoke ID: " + invokeId_,
                                                       SendResult::ErrorType::TARGET_NOT_FOUND));
             return resultFuture;
@@ -62,7 +63,7 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
         SCE_LOG_INFO("[EVENT ROUTING] ✅ Found EventRaiser for child session '{}'", childSessionId);
 
         SCE_LOG_DEBUG("InvokeEventTarget: Routing event '{}' to child session '{}' via invoke ID '{}'", event.eventName,
-                  childSessionId, invokeId_);
+                      childSessionId, invokeId_);
 
         // Prepare event data
         std::string eventName = event.eventName;
@@ -91,8 +92,8 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
         // Origin is parent session, origintype is SCXML processor
         std::string originType = Constants::SCXML_EVENT_PROCESSOR_TYPE;
         SCE_LOG_DEBUG("InvokeEventTarget::send() - Calling eventRaiser->raiseEvent('{}', '{}', origin: '{}', invokeId: "
-                  "'{}', originType: '{}')",
-                  eventName, eventData, parentSessionId_, invokeId_, originType);
+                      "'{}', originType: '{}')",
+                      eventName, eventData, parentSessionId_, invokeId_, originType);
         // Build typed event data from typedParams if available (engine-agnostic pipeline)
         std::optional<ScriptValue> typedData;
         if (!event.typedParams.empty()) {
@@ -103,20 +104,21 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
         auto *eventRaiserImpl = dynamic_cast<EventRaiserImpl *>(eventRaiser.get());
         if (eventRaiserImpl && typedData.has_value()) {
             raiseResult = eventRaiserImpl->raiseEventWithPriority(
-                eventName, eventData, EventRaiserImpl::EventPriority::EXTERNAL,
-                parentSessionId_, "", invokeId_, originType, 0, std::move(typedData));
+                eventName, eventData, EventRaiserImpl::EventPriority::EXTERNAL, parentSessionId_, "", invokeId_,
+                originType, 0, std::move(typedData));
         } else {
             raiseResult = eventRaiser->raiseEvent(eventName, eventData, parentSessionId_, invokeId_, originType);
         }
         SCE_LOG_DEBUG("InvokeEventTarget::send() - eventRaiser->raiseEvent() returned: {}", raiseResult);
 
         if (!raiseResult) {
-            SCE_LOG_WARN("InvokeEventTarget: Failed to raise event '{}' in child session '{}'", eventName, childSessionId);
+            SCE_LOG_WARN("InvokeEventTarget: Failed to raise event '{}' in child session '{}'", eventName,
+                         childSessionId);
             resultPromise.set_value(
                 SendResult::error("Failed to raise event in child session", SendResult::ErrorType::INTERNAL_ERROR));
         } else {
             SCE_LOG_DEBUG("InvokeEventTarget: Successfully routed event '{}' to child session '{}'", eventName,
-                      childSessionId);
+                          childSessionId);
             resultPromise.set_value(SendResult::success(event.sendId));
         }
 

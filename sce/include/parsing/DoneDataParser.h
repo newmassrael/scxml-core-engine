@@ -70,7 +70,7 @@ private:
      */
     bool parseParam(const std::shared_ptr<IXMLElement> &paramElement, IStateNode *stateNode);
 
-    std::shared_ptr<NodeFactory> factory_;  // Node creation factory
+    std::shared_ptr<NodeFactory> factory_;      // Node creation factory
     std::string datamodelType_ = "ecmascript";  // §scxml-3.2 default (SCE-specific)
 };
 

@@ -14,7 +14,7 @@ namespace {
 // Seeded once per thread from 8 random_device words (256 bits) via seed_seq
 // to cover mt19937_64's full state space and prevent cross-thread sequence
 // collisions that a single 32-bit seed would allow at ~2^16 threads.
-std::mt19937_64& tls_rng() {
+std::mt19937_64 &tls_rng() {
     thread_local std::mt19937_64 rng = [] {
         std::random_device rd;
         std::seed_seq seq{rd(), rd(), rd(), rd(), rd(), rd(), rd(), rd()};
@@ -25,16 +25,19 @@ std::mt19937_64& tls_rng() {
 
 uint64_t now_unix_ms() {
     using namespace std::chrono;
-    return static_cast<uint64_t>(
-        duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
+    return static_cast<uint64_t>(duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count());
 }
 
 // Write 16 random bytes from rng into out.
-void fill_random(Bytes& out, std::mt19937_64& rng) {
+void fill_random(Bytes &out, std::mt19937_64 &rng) {
     uint64_t a = rng();
     uint64_t b = rng();
-    for (int i = 0; i < 8; ++i) out[i]     = static_cast<uint8_t>(a >> (56 - i * 8));
-    for (int i = 0; i < 8; ++i) out[8 + i] = static_cast<uint8_t>(b >> (56 - i * 8));
+    for (int i = 0; i < 8; ++i) {
+        out[i] = static_cast<uint8_t>(a >> (56 - i * 8));
+    }
+    for (int i = 0; i < 8; ++i) {
+        out[8 + i] = static_cast<uint8_t>(b >> (56 - i * 8));
+    }
 }
 
 }  // namespace
@@ -57,13 +60,16 @@ Bytes v7() {
         uint64_t last_ms = 0;
         uint16_t counter = 0;  // 12-bit monotonic counter (top 4 bits unused)
     };
+
     thread_local V7State state;
 
-    auto& rng = tls_rng();
+    auto &rng = tls_rng();
 
     uint64_t ts = now_unix_ms();
     // Wall-clock skew protection: never go backwards.
-    if (ts < state.last_ms) ts = state.last_ms;
+    if (ts < state.last_ms) {
+        ts = state.last_ms;
+    }
 
     if (ts == state.last_ms) {
         ++state.counter;

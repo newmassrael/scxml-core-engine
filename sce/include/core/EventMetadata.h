@@ -29,14 +29,14 @@ namespace SCE::Core {
  * - data: Event payload data
  */
 struct EventMetadata {
-    std::string name;             ///< Event name (required)
-    std::string data;             ///< Event data as JSON string
-    std::string type;             ///< Event type ("internal", "platform", "external")
-    std::string sendId;           ///< Send ID from <send> element
-    std::string invokeId;         ///< Invoke ID from <invoke> element
-    std::string originType;       ///< Origin event processor type
-    std::string originSessionId;              ///< Origin session ID for _event.origin
-    std::optional<ScriptValue> typedData;     ///< Typed event data (engine-agnostic, avoids JSON round-trip)
+    std::string name;                      ///< Event name (required)
+    std::string data;                      ///< Event data as JSON string
+    std::string type;                      ///< Event type ("internal", "platform", "external")
+    std::string sendId;                    ///< Send ID from <send> element
+    std::string invokeId;                  ///< Invoke ID from <invoke> element
+    std::string originType;                ///< Origin event processor type
+    std::string originSessionId;           ///< Origin session ID for _event.origin
+    std::optional<ScriptValue> typedData;  ///< Typed event data (engine-agnostic, avoids JSON round-trip)
 
     /**
      * @brief Construct minimal event metadata with name and data

@@ -183,7 +183,7 @@ public:
     /// `CommunicationError::transport_error`. Called under the buffer
     /// mutex for FIFO preservation — see class-level thread-safety
     /// note.
-    using Dispatcher = std::function<SendResult(const MeshEnvelope&)>;
+    using Dispatcher = std::function<SendResult(const MeshEnvelope &)>;
 
     /// Error raise closure. Called when admit observes buffer overflow
     /// (queue depth >= `max_pending`). Invoked OUTSIDE the mutex so a
@@ -191,21 +191,15 @@ public:
     /// admits on the same target.
     using ErrorRaise = std::function<void(CommunicationError)>;
 
-    OutboundBuffer(std::string target,
-                   std::size_t max_pending,
-                   std::string transport_name,
-                   Dispatcher dispatch,
+    OutboundBuffer(std::string target, std::size_t max_pending, std::string transport_name, Dispatcher dispatch,
                    ErrorRaise raise_error)
-        : target_(std::move(target)),
-          transport_name_(std::move(transport_name)),
-          max_pending_(max_pending),
-          dispatch_(std::move(dispatch)),
-          raise_error_(std::move(raise_error)) {}
+        : target_(std::move(target)), transport_name_(std::move(transport_name)), max_pending_(max_pending),
+          dispatch_(std::move(dispatch)), raise_error_(std::move(raise_error)) {}
 
-    OutboundBuffer(const OutboundBuffer&)            = delete;
-    OutboundBuffer& operator=(const OutboundBuffer&) = delete;
-    OutboundBuffer(OutboundBuffer&&)                 = delete;
-    OutboundBuffer& operator=(OutboundBuffer&&)      = delete;
+    OutboundBuffer(const OutboundBuffer &) = delete;
+    OutboundBuffer &operator=(const OutboundBuffer &) = delete;
+    OutboundBuffer(OutboundBuffer &&) = delete;
+    OutboundBuffer &operator=(OutboundBuffer &&) = delete;
 
     /// Admit an outbound envelope. Three paths:
     ///   * ready + empty queue ⇒ dispatch immediately (fast path).
@@ -227,7 +221,7 @@ public:
     /// Returns `true` if the envelope was dispatched-or-buffered
     /// successfully; `false` if it was dropped on overflow OR if
     /// the fast-path dispatch was declined by the transport API.
-    [[nodiscard]] bool admit(const MeshEnvelope& env) {
+    [[nodiscard]] bool admit(const MeshEnvelope &env) {
         bool overflow = false;
         std::size_t depth_at_overflow = 0;
         bool send_failed = false;
@@ -243,8 +237,7 @@ public:
                 accepted = result.ok;
                 if (!result.ok) {
                     send_failed = true;
-                    send_failed_transport_error =
-                        std::move(result.transport_error);
+                    send_failed_transport_error = std::move(result.transport_error);
                 }
             } else if (queue_.size() >= max_pending_) {
                 overflow = true;
@@ -269,8 +262,7 @@ public:
             err.target = target_;
             err.transport = transport_name_;
             if (send_failed_transport_error) {
-                err.transport_error =
-                    std::move(*send_failed_transport_error);
+                err.transport_error = std::move(*send_failed_transport_error);
             }
             raise_error_(std::move(err));
         }
@@ -317,7 +309,7 @@ public:
                 }
             }
         }
-        for (auto& transport_error : failures) {
+        for (auto &transport_error : failures) {
             CommunicationError err;
             err.reason = ::SCE::Mesh::ReasonCode::SendFailed;
             err.target = target_;

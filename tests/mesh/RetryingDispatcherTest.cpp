@@ -25,8 +25,8 @@
 // per-attempt success/failure. The MeshDeadlineScheduler is real —
 // timing tests use a short backoff so total runtime stays sub-second.
 
-#include "mesh/OutboundBuffer.h"
 #include "mesh/RetryingDispatcher.h"
+#include "mesh/OutboundBuffer.h"
 
 #include <gtest/gtest.h>
 
@@ -56,7 +56,7 @@ public:
         idx_ = 0;
     }
 
-    SendResult operator()(const MeshEnvelope& env) {
+    SendResult operator()(const MeshEnvelope &env) {
         std::lock_guard<std::mutex> lock(mu_);
         calls_.push_back(std::chrono::steady_clock::now());
         last_env_id_ = env.id;
@@ -102,9 +102,7 @@ public:
 
     [[nodiscard]] bool waitFor(std::size_t count, std::chrono::milliseconds timeout) {
         std::unique_lock<std::mutex> lock(mu_);
-        return cv_.wait_for(lock, timeout, [this, count] {
-            return raised_.size() >= count;
-        });
+        return cv_.wait_for(lock, timeout, [this, count] { return raised_.size() >= count; });
     }
 
     std::vector<CommunicationError> snapshot() const {
@@ -138,8 +136,7 @@ RetryingDispatcher::Policy small_policy(std::uint32_t max_retries) {
 MeshEnvelope make_envelope() {
     MeshEnvelope env;
     // Distinguishable id so the lastEnvId() probe is meaningful.
-    env.id = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-              0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
+    env.id = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10};
     env.source = "test";
     env.type = "evt";
     return env;
@@ -155,13 +152,9 @@ TEST(RetryingDispatcherTest, FirstFailureThenSuccessNoExhaustionRaise) {
         SendResult::failure("transient", /*retryable=*/true),
         SendResult::success(),
     });
-    RetryingDispatcher dispatcher(scheduler, small_policy(/*max_retries=*/3),
-                                  [&mock](const MeshEnvelope& env) {
-                                      return mock(env);
-                                  },
-                                  [&recorder](CommunicationError err) {
-                                      recorder(std::move(err));
-                                  });
+    RetryingDispatcher dispatcher(
+        scheduler, small_policy(/*max_retries=*/3), [&mock](const MeshEnvelope &env) { return mock(env); },
+        [&recorder](CommunicationError err) { recorder(std::move(err)); });
 
     auto env = make_envelope();
     SendResult initial = dispatcher.send_with_retry(env);
@@ -184,13 +177,9 @@ TEST(RetryingDispatcherTest, ExhaustionRaisesDeliveryExhaustedWithAttempts) {
         SendResult::failure("retryable2", /*retryable=*/true),
         SendResult::failure("final", /*retryable=*/true),
     });
-    RetryingDispatcher dispatcher(scheduler, small_policy(/*max_retries=*/2),
-                                  [&mock](const MeshEnvelope& env) {
-                                      return mock(env);
-                                  },
-                                  [&recorder](CommunicationError err) {
-                                      recorder(std::move(err));
-                                  });
+    RetryingDispatcher dispatcher(
+        scheduler, small_policy(/*max_retries=*/2), [&mock](const MeshEnvelope &env) { return mock(env); },
+        [&recorder](CommunicationError err) { recorder(std::move(err)); });
 
     auto env = make_envelope();
     SendResult initial = dispatcher.send_with_retry(env);
@@ -217,13 +206,9 @@ TEST(RetryingDispatcherTest, TerminalFailureFastFailsWithAttemptsOne) {
     mock.program({
         SendResult::failure("vsomeip app not initialized", /*retryable=*/false),
     });
-    RetryingDispatcher dispatcher(scheduler, small_policy(/*max_retries=*/5),
-                                  [&mock](const MeshEnvelope& env) {
-                                      return mock(env);
-                                  },
-                                  [&recorder](CommunicationError err) {
-                                      recorder(std::move(err));
-                                  });
+    RetryingDispatcher dispatcher(
+        scheduler, small_policy(/*max_retries=*/5), [&mock](const MeshEnvelope &env) { return mock(env); },
+        [&recorder](CommunicationError err) { recorder(std::move(err)); });
 
     auto env = make_envelope();
     SendResult initial = dispatcher.send_with_retry(env);
@@ -253,13 +238,9 @@ TEST(RetryingDispatcherTest, CancelEnvelopeRetryPreemptsScheduledRetry) {
     auto policy = small_policy(/*max_retries=*/5);
     policy.initial_backoff = std::chrono::milliseconds(500);
     policy.max_backoff = std::chrono::milliseconds(500);
-    RetryingDispatcher dispatcher(scheduler, policy,
-                                  [&mock](const MeshEnvelope& env) {
-                                      return mock(env);
-                                  },
-                                  [&recorder](CommunicationError err) {
-                                      recorder(std::move(err));
-                                  });
+    RetryingDispatcher dispatcher(
+        scheduler, policy, [&mock](const MeshEnvelope &env) { return mock(env); },
+        [&recorder](CommunicationError err) { recorder(std::move(err)); });
 
     auto env = make_envelope();
     dispatcher.send_with_retry(env);
@@ -281,13 +262,9 @@ TEST(RetryingDispatcherTest, MaxRetriesZeroDefensivePathPassesThroughFailure) {
         SendResult::failure("just fail", /*retryable=*/true),
     });
     auto policy = small_policy(/*max_retries=*/0);  // defensive — validator rejects
-    RetryingDispatcher dispatcher(scheduler, policy,
-                                  [&mock](const MeshEnvelope& env) {
-                                      return mock(env);
-                                  },
-                                  [&recorder](CommunicationError err) {
-                                      recorder(std::move(err));
-                                  });
+    RetryingDispatcher dispatcher(
+        scheduler, policy, [&mock](const MeshEnvelope &env) { return mock(env); },
+        [&recorder](CommunicationError err) { recorder(std::move(err)); });
 
     auto env = make_envelope();
     SendResult initial = dispatcher.send_with_retry(env);
@@ -314,13 +291,9 @@ TEST(RetryingDispatcherTest, ExponentialBackoffGrowsWithMultiplier) {
     policy.backoff_multiplier = 2.0;
     policy.max_backoff = std::chrono::milliseconds(200);
     policy.jitter_pct = 0;  // deterministic
-    RetryingDispatcher dispatcher(scheduler, policy,
-                                  [&mock](const MeshEnvelope& env) {
-                                      return mock(env);
-                                  },
-                                  [&recorder](CommunicationError err) {
-                                      recorder(std::move(err));
-                                  });
+    RetryingDispatcher dispatcher(
+        scheduler, policy, [&mock](const MeshEnvelope &env) { return mock(env); },
+        [&recorder](CommunicationError err) { recorder(std::move(err)); });
 
     auto env = make_envelope();
     dispatcher.send_with_retry(env);
@@ -339,7 +312,7 @@ TEST(RetryingDispatcherTest, ExponentialBackoffGrowsWithMultiplier) {
     EXPECT_GE(gap1, 15);
     EXPECT_GE(gap2, gap1);  // exponential growth
     EXPECT_GE(gap3, gap2);
-    EXPECT_LE(gap3, 220);   // cap at max_backoff (with slack)
+    EXPECT_LE(gap3, 220);  // cap at max_backoff (with slack)
 }
 
 // Integration test mirroring the codegen wiring: RetryingDispatcher
@@ -360,20 +333,14 @@ TEST(RetryingDispatcherTest, OutboundBufferWiringHidesTransientFailuresAndRaises
         SendResult::failure("transient2", /*retryable=*/true),
         SendResult::success(),
     });
-    RetryingDispatcher retrying(scheduler, small_policy(/*max_retries=*/3),
-                                [&mock](const MeshEnvelope& env) { return mock(env); },
-                                [&delivery_recorder](CommunicationError err) {
-                                    delivery_recorder(std::move(err));
-                                });
+    RetryingDispatcher retrying(
+        scheduler, small_policy(/*max_retries=*/3), [&mock](const MeshEnvelope &env) { return mock(env); },
+        [&delivery_recorder](CommunicationError err) { delivery_recorder(std::move(err)); });
 
     OutboundBuffer outbound(
         /*target=*/"motor", /*max_pending=*/4, /*transport=*/"zenoh",
-        [&retrying](const MeshEnvelope& env) {
-            return retrying.send_with_retry(env);
-        },
-        [&send_failed_recorder](CommunicationError err) {
-            send_failed_recorder(std::move(err));
-        });
+        [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
+        [&send_failed_recorder](CommunicationError err) { send_failed_recorder(std::move(err)); });
 
     outbound.markReady();  // simulate the transport availability anchor
     EXPECT_TRUE(outbound.admit(make_envelope()));
@@ -401,20 +368,14 @@ TEST(RetryingDispatcherTest, OutboundBufferWiringExhaustionRaisesDeliveryExhaust
         SendResult::failure("f1", /*retryable=*/true),
         SendResult::failure("f2", /*retryable=*/true),
     });
-    RetryingDispatcher retrying(scheduler, small_policy(/*max_retries=*/1),
-                                [&mock](const MeshEnvelope& env) { return mock(env); },
-                                [&delivery_recorder](CommunicationError err) {
-                                    delivery_recorder(std::move(err));
-                                });
+    RetryingDispatcher retrying(
+        scheduler, small_policy(/*max_retries=*/1), [&mock](const MeshEnvelope &env) { return mock(env); },
+        [&delivery_recorder](CommunicationError err) { delivery_recorder(std::move(err)); });
 
     OutboundBuffer outbound(
         /*target=*/"motor", /*max_pending=*/4, /*transport=*/"zenoh",
-        [&retrying](const MeshEnvelope& env) {
-            return retrying.send_with_retry(env);
-        },
-        [&send_failed_recorder](CommunicationError err) {
-            send_failed_recorder(std::move(err));
-        });
+        [&retrying](const MeshEnvelope &env) { return retrying.send_with_retry(env); },
+        [&send_failed_recorder](CommunicationError err) { send_failed_recorder(std::move(err)); });
 
     outbound.markReady();
     EXPECT_TRUE(outbound.admit(make_envelope()));
@@ -448,13 +409,9 @@ TEST(RetryingDispatcherTest, JitterStaysWithinDeclaredBand) {
     policy.max_backoff = std::chrono::milliseconds(40);
     policy.jitter_pct = 50;  // ±50%
 
-    RetryingDispatcher dispatcher(scheduler, policy,
-                                  [&mock](const MeshEnvelope& env) {
-                                      return mock(env);
-                                  },
-                                  [&recorder](CommunicationError err) {
-                                      recorder(std::move(err));
-                                  });
+    RetryingDispatcher dispatcher(
+        scheduler, policy, [&mock](const MeshEnvelope &env) { return mock(env); },
+        [&recorder](CommunicationError err) { recorder(std::move(err)); });
 
     auto env = make_envelope();
     dispatcher.send_with_retry(env);

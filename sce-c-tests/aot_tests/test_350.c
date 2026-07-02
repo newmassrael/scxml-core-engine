@@ -3,7 +3,9 @@
 //
 // W3C SCXML test350 — C11 AOT runner.
 //
-// W3C SCXML 6.2: <send target=...> can deliver to the SAME session by using the session ID as target — the targetexpr arm's self-session URI clause (3922f9ab) routes through raise_external; the round-tripped event drives s0→s1→pass before the 5 s safety-net timeout.
+// W3C SCXML 6.2: <send target=...> can deliver to the SAME session by using the session ID as target — the targetexpr
+// arm's self-session URI clause (3922f9ab) routes through raise_external; the round-tripped event drives s0→s1→pass
+// before the 5 s safety-net timeout.
 
 #define _POSIX_C_SOURCE 199309L
 
@@ -25,8 +27,7 @@ int main(void) {
 
     while (!test350_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test350: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test350_active_states(&sm));
+            fprintf(stderr, "test350: TIMEOUT — active = 0x%08x\n", (unsigned)test350_active_states(&sm));
             test350_destroy(&sm);
             return 1;
         }
@@ -36,8 +37,7 @@ int main(void) {
 
     int rc = test350_in_state(&sm, TEST350_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test350: FAIL — active = 0x%08x\n",
-                (unsigned)test350_active_states(&sm));
+        fprintf(stderr, "test350: FAIL — active = 0x%08x\n", (unsigned)test350_active_states(&sm));
     }
     test350_destroy(&sm);
     return rc;

@@ -52,22 +52,27 @@ struct EnemyCallbacks {
         js_notify_enemy_callback(slot, "dormant", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "DORMANT", instance_id, true);
     }
+
     void onAlert() {
         js_notify_enemy_callback(slot, "alert", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "ALERT", instance_id, true);
     }
+
     void onChasing() {
         js_notify_enemy_callback(slot, "chasing", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "CHASING", instance_id, true);
     }
+
     void onAttacking() {
         js_notify_enemy_callback(slot, "attacking", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "ATTACKING", instance_id, true);
     }
+
     void onPain() {
         js_notify_enemy_callback(slot, "pain", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "PAIN", instance_id, true);
     }
+
     void onDead() {
         js_notify_enemy_callback(slot, "dead", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "DEAD", instance_id, true);
@@ -103,21 +108,36 @@ static std::unordered_map<void *, int> g_enemy_slot_map;
 
 static const char *get_enemy_state_name(EnemyState state) {
     switch (state) {
-    case EnemyState::Dormant:   return "DORMANT";
-    case EnemyState::Alert:     return "ALERT";
-    case EnemyState::Chasing:   return "CHASING";
-    case EnemyState::Attacking: return "ATTACKING";
-    case EnemyState::Pain:      return "PAIN";
-    case EnemyState::Dead:      return "DEAD";
-    default:                    return "UNKNOWN";
+    case EnemyState::Dormant:
+        return "DORMANT";
+    case EnemyState::Alert:
+        return "ALERT";
+    case EnemyState::Chasing:
+        return "CHASING";
+    case EnemyState::Attacking:
+        return "ATTACKING";
+    case EnemyState::Pain:
+        return "PAIN";
+    case EnemyState::Dead:
+        return "DEAD";
+    default:
+        return "UNKNOWN";
     }
 }
 
 static EnemyEvent doom_state_to_event(const char *state_name) {
-    if (strcmp(state_name, "ALERT") == 0)     return EnemyEvent::See_player;
-    if (strcmp(state_name, "CHASING") == 0)   return EnemyEvent::Chase;
-    if (strcmp(state_name, "ATTACKING") == 0) return EnemyEvent::Attack;
-    if (strcmp(state_name, "PAIN") == 0)      return EnemyEvent::Pain;
+    if (strcmp(state_name, "ALERT") == 0) {
+        return EnemyEvent::See_player;
+    }
+    if (strcmp(state_name, "CHASING") == 0) {
+        return EnemyEvent::Chase;
+    }
+    if (strcmp(state_name, "ATTACKING") == 0) {
+        return EnemyEvent::Attack;
+    }
+    if (strcmp(state_name, "PAIN") == 0) {
+        return EnemyEvent::Pain;
+    }
     return EnemyEvent::NONE;
 }
 
@@ -128,7 +148,9 @@ static int find_enemy_slot(void *mobj) {
 
 static int find_free_slot() {
     for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (!g_enemies[i].active) return i;
+        if (!g_enemies[i].active) {
+            return i;
+        }
     }
     return -1;
 }
@@ -142,12 +164,9 @@ void sce_sm_reset_all_enemies(bool notify_dead) {
         if (g_enemies[i].active) {
             const char *state_name = "UNKNOWN";
             if (g_enemies[i].sm) {
-                state_name = notify_dead
-                    ? "DEAD"
-                    : get_enemy_state_name(g_enemies[i].sm->getCurrentState());
+                state_name = notify_dead ? "DEAD" : get_enemy_state_name(g_enemies[i].sm->getCurrentState());
             }
-            js_notify_enemy_update(i, g_enemies[i].type_name, state_name,
-                                   g_enemies[i].instance_id, false);
+            js_notify_enemy_update(i, g_enemies[i].type_name, state_name, g_enemies[i].instance_id, false);
             g_enemies[i].sm.reset();
         }
         g_enemies[i] = EnemyInstance{};
@@ -180,26 +199,38 @@ void sce_sm_enemy_init(void) {
 extern "C" {
 
 EMSCRIPTEN_KEEPALIVE
-int sce_get_enemy_count(void) { return g_enemy_count; }
+int sce_get_enemy_count(void) {
+    return g_enemy_count;
+}
 
 EMSCRIPTEN_KEEPALIVE
-int sce_get_enemy_killed(void) { return g_enemy_killed; }
+int sce_get_enemy_killed(void) {
+    return g_enemy_killed;
+}
 
 EMSCRIPTEN_KEEPALIVE
-int sce_get_max_enemies(void) { return MAX_ENEMIES; }
+int sce_get_max_enemies(void) {
+    return MAX_ENEMIES;
+}
 
 EMSCRIPTEN_KEEPALIVE
-int sce_get_enemies_remaining(void) { return g_enemy_count; }
+int sce_get_enemies_remaining(void) {
+    return g_enemy_count;
+}
 
 // DOOM Level Statistics (defined in sce_doom_hooks.c)
 int SCE_GetLevelTotalKills(void);
 int SCE_GetPlayerKillCount(void);
 
 EMSCRIPTEN_KEEPALIVE
-int sce_get_level_total_kills(void) { return SCE_GetLevelTotalKills(); }
+int sce_get_level_total_kills(void) {
+    return SCE_GetLevelTotalKills();
+}
 
 EMSCRIPTEN_KEEPALIVE
-int sce_get_player_kill_count(void) { return SCE_GetPlayerKillCount(); }
+int sce_get_player_kill_count(void) {
+    return SCE_GetPlayerKillCount();
+}
 
 EMSCRIPTEN_KEEPALIVE
 const char *sce_get_enemy_info(int slot) {
@@ -215,10 +246,8 @@ const char *sce_get_enemy_info(int slot) {
         state_name = get_enemy_state_name(g_enemies[slot].sm->getCurrentState());
     }
 
-    snprintf(buffer, sizeof(buffer), "%ld,%.31s,%.31s,%d",
-             (long)(intptr_t)g_enemies[slot].mobj_ptr,
-             g_enemies[slot].type_name ? g_enemies[slot].type_name : "UNKNOWN",
-             state_name ? state_name : "UNKNOWN",
+    snprintf(buffer, sizeof(buffer), "%ld,%.31s,%.31s,%d", (long)(intptr_t)g_enemies[slot].mobj_ptr,
+             g_enemies[slot].type_name ? g_enemies[slot].type_name : "UNKNOWN", state_name ? state_name : "UNKNOWN",
              g_enemies[slot].instance_id);
     buffer[sizeof(buffer) - 1] = '\0';
     return buffer;
@@ -229,7 +258,9 @@ void sce_enemy_spawn(void *mobj, const char *type_name) {
     int slot = find_enemy_slot(mobj);
     if (slot < 0) {
         slot = find_free_slot();
-        if (slot < 0) return;
+        if (slot < 0) {
+            return;
+        }
     }
 
     g_enemies[slot].mobj_ptr = mobj;
@@ -253,7 +284,9 @@ void sce_enemy_spawn(void *mobj, const char *type_name) {
 EMSCRIPTEN_KEEPALIVE
 void sce_enemy_set_state(void *mobj, const char *doom_state) {
     int slot = find_enemy_slot(mobj);
-    if (slot < 0 || !g_enemies[slot].sm) return;
+    if (slot < 0 || !g_enemies[slot].sm) {
+        return;
+    }
 
     EnemyEvent event = doom_state_to_event(doom_state);
     if (event != EnemyEvent::NONE) {
@@ -283,18 +316,18 @@ void sce_enemy_killed(void *mobj) {
 EMSCRIPTEN_KEEPALIVE
 void sce_enemy_remove(void *mobj) {
     int slot = find_enemy_slot(mobj);
-    if (slot < 0) return;
+    if (slot < 0) {
+        return;
+    }
 
     const char *state_name = "UNKNOWN";
     if (g_enemies[slot].sm) {
         state_name = get_enemy_state_name(g_enemies[slot].sm->getCurrentState());
     }
 
-    js_notify_enemy_update(slot, g_enemies[slot].type_name, state_name,
-                           g_enemies[slot].instance_id, false);
+    js_notify_enemy_update(slot, g_enemies[slot].type_name, state_name, g_enemies[slot].instance_id, false);
 
-    bool was_killed = g_enemies[slot].sm &&
-        g_enemies[slot].sm->getCurrentState() == EnemyState::Dead;
+    bool was_killed = g_enemies[slot].sm && g_enemies[slot].sm->getCurrentState() == EnemyState::Dead;
 
     g_enemies[slot].sm.reset();
     g_enemies[slot].active = false;

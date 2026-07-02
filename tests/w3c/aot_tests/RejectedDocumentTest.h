@@ -21,8 +21,7 @@ namespace SCE::W3C::AotTests {
 ///   #else
 ///   // normal SimpleAotTest definition
 ///   #endif
-template <typename Derived, int TestNum>
-class RejectedDocumentTest : public AotTestBase {
+template <typename Derived, int TestNum> class RejectedDocumentTest : public AotTestBase {
 public:
     static constexpr int TEST_ID = TestNum;
 
@@ -31,7 +30,9 @@ public:
         return true;
     }
 
-    int getTestId() const override { return TEST_ID; }
+    int getTestId() const override {
+        return TEST_ID;
+    }
 
     const char *getDescription() const override {
         if (cachedDescription_.empty()) {
@@ -40,7 +41,9 @@ public:
         return cachedDescription_.c_str();
     }
 
-    const char *getTestType() const override { return "document_rejected"; }
+    const char *getTestType() const override {
+        return "document_rejected";
+    }
 
 private:
     mutable std::string cachedDescription_;
@@ -50,8 +53,8 @@ private:
 
 /// Convenience macro: defines a rejected-document AOT test + auto-registers it.
 /// Place after `#include "testXXX_sm.h"` inside `#ifdef SCE_DOCUMENT_REJECTED`.
-#define SCE_REJECTED_DOCUMENT_TEST(NUM)                                                  \
-    namespace SCE::W3C::AotTests {                                                       \
-    struct Test##NUM : public RejectedDocumentTest<Test##NUM, NUM> {};                    \
-    inline static AotTestRegistrar<Test##NUM> registrar_Test##NUM;                        \
+#define SCE_REJECTED_DOCUMENT_TEST(NUM)                                                                                \
+    namespace SCE::W3C::AotTests {                                                                                     \
+    struct Test##NUM : public RejectedDocumentTest<Test##NUM, NUM> {};                                                 \
+    inline static AotTestRegistrar<Test##NUM> registrar_Test##NUM;                                                     \
     }

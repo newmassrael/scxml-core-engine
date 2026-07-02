@@ -17,11 +17,10 @@
 #include <string>
 
 int main() {
-    const char* ep = std::getenv("MESH_PEER_ENDPOINT");
+    const char *ep = std::getenv("MESH_PEER_ENDPOINT");
     if (ep == nullptr || *ep == '\0') {
-        std::fprintf(stderr,
-                     "parent: MESH_PEER_ENDPOINT not set "
-                     "(orchestrator handshake skipped?)\n");
+        std::fprintf(stderr, "parent: MESH_PEER_ENDPOINT not set "
+                             "(orchestrator handshake skipped?)\n");
         return 1;
     }
 

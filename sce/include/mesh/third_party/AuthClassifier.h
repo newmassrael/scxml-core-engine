@@ -80,8 +80,7 @@ inline constexpr std::array<std::string_view, 4> kZenohAuthFailKeywords{
     std::string lower;
     lower.reserve(what.size());
     for (char c : what) {
-        lower.push_back(
-            (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c);
+        lower.push_back((c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c);
     }
     for (auto keyword : kZenohAuthFailKeywords) {
         if (lower.find(keyword) != std::string::npos) {

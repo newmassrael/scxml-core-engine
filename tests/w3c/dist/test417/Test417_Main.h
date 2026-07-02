@@ -82,14 +82,12 @@ struct Test417_Main : public PartitionBase {
             sm.tick();
 
             if (sm.getCurrentState() == gen::State::Pass) {
-                std::fprintf(stdout,
-                             "test417 main: PASS — done.state.s1p1 landed, SM in <final id=\"pass\">\n");
+                std::fprintf(stdout, "test417 main: PASS — done.state.s1p1 landed, SM in <final id=\"pass\">\n");
                 return 0;
             }
             if (sm.getCurrentState() == gen::State::Fail) {
-                std::fprintf(stderr,
-                             "test417 main: FAIL — timeout raised before both regions converged "
-                             "(remote wire-21 did not arrive within 1 s)\n");
+                std::fprintf(stderr, "test417 main: FAIL — timeout raised before both regions converged "
+                                     "(remote wire-21 did not arrive within 1 s)\n");
                 return 11;
             }
 
@@ -99,8 +97,7 @@ struct Test417_Main : public PartitionBase {
         std::fprintf(stderr,
                      "test417 main: FAIL — %d * %lld ms elapsed without Pass/Fail; "
                      "currentState=%d\n",
-                     MAX_ITERATIONS,
-                     static_cast<long long>(POLL_INTERVAL.count()),
+                     MAX_ITERATIONS, static_cast<long long>(POLL_INTERVAL.count()),
                      static_cast<int>(sm.getCurrentState()));
         return 12;
     }

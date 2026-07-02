@@ -89,8 +89,7 @@ TEST(DiagnosticBase, PolymorphicErasureViaBaseReference) {
     const Diagnostic &erased = concrete;
     EXPECT_EQ(erased.code(), std::string_view{"xml/template-cycle"});
     EXPECT_FALSE(erased.location().has_value());
-    EXPECT_EQ(erased.to_json()["code"].get<std::string>(),
-              "xml/template-cycle");
+    EXPECT_EQ(erased.to_json()["code"].get<std::string>(), "xml/template-cycle");
 }
 
 // ── v1 schema conformance for TemplateError subtypes ───────────────
@@ -115,8 +114,7 @@ bool matchesIdRegex(const std::string &id) {
     return std::regex_match(id, kPattern);
 }
 
-void assertSchemaConformantBase(const nlohmann::ordered_json &j,
-                                std::string_view expectedCode) {
+void assertSchemaConformantBase(const nlohmann::ordered_json &j, std::string_view expectedCode) {
     // v1 schema requires v/id/code/stage/message; spec/location/
     // expected/actual/fix are optional. The C++ producer in W1 emits
     // exactly the required set (plus location when populated); the
@@ -132,8 +130,7 @@ void assertSchemaConformantBase(const nlohmann::ordered_json &j,
     EXPECT_EQ(j.at("code").get<std::string>(), std::string{expectedCode});
     EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
     EXPECT_TRUE(matchesIdRegex(j.at("id").get<std::string>()))
-        << "id '" << j.at("id").get<std::string>()
-        << "' does not match ^fnv1a:[0-9a-f]{16}$";
+        << "id '" << j.at("id").get<std::string>() << "' does not match ^fnv1a:[0-9a-f]{16}$";
     EXPECT_FALSE(j.at("message").get<std::string>().empty());
 }
 
@@ -142,23 +139,20 @@ void assertSchemaConformantBase(const nlohmann::ordered_json &j,
 // nlohmann::json does not validate this for us, so we enforce it
 // explicitly here so a stray field added on the C++ side reds.
 const std::set<std::string> kAllowedTopLevelKeys = {
-    "v",       "id",       "code",   "stage", "spec",
-    "message", "location", "expected", "actual", "fix",
+    "v", "id", "code", "stage", "spec", "message", "location", "expected", "actual", "fix",
 };
 
 void assertNoUnexpectedKeys(const nlohmann::ordered_json &j) {
     for (const auto &item : j.items()) {
-        EXPECT_TRUE(kAllowedTopLevelKeys.count(item.key()) == 1)
-            << "unexpected top-level key: '" << item.key() << "'";
+        EXPECT_TRUE(kAllowedTopLevelKeys.count(item.key()) == 1) << "unexpected top-level key: '" << item.key() << "'";
     }
 }
 
 }  // namespace conformance
 
 TEST(TemplateErrorWire, TemplateNotFoundConformsToV1Schema) {
-    const TemplateNotFound err(
-        "<sce:use template=\"missing.sce-template.xml\">: file not "
-        "found (searched: /project/missing.sce-template.xml)");
+    const TemplateNotFound err("<sce:use template=\"missing.sce-template.xml\">: file not "
+                               "found (searched: /project/missing.sce-template.xml)");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-not-found");
     conformance::assertNoUnexpectedKeys(j);
@@ -166,62 +160,54 @@ TEST(TemplateErrorWire, TemplateNotFoundConformsToV1Schema) {
 }
 
 TEST(TemplateErrorWire, TemplateReadErrorConformsToV1Schema) {
-    const TemplateReadError err(
-        "<sce:use template=\"unreadable.sce-template.xml\">: read error: "
-        "permission denied");
+    const TemplateReadError err("<sce:use template=\"unreadable.sce-template.xml\">: read error: "
+                                "permission denied");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-read-error");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateMalformedConformsToV1Schema) {
-    const TemplateMalformed err(
-        "<sce:use template=\"bad.sce-template.xml\">: template is "
-        "malformed: expanded template is malformed: unexpected end of file");
+    const TemplateMalformed err("<sce:use template=\"bad.sce-template.xml\">: template is "
+                                "malformed: expanded template is malformed: unexpected end of file");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-malformed");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateMissingAttributeConformsToV1Schema) {
-    const TemplateMissingAttribute err(
-        "<sce:use> is missing required 'template' attribute");
+    const TemplateMissingAttribute err("<sce:use> is missing required 'template' attribute");
     const auto j = err.to_json();
-    conformance::assertSchemaConformantBase(
-        j, "xml/template-missing-attribute");
+    conformance::assertSchemaConformantBase(j, "xml/template-missing-attribute");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateMissingParamConformsToV1Schema) {
-    const TemplateMissingParam err(
-        "<sce:use template=\"guard.sce-template.xml\">: missing required "
-        "parameter 'condition'");
+    const TemplateMissingParam err("<sce:use template=\"guard.sce-template.xml\">: missing required "
+                                   "parameter 'condition'");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-missing-param");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateUnknownParamConformsToV1Schema) {
-    const TemplateUnknownParam err(
-        "<sce:use template=\"guard.sce-template.xml\">: unknown parameter "
-        "'state' (declared: condition, action)");
+    const TemplateUnknownParam err("<sce:use template=\"guard.sce-template.xml\">: unknown parameter "
+                                   "'state' (declared: condition, action)");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-unknown-param");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateCycleConformsToV1Schema) {
-    const TemplateCycle err(
-        "<sce:use template=\"a.sce-template.xml\">: cycle detected "
-        "(/a.sce-template.xml -> /b.sce-template.xml -> /a.sce-template.xml)");
+    const TemplateCycle err("<sce:use template=\"a.sce-template.xml\">: cycle detected "
+                            "(/a.sce-template.xml -> /b.sce-template.xml -> /a.sce-template.xml)");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-cycle");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(TemplateErrorWire, TemplateTooDeepConformsToV1Schema) {
-    const TemplateTooDeep err(
-        "<sce:use>: template depth limit (32) exceeded");
+    const TemplateTooDeep err("<sce:use>: template depth limit (32) exceeded");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-too-deep");
     conformance::assertNoUnexpectedKeys(j);
@@ -231,17 +217,13 @@ TEST(TemplateErrorWire, EveryCuratedCodeIsExercised) {
     // Sanity-check the curated list mirrors the 8 subtypes above.
     // Adding a 9th wire code without a corresponding test reds here.
     EXPECT_EQ(conformance::kExpectedCodes.size(), 8u);
-    std::set<std::string_view> uniq(conformance::kExpectedCodes.begin(),
-                                    conformance::kExpectedCodes.end());
-    EXPECT_EQ(uniq.size(), conformance::kExpectedCodes.size())
-        << "duplicate entry in kExpectedCodes";
+    std::set<std::string_view> uniq(conformance::kExpectedCodes.begin(), conformance::kExpectedCodes.end());
+    EXPECT_EQ(uniq.size(), conformance::kExpectedCodes.size()) << "duplicate entry in kExpectedCodes";
 }
 
 TEST(TemplateErrorWire, LocationFieldShapeWhenPresent) {
-    TemplateCycle err(
-        "<sce:use template=\"a.sce-template.xml\">: cycle detected");
-    err.setLocation(SourcePos{
-        std::filesystem::path{"/project/main.scxml"}, 12u, 5u});
+    TemplateCycle err("<sce:use template=\"a.sce-template.xml\">: cycle detected");
+    err.setLocation(SourcePos{std::filesystem::path{"/project/main.scxml"}, 12u, 5u});
 
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/template-cycle");
@@ -257,21 +239,17 @@ TEST(TemplateErrorWire, LocationFieldShapeWhenPresent) {
     EXPECT_EQ(loc.at("col").get<unsigned>(), 5u);
 
     // location envelope is closed at v1: only file/line/col allowed.
-    static const std::set<std::string> kAllowedLocationKeys = {
-        "file", "line", "col"};
+    static const std::set<std::string> kAllowedLocationKeys = {"file", "line", "col"};
     for (const auto &item : loc.items()) {
-        EXPECT_TRUE(kAllowedLocationKeys.count(item.key()) == 1)
-            << "unexpected location key: '" << item.key() << "'";
+        EXPECT_TRUE(kAllowedLocationKeys.count(item.key()) == 1) << "unexpected location key: '" << item.key() << "'";
     }
 }
 
 TEST(TemplateErrorWire, IdIsStableAcrossCalls) {
     // Identity is content-addressed (§wire-W1 / SCE_ERROR_CONTRACT.md):
     // re-rendering the same logical error must not shift its id.
-    const TemplateCycle err(
-        "<sce:use template=\"a.sce-template.xml\">: cycle detected");
-    EXPECT_EQ(err.to_json().at("id").get<std::string>(),
-              err.to_json().at("id").get<std::string>());
+    const TemplateCycle err("<sce:use template=\"a.sce-template.xml\">: cycle detected");
+    EXPECT_EQ(err.to_json().at("id").get<std::string>(), err.to_json().at("id").get<std::string>());
 }
 
 // ── XInclude wire-layer probes ────────────────────────────────────
@@ -298,30 +276,26 @@ TEST(XIncludeErrorWire, MissingHrefCarriesActionableFragmentInMessage) {
     // both — `XIncludeMissingHref`. The message names the missing
     // attribute so an operator/agent can dispatch the repair without
     // re-parsing the call site.
-    const std::string src =
-        R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/></root>)";
+    const std::string src = R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/></root>)";
     try {
         SCE::parsing::expandStringX(src, "inline", "", {});
         FAIL() << "expandStringX must throw on missing href";
     } catch (const SCE::parsing::XIncludeExpansionError &e) {
         const std::string what = e.what();
         EXPECT_NE(what.find("href"), std::string::npos) << what;
-        EXPECT_EQ(e.code(),
-                  std::string_view{"xml/xinclude-missing-href"});
+        EXPECT_EQ(e.code(), std::string_view{"xml/xinclude-missing-href"});
     }
 }
 
 TEST(XIncludeErrorWire, EmptyHrefCarriesActionableFragmentInMessage) {
-    const std::string src =
-        R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href=""/></root>)";
+    const std::string src = R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href=""/></root>)";
     try {
         SCE::parsing::expandStringX(src, "inline", "", {});
         FAIL() << "expandStringX must throw on empty href";
     } catch (const SCE::parsing::XIncludeExpansionError &e) {
         const std::string what = e.what();
         EXPECT_NE(what.find("href"), std::string::npos) << what;
-        EXPECT_EQ(e.code(),
-                  std::string_view{"xml/xinclude-missing-href"});
+        EXPECT_EQ(e.code(), std::string_view{"xml/xinclude-missing-href"});
     }
 }
 
@@ -342,17 +316,14 @@ namespace conformance {
 // diff. Pinned cross-side by the W3-3 Rust drift tests in
 // `sce-build/src/xinclude.rs::tests`.
 const std::array<std::string_view, 7> kExpectedXIncludeCodes = {
-    "xml/xinclude-missing-href", "xml/xinclude-not-found",
-    "xml/xinclude-read-error",   "xml/xinclude-cycle",
-    "xml/xinclude-too-deep",     "xml/xinclude-malformed",
-    "xml/xinclude-unsupported",
+    "xml/xinclude-missing-href", "xml/xinclude-not-found", "xml/xinclude-read-error",  "xml/xinclude-cycle",
+    "xml/xinclude-too-deep",     "xml/xinclude-malformed", "xml/xinclude-unsupported",
 };
 
 }  // namespace conformance
 
 TEST(XIncludeErrorWire, MissingHrefConformsToV1Schema) {
-    const XIncludeMissingHref err(
-        "<xi:include> missing or empty `href` attribute");
+    const XIncludeMissingHref err("<xi:include> missing or empty `href` attribute");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-missing-href");
     conformance::assertNoUnexpectedKeys(j);
@@ -360,53 +331,47 @@ TEST(XIncludeErrorWire, MissingHrefConformsToV1Schema) {
 }
 
 TEST(XIncludeErrorWire, NotFoundConformsToV1Schema) {
-    const XIncludeNotFound err(
-        "<xi:include href=\"missing.xml\">: file not found "
-        "(searched: /project/missing.xml)");
+    const XIncludeNotFound err("<xi:include href=\"missing.xml\">: file not found "
+                               "(searched: /project/missing.xml)");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-not-found");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, ReadErrorConformsToV1Schema) {
-    const XIncludeReadError err(
-        "<xi:include href=\"frag.xml\">: cannot read file: "
-        "/project/frag.xml");
+    const XIncludeReadError err("<xi:include href=\"frag.xml\">: cannot read file: "
+                                "/project/frag.xml");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-read-error");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, CycleConformsToV1Schema) {
-    const XIncludeCycle err(
-        "<xi:include href=\"a.xml\">: cycle detected "
-        "(/a.xml -> /b.xml -> /a.xml)");
+    const XIncludeCycle err("<xi:include href=\"a.xml\">: cycle detected "
+                            "(/a.xml -> /b.xml -> /a.xml)");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-cycle");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, TooDeepConformsToV1Schema) {
-    const XIncludeTooDeep err(
-        "<xi:include> nesting exceeds depth limit of 10");
+    const XIncludeTooDeep err("<xi:include> nesting exceeds depth limit of 10");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-too-deep");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, MalformedConformsToV1Schema) {
-    const XIncludeMalformed err(
-        "<xi:include href=\"bad.xml\">: included file is malformed: "
-        "unexpected end of file");
+    const XIncludeMalformed err("<xi:include href=\"bad.xml\">: included file is malformed: "
+                                "unexpected end of file");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-malformed");
     conformance::assertNoUnexpectedKeys(j);
 }
 
 TEST(XIncludeErrorWire, UnsupportedConformsToV1Schema) {
-    const XIncludeUnsupported err(
-        "<xi:include href=\"frag.xml\">: unsupported feature: "
-        "parse=\"text\" (only parse=\"xml\" is supported)");
+    const XIncludeUnsupported err("<xi:include href=\"frag.xml\">: unsupported feature: "
+                                  "parse=\"text\" (only parse=\"xml\" is supported)");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/xinclude-unsupported");
     conformance::assertNoUnexpectedKeys(j);
@@ -416,11 +381,9 @@ TEST(XIncludeErrorWire, EveryCuratedXIncludeCodeIsExercised) {
     // Sanity-check the curated list mirrors the 7 subtypes above.
     // Adding an 8th wire code without a corresponding test reds here.
     EXPECT_EQ(conformance::kExpectedXIncludeCodes.size(), 7u);
-    std::set<std::string_view> uniq(
-        conformance::kExpectedXIncludeCodes.begin(),
-        conformance::kExpectedXIncludeCodes.end());
-    EXPECT_EQ(uniq.size(), conformance::kExpectedXIncludeCodes.size())
-        << "duplicate entry in kExpectedXIncludeCodes";
+    std::set<std::string_view> uniq(conformance::kExpectedXIncludeCodes.begin(),
+                                    conformance::kExpectedXIncludeCodes.end());
+    EXPECT_EQ(uniq.size(), conformance::kExpectedXIncludeCodes.size()) << "duplicate entry in kExpectedXIncludeCodes";
 }
 
 TEST(XIncludeErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
@@ -433,8 +396,7 @@ TEST(XIncludeErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
     const std::string msg = "shared message";
     const XIncludeCycle a(msg);
     const XIncludeMalformed b(msg);
-    EXPECT_NE(a.to_json().at("id").get<std::string>(),
-              b.to_json().at("id").get<std::string>());
+    EXPECT_NE(a.to_json().at("id").get<std::string>(), b.to_json().at("id").get<std::string>());
 }
 
 // ── Canonical-JSON string (§wire-W2 deliverable #3) ────────────────
@@ -451,9 +413,8 @@ TEST(TemplateErrorWire, CanonicalJsonStringIsKeyOrderStable) {
     // `Diagnostic.cpp` to `dump(2)` (pretty-print) and this test
     // stays green for the equality assertion BUT the no-whitespace
     // assertion below reds with a leading space at every key.
-    const TemplateCycle err(
-        "<sce:use template=\"a.sce-template.xml\">: cycle detected "
-        "(/a.sce-template.xml -> /b.sce-template.xml -> /a.sce-template.xml)");
+    const TemplateCycle err("<sce:use template=\"a.sce-template.xml\">: cycle detected "
+                            "(/a.sce-template.xml -> /b.sce-template.xml -> /a.sce-template.xml)");
 
     const std::string a = err.to_canonical_json_string();
     const std::string b = err.to_canonical_json_string();
@@ -461,18 +422,16 @@ TEST(TemplateErrorWire, CanonicalJsonStringIsKeyOrderStable) {
 
     // Required v1 fields are present in the canonical string.
     EXPECT_NE(a.find("\"v\":1"), std::string::npos) << a;
-    EXPECT_NE(a.find("\"code\":\"xml/template-cycle\""),
-              std::string::npos)
-        << a;
+    EXPECT_NE(a.find("\"code\":\"xml/template-cycle\""), std::string::npos) << a;
     EXPECT_NE(a.find("\"stage\":\"xml\""), std::string::npos) << a;
 
     // No-whitespace contract: dump(-1, ' ', false) emits compact
     // form. A pretty-print regression introduces literal '\n' or
     // indent spacing.
     EXPECT_EQ(a.find('\n'), std::string::npos) << a;
-    EXPECT_EQ(a.find("\": "), std::string::npos)
-        << "found ': ' (with space) — canonical dump must be "
-           "compact: " << a;
+    EXPECT_EQ(a.find("\": "), std::string::npos) << "found ': ' (with space) — canonical dump must be "
+                                                    "compact: "
+                                                 << a;
 }
 
 TEST(TemplateErrorWire, CanonicalJsonStringHasAlphabeticalKeyOrder) {
@@ -483,22 +442,19 @@ TEST(TemplateErrorWire, CanonicalJsonStringHasAlphabeticalKeyOrder) {
     // the location-less subtypes. Pin the alphabetisation by
     // checking that `code` precedes `v` in the canonical string
     // (it would not in the producer's insertion order).
-    const TemplateMissingAttribute err(
-        "<sce:use> is missing required 'template' attribute");
+    const TemplateMissingAttribute err("<sce:use> is missing required 'template' attribute");
     const std::string canonical = err.to_canonical_json_string();
 
     const auto code_pos = canonical.find("\"code\":");
     const auto v_pos = canonical.find("\"v\":");
     ASSERT_NE(code_pos, std::string::npos) << canonical;
     ASSERT_NE(v_pos, std::string::npos) << canonical;
-    EXPECT_LT(code_pos, v_pos)
-        << "canonical string did not alphabetise keys: " << canonical;
+    EXPECT_LT(code_pos, v_pos) << "canonical string did not alphabetise keys: " << canonical;
 }
 
 // ── Batch NDJSON formatter (§wire-W2 deliverable #2) ───────────────
 
-TEST(TemplateErrorWire,
-     BatchFormatterEmitsOneRecordPerDiagnosticAsNdjson) {
+TEST(TemplateErrorWire, BatchFormatterEmitsOneRecordPerDiagnosticAsNdjson) {
     // Three subtypes share a vector. `emit_json_diagnostics` writes
     // one JSON record per line, '\n'-delimited, no array wrapper.
     // The reader parses each line with `nlohmann::json::parse` and
@@ -509,21 +465,16 @@ TEST(TemplateErrorWire,
     // reds with `nlohmann::json::parse_error` on line 2 (the comma
     // glues two records into a single malformed line).
     std::vector<std::unique_ptr<Diagnostic>> diags;
-    diags.push_back(std::make_unique<TemplateCycle>(
-        "<sce:use template=\"a.sce-template.xml\">: cycle detected"));
-    diags.push_back(std::make_unique<TemplateMalformed>(
-        "<sce:use template=\"bad.sce-template.xml\">: malformed"));
-    diags.push_back(std::make_unique<TemplateMissingAttribute>(
-        "<sce:use> is missing required 'template' attribute"));
+    diags.push_back(std::make_unique<TemplateCycle>("<sce:use template=\"a.sce-template.xml\">: cycle detected"));
+    diags.push_back(std::make_unique<TemplateMalformed>("<sce:use template=\"bad.sce-template.xml\">: malformed"));
+    diags.push_back(std::make_unique<TemplateMissingAttribute>("<sce:use> is missing required 'template' attribute"));
 
     std::ostringstream oss;
     emit_json_diagnostics(diags, oss);
 
     const std::string ndjson = oss.str();
     ASSERT_FALSE(ndjson.empty());
-    EXPECT_EQ(ndjson.back(), '\n')
-        << "NDJSON must end on the trailing record's newline: "
-        << ndjson;
+    EXPECT_EQ(ndjson.back(), '\n') << "NDJSON must end on the trailing record's newline: " << ndjson;
 
     // Split on '\n'; with a trailing '\n' there are 3 record lines
     // plus one empty trailing fragment after the last delimiter.
@@ -552,10 +503,8 @@ TEST(TemplateErrorWire,
     for (std::size_t i = 0; i < lines.size(); ++i) {
         const std::string &line = lines[i];
         nlohmann::json parsed;
-        ASSERT_NO_THROW(parsed = nlohmann::json::parse(line))
-            << "line " << i << " failed to parse: " << line;
-        conformance::assertSchemaConformantBase(parsed,
-                                                kExpectedCodes[i]);
+        ASSERT_NO_THROW(parsed = nlohmann::json::parse(line)) << "line " << i << " failed to parse: " << line;
+        conformance::assertSchemaConformantBase(parsed, kExpectedCodes[i]);
         conformance::assertNoUnexpectedKeys(parsed);
     }
 }
@@ -579,9 +528,7 @@ TEST(TemplateErrorWire, BatchFormatterSkipsNullEntries) {
             ++newlines;
         }
     }
-    EXPECT_EQ(newlines, 2u)
-        << "null entry must be skipped, not emitted as empty line: "
-        << ndjson;
+    EXPECT_EQ(newlines, 2u) << "null entry must be skipped, not emitted as empty line: " << ndjson;
 }
 
 TEST(TemplateErrorWire, BatchFormatterEmptyVectorWritesNothing) {
@@ -607,17 +554,16 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTemplateDiagnostic) {
     // `recordDiagnostic(tpl.clone())` line in the typed catch arm
     // reds this test with `getDiagnostics().size() == 0` because
     // the flatten happens via `addError` only.
-    constexpr const char *kBrokenScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
-        "       xmlns:sce=\"http://sce.dev/ext\""
-        "       version=\"1.0\""
-        "       initial=\"s1\""
-        "       name=\"boundary_test\">"
-        "  <state id=\"s1\">"
-        "    <sce:use/>"
-        "  </state>"
-        "</scxml>";
+    constexpr const char *kBrokenScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                         "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+                                         "       xmlns:sce=\"http://sce.dev/ext\""
+                                         "       version=\"1.0\""
+                                         "       initial=\"s1\""
+                                         "       name=\"boundary_test\">"
+                                         "  <state id=\"s1\">"
+                                         "    <sce:use/>"
+                                         "  </state>"
+                                         "</scxml>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kBrokenScxml);
@@ -632,15 +578,13 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTemplateDiagnostic) {
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u) << "expected exactly one typed diagnostic";
     ASSERT_NE(diags[0], nullptr);
-    EXPECT_EQ(diags[0]->code(),
-              std::string_view{"xml/template-missing-attribute"});
+    EXPECT_EQ(diags[0]->code(), std::string_view{"xml/template-missing-attribute"});
 
     // Round-trip through `to_json()` to confirm the cloned object
     // preserved its dynamic type (a sliced base copy would dispatch
     // to a different override or fail to compile against pure-virt).
     const auto j = diags[0]->to_json();
-    EXPECT_EQ(j.at("code").get<std::string>(),
-              "xml/template-missing-attribute");
+    EXPECT_EQ(j.at("code").get<std::string>(), "xml/template-missing-attribute");
     EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
 }
 
@@ -660,17 +604,16 @@ TEST(SCXMLParserBoundary, EndToEndParseGetDiagnosticsEmitNdjson) {
     // fixture (pasted as `<state id=\"s1\"/>`) and the
     // `getDiagnostics().size() == 1` assertion below reds with
     // "expected at least one diagnostic, got 0".
-    constexpr const char *kBrokenScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
-        "       xmlns:sce=\"http://sce.dev/ext\""
-        "       version=\"1.0\""
-        "       initial=\"s1\""
-        "       name=\"e2e_test\">"
-        "  <state id=\"s1\">"
-        "    <sce:use/>"
-        "  </state>"
-        "</scxml>";
+    constexpr const char *kBrokenScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                         "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+                                         "       xmlns:sce=\"http://sce.dev/ext\""
+                                         "       version=\"1.0\""
+                                         "       initial=\"s1\""
+                                         "       name=\"e2e_test\">"
+                                         "  <state id=\"s1\">"
+                                         "    <sce:use/>"
+                                         "  </state>"
+                                         "</scxml>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kBrokenScxml);
@@ -682,8 +625,7 @@ TEST(SCXMLParserBoundary, EndToEndParseGetDiagnosticsEmitNdjson) {
 
     // Typed surface via the boundary flatten.
     const auto &diags = parser.getDiagnostics();
-    ASSERT_GE(diags.size(), 1u)
-        << "expected at least one typed diagnostic from SCXMLParser";
+    ASSERT_GE(diags.size(), 1u) << "expected at least one typed diagnostic from SCXMLParser";
 
     // Run the typed vector through the batch formatter.
     std::ostringstream oss;
@@ -694,16 +636,13 @@ TEST(SCXMLParserBoundary, EndToEndParseGetDiagnosticsEmitNdjson) {
     // Parse the first line as a v1 schema record. With one
     // diagnostic emitted, `lines[0]` is the only record.
     const auto firstNewline = ndjson.find('\n');
-    ASSERT_NE(firstNewline, std::string::npos)
-        << "NDJSON output is missing line delimiter: " << ndjson;
+    ASSERT_NE(firstNewline, std::string::npos) << "NDJSON output is missing line delimiter: " << ndjson;
     const std::string firstLine = ndjson.substr(0, firstNewline);
 
     nlohmann::json parsed;
-    ASSERT_NO_THROW(parsed = nlohmann::json::parse(firstLine))
-        << firstLine;
+    ASSERT_NO_THROW(parsed = nlohmann::json::parse(firstLine)) << firstLine;
 
-    conformance::assertSchemaConformantBase(
-        parsed, "xml/template-missing-attribute");
+    conformance::assertSchemaConformantBase(parsed, "xml/template-missing-attribute");
     conformance::assertNoUnexpectedKeys(parsed);
 }
 
@@ -719,17 +658,16 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedXIncludeDiagnostic) {
     // `recordDiagnostic(xie.clone())` call in the typed catch arm
     // reds this test with `getDiagnostics().size() == 0` because
     // the legacy `addError` only populates the string surface.
-    constexpr const char *kBrokenScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
-        "       xmlns:xi=\"http://www.w3.org/2001/XInclude\""
-        "       version=\"1.0\""
-        "       initial=\"s1\""
-        "       name=\"xinc_missing_href_test\">"
-        "  <state id=\"s1\">"
-        "    <xi:include/>"
-        "  </state>"
-        "</scxml>";
+    constexpr const char *kBrokenScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                         "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+                                         "       xmlns:xi=\"http://www.w3.org/2001/XInclude\""
+                                         "       version=\"1.0\""
+                                         "       initial=\"s1\""
+                                         "       name=\"xinc_missing_href_test\">"
+                                         "  <state id=\"s1\">"
+                                         "    <xi:include/>"
+                                         "  </state>"
+                                         "</scxml>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kBrokenScxml);
@@ -744,16 +682,14 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedXIncludeDiagnostic) {
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u) << "expected exactly one typed diagnostic";
     ASSERT_NE(diags[0], nullptr);
-    EXPECT_EQ(diags[0]->code(),
-              std::string_view{"xml/xinclude-missing-href"});
+    EXPECT_EQ(diags[0]->code(), std::string_view{"xml/xinclude-missing-href"});
 
     // Round-trip through to_json() to confirm the cloned object
     // preserved its dynamic type — a sliced base copy would dispatch
     // to a different code() override or fail to compile against the
     // pure-virtual.
     const auto j = diags[0]->to_json();
-    EXPECT_EQ(j.at("code").get<std::string>(),
-              "xml/xinclude-missing-href");
+    EXPECT_EQ(j.at("code").get<std::string>(), "xml/xinclude-missing-href");
     EXPECT_EQ(j.at("stage").get<std::string>(), "xml");
 }
 
@@ -762,14 +698,13 @@ TEST(SCXMLParserBoundary, GetDiagnosticsEmptyOnSuccessfulParse) {
     // surface is opt-in and must not accumulate noise on the
     // happy path. Sanity-checks `initParsing()` clears the vector
     // between successive parses on the same parser instance.
-    constexpr const char *kValidScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
-        "       version=\"1.0\""
-        "       initial=\"s1\""
-        "       name=\"valid_test\">"
-        "  <state id=\"s1\"/>"
-        "</scxml>";
+    constexpr const char *kValidScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+                                        "       version=\"1.0\""
+                                        "       initial=\"s1\""
+                                        "       name=\"valid_test\">"
+                                        "  <state id=\"s1\"/>"
+                                        "</scxml>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kValidScxml);
@@ -785,8 +720,7 @@ TEST(TemplateErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
     const std::string msg = "shared message";
     const TemplateCycle a(msg);
     const TemplateMalformed b(msg);
-    EXPECT_NE(a.to_json().at("id").get<std::string>(),
-              b.to_json().at("id").get<std::string>());
+    EXPECT_NE(a.to_json().at("id").get<std::string>(), b.to_json().at("id").get<std::string>());
 }
 
 // ── v1 schema conformance for ParseError subtypes (W4 α-strict) ──
@@ -833,8 +767,7 @@ TEST(ParseErrorWire, FileNotFoundConformsToV1Schema) {
 }
 
 TEST(ParseErrorWire, ParseXmlFailedConformsToV1Schema) {
-    const ParseXmlFailed err(
-        "Parse error: unexpected end tag </scxml> at offset 42");
+    const ParseXmlFailed err("Parse error: unexpected end tag </scxml> at offset 42");
     const auto j = err.to_json();
     // Reuses xml/parse (no Rust producer for a distinct parser-entry
     // code; pugi err detail is embedded in the message text).
@@ -843,8 +776,7 @@ TEST(ParseErrorWire, ParseXmlFailedConformsToV1Schema) {
 }
 
 TEST(ParseErrorWire, ParseExceptionConformsToV1Schema) {
-    const ParseException err(
-        "Exception while parsing file: out of memory");
+    const ParseException err("Exception while parsing file: out of memory");
     const auto j = err.to_json();
     // Reuses xml/parse (Rust has no exception model — Result-based).
     conformance::assertSchemaConformantBase(j, "xml/parse");
@@ -861,8 +793,7 @@ TEST(ParseErrorWire, NoRootElementConformsToV1Schema) {
 }
 
 TEST(ParseErrorWire, WrongRootElementConformsToV1Schema) {
-    const ParseWrongRootElement err(
-        "Root element is not 'scxml', found: html");
+    const ParseWrongRootElement err("Root element is not 'scxml', found: html");
     const auto j = err.to_json();
     conformance::assertSchemaConformantBase(j, "xml/wrong-root-element");
     conformance::assertNoUnexpectedKeys(j);
@@ -873,11 +804,9 @@ TEST(ParseErrorWire, EveryNewCuratedParseCodeIsExercised) {
     // Adding a 3rd new wire code without a corresponding curated
     // entry reds here.
     EXPECT_EQ(conformance::kExpectedNewParseCodes.size(), 2u);
-    std::set<std::string_view> uniq(
-        conformance::kExpectedNewParseCodes.begin(),
-        conformance::kExpectedNewParseCodes.end());
-    EXPECT_EQ(uniq.size(), conformance::kExpectedNewParseCodes.size())
-        << "duplicate entry in kExpectedNewParseCodes";
+    std::set<std::string_view> uniq(conformance::kExpectedNewParseCodes.begin(),
+                                    conformance::kExpectedNewParseCodes.end());
+    EXPECT_EQ(uniq.size(), conformance::kExpectedNewParseCodes.size()) << "duplicate entry in kExpectedNewParseCodes";
 }
 
 TEST(ParseErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
@@ -891,8 +820,7 @@ TEST(ParseErrorWire, IdDiffersAcrossSubtypesWithSameMessage) {
     const std::string msg = "shared message";
     const ParseFileNotFound a(msg);
     const ParseWrongRootElement b(msg);
-    EXPECT_NE(a.to_json().at("id").get<std::string>(),
-              b.to_json().at("id").get<std::string>());
+    EXPECT_NE(a.to_json().at("id").get<std::string>(), b.to_json().at("id").get<std::string>());
 }
 
 // ── SCXMLParser boundary surfacing for parser-entry leaves ────────
@@ -943,9 +871,8 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedWrongRootElementDiagnostic) {
     // empty model rather than a typed diagnostic — exactly the
     // failure mode the W4 typed surface exists to catch
     // (`feedback_silently_broken_hooks.md`).
-    constexpr const char *kWrongRootScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<not-scxml/>";
+    constexpr const char *kWrongRootScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                            "<not-scxml/>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kWrongRootScxml);
@@ -958,8 +885,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedWrongRootElementDiagnostic) {
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u);
     ASSERT_NE(diags[0], nullptr);
-    EXPECT_EQ(diags[0]->code(),
-              std::string_view{"xml/wrong-root-element"});
+    EXPECT_EQ(diags[0]->code(), std::string_view{"xml/wrong-root-element"});
 
     const auto j = diags[0]->to_json();
     EXPECT_EQ(j.at("code").get<std::string>(), "xml/wrong-root-element");
@@ -974,8 +900,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedWrongRootElementDiagnostic) {
 // `TypedCodeDistinguishesFailureClassWhereStringParsingIsFragile`
 // IS the consumer; the surface IS what makes it possible.
 
-TEST(ParseErrorConsumer,
-     TypedCodeDistinguishesFailureClassWhereStringParsingIsFragile) {
+TEST(ParseErrorConsumer, TypedCodeDistinguishesFailureClassWhereStringParsingIsFragile) {
     // Two distinct parse failures — file-not-found (path retry
     // strategy) vs wrong-root-element (syntax suggestion strategy).
     // A real consumer (LSP / CI report / build tool / agent) needs
@@ -988,8 +913,7 @@ TEST(ParseErrorConsumer,
     p1.parseFile("/nonexistent/path.scxml");
 
     SCE::SCXMLParser p2(std::make_shared<SCE::NodeFactory>());
-    constexpr const char *kWrongRoot =
-        "<?xml version=\"1.0\"?><not-scxml/>";
+    constexpr const char *kWrongRoot = "<?xml version=\"1.0\"?><not-scxml/>";
     p2.parseContent(kWrongRoot);
 
     ASSERT_EQ(p1.getDiagnostics().size(), 1u);
@@ -997,10 +921,12 @@ TEST(ParseErrorConsumer,
 
     // THE consumer pattern — typed dispatch:
     auto retry_strategy = [](const Diagnostic &d) -> std::string {
-        if (d.code() == std::string_view{"xml/file-not-found"})
+        if (d.code() == std::string_view{"xml/file-not-found"}) {
             return "PATH_RETRY";
-        if (d.code() == std::string_view{"xml/wrong-root-element"})
+        }
+        if (d.code() == std::string_view{"xml/wrong-root-element"}) {
             return "SYNTAX_FIX";
+        }
         return "GENERIC";
     };
     EXPECT_EQ(retry_strategy(*p1.getDiagnostics()[0]), "PATH_RETRY");
@@ -1015,13 +941,10 @@ TEST(ParseErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
     // diverges. Bites if a future PR changes wire codes by editing
     // message text — the typed code() returns the same wire string
     // regardless of the message rendering choice.
-    const ParseFileNotFound today(
-        "File not found: /tmp/foo.scxml");
-    const ParseFileNotFound future_edit(
-        "ENOENT: cannot locate /tmp/foo.scxml on filesystem");
+    const ParseFileNotFound today("File not found: /tmp/foo.scxml");
+    const ParseFileNotFound future_edit("ENOENT: cannot locate /tmp/foo.scxml on filesystem");
 
-    EXPECT_EQ(today.code(), future_edit.code())
-        << "wire code() must be invariant under message-text edits";
+    EXPECT_EQ(today.code(), future_edit.code()) << "wire code() must be invariant under message-text edits";
     EXPECT_EQ(today.code(), std::string_view{"xml/file-not-found"});
 
     // Messages diverge.
@@ -1029,9 +952,7 @@ TEST(ParseErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
 
     // Demonstrate the consumer's actual asymmetry: typed dispatch
     // works on both; string-parsing-on-message would only catch one.
-    auto typed_dispatch = [](const ParseError &e) {
-        return e.code() == std::string_view{"xml/file-not-found"};
-    };
+    auto typed_dispatch = [](const ParseError &e) { return e.code() == std::string_view{"xml/file-not-found"}; };
     EXPECT_TRUE(typed_dispatch(today));
     EXPECT_TRUE(typed_dispatch(future_edit));
 
@@ -1041,9 +962,8 @@ TEST(ParseErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
         return m.rfind("File not found:", 0) == 0;
     };
     EXPECT_TRUE(fragile_string_dispatch(today));
-    EXPECT_FALSE(fragile_string_dispatch(future_edit))
-        << "string dispatch silently breaks when message text changes; "
-           "typed code() does not. THIS is what the W4 surface unlocks.";
+    EXPECT_FALSE(fragile_string_dispatch(future_edit)) << "string dispatch silently breaks when message text changes; "
+                                                          "typed code() does not. THIS is what the W4 surface unlocks.";
 }
 
 // ── §wire-W5: SCXML semantic-validation typed family ───────────────
@@ -1065,8 +985,7 @@ namespace semantic_conformance {
 // W5 variant of the schema-conformance helper. `stage` is fixed to
 // "validation" because all four SemanticError leaves share that
 // stage (§wire-W5 D2).
-void assertSemanticBase(const nlohmann::ordered_json &j,
-                        std::string_view expectedCode) {
+void assertSemanticBase(const nlohmann::ordered_json &j, std::string_view expectedCode) {
     ASSERT_TRUE(j.contains("v")) << j.dump();
     ASSERT_TRUE(j.contains("id")) << j.dump();
     ASSERT_TRUE(j.contains("code")) << j.dump();
@@ -1080,8 +999,7 @@ void assertSemanticBase(const nlohmann::ordered_json &j,
     // Reuse the W4 helper's id regex via the existing matchesIdRegex
     // visible from the conformance:: namespace.
     EXPECT_TRUE(conformance::matchesIdRegex(j.at("id").get<std::string>()))
-        << "id '" << j.at("id").get<std::string>()
-        << "' does not match ^fnv1a:[0-9a-f]{16}$";
+        << "id '" << j.at("id").get<std::string>() << "' does not match ^fnv1a:[0-9a-f]{16}$";
 }
 
 }  // namespace semantic_conformance
@@ -1092,12 +1010,10 @@ TEST(SemanticErrorWire, InitialStateUnknownConformsToV1Schema) {
     // Test pins the fold: a consumer dispatching on
     // `validation/invalid-reference` MUST see this leaf's payload
     // identical to the forge counterpart's payload shape.
-    const SemanticInitialStateUnknown err(
-        "Initial state 'nope' not found",
-        /*state_id=*/"nope",
-        SemanticInitialStateUnknown::Scope::DocumentRoot,
-        /*parent_id=*/"",
-        /*available=*/{"s1", "s2"});
+    const SemanticInitialStateUnknown err("Initial state 'nope' not found",
+                                          /*state_id=*/"nope", SemanticInitialStateUnknown::Scope::DocumentRoot,
+                                          /*parent_id=*/"",
+                                          /*available=*/{"s1", "s2"});
     const auto j = err.to_json();
     semantic_conformance::assertSemanticBase(j, "validation/invalid-reference");
     conformance::assertNoUnexpectedKeys(j);
@@ -1117,12 +1033,10 @@ TEST(SemanticErrorWire, InitialStateUnknownEmptyAvailableSuppressesFix) {
     // `replace_one_of` with no choices). Mirrors Rust
     // `scxml_semantic_fields` behaviour: `if available.is_empty()
     // { None } else { Some(Fix::ReplaceOneOf {...}) }`.
-    const SemanticInitialStateUnknown err(
-        "Initial state 'nope' not found",
-        /*state_id=*/"nope",
-        SemanticInitialStateUnknown::Scope::DocumentRoot,
-        /*parent_id=*/"",
-        /*available=*/{});
+    const SemanticInitialStateUnknown err("Initial state 'nope' not found",
+                                          /*state_id=*/"nope", SemanticInitialStateUnknown::Scope::DocumentRoot,
+                                          /*parent_id=*/"",
+                                          /*available=*/{});
     const auto j = err.to_json();
     EXPECT_FALSE(j.contains("fix"));
     EXPECT_EQ(j.at("actual").get<std::string>(), "nope");
@@ -1158,10 +1072,9 @@ TEST(SemanticErrorWire, TopLevelScriptUnloadedConformsToV1Schema) {
     // ("W3C SCXML §5.8") because the code has a spec_anchor on the
     // Rust side; key ordering is (v, id, code, stage, spec, message,
     // location?, actual?) per the schema's canonical order.
-    const SemanticTopLevelScriptUnloaded err(
-        "Top-level <script> rejected per W3C SCXML 5.8",
-        /*index=*/std::optional<std::size_t>{2},
-        /*src=*/std::optional<std::string>{"init.js"});
+    const SemanticTopLevelScriptUnloaded err("Top-level <script> rejected per W3C SCXML 5.8",
+                                             /*index=*/std::optional<std::size_t>{2},
+                                             /*src=*/std::optional<std::string>{"init.js"});
     const auto j = err.to_json();
     semantic_conformance::assertSemanticBase(j, "scxml/top-level-script-unloaded");
     conformance::assertNoUnexpectedKeys(j);
@@ -1178,10 +1091,9 @@ TEST(SemanticErrorWire, TopLevelScriptUnloadedAnalyzerPathOmitsActual) {
     // asymmetry symmetric across producers (§wire-W5 anti-pattern #5:
     // "NEW wire code count > NEW Rust producer count" — both sides
     // emit the same code; payload detail varies).
-    const SemanticTopLevelScriptUnloaded err(
-        "Top-level <script> rejected per W3C SCXML 5.8",
-        /*index=*/std::nullopt,
-        /*src=*/std::nullopt);
+    const SemanticTopLevelScriptUnloaded err("Top-level <script> rejected per W3C SCXML 5.8",
+                                             /*index=*/std::nullopt,
+                                             /*src=*/std::nullopt);
     const auto j = err.to_json();
     semantic_conformance::assertSemanticBase(j, "scxml/top-level-script-unloaded");
     EXPECT_FALSE(j.contains("actual"));
@@ -1197,20 +1109,11 @@ TEST(SemanticErrorWire, IdDistinguishesScopeOnInitialStateUnknown) {
     // (which differs across scopes when the throw-site message
     // includes the parent state's id), which is the W4 D4 idiom
     // applied here.
-    const SemanticInitialStateUnknown root(
-        "Initial state 'X' not found",
-        "X",
-        SemanticInitialStateUnknown::Scope::DocumentRoot,
-        "",
-        {});
-    const SemanticInitialStateUnknown compound(
-        "State 'parent' references non-existent initial state 'X'",
-        "X",
-        SemanticInitialStateUnknown::Scope::CompoundState,
-        "parent",
-        {});
-    EXPECT_NE(root.to_json().at("id").get<std::string>(),
-              compound.to_json().at("id").get<std::string>())
+    const SemanticInitialStateUnknown root("Initial state 'X' not found", "X",
+                                           SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    const SemanticInitialStateUnknown compound("State 'parent' references non-existent initial state 'X'", "X",
+                                               SemanticInitialStateUnknown::Scope::CompoundState, "parent", {});
+    EXPECT_NE(root.to_json().at("id").get<std::string>(), compound.to_json().at("id").get<std::string>())
         << "root vs compound scope must yield distinct ids";
 }
 
@@ -1222,11 +1125,9 @@ TEST(SemanticErrorWire, IdDiffersAcrossDifferentWireCodes) {
     // collide on id when message+payload match — the documented
     // α-strict tradeoff for the fold.
     const std::string msg = "shared message";
-    const SemanticInitialStateUnknown a(
-        msg, "x", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    const SemanticInitialStateUnknown a(msg, "x", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
     const SemanticNoStates b(msg);
-    EXPECT_NE(a.to_json().at("id").get<std::string>(),
-              b.to_json().at("id").get<std::string>())
+    EXPECT_NE(a.to_json().at("id").get<std::string>(), b.to_json().at("id").get<std::string>())
         << "different wire codes must yield distinct ids even with shared message";
 }
 
@@ -1242,14 +1143,10 @@ TEST(SemanticErrorWire, IdDiffersAcrossDifferentWireCodes) {
 // SemanticInitialStateUnknown / SemanticTransitionTargetUnknown
 // uniformly.
 
-TEST(SemanticErrorConsumer,
-     TypedCodeDistinguishesFailureClassInitialStateUnknown) {
-    const SemanticInitialStateUnknown err(
-        "Initial state 'nope' not found", "nope",
-        SemanticInitialStateUnknown::Scope::DocumentRoot, "", {"s1"});
-    auto dispatch = [](const SemanticError &e) {
-        return e.code() == std::string_view{"validation/invalid-reference"};
-    };
+TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassInitialStateUnknown) {
+    const SemanticInitialStateUnknown err("Initial state 'nope' not found", "nope",
+                                          SemanticInitialStateUnknown::Scope::DocumentRoot, "", {"s1"});
+    auto dispatch = [](const SemanticError &e) { return e.code() == std::string_view{"validation/invalid-reference"}; };
     EXPECT_TRUE(dispatch(err));
 
     // Round-trip via the SemanticError base reference confirms the
@@ -1259,33 +1156,24 @@ TEST(SemanticErrorConsumer,
     EXPECT_EQ(base.code(), std::string_view{"validation/invalid-reference"});
 }
 
-TEST(SemanticErrorConsumer,
-     TypedCodeDistinguishesFailureClassTransitionTargetUnknown) {
-    const SemanticTransitionTargetUnknown err(
-        "Transition in state 'a' references non-existent target state 'b'",
-        "a", "b", {"a", "c"});
-    auto dispatch = [](const SemanticError &e) {
-        return e.code() == std::string_view{"validation/invalid-reference"};
-    };
+TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassTransitionTargetUnknown) {
+    const SemanticTransitionTargetUnknown err("Transition in state 'a' references non-existent target state 'b'", "a",
+                                              "b", {"a", "c"});
+    auto dispatch = [](const SemanticError &e) { return e.code() == std::string_view{"validation/invalid-reference"}; };
     EXPECT_TRUE(dispatch(err));
 }
 
 TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassNoStates) {
     const SemanticNoStates err("No state nodes found in SCXML document");
-    auto dispatch = [](const SemanticError &e) {
-        return e.code() == std::string_view{"validation/empty-collection"};
-    };
+    auto dispatch = [](const SemanticError &e) { return e.code() == std::string_view{"validation/empty-collection"}; };
     EXPECT_TRUE(dispatch(err));
 }
 
-TEST(SemanticErrorConsumer,
-     TypedCodeDistinguishesFailureClassTopLevelScriptUnloaded) {
-    const SemanticTopLevelScriptUnloaded err(
-        "Top-level <script> rejected per W3C SCXML 5.8", std::nullopt,
-        std::nullopt);
+TEST(SemanticErrorConsumer, TypedCodeDistinguishesFailureClassTopLevelScriptUnloaded) {
+    const SemanticTopLevelScriptUnloaded err("Top-level <script> rejected per W3C SCXML 5.8", std::nullopt,
+                                             std::nullopt);
     auto dispatch = [](const SemanticError &e) {
-        return e.code() ==
-               std::string_view{"scxml/top-level-script-unloaded"};
+        return e.code() == std::string_view{"scxml/top-level-script-unloaded"};
     };
     EXPECT_TRUE(dispatch(err));
 }
@@ -1304,14 +1192,10 @@ TEST(SemanticErrorConsumer, FoldHonestAtConsumerLevel) {
     // handles both. (The forge half is pinned by Rust's
     // `fold_invariant_holds_for_invalid_reference` test in
     // `sce-build/src/scxml_semantic.rs`.)
-    const SemanticInitialStateUnknown a(
-        "msg", "id", SemanticInitialStateUnknown::Scope::DocumentRoot, "",
-        {});
+    const SemanticInitialStateUnknown a("msg", "id", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
     const SemanticTransitionTargetUnknown b("msg", "s", "t", {});
-    EXPECT_EQ(a.code(), b.code())
-        << "fold reuses `validation/invalid-reference` for both leaves";
-    EXPECT_EQ(a.code(),
-              std::string_view{"validation/invalid-reference"});
+    EXPECT_EQ(a.code(), b.code()) << "fold reuses `validation/invalid-reference` for both leaves";
+    EXPECT_EQ(a.code(), std::string_view{"validation/invalid-reference"});
 }
 
 TEST(SemanticErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
@@ -1320,12 +1204,11 @@ TEST(SemanticErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
     // still share `code()` — agents dispatching on the wire code do
     // not break when the message text changes (e.g. localization,
     // refinement of the human-readable wording).
-    const SemanticInitialStateUnknown today(
-        "Initial state 'X' not found",
-        "X", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+    const SemanticInitialStateUnknown today("Initial state 'X' not found", "X",
+                                            SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
     const SemanticInitialStateUnknown future_edit(
-        "scxml semantic check: cannot resolve initial=\"X\" to a declared state",
-        "X", SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
+        "scxml semantic check: cannot resolve initial=\"X\" to a declared state", "X",
+        SemanticInitialStateUnknown::Scope::DocumentRoot, "", {});
     EXPECT_EQ(today.code(), future_edit.code());
     EXPECT_NE(std::string(today.what()), std::string(future_edit.what()));
 }
@@ -1347,14 +1230,13 @@ TEST(SemanticErrorConsumer, TypedCodeStableUnderMessageTextEdit) {
 // `addError(se.what())` reds Q4-B coexistence.
 
 TEST(SCXMLParserBoundary, ParseContentSurfacesTypedInitialStateUnknownDiagnostic) {
-    constexpr const char *kBrokenScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
-        "       version=\"1.0\""
-        "       initial=\"nope\""
-        "       name=\"boundary_w5_initial\">"
-        "  <state id=\"s1\"/>"
-        "</scxml>";
+    constexpr const char *kBrokenScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                         "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+                                         "       version=\"1.0\""
+                                         "       initial=\"nope\""
+                                         "       name=\"boundary_w5_initial\">"
+                                         "  <state id=\"s1\"/>"
+                                         "</scxml>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kBrokenScxml);
@@ -1366,8 +1248,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedInitialStateUnknownDiagnostic
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u);
     ASSERT_NE(diags[0], nullptr);
-    EXPECT_EQ(diags[0]->code(),
-              std::string_view{"validation/invalid-reference"});
+    EXPECT_EQ(diags[0]->code(), std::string_view{"validation/invalid-reference"});
 
     const auto j = diags[0]->to_json();
     EXPECT_EQ(j.at("code").get<std::string>(), "validation/invalid-reference");
@@ -1376,16 +1257,15 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedInitialStateUnknownDiagnostic
 }
 
 TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTransitionTargetUnknownDiagnostic) {
-    constexpr const char *kBrokenScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
-        "       version=\"1.0\""
-        "       initial=\"s1\""
-        "       name=\"boundary_w5_target\">"
-        "  <state id=\"s1\">"
-        "    <transition event=\"go\" target=\"ghost\"/>"
-        "  </state>"
-        "</scxml>";
+    constexpr const char *kBrokenScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                         "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+                                         "       version=\"1.0\""
+                                         "       initial=\"s1\""
+                                         "       name=\"boundary_w5_target\">"
+                                         "  <state id=\"s1\">"
+                                         "    <transition event=\"go\" target=\"ghost\"/>"
+                                         "  </state>"
+                                         "</scxml>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kBrokenScxml);
@@ -1395,8 +1275,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTransitionTargetUnknownDiagno
 
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u);
-    EXPECT_EQ(diags[0]->code(),
-              std::string_view{"validation/invalid-reference"});
+    EXPECT_EQ(diags[0]->code(), std::string_view{"validation/invalid-reference"});
     EXPECT_EQ(diags[0]->to_json().at("actual").get<std::string>(), "ghost");
 }
 
@@ -1405,16 +1284,15 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedCompoundInitialUnknownDiagnos
     // (`validation/invalid-reference`) as document-root initial. The
     // typed leaf carries `Scope::CompoundState` for in-process typed
     // dispatch consumers; wire consumers see one branch.
-    constexpr const char *kBrokenScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
-        "       version=\"1.0\""
-        "       initial=\"outer\""
-        "       name=\"boundary_w5_compound\">"
-        "  <state id=\"outer\" initial=\"missing\">"
-        "    <state id=\"inner\"/>"
-        "  </state>"
-        "</scxml>";
+    constexpr const char *kBrokenScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                         "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+                                         "       version=\"1.0\""
+                                         "       initial=\"outer\""
+                                         "       name=\"boundary_w5_compound\">"
+                                         "  <state id=\"outer\" initial=\"missing\">"
+                                         "    <state id=\"inner\"/>"
+                                         "  </state>"
+                                         "</scxml>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kBrokenScxml);
@@ -1422,16 +1300,13 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedCompoundInitialUnknownDiagnos
     EXPECT_EQ(model, nullptr);
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u);
-    EXPECT_EQ(diags[0]->code(),
-              std::string_view{"validation/invalid-reference"});
+    EXPECT_EQ(diags[0]->code(), std::string_view{"validation/invalid-reference"});
     EXPECT_EQ(diags[0]->to_json().at("actual").get<std::string>(), "missing");
 
     // In-process typed dispatch — confirm scope is CompoundState.
-    const auto *typed =
-        dynamic_cast<const SemanticInitialStateUnknown *>(diags[0].get());
+    const auto *typed = dynamic_cast<const SemanticInitialStateUnknown *>(diags[0].get());
     ASSERT_NE(typed, nullptr) << "diagnostic must preserve dynamic type";
-    EXPECT_EQ(typed->scope(),
-              SemanticInitialStateUnknown::Scope::CompoundState);
+    EXPECT_EQ(typed->scope(), SemanticInitialStateUnknown::Scope::CompoundState);
     EXPECT_EQ(typed->parentId(), "outer");
 }
 
@@ -1439,12 +1314,11 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedNoStatesDiagnostic) {
     // Doc with no top-level state/parallel/final children. W3C SCXML
     // §3.2 requires at least one — folded onto
     // `validation/empty-collection` per §wire-W5 D2.
-    constexpr const char *kBrokenScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
-        "       version=\"1.0\""
-        "       name=\"boundary_w5_no_states\">"
-        "</scxml>";
+    constexpr const char *kBrokenScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                         "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+                                         "       version=\"1.0\""
+                                         "       name=\"boundary_w5_no_states\">"
+                                         "</scxml>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kBrokenScxml);
@@ -1452,8 +1326,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedNoStatesDiagnostic) {
     EXPECT_EQ(model, nullptr);
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u);
-    EXPECT_EQ(diags[0]->code(),
-              std::string_view{"validation/empty-collection"});
+    EXPECT_EQ(diags[0]->code(), std::string_view{"validation/empty-collection"});
 }
 
 TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnostic) {
@@ -1470,16 +1343,15 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnos
     // `analyzer::can_generate_static`'s `document_rejected` branch).
     // C++ behaviour mirrors the typed surface for the file-load
     // failure case which IS pinned here.
-    constexpr const char *kBrokenScxml =
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
-        "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
-        "       version=\"1.0\""
-        "       initial=\"s1\""
-        "       datamodel=\"ecmascript\""
-        "       name=\"boundary_w5_script\">"
-        "  <script src=\"/this/path/should/not/exist/missing.js\"/>"
-        "  <state id=\"s1\"/>"
-        "</scxml>";
+    constexpr const char *kBrokenScxml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                         "<scxml xmlns=\"http://www.w3.org/2005/07/scxml\""
+                                         "       version=\"1.0\""
+                                         "       initial=\"s1\""
+                                         "       datamodel=\"ecmascript\""
+                                         "       name=\"boundary_w5_script\">"
+                                         "  <script src=\"/this/path/should/not/exist/missing.js\"/>"
+                                         "  <state id=\"s1\"/>"
+                                         "</scxml>";
 
     SCE::SCXMLParser parser(std::make_shared<SCE::NodeFactory>());
     auto model = parser.parseContent(kBrokenScxml);
@@ -1487,8 +1359,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnos
     EXPECT_EQ(model, nullptr);
     const auto &diags = parser.getDiagnostics();
     ASSERT_EQ(diags.size(), 1u);
-    EXPECT_EQ(diags[0]->code(),
-              std::string_view{"scxml/top-level-script-unloaded"});
+    EXPECT_EQ(diags[0]->code(), std::string_view{"scxml/top-level-script-unloaded"});
 
     const auto j = diags[0]->to_json();
     EXPECT_EQ(j.at("spec").get<std::string>(), "W3C SCXML §5.8");
@@ -1497,8 +1368,7 @@ TEST(SCXMLParserBoundary, ParseContentSurfacesTypedTopLevelScriptUnloadedDiagnos
     // In-process typed dispatch — confirm payload preserved through
     // catch-arm `clone()`. Index is 1-based per W3C SCXML §5.8
     // ordinal.
-    const auto *typed =
-        dynamic_cast<const SemanticTopLevelScriptUnloaded *>(diags[0].get());
+    const auto *typed = dynamic_cast<const SemanticTopLevelScriptUnloaded *>(diags[0].get());
     ASSERT_NE(typed, nullptr) << "diagnostic must preserve dynamic type";
     ASSERT_TRUE(typed->index().has_value());
     EXPECT_EQ(*typed->index(), 1u);

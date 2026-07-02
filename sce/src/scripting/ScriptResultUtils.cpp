@@ -86,16 +86,21 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
                 arrayValues.push_back(std::visit(
                     [](const auto &v) -> std::string {
                         using T = std::decay_t<decltype(v)>;
-                        if constexpr (std::is_same_v<T, std::string>) return v;
-                        else if constexpr (std::is_same_v<T, int64_t>) return std::to_string(v);
-                        else if constexpr (std::is_same_v<T, double>) {
+                        if constexpr (std::is_same_v<T, std::string>) {
+                            return v;
+                        } else if constexpr (std::is_same_v<T, int64_t>) {
+                            return std::to_string(v);
+                        } else if constexpr (std::is_same_v<T, double>) {
                             std::ostringstream oss;
                             oss << std::noshowpoint << v;
                             return oss.str();
+                        } else if constexpr (std::is_same_v<T, bool>) {
+                            return v ? "true" : "false";
+                        } else {
+                            return "undefined";
                         }
-                        else if constexpr (std::is_same_v<T, bool>) return v ? "true" : "false";
-                        else return "undefined";
-                    }, elem));
+                    },
+                    elem));
             }
             SCE_LOG_DEBUG("resultToStringArray: Extracted {} elements directly from ScriptArray", arrayValues.size());
             return arrayValues;
@@ -111,7 +116,8 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
             std::string stringifyExpr = "JSON.stringify(" + originalExpression + ")";
             SCE_LOG_DEBUG("resultToStringArray: Evaluating stringify expression: '{}'", stringifyExpr);
             auto stringifyResult = engine->evaluateExpression(sessionId, stringifyExpr).get();
-            if (stringifyResult.isSuccess() && std::holds_alternative<std::string>(stringifyResult.getInternalValue())) {
+            if (stringifyResult.isSuccess() &&
+                std::holds_alternative<std::string>(stringifyResult.getInternalValue())) {
                 arrayStr = std::get<std::string>(stringifyResult.getInternalValue());
                 SCE_LOG_DEBUG("resultToStringArray: JSON.stringify succeeded, result: '{}'", arrayStr);
             } else {
@@ -135,8 +141,7 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
             SCE_LOG_DEBUG("resultToStringArray: Validating array type with expression: '{}'", arrayCheckExpr);
             auto arrayCheckResult = engine->evaluateExpression(sessionId, arrayCheckExpr).get();
 
-            if (!arrayCheckResult.isSuccess() ||
-                !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
+            if (!arrayCheckResult.isSuccess() || !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
                 !std::get<bool>(arrayCheckResult.getInternalValue())) {
                 SCE_LOG_DEBUG(
                     "resultToStringArray: Value is not an array (instanceof Array check failed), returning empty");
@@ -171,8 +176,7 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
                     std::string typeCheckExpr = "typeof _tempArray[" + std::to_string(i) + "]";
                     auto typeResult = engine->evaluateExpression(sessionId, typeCheckExpr).get();
 
-                    if (typeResult.isSuccess() &&
-                        std::holds_alternative<std::string>(typeResult.getInternalValue())) {
+                    if (typeResult.isSuccess() && std::holds_alternative<std::string>(typeResult.getInternalValue())) {
                         std::string typeStr = std::get<std::string>(typeResult.getInternalValue());
 
                         if (typeStr == "undefined") {
@@ -212,8 +216,7 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
 }
 
 std::vector<ScriptValue> resultToScriptValueArray(const ScriptResult &result, IScriptEngine *engine,
-                                                    const std::string &sessionId,
-                                                    const std::string &originalExpression) {
+                                                  const std::string &sessionId, const std::string &originalExpression) {
     // §scxml-4.6: <foreach> array element extraction without string round-trip,
     // preserving type information for objects, arrays, and all primitive types.
     std::vector<ScriptValue> values;
@@ -245,8 +248,11 @@ std::vector<ScriptValue> resultToScriptValueArray(const ScriptResult &result, IS
         int64_t arrayLength = 0;
         if (lengthResult.isSuccess()) {
             const auto &lv = lengthResult.getInternalValue();
-            if (std::holds_alternative<int64_t>(lv)) arrayLength = std::get<int64_t>(lv);
-            else if (std::holds_alternative<double>(lv)) arrayLength = static_cast<int64_t>(std::get<double>(lv));
+            if (std::holds_alternative<int64_t>(lv)) {
+                arrayLength = std::get<int64_t>(lv);
+            } else if (std::holds_alternative<double>(lv)) {
+                arrayLength = static_cast<int64_t>(std::get<double>(lv));
+            }
         }
 
         for (int64_t i = 0; i < arrayLength; ++i) {

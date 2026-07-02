@@ -258,8 +258,7 @@ static int sce_xml_is_name_start(int c) {
 }
 
 static int sce_xml_is_name_char(int c) {
-    return sce_xml_is_name_start(c) || c == '-' || c == '.' ||
-           (c >= '0' && c <= '9');
+    return sce_xml_is_name_start(c) || c == '-' || c == '.' || (c >= '0' && c <= '9');
 }
 
 static void sce_xml_skip_ws(sce_xml_parser_t *p) {
@@ -303,8 +302,7 @@ static void sce_xml_skip_pi(sce_xml_parser_t *p) {
 static void sce_xml_skip_comment(sce_xml_parser_t *p) {
     if (sce_xml_match(p, "<!--")) {
         while (p->pos + 2u < p->len) {
-            if (p->src[p->pos] == '-' && p->src[p->pos + 1u] == '-' &&
-                p->src[p->pos + 2u] == '>') {
+            if (p->src[p->pos] == '-' && p->src[p->pos + 1u] == '-' && p->src[p->pos + 2u] == '>') {
                 p->pos += 3u;
                 return;
             }
@@ -347,13 +345,12 @@ static int sce_xml_skip_misc(sce_xml_parser_t *p) {
             sce_xml_skip_pi(p);
             return 1;
         }
-        if (p->pos + 3u < p->len && p->src[p->pos + 1u] == '!' &&
-            p->src[p->pos + 2u] == '-' && p->src[p->pos + 3u] == '-') {
+        if (p->pos + 3u < p->len && p->src[p->pos + 1u] == '!' && p->src[p->pos + 2u] == '-' &&
+            p->src[p->pos + 3u] == '-') {
             sce_xml_skip_comment(p);
             return 1;
         }
-        if (p->pos + 8u < p->len && p->src[p->pos + 1u] == '!' &&
-            memcmp(p->src + p->pos + 2u, "DOCTYPE", 7) == 0) {
+        if (p->pos + 8u < p->len && p->src[p->pos + 1u] == '!' && memcmp(p->src + p->pos + 2u, "DOCTYPE", 7) == 0) {
             sce_xml_skip_doctype(p);
             return 1;
         }
@@ -455,8 +452,7 @@ static int sce_xml_parse_attributes(sce_xml_parser_t *p, sce_xml_node_t *node) {
 
 // Append `child` to `parent`'s child list.  Caller owns lifecycle on
 // failure (the freshly-parsed child is freed by the caller path).
-static void sce_xml_append_child(sce_xml_node_t *parent, sce_xml_node_t *child,
-                                 sce_xml_node_t **tail_inout) {
+static void sce_xml_append_child(sce_xml_node_t *parent, sce_xml_node_t *child, sce_xml_node_t **tail_inout) {
     child->parent = parent;
     if (*tail_inout) {
         (*tail_inout)->next_sibling = child;
@@ -468,16 +464,14 @@ static void sce_xml_append_child(sce_xml_node_t *parent, sce_xml_node_t *child,
 
 // Parse a `<![CDATA[ ... ]]>` section into a CDATA-typed text child.
 // Caller has already verified the `<![CDATA[` prefix is present.
-static int sce_xml_parse_cdata(sce_xml_parser_t *p, sce_xml_node_t *parent,
-                               sce_xml_node_t **tail_inout) {
+static int sce_xml_parse_cdata(sce_xml_parser_t *p, sce_xml_node_t *parent, sce_xml_node_t **tail_inout) {
     if (!sce_xml_match(p, "<![CDATA[")) {
         sce_xml_parser_set_error(p, "expected CDATA");
         return 0;
     }
     size_t start = p->pos;
     while (p->pos + 2u < p->len) {
-        if (p->src[p->pos] == ']' && p->src[p->pos + 1u] == ']' &&
-            p->src[p->pos + 2u] == '>') {
+        if (p->src[p->pos] == ']' && p->src[p->pos + 1u] == ']' && p->src[p->pos + 2u] == '>') {
             char *body = sce_xml_dup_range(p->src, start, p->pos);
             if (!body) {
                 sce_xml_parser_set_error(p, "out of memory");
@@ -507,8 +501,7 @@ static int sce_xml_parse_cdata(sce_xml_parser_t *p, sce_xml_node_t *parent,
 // don't surface a runtime difference: the W3C corpus reads attribute
 // values, not text content, and `getElementsByTagName` only collects
 // element nodes anyway.
-static int sce_xml_consume_text(sce_xml_parser_t *p, sce_xml_node_t *parent,
-                                sce_xml_node_t **tail_inout) {
+static int sce_xml_consume_text(sce_xml_parser_t *p, sce_xml_node_t *parent, sce_xml_node_t **tail_inout) {
     size_t start = p->pos;
     while (p->pos < p->len && p->src[p->pos] != '<') {
         p->pos++;
@@ -582,8 +575,7 @@ static sce_xml_node_t *sce_xml_parse_element(sce_xml_parser_t *p) {
     while (p->pos < p->len) {
         // CDATA must be tested before generic comment / PI dispatch
         // because skip_misc does not handle `<![CDATA[`.
-        if (p->pos + 8u < p->len && p->src[p->pos] == '<' &&
-            p->src[p->pos + 1u] == '!' && p->src[p->pos + 2u] == '[' &&
+        if (p->pos + 8u < p->len && p->src[p->pos] == '<' && p->src[p->pos + 1u] == '!' && p->src[p->pos + 2u] == '[' &&
             memcmp(p->src + p->pos + 3u, "CDATA[", 6) == 0) {
             if (!sce_xml_parse_cdata(p, node, &child_tail)) {
                 sce_xml_free_node_recursive(node);
@@ -678,8 +670,7 @@ sce_xml_doc_t *sce_xml_parse(const char *src) {
     sce_xml_node_t *root = sce_xml_parse_element(&p);
     if (!root) {
         char buf[224];
-        snprintf(buf, sizeof(buf), "Failed to parse XML content: %s",
-                 p.has_error ? p.error : "unknown");
+        snprintf(buf, sizeof(buf), "Failed to parse XML content: %s", p.has_error ? p.error : "unknown");
         doc->error_msg = sce_xml_dup_cstr(buf);
         return doc;
     }
@@ -741,13 +732,11 @@ const char *sce_xml_get_attribute(const sce_xml_node_t *node, const char *attr) 
 
 // cpp findElementsByTagNameStatic 1:1 — element-only match, then
 // descend.  PCDATA / CDATA children carry no tag and are walked past.
-static int sce_xml_collect(sce_xml_node_t *node, const char *tag,
-                           sce_xml_node_t ***out, size_t *count, size_t *cap) {
+static int sce_xml_collect(sce_xml_node_t *node, const char *tag, sce_xml_node_t ***out, size_t *count, size_t *cap) {
     if (!node) {
         return 1;
     }
-    if (node->type == SCE_XML_NODE_ELEMENT && node->tag &&
-        strcmp(node->tag, tag) == 0) {
+    if (node->type == SCE_XML_NODE_ELEMENT && node->tag && strcmp(node->tag, tag) == 0) {
         if (*count == *cap) {
             size_t new_cap = *cap == 0u ? 4u : *cap * 2u;
             sce_xml_node_t **resized = (sce_xml_node_t **)realloc(*out, new_cap * sizeof(*resized));
@@ -771,8 +760,7 @@ static int sce_xml_collect(sce_xml_node_t *node, const char *tag,
 }
 
 // cpp XMLDocument::getElementsByTagName — recursive from root (root included).
-sce_xml_node_t **sce_xml_doc_get_elements_by_tag_name(
-    sce_xml_doc_t *doc, const char *tag, size_t *out_count) {
+sce_xml_node_t **sce_xml_doc_get_elements_by_tag_name(sce_xml_doc_t *doc, const char *tag, size_t *out_count) {
     if (out_count) {
         *out_count = 0u;
     }
@@ -795,8 +783,7 @@ sce_xml_node_t **sce_xml_doc_get_elements_by_tag_name(
 // cpp XMLElement::getElementsByTagName — descends children only (self
 // not matched).  Uses the same recursive collector starting from each
 // direct child.
-sce_xml_node_t **sce_xml_node_get_elements_by_tag_name(
-    sce_xml_node_t *node, const char *tag, size_t *out_count) {
+sce_xml_node_t **sce_xml_node_get_elements_by_tag_name(sce_xml_node_t *node, const char *tag, size_t *out_count) {
     if (out_count) {
         *out_count = 0u;
     }

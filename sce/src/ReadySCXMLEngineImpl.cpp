@@ -67,7 +67,9 @@ public:
 
     bool initialize(const std::string &scxmlContent) {
         try {
-            if (!initEngine()) return false;
+            if (!initEngine()) {
+                return false;
+            }
 
             if (!scxmlEngine_->loadSCXMLFromString(scxmlContent, sessionId_)) {
                 lastError_ = "Failed to load SCXML content: " + scxmlEngine_->getLastStateMachineError(sessionId_);
@@ -88,7 +90,9 @@ public:
 
     bool initializeFromFile(const std::string &scxmlFile) {
         try {
-            if (!initEngine()) return false;
+            if (!initEngine()) {
+                return false;
+            }
 
             // W3C SCXML: Use loadSCXMLFromFile to preserve base path for invoke relative resolution
             if (!scxmlEngine_->loadSCXMLFromFile(scxmlFile, sessionId_)) {
@@ -124,7 +128,6 @@ private:
     }
 
 public:
-
     // === ReadySCXMLEngine Interface Implementation ===
 
     bool start() override {

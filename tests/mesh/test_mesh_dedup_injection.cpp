@@ -49,41 +49,36 @@ int run_test() {
     env.type = "brake.activate";
     env.pattern = PK::PatternKind::FireForget;
 
-    MESH_TEST_REQUIRE(router.admitInbound(env, 0),
-        "first inject of a novel envelope must reach the engine");
+    MESH_TEST_REQUIRE(router.admitInbound(env, 0), "first inject of a novel envelope must reach the engine");
     {
         std::lock_guard<std::mutex> lk(sender.received_.m);
         MESH_TEST_REQUIRE(sender.received_.events.size() == 1,
-            "sender must record exactly one event after the first inject");
+                          "sender must record exactly one event after the first inject");
     }
 
     // ── 2. Second inject of the same envelope is the duplicate case ──
     // §10.5: `admit()` returns false on a repeat (source, id); the
     // envelope never reaches dispatchToSession.
     MESH_TEST_REQUIRE(!router.admitInbound(env, 0),
-        "duplicate envelope (same source+id) must be dropped by DedupRouter");
+                      "duplicate envelope (same source+id) must be dropped by DedupRouter");
     {
         std::lock_guard<std::mutex> lk(sender.received_.m);
-        MESH_TEST_REQUIRE(sender.received_.events.size() == 1,
-            "duplicate inject must NOT reach the engine");
+        MESH_TEST_REQUIRE(sender.received_.events.size() == 1, "duplicate inject must NOT reach the engine");
     }
 
     // ── 3. A fresh id from the same source is admitted again ────────
     env.id = SCE::uuid::v7();
-    MESH_TEST_REQUIRE(router.admitInbound(env, 0),
-        "novel id from the same source must be admitted");
+    MESH_TEST_REQUIRE(router.admitInbound(env, 0), "novel id from the same source must be admitted");
     {
         std::lock_guard<std::mutex> lk(sender.received_.m);
-        MESH_TEST_REQUIRE(sender.received_.events.size() == 2,
-            "novel id must reach the engine");
+        MESH_TEST_REQUIRE(sender.received_.events.size() == 2, "novel id must reach the engine");
     }
 
     // ── 4. Same id from a different source is admitted ────────────
     // DedupRouter keys on (source, id), so the cross-source case must
     // not collide even when the ids happen to match.
     env.source = "telemetry";
-    MESH_TEST_REQUIRE(router.admitInbound(env, 0),
-        "per-sender window must isolate identical ids across sources");
+    MESH_TEST_REQUIRE(router.admitInbound(env, 0), "per-sender window must isolate identical ids across sources");
 
     std::printf("SCE Mesh dedup injection regression: PASS\n");
     return 0;
@@ -94,7 +89,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: unexpected exception: %s\n", ex.what());
         return 1;
     } catch (...) {

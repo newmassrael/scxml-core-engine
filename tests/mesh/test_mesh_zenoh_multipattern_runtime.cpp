@@ -36,12 +36,11 @@ namespace {
 using namespace SCE::Test::Mesh;
 namespace PK = SCE::Mesh;
 
-constexpr const char* kMotorKey = "sce/brake/motor";
+constexpr const char *kMotorKey = "sce/brake/motor";
 // Mirrors brake's connect endpoint (deploy_zenoh_multi.yaml ecu_brake),
 // which pins to motor's ecu_motor listen — co-locating the raw motor peer
 // on the same address is what makes brake's router reach it.
-constexpr const char* kListen   =
-    SCE::Generated::brake_zenoh_multi::ZENOH_CONNECT_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::brake_zenoh_multi::ZENOH_CONNECT_ENDPOINTS[0];
 
 int run_test() {
     using namespace SCE::Generated::brake_zenoh_multi;
@@ -67,7 +66,7 @@ int run_test() {
     CapturedEvents motor_inbox;
     auto motor_subscriber = motor_session.declare_subscriber(
         zenoh::KeyExpr(kMotorKey),
-        [&motor_inbox](const zenoh::Sample& sample) {
+        [&motor_inbox](const zenoh::Sample &sample) {
             auto bytes = sample.get_payload().as_vector();
             SCE::Mesh::MeshEnvelope env;
             if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
@@ -81,7 +80,7 @@ int run_test() {
     // verify the reply round-trip.
     auto motor_queryable = motor_session.declare_queryable(
         zenoh::KeyExpr(kMotorKey),
-        [](const zenoh::Query& query) {
+        [](const zenoh::Query &query) {
             std::string req_type = "unknown";
             if (auto payload = query.get_payload(); payload) {
                 auto bytes = payload->get().as_vector();
@@ -90,9 +89,8 @@ int run_test() {
                     req_type = req.type;
                 }
             }
-            auto resp_env = make_envelope(
-                req_type + ".response", SCE::Mesh::PatternKind::FireForget,
-                std::string(R"({"result":42})"));
+            auto resp_env = make_envelope(req_type + ".response", SCE::Mesh::PatternKind::FireForget,
+                                          std::string(R"({"result":42})"));
             auto bytes = SCE::Mesh::encodeEnvelope(resp_env);
             query.reply(zenoh::KeyExpr(kMotorKey), zenoh::Bytes(std::move(bytes)));
         },
@@ -114,75 +112,68 @@ int run_test() {
 
     // ── 1. FireForget: send_zenoh → session.put → motor subscriber ─────
     {
-        auto env = make_envelope("service.fire_forget.activate",
-                                 SCE::Mesh::PatternKind::FireForget);
+        auto env = make_envelope("service.fire_forget.activate", SCE::Mesh::PatternKind::FireForget);
         const bool ok = router.send_zenoh(env, kMotorKey, "#motor");
         MESH_TEST_REQUIRE(ok, "send_zenoh FireForget returned false");
-        MESH_TEST_REQUIRE(motor_inbox.wait_for([](const auto& v) { return !v.empty(); }),
-                "motor subscriber did not receive FireForget envelope");
+        MESH_TEST_REQUIRE(motor_inbox.wait_for([](const auto &v) { return !v.empty(); }),
+                          "motor subscriber did not receive FireForget envelope");
         std::lock_guard<std::mutex> lk(motor_inbox.m);
         MESH_TEST_REQUIRE(motor_inbox.envelopes.front().type == "service.fire_forget.activate",
-                "FireForget envelope type mismatch on motor side");
+                          "FireForget envelope type mismatch on motor side");
         MESH_TEST_REQUIRE(motor_inbox.envelopes.front().pattern == SCE::Mesh::PatternKind::FireForget,
-                "FireForget envelope pattern not preserved");
+                          "FireForget envelope pattern not preserved");
         motor_inbox.envelopes.clear();
     }
 
     // ── 2. RpcRequest: send_zenoh → session.get → queryable → on_reply ─
     {
-        auto env = make_envelope("service.request.compute_force",
-                                 SCE::Mesh::PatternKind::RpcRequest);
+        auto env = make_envelope("service.request.compute_force", SCE::Mesh::PatternKind::RpcRequest);
         const bool ok = router.send_zenoh(env, kMotorKey, "#motor");
         MESH_TEST_REQUIRE(ok, "send_zenoh RpcRequest returned false");
 
-        MESH_TEST_REQUIRE(sender.received_.wait_for([](const auto& v) {
-                    return !v.empty() && v.back().type == "service.response.compute_force";
-                }),
-                "sender engine did not see paired reply 'service.response.compute_force'");
+        MESH_TEST_REQUIRE(sender.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.response.compute_force";
+        }),
+                          "sender engine did not see paired reply 'service.response.compute_force'");
         sender.received_.clear();
     }
 
     // ── 3. EventSubscribe: sender subscribes, receiver publishes ─────
     {
-        auto env = make_envelope("event.subscribe.status",
-                                 SCE::Mesh::PatternKind::EventSubscribe);
+        auto env = make_envelope("event.subscribe.status", SCE::Mesh::PatternKind::EventSubscribe);
         const bool ok = router.send_zenoh(env, kMotorKey, "#motor");
         MESH_TEST_REQUIRE(ok, "send_zenoh EventSubscribe returned false");
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
-        auto notify = make_envelope("event.notification.status",
-                                    SCE::Mesh::PatternKind::FireForget);
+        auto notify = make_envelope("event.notification.status", SCE::Mesh::PatternKind::FireForget);
         auto bytes = SCE::Mesh::encodeEnvelope(notify);
         motor_session.put(zenoh::KeyExpr(kMotorKey), zenoh::Bytes(std::move(bytes)));
 
-        MESH_TEST_REQUIRE(sender.received_.wait_for([](const auto& v) {
-                    return !v.empty() && v.back().type == "event.notification.status";
-                }),
-                "sender engine did not see 'event.notification.status' from subscriber");
+        MESH_TEST_REQUIRE(sender.received_.wait_for(
+                              [](const auto &v) { return !v.empty() && v.back().type == "event.notification.status"; }),
+                          "sender engine did not see 'event.notification.status' from subscriber");
         sender.received_.clear();
     }
 
     // ── 4. FieldRead: structural mirror of RpcRequest ──────────────────
     {
-        auto env = make_envelope("field.get.position",
-                                 SCE::Mesh::PatternKind::FieldRead);
+        auto env = make_envelope("field.get.position", SCE::Mesh::PatternKind::FieldRead);
         const bool ok = router.send_zenoh(env, kMotorKey, "#motor");
         MESH_TEST_REQUIRE(ok, "send_zenoh FieldRead returned false");
-        MESH_TEST_REQUIRE(sender.received_.wait_for([](const auto& v) {
-                    return !v.empty() && v.back().type == "field.get.position.response";
-                }),
-                "sender engine did not see FieldRead reply echo");
+        MESH_TEST_REQUIRE(sender.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "field.get.position.response";
+        }),
+                          "sender engine did not see FieldRead reply echo");
         sender.received_.clear();
     }
 
     // ── 5. EventUnsubscribe: handle map entry drops on erase ───────────
     {
-        auto env = make_envelope("event.unsubscribe.status",
-                                 SCE::Mesh::PatternKind::EventUnsubscribe);
+        auto env = make_envelope("event.unsubscribe.status", SCE::Mesh::PatternKind::EventUnsubscribe);
         const bool ok = router.send_zenoh(env, kMotorKey, "#motor");
         MESH_TEST_REQUIRE(ok, "send_zenoh EventUnsubscribe returned false");
         MESH_TEST_REQUIRE(router.zenoh_subscribers_.count("#motor") == 0,
-                "subscriber handle not erased on EventUnsubscribe");
+                          "subscriber handle not erased on EventUnsubscribe");
     }
 
     router.shutdown();
@@ -195,7 +186,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

@@ -54,11 +54,10 @@ extern "C" {
  *         (in which case nothing is pushed and the stack is restored
  *         to its entry depth).
  */
-bool sce_test_lua_push_json(struct lua_State *L,
-                            const char *json, size_t len);
+bool sce_test_lua_push_json(struct lua_State *L, const char *json, size_t len);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  /* SCE_C_TESTS_SUPPORT_HTTP_LUA_BINDING_H */
+#endif /* SCE_C_TESTS_SUPPORT_HTTP_LUA_BINDING_H */

@@ -207,8 +207,8 @@ private:
     std::string originType_;
     std::string invokeId_;
     std::string dataString_;
-    mutable std::optional<std::string> rawJsonData_;   // Raw JSON storage
-    std::optional<ScriptValue> typedData_;              // Typed data (engine-agnostic)
+    mutable std::optional<std::string> rawJsonData_;  // Raw JSON storage
+    std::optional<ScriptValue> typedData_;            // Typed data (engine-agnostic)
 };
 
 /**

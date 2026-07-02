@@ -45,14 +45,12 @@ namespace SCE::Core {
  * - W3C SCXML Perfect Compliance: Full Appendix D.2 algorithm
  */
 struct ConflictResolutionAlgorithms {
-
     /**
      * @brief Transition descriptor for conflict resolution (W3C SCXML Appendix D.2)
      *
      * @tparam StateType State identifier type (enum for AOT, std::string for Interpreter)
      */
-    template <typename StateType>
-    struct TransitionDescriptor {
+    template <typename StateType> struct TransitionDescriptor {
         StateType source{};
         StateType target{};
         std::vector<StateType> exitSet;
@@ -103,7 +101,7 @@ struct ConflictResolutionAlgorithms {
         std::vector<TransitionDescriptor<StateType>> filteredTransitions;
 
         SCE_LOG_DEBUG("ConflictResolution::removeConflictingTransitions: Processing {} transitions",
-                  enabledTransitions.size());
+                      enabledTransitions.size());
 
         for (const auto &t1 : enabledTransitions) {
             bool t1Preempted = false;
@@ -173,7 +171,7 @@ struct ConflictResolutionAlgorithms {
         }
 
         SCE_LOG_DEBUG("ConflictResolution::removeConflictingTransitions: Filtered to {} transitions",
-                  filteredTransitions.size());
+                      filteredTransitions.size());
 
         return filteredTransitions;
     }
@@ -200,6 +198,7 @@ template <ParallelStatePolicy StatePolicy> class ConflictResolutionHelper {
 #else
 template <typename StatePolicy> class ConflictResolutionHelper {
 #endif
+
 public:
     using State = typename StatePolicy::State;
     using TransitionDescriptor = ConflictResolutionAlgorithms::TransitionDescriptor<State>;
@@ -249,7 +248,7 @@ public:
         std::vector<State> exitSet(exitSetUnordered.begin(), exitSetUnordered.end());
 
         SCE_LOG_DEBUG("ConflictResolutionHelper::computeExitSet: Transition {} -> {} exits {} states",
-                  static_cast<int>(source), static_cast<int>(target), exitSet.size());
+                      static_cast<int>(source), static_cast<int>(target), exitSet.size());
 
         return exitSet;
     }
@@ -292,8 +291,7 @@ public:
     static std::vector<TransitionDescriptor>
     removeConflictingTransitions(const std::vector<TransitionDescriptor> &enabledTransitions) {
         return ConflictResolutionAlgorithms::removeConflictingTransitions(
-            enabledTransitions,
-            [](State s) { return StatePolicy::getParent(s); },
+            enabledTransitions, [](State s) { return StatePolicy::getParent(s); },
             [](State s) { return StatePolicy::isParallelState(s); });
     }
 };

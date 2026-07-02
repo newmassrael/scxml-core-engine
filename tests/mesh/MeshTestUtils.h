@@ -49,9 +49,7 @@ struct ReceivedEvents {
         cv.notify_all();
     }
 
-    template <typename Pred>
-    bool wait_for(Pred&& pred,
-                  std::chrono::seconds timeout = kDefaultTimeout) {
+    template <typename Pred> bool wait_for(Pred &&pred, std::chrono::seconds timeout = kDefaultTimeout) {
         std::unique_lock<std::mutex> lock(m);
         return cv.wait_for(lock, timeout, [&] { return pred(events); });
     }
@@ -72,7 +70,7 @@ struct TestSenderEngine {
     using Event = std::string;
 
     struct Policy {
-        static std::optional<Event> getEventFromName(const char* name) {
+        static std::optional<Event> getEventFromName(const char *name) {
             return Event{name};
         }
     };
@@ -99,25 +97,36 @@ struct TestSenderEngine {
     };
 
     Policy policy_;
-    Policy& getPolicy() { return policy_; }
-    std::string currentEventInvokeId() const { return {}; }
+
+    Policy &getPolicy() {
+        return policy_;
+    }
+
+    std::string currentEventInvokeId() const {
+        return {};
+    }
 
     ReceivedEvents received_;
-    void raiseExternal(const Event& event_name) {
+
+    void raiseExternal(const Event &event_name) {
         received_.push({event_name, ""});
     }
-    void raiseExternal(const Event& event_name, const std::string& data) {
+
+    void raiseExternal(const Event &event_name, const std::string &data) {
         received_.push({event_name, data});
     }
-    void raiseExternal(const EventWithMetadata& meta) {
+
+    void raiseExternal(const EventWithMetadata &meta) {
         received_.push({meta.event, meta.data});
     }
 
-    using MeshSendCb = std::function<bool(const std::string&, const std::string&,
-                                          const std::string&, const std::string&,
-                                          const std::string&)>;
+    using MeshSendCb = std::function<bool(const std::string &, const std::string &, const std::string &,
+                                          const std::string &, const std::string &)>;
     MeshSendCb mesh_send_cb_;
-    void setMeshSendCallback(MeshSendCb cb) { mesh_send_cb_ = std::move(cb); }
+
+    void setMeshSendCallback(MeshSendCb cb) {
+        mesh_send_cb_ = std::move(cb);
+    }
 
     // SCE_MESH.md §16.5 wire-21: codegen installs this in the
     // TransportRouter ctor for any partition that hosts a region of a
@@ -128,9 +137,9 @@ struct TestSenderEngine {
     // exercises (no state graph driven), so a no-op store is enough
     // to satisfy the template instantiation. Real engines override
     // through state_machine.jinja2's emitted definition.
-    using ParallelRegionDoneCb =
-        std::function<bool(const SCE::Mesh::MeshEnvelope&)>;
+    using ParallelRegionDoneCb = std::function<bool(const SCE::Mesh::MeshEnvelope &)>;
     ParallelRegionDoneCb parallel_region_done_cb_;
+
     void setParallelRegionDoneCallback(ParallelRegionDoneCb cb) {
         parallel_region_done_cb_ = std::move(cb);
     }
@@ -138,10 +147,8 @@ struct TestSenderEngine {
 
 // ── Envelope factory ─────────────────────────────────────────────────
 
-inline SCE::Mesh::MeshEnvelope make_envelope(
-        const std::string& type,
-        SCE::Mesh::PatternKind pattern,
-        std::string_view data = {}) {
+inline SCE::Mesh::MeshEnvelope make_envelope(const std::string &type, SCE::Mesh::PatternKind pattern,
+                                             std::string_view data = {}) {
     SCE::Mesh::MeshEnvelope env;
     // Mirror the generated mesh send callback: stamp a fresh UUID v7 on
     // every envelope so successive fixtures from the same logical source
@@ -152,9 +159,7 @@ inline SCE::Mesh::MeshEnvelope make_envelope(
     env.source = "test";
     env.type = type;
     env.pattern = pattern;
-    env.datacontenttype = data.empty()
-        ? SCE::Mesh::PayloadCodec::None
-        : SCE::Mesh::PayloadCodec::Json;
+    env.datacontenttype = data.empty() ? SCE::Mesh::PayloadCodec::None : SCE::Mesh::PayloadCodec::Json;
     env.data.assign(data.begin(), data.end());
     return env;
 }
@@ -163,11 +168,11 @@ inline SCE::Mesh::MeshEnvelope make_envelope(
 
 // ── Test assertion macro ─────────────────────────────────────────────
 #ifndef MESH_TEST_REQUIRE
-#define MESH_TEST_REQUIRE(cond, msg)                                           \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); \
-            return 1;                                                          \
-        }                                                                      \
+#define MESH_TEST_REQUIRE(cond, msg)                                                                                   \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__);                                       \
+            return 1;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 #endif

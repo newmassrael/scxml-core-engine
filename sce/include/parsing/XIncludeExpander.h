@@ -53,8 +53,7 @@ constexpr unsigned MAX_XINCLUDE_DEPTH = 10;
 // name (`include`) for parity with the DOM-mutating pugixml
 // expansion this expander replaced, which was lenient about
 // namespace declarations. Exposed for diagnostic context.
-inline constexpr std::string_view XINCLUDE_NS =
-    "http://www.w3.org/2001/XInclude";
+inline constexpr std::string_view XINCLUDE_NS = "http://www.w3.org/2001/XInclude";
 
 // Result of a successful XInclude expansion: the expanded source
 // text (post-splice) and a `PositionMap` keyed against that text's
@@ -94,9 +93,7 @@ struct XIncludeExpandResult {
 // path, tried after `baseDir` and before the cwd fallback (mirrors
 // the Rust `extra_dirs` parameter of `xinclude::expand`). Pass an
 // empty vector to resolve exactly as `absolute → base → cwd`.
-XIncludeExpandResult expandStringX(std::string_view content,
-                                   std::string_view selfPath,
-                                   std::string_view baseDir,
+XIncludeExpandResult expandStringX(std::string_view content, std::string_view selfPath, std::string_view baseDir,
                                    const std::vector<std::string> &includeDirs);
 
 }  // namespace SCE::parsing

@@ -350,10 +350,8 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
     // author (file, row, col) without skew. Mirrors the Rust
     // expand fast path in sce-build/src/xinclude.rs and the
     // sibling identity fast path in processSceTemplate.
-    if (!sourceText_.empty() &&
-        sourceText_.find("include") == std::string::npos) {
-        return SCE::parsing::PositionMap::identity(
-            std::filesystem::path(sourcePath_), sourceText_);
+    if (!sourceText_.empty() && sourceText_.find("include") == std::string::npos) {
+        return SCE::parsing::PositionMap::identity(std::filesystem::path(sourcePath_), sourceText_);
     }
 
     try {
@@ -369,26 +367,22 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
             content = sourceText_;
         } else {
             std::ostringstream serialised;
-            doc_->save(serialised, "",
-                       pugi::format_raw | pugi::format_no_declaration);
+            doc_->save(serialised, "", pugi::format_raw | pugi::format_no_declaration);
             content = serialised.str();
         }
 
         SCE::parsing::XIncludeExpandResult expanded =
-            SCE::parsing::expandStringX(content, sourcePath_, basePath_,
-                                        includeDirs_);
+            SCE::parsing::expandStringX(content, sourcePath_, basePath_, includeDirs_);
 
         // Reparse into the same shared_ptr'd document so every
         // `IXMLElement` the caller has already retrieved continues
         // to see the expanded tree. Mirrors processSceTemplate's
         // reset+load_buffer pattern (PugiXMLParser.cpp:406-413).
         doc_->reset();
-        const auto parseResult = doc_->load_buffer(
-            expanded.expanded_text.data(), expanded.expanded_text.size());
+        const auto parseResult = doc_->load_buffer(expanded.expanded_text.data(), expanded.expanded_text.size());
         if (!parseResult) {
-            throw SCE::parsing::ParseXmlFailed(
-                "Failed to reparse expanded XInclude: " +
-                std::string(parseResult.description()));
+            throw SCE::parsing::ParseXmlFailed("Failed to reparse expanded XInclude: " +
+                                               std::string(parseResult.description()));
         }
 
         // Threaded buffer: subsequent `processSceTemplate` operates
@@ -429,13 +423,11 @@ SCE::parsing::PositionMap PugiXMLDocument::processXInclude() {
         // std::bad_alloc propagating through expandStringX) folds
         // into the `xml/xinclude-malformed` family — the catch-all
         // for "expansion failed for an unspecified reason".
-        throw SCE::parsing::XIncludeMalformed(
-            "XInclude processing failed: " + std::string(ex.what()));
+        throw SCE::parsing::XIncludeMalformed("XInclude processing failed: " + std::string(ex.what()));
     }
 }
 
-SCE::parsing::PositionMap PugiXMLDocument::processSceTemplate(
-    const SCE::parsing::PositionMap &upstream) {
+SCE::parsing::PositionMap PugiXMLDocument::processSceTemplate(const SCE::parsing::PositionMap &upstream) {
     // String-level `<sce:use>` expansion. Operates on the
     // post-XInclude bytes captured in `sourceText_` (see
     // `processXInclude` for how that buffer becomes the threaded
@@ -464,8 +456,7 @@ SCE::parsing::PositionMap PugiXMLDocument::processSceTemplate(
     // PositionMap continues to describe every byte (whether it
     // originates in the host document or in an `xi:include`'d
     // fragment).
-    if (!sourceText_.empty() &&
-        sourceText_.find("sce:use") == std::string::npos) {
+    if (!sourceText_.empty() && sourceText_.find("sce:use") == std::string::npos) {
         return upstream;
     }
 
@@ -495,9 +486,7 @@ SCE::parsing::PositionMap PugiXMLDocument::processSceTemplate(
         return upstream;
     }
 
-    auto expanded =
-        SCE::parsing::expandString(content, sourcePath_, basePath_, includeDirs_,
-                                   upstream);
+    auto expanded = SCE::parsing::expandString(content, sourcePath_, basePath_, includeDirs_, upstream);
 
     // Reparse into the same shared_ptr'd document so every
     // `IXMLElement` the caller has already retrieved continues to
@@ -505,12 +494,10 @@ SCE::parsing::PositionMap PugiXMLDocument::processSceTemplate(
     // deallocating the owning shared_ptr, then load_buffer populates
     // it with the expanded bytes.
     doc_->reset();
-    const auto parseResult = doc_->load_buffer(
-        expanded.expanded_text.data(), expanded.expanded_text.size());
+    const auto parseResult = doc_->load_buffer(expanded.expanded_text.data(), expanded.expanded_text.size());
     if (!parseResult) {
-        throw SCE::parsing::ParseXmlFailed(
-            "Failed to reparse expanded template: " +
-            std::string(parseResult.description()));
+        throw SCE::parsing::ParseXmlFailed("Failed to reparse expanded template: " +
+                                           std::string(parseResult.description()));
     }
 
     return std::move(expanded.positions);
@@ -562,12 +549,10 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
     std::string sourceText = buffer.str();
 
     auto doc = std::make_shared<pugi::xml_document>();
-    pugi::xml_parse_result result =
-        doc->load_buffer(sourceText.data(), sourceText.size());
+    pugi::xml_parse_result result = doc->load_buffer(sourceText.data(), sourceText.size());
 
     if (!result) {
-        const std::string msg =
-            "Parse error: " + std::string(result.description());
+        const std::string msg = "Parse error: " + std::string(result.description());
         SCE_LOG_ERROR("PugiXMLParser: {}", msg);
         throw SCE::parsing::ParseXmlFailed(msg);
     }
@@ -602,8 +587,7 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseContent(const std::string &con
     pugi::xml_parse_result result = doc->load_string(content.c_str());
 
     if (!result) {
-        const std::string msg =
-            "Parse error: " + std::string(result.description());
+        const std::string msg = "Parse error: " + std::string(result.description());
         SCE_LOG_ERROR("PugiXMLParser: {}", msg);
         throw SCE::parsing::ParseXmlFailed(msg);
     }

@@ -3,8 +3,8 @@
 
 #pragma once
 #include "AotTestBase.h"
-#include "core/LogMacros.h"
 #include "AotTestRegistry.h"
+#include "core/LogMacros.h"
 #include "scripting/ScriptEngineProvider.h"
 #include "test329_sm.h"
 #include <memory>
@@ -33,9 +33,8 @@ struct Test329 : public AotTestBase {
         SM sm;
         // W3C SCXML B.1: Inject script engine handle (Path B+ Q1=(d) C++=shared_ptr).
         if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
-            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
-                &::SCE::ScriptEngineProvider::getScriptEngine(),
-                [](::SCE::IScriptEngine*){}));
+            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                       [](::SCE::IScriptEngine *) {}));
         }
 
         SCE_LOG_DEBUG("Test329 Debug: Before initialize");
@@ -47,7 +46,8 @@ struct Test329 : public AotTestBase {
         bool isPass = (currentState == SM::State::Pass);
 
         SCE_LOG_DEBUG("Test329 Debug: isInFinalState={}, currentState={}, Pass={}, Fail={}", isInFinal,
-                  static_cast<int>(currentState), static_cast<int>(SM::State::Pass), static_cast<int>(SM::State::Fail));
+                      static_cast<int>(currentState), static_cast<int>(SM::State::Pass),
+                      static_cast<int>(SM::State::Fail));
 
         if (currentState == SM::State::Fail) {
             SCE_LOG_ERROR("Test329: Reached FAIL state instead of PASS!");

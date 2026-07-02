@@ -34,18 +34,18 @@
 
 #include "mesh/transports/CustomTcpTransport.h"
 
-#include <gtest/gtest.h>
 #include <chrono>
 #include <cstdlib>
+#include <gtest/gtest.h>
 #include <thread>
 
 TEST(CrossdevDonedata, ThreeShapesSurviveWire18OverCustomTcp) {
-    const char* ep_param   = std::getenv("MESH_PEER_ENDPOINT_worker_session_f_donedata_param");
-    const char* ep_content = std::getenv("MESH_PEER_ENDPOINT_worker_session_f_donedata_content");
-    const char* ep_nested  = std::getenv("MESH_PEER_ENDPOINT_worker_session_f_donedata_nested");
-    ASSERT_NE(ep_param, nullptr)   << "param peer endpoint env var missing";
+    const char *ep_param = std::getenv("MESH_PEER_ENDPOINT_worker_session_f_donedata_param");
+    const char *ep_content = std::getenv("MESH_PEER_ENDPOINT_worker_session_f_donedata_content");
+    const char *ep_nested = std::getenv("MESH_PEER_ENDPOINT_worker_session_f_donedata_nested");
+    ASSERT_NE(ep_param, nullptr) << "param peer endpoint env var missing";
     ASSERT_NE(ep_content, nullptr) << "content peer endpoint env var missing";
-    ASSERT_NE(ep_nested, nullptr)  << "nested peer endpoint env var missing";
+    ASSERT_NE(ep_nested, nullptr) << "nested peer endpoint env var missing";
 
     using ParentEngine = SCE::Generated::parent_session_f_donedata::parent_session_f_donedata;
     using ParentRouter = SCE::Generated::parent_session_f_donedata::TransportRouter<ParentEngine>;
@@ -55,13 +55,12 @@ TEST(CrossdevDonedata, ThreeShapesSurviveWire18OverCustomTcp) {
     ParentRouter router({&parent});
 
     SCE::Mesh::CustomTcp::PortOverride port_override;
-    port_override.peer_connect_endpoints["worker_session_f_donedata_param"]   = ep_param;
+    port_override.peer_connect_endpoints["worker_session_f_donedata_param"] = ep_param;
     port_override.peer_connect_endpoints["worker_session_f_donedata_content"] = ep_content;
-    port_override.peer_connect_endpoints["worker_session_f_donedata_nested"]  = ep_nested;
-    ASSERT_TRUE(router.init(port_override))
-        << "parent TransportRouter::init(PortOverride) failed — likely a "
-           "bind collision on SCE_TEST_CROSSDEV_DONEDATA_PORT (parallel "
-           "ctest holding the RESOURCE_LOCK?)";
+    port_override.peer_connect_endpoints["worker_session_f_donedata_nested"] = ep_nested;
+    ASSERT_TRUE(router.init(port_override)) << "parent TransportRouter::init(PortOverride) failed — likely a "
+                                               "bind collision on SCE_TEST_CROSSDEV_DONEDATA_PORT (parallel "
+                                               "ctest holding the RESOURCE_LOCK?)";
 
     SCE::Test::inject_build_engine(parent);
     parent.initialize();
@@ -77,17 +76,17 @@ TEST(CrossdevDonedata, ThreeShapesSurviveWire18OverCustomTcp) {
             SUCCEED();
             return;
         }
-        ASSERT_NE(state, ParentState::Fail)
-            << "parent took the fail transition. One of the three donedata "
-               "conds did not match the wire-18 payload: either the param "
-               "shape lost the name/value pair, the content shape dropped "
-               "the primitive string, or the nested shape regressed the "
-               "canonical-JSON contract (object + array + integer).";
+        ASSERT_NE(state, ParentState::Fail) << "parent took the fail transition. One of the three donedata "
+                                               "conds did not match the wire-18 payload: either the param "
+                                               "shape lost the name/value pair, the content shape dropped "
+                                               "the primitive string, or the nested shape regressed the "
+                                               "canonical-JSON contract (object + array + integer).";
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     FAIL() << "parent did not reach Pass within 10s. "
-              "Current state=" << static_cast<int>(parent.getCurrentState())
+              "Current state="
+           << static_cast<int>(parent.getCurrentState())
            << ". Expected three sequential wire-14 → wire-18 round-trips "
               "(param → content → nested). A timeout usually means the "
               "current phase's PortOverride did not redirect the dial or "

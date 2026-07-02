@@ -34,39 +34,46 @@ namespace SCE::Core {
 // Used in if constexpr for optional policy feature detection.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-template<typename P, typename E, typename = void>
-struct HasDataModelInitTrait : std::false_type {};
-template<typename P, typename E>
-struct HasDataModelInitTrait<P, E, std::void_t<decltype(std::declval<P>().initializeDataModel(std::declval<E&>()))>> : std::true_type {};
+template <typename P, typename E, typename = void> struct HasDataModelInitTrait : std::false_type {};
 
-template<typename P, typename E, typename = void>
-struct HasInvokeSupportTrait : std::false_type {};
-template<typename P, typename E>
-struct HasInvokeSupportTrait<P, E, std::void_t<decltype(std::declval<P>().executePendingInvokes(std::declval<E&>()))>> : std::true_type {};
+template <typename P, typename E>
+struct HasDataModelInitTrait<P, E, std::void_t<decltype(std::declval<P>().initializeDataModel(std::declval<E &>()))>>
+    : std::true_type {};
 
-template<typename P, typename E, typename = void>
-struct HasChildTickTrait : std::false_type {};
-template<typename P, typename E>
-struct HasChildTickTrait<P, E, std::void_t<decltype(std::declval<P>().tickChildren(std::declval<E&>()))>> : std::true_type {};
+template <typename P, typename E, typename = void> struct HasInvokeSupportTrait : std::false_type {};
 
-template<typename P, typename E, typename = void>
-struct HasAutoforwardTrait : std::false_type {};
-template<typename P, typename E>
-struct HasAutoforwardTrait<P, E, std::void_t<decltype(std::declval<P>().forwardToAutoforwardChildren(std::declval<const std::string&>(), std::declval<E&>()))>> : std::true_type {};
+template <typename P, typename E>
+struct HasInvokeSupportTrait<P, E, std::void_t<decltype(std::declval<P>().executePendingInvokes(std::declval<E &>()))>>
+    : std::true_type {};
 
-template<typename P, typename M, typename E, typename = void>
-struct HasFinalizeTrait : std::false_type {};
-template<typename P, typename M, typename E>
-struct HasFinalizeTrait<P, M, E, std::void_t<decltype(std::declval<P>().executeFinalizeForChildEvent(std::declval<const M&>(), std::declval<E&>()))>> : std::true_type {};
+template <typename P, typename E, typename = void> struct HasChildTickTrait : std::false_type {};
 
-template<typename P, typename = void>
-struct HasActiveStatesTrait : std::false_type {};
-template<typename P>
+template <typename P, typename E>
+struct HasChildTickTrait<P, E, std::void_t<decltype(std::declval<P>().tickChildren(std::declval<E &>()))>>
+    : std::true_type {};
+
+template <typename P, typename E, typename = void> struct HasAutoforwardTrait : std::false_type {};
+
+template <typename P, typename E>
+struct HasAutoforwardTrait<P, E,
+                           std::void_t<decltype(std::declval<P>().forwardToAutoforwardChildren(
+                               std::declval<const std::string &>(), std::declval<E &>()))>> : std::true_type {};
+
+template <typename P, typename M, typename E, typename = void> struct HasFinalizeTrait : std::false_type {};
+
+template <typename P, typename M, typename E>
+struct HasFinalizeTrait<P, M, E,
+                        std::void_t<decltype(std::declval<P>().executeFinalizeForChildEvent(
+                            std::declval<const M &>(), std::declval<E &>()))>> : std::true_type {};
+
+template <typename P, typename = void> struct HasActiveStatesTrait : std::false_type {};
+
+template <typename P>
 struct HasActiveStatesTrait<P, std::void_t<decltype(std::declval<P>().getActiveStates())>> : std::true_type {};
 
-template<typename P, typename = void>
-struct HasExternalEventFlagTrait : std::false_type {};
-template<typename P>
+template <typename P, typename = void> struct HasExternalEventFlagTrait : std::false_type {};
+
+template <typename P>
 struct HasExternalEventFlagTrait<P, std::void_t<decltype(std::declval<P>().nextEventIsExternal_)>> : std::true_type {};
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -115,9 +122,7 @@ struct HasExternalEventFlagTrait<P, std::void_t<decltype(std::declval<P>().nextE
 /// Minimal state hierarchy navigation capability.
 /// Any policy used with HierarchicalStateHelper must satisfy this.
 template <typename P>
-concept HierarchyPolicy = requires {
-    typename P::State;
-} && requires(typename P::State s) {
+concept HierarchyPolicy = requires { typename P::State; } && requires(typename P::State s) {
     { P::getParent(s) } -> std::same_as<std::optional<typename P::State>>;
     { P::isCompoundState(s) } -> std::convertible_to<bool>;
     { P::getInitialChild(s) } -> std::same_as<typename P::State>;
@@ -230,26 +235,20 @@ concept HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
 // Feature detection works identically: if constexpr (HasDataModelInit<P, E>)
 // ─────────────────────────────────────────────────────────────────────────────
 
-template <typename P, typename Engine>
-inline constexpr bool HasDataModelInit = HasDataModelInitTrait<P, Engine>::value;
+template <typename P, typename Engine> inline constexpr bool HasDataModelInit = HasDataModelInitTrait<P, Engine>::value;
 
-template <typename P, typename Engine>
-inline constexpr bool HasInvokeSupport = HasInvokeSupportTrait<P, Engine>::value;
+template <typename P, typename Engine> inline constexpr bool HasInvokeSupport = HasInvokeSupportTrait<P, Engine>::value;
 
-template <typename P, typename Engine>
-inline constexpr bool HasChildTick = HasChildTickTrait<P, Engine>::value;
+template <typename P, typename Engine> inline constexpr bool HasChildTick = HasChildTickTrait<P, Engine>::value;
 
-template <typename P, typename Engine>
-inline constexpr bool HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
+template <typename P, typename Engine> inline constexpr bool HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
 
 template <typename P, typename M, typename Engine>
 inline constexpr bool HasFinalize = HasFinalizeTrait<P, M, Engine>::value;
 
-template <typename P>
-inline constexpr bool HasActiveStates = HasActiveStatesTrait<P>::value;
+template <typename P> inline constexpr bool HasActiveStates = HasActiveStatesTrait<P>::value;
 
-template <typename P>
-inline constexpr bool HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
+template <typename P> inline constexpr bool HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
 
 #endif  // __cpp_concepts >= 202002L
 

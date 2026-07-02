@@ -108,8 +108,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         std::string msg = tpl.what();
         if (tpl.location().has_value()) {
             const auto &loc = *tpl.location();
-            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) +
-                   ":" + std::to_string(loc.col);
+            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) + ":" + std::to_string(loc.col);
         }
         addError(msg);
         recordDiagnostic(tpl.clone());
@@ -123,8 +122,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         std::string msg = "XInclude processing failed: " + std::string(xie.what());
         if (xie.location().has_value()) {
             const auto &loc = *xie.location();
-            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) +
-                   ":" + std::to_string(loc.col);
+            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) + ":" + std::to_string(loc.col);
         }
         addError(msg);
         recordDiagnostic(xie.clone());
@@ -146,8 +144,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &
         // D4 α-strict, `typeid(ex).name()` is NOT included — the wire
         // detail field would emit different strings on libstdc++ /
         // libc++ / MSVC, breaking portability.
-        SCE::parsing::ParseException pe(
-            "Exception while parsing file: " + std::string(ex.what()));
+        SCE::parsing::ParseException pe("Exception while parsing file: " + std::string(ex.what()));
         addError(pe.what());
         recordDiagnostic(pe.clone());
         return nullptr;
@@ -192,8 +189,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         std::string msg = tpl.what();
         if (tpl.location().has_value()) {
             const auto &loc = *tpl.location();
-            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) +
-                   ":" + std::to_string(loc.col);
+            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) + ":" + std::to_string(loc.col);
         }
         addError(msg);
         recordDiagnostic(tpl.clone());
@@ -206,8 +202,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
         std::string msg = "XInclude processing failed: " + std::string(xie.what());
         if (xie.location().has_value()) {
             const auto &loc = *xie.location();
-            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) +
-                   ":" + std::to_string(loc.col);
+            msg += " at " + loc.file.string() + ":" + std::to_string(loc.row) + ":" + std::to_string(loc.col);
         }
         addError(msg);
         recordDiagnostic(xie.clone());
@@ -226,8 +221,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::strin
     } catch (const std::exception &ex) {
         // §wire-W4 D1-C: wrap unexpected std::exception as typed
         // `ParseException`.
-        SCE::parsing::ParseException pe(
-            "Exception while parsing content: " + std::string(ex.what()));
+        SCE::parsing::ParseException pe("Exception while parsing content: " + std::string(ex.what()));
         addError(pe.what());
         recordDiagnostic(pe.clone());
         return nullptr;
@@ -261,8 +255,7 @@ std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::sh
     // otherwise be matched by local-name-only dispatch.
     if (!ParsingCommon::matchNodeName(rootElement->getName(), "scxml") ||
         !ParsingCommon::isScxmlNamespace(rootElement)) {
-        throw SCE::parsing::ParseWrongRootElement(
-            "Root element is not 'scxml', found: " + rootElement->getName());
+        throw SCE::parsing::ParseWrongRootElement("Root element is not 'scxml', found: " + rootElement->getName());
     }
 
     SCE_LOG_INFO("Valid SCXML document found, parsing structure");
@@ -348,8 +341,8 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
         model->addGuard(guard);
 
         if (!guard->getCondition().empty() && !guard->getTargetState().empty()) {
-            SCE_LOG_DEBUG("Added guard: {} with condition: {} targeting state: {}", guard->getId(), guard->getCondition(),
-                      guard->getTargetState());
+            SCE_LOG_DEBUG("Added guard: {} with condition: {} targeting state: {}", guard->getId(),
+                          guard->getCondition(), guard->getTargetState());
         } else if (!guard->getCondition().empty()) {
             SCE_LOG_DEBUG("Added guard: {} with condition: {}", guard->getId(), guard->getCondition());
         } else if (!guard->getTargetState().empty()) {
@@ -399,14 +392,14 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
                 // §wire-W5 D5: typed-throw replaces addError + return-false
                 // so the parser-entry catch arm can record both the legacy
                 // string and the typed Diagnostic in one site.
-                throw SCE::parsing::SemanticTopLevelScriptUnloaded(
-                    std::move(errorDetail),
-                    /*index=*/std::optional<std::size_t>{i + 1},
-                    /*src=*/std::move(srcOpt));
+                throw SCE::parsing::SemanticTopLevelScriptUnloaded(std::move(errorDetail),
+                                                                   /*index=*/std::optional<std::size_t>{i + 1},
+                                                                   /*src=*/std::move(srcOpt));
             }
         }
 
-        SCE_LOG_DEBUG("Successfully parsed {}/{} top-level script(s) (W3C SCXML 5.8)", parsedCount, scriptElements.size());
+        SCE_LOG_DEBUG("Successfully parsed {}/{} top-level script(s) (W3C SCXML 5.8)", parsedCount,
+                      scriptElements.size());
     }
 
     // Parse states
@@ -426,8 +419,7 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
         // §wire-W5 D5: typed-throw — folded onto `validation/empty-collection`
         // per W4 D4 fold (concept identity with forge "kind requires at
         // least one X").
-        throw SCE::parsing::SemanticNoStates(
-            "No state nodes found in SCXML document");
+        throw SCE::parsing::SemanticNoStates("No state nodes found in SCXML document");
     }
 
     SCE_LOG_INFO("Found {} root state nodes", rootStateElements.size());
@@ -534,8 +526,7 @@ const std::vector<std::string> &SCE::SCXMLParser::getWarningMessages() const {
     return warningMessages_;
 }
 
-const std::vector<std::unique_ptr<SCE::parsing::Diagnostic>> &
-SCE::SCXMLParser::getDiagnostics() const noexcept {
+const std::vector<std::unique_ptr<SCE::parsing::Diagnostic>> &SCE::SCXMLParser::getDiagnostics() const noexcept {
     return diagnostics_;
 }
 
@@ -555,8 +546,7 @@ void SCE::SCXMLParser::addWarning(const std::string &message) {
     warningMessages_.push_back(message);
 }
 
-void SCE::SCXMLParser::recordDiagnostic(
-    std::unique_ptr<SCE::parsing::Diagnostic> diag) {
+void SCE::SCXMLParser::recordDiagnostic(std::unique_ptr<SCE::parsing::Diagnostic> diag) {
     if (diag) {
         diagnostics_.push_back(std::move(diag));
     }
@@ -596,11 +586,9 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                 // terminates the parse, paralleling the parser-entry
                 // ParseError catch arm).
                 throw SCE::parsing::SemanticInitialStateUnknown(
-                    "Initial state '" + initialStateId + "' not found",
-                    initialStateId,
+                    "Initial state '" + initialStateId + "' not found", initialStateId,
                     SCE::parsing::SemanticInitialStateUnknown::Scope::DocumentRoot,
-                    /*parent_id=*/std::string{},
-                    availableStateIds);
+                    /*parent_id=*/std::string{}, availableStateIds);
             }
         }
     }
@@ -629,13 +617,10 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                     // §wire-W5 D5 typed-throw — folded onto
                     // `validation/invalid-reference` (concept identity
                     // with forge `ValidationError::InvalidReference`).
-                    throw SCE::parsing::SemanticTransitionTargetUnknown(
-                        "Transition in state '" + state->getId() +
-                            "' references non-existent target state '" +
-                            target + "'",
-                        state->getId(),
-                        target,
-                        availableStateIds);
+                    throw SCE::parsing::SemanticTransitionTargetUnknown("Transition in state '" + state->getId() +
+                                                                            "' references non-existent target state '" +
+                                                                            target + "'",
+                                                                        state->getId(), target, availableStateIds);
                 }
             }
         }
@@ -651,13 +636,9 @@ bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                     // discriminates root vs compound for in-process
                     // typed dispatch.
                     throw SCE::parsing::SemanticInitialStateUnknown(
-                        "State '" + state->getId() +
-                            "' references non-existent initial state '" +
-                            initialStateId + "'",
-                        initialStateId,
-                        SCE::parsing::SemanticInitialStateUnknown::Scope::CompoundState,
-                        /*parent_id=*/state->getId(),
-                        availableStateIds);
+                        "State '" + state->getId() + "' references non-existent initial state '" + initialStateId + "'",
+                        initialStateId, SCE::parsing::SemanticInitialStateUnknown::Scope::CompoundState,
+                        /*parent_id=*/state->getId(), availableStateIds);
                 }
             }
         }

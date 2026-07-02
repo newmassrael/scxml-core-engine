@@ -46,8 +46,7 @@ int main(void) {
 
     while (!test226_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test226: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test226_active_states(&sm));
+            fprintf(stderr, "test226: TIMEOUT — active = 0x%08x\n", (unsigned)test226_active_states(&sm));
             test226_destroy(&sm);
             return 1;
         }
@@ -57,8 +56,7 @@ int main(void) {
 
     int rc = test226_in_state(&sm, TEST226_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test226: FAIL — active = 0x%08x\n",
-                (unsigned)test226_active_states(&sm));
+        fprintf(stderr, "test226: FAIL — active = 0x%08x\n", (unsigned)test226_active_states(&sm));
     }
     test226_destroy(&sm);
     return rc;

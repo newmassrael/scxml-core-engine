@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "core/LogMacros.h"
 #include "core/EventQueueConcept.h"
+#include "core/LogMacros.h"
 #include <functional>
 
 namespace SCE::Core {
@@ -131,7 +131,7 @@ public:
 
         if (iterations >= maxIterations) {
             SCE_LOG_ERROR("EventProcessingAlgorithms: Eventless transition loop detected after {} iterations",
-                      maxIterations);
+                          maxIterations);
             return false;
         }
 

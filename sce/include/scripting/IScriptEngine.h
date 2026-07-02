@@ -62,7 +62,8 @@ public:
      * @param expression expression to evaluate
      * @return Future with evaluation result
      */
-    virtual std::future<ScriptResult> evaluateExpression(const std::string &sessionId, const std::string &expression) = 0;
+    virtual std::future<ScriptResult> evaluateExpression(const std::string &sessionId,
+                                                         const std::string &expression) = 0;
 
     /**
      * @brief Validate expression syntax without executing
@@ -70,7 +71,8 @@ public:
      * @param expression expression to validate
      * @return Future with validation result (true if syntax is valid)
      */
-    virtual std::future<ScriptResult> validateExpression(const std::string &sessionId, const std::string &expression) = 0;
+    virtual std::future<ScriptResult> validateExpression(const std::string &sessionId,
+                                                         const std::string &expression) = 0;
 
     // === Variable Management ===
 
@@ -82,7 +84,7 @@ public:
      * @return Future indicating success/failure
      */
     virtual std::future<ScriptResult> setVariable(const std::string &sessionId, const std::string &name,
-                                              const ScriptValue &value) = 0;
+                                                  const ScriptValue &value) = 0;
 
     /**
      * @brief Get a variable from the specified session
@@ -100,7 +102,7 @@ public:
      * @return Future indicating success/failure
      */
     virtual std::future<ScriptResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
-                                                   const std::string &xmlContent) = 0;
+                                                       const std::string &xmlContent) = 0;
 
     /**
      * @brief Check if a variable exists in the session scope
@@ -131,7 +133,7 @@ public:
      * @return Future indicating success/failure
      */
     virtual std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                       const std::vector<std::string> &ioProcessors) = 0;
+                                                           const std::vector<std::string> &ioProcessors) = 0;
 
     /**
      * @brief Set current event from Event object (§scxml-5.10)

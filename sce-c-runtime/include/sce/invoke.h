@@ -15,10 +15,10 @@
 #ifndef SCE_INVOKE_H
 #define SCE_INVOKE_H
 
-#include <stdint.h>
 #include <stddef.h>
-#include <string.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "sce/types.h"
 
@@ -55,11 +55,8 @@ typedef struct sce_invoke_pending_queue_s {
    overflow rolls a build-time -D bump. cpp's std::vector grows; C11's
    bounded array matches the runtime/scheduler discipline applied to
    every other queue in this engine (event_queue, scheduled_queue). */
-SCE_C_UNUSED static inline void
-sce_invoke_pending_push(sce_invoke_pending_queue_t *q,
-                        int state,
-                        int invoke_idx,
-                        const char *invoke_id) {
+SCE_C_UNUSED static inline void sce_invoke_pending_push(sce_invoke_pending_queue_t *q, int state, int invoke_idx,
+                                                        const char *invoke_id) {
     if (q->count >= (int)SCE_MAX_INVOKES) {
         return;
     }
@@ -73,8 +70,7 @@ sce_invoke_pending_push(sce_invoke_pending_queue_t *q,
    Compaction in place (cpp uses std::remove_if + erase; C11 walks the
    bounded array). Multiple invokes per state are valid (test422), so
    the walk does not stop at the first match. */
-SCE_C_UNUSED static inline void
-sce_invoke_pending_cancel_for_state(sce_invoke_pending_queue_t *q, int state) {
+SCE_C_UNUSED static inline void sce_invoke_pending_cancel_for_state(sce_invoke_pending_queue_t *q, int state) {
     int w = 0;
     for (int r = 0; r < q->count; r++) {
         if (q->entries[r].state != state) {
@@ -90,8 +86,7 @@ sce_invoke_pending_cancel_for_state(sce_invoke_pending_queue_t *q, int state) {
 /* W3C SCXML 6.4: Clear queue after execution.
    Used by `<sm>_execute_pending_invokes` to reset between macrosteps —
    matches cpp `pending.clear()` after copying for safe iteration. */
-SCE_C_UNUSED static inline void
-sce_invoke_pending_clear(sce_invoke_pending_queue_t *q) {
+SCE_C_UNUSED static inline void sce_invoke_pending_clear(sce_invoke_pending_queue_t *q) {
     q->count = 0;
 }
 
@@ -103,18 +98,12 @@ sce_invoke_pending_clear(sce_invoke_pending_queue_t *q) {
    state id and a dot. Caller-provided buffer must be sized for the
    formatted string; buf[SCE_MAX_ID_LEN] is the conventional sizing
    (matches `sce_invoke_pending_t::invoke_id`). */
-SCE_C_UNUSED static inline void
-sce_invoke_format_id(char *buf,
-                     size_t bufsz,
-                     const char *state_id,
-                     const void *sm_ptr,
-                     int invoke_idx) {
+SCE_C_UNUSED static inline void sce_invoke_format_id(char *buf, size_t bufsz, const char *state_id, const void *sm_ptr,
+                                                     int invoke_idx) {
     if (buf == NULL || bufsz == 0u) {
         return;
     }
-    (void)snprintf(buf, bufsz, "%s.%lx._invoke_%d",
-                   state_id != NULL ? state_id : "",
-                   (unsigned long)(uintptr_t)sm_ptr,
+    (void)snprintf(buf, bufsz, "%s.%lx._invoke_%d", state_id != NULL ? state_id : "", (unsigned long)(uintptr_t)sm_ptr,
                    invoke_idx);
 }
 
@@ -126,13 +115,11 @@ sce_invoke_format_id(char *buf,
    the event itself; the fully-qualified name is stashed onto the
    event's `invoke_id` metadata field so a transition cond inspecting
    `_event.invokeid` can select on it. */
-SCE_C_UNUSED static inline void
-sce_invoke_format_done_event_name(char *buf, size_t bufsz, const char *invoke_id) {
+SCE_C_UNUSED static inline void sce_invoke_format_done_event_name(char *buf, size_t bufsz, const char *invoke_id) {
     if (buf == NULL || bufsz == 0u) {
         return;
     }
-    (void)snprintf(buf, bufsz, "done.invoke.%s",
-                   invoke_id != NULL ? invoke_id : "");
+    (void)snprintf(buf, bufsz, "done.invoke.%s", invoke_id != NULL ? invoke_id : "");
 }
 
 #ifdef __cplusplus

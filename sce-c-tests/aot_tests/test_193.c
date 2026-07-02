@@ -3,7 +3,10 @@
 //
 // W3C SCXML test193 — C11 AOT runner.
 //
-// W3C SCXML 6.2: omitting target/targetexpr on <send> still routes through the external queue (not internal) — the s0 onentry's bare `<send event=internal>` and explicit-type `<send event=event1>` both land externally; the App.D.2 internal-priority drain pops nothing internal, then external pops in queue order so 'internal' (queued first) drives s0→s1 before event1 reaches the s1 pass transition.
+// W3C SCXML 6.2: omitting target/targetexpr on <send> still routes through the external queue (not internal) — the s0
+// onentry's bare `<send event=internal>` and explicit-type `<send event=event1>` both land externally; the App.D.2
+// internal-priority drain pops nothing internal, then external pops in queue order so 'internal' (queued first) drives
+// s0→s1 before event1 reaches the s1 pass transition.
 
 #define _POSIX_C_SOURCE 199309L
 
@@ -25,8 +28,7 @@ int main(void) {
 
     while (!test193_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test193: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test193_active_states(&sm));
+            fprintf(stderr, "test193: TIMEOUT — active = 0x%08x\n", (unsigned)test193_active_states(&sm));
             test193_destroy(&sm);
             return 1;
         }
@@ -36,8 +38,7 @@ int main(void) {
 
     int rc = test193_in_state(&sm, TEST193_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test193: FAIL — active = 0x%08x\n",
-                (unsigned)test193_active_states(&sm));
+        fprintf(stderr, "test193: FAIL — active = 0x%08x\n", (unsigned)test193_active_states(&sm));
     }
     test193_destroy(&sm);
     return rc;

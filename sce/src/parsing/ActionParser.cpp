@@ -10,11 +10,11 @@
 #include "actions/RaiseAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
-#include "common/FileLoadingHelper.h"
 #include "backends/LogUtils.h"
+#include "common/FileLoadingHelper.h"
 #include "core/LogMacros.h"
-#include "parsing/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
+#include "parsing/XmlSerializationHelper.h"
 #include <algorithm>
 #include <sstream>
 
@@ -349,7 +349,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             }
 
             SCE_LOG_DEBUG("  Child {}: name='{}', currentBranch={}", childIndex, childName,
-                      currentBranch ? "else/elseif" : "if");
+                          currentBranch ? "else/elseif" : "if");
 
             if (childName == "elseif") {
                 std::string elseifCondition = element->hasAttribute("cond") ? element->getAttribute("cond") : "";
@@ -365,7 +365,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
                         // Add to current elseif/else branch
                         currentBranch->actions.push_back(childAction);
                         SCE_LOG_DEBUG("    Added {} action to current branch (size now: {})", childName,
-                                  currentBranch->actions.size());
+                                      currentBranch->actions.size());
                     } else {
                         // Add to main if branch (before any elseif/else)
                         ifAction->addIfAction(childAction);

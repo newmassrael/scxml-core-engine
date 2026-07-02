@@ -14,13 +14,15 @@ namespace SCE::Forge {
 /// Out-of-range x is clamped (extrapolate / error policies are applied by
 /// the generated code before this call).
 template <std::size_t N>
-constexpr double linear(const double (&axis)[N],
-                        const double (&values)[N],
-                        double x) noexcept {
+constexpr double linear(const double (&axis)[N], const double (&values)[N], double x) noexcept {
     static_assert(N >= 2, "linear interpolation requires at least 2 axis points");
 
-    if (x <= axis[0]) return values[0];
-    if (x >= axis[N - 1]) return values[N - 1];
+    if (x <= axis[0]) {
+        return values[0];
+    }
+    if (x >= axis[N - 1]) {
+        return values[N - 1];
+    }
 
     for (std::size_t i = 0; i + 1 < N; ++i) {
         if (x <= axis[i + 1]) {
@@ -38,11 +40,8 @@ constexpr double linear(const double (&axis)[N],
 /// 2D bilinear interpolation. `axis_x` indexes rows, `axis_y` indexes columns,
 /// `values[r][c]` is row-major. Both inputs are clamped to their axis ranges.
 template <std::size_t Rows, std::size_t Cols>
-constexpr double bilinear(const double (&axis_x)[Rows],
-                          const double (&axis_y)[Cols],
-                          const double (&values)[Rows][Cols],
-                          double x,
-                          double y) noexcept {
+constexpr double bilinear(const double (&axis_x)[Rows], const double (&axis_y)[Cols],
+                          const double (&values)[Rows][Cols], double x, double y) noexcept {
     static_assert(Rows >= 2, "bilinear interpolation requires at least 2 rows");
     static_assert(Cols >= 2, "bilinear interpolation requires at least 2 cols");
 
@@ -100,4 +99,4 @@ constexpr double bilinear(const double (&axis_x)[Rows],
     return v0 + ty * (v1 - v0);
 }
 
-} // namespace SCE::Forge
+}  // namespace SCE::Forge

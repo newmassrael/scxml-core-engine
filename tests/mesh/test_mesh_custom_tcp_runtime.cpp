@@ -20,13 +20,13 @@
 //      deliveries that produce the same final state.
 
 #include "brake_sm.h"
-#include "motor_sm.h"
 #include "brake_transport.h"
+#include "motor_sm.h"
 #include "motor_transport.h"
 
 #include "common/Uuid.h"
-#include "mesh/transports/CustomTcpTransport.h"
 #include "mesh/MeshEnvelope.h"
+#include "mesh/transports/CustomTcpTransport.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -41,24 +41,24 @@
 // in-test recording server's port in lockstep so a CMake override
 // flows through both halves of the test atomically.
 #ifndef SCE_TEST_CUSTOM_TCP_PORT
-#  error "SCE_TEST_CUSTOM_TCP_PORT must be defined by the build system"
+#error "SCE_TEST_CUSTOM_TCP_PORT must be defined by the build system"
 #endif
 #define SCE_STRINGIFY_INNER(x) #x
 #define SCE_STRINGIFY(x) SCE_STRINGIFY_INNER(x)
-static constexpr const char* kTestEndpoint =
-    "127.0.0.1:" SCE_STRINGIFY(SCE_TEST_CUSTOM_TCP_PORT);
+static constexpr const char *kTestEndpoint = "127.0.0.1:" SCE_STRINGIFY(SCE_TEST_CUSTOM_TCP_PORT);
 
 namespace {
 
 constexpr auto kPollInterval = std::chrono::milliseconds(10);
-constexpr int kWaitIters = 200;       // 2s budget for the engine path
+constexpr int kWaitIters = 200;  // 2s budget for the engine path
 constexpr int kFifoCount = 100;
-constexpr int kFifoWaitIters = 500;   // 5s budget for 100-envelope drain
+constexpr int kFifoWaitIters = 500;  // 5s budget for 100-envelope drain
 
-template <typename Predicate>
-bool waitFor(Predicate p, int iters = kWaitIters) {
+template <typename Predicate> bool waitFor(Predicate p, int iters = kWaitIters) {
     for (int i = 0; i < iters; ++i) {
-        if (p()) return true;
+        if (p()) {
+            return true;
+        }
         std::this_thread::sleep_for(kPollInterval);
     }
     return false;
@@ -120,9 +120,7 @@ int main() {
                 return 103;
             }
             if (ntohs(ephem.sin_port) != 0) {
-                std::fprintf(stderr,
-                             "FAIL: parse_endpoint accepted :0 but sin_port=%u\n",
-                             ntohs(ephem.sin_port));
+                std::fprintf(stderr, "FAIL: parse_endpoint accepted :0 but sin_port=%u\n", ntohs(ephem.sin_port));
                 return 103;
             }
         }
@@ -146,9 +144,7 @@ int main() {
     // A4) relies on exporting this endpoint to the peer process at
     // runtime rather than baking a static port into codegen.
     {
-        SCE::Mesh::CustomTcp::Server ephem_server(
-            "127.0.0.1:0",
-            [](const SCE::Mesh::MeshEnvelope&) {});
+        SCE::Mesh::CustomTcp::Server ephem_server("127.0.0.1:0", [](const SCE::Mesh::MeshEnvelope &) {});
         if (!ephem_server.valid()) {
             std::fprintf(stderr, "FAIL: ephemeral Server bind failed on 127.0.0.1:0\n");
             return 106;
@@ -166,14 +162,11 @@ int main() {
         // format to whatever parse_endpoint accepts.
         sockaddr_in verify{};
         if (!SCE::Mesh::CustomTcp::detail::parse_endpoint(*ep, verify)) {
-            std::fprintf(stderr, "FAIL: local_endpoint returned unparseable '%s'\n",
-                         ep->c_str());
+            std::fprintf(stderr, "FAIL: local_endpoint returned unparseable '%s'\n", ep->c_str());
             return 108;
         }
         if (ntohs(verify.sin_port) == 0) {
-            std::fprintf(stderr,
-                         "FAIL: local_endpoint returned ephemeral sentinel '%s'\n",
-                         ep->c_str());
+            std::fprintf(stderr, "FAIL: local_endpoint returned ephemeral sentinel '%s'\n", ep->c_str());
             return 109;
         }
         // After explicit shutdown the listen fd closes, so the readback
@@ -213,9 +206,7 @@ int main() {
         }
     }
     {
-        SCE::Mesh::CustomTcp::Server target_server(
-            "127.0.0.1:0",
-            [](const SCE::Mesh::MeshEnvelope&) {});
+        SCE::Mesh::CustomTcp::Server target_server("127.0.0.1:0", [](const SCE::Mesh::MeshEnvelope &) {});
         if (!target_server.valid()) {
             std::fprintf(stderr, "FAIL: override-target server bind failed\n");
             return 114;
@@ -273,8 +264,7 @@ int main() {
         motor.initialize();
 
         if (motor.getCurrentState() != SCE::Generated::motor::State::Running) {
-            std::fprintf(stderr,
-                         "FAIL: motor did not enter 'running' on initialize (state=%d)\n",
+            std::fprintf(stderr, "FAIL: motor did not enter 'running' on initialize (state=%d)\n",
                          static_cast<int>(motor.getCurrentState()));
             return 2;
         }
@@ -314,10 +304,7 @@ int main() {
     // between send and receive sequences.
     OrderRecorder recorder;
     SCE::Mesh::CustomTcp::Server recording_server(
-        kTestEndpoint,
-        [&recorder](const SCE::Mesh::MeshEnvelope& env) {
-            recorder.push(env.type);
-        });
+        kTestEndpoint, [&recorder](const SCE::Mesh::MeshEnvelope &env) { recorder.push(env.type); });
     if (!recording_server.valid()) {
         std::fprintf(stderr, "FAIL: recording server bind failed (port reuse race?)\n");
         return 4;
@@ -357,9 +344,7 @@ int main() {
     // relation between send() return and recorder.push().
     if (!recorder.waitForCount(kFifoCount, std::chrono::seconds(5))) {
         std::lock_guard<std::mutex> lock(recorder.m);
-        std::fprintf(stderr,
-                     "FAIL: only %zu of %d envelopes received within 5s\n",
-                     recorder.events.size(), kFifoCount);
+        std::fprintf(stderr, "FAIL: only %zu of %d envelopes received within 5s\n", recorder.events.size(), kFifoCount);
         return 6;
     }
 
@@ -369,16 +354,13 @@ int main() {
     {
         std::lock_guard<std::mutex> lock(recorder.m);
         if (recorder.events.size() != sent.size()) {
-            std::fprintf(stderr,
-                         "FAIL: received %zu events, sent %zu\n",
-                         recorder.events.size(), sent.size());
+            std::fprintf(stderr, "FAIL: received %zu events, sent %zu\n", recorder.events.size(), sent.size());
             return 7;
         }
         for (std::size_t i = 0; i < sent.size(); ++i) {
             if (recorder.events[i] != sent[i]) {
-                std::fprintf(stderr,
-                             "FAIL: FIFO violation at index %zu: sent='%s' received='%s'\n",
-                             i, sent[i].c_str(), recorder.events[i].c_str());
+                std::fprintf(stderr, "FAIL: FIFO violation at index %zu: sent='%s' received='%s'\n", i, sent[i].c_str(),
+                             recorder.events[i].c_str());
                 return 8;
             }
         }

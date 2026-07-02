@@ -43,7 +43,7 @@ int main() {
     // Mirrors deploy_scxml_invoke_zenoh.yaml ecu1.transports.zenoh.connect.
     // The relay session below binds this address so both routers'
     // generated init() reaches a listener via peer mesh routing.
-    constexpr const char* kListen = "tcp/127.0.0.1:17448";
+    constexpr const char *kListen = "tcp/127.0.0.1:17448";
 
     // Test fixture relay listener. Multicast disabled in `open_peer`
     // so peer discovery happens deterministically through this
@@ -55,23 +55,19 @@ int main() {
     // the §9.6 endpoint emplace + start() runs there too, declaring
     // the Publisher on `sce/scxml_invoke/p2c/<parent>/<worker>` and
     // the Subscriber on `sce/scxml_invoke/c2p/<worker>/<parent>`.
-    using ParentEngine =
-        SCE::Generated::scxml_invoke_zenoh_parent::scxml_invoke_zenoh_parent;
+    using ParentEngine = SCE::Generated::scxml_invoke_zenoh_parent::scxml_invoke_zenoh_parent;
     ParentEngine parent;
-    SCE::Generated::scxml_invoke_zenoh_parent::TransportRouter<ParentEngine>
-        parent_router({&parent});
+    SCE::Generated::scxml_invoke_zenoh_parent::TransportRouter<ParentEngine> parent_router({&parent});
     if (!parent_router.init()) {
         std::fprintf(stderr, "FAIL: parent_router.init() returned false\n");
         return 1;
     }
 
-    using WorkerEngine =
-        SCE::Generated::scxml_invoke_zenoh_worker::scxml_invoke_zenoh_worker;
+    using WorkerEngine = SCE::Generated::scxml_invoke_zenoh_worker::scxml_invoke_zenoh_worker;
     WorkerEngine worker;
     SCE::Test::inject_build_engine(worker);
     worker.initialize();
-    SCE::Generated::scxml_invoke_zenoh_worker::TransportRouter<WorkerEngine>
-        worker_router({&worker});
+    SCE::Generated::scxml_invoke_zenoh_worker::TransportRouter<WorkerEngine> worker_router({&worker});
     if (!worker_router.init()) {
         std::fprintf(stderr, "FAIL: worker_router.init() returned false\n");
         return 1;
@@ -118,15 +114,13 @@ int main() {
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
         if (parent.getCurrentState() == State::Pass) {
-            std::printf(
-                "SCE Mesh §9.6 Session 5 Zenoh scxml-invoke roundtrip: PASS\n");
+            std::printf("SCE Mesh §9.6 Session 5 Zenoh scxml-invoke roundtrip: PASS\n");
             return 0;
         }
         if (parent.getCurrentState() == State::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent observed error.execution — the wire "
-                         "is present but the wire-15/18 success path did "
-                         "not complete over Zenoh.\n");
+            std::fprintf(stderr, "FAIL: parent observed error.execution — the wire "
+                                 "is present but the wire-15/18 success path did "
+                                 "not complete over Zenoh.\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));

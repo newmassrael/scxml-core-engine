@@ -3,7 +3,9 @@
 //
 // W3C SCXML test314 — C11 AOT runner.
 //
-// W3C SCXML 5.4: `<assign expr=...>` whose expression evaluates to undefined / null / non-existent property raises `error.execution` — same lua_assign error-path that test313 covers, exercised through a different illegal-expression shape (right-hand-side resolution failure rather than illegal location).
+// W3C SCXML 5.4: `<assign expr=...>` whose expression evaluates to undefined / null / non-existent property raises
+// `error.execution` — same lua_assign error-path that test313 covers, exercised through a different illegal-expression
+// shape (right-hand-side resolution failure rather than illegal location).
 
 #include <stdio.h>
 

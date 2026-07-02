@@ -50,12 +50,12 @@ std::vector<DataModelInitializer::DataItemInfo> DataModelInitializer::collectAll
                 allDataItems.push_back(DataItemInfo{state->getId(), item});
             }
             SCE_LOG_DEBUG("DataModelInitializer: Collected {} data items from state '{}'", stateDataItems.size(),
-                      state->getId());
+                          state->getId());
         }
     }
 
     SCE_LOG_INFO("DataModelInitializer: Total data items collected: {} (for global scope initialization)",
-             allDataItems.size());
+                 allDataItems.size());
     return allDataItems;
 }
 
@@ -87,7 +87,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
 
         if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
             SCE_LOG_ERROR("DataModelInitializer: Failed to create unbound variable '{}': {}", id,
-                      setResult.getErrorMessage());
+                          setResult.getErrorMessage());
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.execution",
                                          "Failed to create variable '" + id + "': " + setResult.getErrorMessage());
@@ -95,8 +95,8 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             return;
         }
 
-        SCE_LOG_DEBUG("DataModelInitializer: Created unbound variable '{}' (value assignment deferred for late binding)",
-                  id);
+        SCE_LOG_DEBUG(
+            "DataModelInitializer: Created unbound variable '{}' (value assignment deferred for late binding)", id);
         return;
     }
 
@@ -114,9 +114,8 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             auto scriptResult = scriptFuture.get();
 
             if (!SCE::ScriptResultUtils::isSuccess(scriptResult)) {
-                SCE_LOG_ERROR(
-                    "DataModelInitializer: Failed to assign function expression '{}' to variable '{}': {}", expr, id,
-                    scriptResult.getErrorMessage());
+                SCE_LOG_ERROR("DataModelInitializer: Failed to assign function expression '{}' to variable '{}': {}",
+                              expr, id, scriptResult.getErrorMessage());
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution", "Failed to assign function expression for '" + id +
                                                                     "': " + scriptResult.getErrorMessage());
@@ -180,15 +179,14 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
         if (isXMLContent(fileContent)) {
             // §scxml-B-2 test 557: Parse XML content as DOM object
             SCE_LOG_DEBUG("DataModelInitializer: Parsing XML content from file '{}' as DOM for variable '{}'", filePath,
-                      id);
+                          id);
 
             auto setVarFuture = scriptEngine_.setVariableAsDOM(sessionId_, id, fileContent);
             auto setResult = setVarFuture.get();
 
             if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
-                SCE_LOG_ERROR(
-                    "DataModelInitializer: Failed to set XML content from file '{}' for variable '{}': {}", filePath,
-                    id, setResult.getErrorMessage());
+                SCE_LOG_ERROR("DataModelInitializer: Failed to set XML content from file '{}' for variable '{}': {}",
+                              filePath, id, setResult.getErrorMessage());
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution", "Failed to set XML content from file '" + filePath +
                                                                     "' for '" + id +
@@ -205,17 +203,15 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
 
             if (SCE::ScriptResultUtils::isSuccess(result)) {
                 // Successfully evaluated as JSON/JS expression
-                auto setVarFuture =
-                    scriptEngine_.setVariable(sessionId_, id, result.getInternalValue());
+                auto setVarFuture = scriptEngine_.setVariable(sessionId_, id, result.getInternalValue());
                 auto setResult = setVarFuture.get();
 
                 if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
                     SCE_LOG_ERROR("DataModelInitializer: Failed to set variable '{}' from file '{}': {}", id, filePath,
-                              setResult.getErrorMessage());
+                                  setResult.getErrorMessage());
                     if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution",
-                                                 "Failed to set variable '" + id + "' from file '" + filePath +
-                                                     "': " + setResult.getErrorMessage());
+                        eventRaiser_->raiseEvent("error.execution", "Failed to set variable '" + id + "' from file '" +
+                                                                        filePath + "': " + setResult.getErrorMessage());
                     }
                     return;
                 }
@@ -225,8 +221,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
                 // §scxml-B-2 test 558: Non-JSON content - normalize whitespace and store as string
                 std::string normalized = normalizeWhitespace(fileContent);
 
-                auto setVarFuture =
-                    scriptEngine_.setVariable(sessionId_, id, ScriptValue{normalized});
+                auto setVarFuture = scriptEngine_.setVariable(sessionId_, id, ScriptValue{normalized});
                 auto setResult = setVarFuture.get();
 
                 if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
@@ -234,27 +229,27 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
                         "DataModelInitializer: Failed to set normalized text from file '{}' for variable '{}': {}",
                         filePath, id, setResult.getErrorMessage());
                     if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution",
-                                                 "Failed to set text content from file '" + filePath + "' for '" + id +
-                                                     "': " + setResult.getErrorMessage());
+                        eventRaiser_->raiseEvent("error.execution", "Failed to set text content from file '" +
+                                                                        filePath + "' for '" + id +
+                                                                        "': " + setResult.getErrorMessage());
                     }
                     return;
                 }
 
                 SCE_LOG_DEBUG("DataModelInitializer: Set variable '{}' with normalized text from file '{}': '{}'", id,
-                          filePath, normalized);
+                              filePath, normalized);
             }
         }
     } else if (!content.empty()) {
         // §scxml-B-2: Initialize with inline content
         // ARCHITECTURE.md: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
-        bool success = DataModelInitHelper::initializeVariable(
-            scriptEngine_, sessionId_, id, content, [this](const std::string &msg) {
-                SCE_LOG_ERROR("DataModelInitializer: {}", msg);
-                if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", msg);
-                }
-            });
+        bool success = DataModelInitHelper::initializeVariable(scriptEngine_, sessionId_, id, content,
+                                                               [this](const std::string &msg) {
+                                                                   SCE_LOG_ERROR("DataModelInitializer: {}", msg);
+                                                                   if (eventRaiser_) {
+                                                                       eventRaiser_->raiseEvent("error.execution", msg);
+                                                                   }
+                                                               });
 
         if (!success) {
             return;  // Error already handled by callback
@@ -268,7 +263,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
 
         if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
             SCE_LOG_ERROR("DataModelInitializer: Failed to create undefined variable '{}': {}", id,
-                      setResult.getErrorMessage());
+                          setResult.getErrorMessage());
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.execution",
                                          "Failed to create variable '" + id + "': " + setResult.getErrorMessage());
@@ -288,7 +283,7 @@ void DataModelInitializer::initializeAllDataItems(const std::string &binding) {
 
     const auto allDataItems = collectAllDataItems();
     SCE_LOG_INFO("DataModelInitializer: Initializing {} total data items (global scope with {} binding)",
-             allDataItems.size(), binding.empty() ? "early (default)" : binding);
+                 allDataItems.size(), binding.empty() ? "early (default)" : binding);
 
     // Use BindingHelper to determine initialization strategy
     // This ensures §scxml-5.3 compliance through shared logic with AOT engine

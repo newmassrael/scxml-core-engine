@@ -22,12 +22,12 @@
 // equivalent does the same with three Servers — same multiplexing
 // pattern, different transport.
 
-#include "worker_session_f_donedata_param_sm.h"
-#include "worker_session_f_donedata_param_transport.h"
 #include "worker_session_f_donedata_content_sm.h"
 #include "worker_session_f_donedata_content_transport.h"
 #include "worker_session_f_donedata_nested_sm.h"
 #include "worker_session_f_donedata_nested_transport.h"
+#include "worker_session_f_donedata_param_sm.h"
+#include "worker_session_f_donedata_param_transport.h"
 
 #include <chrono>
 #include <csignal>
@@ -36,7 +36,10 @@
 
 namespace {
 volatile std::sig_atomic_t g_signalled = 0;
-void on_signal(int) { g_signalled = 1; }
+
+void on_signal(int) {
+    g_signalled = 1;
+}
 }  // namespace
 
 int main() {

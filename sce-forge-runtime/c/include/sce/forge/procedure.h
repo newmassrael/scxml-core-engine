@@ -28,18 +28,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "sce/forge/bytes.h" /* sce_forge_bytes_t (relocated to the shared bytes header) */
 #include "sce/forge/limits.h"
-#include "sce/forge/bytes.h"  /* sce_forge_bytes_t (relocated to the shared bytes header) */
 
 /* Service request dispatched by `<send sce:service=...>`. */
 typedef struct {
-    const char *service;            /* sce:service — always present */
+    const char *service; /* sce:service — always present */
     bool has_subfunc;
-    const char *subfunc;            /* sce:subfunc — valid when has_subfunc */
+    const char *subfunc; /* sce:subfunc — valid when has_subfunc */
     bool has_addr;
-    const char *addr;               /* sce:addr resolved to string */
+    const char *addr; /* sce:addr resolved to string */
     bool has_payload;
-    sce_forge_bytes_t payload;      /* sce:payload bytes — valid when has_payload */
+    sce_forge_bytes_t payload; /* sce:payload bytes — valid when has_payload */
 } sce_forge_procedure_service_request_t;
 
 /* Service response. `data` populates `_event.data` for subsequent
@@ -55,8 +55,7 @@ typedef struct {
  * runs; a NULL handler is a programmer error and the generated code
  * falls through to an uncompleted result. */
 typedef sce_forge_procedure_service_response_t (*sce_forge_procedure_service_handler_t)(
-    const sce_forge_procedure_service_request_t *req,
-    void *user_data);
+    const sce_forge_procedure_service_request_t *req, void *user_data);
 
 /* Done data parameter (one row of `<donedata><param>...`). The
  * generated code emits one static const array per `<final>` state
@@ -72,7 +71,7 @@ typedef struct {
  * free it. */
 typedef struct {
     bool completed;
-    const char *final_state;        /* "" when not completed */
+    const char *final_state; /* "" when not completed */
     const sce_forge_procedure_done_param_t *done_data;
     size_t done_data_count;
 } sce_forge_procedure_run_result_t;
@@ -85,4 +84,4 @@ typedef struct {
     int event;
 } sce_forge_procedure_raise_t;
 
-#endif  /* SCE_FORGE_PROCEDURE_H */
+#endif /* SCE_FORGE_PROCEDURE_H */

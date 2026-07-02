@@ -22,25 +22,25 @@ namespace SCE::Mesh {
 
 /// Wire-stable CBOR map keys. Once shipped, never repurpose; new fields take
 /// new integers.
-inline constexpr int kEnvelopeKeyId              = 0;
-inline constexpr int kEnvelopeKeySource          = 1;
-inline constexpr int kEnvelopeKeyType            = 2;
-inline constexpr int kEnvelopeKeyPattern         = 3;
+inline constexpr int kEnvelopeKeyId = 0;
+inline constexpr int kEnvelopeKeySource = 1;
+inline constexpr int kEnvelopeKeyType = 2;
+inline constexpr int kEnvelopeKeyPattern = 3;
 inline constexpr int kEnvelopeKeyDatacontenttype = 4;
-inline constexpr int kEnvelopeKeyData            = 5;
-inline constexpr int kEnvelopeKeySubject         = 6;
-inline constexpr int kEnvelopeKeyCorrelationId   = 7;
-inline constexpr int kEnvelopeKeyReplyTo         = 8;
-inline constexpr int kEnvelopeKeyInvokeId        = 9;
-inline constexpr int kEnvelopeKeyRpcStatus       = 10;
+inline constexpr int kEnvelopeKeyData = 5;
+inline constexpr int kEnvelopeKeySubject = 6;
+inline constexpr int kEnvelopeKeyCorrelationId = 7;
+inline constexpr int kEnvelopeKeyReplyTo = 8;
+inline constexpr int kEnvelopeKeyInvokeId = 9;
+inline constexpr int kEnvelopeKeyRpcStatus = 10;
 inline constexpr int kEnvelopeKeyRpcErrorMessage = 11;
-inline constexpr int kEnvelopeKeyDeadlineUnixMs  = 12;
-inline constexpr int kEnvelopeKeyQos             = 13;
-inline constexpr int kEnvelopeKeySequenceNo      = 14;
-inline constexpr int kEnvelopeKeyRoutingId       = 15;
-inline constexpr int kEnvelopeKeyParallelId      = 16;  // SCE_MESH.md §mesh-16.5 wire-21 region routing
-inline constexpr int kEnvelopeKeyRegionId        = 17;  // SCE_MESH.md §mesh-16.5 wire-21 region routing
-inline constexpr int kEnvelopeKeyChildSessionId  = 18;  // SCE_MESH.md §mesh-9.6.2 wire-15 child session URI
+inline constexpr int kEnvelopeKeyDeadlineUnixMs = 12;
+inline constexpr int kEnvelopeKeyQos = 13;
+inline constexpr int kEnvelopeKeySequenceNo = 14;
+inline constexpr int kEnvelopeKeyRoutingId = 15;
+inline constexpr int kEnvelopeKeyParallelId = 16;      // SCE_MESH.md §mesh-16.5 wire-21 region routing
+inline constexpr int kEnvelopeKeyRegionId = 17;        // SCE_MESH.md §mesh-16.5 wire-21 region routing
+inline constexpr int kEnvelopeKeyChildSessionId = 18;  // SCE_MESH.md §mesh-9.6.2 wire-15 child session URI
 
 /// Single source for the SCE mesh envelope payload size ceiling.
 ///

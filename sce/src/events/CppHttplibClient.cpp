@@ -108,7 +108,7 @@ std::future<HttpClient::Response> CppHttplibClient::sendRequest(const HttpClient
                 }
 
                 SCE_LOG_DEBUG("CppHttplibClient: Response {} {} (body {} bytes)", result->status,
-                          response.success ? "OK" : "ERROR", response.body.size());
+                              response.success ? "OK" : "ERROR", response.body.size());
             } else {
                 response.success = false;
                 response.statusCode = 0;

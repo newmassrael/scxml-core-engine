@@ -42,14 +42,14 @@ typedef struct sce_xml_attr_s {
 // W3C SCXML B.2 corpus and getElementsByTagName semantics.
 typedef enum {
     SCE_XML_NODE_ELEMENT,
-    SCE_XML_NODE_PCDATA,    // mixed text content (#PCDATA)
-    SCE_XML_NODE_CDATA      // <![CDATA[...]]> section
+    SCE_XML_NODE_PCDATA,  // mixed text content (#PCDATA)
+    SCE_XML_NODE_CDATA    // <![CDATA[...]]> section
 } sce_xml_node_type_t;
 
 typedef struct sce_xml_node_s {
     sce_xml_node_type_t type;
-    char *tag;                    // element: tag name; pcdata/cdata: NULL
-    char *text;                   // pcdata/cdata: content; element: NULL
+    char *tag;   // element: tag name; pcdata/cdata: NULL
+    char *text;  // pcdata/cdata: content; element: NULL
     sce_xml_attr_t *attrs;
     struct sce_xml_node_s *first_child;
     struct sce_xml_node_s *next_sibling;
@@ -67,8 +67,7 @@ sce_xml_node_t *sce_xml_doc_root(sce_xml_doc_t *doc);
 
 // cpp XMLDocument::getElementsByTagName — recurses from root (root itself
 // is matched, then its descendants via DFS).
-sce_xml_node_t **sce_xml_doc_get_elements_by_tag_name(
-    sce_xml_doc_t *doc, const char *tag, size_t *out_count);
+sce_xml_node_t **sce_xml_doc_get_elements_by_tag_name(sce_xml_doc_t *doc, const char *tag, size_t *out_count);
 
 // cpp XMLElement 1:1 mirror.
 const char *sce_xml_get_tag_name(const sce_xml_node_t *node);
@@ -76,8 +75,7 @@ const char *sce_xml_get_attribute(const sce_xml_node_t *node, const char *attr);
 
 // cpp XMLElement::getElementsByTagName — descends children (self not
 // matched), recursive DFS via findElementsByTagNameStatic on each child.
-sce_xml_node_t **sce_xml_node_get_elements_by_tag_name(
-    sce_xml_node_t *node, const char *tag, size_t *out_count);
+sce_xml_node_t **sce_xml_node_get_elements_by_tag_name(sce_xml_node_t *node, const char *tag, size_t *out_count);
 
 // Free the heap array returned by the two get_elements_by_tag_name
 // functions. The element pointers it holds remain owned by the document

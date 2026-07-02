@@ -23,4 +23,4 @@
 
 #define SCE_FORGE_BYTES_DEFAULT_MAX 256u
 
-#endif  /* SCE_FORGE_LIMITS_H */
+#endif /* SCE_FORGE_LIMITS_H */

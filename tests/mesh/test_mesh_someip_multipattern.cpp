@@ -13,8 +13,8 @@
 // service.response.X), not declared via sce:* attributes.
 
 #include "brake_someip_multi_sm.h"
-#include "motor_someip_multi_sm.h"
 #include "brake_someip_multi_transport.h"
+#include "motor_someip_multi_sm.h"
 #include "motor_someip_multi_transport.h"
 
 #include "mesh/PatternKind.h"
@@ -31,14 +31,11 @@ using RouterT = gen::TransportRouter<BrakeEngine>;
 
 // ── Structural invariants (compile-time) ────────────────────────
 
-static_assert(sizeof(RouterT) > 0,
-              "TransportRouter must be instantiable for SOME/IP multi-pattern");
+static_assert(sizeof(RouterT) > 0, "TransportRouter must be instantiable for SOME/IP multi-pattern");
 
 // Service/instance constants (from vsomeip_motor_multi.json via deploy.yaml)
-static_assert(gen::SOMEIP_SERVICE_MOTOR == 0x2000,
-              "Service ID must match vsomeip_motor_multi.json");
-static_assert(gen::SOMEIP_INSTANCE_MOTOR == 0x0001,
-              "Instance ID must match vsomeip_motor_multi.json");
+static_assert(gen::SOMEIP_SERVICE_MOTOR == 0x2000, "Service ID must match vsomeip_motor_multi.json");
+static_assert(gen::SOMEIP_INSTANCE_MOTOR == 0x0001, "Instance ID must match vsomeip_motor_multi.json");
 
 // Per-event method constants (FireForget + RPC)
 static_assert(gen::SOMEIP_METHOD_MOTOR_SERVICE_FIRE_FORGET_ACTIVATE == 0x0100,
@@ -60,12 +57,12 @@ static_assert(gen::SOMEIP_SETTER_MOTOR_FIELD_SET_TARGET_SPEED == 0x0201,
 
 // ── Runtime checks (pattern resolution + RPC reply table) ───────
 
-#define CHECK(cond, msg)                                                        \
-    do {                                                                        \
-        if (!(cond)) {                                                          \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); \
-            return 1;                                                           \
-        }                                                                       \
+#define CHECK(cond, msg)                                                                                               \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__);                                       \
+            return 1;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
 int main() {
@@ -89,16 +86,15 @@ int main() {
           "event.subscribe.* must resolve to EventSubscribe");
     CHECK(RouterT::resolvePattern("event.unsubscribe.status") == PK::EventUnsubscribe,
           "event.unsubscribe.* must resolve to EventUnsubscribe");
-    CHECK(RouterT::resolvePattern("field.get.vehicle_speed") == PK::FieldRead,
-          "field.get.* must resolve to FieldRead");
+    CHECK(RouterT::resolvePattern("field.get.vehicle_speed") == PK::FieldRead, "field.get.* must resolve to FieldRead");
     CHECK(RouterT::resolvePattern("field.set.target_speed") == PK::FieldWrite,
           "field.set.* must resolve to FieldWrite");
 
     // Topology-inferred RPC pairing: service.request.X must resolve to
     // service.response.X in the build-time reply table (SCE_MESH.md
     // Section 13 path B).
-    CHECK(std::strcmp(RouterT::resolveReplyEvent("service.request.compute_force"),
-                      "service.response.compute_force") == 0,
+    CHECK(std::strcmp(RouterT::resolveReplyEvent("service.request.compute_force"), "service.response.compute_force") ==
+              0,
           "topology-inferred RPC reply must appear in resolveReplyEvent table");
     // Non-RPC events return empty string.
     CHECK(RouterT::resolveReplyEvent("service.fire_forget.activate")[0] == '\0',
@@ -114,18 +110,15 @@ int main() {
     namespace motor_gen = SCE::Generated::motor_someip_multi;
     using MotorEngine = motor_gen::motor_someip_multi;
     using MotorRouterT = motor_gen::TransportRouter<MotorEngine>;
-    static_assert(sizeof(MotorRouterT) > 0,
-                  "Server TransportRouter must be instantiable for SOME/IP");
+    static_assert(sizeof(MotorRouterT) > 0, "Server TransportRouter must be instantiable for SOME/IP");
 
     // Server-side SOME/IP constants
-    static_assert(motor_gen::SOMEIP_SERVER_SERVICE == 0x2000,
-                  "Server service ID must match vsomeip_motor_multi.json");
+    static_assert(motor_gen::SOMEIP_SERVER_SERVICE == 0x2000, "Server service ID must match vsomeip_motor_multi.json");
     // SCE_MESH.md §14.4: SOMEIP_SERVER_INSTANCES is an array so
     // multi-instance pools can be offered. Non-pool servers degenerate
     // to a 1-element array whose sole entry is the binding-default
     // instance id.
-    static_assert(motor_gen::SOMEIP_SERVER_INSTANCES.size() == 1,
-                  "Non-pool server offers exactly one instance");
+    static_assert(motor_gen::SOMEIP_SERVER_INSTANCES.size() == 1, "Non-pool server offers exactly one instance");
     static_assert(motor_gen::SOMEIP_SERVER_INSTANCES[0] == 0x0001,
                   "Server instance ID must match vsomeip_motor_multi.json");
     static_assert(motor_gen::SOMEIP_SERVER_METHOD_SERVICE_REQUEST_COMPUTE_FORCE == 0x0101,

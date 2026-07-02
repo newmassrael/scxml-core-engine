@@ -3,11 +3,11 @@
 
 #include "runtime/InvokeExecutor.h"
 #include "SCXMLTypes.h"
-#include "common/SCXMLConstants.h"
 #include "common/DatamodelValidationHelper.h"
+#include "common/SCXMLConstants.h"
+#include "common/UniqueIdGenerator.h"
 #include "core/InvokeHelper.h"
 #include "core/LogMacros.h"
-#include "common/UniqueIdGenerator.h"
 #include "events/EventDescriptor.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
@@ -83,7 +83,7 @@ std::string SCXMLInvokeHandler::startInvoke(const std::shared_ptr<IInvokeNode> &
     std::string childSessionId = SessionRegistry::instance().generateSessionIdString("session_");
 
     SCE_LOG_DEBUG("SCXMLInvokeHandler: startInvoke called with parent session: {}, generated child session: {}",
-              parentSessionId, childSessionId);
+                  parentSessionId, childSessionId);
 
     // Delegate to internal method with session creation required
     return startInvokeInternal(invoke, parentSessionId, eventDispatcher, childSessionId, false, false);
@@ -129,8 +129,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // Get invoke content (SCXML document)
     std::string scxmlContent = invoke->getContent();
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Invoke content length: {}, has src: {}, has srcexpr: {}, has contentexpr: {}",
-              scxmlContent.length(), !invoke->getSrc().empty(), !invoke->getSrcExpr().empty(),
-              !invoke->getContentExpr().empty());
+                  scxmlContent.length(), !invoke->getSrc().empty(), !invoke->getSrcExpr().empty(),
+                  !invoke->getContentExpr().empty());
 
     // W3C SCXML test 530: Handle contentexpr evaluation
     if (scxmlContent.empty() && !invoke->getContentExpr().empty()) {
@@ -141,10 +141,10 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         if (result.isSuccess()) {
             scxmlContent = result.getValue<std::string>();
             SCE_LOG_DEBUG("SCXMLInvokeHandler: contentexpr '{}' evaluated to content of length {}",
-                      invoke->getContentExpr(), scxmlContent.length());
+                          invoke->getContentExpr(), scxmlContent.length());
         } else {
             SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to evaluate contentexpr '{}': {}", invoke->getContentExpr(),
-                      result.getErrorMessage());
+                          result.getErrorMessage());
             return "";
         }
     }
@@ -172,7 +172,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             }
         } else {
             SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to evaluate srcexpr '{}': {}", invoke->getSrcExpr(),
-                      result.getErrorMessage());
+                          result.getErrorMessage());
             return "";
         }
     }
@@ -204,7 +204,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     if (!invoke->getIdLocation().empty()) {
         scriptEngine_.setVariable(parentSessionId, invoke->getIdLocation(), ScriptValue{invokeid});
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Set idlocation '{}' = '{}' in parent session '{}'", invoke->getIdLocation(),
-                  invokeid, parentSessionId);
+                      invokeid, parentSessionId);
     }
 
     // Set special variables in child session
@@ -229,7 +229,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             if (auto parentScheduler = parentEventRaiser->getScheduler()) {
                 childEventRaiser->setScheduler(parentScheduler);
                 SCE_LOG_DEBUG("InvokeExecutor: Set child EventRaiser scheduler from parent for session: {}",
-                          childSessionId);
+                              childSessionId);
             } else {
                 SCE_LOG_WARN("InvokeExecutor: Parent EventRaiser has no scheduler for session: {}", childSessionId);
             }
@@ -266,7 +266,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     std::weak_ptr<StateMachine> weakChildSM = smContext->getShared();
 
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Created child StateMachine with StateMachineBuilder for session: {}",
-              childSessionId);
+                  childSessionId);
 
     // §scxml-6.4.3: Register completion callback for done.invoke generation
     // This callback is invoked AFTER the child's final state onexit handlers complete
@@ -277,9 +277,9 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     weakChildSM.lock()->setCompletionCallback([weakParentSM, weakChildSM, invokeid, childSessionId, parentSessionId,
                                                eventDispatcher]() {
         SCE_LOG_INFO("SCXMLInvokeHandler: Child completion callback invoked - invokeid: {}, session: {}", invokeid,
-                 childSessionId);
-        SCE_LOG_INFO("SCXMLInvokeHandler: Parent check - weakPtr valid: {}, parentSessionId: {}", !weakParentSM.expired(),
-                 parentSessionId);
+                     childSessionId);
+        SCE_LOG_INFO("SCXMLInvokeHandler: Parent check - weakPtr valid: {}, parentSessionId: {}",
+                     !weakParentSM.expired(), parentSessionId);
 
         // W3C SCXML Test 192: Check if parent StateMachine is in final state (thread-safe with weak_ptr)
         // If parent already completed, don't send done.invoke (it would be ignored anyway)
@@ -329,14 +329,15 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
             if (success) {
                 SCE_LOG_INFO("SCXMLInvokeHandler: {} sent directly to parent's external queue (session: {}, matches "
-                         "AOT raiseExternal)",
-                         doneEvent, parentSessionId);
+                             "AOT raiseExternal)",
+                             doneEvent, parentSessionId);
             } else {
-                SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to send {} to parent session: {}", doneEvent, parentSessionId);
+                SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to send {} to parent session: {}", doneEvent,
+                              parentSessionId);
             }
         } else {
             SCE_LOG_WARN("SCXMLInvokeHandler: Child reached final state but no parent EventRaiser available for: {}",
-                     doneEvent);
+                         doneEvent);
         }
 
         // §scxml-6.2: Cancel pending delayed sends when child session terminates
@@ -346,14 +347,14 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         if (eventDispatcher) {
             size_t cancelledCount = eventDispatcher->cancelEventsForSession(childSessionId);
             SCE_LOG_INFO("SCXMLInvokeHandler: Cancelled {} pending delayed send(s) for terminated child session: {}",
-                     cancelledCount, childSessionId);
+                         cancelledCount, childSessionId);
         }
     });
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Registered completion callback for invoke: {}", invokeid);
 
     // Set up EventRaiser callback to child StateMachine's processEvent
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Setting EventRaiser callback for session: {}, EventRaiser: {}", childSessionId,
-              (void *)childEventRaiser.get());
+                  (void *)childEventRaiser.get());
 
     // Reuse weakParentSM from completion callback above
     childEventRaiser->setEventCallback([weakChildSM, weakParentSM, childSessionId](
@@ -362,30 +363,31 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         auto childSM = weakChildSM.lock();
         if (!childSM) {
             SCE_LOG_DEBUG("EventRaiser callback skipped - child StateMachine destroyed, session: {}, event: '{}'",
-                      childSessionId, eventName);
+                          childSessionId, eventName);
             return false;
         }
 
-        SCE_LOG_DEBUG("EventRaiser callback executing - session: {}, event: '{}', isRunning: {}", childSessionId, eventName,
-                  childSM->isRunning() ? "true" : "false");
+        SCE_LOG_DEBUG("EventRaiser callback executing - session: {}, event: '{}', isRunning: {}", childSessionId,
+                      eventName, childSM->isRunning() ? "true" : "false");
 
         // W3C SCXML: Don't process events if parent is in final state (thread-safe with weak_ptr)
         auto parentSM = weakParentSM.lock();
         if (parentSM && parentSM->isInFinalState()) {
-            SCE_LOG_DEBUG("EventRaiser callback skipped - parent in final state, session: {}, event: '{}'", childSessionId,
-                      eventName);
+            SCE_LOG_DEBUG("EventRaiser callback skipped - parent in final state, session: {}, event: '{}'",
+                          childSessionId, eventName);
             return false;
         }
 
         // W3C SCXML: Don't process events if child is in final state
         if (childSM->isRunning() && !childSM->isInFinalState()) {
             auto result = childSM->processEvent(eventName, eventData);
-            SCE_LOG_DEBUG("EventRaiser callback result - session: {}, event: '{}', success: {}", childSessionId, eventName,
-                      result.success);
+            SCE_LOG_DEBUG("EventRaiser callback result - session: {}, event: '{}', success: {}", childSessionId,
+                          eventName, result.success);
             return result.success;
         }
-        SCE_LOG_DEBUG("EventRaiser callback skipped - session: {}, event: '{}', StateMachine not running or in final state",
-                  childSessionId, eventName);
+        SCE_LOG_DEBUG(
+            "EventRaiser callback skipped - session: {}, event: '{}', StateMachine not running or in final state",
+            childSessionId, eventName);
         return false;
     });
 
@@ -416,7 +418,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     if (childModel) {
         childDatamodelVars = childModel->getDataModelVariableNames();
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Child session {} has {} datamodel variables", childSessionId,
-                  childDatamodelVars.size());
+                      childDatamodelVars.size());
     }
 
     // §scxml-6.4: Handle namelist attribute - pass datamodel variables by name
@@ -453,7 +455,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             // ARCHITECTURE.md Zero Duplication: Use DatamodelValidationHelper
             if (!DatamodelValidationHelper::isVariableDeclaredInChild(varName, childDatamodelVars)) {
                 SCE_LOG_DEBUG("SCXMLInvokeHandler: Skipping namelist variable '{}' - not defined in child's datamodel",
-                          varName);
+                              varName);
                 continue;
             }
 
@@ -499,12 +501,12 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // This ensures mapping is available when child's final state onentry sends events
     // For pre-allocated sessions (sessionAlreadyExists=true), mapping may already be registered by InvokeExecutor
     SCE_LOG_INFO("[INVOKE MAPPING] sessionAlreadyExists={}, isRestoration={}, parent={}, invoke={}, child={}",
-             sessionAlreadyExists, isRestoration, parentSessionId, invokeid, childSessionId);
+                 sessionAlreadyExists, isRestoration, parentSessionId, invokeid, childSessionId);
 
     if (!sessionAlreadyExists) {
         SessionRegistry::instance().registerInvokeMapping(parentSessionId, invokeid, childSessionId);
         SCE_LOG_INFO("[INVOKE MAPPING REGISTERED] parent={}, invoke={} -> child={}", parentSessionId, invokeid,
-                 childSessionId);
+                     childSessionId);
     } else {
         SCE_LOG_WARN("[INVOKE MAPPING SKIPPED] sessionAlreadyExists=true - mapping should exist already");
     }
@@ -535,12 +537,13 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             scriptEngine_.destroySession(childSessionId);
             return "";
         }
-        SCE_LOG_INFO("SCXMLInvokeHandler: Child StateMachine started successfully for invoke: {} (session: {})", invokeid,
-                 childSessionId);
+        SCE_LOG_INFO("SCXMLInvokeHandler: Child StateMachine started successfully for invoke: {} (session: {})",
+                     invokeid, childSessionId);
     } else {
         // Restoration mode: Skip start() - state will be restored by restoreChildState()
-        SCE_LOG_DEBUG("SCXMLInvokeHandler: Skipping start() for invoke restoration: {} (state will be restored separately)",
-                  invokeid);
+        SCE_LOG_DEBUG(
+            "SCXMLInvokeHandler: Skipping start() for invoke restoration: {} (state will be restored separately)",
+            invokeid);
     }
 
     // §scxml-6.4.3: done.invoke generation is now handled by completion callback
@@ -548,7 +551,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // No need for synchronous done.invoke generation here
 
     SCE_LOG_INFO("SCXMLInvokeHandler: Successfully started SCXML invoke: {} with session: {} and running StateMachine",
-             invokeid, childSessionId);
+                 invokeid, childSessionId);
 
     return invokeid;
 }
@@ -594,13 +597,13 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
         cacheSize = cancelledSessionsOrder_.size();
     }
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Added cancelled child session to filter list: {} (cache size: {})",
-              session.sessionId, cacheSize);
+                  session.sessionId, cacheSize);
 
     // Cancel pending events in child's EventDispatcher
     if (session.eventDispatcher) {
         size_t cancelledEvents = session.eventDispatcher->cancelEventsForSession(session.sessionId);
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Cancelled {} pending events for session: {}", cancelledEvents,
-                  session.sessionId);
+                      session.sessionId);
     }
 
     // W3C SCXML Test 252: Cancel queued events in parent's EventRaiser
@@ -611,7 +614,7 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
             size_t cancelledQueued = parentEventRaiser->cancelEventsForSession(session.sessionId);
             if (cancelledQueued > 0) {
                 SCE_LOG_INFO("SCXMLInvokeHandler: Cancelled {} queued event(s) in parent EventRaiser for session: {}",
-                         cancelledQueued, session.sessionId);
+                             cancelledQueued, session.sessionId);
             }
         }
     }
@@ -682,7 +685,7 @@ std::shared_ptr<IInvokeHandler> InvokeHandlerFactory::createHandler(const std::s
     // W3C SCXML: Check if type matches SCXML invoke processor
     if (type == "scxml" || type == Constants::SCXML_INVOKE_PROCESSOR_URI ||
         type == std::string(Constants::SCXML_INVOKE_PROCESSOR_URI)
-                   .substr(0, std::string(Constants::SCXML_INVOKE_PROCESSOR_URI).length() - 1)) {
+                    .substr(0, std::string(Constants::SCXML_INVOKE_PROCESSOR_URI).length() - 1)) {
         return std::make_shared<SCXMLInvokeHandler>(scriptEngine);
     }
 
@@ -743,8 +746,8 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
         return "";
     }
 
-    SCE_LOG_DEBUG("InvokeExecutor: executeInvoke called - session: {}, invokeId: {}, type: {}", sessionId, invoke->getId(),
-              invoke->getType());
+    SCE_LOG_DEBUG("InvokeExecutor: executeInvoke called - session: {}, invokeId: {}, type: {}", sessionId,
+                  invoke->getId(), invoke->getType());
 
     std::string invokeType = invoke->getType();
 
@@ -755,7 +758,7 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
             auto jsResult = future.get();
             if (!jsResult.isSuccess()) {
                 SCE_LOG_ERROR("InvokeExecutor: Failed to evaluate typeexpr '{}': {}", invoke->getTypeExpr(),
-                          jsResult.getErrorMessage());
+                              jsResult.getErrorMessage());
                 return "";
             }
             invokeType = ScriptResultUtils::resultToString(jsResult, &scriptEngine_, sessionId, invoke->getTypeExpr());
@@ -808,8 +811,8 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
 
     std::string childSessionId = SessionRegistry::instance().generateSessionIdString("session_");
     SessionRegistry::instance().registerInvokeMapping(sessionId, invokeid, childSessionId);
-    SCE_LOG_DEBUG("InvokeExecutor: Pre-registered invoke mapping - parent: {}, invoke: {}, child: {}", sessionId, invokeid,
-              childSessionId);
+    SCE_LOG_DEBUG("InvokeExecutor: Pre-registered invoke mapping - parent: {}, invoke: {}, child: {}", sessionId,
+                  invokeid, childSessionId);
 
     // Start invoke with pre-allocated child session ID
     std::string returnedId =
@@ -827,7 +830,7 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
     // Track handler for cancellation (invokeid should match returnedId)
 
     SCE_LOG_INFO("InvokeExecutor: Successfully executed invoke: {} of type: {} for session: {}", invokeid, invokeType,
-             sessionId);
+                 sessionId);
 
     return invokeid;
 }
@@ -868,7 +871,8 @@ size_t InvokeExecutor::cancelInvokesForSession(const std::string &sessionId) {
     // Remove session tracking
     sessionInvokes_.erase(sessionIt);
 
-    SCE_LOG_INFO("InvokeExecutor: Cancelled {}/{} invokes for session: {}", cancelledCount, invokeIds.size(), sessionId);
+    SCE_LOG_INFO("InvokeExecutor: Cancelled {}/{} invokes for session: {}", cancelledCount, invokeIds.size(),
+                 sessionId);
 
     return cancelledCount;
 }
@@ -1068,7 +1072,7 @@ std::string SCXMLInvokeHandler::loadSCXMLFromFile(const std::string &filepath, c
                 auto relativePath = std::filesystem::relative(resolvedPath, normalizedParentDir);
                 if (relativePath.string().starts_with("..")) {
                     SCE_LOG_ERROR("SCXMLInvokeHandler: Security violation - path escapes parent directory: '{}'",
-                              resolvedPath.string());
+                                  resolvedPath.string());
                     return "";
                 }
             } catch (const std::filesystem::filesystem_error &e) {
@@ -1077,7 +1081,7 @@ std::string SCXMLInvokeHandler::loadSCXMLFromFile(const std::string &filepath, c
             }
 
             SCE_LOG_DEBUG("SCXMLInvokeHandler: Resolving relative path '{}' to '{}' (parent: '{}')", cleanPath,
-                      resolvedPath.string(), parentFilePath);
+                          resolvedPath.string(), parentFilePath);
         } else {
             // Production engine requires proper file path tracking - no fallback
             SCE_LOG_ERROR(
@@ -1104,7 +1108,7 @@ std::string SCXMLInvokeHandler::loadSCXMLFromFile(const std::string &filepath, c
             finalPath = txmlPath;
         } else {
             SCE_LOG_ERROR("SCXMLInvokeHandler: SCXML/TXML file not found: '{}' (tried .scxml and .txml)",
-                      finalPath.string());
+                          finalPath.string());
             return "";
         }
     } else {
@@ -1140,8 +1144,8 @@ std::string SCXMLInvokeHandler::loadSCXMLFromFile(const std::string &filepath, c
     fclose(file);
 
     if (bytesRead != static_cast<size_t>(fileSize)) {
-        SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to read complete file: '{}' (read {} of {} bytes)", finalPath.string(),
-                  bytesRead, fileSize);
+        SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to read complete file: '{}' (read {} of {} bytes)",
+                      finalPath.string(), bytesRead, fileSize);
         return "";
     }
 #else
@@ -1164,7 +1168,7 @@ std::string SCXMLInvokeHandler::loadSCXMLFromFile(const std::string &filepath, c
     // Production engine only handles pure SCXML files
 
     SCE_LOG_INFO("SCXMLInvokeHandler: Successfully loaded SCXML content from file: '{}' ({} bytes)", finalPath.string(),
-             content.length());
+                 content.length());
 
     return content;
 }
@@ -1237,14 +1241,15 @@ std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
         if (childEventRaiser) {
             childEventRaiser->getEventQueues(childSnapshot->internalQueue, childSnapshot->externalQueue);
             SCE_LOG_DEBUG("SCXMLInvokeHandler: Captured child event queues - internal: {}, external: {}",
-                      childSnapshot->internalQueue.size(), childSnapshot->externalQueue.size());
+                          childSnapshot->internalQueue.size(), childSnapshot->externalQueue.size());
         }
 
         // Capture child's nested invocations recursively
         auto childInvokeExecutor = childSM->getInvokeExecutor();
         if (childInvokeExecutor) {
             childInvokeExecutor->captureInvokeState(childSnapshot->activeInvokes);
-            SCE_LOG_DEBUG("SCXMLInvokeHandler: Captured {} child nested invocations", childSnapshot->activeInvokes.size());
+            SCE_LOG_DEBUG("SCXMLInvokeHandler: Captured {} child nested invocations",
+                          childSnapshot->activeInvokes.size());
         }
 
         // Capture datamodel (simplified - would need JSEngine integration for full implementation)
@@ -1279,16 +1284,16 @@ std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
                     }
 
                     SCE_LOG_DEBUG("SCXMLInvokeHandler: Captured {} child scheduled events for session {}",
-                              childSnapshot->scheduledEvents.size(), session.sessionId);
+                                  childSnapshot->scheduledEvents.size(), session.sessionId);
                 }
             }
         }
 
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Captured complete child state - {} active states, {} queued events, {} "
-                  "scheduled events",
-                  childSnapshot->activeStates.size(),
-                  childSnapshot->internalQueue.size() + childSnapshot->externalQueue.size(),
-                  childSnapshot->scheduledEvents.size());
+                      "scheduled events",
+                      childSnapshot->activeStates.size(),
+                      childSnapshot->internalQueue.size() + childSnapshot->externalQueue.size(),
+                      childSnapshot->scheduledEvents.size());
 
         return childSnapshot;
     }
@@ -1332,7 +1337,7 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
                     eventRaiserImpl->raiseExternalEvent(eventSnapshot.name, eventSnapshot.data);
                 }
                 SCE_LOG_DEBUG("SCXMLInvokeHandler: Restored child event queues - internal: {}, external: {}",
-                          childSnapshot.internalQueue.size(), childSnapshot.externalQueue.size());
+                              childSnapshot.internalQueue.size(), childSnapshot.externalQueue.size());
 
                 // CRITICAL FIX: Enable immediate mode for child EventRaiser after restoration
                 // §scxml-6.4: Child state machines must process parent events immediately (Test 192)
@@ -1342,7 +1347,7 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
                 // After reset(), new EventRaiser instance needs immediateMode=true to match normal behavior
                 eventRaiserImpl->setImmediateMode(true);
                 SCE_LOG_INFO("SCXMLInvokeHandler: Enabled immediate mode for restored child EventRaiser (session: {})",
-                         childSessionId);
+                             childSessionId);
             }
         }
 
@@ -1354,7 +1359,7 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
             if (childSMShared) {
                 childInvokeExecutor->restoreInvokeState(childSnapshot.activeInvokes, childSMShared);
                 SCE_LOG_DEBUG("SCXMLInvokeHandler: Restored {} child nested invocations",
-                          childSnapshot.activeInvokes.size());
+                              childSnapshot.activeInvokes.size());
             }
         }
 
@@ -1395,22 +1400,23 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
                         auto delay = std::chrono::milliseconds(eventSnapshot.remainingTimeMs);
                         auto future = session.eventDispatcher->sendEventDelayed(event, delay);
 
-                        SCE_LOG_DEBUG("SCXMLInvokeHandler: Restored child scheduled event '{}' (sendId: {}, remainingTime: "
-                                  "{}ms, originalDelay: {}ms)",
-                                  eventSnapshot.eventName, eventSnapshot.sendId, eventSnapshot.remainingTimeMs,
-                                  eventSnapshot.originalDelayMs);
+                        SCE_LOG_DEBUG(
+                            "SCXMLInvokeHandler: Restored child scheduled event '{}' (sendId: {}, remainingTime: "
+                            "{}ms, originalDelay: {}ms)",
+                            eventSnapshot.eventName, eventSnapshot.sendId, eventSnapshot.remainingTimeMs,
+                            eventSnapshot.originalDelayMs);
                     }
 
                     SCE_LOG_DEBUG("SCXMLInvokeHandler: Restored {} child scheduled events for session {}",
-                              childSnapshot.scheduledEvents.size(), childSessionId);
+                                  childSnapshot.scheduledEvents.size(), childSessionId);
                 }
             }
         }
 
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Successfully restored complete child state - {} active states, {} queued "
-                  "events for session {}",
-                  childSnapshot.activeStates.size(),
-                  childSnapshot.internalQueue.size() + childSnapshot.externalQueue.size(), childSessionId);
+                      "events for session {}",
+                      childSnapshot.activeStates.size(),
+                      childSnapshot.internalQueue.size() + childSnapshot.externalQueue.size(), childSessionId);
         return;
     }
 
@@ -1481,7 +1487,7 @@ void InvokeExecutor::captureInvokeState(std::vector<InvokeSnapshot> &out) const 
         out.push_back(snapshot);
 
         SCE_LOG_DEBUG("InvokeExecutor: Captured invoke state - invokeId: {}, childSession: {}", invokeid,
-                  snapshot.childSessionId);
+                      snapshot.childSessionId);
     }
 
     SCE_LOG_INFO("InvokeExecutor: Captured {} active invocations", out.size());

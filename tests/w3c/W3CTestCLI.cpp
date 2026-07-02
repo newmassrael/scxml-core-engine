@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
+#include "TestSummaryHelper.h"
 #include "W3CTestRegistry.h"
 #include "W3CTestRunner.h"
 #include "common/Logger.h"
 #include "core/LogMacros.h"
-#include "TestSummaryHelper.h"
 #include "scripting/ScriptEngineProvider.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -204,7 +204,7 @@ int main(int argc, char *argv[]) {
         bool runInterpreter = true;                // run Interpreter engine tests (default: true)
         bool runAot = true;                        // run AOT engine tests (default: true)
         bool saveFailedLogs = true;                // save debug logs for failed tests (default: true)
-        std::string scriptEngine;                    // --engine flag: empty = use compile-time default
+        std::string scriptEngine;                  // --engine flag: empty = use compile-time default
 
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -306,7 +306,7 @@ int main(int argc, char *argv[]) {
                             // START~ format: run from START to maximum test ID
                             endId = MAX_W3C_TEST_ID;
                             SCE_LOG_INFO("W3C CLI: Range mode enabled - will run tests from {} to end ({})", startId,
-                                     endId);
+                                         endId);
                         } else {
                             // START~END format: run from START to END
                             endId = std::stoi(endStr);
@@ -314,8 +314,8 @@ int main(int argc, char *argv[]) {
                                 fprintf(stderr, "Invalid range: start (%d) must be <= end (%d)\n", startId, endId);
                                 return 1;
                             }
-                            SCE_LOG_INFO("W3C CLI: Range mode enabled - will run tests {}-{} ({} tests)", startId, endId,
-                                     endId - startId + 1);
+                            SCE_LOG_INFO("W3C CLI: Range mode enabled - will run tests {}-{} ({} tests)", startId,
+                                         endId, endId - startId + 1);
                         }
 
                         // Add all test IDs in the range
@@ -398,7 +398,7 @@ int main(int argc, char *argv[]) {
             if (!serverReady) {
                 SCE_LOG_ERROR("W3C CLI: HTTP server not ready after 5 seconds - HTTP tests will fail");
                 SCE_LOG_WARN("W3C CLI: HTTP server should be auto-started by polyfill_pre.js for tests: 201, 518, 519, "
-                         "520, etc.");
+                             "520, etc.");
             }
         }
 #endif
@@ -439,7 +439,7 @@ int main(int argc, char *argv[]) {
             }
 
             SCE_LOG_INFO("W3C CLI: Running tests up to {} ({} tests: 150-{}) (repeat {} times)", upToTestId,
-                     upToTestIds.size(), upToTestId, repeatCount);
+                         upToTestIds.size(), upToTestId, repeatCount);
 
             // Begin test run for consistent reporting
             auto testSuiteInfo = runner.getTestSuite()->getInfo();
@@ -486,8 +486,8 @@ int main(int argc, char *argv[]) {
                                 break;
                             }
 
-                            SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
-                                     report.executionContext.executionTime.count());
+                            SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum,
+                                         status, report.executionContext.executionTime.count());
                             if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
                                 SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
 
@@ -530,7 +530,8 @@ int main(int argc, char *argv[]) {
             runner.getReporter()->endTestRun();
 
         } else if (!specificTestIds.empty()) {
-            SCE_LOG_INFO("W3C CLI: Running {} specific W3C tests (repeat {} times)", specificTestIds.size(), repeatCount);
+            SCE_LOG_INFO("W3C CLI: Running {} specific W3C tests (repeat {} times)", specificTestIds.size(),
+                         repeatCount);
 
             // Begin test run for consistent reporting
             auto testSuiteInfo = runner.getTestSuite()->getInfo();
@@ -677,8 +678,8 @@ int main(int argc, char *argv[]) {
                                 break;
                             }
 
-                            SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
-                                     report.executionContext.executionTime.count());
+                            SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum,
+                                         status, report.executionContext.executionTime.count());
                             if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
                                 SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
 
@@ -785,7 +786,7 @@ int main(int argc, char *argv[]) {
                 // Run AOT engine tests for all test IDs (including variants)
                 if (runAot) {
                     SCE_LOG_INFO("W3C CLI: Running AOT engine tests for all {} tests (including variants)",
-                             allTestIds.size());
+                                 allTestIds.size());
                     for (const std::string &testIdStr : allTestIds) {
                         if (shouldStop) {
                             break;

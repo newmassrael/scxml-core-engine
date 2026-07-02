@@ -15,13 +15,13 @@ namespace SCE::Forge {
 /// the first index where `keys[i] == needle`, otherwise `std::nullopt`.
 /// Keys must be unique (validated at parse time by the Forge compiler).
 template <typename K, typename V, std::size_t N>
-constexpr std::optional<V> lookup(const K (&keys)[N],
-                                  const V (&values)[N],
-                                  K needle) noexcept {
+constexpr std::optional<V> lookup(const K (&keys)[N], const V (&values)[N], K needle) noexcept {
     for (std::size_t i = 0; i < N; ++i) {
-        if (keys[i] == needle) return values[i];
+        if (keys[i] == needle) {
+            return values[i];
+        }
     }
     return std::nullopt;
 }
 
-} // namespace SCE::Forge
+}  // namespace SCE::Forge

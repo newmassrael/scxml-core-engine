@@ -38,7 +38,7 @@ bool SessionManagerImpl::createSession(const std::string &sessionId, const std::
     sessions_[sessionId] = sessionInfo;
 
     SCE_LOG_DEBUG("SessionManagerImpl: Created session '{}' with parent '{}' (total sessions: {})", sessionId,
-              parentSessionId.empty() ? "none" : parentSessionId, sessions_.size());
+                  parentSessionId.empty() ? "none" : parentSessionId, sessions_.size());
 
     // Notify observers after successful creation
     notifySessionCreated(sessionId, parentSessionId);
@@ -141,8 +141,8 @@ bool SessionManagerImpl::updateSessionSystemVariables(const std::string &session
     it->second.sessionName = sessionName;
     it->second.ioProcessors = ioProcessors;
 
-    SCE_LOG_DEBUG("SessionManagerImpl: Updated system variables for session '{}': name='{}', {} I/O processors", sessionId,
-              sessionName, ioProcessors.size());
+    SCE_LOG_DEBUG("SessionManagerImpl: Updated system variables for session '{}': name='{}', {} I/O processors",
+                  sessionId, sessionName, ioProcessors.size());
 
     // Notify observers after successful update
     notifySessionSystemVariablesUpdated(sessionId, sessionName, ioProcessors);
@@ -195,7 +195,8 @@ void SessionManagerImpl::notifySessionDestroyed(const std::string &sessionId) {
         try {
             observer->onSessionDestroyed(sessionId);
         } catch (const std::exception &e) {
-            SCE_LOG_ERROR("SessionManagerImpl: Observer exception during session destruction notification: {}", e.what());
+            SCE_LOG_ERROR("SessionManagerImpl: Observer exception during session destruction notification: {}",
+                          e.what());
         } catch (...) {
             SCE_LOG_ERROR("SessionManagerImpl: Unknown observer exception during session destruction notification");
         }
@@ -212,7 +213,7 @@ void SessionManagerImpl::notifySessionSystemVariablesUpdated(const std::string &
             observer->onSessionSystemVariablesUpdated(sessionId, sessionName, ioProcessors);
         } catch (const std::exception &e) {
             SCE_LOG_ERROR("SessionManagerImpl: Observer exception during system variables update notification: {}",
-                      e.what());
+                          e.what());
         } catch (...) {
             SCE_LOG_ERROR("SessionManagerImpl: Unknown observer exception during system variables update notification");
         }

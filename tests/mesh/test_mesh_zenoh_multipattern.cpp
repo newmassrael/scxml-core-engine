@@ -13,8 +13,8 @@
 // service.response.X), not declared via sce:* attributes.
 
 #include "brake_zenoh_multi_sm.h"
-#include "motor_zenoh_multi_sm.h"
 #include "brake_zenoh_multi_transport.h"
+#include "motor_zenoh_multi_sm.h"
 #include "motor_zenoh_multi_transport.h"
 
 #include "mesh/PatternKind.h"
@@ -30,20 +30,19 @@ using BrakeEngine = gen::brake_zenoh_multi;
 using RouterT = gen::TransportRouter<BrakeEngine>;
 
 // Structural invariants that the compiler can check without running the code.
-static_assert(sizeof(RouterT) > 0,
-              "TransportRouter must be instantiable for zenoh multi-pattern");
+static_assert(sizeof(RouterT) > 0, "TransportRouter must be instantiable for zenoh multi-pattern");
 static_assert(std::string_view(gen::ZENOH_KEY_MOTOR) == "sce/brake/motor",
               "Zenoh key expression must match deploy.yaml");
 
 // resolvePattern / resolveReplyEvent take std::string, so they can't be
 // constexpr — check them at runtime. A failure returns 1 (ctest FAIL);
 // success prints PASS and returns 0.
-#define CHECK(cond, msg)                                                        \
-    do {                                                                        \
-        if (!(cond)) {                                                          \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); \
-            return 1;                                                           \
-        }                                                                       \
+#define CHECK(cond, msg)                                                                                               \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__);                                       \
+            return 1;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
 int main() {
@@ -67,16 +66,14 @@ int main() {
           "service.request.* must resolve to RpcRequest");
     CHECK(RouterT::resolvePattern("event.subscribe.status") == PK::EventSubscribe,
           "event.subscribe.* must resolve to EventSubscribe");
-    CHECK(RouterT::resolvePattern("field.get.position") == PK::FieldRead,
-          "field.get.* must resolve to FieldRead");
-    CHECK(RouterT::resolvePattern("field.set.position") == PK::FieldWrite,
-          "field.set.* must resolve to FieldWrite");
+    CHECK(RouterT::resolvePattern("field.get.position") == PK::FieldRead, "field.get.* must resolve to FieldRead");
+    CHECK(RouterT::resolvePattern("field.set.position") == PK::FieldWrite, "field.set.* must resolve to FieldWrite");
 
     // Topology-inferred RPC pairing: the request `service.request.X`
     // must resolve to the reply `service.response.X` in the build-time
     // reply table (SCE_MESH.md §13 path B — no sce:reply-event needed).
-    CHECK(std::strcmp(RouterT::resolveReplyEvent("service.request.compute_force"),
-                      "service.response.compute_force") == 0,
+    CHECK(std::strcmp(RouterT::resolveReplyEvent("service.request.compute_force"), "service.response.compute_force") ==
+              0,
           "topology-inferred RPC reply must appear in resolveReplyEvent table");
     // Unmapped events return an empty string so callers can branch safely.
     CHECK(RouterT::resolveReplyEvent("service.fire_forget.activate")[0] == '\0',
@@ -88,8 +85,7 @@ int main() {
     namespace motor_gen = SCE::Generated::motor_zenoh_multi;
     using MotorEngine = motor_gen::motor_zenoh_multi;
     using MotorRouterT = motor_gen::TransportRouter<MotorEngine>;
-    static_assert(sizeof(MotorRouterT) > 0,
-                  "Server TransportRouter must be instantiable for Zenoh");
+    static_assert(sizeof(MotorRouterT) > 0, "Server TransportRouter must be instantiable for Zenoh");
     static_assert(std::string_view(motor_gen::ZENOH_SERVER_KEY) == "sce/brake/motor",
                   "Server Zenoh key expression must match deploy.yaml");
 

@@ -251,7 +251,7 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
 
             try {
                 SCE_LOG_DEBUG("StateMachineTestExecutor: Starting test execution for test {} with source path: {}",
-                          metadata.id, sourceFilePath);
+                              metadata.id, sourceFilePath);
 
                 // Build StateMachine with resource injection, then wrap in RAII context
                 auto stateMachineUnique = SCE::StateMachineBuilder()
@@ -266,8 +266,8 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
 
                 // Register source file path for relative path resolution before loading SCXML
                 SCE::SessionRegistry::instance().registerSessionFilePath(stateMachine->getSessionId(), sourceFilePath);
-                SCE_LOG_DEBUG("StateMachineTestExecutor: Registered source file path '{}' for session '{}'", sourceFilePath,
-                          stateMachine->getSessionId());
+                SCE_LOG_DEBUG("StateMachineTestExecutor: Registered source file path '{}' for session '{}'",
+                              sourceFilePath, stateMachine->getSessionId());
 
                 // Load SCXML content
                 if (!stateMachine->loadSCXMLFromString(scxmlContent)) {
@@ -894,20 +894,21 @@ std::unique_ptr<TestResources> TestComponentFactory::createResources() {
                                                                   const std::string &sendId) -> bool {
         // Event execution callback: send event to target and return success status
         SCE_LOG_DEBUG("EventScheduler: Executing event '{}' with sendId '{}' on target '{}'", event.eventName, sendId,
-                  target->getDebugInfo());
+                      target->getDebugInfo());
 
         auto future = target->send(event);
         try {
             auto sendResult = future.get();
             if (sendResult.isSuccess) {
-                SCE_LOG_DEBUG("EventScheduler: Event '{}' (sendId: '{}') executed successfully", event.eventName, sendId);
+                SCE_LOG_DEBUG("EventScheduler: Event '{}' (sendId: '{}') executed successfully", event.eventName,
+                              sendId);
             } else {
                 SCE_LOG_WARN("EventScheduler: Event '{}' (sendId: '{}') execution failed", event.eventName, sendId);
             }
             return sendResult.isSuccess;
         } catch (const std::exception &e) {
             SCE_LOG_ERROR("EventScheduler: Failed to send event '{}' (sendId: '{}'): {}", event.eventName, sendId,
-                      e.what());
+                          e.what());
             return false;
         }
     });
@@ -994,7 +995,7 @@ static std::unordered_map<std::string, W3CTestRunner::VerificationInfo> loadVeri
                                                         line.substr(notesStart + 1, notesEnd - notesStart - 1);
                                                     verified[currentTestId] = {currentNotes};
                                                     SCE_LOG_DEBUG("Loaded verification: Test {} - {}", currentTestId,
-                                                              currentNotes);
+                                                                  currentNotes);
                                                 }
                                             }
                                         }
@@ -1108,7 +1109,7 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
             // WASM memory leak investigation: Log heap size BEFORE each test
             size_t heapBefore = emscripten_get_heap_size();
             SCE_LOG_DEBUG("WASM heap tracking: test {}/{} BEFORE - {} MB", testIndex, testDirectories.size(),
-                      heapBefore / (1024 * 1024));
+                          heapBefore / (1024 * 1024));
 #endif
 
             // Extract test ID from directory name
@@ -1173,7 +1174,7 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
             size_t heapAfterTest = emscripten_get_heap_size();
             size_t testDelta = heapAfterTest - heapBefore;
             SCE_LOG_DEBUG("WASM heap tracking: test {}/{} AFTER test - {} MB (delta: +{} MB)", testIndex,
-                      testDirectories.size(), heapAfterTest / (1024 * 1024), testDelta / (1024 * 1024));
+                          testDirectories.size(), heapAfterTest / (1024 * 1024), testDelta / (1024 * 1024));
 #endif
 
             // W3C SCXML: Cleanup shared state for test isolation (Zero Duplication)
@@ -1207,7 +1208,7 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
     size_t heapFinal = emscripten_get_heap_size();
     size_t totalAccumulation = heapFinal - heapInitial;
     SCE_LOG_DEBUG("WASM heap tracking: FINAL heap = {} MB (total: +{} MB from {} tests)", heapFinal / (1024 * 1024),
-              totalAccumulation / (1024 * 1024), reports.size());
+                  totalAccumulation / (1024 * 1024), reports.size());
 #endif
 
     TestRunSummary summary = calculateSummary(reports);
@@ -1325,7 +1326,7 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
                 scxmlFile << subScxml;
 
                 SCE_LOG_DEBUG("W3C Test {}: Converted sub-file {} to {}", report.testId, filename,
-                          scxmlPath.filename().string());
+                              scxmlPath.filename().string());
             }
         }
 
@@ -1347,7 +1348,7 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
         }
 
         SCE_LOG_DEBUG("W3C Single Test: Test {} completed with result: {}", report.testId,
-                  static_cast<int>(report.validationResult.finalResult));
+                      static_cast<int>(report.validationResult.finalResult));
 
         // Check if test is verified (passed validate-test-execution with LOW RISK)
         {
@@ -1363,7 +1364,8 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
         if (!failedLogDir_.empty()) {
             SCE::Logger::stopCapture();
             if (report.validationResult.finalResult != TestResult::PASS) {
-                saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report, SCE::Logger::getCapturedLogs());
+                saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report,
+                                  SCE::Logger::getCapturedLogs());
             } else {
                 SCE::Logger::getCapturedLogs();  // Discard
             }
@@ -1469,8 +1471,8 @@ std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestInDockerTsan(const st
     }
 
     SCE_LOG_WARN("W3C Test {}: Skipping HTTP test in Docker TSAN environment (cpp-httplib thread creation incompatible "
-             "with TSAN)",
-             testId);
+                 "with TSAN)",
+                 testId);
 
     TestReport report;
     report.testId = std::to_string(testId);
@@ -1488,8 +1490,8 @@ std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestInDockerTsan(const st
     }
 
     SCE_LOG_WARN("W3C Test {}: Skipping HTTP test in Docker TSAN environment (cpp-httplib thread creation incompatible "
-             "with TSAN)",
-             testId);
+                 "with TSAN)",
+                 testId);
 
     TestReport report;
     report.testId = testId;
@@ -1722,7 +1724,8 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
                             reporter_->reportTestResult(result);
                         } catch (const std::exception &e) {
                             httpServer.stop();
-                            SCE_LOG_ERROR("W3C Test {}: Test execution failed, HTTP server stopped: {}", testId, e.what());
+                            SCE_LOG_ERROR("W3C Test {}: Test execution failed, HTTP server stopped: {}", testId,
+                                          e.what());
                             throw;
                         }
                     } else {
@@ -1884,13 +1887,13 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
 
             // Set up HTTP server eventCallback to use the EventRaiser
             // W3C SCXML compliance: HTTP events must use EXTERNAL priority (test 510)
-            httpServer->setEventCallback(
-                [eventRaiser = resources->eventRaiser](const std::string &eventName, const std::string &eventData) {
-                    SCE_LOG_INFO("W3CHttpTestServer: Receiving HTTP event '{}' - raising to SCXML with EXTERNAL priority",
+            httpServer->setEventCallback([eventRaiser = resources->eventRaiser](const std::string &eventName,
+                                                                                const std::string &eventData) {
+                SCE_LOG_INFO("W3CHttpTestServer: Receiving HTTP event '{}' - raising to SCXML with EXTERNAL priority",
                              eventName);
-                    // W3C SCXML 5.10: HTTP events must use external queue (test 510 compliance)
-                    eventRaiser->raiseExternalEvent(eventName, eventData);
-                });
+                // W3C SCXML 5.10: HTTP events must use external queue (test 510 compliance)
+                eventRaiser->raiseExternalEvent(eventName, eventData);
+            });
 
             // Build StateMachine with resource injection, then wrap in RAII context
             auto stateMachineUnique = SCE::StateMachineBuilder()
@@ -1969,7 +1972,8 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
             context.executionTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
 
             // RAII cleanup: StateMachineContext destructor handles cleanup on exception (HTTP version)
-            SCE_LOG_DEBUG("StateMachineTestExecutor (HTTP): Automatic cleanup will occur on scope exit after exception");
+            SCE_LOG_DEBUG(
+                "StateMachineTestExecutor (HTTP): Automatic cleanup will occur on scope exit after exception");
 
             report.executionContext = context;
         }
@@ -1988,7 +1992,7 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         }
 
         SCE_LOG_DEBUG("W3C Single Test (HTTP): Test {} completed with result: {}", report.testId,
-                  static_cast<int>(report.validationResult.finalResult));
+                      static_cast<int>(report.validationResult.finalResult));
 
         // Check if test is verified (passed validate-test-execution with LOW RISK)
         {
@@ -2038,7 +2042,7 @@ TestReport W3CTestRunner::runAotTest(int testId) {
                     if (it != verifiedTests_.end()) {
                         report.verified = true;
                         SCE_LOG_DEBUG("AOT Test {} (Interpreter fallback) is verified (passed validate-test-execution)",
-                                  report.testId);
+                                      report.testId);
                     }
                 }
 
@@ -2065,7 +2069,8 @@ TestReport W3CTestRunner::runAotTest(int testId) {
         report.timestamp = std::chrono::system_clock::now();
         report.testId = std::to_string(testId);
         report.engineType = "aot";
-        report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_SCRIPT_ENGINE
+        report.testType =
+            registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_SCRIPT_ENGINE
 
         // Start log capture for failure diagnostics
         if (!failedLogDir_.empty()) {
@@ -2092,7 +2097,7 @@ TestReport W3CTestRunner::runAotTest(int testId) {
             report.executionContext.executionTime = duration;
 
             SCE_LOG_INFO("AOT Test {} ({}): {} in {}ms", testId, testDescription, testPassed ? "PASS" : "FAIL",
-                     duration.count());
+                         duration.count());
 
             // Check if test is verified (passed validate-test-execution with LOW RISK)
             {
@@ -2188,7 +2193,7 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
                     if (it != verifiedTests_.end()) {
                         report.verified = true;
                         SCE_LOG_DEBUG("AOT Test {} (Interpreter fallback) is verified (passed validate-test-execution)",
-                                  report.testId);
+                                      report.testId);
                     }
                 }
 
@@ -2215,7 +2220,8 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
         report.timestamp = std::chrono::system_clock::now();
         report.testId = testId;
         report.engineType = "aot";
-        report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_SCRIPT_ENGINE
+        report.testType =
+            registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_SCRIPT_ENGINE
 
         // Start log capture for failure diagnostics
         if (!failedLogDir_.empty()) {
@@ -2242,7 +2248,7 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
             report.executionContext.executionTime = duration;
 
             SCE_LOG_INFO("AOT Test {} ({}): {} in {}ms", testId, testDescription, testPassed ? "PASS" : "FAIL",
-                     duration.count());
+                         duration.count());
 
             // Check if test is verified (passed validate-test-execution with LOW RISK)
             {
@@ -2377,19 +2383,21 @@ TestReport W3CTestRunner::runManualTest178(const std::string &testDirectory, Tes
             SCE_LOG_INFO(
                 "W3C Test 178: W3C SCXML 6.2 validated - duplicate params preserved as {{\"Var1\":[\"2\",\"3\"]}}");
             SCE_LOG_INFO("W3C Test 178: Trace logs confirm: Param[1] Var1=2, Param[2] Var1=3, EventData: "
-                     "{{\"Var1\":[\"2\",\"3\"]}}");
+                         "{{\"Var1\":[\"2\",\"3\"]}}");
             report.executionContext.finalState = "pass";
             report.validationResult = ValidationResult(
                 true, TestResult::PASS, "W3C SCXML 6.2: param preserves duplicate keys with multiple values");
         } else if (finalState == "fail") {
             SCE_LOG_ERROR("W3C Test 178: FAIL - StateMachine reached fail state");
-            SCE_LOG_ERROR("W3C Test 178: W3C SCXML 6.2 violation - event1 with duplicate params not received correctly");
+            SCE_LOG_ERROR(
+                "W3C Test 178: W3C SCXML 6.2 violation - event1 with duplicate params not received correctly");
             report.executionContext.finalState = "fail";
             report.validationResult =
                 ValidationResult(false, TestResult::FAIL,
                                  "W3C SCXML 6.2 violation: StateMachine reached fail state (event1 not received)");
         } else {
-            SCE_LOG_ERROR("W3C Test 178: TIMEOUT - StateMachine did not reach final state. Current state: {}", finalState);
+            SCE_LOG_ERROR("W3C Test 178: TIMEOUT - StateMachine did not reach final state. Current state: {}",
+                          finalState);
             report.executionContext.finalState = "fail";
             report.validationResult = ValidationResult(
                 false, TestResult::FAIL,

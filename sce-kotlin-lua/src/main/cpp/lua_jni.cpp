@@ -9,19 +9,21 @@
 #include <jni.h>
 
 extern "C" {
+#include "lauxlib.h"
 #include "lua.h"
 #include "lualib.h"
-#include "lauxlib.h"
 }
 
-#include <string>
 #include <cstring>
+#include <string>
 
 // ---------------------------------------------------------------------------
 // Helper: Convert jstring to std::string (handles null)
 // ---------------------------------------------------------------------------
 static std::string jstringToString(JNIEnv *env, jstring jstr) {
-    if (!jstr) return "";
+    if (!jstr) {
+        return "";
+    }
     const char *chars = env->GetStringUTFChars(jstr, nullptr);
     std::string result(chars);
     env->ReleaseStringUTFChars(jstr, chars);
@@ -55,20 +57,26 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL JNI_METHOD(newState)(JNIEnv *, jclass) {
     lua_State *L = luaL_newstate();
-    if (L) luaL_openlibs(L);
+    if (L) {
+        luaL_openlibs(L);
+    }
     return toHandle(L);
 }
 
 JNIEXPORT void JNICALL JNI_METHOD(closeState)(JNIEnv *, jclass, jlong handle) {
     lua_State *L = toState(handle);
-    if (L) lua_close(L);
+    if (L) {
+        lua_close(L);
+    }
 }
 
 // === Script Execution ===
 
 JNIEXPORT jstring JNICALL JNI_METHOD(doString)(JNIEnv *env, jclass, jlong handle, jstring code) {
     lua_State *L = toState(handle);
-    if (!L) return toJString(env, "error: null state");
+    if (!L) {
+        return toJString(env, "error: null state");
+    }
 
     std::string luaCode = jstringToString(env, code);
     int status = luaL_dostring(L, luaCode.c_str());
@@ -82,14 +90,17 @@ JNIEXPORT jstring JNICALL JNI_METHOD(doString)(JNIEnv *env, jclass, jlong handle
     return nullptr;  // success
 }
 
-JNIEXPORT jint JNICALL JNI_METHOD(loadAndCall)(JNIEnv *env, jclass, jlong handle,
-                                                jstring code, jint nresults) {
+JNIEXPORT jint JNICALL JNI_METHOD(loadAndCall)(JNIEnv *env, jclass, jlong handle, jstring code, jint nresults) {
     lua_State *L = toState(handle);
-    if (!L) return -1;
+    if (!L) {
+        return -1;
+    }
 
     std::string luaCode = jstringToString(env, code);
     int status = luaL_loadstring(L, luaCode.c_str());
-    if (status != LUA_OK) return status;
+    if (status != LUA_OK) {
+        return status;
+    }
 
     return lua_pcall(L, 0, nresults, 0);
 }
@@ -197,25 +208,21 @@ JNIEXPORT void JNICALL JNI_METHOD(getTable)(JNIEnv *, jclass, jlong handle, jint
     lua_gettable(toState(handle), index);
 }
 
-JNIEXPORT void JNICALL JNI_METHOD(setField)(JNIEnv *env, jclass, jlong handle,
-                                              jint index, jstring key) {
+JNIEXPORT void JNICALL JNI_METHOD(setField)(JNIEnv *env, jclass, jlong handle, jint index, jstring key) {
     std::string k = jstringToString(env, key);
     lua_setfield(toState(handle), index, k.c_str());
 }
 
-JNIEXPORT void JNICALL JNI_METHOD(getField)(JNIEnv *env, jclass, jlong handle,
-                                              jint index, jstring key) {
+JNIEXPORT void JNICALL JNI_METHOD(getField)(JNIEnv *env, jclass, jlong handle, jint index, jstring key) {
     std::string k = jstringToString(env, key);
     lua_getfield(toState(handle), index, k.c_str());
 }
 
-JNIEXPORT void JNICALL JNI_METHOD(rawSetI)(JNIEnv *, jclass, jlong handle,
-                                            jint index, jlong n) {
+JNIEXPORT void JNICALL JNI_METHOD(rawSetI)(JNIEnv *, jclass, jlong handle, jint index, jlong n) {
     lua_rawseti(toState(handle), index, static_cast<lua_Integer>(n));
 }
 
-JNIEXPORT void JNICALL JNI_METHOD(rawGetI)(JNIEnv *, jclass, jlong handle,
-                                            jint index, jlong n) {
+JNIEXPORT void JNICALL JNI_METHOD(rawGetI)(JNIEnv *, jclass, jlong handle, jint index, jlong n) {
     lua_rawgeti(toState(handle), index, static_cast<lua_Integer>(n));
 }
 
@@ -292,12 +299,32 @@ JNIEXPORT jboolean JNICALL JNI_METHOD(getMetatable)(JNIEnv *, jclass, jlong hand
 
 // === Lua Type Constants ===
 
-JNIEXPORT jint JNICALL JNI_METHOD(typeNone)(JNIEnv *, jclass)     { return LUA_TNONE; }
-JNIEXPORT jint JNICALL JNI_METHOD(typeNil)(JNIEnv *, jclass)      { return LUA_TNIL; }
-JNIEXPORT jint JNICALL JNI_METHOD(typeBoolean)(JNIEnv *, jclass)  { return LUA_TBOOLEAN; }
-JNIEXPORT jint JNICALL JNI_METHOD(typeNumber)(JNIEnv *, jclass)   { return LUA_TNUMBER; }
-JNIEXPORT jint JNICALL JNI_METHOD(typeString)(JNIEnv *, jclass)   { return LUA_TSTRING; }
-JNIEXPORT jint JNICALL JNI_METHOD(typeTable)(JNIEnv *, jclass)    { return LUA_TTABLE; }
-JNIEXPORT jint JNICALL JNI_METHOD(typeFunction)(JNIEnv *, jclass) { return LUA_TFUNCTION; }
+JNIEXPORT jint JNICALL JNI_METHOD(typeNone)(JNIEnv *, jclass) {
+    return LUA_TNONE;
+}
+
+JNIEXPORT jint JNICALL JNI_METHOD(typeNil)(JNIEnv *, jclass) {
+    return LUA_TNIL;
+}
+
+JNIEXPORT jint JNICALL JNI_METHOD(typeBoolean)(JNIEnv *, jclass) {
+    return LUA_TBOOLEAN;
+}
+
+JNIEXPORT jint JNICALL JNI_METHOD(typeNumber)(JNIEnv *, jclass) {
+    return LUA_TNUMBER;
+}
+
+JNIEXPORT jint JNICALL JNI_METHOD(typeString)(JNIEnv *, jclass) {
+    return LUA_TSTRING;
+}
+
+JNIEXPORT jint JNICALL JNI_METHOD(typeTable)(JNIEnv *, jclass) {
+    return LUA_TTABLE;
+}
+
+JNIEXPORT jint JNICALL JNI_METHOD(typeFunction)(JNIEnv *, jclass) {
+    return LUA_TFUNCTION;
+}
 
 }  // extern "C"

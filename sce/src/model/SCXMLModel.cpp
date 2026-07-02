@@ -195,7 +195,7 @@ bool SCE::SCXMLModel::validateStateRelationships() const {
 
             if (!foundAsChild) {
                 SCE_LOG_ERROR("State '{}' has parent '{}' but is not in parent's children list", state->getId(),
-                          parent->getId());
+                              parent->getId());
                 return false;
             }
         }
@@ -207,7 +207,7 @@ bool SCE::SCXMLModel::validateStateRelationships() const {
                 SCE::IStateNode *targetState = findStateById(target);
                 if (!targetState) {
                     SCE_LOG_ERROR("Transition in state '{}' references non-existent target state '{}'", state->getId(),
-                              target);
+                                  target);
                     return false;
                 }
             }
@@ -226,7 +226,7 @@ bool SCE::SCXMLModel::validateStateRelationships() const {
                     // Search in entire model (not just direct children)
                     if (!findStateById(initialStateId)) {
                         SCE_LOG_ERROR("State '{}' references non-existent initial state '{}'", state->getId(),
-                                  initialStateId);
+                                      initialStateId);
                         return false;
                     }
                 }

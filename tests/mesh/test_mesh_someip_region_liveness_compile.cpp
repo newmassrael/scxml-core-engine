@@ -51,45 +51,33 @@ int main() {
     namespace brake_gen = SCE::Generated::brake_region_liveness::P_brake_right_part;
 #endif
 
-    static_assert(
-        brake_gen::SCE_LIVENESS_SERVICE_SELF >= 0x8180 &&
-            brake_gen::SCE_LIVENESS_SERVICE_SELF <= 0x81FF,
-        "SCE_LIVENESS_SERVICE_SELF must land in F.X-1 D2 reservation [0x8180, 0x81FF]");
+    static_assert(brake_gen::SCE_LIVENESS_SERVICE_SELF >= 0x8180 && brake_gen::SCE_LIVENESS_SERVICE_SELF <= 0x81FF,
+                  "SCE_LIVENESS_SERVICE_SELF must land in F.X-1 D2 reservation [0x8180, 0x81FF]");
 
 #ifdef SCE_LIVENESS_PARTITION_LEFT
-    static_assert(
-        brake_gen::SCE_LIVENESS_SERVICE_SELF == 0x8180,
-        "brake_left_part own liveness service must be 0x8180 (lex-sorted counter base)");
-    static_assert(
-        brake_gen::SCE_LIVENESS_SERVICE_PEER_BRAKE_RIGHT_PART == 0x8181,
-        "brake_left_part sibling liveness service must be 0x8181");
-    static_assert(
-        brake_gen::SCE_LIVENESS_SERVICE_SELF !=
-            brake_gen::SCE_LIVENESS_SERVICE_PEER_BRAKE_RIGHT_PART,
-        "self and peer service IDs must be distinct so offer/subscribe cannot collide");
+    static_assert(brake_gen::SCE_LIVENESS_SERVICE_SELF == 0x8180,
+                  "brake_left_part own liveness service must be 0x8180 (lex-sorted counter base)");
+    static_assert(brake_gen::SCE_LIVENESS_SERVICE_PEER_BRAKE_RIGHT_PART == 0x8181,
+                  "brake_left_part sibling liveness service must be 0x8181");
+    static_assert(brake_gen::SCE_LIVENESS_SERVICE_SELF != brake_gen::SCE_LIVENESS_SERVICE_PEER_BRAKE_RIGHT_PART,
+                  "self and peer service IDs must be distinct so offer/subscribe cannot collide");
 #endif
 #ifdef SCE_LIVENESS_PARTITION_RIGHT
-    static_assert(
-        brake_gen::SCE_LIVENESS_SERVICE_SELF == 0x8181,
-        "brake_right_part own liveness service must be 0x8181 (lex-sorted counter +1)");
-    static_assert(
-        brake_gen::SCE_LIVENESS_SERVICE_PEER_BRAKE_LEFT_PART == 0x8180,
-        "brake_right_part sibling liveness service must be 0x8180");
-    static_assert(
-        brake_gen::SCE_LIVENESS_SERVICE_SELF !=
-            brake_gen::SCE_LIVENESS_SERVICE_PEER_BRAKE_LEFT_PART,
-        "self and peer service IDs must be distinct so offer/subscribe cannot collide");
+    static_assert(brake_gen::SCE_LIVENESS_SERVICE_SELF == 0x8181,
+                  "brake_right_part own liveness service must be 0x8181 (lex-sorted counter +1)");
+    static_assert(brake_gen::SCE_LIVENESS_SERVICE_PEER_BRAKE_LEFT_PART == 0x8180,
+                  "brake_right_part sibling liveness service must be 0x8180");
+    static_assert(brake_gen::SCE_LIVENESS_SERVICE_SELF != brake_gen::SCE_LIVENESS_SERVICE_PEER_BRAKE_LEFT_PART,
+                  "self and peer service IDs must be distinct so offer/subscribe cannot collide");
 #endif
 
-    static_assert(
-        brake_gen::SCE_LIVENESS_INSTANCE == 0x0001,
-        "SCE_LIVENESS_INSTANCE is fixed at 0x0001 per RFC F.X-3 §2 wire shape");
+    static_assert(brake_gen::SCE_LIVENESS_INSTANCE == 0x0001,
+                  "SCE_LIVENESS_INSTANCE is fixed at 0x0001 per RFC F.X-3 §2 wire shape");
 
     using RouterT = brake_gen::TransportRouter<SCE::Test::Mesh::TestSenderEngine>;
-    static_assert(sizeof(RouterT) > 0,
-                  "TransportRouter must be a complete type — instantiation drags the "
-                  "consolidated SCE app field + register_availability_handler closure "
-                  "through the front end");
+    static_assert(sizeof(RouterT) > 0, "TransportRouter must be a complete type — instantiation drags the "
+                                       "consolidated SCE app field + register_availability_handler closure "
+                                       "through the front end");
 
     std::printf("SCE Mesh §16.4 region liveness compile verification (SOME/IP): PASS\n");
     return 0;

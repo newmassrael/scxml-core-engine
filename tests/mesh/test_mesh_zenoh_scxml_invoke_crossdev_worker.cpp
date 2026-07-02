@@ -29,19 +29,20 @@
 
 namespace {
 volatile std::sig_atomic_t g_signalled = 0;
-void on_signal(int) { g_signalled = 1; }
+
+void on_signal(int) {
+    g_signalled = 1;
+}
 }  // namespace
 
 int main() {
     std::signal(SIGTERM, on_signal);
     std::signal(SIGINT, on_signal);
 
-    using WorkerEngine =
-        SCE::Generated::scxml_invoke_zenoh_crossdev_worker::scxml_invoke_zenoh_crossdev_worker;
+    using WorkerEngine = SCE::Generated::scxml_invoke_zenoh_crossdev_worker::scxml_invoke_zenoh_crossdev_worker;
     WorkerEngine worker;
     worker.initialize();
-    SCE::Generated::scxml_invoke_zenoh_crossdev_worker::TransportRouter<WorkerEngine>
-        worker_router({&worker});
+    SCE::Generated::scxml_invoke_zenoh_crossdev_worker::TransportRouter<WorkerEngine> worker_router({&worker});
     if (!worker_router.init()) {
         std::fprintf(stderr, "FAIL: worker_router.init() returned false\n");
         return 1;

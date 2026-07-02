@@ -94,11 +94,15 @@ int run_test() {
     struct EnginePump {
         std::atomic<bool> running{true};
         std::thread t;
+
         ~EnginePump() {
             running.store(false, std::memory_order_release);
-            if (t.joinable()) t.join();
+            if (t.joinable()) {
+                t.join();
+            }
         }
     } pump;
+
     pump.t = std::thread([&motor, &pump] {
         while (pump.running.load(std::memory_order_acquire)) {
             motor.step();
@@ -116,16 +120,16 @@ int run_test() {
         brake_router.motor_app_->register_availability_handler(
             brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
             [&](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
-                if (!is_available) return;
+                if (!is_available) {
+                    return;
+                }
                 std::lock_guard<std::mutex> lock(availability_m);
                 service_available = true;
                 availability_cv.notify_all();
             });
 
         std::unique_lock<std::mutex> lock(availability_m);
-        MESH_TEST_REQUIRE(availability_cv.wait_for(
-                              lock, std::chrono::seconds(10),
-                              [&] { return service_available; }),
+        MESH_TEST_REQUIRE(availability_cv.wait_for(lock, std::chrono::seconds(10), [&] { return service_available; }),
                           "vsomeip service motor_control did not become "
                           "available within 10s (routing manager handshake stuck)");
     }
@@ -155,14 +159,12 @@ int run_test() {
         env.data.assign(payload.begin(), payload.end());
         env.invoke_id = SCE::uuid::v7();
 
-        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env),
-                          "brake route_send RpcRequest returned false");
-        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "service.response.compute_force";
-                }),
-                "engine-driven RPC reply not received — regression in "
-                "transition→raise→injected-send→correlation chain");
+        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env), "brake route_send RpcRequest returned false");
+        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.response.compute_force";
+        }),
+                          "engine-driven RPC reply not received — regression in "
+                          "transition→raise→injected-send→correlation chain");
         // Motor SCXML raises service.response without data, so the reply
         // envelope carries an empty payload — asserting on payload here
         // would be meaningless. Data survival is covered by the FireForget
@@ -188,14 +190,12 @@ int run_test() {
         env.datacontenttype = SCE::Mesh::PayloadCodec::None;
         env.invoke_id = SCE::uuid::v7();
 
-        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env),
-                          "brake route_send FieldRead returned false");
-        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "field.notify.vehicle_speed";
-                }),
-                "engine-driven FieldRead reply not received — regression "
-                "in transition<raise>→FieldNotify correlation chain");
+        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env), "brake route_send FieldRead returned false");
+        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "field.notify.vehicle_speed";
+        }),
+                          "engine-driven FieldRead reply not received — regression "
+                          "in transition<raise>→FieldNotify correlation chain");
     }
 
     // Stop the pump eagerly so shutdown observes a quiet engine; the
@@ -213,7 +213,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

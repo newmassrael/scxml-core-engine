@@ -16,8 +16,8 @@
 // This test fails loudly if any link in the chain regresses.
 
 #include "brake_sm.h"
-#include "motor_sm.h"
 #include "brake_transport.h"
+#include "motor_sm.h"
 
 #include <cstdio>
 

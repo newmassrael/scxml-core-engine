@@ -16,23 +16,23 @@
 namespace SCE::Mesh {
 
 enum class RpcStatus : uint8_t {
-    Ok                = 0,
-    Cancelled         = 1,
-    InvalidArgument   = 3,
-    DeadlineExceeded  = 4,
-    NotFound          = 5,
-    Unimplemented     = 12,
-    Internal          = 13,
-    Unavailable       = 14,
+    Ok = 0,
+    Cancelled = 1,
+    InvalidArgument = 3,
+    DeadlineExceeded = 4,
+    NotFound = 5,
+    Unimplemented = 12,
+    Internal = 13,
+    Unavailable = 14,
 };
 
-static_assert(static_cast<uint8_t>(RpcStatus::Ok)               == 0,  "RpcStatus wire value changed");
-static_assert(static_cast<uint8_t>(RpcStatus::Cancelled)        == 1,  "RpcStatus wire value changed");
-static_assert(static_cast<uint8_t>(RpcStatus::InvalidArgument)  == 3,  "RpcStatus wire value changed");
-static_assert(static_cast<uint8_t>(RpcStatus::DeadlineExceeded) == 4,  "RpcStatus wire value changed");
-static_assert(static_cast<uint8_t>(RpcStatus::NotFound)         == 5,  "RpcStatus wire value changed");
-static_assert(static_cast<uint8_t>(RpcStatus::Unimplemented)    == 12, "RpcStatus wire value changed");
-static_assert(static_cast<uint8_t>(RpcStatus::Internal)         == 13, "RpcStatus wire value changed");
-static_assert(static_cast<uint8_t>(RpcStatus::Unavailable)      == 14, "RpcStatus wire value changed");
+static_assert(static_cast<uint8_t>(RpcStatus::Ok) == 0, "RpcStatus wire value changed");
+static_assert(static_cast<uint8_t>(RpcStatus::Cancelled) == 1, "RpcStatus wire value changed");
+static_assert(static_cast<uint8_t>(RpcStatus::InvalidArgument) == 3, "RpcStatus wire value changed");
+static_assert(static_cast<uint8_t>(RpcStatus::DeadlineExceeded) == 4, "RpcStatus wire value changed");
+static_assert(static_cast<uint8_t>(RpcStatus::NotFound) == 5, "RpcStatus wire value changed");
+static_assert(static_cast<uint8_t>(RpcStatus::Unimplemented) == 12, "RpcStatus wire value changed");
+static_assert(static_cast<uint8_t>(RpcStatus::Internal) == 13, "RpcStatus wire value changed");
+static_assert(static_cast<uint8_t>(RpcStatus::Unavailable) == 14, "RpcStatus wire value changed");
 
 }  // namespace SCE::Mesh

@@ -3,7 +3,9 @@
 //
 // W3C SCXML test311 — C11 AOT runner.
 //
-// W3C SCXML 5.4: `<assign location="">` with an empty location attribute raises error.execution — the lua_assign macro's empty-location guard (8b1bb1e9) emits the error and the receiving error.execution transition matches before the safety-net 1 s timeout fires.
+// W3C SCXML 5.4: `<assign location="">` with an empty location attribute raises error.execution — the lua_assign
+// macro's empty-location guard (8b1bb1e9) emits the error and the receiving error.execution transition matches before
+// the safety-net 1 s timeout fires.
 
 #define _POSIX_C_SOURCE 199309L
 
@@ -25,8 +27,7 @@ int main(void) {
 
     while (!test311_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test311: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test311_active_states(&sm));
+            fprintf(stderr, "test311: TIMEOUT — active = 0x%08x\n", (unsigned)test311_active_states(&sm));
             test311_destroy(&sm);
             return 1;
         }
@@ -36,8 +37,7 @@ int main(void) {
 
     int rc = test311_in_state(&sm, TEST311_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test311: FAIL — active = 0x%08x\n",
-                (unsigned)test311_active_states(&sm));
+        fprintf(stderr, "test311: FAIL — active = 0x%08x\n", (unsigned)test311_active_states(&sm));
     }
     test311_destroy(&sm);
     return rc;

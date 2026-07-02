@@ -32,8 +32,7 @@ namespace SCE {
  * the captured buffer can be saved to a file for post-mortem analysis.
  * Always captures at debug level regardless of the logger's active level.
  */
-template <typename Mutex>
-class CaptureSink : public spdlog::sinks::base_sink<Mutex> {
+template <typename Mutex> class CaptureSink : public spdlog::sinks::base_sink<Mutex> {
 public:
     std::string getBuffer() {
         std::lock_guard<Mutex> lock(spdlog::sinks::base_sink<Mutex>::mutex_);

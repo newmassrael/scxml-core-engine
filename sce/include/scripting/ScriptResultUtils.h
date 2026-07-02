@@ -64,8 +64,8 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
  * @return Vector of ScriptValue elements, empty on failure
  */
 std::vector<ScriptValue> resultToScriptValueArray(const ScriptResult &result, IScriptEngine *engine = nullptr,
-                                                   const std::string &sessionId = "",
-                                                   const std::string &originalExpression = "");
+                                                  const std::string &sessionId = "",
+                                                  const std::string &originalExpression = "");
 
 /**
  * @brief Check if result represents successful operation

@@ -74,12 +74,11 @@ int main() {
             return 0;
         }
         if (parent.getCurrentState() == ParentState::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent reached `fail`. Expected autoforward "
-                         "to forward `trigger` to child → child reaches "
-                         "`done` → wire-18 → done.invoke.* → pass. Likely "
-                         "`error.execution` fired (wire-20 or forward "
-                         "callback uninstalled).\n");
+            std::fprintf(stderr, "FAIL: parent reached `fail`. Expected autoforward "
+                                 "to forward `trigger` to child → child reaches "
+                                 "`done` → wire-18 → done.invoke.* → pass. Likely "
+                                 "`error.execution` fired (wire-20 or forward "
+                                 "callback uninstalled).\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

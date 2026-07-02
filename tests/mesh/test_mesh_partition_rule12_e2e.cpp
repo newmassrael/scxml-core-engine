@@ -44,7 +44,7 @@
 
 namespace {
 
-pid_t spawn(const char* binary) {
+pid_t spawn(const char *binary) {
     pid_t pid = ::fork();
     if (pid < 0) {
         std::perror("fork");
@@ -53,7 +53,7 @@ pid_t spawn(const char* binary) {
     if (pid == 0) {
         // Argv must be a non-const char*[] for execv; cast away const
         // since the kernel does not modify the strings.
-        char* argv[] = {const_cast<char*>(binary), nullptr};
+        char *argv[] = {const_cast<char *>(binary), nullptr};
         ::execv(binary, argv);
         // Unreachable on success; print and abort on exec failure.
         std::fprintf(stderr, "execv(%s) failed: %s\n", binary, std::strerror(errno));
@@ -62,7 +62,7 @@ pid_t spawn(const char* binary) {
     return pid;
 }
 
-bool wait_child(pid_t pid, const char* tag) {
+bool wait_child(pid_t pid, const char *tag) {
     int status = 0;
     if (::waitpid(pid, &status, 0) < 0) {
         std::fprintf(stderr, "waitpid(%s) failed: %s\n", tag, std::strerror(errno));

@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "W3CHttpTestServer.h"
-#include "runtime/JsonUtils.h"
-#include "core/LogMacros.h"
 #include "common/TestUtils.h"
+#include "core/LogMacros.h"
 #include "events/HttpEventBridge.h"
+#include "runtime/JsonUtils.h"
 #include <chrono>
 #include <httplib.h>
 #include <sstream>
@@ -192,7 +192,7 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
                             if (quoteEnd != std::string::npos) {
                                 eventName = req.body.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
                                 SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Extracted event name from JSON: {}", instanceId_,
-                                          eventName);
+                                              eventName);
                             }
                         }
                     }
@@ -228,7 +228,7 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
                 eventCallback_(eventName, eventData);
             } else {
                 SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Callback not set yet, queuing event '{}' for later delivery",
-                          instanceId_, eventName);
+                              instanceId_, eventName);
                 pendingEvents_.emplace_back(eventName, eventData);
             }
         }

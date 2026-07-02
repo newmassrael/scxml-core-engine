@@ -4,8 +4,8 @@
 #pragma once
 
 #include "AotTestBase.h"
-#include "core/LogMacros.h"
 #include "AotTestRegistry.h"
+#include "core/LogMacros.h"
 #include "scripting/ScriptEngineProvider.h"
 #include <memory>
 #include <thread>
@@ -40,9 +40,8 @@ public:
         SM sm;
         // W3C SCXML B.1: Inject script engine handle (Path B+ Q1=(d) C++=shared_ptr).
         if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
-            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
-                &::SCE::ScriptEngineProvider::getScriptEngine(),
-                [](::SCE::IScriptEngine*){}));
+            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                       [](::SCE::IScriptEngine *) {}));
         }
         sm.initialize();
 
@@ -64,12 +63,13 @@ public:
             // Manual test or custom success state
             isPass = (currentState == Derived::PASS_STATE);
             SCE_LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, PASS_STATE={}, isPass={}",
-                      static_cast<int>(currentState), static_cast<int>(Derived::PASS_STATE), isPass);
+                          static_cast<int>(currentState), static_cast<int>(Derived::PASS_STATE), isPass);
         } else {
             // Standard test: success = Pass state
             isPass = (currentState == SM::State::Pass);
-            SCE_LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, SM::State::Pass={}, isPass={}",
-                      static_cast<int>(currentState), static_cast<int>(SM::State::Pass), isPass);
+            SCE_LOG_DEBUG(
+                "ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, SM::State::Pass={}, isPass={}",
+                static_cast<int>(currentState), static_cast<int>(SM::State::Pass), isPass);
         }
         bool result = isPass;
 

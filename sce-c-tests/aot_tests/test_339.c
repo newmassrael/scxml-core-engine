@@ -3,7 +3,10 @@
 //
 // W3C SCXML test339 — C11 AOT runner.
 //
-// W3C SCXML 5.10.1: `_event.invokeid` is unset for events not produced by an `<invoke>` — the existing set_current_event lua chunk simply does not bind invokeid (carve-out tracked in c11_design_decisions.md until first invoke fixture lifts it), so internal raises leave it nil and the cond `typeof _event.invokeid === 'undefined'` matches pass.
+// W3C SCXML 5.10.1: `_event.invokeid` is unset for events not produced by an `<invoke>` — the existing
+// set_current_event lua chunk simply does not bind invokeid (carve-out tracked in c11_design_decisions.md until first
+// invoke fixture lifts it), so internal raises leave it nil and the cond `typeof _event.invokeid === 'undefined'`
+// matches pass.
 
 #include <stdio.h>
 

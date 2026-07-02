@@ -70,8 +70,7 @@ public:
      * expansion failures, `SCE::parsing::ParseXmlFailed` for
      * reparse failures. §wire-W4.5 D2.
      */
-    virtual SCE::parsing::PositionMap processSceTemplate(
-        const SCE::parsing::PositionMap &upstream) = 0;
+    virtual SCE::parsing::PositionMap processSceTemplate(const SCE::parsing::PositionMap &upstream) = 0;
 
     /**
      * @brief Check if document is valid

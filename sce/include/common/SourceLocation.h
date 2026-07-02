@@ -27,18 +27,34 @@
 
 #if __has_include(<source_location>) && __cplusplus >= 202002L
 #include <source_location>
+
 namespace SCE {
 using source_location = std::source_location;
 }
 #else
 #include <cstdint>
+
 namespace SCE {
 struct source_location {
-    static constexpr source_location current() noexcept { return {}; }
-    constexpr const char* file_name() const noexcept { return ""; }
-    constexpr const char* function_name() const noexcept { return ""; }
-    constexpr uint_least32_t line() const noexcept { return 0; }
-    constexpr uint_least32_t column() const noexcept { return 0; }
+    static constexpr source_location current() noexcept {
+        return {};
+    }
+
+    constexpr const char *file_name() const noexcept {
+        return "";
+    }
+
+    constexpr const char *function_name() const noexcept {
+        return "";
+    }
+
+    constexpr uint_least32_t line() const noexcept {
+        return 0;
+    }
+
+    constexpr uint_least32_t column() const noexcept {
+        return 0;
+    }
 };
-}
+}  // namespace SCE
 #endif

@@ -295,7 +295,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
             // Capture final snapshot
             auto finalSnapshot = captureCurrentSnapshot(runner);
             SCE_LOG_DEBUG("Stage 1: FINAL_STATE/NO_EVENTS_AVAILABLE, captured final snapshot with stepNumber={}",
-                      finalSnapshot.stepNumber);
+                          finalSnapshot.stepNumber);
             forwardSnapshots.push_back(finalSnapshot);
             break;
         }
@@ -304,7 +304,8 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
             // Scheduled events waiting - consider this end of execution
             totalSteps = step + 1;
             auto finalSnapshot = captureCurrentSnapshot(runner);
-            SCE_LOG_DEBUG("Stage 1: NO_EVENTS_READY, captured final snapshot with stepNumber={}", finalSnapshot.stepNumber);
+            SCE_LOG_DEBUG("Stage 1: NO_EVENTS_READY, captured final snapshot with stepNumber={}",
+                          finalSnapshot.stepNumber);
             forwardSnapshots.push_back(finalSnapshot);
             break;
         }

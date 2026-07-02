@@ -26,8 +26,7 @@ int main(void) {
 
     int rc = test456_in_state(&sm, TEST456_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        (void)fprintf(stderr, "test456: FAIL — active = 0x%08x\n",
-                      (unsigned)test456_active_states(&sm));
+        (void)fprintf(stderr, "test456: FAIL — active = 0x%08x\n", (unsigned)test456_active_states(&sm));
     }
     test456_destroy(&sm);
     return rc;

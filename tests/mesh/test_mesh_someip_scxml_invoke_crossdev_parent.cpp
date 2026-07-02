@@ -40,11 +40,9 @@ int main() {
     // invocation could prevent vsomeip from binding here.
     SCE::Test::Mesh::wipe_stale_vsomeip_sockets();
 
-    using ParentEngine =
-        SCE::Generated::scxml_invoke_someip_crossdev_parent::scxml_invoke_someip_crossdev_parent;
+    using ParentEngine = SCE::Generated::scxml_invoke_someip_crossdev_parent::scxml_invoke_someip_crossdev_parent;
     ParentEngine parent;
-    SCE::Generated::scxml_invoke_someip_crossdev_parent::TransportRouter<ParentEngine>
-        parent_router({&parent});
+    SCE::Generated::scxml_invoke_someip_crossdev_parent::TransportRouter<ParentEngine> parent_router({&parent});
     if (!parent_router.init()) {
         std::fprintf(stderr, "FAIL: parent_router.init() returned false\n");
         return 1;
@@ -77,15 +75,13 @@ int main() {
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
         if (parent.getCurrentState() == State::Pass) {
-            std::printf(
-                "SCE Mesh §9.6 Session 5b SOME/IP scxml-invoke crossdev: PASS\n");
+            std::printf("SCE Mesh §9.6 Session 5b SOME/IP scxml-invoke crossdev: PASS\n");
             return 0;
         }
         if (parent.getCurrentState() == State::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent observed error.execution — wire-14 "
-                         "reached the worker but the success path "
-                         "(wire-15 + wire-18) did not complete.\n");
+            std::fprintf(stderr, "FAIL: parent observed error.execution — wire-14 "
+                                 "reached the worker but the success path "
+                                 "(wire-15 + wire-18) did not complete.\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));

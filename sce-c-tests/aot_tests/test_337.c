@@ -3,7 +3,9 @@
 //
 // W3C SCXML test337 — C11 AOT runner.
 //
-// W3C SCXML 5.10.1: `_event.origintype` follows the same internal-vs-external binding rule as `_event.origin` — internal pops leave it nil, and the cond `typeof _event.origintype === 'undefined'` matches the pass transition. Direct sibling of test335 over the origintype field.
+// W3C SCXML 5.10.1: `_event.origintype` follows the same internal-vs-external binding rule as `_event.origin` —
+// internal pops leave it nil, and the cond `typeof _event.origintype === 'undefined'` matches the pass transition.
+// Direct sibling of test335 over the origintype field.
 
 #include <stdio.h>
 

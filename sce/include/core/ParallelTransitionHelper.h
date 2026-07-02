@@ -256,10 +256,11 @@ public:
      * @return Depth (0 = root)
      */
 #if __cpp_concepts >= 202002L
-    template <typename StateType, ParallelStatePolicy PolicyType> static int getDepth(StateType state) {
+    template <typename StateType, ParallelStatePolicy PolicyType>
 #else
-    template <typename StateType, typename PolicyType> static int getDepth(StateType state) {
+    template <typename StateType, typename PolicyType>
 #endif
+    static int getDepth(StateType state) {
         int depth = 0;
         auto current = state;
 
@@ -528,7 +529,9 @@ private:
 #endif
     static bool isInternalToDescendant(StateType source, StateType target) {
         bool sourceIsCompound = PolicyType::isCompoundState(source) && !PolicyType::isParallelState(source);
-        if (!sourceIsCompound) return false;
+        if (!sourceIsCompound) {
+            return false;
+        }
         return PolicyType::isDescendantOf(target, source) && target != source;
     }
 

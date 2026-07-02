@@ -1,0 +1,4 @@
+# Vendored doomgeneric sources keep upstream formatting so diffs against
+# upstream stay reviewable. clang-format skips this subtree entirely.
+DisableFormat: true
+SortIncludes: false

@@ -16,17 +16,17 @@
 namespace SCE::Mesh {
 
 enum class PayloadCodec : uint8_t {
-    None  = 0,  // payload absent (FireForget control messages)
-    Json  = 1,  // default; §scxml-5.10 _event.data
-    Cbor  = 2,  // structured, smaller than JSON
+    None = 0,   // payload absent (FireForget control messages)
+    Json = 1,   // default; §scxml-5.10 _event.data
+    Cbor = 2,   // structured, smaller than JSON
     Typed = 3,  // codegen-emitted binary using event schema
-    Raw   = 4,  // user-supplied encoder (escape hatch)
+    Raw = 4,    // user-supplied encoder (escape hatch)
 };
 
-static_assert(static_cast<uint8_t>(PayloadCodec::None)  == 0, "PayloadCodec wire value changed");
-static_assert(static_cast<uint8_t>(PayloadCodec::Json)  == 1, "PayloadCodec wire value changed");
-static_assert(static_cast<uint8_t>(PayloadCodec::Cbor)  == 2, "PayloadCodec wire value changed");
+static_assert(static_cast<uint8_t>(PayloadCodec::None) == 0, "PayloadCodec wire value changed");
+static_assert(static_cast<uint8_t>(PayloadCodec::Json) == 1, "PayloadCodec wire value changed");
+static_assert(static_cast<uint8_t>(PayloadCodec::Cbor) == 2, "PayloadCodec wire value changed");
 static_assert(static_cast<uint8_t>(PayloadCodec::Typed) == 3, "PayloadCodec wire value changed");
-static_assert(static_cast<uint8_t>(PayloadCodec::Raw)   == 4, "PayloadCodec wire value changed");
+static_assert(static_cast<uint8_t>(PayloadCodec::Raw) == 4, "PayloadCodec wire value changed");
 
 }  // namespace SCE::Mesh

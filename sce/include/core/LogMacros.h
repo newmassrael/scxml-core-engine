@@ -34,48 +34,69 @@
  */
 
 #ifdef SCE_ENABLE_RUNTIME_LOGGING
-  #include "common/Logger.h"
-  #include "common/SourceLocation.h"
+#include "common/Logger.h"
+#include "common/SourceLocation.h"
 
-  // Format string handling: prefer std::format (C++20), fall back to fmt (spdlog bundled)
-  #if __cpp_lib_format >= 201907L
-    #include <format>
-    #define SCE_DETAIL_FORMAT(...) std::format(__VA_ARGS__)
-  #elif defined(SCE_USE_SPDLOG)
-    #include <spdlog/fmt/bundled/format.h>
-    #define SCE_DETAIL_FORMAT(...) fmt::format(__VA_ARGS__)
-  #else
-    // No format library available — log format string only (parameter substitution lost)
-    #include <string>
-    namespace SCE::detail {
-    inline std::string format_fallback(const char* fmt) { return std::string(fmt); }
-    template<typename... Args>
-    inline std::string format_fallback(const char* fmt, Args&&...) { return std::string(fmt); }
-    }
-    #define SCE_DETAIL_FORMAT(...) SCE::detail::format_fallback(__VA_ARGS__)
-  #endif
-
-  #define SCE_LOG_TRACE(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Trace)) \
-      SCE::Logger::trace(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
-  #define SCE_LOG_DEBUG(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Debug)) \
-      SCE::Logger::debug(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
-  #define SCE_LOG_INFO(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Info)) \
-      SCE::Logger::info(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
-  #define SCE_LOG_WARN(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Warn)) \
-      SCE::Logger::warn(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
-  #define SCE_LOG_ERROR(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Error)) \
-      SCE::Logger::error(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
+// Format string handling: prefer std::format (C++20), fall back to fmt (spdlog bundled)
+#if __cpp_lib_format >= 201907L
+#include <format>
+#define SCE_DETAIL_FORMAT(...) std::format(__VA_ARGS__)
+#elif defined(SCE_USE_SPDLOG)
+#include <spdlog/fmt/bundled/format.h>
+#define SCE_DETAIL_FORMAT(...) fmt::format(__VA_ARGS__)
 #else
-  // No-op branch. Arguments are forwarded to a variadic sink so callers do
-  // not trip -Wunused-parameter when a logged variable would otherwise be
-  // unreferenced. The compiler discards the call entirely at -O1+.
-  namespace SCE::detail {
-  template <typename... Args>
-  inline void log_noop(Args &&...) noexcept {}
-  }  // namespace SCE::detail
-  #define SCE_LOG_TRACE(...) ::SCE::detail::log_noop(__VA_ARGS__)
-  #define SCE_LOG_DEBUG(...) ::SCE::detail::log_noop(__VA_ARGS__)
-  #define SCE_LOG_INFO(...)  ::SCE::detail::log_noop(__VA_ARGS__)
-  #define SCE_LOG_WARN(...)  ::SCE::detail::log_noop(__VA_ARGS__)
-  #define SCE_LOG_ERROR(...) ::SCE::detail::log_noop(__VA_ARGS__)
+// No format library available — log format string only (parameter substitution lost)
+#include <string>
+
+namespace SCE::detail {
+inline std::string format_fallback(const char *fmt) {
+    return std::string(fmt);
+}
+
+template <typename... Args> inline std::string format_fallback(const char *fmt, Args &&...) {
+    return std::string(fmt);
+}
+}  // namespace SCE::detail
+
+#define SCE_DETAIL_FORMAT(...) SCE::detail::format_fallback(__VA_ARGS__)
+#endif
+
+#define SCE_LOG_TRACE(...)                                                                                             \
+    do {                                                                                                               \
+        if (SCE::Logger::shouldLog(SCE::LogLevel::Trace))                                                              \
+            SCE::Logger::trace(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                       \
+    } while (0)
+#define SCE_LOG_DEBUG(...)                                                                                             \
+    do {                                                                                                               \
+        if (SCE::Logger::shouldLog(SCE::LogLevel::Debug))                                                              \
+            SCE::Logger::debug(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                       \
+    } while (0)
+#define SCE_LOG_INFO(...)                                                                                              \
+    do {                                                                                                               \
+        if (SCE::Logger::shouldLog(SCE::LogLevel::Info))                                                               \
+            SCE::Logger::info(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                        \
+    } while (0)
+#define SCE_LOG_WARN(...)                                                                                              \
+    do {                                                                                                               \
+        if (SCE::Logger::shouldLog(SCE::LogLevel::Warn))                                                               \
+            SCE::Logger::warn(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                        \
+    } while (0)
+#define SCE_LOG_ERROR(...)                                                                                             \
+    do {                                                                                                               \
+        if (SCE::Logger::shouldLog(SCE::LogLevel::Error))                                                              \
+            SCE::Logger::error(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current());                       \
+    } while (0)
+#else
+// No-op branch. Arguments are forwarded to a variadic sink so callers do
+// not trip -Wunused-parameter when a logged variable would otherwise be
+// unreferenced. The compiler discards the call entirely at -O1+.
+namespace SCE::detail {
+template <typename... Args> inline void log_noop(Args &&...) noexcept {}
+}  // namespace SCE::detail
+
+#define SCE_LOG_TRACE(...) ::SCE::detail::log_noop(__VA_ARGS__)
+#define SCE_LOG_DEBUG(...) ::SCE::detail::log_noop(__VA_ARGS__)
+#define SCE_LOG_INFO(...) ::SCE::detail::log_noop(__VA_ARGS__)
+#define SCE_LOG_WARN(...) ::SCE::detail::log_noop(__VA_ARGS__)
+#define SCE_LOG_ERROR(...) ::SCE::detail::log_noop(__VA_ARGS__)
 #endif

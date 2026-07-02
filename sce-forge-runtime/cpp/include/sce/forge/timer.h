@@ -29,4 +29,4 @@ public:
     virtual void cancel() = 0;
 };
 
-} // namespace SCE::Forge
+}  // namespace SCE::Forge

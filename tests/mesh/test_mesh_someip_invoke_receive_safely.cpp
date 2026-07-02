@@ -52,17 +52,17 @@ SCE::Mesh::MeshEnvelope make_probe_envelope() {
     return env;
 }
 
-#define REQUIRE(cond, msg)                                              \
-    do {                                                                \
-        if (!(cond)) {                                                  \
-            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__); \
-            return 1;                                                   \
-        }                                                               \
+#define REQUIRE(cond, msg)                                                                                             \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            std::fprintf(stderr, "FAIL: %s (%s:%d)\n", msg, __FILE__, __LINE__);                                       \
+            return 1;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
 int test_std_exception_does_not_propagate() {
     std::atomic<int> calls{0};
-    ReceiveCallback throws_runtime = [&](const SCE::Mesh::MeshEnvelope&) {
+    ReceiveCallback throws_runtime = [&](const SCE::Mesh::MeshEnvelope &) {
         calls.fetch_add(1);
         throw std::runtime_error("simulated SCE handler failure");
     };
@@ -76,7 +76,7 @@ int test_std_exception_does_not_propagate() {
 
 int test_non_std_exception_does_not_propagate() {
     std::atomic<int> calls{0};
-    ReceiveCallback throws_int = [&](const SCE::Mesh::MeshEnvelope&) {
+    ReceiveCallback throws_int = [&](const SCE::Mesh::MeshEnvelope &) {
         calls.fetch_add(1);
         throw 42;  // non-std::exception → must reach `catch (...)` arm
     };
@@ -84,9 +84,8 @@ int test_non_std_exception_does_not_propagate() {
     auto env = make_probe_envelope();
     invokeReceiveSafely(throws_int, env);
 
-    REQUIRE(calls.load() == 1,
-            "handler must have been invoked exactly once "
-            "(non-std::exception still reaches the body)");
+    REQUIRE(calls.load() == 1, "handler must have been invoked exactly once "
+                               "(non-std::exception still reaches the body)");
     return 0;
 }
 
@@ -103,20 +102,17 @@ int test_subsequent_dispatch_after_exception_still_runs() {
     // a well-behaved handler must still execute. The boundary must not
     // leave any persistent state behind.
     std::atomic<int> good_calls{0};
-    ReceiveCallback throws_once = [](const SCE::Mesh::MeshEnvelope&) {
+    ReceiveCallback throws_once = [](const SCE::Mesh::MeshEnvelope &) {
         throw std::logic_error("first handler throws");
     };
-    ReceiveCallback well_behaved = [&](const SCE::Mesh::MeshEnvelope&) {
-        good_calls.fetch_add(1);
-    };
+    ReceiveCallback well_behaved = [&](const SCE::Mesh::MeshEnvelope &) { good_calls.fetch_add(1); };
 
     auto env = make_probe_envelope();
     invokeReceiveSafely(throws_once, env);   // exception swallowed
     invokeReceiveSafely(well_behaved, env);  // must run to completion
 
-    REQUIRE(good_calls.load() == 1,
-            "well-behaved handler must run after an earlier exception was "
-            "swallowed by the boundary");
+    REQUIRE(good_calls.load() == 1, "well-behaved handler must run after an earlier exception was "
+                                    "swallowed by the boundary");
     return 0;
 }
 
@@ -125,7 +121,7 @@ int test_repeated_throwing_handler_runs_each_time() {
     // of a throwing handler each get caught independently. Pins that the
     // catch-all does not stash exception state across calls.
     std::atomic<int> calls{0};
-    ReceiveCallback throws_each_time = [&](const SCE::Mesh::MeshEnvelope&) {
+    ReceiveCallback throws_each_time = [&](const SCE::Mesh::MeshEnvelope &) {
         calls.fetch_add(1);
         throw std::runtime_error("recurring failure");
     };
@@ -135,8 +131,7 @@ int test_repeated_throwing_handler_runs_each_time() {
         invokeReceiveSafely(throws_each_time, env);
     }
 
-    REQUIRE(calls.load() == 5,
-            "each throwing call must be invoked AND swallowed independently");
+    REQUIRE(calls.load() == 5, "each throwing call must be invoked AND swallowed independently");
     return 0;
 }
 

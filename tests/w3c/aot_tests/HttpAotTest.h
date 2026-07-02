@@ -3,10 +3,10 @@
 
 #pragma once
 #include "AotTestBase.h"
-#include "core/LogMacros.h"
 #include "AotTestRegistry.h"
-#include "events/IHttpClient.h"
 #include "common/SendHelper.h"
+#include "core/LogMacros.h"
+#include "events/IHttpClient.h"
 #ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"
 #include "events/CppHttplibClient.h"
@@ -14,9 +14,9 @@
 #include "events/EmscriptenFetchClient.h"
 #include <nlohmann/json.hpp>
 #endif
-#include "static/StaticExecutionEngine.h"
 #include "common/TestUtils.h"
 #include "scripting/ScriptEngineProvider.h"
+#include "static/StaticExecutionEngine.h"
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -52,8 +52,8 @@ public:
         // Skip HTTP tests to avoid TSAN false positives in DNS resolution
         if (SCE::Test::Utils::isInDockerTsan()) {
             SCE_LOG_WARN("HttpAotTest {}: Skipping W3C SCXML C.2 test in Docker TSAN environment (getaddrinfo DNS "
-                     "resolution incompatible with TSAN)",
-                     TestNum);
+                         "resolution incompatible with TSAN)",
+                         TestNum);
             return true;  // Report as PASS (skip, not fail)
         }
 
@@ -61,9 +61,8 @@ public:
         SM sm;
         // W3C SCXML B.1: Inject script engine handle (Path B+ Q1=(d) C++=shared_ptr).
         if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
-            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
-                &::SCE::ScriptEngineProvider::getScriptEngine(),
-                [](::SCE::IScriptEngine*){}));
+            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                       [](::SCE::IScriptEngine *){}));
         }
 
         // W3C SCXML C.2: Create and start HTTP server
@@ -80,7 +79,7 @@ public:
         // When HTTP server receives POST response, it raises event to state machine
         httpServer.setEventCallback([&sm](const std::string &eventName, const std::string &eventData) {
             SCE_LOG_DEBUG("HttpAotTest {}: HTTP callback received event '{}' with data '{}'", TestNum, eventName,
-                      eventData);
+                          eventData);
 
             // W3C SCXML C.2: Map event name string to Event enum
             // Each test has different Event enum values, so we iterate to find match
@@ -114,8 +113,8 @@ public:
         // Synchronous send ensures server callback (which injects response event into SM)
         // completes before performHttpSend returns, preserving event ordering.
         sm.setHttpSendCallback([](const SCE::Static::HttpSendRequest &request) {
-            SCE_LOG_DEBUG("HttpAotTest {}: performHttpSend target='{}' event='{}' content='{}'",
-                      TestNum, request.target, request.eventName, request.content);
+            SCE_LOG_DEBUG("HttpAotTest {}: performHttpSend target='{}' event='{}' content='{}'", TestNum,
+                          request.target, request.eventName, request.content);
 
             // W3C SCXML C.2: Build HTTP POST body (Zero Duplication with SendHelper)
             std::string body;
@@ -160,7 +159,7 @@ public:
             auto elapsed = std::chrono::steady_clock::now() - startTime;
             if (elapsed > timeout) {
                 SCE_LOG_ERROR("HttpAotTest {}: Timeout waiting for final state (elapsed: {}ms)", TestNum,
-                          std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+                              std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
                 httpServer.stop();
                 return false;
             }
@@ -178,7 +177,8 @@ public:
 
         // Check if final state is Pass
         bool isPass = sm.getCurrentState() == SM::State::Pass;
-        SCE_LOG_DEBUG("HttpAotTest {}: Final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()), isPass);
+        SCE_LOG_DEBUG("HttpAotTest {}: Final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()),
+                      isPass);
 
         return isPass;
 #else
@@ -194,8 +194,8 @@ public:
         // EmscriptenFetchClient sends HTTP POST to external server (standalone_http_server.js),
         // then parses JSON response to route events back into the state machine.
         sm.setHttpSendCallback([&sm](const SCE::Static::HttpSendRequest &request) {
-            SCE_LOG_DEBUG("HttpAotTest {}: WASM performHttpSend target='{}' event='{}' content='{}'",
-                      TestNum, request.target, request.eventName, request.content);
+            SCE_LOG_DEBUG("HttpAotTest {}: WASM performHttpSend target='{}' event='{}' content='{}'", TestNum,
+                          request.target, request.eventName, request.content);
 
             // W3C SCXML C.2: Build HTTP POST body (Zero Duplication with SendHelper)
             std::string body;
@@ -237,8 +237,7 @@ public:
                         sm.raiseExternal(eventName, eventData);
                     }
                 } else if (!response.success) {
-                    SCE_LOG_ERROR("HttpAotTest {}: WASM HTTP POST failed (status {})",
-                              TestNum, response.statusCode);
+                    SCE_LOG_ERROR("HttpAotTest {}: WASM HTTP POST failed (status {})", TestNum, response.statusCode);
                 }
             } catch (const std::exception &e) {
                 SCE_LOG_ERROR("HttpAotTest {}: WASM HTTP POST exception: {}", TestNum, e.what());
@@ -259,9 +258,9 @@ public:
             auto elapsed = std::chrono::steady_clock::now() - startTime;
             if (elapsed > timeout) {
                 SCE_LOG_ERROR("HttpAotTest {}: WASM timeout waiting for final state (elapsed: {}ms)", TestNum,
-                          std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+                              std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
                 SCE_LOG_ERROR("HttpAotTest {}: Make sure external HTTP server is running (started by polyfill_pre.js)",
-                          TestNum);
+                              TestNum);
                 return false;
             }
 
@@ -275,7 +274,7 @@ public:
         // Check if final state is Pass
         bool isPass = sm.getCurrentState() == SM::State::Pass;
         SCE_LOG_DEBUG("HttpAotTest {}: WASM final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()),
-                  isPass);
+                      isPass);
 
         return isPass;
 #endif

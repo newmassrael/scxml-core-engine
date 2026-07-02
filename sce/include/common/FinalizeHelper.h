@@ -74,8 +74,8 @@ public:
         // §scxml-6.5: Set _event BEFORE finalize execution
         // Finalize scripts need access to _event.data.fieldName (test 233)
         jsEngine
-            .setCurrentEvent(sessionId,
-                             SetCurrentEventArgs{eventName, eventData, "external", sendId, origin, originType, invokeId})
+            .setCurrentEvent(
+                sessionId, SetCurrentEventArgs{eventName, eventData, "external", sendId, origin, originType, invokeId})
             .get();
 
         // Execute finalize script

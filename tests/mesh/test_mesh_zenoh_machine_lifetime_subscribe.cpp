@@ -44,10 +44,9 @@ using namespace SCE::Test::Mesh;
 // Mirrors brake's connect endpoint, pinned in deploy_zenoh_machine_lifetime_subscribe.yaml
 // to motor's ecu_motor listen. The raw motor peer co-locates on the same
 // address so the Zenoh handshake converges deterministically.
-constexpr const char* kListen =
-    SCE::Generated::brake_zenoh_machine_lifetime_subscribe::ZENOH_CONNECT_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::brake_zenoh_machine_lifetime_subscribe::ZENOH_CONNECT_ENDPOINTS[0];
 // Must match deploy_zenoh_machine_lifetime_subscribe.yaml binding key for #motor.
-constexpr const char* kMotorKey = "sce/brake_lifetime/motor/status";
+constexpr const char *kMotorKey = "sce/brake_lifetime/motor/status";
 
 constexpr int kBurstCount = 5;
 constexpr auto kBurstCadence = std::chrono::milliseconds(30);
@@ -87,8 +86,7 @@ int run_test() {
     // collapse them, and each arrives through the same subscriber
     // callback declared at init() time.
     for (int i = 0; i < kBurstCount; ++i) {
-        auto notify = make_envelope("event.notification.status",
-                                    SCE::Mesh::PatternKind::FireForget);
+        auto notify = make_envelope("event.notification.status", SCE::Mesh::PatternKind::FireForget);
         auto bytes = SCE::Mesh::encodeEnvelope(notify);
         motor_session.put(zenoh::KeyExpr(kMotorKey), zenoh::Bytes(std::move(bytes)));
         if (i + 1 < kBurstCount) {
@@ -96,20 +94,19 @@ int run_test() {
         }
     }
 
-    MESH_TEST_REQUIRE(
-        sender.received_.wait_for([](const auto& v) {
-            if (v.size() < static_cast<std::size_t>(kBurstCount)) {
+    MESH_TEST_REQUIRE(sender.received_.wait_for([](const auto &v) {
+        if (v.size() < static_cast<std::size_t>(kBurstCount)) {
+            return false;
+        }
+        for (const auto &ev : v) {
+            if (ev.type != "event.notification.status") {
                 return false;
             }
-            for (const auto& ev : v) {
-                if (ev.type != "event.notification.status") {
-                    return false;
-                }
-            }
-            return true;
-        }),
-        "machine-lifetime subscription did not deliver the full burst "
-        "through route_send synthesised from deploy.yaml");
+        }
+        return true;
+    }),
+                      "machine-lifetime subscription did not deliver the full burst "
+                      "through route_send synthesised from deploy.yaml");
 
     router.shutdown();
     std::printf("SCE Mesh zenoh machine-lifetime subscribe runtime E2E: PASS\n");
@@ -121,7 +118,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

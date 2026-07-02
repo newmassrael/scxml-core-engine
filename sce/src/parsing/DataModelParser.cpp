@@ -4,8 +4,8 @@
 #include "parsing/DataModelParser.h"
 #include "common/FileLoadingHelper.h"
 #include "core/LogMacros.h"
-#include "parsing/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
+#include "parsing/XmlSerializationHelper.h"
 #include <algorithm>
 
 #ifndef __EMSCRIPTEN__

@@ -51,8 +51,7 @@ inline constexpr int MAX_TEMPLATE_DEPTH = 10;
 // Consumed by `is_valid_param_name` (below), which runs on every
 // `<sce:param>` declaration and every `{$token}` substitution
 // candidate during expansion.
-inline constexpr std::string_view PARAM_NAME_PATTERN =
-    R"pat([A-Za-z_][A-Za-z0-9_\-]*)pat";
+inline constexpr std::string_view PARAM_NAME_PATTERN = R"pat([A-Za-z_][A-Za-z0-9_\-]*)pat";
 
 // Validate a `<sce:param name>` identifier against
 // `PARAM_NAME_PATTERN`. Returns true iff `name` matches
@@ -73,18 +72,14 @@ inline bool is_valid_param_name(std::string_view name) noexcept {
         return false;
     }
     const char first = name[0];
-    const bool first_ok = (first >= 'A' && first <= 'Z') ||
-                          (first >= 'a' && first <= 'z') ||
-                          first == '_';
+    const bool first_ok = (first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z') || first == '_';
     if (!first_ok) {
         return false;
     }
     for (size_t i = 1; i < name.size(); ++i) {
         const char c = name[i];
-        const bool rest_ok = (c >= 'A' && c <= 'Z') ||
-                             (c >= 'a' && c <= 'z') ||
-                             (c >= '0' && c <= '9') ||
-                             c == '_' || c == '-';
+        const bool rest_ok =
+            (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-';
         if (!rest_ok) {
             return false;
         }

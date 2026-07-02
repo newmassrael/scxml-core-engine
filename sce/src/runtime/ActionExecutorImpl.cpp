@@ -14,19 +14,19 @@
 #include "common/AssignmentExecutionHelper.h"
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
-#include "core/ForeachHelper.h"
 #include "common/ForeachValidator.h"
 #include "common/GuardHelper.h"
-#include "core/LogMacros.h"
 #include "common/NamelistHelper.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"
 #include "common/StringUtils.h"
-#include "runtime/TypeRegistry.h"
 #include "common/UniqueIdGenerator.h"
+#include "core/ForeachHelper.h"
+#include "core/LogMacros.h"
 #include "events/EventDescriptor.h"
 #include "events/EventRaiserService.h"
+#include "runtime/TypeRegistry.h"
 
 #include "events/IEventDispatcher.h"
 #include "events/InvokeEventTarget.h"
@@ -55,7 +55,7 @@ ActionExecutorImpl::~ActionExecutorImpl() {
         try {
             SessionRegistry::instance().unregisterEventDispatcher(sessionId_);
             SCE_LOG_DEBUG("ActionExecutorImpl: Unregistered EventDispatcher for session: {} during destruction",
-                      sessionId_);
+                          sessionId_);
         } catch (const std::exception &e) {
             SCE_LOG_WARN("ActionExecutorImpl: Failed to unregister EventDispatcher during destruction: {}", e.what());
         }
@@ -229,8 +229,8 @@ bool ActionExecutorImpl::tryJavaScriptEvaluation(const std::string &expression, 
 
         if (!jsResult.isSuccess()) {
             SCE_LOG_DEBUG("JavaScript evaluation failed for '{}': not a "
-                      "valid expression or runtime error",
-                      expression);
+                          "valid expression or runtime error",
+                          expression);
             return false;
         }
 
@@ -301,7 +301,7 @@ void ActionExecutorImpl::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaise
     if (eventRaiser) {
         if (EventRaiserService::getInstance().registerEventRaiser(sessionId_, eventRaiser)) {
             SCE_LOG_DEBUG("ActionExecutorImpl: EventRaiser automatically registered via Service for session: {}",
-                      sessionId_);
+                          sessionId_);
         } else {
             SCE_LOG_DEBUG("ActionExecutorImpl: EventRaiser already registered for session: {}", sessionId_);
         }
@@ -552,7 +552,7 @@ bool ActionExecutorImpl::executeRaiseAction(const RaiseAction &action) {
         }
 
         SCE_LOG_DEBUG("ActionExecutorImpl: Calling raiseEvent with event: '{}', data: '{}', EventRaiser instance: {}",
-                  action.getEvent(), eventData, (void *)eventRaiser_.get());
+                      action.getEvent(), eventData, (void *)eventRaiser_.get());
         if (!eventRaiser_) {
             SCE_LOG_ERROR("ActionExecutorImpl: EventRaiser not available - incomplete setup");
             return false;
@@ -675,10 +675,11 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (!action.getIdLocation().empty()) {
             try {
                 assignVariable(action.getIdLocation(), "'" + sendId + "'");
-                SCE_LOG_DEBUG("ActionExecutorImpl: Stored sendid '{}' in variable '{}'", sendId, action.getIdLocation());
+                SCE_LOG_DEBUG("ActionExecutorImpl: Stored sendid '{}' in variable '{}'", sendId,
+                              action.getIdLocation());
             } catch (const std::exception &e) {
-                SCE_LOG_ERROR("ActionExecutorImpl: Failed to store sendid in idlocation '{}': {}", action.getIdLocation(),
-                          e.what());
+                SCE_LOG_ERROR("ActionExecutorImpl: Failed to store sendid in idlocation '{}': {}",
+                              action.getIdLocation(), e.what());
             }
         }
 
@@ -785,12 +786,13 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // Only explicit target="#_internal" goes to internal queue
         if (target.empty()) {
             // W3C SCXML: send with no target → external queue (regardless of type)
-            SCE_LOG_DEBUG("ActionExecutorImpl: [W3C193 DEBUG] Send event '{}' with type '{}' → external queue (no target "
-                      "specified)",
-                      action.getEvent(), action.getType());
+            SCE_LOG_DEBUG(
+                "ActionExecutorImpl: [W3C193 DEBUG] Send event '{}' with type '{}' → external queue (no target "
+                "specified)",
+                action.getEvent(), action.getType());
         } else {
             SCE_LOG_DEBUG("ActionExecutorImpl: [W3C193 DEBUG] Send event '{}' with type '{}' → target '{}' specified",
-                      action.getEvent(), action.getType(), target);
+                          action.getEvent(), action.getType(), target);
         }
 
         // Evaluate data if provided
@@ -809,18 +811,18 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (!namelist.empty()) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Evaluating namelist: '{}'", namelist);
 
-            bool success = NamelistHelper::evaluateNamelist(scriptEngine_, sessionId_, namelist, evaluatedParams,
-                                                            [this, &sendId](const std::string &errorMsg) {
-                                                                SCE_LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
-                                                                // §scxml-6.2: If evaluation of send's arguments
-                                                                // produces an error, the Processor MUST discard the
-                                                                // message without attempting to deliver it (test 553)
-                                                                if (eventRaiser_) {
-                                                                    eventRaiser_->raiseEvent("error.execution",
-                                                                                             errorMsg, sendId, false);
-                                                                }
-                                                            },
-                                                            &typedParams);
+            bool success = NamelistHelper::evaluateNamelist(
+                scriptEngine_, sessionId_, namelist, evaluatedParams,
+                [this, &sendId](const std::string &errorMsg) {
+                    SCE_LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
+                    // §scxml-6.2: If evaluation of send's arguments
+                    // produces an error, the Processor MUST discard the
+                    // message without attempting to deliver it (test 553)
+                    if (eventRaiser_) {
+                        eventRaiser_->raiseEvent("error.execution", errorMsg, sendId, false);
+                    }
+                },
+                &typedParams);
 
             if (!success) {
                 return false;
@@ -841,18 +843,19 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 try {
                     // Evaluate and preserve both string (for JSON serialization) and ScriptValue (for typed pipeline)
                     auto evalResult = scriptEngine_.evaluateExpression(sessionId_, param.expr).get();
-                    std::string paramValue = ScriptResultUtils::resultToString(evalResult, &scriptEngine_, sessionId_, param.expr);
+                    std::string paramValue =
+                        ScriptResultUtils::resultToString(evalResult, &scriptEngine_, sessionId_, param.expr);
                     evaluatedParams[param.name].push_back(
                         paramValue);  // W3C SCXML: Support duplicate param names (Test 178)
                     // Preserve ScriptValue for engine-agnostic typed data pipeline
                     if (evalResult.isSuccess()) {
                         typedParams[param.name] = evalResult.getInternalValue();
                     }
-                    SCE_LOG_DEBUG("ActionExecutorImpl: Param[{}] {}={} (expr: '{}')", paramCount, param.name, paramValue,
-                              param.expr);
+                    SCE_LOG_DEBUG("ActionExecutorImpl: Param[{}] {}={} (expr: '{}')", paramCount, param.name,
+                                  paramValue, param.expr);
                 } catch (const std::exception &e) {
-                    SCE_LOG_ERROR("ActionExecutorImpl: Failed to evaluate param '{}' expr '{}': {}", param.name, param.expr,
-                              e.what());
+                    SCE_LOG_ERROR("ActionExecutorImpl: Failed to evaluate param '{}' expr '{}': {}", param.name,
+                                  param.expr, e.what());
                     // W3C SCXML: Continue with other params despite failures
                 }
             }
@@ -883,9 +886,9 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             event.data = eventData;
             event.delay = delay;
             event.sendId = sendId;
-            event.sessionId = sessionId_;    // §scxml-6.2: Track session for delayed event cancellation
-            event.params = evaluatedParams;        // W3C SCXML compliant: params evaluated at send time
-            event.typedParams = typedParams;       // Engine-agnostic typed params (avoids JSON round-trip)
+            event.sessionId = sessionId_;     // §scxml-6.2: Track session for delayed event cancellation
+            event.params = evaluatedParams;   // W3C SCXML compliant: params evaluated at send time
+            event.typedParams = typedParams;  // Engine-agnostic typed params (avoids JSON round-trip)
             // §scxml-C-2: Set content for HTTP body
             event.content = action.getContent();
             // §scxml-5.10: Set event type for origintype field (test 253, 331, 352, 372)
@@ -893,8 +896,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
 
             // [EVENT ROUTING] Log parent→child and child→parent event sending
             if (target.find("#_invoked") != std::string::npos || target.find("#_parent") != std::string::npos) {
-                SCE_LOG_INFO("[EVENT ROUTING] Session '{}' sending event '{}' to target '{}' with data '{}'", sessionId_,
-                         eventName, target, eventData);
+                SCE_LOG_INFO("[EVENT ROUTING] Session '{}' sending event '{}' to target '{}' with data '{}'",
+                             sessionId_, eventName, target, eventData);
             }
 
             // Send via dispatcher (handles both immediate and delayed events)
@@ -909,11 +912,11 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 auto result = resultFuture.get();
 
                 SCE_LOG_INFO("ActionExecutorImpl: AFTER future.get() - event: '{}', success: {}", eventName,
-                         result.isSuccess);
+                             result.isSuccess);
 
                 if (result.isSuccess) {
                     SCE_LOG_DEBUG("ActionExecutorImpl: Send action queued successfully for event: {} (sendId: {})",
-                              eventName, result.sendId);
+                                  eventName, result.sendId);
                 } else {
                     SCE_LOG_WARN("ActionExecutorImpl: Send action failed: {}", result.errorMessage);
                 }
@@ -965,7 +968,7 @@ bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
         // SCXML Event System: Use event dispatcher if available
         if (eventDispatcher_) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Using event dispatcher for cancel action - sendId: '{}', session: '{}'",
-                      sendId, sessionId_);
+                          sendId, sessionId_);
 
             bool cancelled = eventDispatcher_->cancelEvent(sendId, sessionId_);
             if (cancelled) {

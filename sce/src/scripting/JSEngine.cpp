@@ -2,17 +2,17 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "scripting/JSEngine.h"
-#include "core/LogMacros.h"
-#include "scripting/PlatformExecutionHelper.h"
-#include "scripting/ScriptResultUtils.h"
-#include "scripting/SessionRegistry.h"
 #include "common/UniqueIdGenerator.h"
+#include "core/LogMacros.h"
 #include "events/EventRaiserRegistry.h"
 #include "events/EventRaiserService.h"
 #include "events/IEventDispatcher.h"
 #include "quickjs.h"
 #include "runtime/StateMachine.h"
 #include "scripting/DOMBinding.h"
+#include "scripting/PlatformExecutionHelper.h"
+#include "scripting/ScriptResultUtils.h"
+#include "scripting/SessionRegistry.h"
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -263,14 +263,14 @@ std::future<ScriptResult> JSEngine::validateExpression(const std::string &sessio
 }
 
 std::future<ScriptResult> JSEngine::setVariable(const std::string &sessionId, const std::string &name,
-                                            const ScriptValue &value) {
+                                                const ScriptValue &value) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync(
         [this, sessionId, name, value]() { return setVariableInternal(sessionId, name, value); });
 }
 
 std::future<ScriptResult> JSEngine::setVariableAsDOM(const std::string &sessionId, const std::string &name,
-                                                 const std::string &xmlContent) {
+                                                     const std::string &xmlContent) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync([this, sessionId, name, xmlContent]() {
         // §scxml-B-2: Set variable to XML DOM object
@@ -290,7 +290,8 @@ std::future<ScriptResult> JSEngine::setVariableAsDOM(const std::string &sessionI
         int setResult = JS_SetPropertyStr(ctx, global, name.c_str(), domObject);
         JS_FreeValue(ctx, global);
 
-        return (setResult == 0) ? ScriptResult::createSuccess() : ScriptResult::createError("Failed to set DOM variable");
+        return (setResult == 0) ? ScriptResult::createSuccess()
+                                : ScriptResult::createError("Failed to set DOM variable");
     });
 }
 
@@ -305,8 +306,7 @@ std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId
         [this, sessionId, event]() { return setCurrentEventInternal(sessionId, event); });
 }
 
-std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId,
-                                                    const SetCurrentEventArgs &args) {
+std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId, const SetCurrentEventArgs &args) {
     // For AOT engine: Create simple Event object from string parameters
     auto event = std::make_shared<Event>(args.eventName, args.eventType);
     if (!args.eventData.empty()) {
@@ -334,7 +334,7 @@ std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId
 }
 
 std::future<ScriptResult> JSEngine::setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                     const std::vector<std::string> &ioProcessors) {
+                                                         const std::vector<std::string> &ioProcessors) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync([this, sessionId, sessionName, ioProcessors]() {
         return setupSystemVariablesInternal(sessionId, sessionName, ioProcessors);
@@ -970,7 +970,8 @@ bool JSEngine::bindNativeObject(const std::string &sessionId, const std::string 
     JSValue obj = JS_NewObject(ctx);
 
     if (JS_IsException(obj)) {
-        SCE_LOG_ERROR("JSEngine::bindNativeObject: Failed to create object '{}' in session '{}'", objectName, sessionId);
+        SCE_LOG_ERROR("JSEngine::bindNativeObject: Failed to create object '{}' in session '{}'", objectName,
+                      sessionId);
         JS_FreeValue(ctx, global);
         return false;
     }
@@ -1048,9 +1049,8 @@ bool JSEngine::hasVariable(const std::string &sessionId, const std::string &vari
         size_t segStart = dotPos + 1;
         while (segStart < variableName.size()) {
             size_t nextDot = variableName.find('.', segStart);
-            std::string segment = (nextDot != std::string::npos)
-                ? variableName.substr(segStart, nextDot - segStart)
-                : variableName.substr(segStart);
+            std::string segment = (nextDot != std::string::npos) ? variableName.substr(segStart, nextDot - segStart)
+                                                                 : variableName.substr(segStart);
             std::string parent = variableName.substr(0, segStart - 1);
             checkExpr += " && '" + segment + "' in " + parent;
             segStart = (nextDot != std::string::npos) ? nextDot + 1 : variableName.size();

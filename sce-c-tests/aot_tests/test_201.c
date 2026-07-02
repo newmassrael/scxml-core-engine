@@ -17,8 +17,7 @@ int main(void) {
 
     int rc = test201_in_state(&sm, TEST201_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test201: FAIL — active = 0x%08x\n",
-                (unsigned)test201_active_states(&sm));
+        fprintf(stderr, "test201: FAIL — active = 0x%08x\n", (unsigned)test201_active_states(&sm));
     }
     test201_destroy(&sm);
     return rc;

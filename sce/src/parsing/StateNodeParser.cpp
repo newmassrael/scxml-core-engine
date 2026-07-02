@@ -55,10 +55,10 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
     // Determine state type
     Type stateType = determineStateType(stateElement);
     SCE_LOG_DEBUG("Parsing state: {} ({})", stateId,
-              (stateType == Type::PARALLEL  ? "parallel"
-               : stateType == Type::FINAL   ? "final"
-               : stateType == Type::HISTORY ? "history"
-                                            : "state"));
+                  (stateType == Type::PARALLEL  ? "parallel"
+                   : stateType == Type::FINAL   ? "final"
+                   : stateType == Type::HISTORY ? "history"
+                                                : "state"));
 
     // Create state node
     auto stateNode = nodeFactory_->createStateNode(stateId, stateType);
@@ -315,7 +315,8 @@ void SCE::StateNodeParser::parseInitialElement(const std::shared_ptr<IXMLElement
                     allTargets += transition->getTargets()[i];
                 }
                 state->setInitialState(allTargets);
-                SCE_LOG_DEBUG("StateNodeParser: State '{}' <initial> transition targets='{}'", state->getId(), allTargets);
+                SCE_LOG_DEBUG("StateNodeParser: State '{}' <initial> transition targets='{}'", state->getId(),
+                              allTargets);
             }
 
             SCE_LOG_DEBUG("Initial transition set for state: {}", state->getId());

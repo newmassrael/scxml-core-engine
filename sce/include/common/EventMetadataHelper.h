@@ -32,7 +32,7 @@ template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine;
 #else
 template <typename StatePolicy> class StaticExecutionEngine;
 #endif
-}
+}  // namespace SCE::Static
 
 namespace SCE::Common {
 
@@ -44,37 +44,59 @@ namespace SCE::Common {
 // ═══════════════════════════════════════════════════════════════════════════════
 namespace detail {
 
-template<typename P, typename = void> struct has_pendingEventData : std::false_type {};
-template<typename P> struct has_pendingEventData<P, std::void_t<decltype(std::declval<P>().pendingEventData_)>> : std::true_type {};
+template <typename P, typename = void> struct has_pendingEventData : std::false_type {};
 
-template<typename P, typename = void> struct has_pendingEventOrigin : std::false_type {};
-template<typename P> struct has_pendingEventOrigin<P, std::void_t<decltype(std::declval<P>().pendingEventOrigin_)>> : std::true_type {};
+template <typename P>
+struct has_pendingEventData<P, std::void_t<decltype(std::declval<P>().pendingEventData_)>> : std::true_type {};
 
-template<typename P, typename = void> struct has_pendingEventSendId : std::false_type {};
-template<typename P> struct has_pendingEventSendId<P, std::void_t<decltype(std::declval<P>().pendingEventSendId_)>> : std::true_type {};
+template <typename P, typename = void> struct has_pendingEventOrigin : std::false_type {};
 
-template<typename P, typename = void> struct has_pendingEventType : std::false_type {};
-template<typename P> struct has_pendingEventType<P, std::void_t<decltype(std::declval<P>().pendingEventType_)>> : std::true_type {};
+template <typename P>
+struct has_pendingEventOrigin<P, std::void_t<decltype(std::declval<P>().pendingEventOrigin_)>> : std::true_type {};
 
-template<typename P, typename = void> struct has_pendingEventOriginType : std::false_type {};
-template<typename P> struct has_pendingEventOriginType<P, std::void_t<decltype(std::declval<P>().pendingEventOriginType_)>> : std::true_type {};
+template <typename P, typename = void> struct has_pendingEventSendId : std::false_type {};
 
-template<typename P, typename = void> struct has_pendingEventInvokeId : std::false_type {};
-template<typename P> struct has_pendingEventInvokeId<P, std::void_t<decltype(std::declval<P>().pendingEventInvokeId_)>> : std::true_type {};
+template <typename P>
+struct has_pendingEventSendId<P, std::void_t<decltype(std::declval<P>().pendingEventSendId_)>> : std::true_type {};
 
-template<typename P, typename = void> struct has_pendingEventTypedData : std::false_type {};
-template<typename P> struct has_pendingEventTypedData<P, std::void_t<decltype(std::declval<P>().pendingEventTypedData_)>> : std::true_type {};
+template <typename P, typename = void> struct has_pendingEventType : std::false_type {};
 
-template<typename P, typename = void> struct has_pendingEventName : std::false_type {};
-template<typename P> struct has_pendingEventName<P, std::void_t<decltype(std::declval<P>().pendingEventName_)>> : std::true_type {};
+template <typename P>
+struct has_pendingEventType<P, std::void_t<decltype(std::declval<P>().pendingEventType_)>> : std::true_type {};
+
+template <typename P, typename = void> struct has_pendingEventOriginType : std::false_type {};
+
+template <typename P>
+struct has_pendingEventOriginType<P, std::void_t<decltype(std::declval<P>().pendingEventOriginType_)>>
+    : std::true_type {};
+
+template <typename P, typename = void> struct has_pendingEventInvokeId : std::false_type {};
+
+template <typename P>
+struct has_pendingEventInvokeId<P, std::void_t<decltype(std::declval<P>().pendingEventInvokeId_)>> : std::true_type {};
+
+template <typename P, typename = void> struct has_pendingEventTypedData : std::false_type {};
+
+template <typename P>
+struct has_pendingEventTypedData<P, std::void_t<decltype(std::declval<P>().pendingEventTypedData_)>> : std::true_type {
+};
+
+template <typename P, typename = void> struct has_pendingEventName : std::false_type {};
+
+template <typename P>
+struct has_pendingEventName<P, std::void_t<decltype(std::declval<P>().pendingEventName_)>> : std::true_type {};
 
 // NL→IR Item C1 Path A (EventSchema native lowering): detect the generated
 // policy's typed-payload populate hook. Present only on a policy whose
 // statechart reads a typed `_event.data.<field>` guard that lowered natively;
 // when absent the if-constexpr block below is a no-op, so every existing
 // policy is unaffected.
-template<typename P, typename = void> struct has_populateTypedPayload : std::false_type {};
-template<typename P> struct has_populateTypedPayload<P, std::void_t<decltype(std::declval<P&>().populateTypedPayload(std::declval<const std::any&>()))>> : std::true_type {};
+template <typename P, typename = void> struct has_populateTypedPayload : std::false_type {};
+
+template <typename P>
+struct has_populateTypedPayload<
+    P, std::void_t<decltype(std::declval<P &>().populateTypedPayload(std::declval<const std::any &>()))>>
+    : std::true_type {};
 
 }  // namespace detail
 
@@ -378,9 +400,7 @@ public:
      *                  `setPolicyMetadata` hydrates `typedData` from `data`.
      */
     template <typename EventEnum, typename MetadataType>
-    static MetadataType createDoneInvokeEvent(EventEnum event,
-                                              const std::string &invokeId,
-                                              const std::string &data,
+    static MetadataType createDoneInvokeEvent(EventEnum event, const std::string &invokeId, const std::string &data,
                                               std::optional<ScriptValue> typedData = std::nullopt) {
         MetadataType metadata(event,     // event - §scxml-6.4.3
                               data,      // data - §scxml-5.5 donedata payload

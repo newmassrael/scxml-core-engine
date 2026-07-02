@@ -32,7 +32,7 @@ void SCE_GameLoadGame(void);
 void SCE_GameCompleted(void);
 void SCE_GameWorldDone(void);
 void SCE_GameFinale(void);
-void SCE_GameDemoStart(void);  /* Reset weapon/enemy for new demo playback */
+void SCE_GameDemoStart(void); /* Reset weapon/enemy for new demo playback */
 
 /**
  * Player state events
@@ -84,11 +84,11 @@ void SCE_EnemyRescanAll(void);
  */
 void SCE_SecretHintEnable(void);
 void SCE_SecretHintDisable(void);
-void SCE_SecretHintToggle(void);        /* H key: toggle hint system on/off */
-void SCE_SecretHintRequest(void);       /* Request path to current target */
-void SCE_SecretHintPrevious(void);      /* G key: select previous target */
-void SCE_SecretHintCancel(void);        /* Cancel current hint display */
-void SCE_SecretLevelChange(void);       /* New level loaded */
+void SCE_SecretHintToggle(void);   /* H key: toggle hint system on/off */
+void SCE_SecretHintRequest(void);  /* Request path to current target */
+void SCE_SecretHintPrevious(void); /* G key: select previous target */
+void SCE_SecretHintCancel(void);   /* Cancel current hint display */
+void SCE_SecretLevelChange(void);  /* New level loaded */
 
 /**
  * Called each frame to check if player reached target secret
@@ -98,7 +98,7 @@ void SCE_SecretCheckReached(void);
 /**
  * Get current secret hint state name
  */
-const char* SCE_SecretGetStateName(void);
+const char *SCE_SecretGetStateName(void);
 
 /**
  * DOOM Level Statistics - for UI display
@@ -109,19 +109,19 @@ int SCE_GetPlayerKillCount(void);
 /**
  * Aim Assist events
  */
-void SCE_AimAssistToggle(void);           /* Toggle aim assist on/off */
-boolean SCE_AimAssistIsEnabled(void);     /* Check if aim assist is currently enabled */
-void SCE_AimAssistTick(void);             /* Called every game tick to update lock-on */
-void SCE_AimAssistSetTarget(mobj_t *target);  /* Set lock-on target */
-void SCE_AimAssistClearTarget(void);      /* Clear lock-on target */
-mobj_t* SCE_AimAssistGetTarget(void);     /* Get current lock-on target (NULL if none) */
+void SCE_AimAssistToggle(void);              /* Toggle aim assist on/off */
+boolean SCE_AimAssistIsEnabled(void);        /* Check if aim assist is currently enabled */
+void SCE_AimAssistTick(void);                /* Called every game tick to update lock-on */
+void SCE_AimAssistSetTarget(mobj_t *target); /* Set lock-on target */
+void SCE_AimAssistClearTarget(void);         /* Clear lock-on target */
+mobj_t *SCE_AimAssistGetTarget(void);        /* Get current lock-on target (NULL if none) */
 
 /* SCXML state machine events */
-void SCE_AimEventShotFired(void);         /* Player fired weapon */
-void SCE_AimEventTargetAcquired(void);    /* Target found and locked */
-void SCE_AimEventTargetLost(void);        /* Target died or out of range */
-void SCE_AimEventNoTarget(void);          /* Search completed, no target found */
-void SCE_AimEventShotComplete(void);      /* Shot processing finished, return to idle */
+void SCE_AimEventShotFired(void);      /* Player fired weapon */
+void SCE_AimEventTargetAcquired(void); /* Target found and locked */
+void SCE_AimEventTargetLost(void);     /* Target died or out of range */
+void SCE_AimEventNoTarget(void);       /* Search completed, no target found */
+void SCE_AimEventShotComplete(void);   /* Shot processing finished, return to idle */
 
 /**
  * Logical time processing - call from G_Ticker
@@ -135,18 +135,18 @@ void SCE_ProcessTic(void);
 void SCE_ComboReset(void);               /* Reset combo on level change */
 int SCE_ComboGetCount(void);             /* Get current combo count */
 boolean SCE_ComboIsActive(void);         /* Check if combo is active */
-const char* SCE_ComboGetStateName(void); /* Get current combo state name */
+const char *SCE_ComboGetStateName(void); /* Get current combo state name */
 
 /**
  * Berserk Mode System (triggered at combo 5+)
  */
-boolean SCE_BerserkIsActive(void);        /* Check if berserk mode is active */
-int SCE_BerserkGetIntensity(void);        /* Get current berserk intensity (0-10) */
-float SCE_BerserkGetMultiplier(void);     /* Get current damage multiplier */
-int SCE_BerserkGetAttackSpeed(void);      /* Get attack speed multiplier (1-5) */
-void SCE_BerserkHealPlayer(void);         /* Heal player to 100 HP (called from SCXML) */
+boolean SCE_BerserkIsActive(void);         /* Check if berserk mode is active */
+int SCE_BerserkGetIntensity(void);         /* Get current berserk intensity (0-10) */
+float SCE_BerserkGetMultiplier(void);      /* Get current damage multiplier */
+int SCE_BerserkGetAttackSpeed(void);       /* Get attack speed multiplier (1-5) */
+void SCE_BerserkHealPlayer(void);          /* Heal player to 100 HP (called from SCXML) */
 void SCE_BerserkSetMultiplier(float mult); /* Set damage multiplier (called from SCXML) */
-void SCE_BerserkReset(void);              /* Reset berserk effects (called from SCXML) */
+void SCE_BerserkReset(void);               /* Reset berserk effects (called from SCXML) */
 
 /**
  * In-game HUD (combo counter, berserk overlay)

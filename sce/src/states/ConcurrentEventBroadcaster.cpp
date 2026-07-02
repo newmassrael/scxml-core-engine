@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "states/ConcurrentEventBroadcaster.h"
-#include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
+#include "core/LogMacros.h"
 #include "events/EventDescriptor.h"
 #include <algorithm>
 #include <format>
@@ -24,7 +24,8 @@ ConcurrentEventBroadcaster::~ConcurrentEventBroadcaster() {
 EventBroadcastResult ConcurrentEventBroadcaster::broadcastEvent(const EventBroadcastRequest &request) {
     auto startTime = std::chrono::system_clock::now();
 
-    SCE_LOG_DEBUG("Broadcasting event: {} with priority: {}", request.event.eventName, static_cast<int>(request.priority));
+    SCE_LOG_DEBUG("Broadcasting event: {} with priority: {}", request.event.eventName,
+                  static_cast<int>(request.priority));
 
     // Get target regions based on scope
     auto targetRegions = getTargetRegions(request);
