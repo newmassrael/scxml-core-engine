@@ -190,10 +190,21 @@ int main(int argc, char *argv[]) {
         }
 #endif
 
-        // Set output path to project root (parent of resources/)
-        // This ensures w3c_test_results.xml/html are always created in project root
         std::filesystem::path projectRoot = std::filesystem::path(resourcePath).parent_path();
-        std::string outputPath = (projectRoot / "w3c_test_results.xml").string();
+
+        // Artifacts (XML/HTML reports, failed-test logs) land in the directory
+        // the CLI was invoked from — standard CLI semantics. Captured before the
+        // later chdir to projectRoot (resource-relative machinery) so that chdir
+        // cannot relocate them into the source tree.
+#ifdef __EMSCRIPTEN__
+        // WASM: NODEFS mounts the host project at /project (pre-js), and there
+        // is no meaningful invocation directory — reports go to the mount so
+        // the host filesystem sees them.
+        std::filesystem::path artifactDir = "/project";
+#else
+        std::filesystem::path artifactDir = std::filesystem::current_path();
+#endif
+        std::string outputPath = (artifactDir / "w3c_test_results.xml").string();
 
         // Parse command line arguments
         std::vector<std::string> specificTestIds;  // empty means run all tests (supports both "403" and "403a")
@@ -212,9 +223,10 @@ int main(int argc, char *argv[]) {
                 resourcePath = argv[++i];
             } else if (arg == "--output" && i + 1 < argc) {
                 std::filesystem::path userOutputPath = argv[++i];
-                // If relative path, make it relative to project root
+                // Relative paths resolve against the invocation directory,
+                // not the later chdir target (projectRoot).
                 if (userOutputPath.is_relative()) {
-                    outputPath = (projectRoot / userOutputPath).string();
+                    outputPath = (artifactDir / userOutputPath).string();
                 } else {
                     outputPath = userOutputPath.string();
                 }
@@ -409,7 +421,7 @@ int main(int argc, char *argv[]) {
 
         // Configure failed test log directory
         if (saveFailedLogs) {
-            std::string failedLogDir = (projectRoot / "w3c_failed_test_logs").string();
+            std::string failedLogDir = (artifactDir / "w3c_failed_test_logs").string();
 
             // Clean up previous failed test logs
             if (std::filesystem::exists(failedLogDir)) {
@@ -1042,7 +1054,7 @@ int main(int argc, char *argv[]) {
 
         // Show failed test log directory if any tests failed
         if (saveFailedLogs && (summary.failedTests > 0 || summary.errorTests > 0)) {
-            std::string failedLogDir = (projectRoot / "w3c_failed_test_logs").string();
+            std::string failedLogDir = (artifactDir / "w3c_failed_test_logs").string();
             if (std::filesystem::exists(failedLogDir) && !std::filesystem::is_empty(failedLogDir)) {
                 printf("📋 Failed test logs saved to: %s\n", failedLogDir.c_str());
             }
