@@ -484,14 +484,14 @@ jobs:
       if: always()
       with:
         name: w3c-test-results-kotlin
-        path: sce-kotlin-tests/build/reports/tests/test/
+        path: backends/kotlin/tests/build/reports/tests/test/
         retention-days: 30
 
     - name: Publish Test Report
       uses: mikepenz/action-junit-report@v4
       if: always()
       with:
-        report_paths: 'sce-kotlin-tests/build/test-results/test/*.xml'
+        report_paths: 'backends/kotlin/tests/build/test-results/test/*.xml'
         detailed_summary: true
         include_passed: true
         fail_on_failure: false
@@ -503,7 +503,7 @@ jobs:
         echo "## W3C SCXML Test Results (Kotlin/JVM - Rhino)" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
 
-        REPORT_DIR="sce-kotlin-tests/build/test-results/test"
+        REPORT_DIR="backends/kotlin/tests/build/test-results/test"
         if [ -d "$REPORT_DIR" ]; then
           total=$(grep -roh 'tests="[0-9]*"' "$REPORT_DIR"/*.xml | grep -oP '\d+' | paste -sd+ | bc)
           failures=$(grep -roh 'failures="[0-9]*"' "$REPORT_DIR"/*.xml | grep -oP '\d+' | paste -sd+ | bc)
@@ -584,7 +584,7 @@ jobs:
           build_python/CMakeCache.txt
           build_python/CMakeFiles
           build_python/_deps
-        key: ${{ runner.os }}-cmake-python-${{ hashFiles('**/CMakeLists.txt', 'sce-python/**') }}
+        key: ${{ runner.os }}-cmake-python-${{ hashFiles('**/CMakeLists.txt', 'backends/python/bindings/**') }}
         restore-keys: |
           ${{ runner.os }}-cmake-python-
 
@@ -602,8 +602,8 @@ jobs:
       run: |
         echo "=== Python Bindings W3C SCXML Conformance Tests ==="
         SPDLOG_LEVEL=off \
-        PYTHONPATH=build_python/sce-python:sce-python/python \
-          python3 sce-python/tests/test_w3c.py 2>&1 | tee python_bindings_test_output.log
+        PYTHONPATH=build_python/sce-python:backends/python/bindings/python \
+          python3 backends/python/bindings/tests/test_w3c.py 2>&1 | tee python_bindings_test_output.log
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v4
@@ -699,15 +699,15 @@ jobs:
         python3 -m pip install lupa pytest
         # sce-python-runtime ships its own lupa dep; install it editable so
         # the harness imports the engine module directly from the working
-        # tree (matches how sce-python-tests/conftest.py shims sys.path).
-        python3 -m pip install -e sce-python-runtime/
+        # tree (matches how backends/python/tests/conftest.py shims sys.path).
+        python3 -m pip install -e backends/python/runtime/
 
     - name: Run W3C Tests
       run: |
         echo "=== Python W3C SCXML Conformance Tests ==="
         # conftest.py spawns its own HTTP echo server on port 8080 for
         # BasicHTTP fixtures — no Node.js standalone_http_server.js needed.
-        python3 -m pytest sce-python-tests/generated/ sce-python-tests/integration/ --no-header -v 2>&1 | tee python_test_output.log
+        python3 -m pytest backends/python/tests/generated/ backends/python/tests/integration/ --no-header -v 2>&1 | tee python_test_output.log
         echo "Exit code: $?"
 
     - name: Upload Test Log
@@ -788,9 +788,9 @@ jobs:
       with:
         go-version: '1.22'
         cache-dependency-path: |
-          sce-go-runtime/go.sum
-          sce-go-lua/go.sum
-          sce-go-tests/go.sum
+          backends/go/runtime/go.sum
+          backends/go/lua/go.sum
+          backends/go/tests/go.sum
 
     - name: Start W3C HTTP Test Server
       run: |
@@ -802,7 +802,7 @@ jobs:
     - name: Run W3C Tests
       run: |
         echo "=== Go W3C SCXML Conformance Tests ==="
-        cd sce-go-tests
+        cd backends/go/tests
         go test ./... -v -count=1 2>&1 | tee ../go_test_output.log
         echo "Exit code: $?"
 

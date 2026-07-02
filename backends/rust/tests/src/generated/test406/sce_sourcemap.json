@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "source_hash": "f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9",
+  "template_hash": "b5e91c83753cb468c86997c5541ac646288562f682111eb4bbd825060d84bc2e",
+  "symbols": {
+    "test406_____machine": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        6,
+        6
+      ],
+      "kind": "machine"
+    },
+    "test406__fail___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "fail",
+      "scxml_xpath": "//state[@id='fail']",
+      "line_range": [
+        66,
+        66
+      ],
+      "kind": "state"
+    },
+    "test406__pass___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "pass",
+      "scxml_xpath": "//state[@id='pass']",
+      "line_range": [
+        65,
+        65
+      ],
+      "kind": "state"
+    },
+    "test406__s01___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s01",
+      "scxml_xpath": "//state[@id='s01']",
+      "line_range": [
+        14,
+        14
+      ],
+      "kind": "state"
+    },
+    "test406__s01___transition_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s01",
+      "scxml_xpath": "//state[@id='s01']/transition[1]",
+      "line_range": [
+        15,
+        15
+      ],
+      "kind": "transition"
+    },
+    "test406__s01p21___on_entry_0_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s01p21",
+      "scxml_xpath": "//state[@id='s01p21']/onentry",
+      "line_range": [
+        28,
+        28
+      ],
+      "kind": "on_entry"
+    },
+    "test406__s01p21___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s01p21",
+      "scxml_xpath": "//state[@id='s01p21']",
+      "line_range": [
+        25,
+        25
+      ],
+      "kind": "state"
+    },
+    "test406__s01p22___on_entry_0_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s01p22",
+      "scxml_xpath": "//state[@id='s01p22']/onentry",
+      "line_range": [
+        35,
+        35
+      ],
+      "kind": "on_entry"
+    },
+    "test406__s01p22___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s01p22",
+      "scxml_xpath": "//state[@id='s01p22']",
+      "line_range": [
+        32,
+        32
+      ],
+      "kind": "state"
+    },
+    "test406__s03___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s03",
+      "scxml_xpath": "//state[@id='s03']",
+      "line_range": [
+        46,
+        46
+      ],
+      "kind": "state"
+    },
+    "test406__s03___transition_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s03",
+      "scxml_xpath": "//state[@id='s03']/transition[1]",
+      "line_range": [
+        47,
+        47
+      ],
+      "kind": "transition"
+    },
+    "test406__s03___transition_1": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s03",
+      "scxml_xpath": "//state[@id='s03']/transition[2]",
+      "line_range": [
+        48,
+        48
+      ],
+      "kind": "transition"
+    },
+    "test406__s04___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s04",
+      "scxml_xpath": "//state[@id='s04']",
+      "line_range": [
+        51,
+        51
+      ],
+      "kind": "state"
+    },
+    "test406__s04___transition_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s04",
+      "scxml_xpath": "//state[@id='s04']/transition[1]",
+      "line_range": [
+        52,
+        52
+      ],
+      "kind": "transition"
+    },
+    "test406__s04___transition_1": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s04",
+      "scxml_xpath": "//state[@id='s04']/transition[2]",
+      "line_range": [
+        53,
+        53
+      ],
+      "kind": "transition"
+    },
+    "test406__s05___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s05",
+      "scxml_xpath": "//state[@id='s05']",
+      "line_range": [
+        57,
+        57
+      ],
+      "kind": "state"
+    },
+    "test406__s05___transition_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s05",
+      "scxml_xpath": "//state[@id='s05']/transition[1]",
+      "line_range": [
+        58,
+        58
+      ],
+      "kind": "transition"
+    },
+    "test406__s05___transition_1": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s05",
+      "scxml_xpath": "//state[@id='s05']/transition[2]",
+      "line_range": [
+        59,
+        59
+      ],
+      "kind": "transition"
+    },
+    "test406__s0___on_entry_0_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s0",
+      "scxml_xpath": "//state[@id='s0']/onentry",
+      "line_range": [
+        10,
+        10
+      ],
+      "kind": "on_entry"
+    },
+    "test406__s0___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s0",
+      "scxml_xpath": "//state[@id='s0']",
+      "line_range": [
+        8,
+        8
+      ],
+      "kind": "state"
+    },
+    "test406__s0___transition_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s0",
+      "scxml_xpath": "//state[@id='s0']/transition[1]",
+      "line_range": [
+        12,
+        12
+      ],
+      "kind": "transition"
+    },
+    "test406__s0p2___on_entry_0_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s0p2",
+      "scxml_xpath": "//state[@id='s0p2']/onentry",
+      "line_range": [
+        41,
+        41
+      ],
+      "kind": "on_entry"
+    },
+    "test406__s0p2___state_body": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s0p2",
+      "scxml_xpath": "//state[@id='s0p2']",
+      "line_range": [
+        21,
+        21
+      ],
+      "kind": "state"
+    },
+    "test406__s0p2___transition_0": {
+      "scxml_file": "test406.scxml",
+      "scxml_state_path": "s0p2",
+      "scxml_xpath": "//state[@id='s0p2']/transition[1]",
+      "line_range": [
+        23,
+        23
+      ],
+      "kind": "transition"
+    }
+  }
+}

@@ -7,7 +7,7 @@
    algorithm SCXML carries at least one `<sce:test-vector hex
    value/>` row. The sidecar is `<snake>_test.go` so Go's per-
    directory test discovery picks it up automatically; the existing
-   `go test ./sce-forge-runtime/go/conformance/...` recursion runs
+   `go test ./backends/go/forge-runtime/conformance/...` recursion runs
    the per-fixture package tests alongside the harness. The sidecar
    shares the per-fixture package, so the algorithm function is
    reachable as `<Pascal>(...)` directly without an import. #}

@@ -21,12 +21,12 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'sce-rust-runtime/**'
+      - 'backends/rust/runtime/**'
       - '.github/workflows/doc-check.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'sce-rust-runtime/**'
+      - 'backends/rust/runtime/**'
       - '.github/workflows/doc-check.yml'
   workflow_dispatch:
 

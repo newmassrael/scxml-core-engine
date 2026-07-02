@@ -68,7 +68,7 @@ public:
     }
 
     /// Run the procedure to completion (blocking). Delegates to the
-    /// shared event loop in sce-forge-runtime/cpp, which mirrors the
+    /// shared event loop in backends/cpp/forge-runtime, which mirrors the
     /// return-event shape used by Rust / Python / Kotlin / Go.
     SCE::Forge::ProcedureRunResult runToCompletion() {
         return SCE::Forge::run_procedure(*this);

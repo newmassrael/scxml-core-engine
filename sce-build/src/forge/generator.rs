@@ -13166,7 +13166,7 @@ pub fn generate_kotlin_with_imports(
     // `<sce:test-vector>` rows are declared. The Kotlin/JVM test
     // runner picks up the `@Test`-annotated class via the
     // `jvmTest` source set wired in
-    // `sce-forge-runtime/kotlin/build.gradle.kts`.
+    // `backends/kotlin/forge-runtime/build.gradle.kts`.
     if let ForgeDocument::Algorithm(m) = doc {
         if let Some(sidecar) =
             render_algorithm_test_vector_sidecar(&env, m, crate::generator::Language::Kotlin)?
@@ -14380,7 +14380,7 @@ fn render_bounded_collection_python(
 /// Render a `<sce:kind="link">` document for the C11 backend
 /// (watching-zenoh RFC §synth-5-C, item B6). Mirrors `render_link_rust` but
 /// emits a header that composes a `sce_forge_link_t` driver handle
-/// from `sce-forge-runtime/c/include/sce/forge/link.h`. The dispatch
+/// from `backends/c/forge-runtime/include/sce/forge/link.h`. The dispatch
 /// shape is the canonical Linux-kernel separate-vtable
 /// pattern (`const sce_forge_link_ops_t *ops` + `void *self`) so the
 /// ops table can live in flash/ROM on MCU targets.
@@ -15133,7 +15133,7 @@ pub fn generate_c11_with_imports_and_externs(
         // RFC §synth-5-C: byte-stream link emit. The template wires the
         // §synth-5-B framer into RX/TX paths through the canonical Linux-
         // kernel separate-vtable shape declared in
-        // `sce-forge-runtime/c/include/sce/forge/link.h`. Item C10
+        // `backends/c/forge-runtime/include/sce/forge/link.h`. Item C10
         // threads the orchestrator-resolved listener-pair flag for
         // Sibling EstablishedSession emission.
         ForgeDocument::Link(m) => render_link_c(&env, m, imports, options)?,
@@ -16256,7 +16256,7 @@ fn render_procedure_c_l2(
 
 /// C type for an L2 datamodel field. `bytes` maps to the
 /// stack-bounded `sce_forge_bytes_t` from
-/// `sce-forge-runtime/c/include/sce/forge/procedure.h`. Other types
+/// `backends/c/forge-runtime/include/sce/forge/procedure.h`. Other types
 /// reuse the existing C type mapping.
 fn c_l2_type(ty: &SceType) -> String {
     match ty {

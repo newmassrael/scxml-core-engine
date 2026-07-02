@@ -71,7 +71,7 @@
 #include <stdio.h>  /* snprintf for body-bearing <foreach> per-iter set */
 {% endif %}
 {% if model.needs_dom_helper %}
-/* W3C SCXML B.2: XML DOM helper (sce-c-runtime/include/sce/lua_dom_binding.h).
+/* W3C SCXML B.2: XML DOM helper (backends/c/runtime/include/sce/lua_dom_binding.h).
    cpp `LuaDOMBinding` 1:1 algorithmic mirror in pure C — pugixml is
    C++-only and would break the C11 zero-dependency contract (RFC §synth-5-J-1). Lives in the
    `sce_c_scripting` tier (Lua-bound), built atop the freestanding-C
@@ -80,7 +80,7 @@
 {% endif %}
 {% if model.needs_http_send %}
 /* W3C SCXML C.2: HTTP/1.1 client + JSON response extractor
-   (sce-c-runtime/include/sce/http_client.h). Synchronous POST against
+   (backends/c/runtime/include/sce/http_client.h). Synchronous POST against
    the standalone Node server (`tests/w3c/standalone_http_server.js`) —
    Pattern B-i mirroring Go/Rust harnesses, single source of truth.
    POSIX impl in `sce_c_runtime_posix`; bare-metal consumers (e.g.
@@ -99,7 +99,7 @@
 {% if model.needs_event_scheduler %}
 
 /* W3C SCXML 6.2: Monotonic clock binding for delayed `<send>` scheduling.
-   The interface lives in `sce-c-runtime/include/sce/clock.h` (sce-c-core
+   The interface lives in `backends/c/runtime/include/sce/clock.h` (sce-c-core
    tier); the link-time impl is supplied by `sce_c_runtime_posix` for
    host runners or by a downstream `sce_c_runtime_<target>` for bare-metal
    consumers (see ARCHITECTURE.md §"C11 backend layering" and
@@ -1071,7 +1071,7 @@ static {{ csym_prefix }}{{ model.name }}_event_t SCE_SM_FN {{ csym_prefix }}{{ m
                onto the `_pending_donedata` Lua slot. Mirrors cpp
                `actions/send.jinja2:347-428` `engine.performHttpSend()`,
                rust `rust/actions/send.rs.jinja2:252-315`, and
-               `sce-go-tests/harness/harness.go::SetupHTTPTest`.
+               `backends/go/tests/harness/harness.go::SetupHTTPTest`.
 
                Dimension coverage (RFC §2.1 c11 guard #1):
                  * idlocation (W3C 6.2.4) — store `auto_send_id` into the

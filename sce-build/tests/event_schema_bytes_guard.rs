@@ -222,7 +222,7 @@ fn c11_bytes_guard_compiles_freestanding() {
         .filter(|p| p.extension().is_some_and(|x| x == "c"))
         .collect();
     assert_eq!(c_files.len(), 1, "expected exactly one generated C11 TU");
-    let runtime_inc = repo_root().join("sce-c-runtime/include");
+    let runtime_inc = repo_root().join("backends/c/runtime/include");
     let mut cmd = Command::new(&cc);
     cmd.args([
         "-std=c11",

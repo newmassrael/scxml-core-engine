@@ -5759,7 +5759,7 @@ fn forge_kotlin_algorithm_crc16() {
 /// sidecar (`<Pascal>TestVectors.kt`) emitted next to the
 /// algorithm `.kt`. The Kotlin/JVM test runner discovers the
 /// `@Test`-annotated class via the `jvmTest` source set wired in
-/// `sce-forge-runtime/kotlin/build.gradle.kts`; the sidecar
+/// `backends/kotlin/forge-runtime/build.gradle.kts`; the sidecar
 /// itself is byte-stable as the second entry of the codegen
 /// output.
 #[test]
@@ -7272,7 +7272,7 @@ fn forge_python_algorithm_crc16() {
 /// module re-exports the `<Pascal>TestVectors(unittest.TestCase)`
 /// class so pytest discovery picks it up via the existing
 /// `import *` shim at
-/// `sce-forge-runtime/python/tests/test_numerical_conformance.py`.
+/// `backends/python/forge-runtime/tests/test_numerical_conformance.py`.
 #[test]
 fn forge_python_algorithm_crc16_test_vector_sidecar() {
     assert_sidecar_forge_lang(
@@ -11069,8 +11069,7 @@ fn rustc_run_codec_set(
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let forge_runtime = std::path::Path::new(manifest_dir)
         .join("..")
-        .join("sce-forge-runtime")
-        .join("rust")
+        .join("backends/rust/forge-runtime")
         .canonicalize()
         .map_err(|e| format!("canonicalize sce-forge-runtime: {e}"))?;
     // SCE byte-buffer-build (SCE_FORGE.md §4.12): a `bytes`-returning algorithm
@@ -11079,7 +11078,7 @@ fn rustc_run_codec_set(
     // that don't use it (an unused dependency is not a compile error).
     let portable_bytes = std::path::Path::new(manifest_dir)
         .join("..")
-        .join("sce-portable-bytes")
+        .join("backends/rust/portable-bytes")
         .canonicalize()
         .map_err(|e| format!("canonicalize sce-portable-bytes: {e}"))?;
 
@@ -11625,7 +11624,7 @@ fn generate_files_for_codec_set(
 /// Writes every emitted `.h` into a temp dir, writes a one-line
 /// aggregator `.cpp` that `#include`s each header (forces multi-TU
 /// resolution), invokes `g++ -c -std=c++17 -Wall -Wextra -Werror
-/// -Wunused -Wuninitialized` against the sce-forge-runtime/cpp
+/// -Wunused -Wuninitialized` against the backends/cpp/forge-runtime
 /// header-only include tree, and returns stderr+stdout verbatim on
 /// failure. Header-only runtime ⇒ no link step, so `-c` (compile to
 /// `.o`) is enough to surface type-check + cross-TU resolution bugs.
@@ -11651,11 +11650,10 @@ fn compile_codec_set_cpp(
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_include = std::path::Path::new(manifest_dir)
         .join("..")
-        .join("sce-forge-runtime")
-        .join("cpp")
+        .join("backends/cpp/forge-runtime")
         .join("include")
         .canonicalize()
-        .map_err(|e| format!("canonicalize sce-forge-runtime/cpp/include: {e}"))?;
+        .map_err(|e| format!("canonicalize backends/cpp/forge-runtime/include: {e}"))?;
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut header_includes: Vec<String> = Vec::new();
@@ -11723,7 +11721,7 @@ fn compile_codec_set_cpp(
 /// RFC codegen-per-backend-compile-harness — C11 compile gate.
 ///
 /// Same shape as `compile_codec_set_cpp` but routed through `gcc
-/// -std=c11`. The C11 sce-forge-runtime tree under `sce-forge-runtime/c`
+/// -std=c11`. The C11 sce-forge-runtime tree under `backends/c/forge-runtime`
 /// mirrors the Cpp INTERFACE library convention (header-only,
 /// freestanding-mode-safe libc headers only — `stdint`, `stdbool`,
 /// `stddef`, `string`).
@@ -11749,11 +11747,10 @@ fn compile_codec_set_c11(
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_include = std::path::Path::new(manifest_dir)
         .join("..")
-        .join("sce-forge-runtime")
-        .join("c")
+        .join("backends/c/forge-runtime")
         .join("include")
         .canonicalize()
-        .map_err(|e| format!("canonicalize sce-forge-runtime/c/include: {e}"))?;
+        .map_err(|e| format!("canonicalize backends/c/forge-runtime/include: {e}"))?;
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut header_includes: Vec<String> = Vec::new();
@@ -11845,10 +11842,9 @@ fn compile_codec_set_go(
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_path = std::path::Path::new(manifest_dir)
         .join("..")
-        .join("sce-forge-runtime")
-        .join("go")
+        .join("backends/go/forge-runtime")
         .canonicalize()
-        .map_err(|e| format!("canonicalize sce-forge-runtime/go: {e}"))?;
+        .map_err(|e| format!("canonicalize backends/go/forge-runtime: {e}"))?;
 
     // Go requires one-package-per-directory. The Go backend emits
     // each codec as a flat `<codec_id>.go` with `package <codec_id>`
@@ -11940,7 +11936,7 @@ fn compile_codec_set_go(
 /// so missing-runtime-module errors fire visibly at import resolution
 /// inside the emit's `from sce_forge_runtime import ...` lines.
 ///
-/// `PYTHONPATH` is augmented with the in-tree `sce-forge-runtime/python`
+/// `PYTHONPATH` is augmented with the in-tree `backends/python/forge-runtime`
 /// dir so `import sce_forge_runtime.codec` resolves at compile time
 /// without requiring `pip install -e` — same model as `replace` in Go.
 fn compile_codec_set_python(
@@ -11965,10 +11961,9 @@ fn compile_codec_set_python(
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_path = std::path::Path::new(manifest_dir)
         .join("..")
-        .join("sce-forge-runtime")
-        .join("python")
+        .join("backends/python/forge-runtime")
         .canonicalize()
-        .map_err(|e| format!("canonicalize sce-forge-runtime/python: {e}"))?;
+        .map_err(|e| format!("canonicalize backends/python/forge-runtime: {e}"))?;
 
     let mut seen: HashSet<String> = HashSet::new();
     let mut py_files: Vec<std::path::PathBuf> = Vec::new();
@@ -12023,7 +12018,7 @@ fn compile_codec_set_python(
 /// RFC codegen-per-backend-compile-harness — Kotlin compile gate.
 ///
 /// Invokes `kotlinc -Werror` with the in-tree sce-forge-runtime Kotlin
-/// jar (`sce-forge-runtime/kotlin/build/libs/sce-forge-runtime-kotlin-jvm-*.jar`)
+/// jar (`backends/kotlin/forge-runtime/build/libs/sce-forge-runtime-kotlin-jvm-*.jar`)
 /// on the classpath, against every emitted `.kt`. On a fresh worktree
 /// where the jar hasn't been built yet, attempts a one-shot `./gradlew
 /// :sce-forge-runtime:jvmJar` from the workspace root. Failure still
@@ -12051,8 +12046,7 @@ fn compile_codec_set_kotlin(
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let runtime_jar_dir = std::path::Path::new(manifest_dir)
         .join("..")
-        .join("sce-forge-runtime")
-        .join("kotlin")
+        .join("backends/kotlin/forge-runtime")
         .join("build")
         .join("libs");
     let runtime_jar = std::fs::read_dir(&runtime_jar_dir)
@@ -12068,7 +12062,7 @@ fn compile_codec_set_kotlin(
         let _ = std::fs::remove_dir_all(&proj_dir);
         return require_all_or_warn(
             test_id,
-            "sce-forge-runtime-kotlin-jvm-*.jar (run `./gradlew :sce-forge-runtime:jvmJar` from sce-forge-runtime/kotlin)",
+            "sce-forge-runtime-kotlin-jvm-*.jar (run `./gradlew :sce-forge-runtime:jvmJar` from backends/kotlin/forge-runtime)",
         );
     };
     let jar_path = jar_path

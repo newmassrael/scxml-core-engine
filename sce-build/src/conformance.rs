@@ -954,7 +954,7 @@ pub fn harness_layout(language: Language) -> HarnessLayout {
             template_filename: "harness.rs.jinja2",
         },
         // Not test_-prefixed so the committed shim at
-        // sce-forge-runtime/python/tests/test_numerical_conformance.py can
+        // backends/python/forge-runtime/tests/test_numerical_conformance.py can
         // import from this module without name collision during unittest
         // discovery.
         Language::Python => HarnessLayout {
@@ -992,7 +992,7 @@ pub fn harness_layout(language: Language) -> HarnessLayout {
 }
 
 /// Backwards-compatible wrapper. Kept so existing call sites in
-/// `sce_codegen.rs` and `sce-forge-runtime/rust/build.rs` continue to
+/// `sce_codegen.rs` and `backends/rust/forge-runtime/build.rs` continue to
 /// compile; new code should call [`harness_layout`] directly.
 pub fn harness_filename(language: Language) -> &'static str {
     harness_layout(language).output_filename

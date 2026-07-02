@@ -498,14 +498,14 @@ fn workspace_root() -> PathBuf {
 // (`scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh`) are the
 // existing gate for that context. Layout per backend:
 //
-//   Rust:   W3C SM under `sce-rust-tests/src/generated/`
-//           donedata SM under `sce-rust-tests/src/integration/donedata_local_invoke/`
+//   Rust:   W3C SM under `backends/rust/tests/src/generated/`
+//           donedata SM under `backends/rust/tests/src/integration/donedata_local_invoke/`
 //           ⇒ verify `src/generated/` is donedata-free.
 //
 //   Kotlin: W3C SM and donedata SM are siblings under
-//           `sce-kotlin-tests/src/main/kotlin/com/sce/generated/`
+//           `backends/kotlin/tests/src/main/kotlin/com/sce/generated/`
 //           ⇒ verify the W3C *harness* tree
-//           (`sce-kotlin-tests/src/test/kotlin/com/sce/w3c/`) which is
+//           (`backends/kotlin/tests/src/test/kotlin/com/sce/w3c/`) which is
 //           donedata-free and shares the W3C drift context with the
 //           SM tree (one `generate-w3c -l kotlin` invocation emits
 //           both atomically, so harness-fresh ⇒ SM-fresh).
@@ -528,7 +528,7 @@ fn run_verify_real_tree(target: &Path, input_root: &Path) -> (i32, String) {
 fn verify_passes_on_real_committed_rust_w3c_tree() {
     let workspace = workspace_root();
     let target = workspace
-        .join("sce-rust-tests")
+        .join("backends/rust/tests")
         .join("src")
         .join("generated");
     let input_root = workspace.join("resources");
@@ -537,7 +537,7 @@ fn verify_passes_on_real_committed_rust_w3c_tree() {
         code, 0,
         "verify must pass on the committed Rust W3C generated tree. \
          A failure here means tools/codegen/templates/** or Cargo.lock \
-         changed without refreshing sce-rust-tests/src/generated/. \
+         changed without refreshing backends/rust/tests/src/generated/. \
          Run `cargo build --bin sce-codegen --features cli --release \
          -p sce-build` then `target/release/sce-codegen generate-w3c \
          -l rust` and commit the result. stderr:\n{stderr}"
@@ -548,7 +548,7 @@ fn verify_passes_on_real_committed_rust_w3c_tree() {
 fn verify_passes_on_real_committed_kotlin_w3c_tree() {
     let workspace = workspace_root();
     let target = workspace
-        .join("sce-kotlin-tests")
+        .join("backends/kotlin/tests")
         .join("src")
         .join("test")
         .join("kotlin")
@@ -580,7 +580,7 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
 // distinct top-level dirs. Regen via
 // `scripts/regen_donedata_local_invoke{,_kotlin,_go}.sh`.
 //
-// Python is intentionally skipped: `sce-python/tests/` runs the
+// Python is intentionally skipped: `backends/python/bindings/tests/` runs the
 // pybind11 → C++ Interpreter channel, so no donedata SM is codegen'd
 // for Python — there is no committed §synth-6.2.6 header to verify.
 
@@ -588,7 +588,7 @@ fn verify_passes_on_real_committed_kotlin_w3c_tree() {
 fn verify_passes_on_real_committed_rust_donedata_tree() {
     let workspace = workspace_root();
     let target = workspace
-        .join("sce-rust-tests")
+        .join("backends/rust/tests")
         .join("src")
         .join("integration")
         .join("donedata_local_invoke");
@@ -601,7 +601,7 @@ fn verify_passes_on_real_committed_rust_donedata_tree() {
         "verify must pass on the committed Rust donedata tree. A \
          failure here means tools/codegen/templates/**, Cargo.lock, or \
          integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
-         changed without refreshing sce-rust-tests/src/integration/donedata_local_invoke/. \
+         changed without refreshing backends/rust/tests/src/integration/donedata_local_invoke/. \
          Run `scripts/regen_donedata_local_invoke.sh` and commit the \
          result. stderr:\n{stderr}"
     );
@@ -611,7 +611,7 @@ fn verify_passes_on_real_committed_rust_donedata_tree() {
 fn verify_passes_on_real_committed_kotlin_donedata_tree() {
     let workspace = workspace_root();
     let target = workspace
-        .join("sce-kotlin-tests")
+        .join("backends/kotlin/tests")
         .join("src")
         .join("main")
         .join("kotlin")
@@ -638,7 +638,7 @@ fn verify_passes_on_real_committed_kotlin_donedata_tree() {
 fn verify_passes_on_real_committed_go_donedata_tree() {
     let workspace = workspace_root();
     let target = workspace
-        .join("sce-go-tests")
+        .join("backends/go/tests")
         .join("integration")
         .join("donedata_local_invoke");
     let input_root = workspace
@@ -650,7 +650,7 @@ fn verify_passes_on_real_committed_go_donedata_tree() {
         "verify must pass on the committed Go donedata tree. A \
          failure here means tools/codegen/templates/**, Cargo.lock, or \
          integration_resources/donedata_local_invoke/donedata_local_invoke.scxml \
-         changed without refreshing sce-go-tests/donedata_local_invoke/. \
+         changed without refreshing backends/go/tests/donedata_local_invoke/. \
          Run `scripts/regen_donedata_local_invoke_go.sh` and commit the \
          result. stderr:\n{stderr}"
     );
@@ -658,8 +658,8 @@ fn verify_passes_on_real_committed_go_donedata_tree() {
 
 // Forge variant-default round-trip Go drift context. The 3 codec
 // fixtures under `tests/forge/resources/codec_{default,variant_default}_marker*`
-// are emitted via `sce-forge-runtime/go/round_trip/generate.sh` to
-// `sce-forge-runtime/go/round_trip/generated/`. The Go runtime test
+// are emitted via `backends/go/forge-runtime/round_trip/generate.sh` to
+// `backends/go/forge-runtime/round_trip/generated/`. The Go runtime test
 // `default_round_trip_test.go` includes them at build time. This
 // context was discovered after the §synth-6.2.6 sweep audit found the
 // previous run of generate.sh had been on the pre-writer-encode template
@@ -671,8 +671,7 @@ fn verify_passes_on_real_committed_go_donedata_tree() {
 fn verify_passes_on_real_committed_forge_default_round_trip_go_tree() {
     let workspace = workspace_root();
     let target = workspace
-        .join("sce-forge-runtime")
-        .join("go")
+        .join("backends/go/forge-runtime")
         .join("round_trip")
         .join("generated");
     let input_root = workspace.join("tests").join("forge").join("resources");
@@ -682,8 +681,8 @@ fn verify_passes_on_real_committed_forge_default_round_trip_go_tree() {
         "verify must pass on the committed Go forge round-trip tree. \
          A failure here means tools/codegen/templates/**, Cargo.lock, \
          or any tests/forge/resources/*.scxml changed without \
-         refreshing sce-forge-runtime/go/round_trip/generated/. Run \
-         `sce-forge-runtime/go/round_trip/generate.sh` and commit the \
+         refreshing backends/go/forge-runtime/round_trip/generated/. Run \
+         `backends/go/forge-runtime/round_trip/generate.sh` and commit the \
          result. stderr:\n{stderr}"
     );
 }

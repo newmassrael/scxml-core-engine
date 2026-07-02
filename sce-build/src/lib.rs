@@ -6111,7 +6111,7 @@ pub fn validate_no_std_compatibility(
 
     // Watching-zenoh RFC §synth-5-J-2 lines 1989-1994: the
     // no_std variant has zero alloc dependency. Filesystem-coupled
-    // helpers in `sce-rust-runtime/src/helpers/datamodel_init.rs` are
+    // helpers in `backends/rust/runtime/src/helpers/datamodel_init.rs` are
     // gated to `!no_std`; reject `<data src="...">` up-front so the
     // generated crate never tries to call them.
     //
@@ -6151,7 +6151,7 @@ pub fn validate_no_std_compatibility(
     }
 
     // Watching-zenoh RFC §synth-5-J-2: invoke processing in
-    // `sce-rust-runtime/src/helpers/invoke_processing.rs` is
+    // `backends/rust/runtime/src/helpers/invoke_processing.rs` is
     // whole-module gated to `!no_std` because `Arc<Mutex<Vec<…>>>` +
     // `HashMap` are alloc-coupled. `model.invokes` is the aggregated
     // flat view refreshed in `parser::refresh_invokes_view` at the end
@@ -9300,11 +9300,11 @@ int main(void) {
 
         let exec_path = tmp.join("driver");
         // sample.h integration: the generated pool header pulls in
-        // `<sce/sample.h>` from `sce-c-runtime/include/`, so the host
+        // `<sce/sample.h>` from `backends/c/runtime/include/`, so the host
         // gcc compile must see that include path alongside the temp
         // dir holding the generated header.
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let runtime_include = crate_dir.join("../sce-c-runtime/include");
+        let runtime_include = crate_dir.join("../backends/c/runtime/include");
         let status = std::process::Command::new("gcc")
             .arg("-std=c11")
             .arg("-Wall")
@@ -9621,7 +9621,7 @@ topology:
     /// Watching-zenoh RFC §synth-5-E: Clang `-Wconsumed`
     /// `-Wthread-safety` rejects three Layer 1 typestate misuse
     /// patterns against the runtime header
-    /// `sce-c-runtime/include/sce/sample.h`:
+    /// `backends/c/runtime/include/sce/sample.h`:
     ///
     /// 1. **use-after-take** — `sce_sample_payload` (callable_when
     ///    "unconsumed") on a sample whose typestate has already
@@ -9652,7 +9652,7 @@ topology:
         };
 
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let runtime_include = crate_dir.join("../sce-c-runtime/include");
+        let runtime_include = crate_dir.join("../backends/c/runtime/include");
 
         // Each entry: (case-name, driver source, substring stderr must
         // contain so a diagnostic regression on the wrong axis is
@@ -9817,7 +9817,7 @@ int main(void) { (void)0; return 0; }
         .expect("write driver.c");
 
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let runtime_include = crate_dir.join("../sce-c-runtime/include");
+        let runtime_include = crate_dir.join("../backends/c/runtime/include");
         let out = std::process::Command::new("gcc")
             .arg("-std=c11")
             .arg("-Wall")
@@ -10191,7 +10191,7 @@ int main(void) { (void)0; return 0; }
     }
 
     /// Smoke check that the prereq runtime header
-    /// `sce-c-runtime/include/sce/sample.h` is well-formed C11. Drives
+    /// `backends/c/runtime/include/sce/sample.h` is well-formed C11. Drives
     /// gcc under `-std=c11 -Wall -Wextra -Werror` against a tiny
     /// translation unit that `#include`s the header and exercises the
     /// `_Static_assert` invariants + macro expansions. The clang-axis
@@ -10205,10 +10205,10 @@ int main(void) { (void)0; return 0; }
     #[test]
     fn sce_c_runtime_sample_h_compiles_under_gcc_c11() {
         let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let include_dir = crate_dir.join("../sce-c-runtime/include");
+        let include_dir = crate_dir.join("../backends/c/runtime/include");
         assert!(
             include_dir.join("sce/sample.h").exists(),
-            "expected sce-c-runtime/include/sce/sample.h to exist; \
+            "expected backends/c/runtime/include/sce/sample.h to exist; \
              searched at {}",
             include_dir.display(),
         );

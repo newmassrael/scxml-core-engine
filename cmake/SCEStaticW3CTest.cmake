@@ -314,14 +314,14 @@ endfunction()
 # the MCU footprint stays minimal for the watching-zenoh consumer.
 #
 # Optional flag NEEDS_DOM: append the test to W3C_C_AOT_TESTS_NEEDS_DOM so
-# the caller can link the host-side XML DOM helper (sce-c-tests/support/
+# the caller can link the host-side XML DOM helper (backends/c/tests/support/
 # dom.c + lua_dom_binding.c) alongside Lua. NEEDS_DOM implies NEEDS_LUA.
 # Currently used only by the W3C SCXML B.2 corpus (test557, test561) —
-# the helper is testbench-only and never enters the sce-c-runtime link.
+# the helper is testbench-only and never enters the backends/c/runtime link.
 #
 # Optional flag NEEDS_HTTP: append the test to W3C_C_AOT_TESTS_NEEDS_HTTP so
 # the caller can link the host-side HTTP/1.1 client + JSON extractor
-# (sce-c-tests/support/http_client.c). Used by the W3C SCXML C.2
+# (backends/c/tests/support/http_client.c). Used by the W3C SCXML C.2
 # BasicHTTPEventProcessor corpus that issues a real HTTP POST against the
 # Node.js standalone server (`tests/w3c/standalone_http_server.js`).
 # Independent of NEEDS_LUA / NEEDS_DOM — combined freely as the fixture

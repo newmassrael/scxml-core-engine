@@ -1152,7 +1152,7 @@ pub enum DiagnosticCode {
 
     // ── §synth-5-E pool kind Layer 1 ownership (watching-zenoh RFC §synth-5-E,
     //    item B7). Layer 1 typestate-attribute family is exposed to
-    //    consumer builds through `sce-c-runtime/include/sce/sample.h`,
+    //    consumer builds through `backends/c/runtime/include/sce/sample.h`,
     //    pulled in by the generated pool header. The diagnostic catches
     //    a future template edit that drops the `#include` — Layer 1
     //    coverage would silently disappear without it. Stage =

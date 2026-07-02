@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate sce-kotlin-tests/src/main/kotlin/com/sce/integration/statechart_minimal/
+# Regenerate backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_minimal/
 # from the canonical EventSchema native-lowering fixture at
 # sce-build/tests/fixtures/event_schema/statechart_minimal.scxml.
 #
@@ -42,7 +42,7 @@ cd "$REPO_ROOT"
 CODEGEN="target/release/sce-codegen"
 FIXTURE="sce-build/tests/fixtures/event_schema/statechart_minimal.scxml"
 INPUT_ROOT="sce-build/tests/fixtures/event_schema"
-GENERATED_DIR="sce-kotlin-tests/src/main/kotlin/com/sce/integration/statechart_minimal"
+GENERATED_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_minimal"
 PACKAGE_PREFIX="com.sce.integration"
 
 if [[ ! -x "$CODEGEN" ]]; then
@@ -54,7 +54,7 @@ fi
 # `==` is reference equality, so contentEquals is the whole point. Its
 # machine name differs, so the generated SM lives in its own package dir.
 BYTES_FIXTURE="sce-build/tests/fixtures/event_schema/statechart_bytes.scxml"
-BYTES_DIR="sce-kotlin-tests/src/main/kotlin/com/sce/integration/statechart_bytes"
+BYTES_DIR="backends/kotlin/tests/src/main/kotlin/com/sce/integration/statechart_bytes"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

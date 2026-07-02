@@ -186,7 +186,7 @@ find_package(PkgConfig REQUIRED)
 
 # Modular Architecture - Add subdirectories
 add_subdirectory(sce)                 # Unified SCE library with integrated parsing
-add_subdirectory(sce-c-runtime)       # C11 heapless runtime (RFC §5.J.1, watching-zenoh)
+add_subdirectory(backends/c/runtime)       # C11 heapless runtime (RFC §5.J.1, watching-zenoh)
 
 # Tools - TXML conversion (code generation is handled by sce-codegen Rust binary)
 # TXML converter (Native builds only - requires filesystem operations)
@@ -200,9 +200,9 @@ if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
     # RFC §5.J.1 — C11 backend conformance harness, sibling of the
-    # C++ tests/ tree. Lives at the repo root next to sce-c-runtime
+    # C++ tests/ tree. Lives at the repo root next to backends/c/runtime
     # so the C-only translation units stay isolated from C++ link.
-    add_subdirectory(sce-c-tests)
+    add_subdirectory(backends/c/tests)
 endif()
 
 # Example build option (enabled by default)
@@ -220,7 +220,7 @@ endif()
 option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
 if(BUILD_PYTHON_BINDINGS AND NOT EMSCRIPTEN)
     find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-    add_subdirectory(sce-python)
+    add_subdirectory(backends/python/bindings)
 endif()
 
 # =============================================================================

@@ -373,7 +373,7 @@ fn smoke_c_symbol_prefix() {
     };
     let scratch = reset_scratch("c_sym_prefix");
     let fx_path = fixtures_dir().join(format!("{FIXTURE}.scxml"));
-    let runtime_inc = repo_root().join("sce-c-runtime/include");
+    let runtime_inc = repo_root().join("backends/c/runtime/include");
 
     let generate = |out_dir: &Path, prefix: Option<&str>| {
         std::fs::create_dir_all(out_dir).expect("create out dir");
@@ -527,7 +527,7 @@ fn smoke_go() {
 /// Version is discovered rather than hardcoded so bumping the module
 /// version does not silently break this test.
 fn find_kotlin_runtime_jar() -> Option<PathBuf> {
-    let libs = repo_root().join("sce-kotlin-runtime/build/libs");
+    let libs = repo_root().join("backends/kotlin/runtime/build/libs");
     let entries = std::fs::read_dir(&libs).ok()?;
     let mut candidates: Vec<PathBuf> = entries
         .flatten()
@@ -551,7 +551,7 @@ fn smoke_kotlin() {
     };
     let Some(jar) = find_kotlin_runtime_jar() else {
         eprintln!(
-            "SKIP smoke_kotlin: runtime jar missing under sce-kotlin-runtime/build/libs \
+            "SKIP smoke_kotlin: runtime jar missing under backends/kotlin/runtime/build/libs \
              (run `./gradlew :sce-kotlin-runtime:assemble`)",
         );
         return;

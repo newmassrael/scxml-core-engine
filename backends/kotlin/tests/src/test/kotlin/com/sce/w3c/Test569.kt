@@ -1,0 +1,19 @@
+// SCE-GENERATED — DO NOT EDIT
+// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
+// template-hash: b5e91c83753cb468c86997c5541ac646288562f682111eb4bbd825060d84bc2e
+// generated-at: 1782963882
+// GENERATED -- DO NOT EDIT (sce-codegen)
+// SCE-MAP: test569.scxml:1
+package com.sce.w3c
+
+import com.sce.generated.test569.Test569Event
+import com.sce.generated.test569.Test569State
+import com.sce.generated.test569.Test569StateMachine
+import org.junit.jupiter.api.DisplayName
+
+// W3C SCXML B.2: For the _ioprocessors system variable in the ECMAScript datamodel the Processor MUST create an array with an object for each Event I/O processor that it supports, where the name of the object is the same as that of the I/O processor. For the SCXML and BasicHTTP Event I/O processors, the Processor MUST create a location property under the object, assigning the access URI as its String value.
+@DisplayName("Test 569 -- W3C SCXML B.2")
+class Test569 : W3CTestBase<Test569State, Test569Event>() {
+    override fun createStateMachine() = Test569StateMachine(createEngine())
+    override val expectedPassState: Test569State = Test569State.Pass
+}

@@ -1482,7 +1482,7 @@ pub enum ValidationError {
     /// header is missing the `#include <sce/sample.h>` directive. The
     /// generated pool header surfaces the runtime Sample API
     /// (typestate-tracked `sce_sample_t` + Layer 1 attribute family) by
-    /// pulling in `sce-c-runtime/include/sce/sample.h`; without the
+    /// pulling in `backends/c/runtime/include/sce/sample.h`; without the
     /// include, downstream consumers building against the pool header
     /// silently lose Layer 1 typestate coverage even on Clang ≥ 9
     /// because the macro family is unreachable. The diagnostic fires
@@ -3613,7 +3613,7 @@ pub enum GenerateError {
     /// runtime crate's `http-send` feature pulls in `tokio` +
     /// `reqwest`, both of which require std; the `no_std` feature
     /// asserts incompatibility at the cfg layer in
-    /// `sce-rust-runtime/src/lib.rs`. Author repair is to remove the
+    /// `backends/rust/runtime/src/lib.rs`. Author repair is to remove the
     /// HTTP send, or drop `--no-std`. `locations` is a single
     /// human-readable summary of the offending `<send>` site.
     #[error(
