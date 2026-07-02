@@ -21,7 +21,7 @@ HOST_GID=$(id -g)
 echo -e "${YELLOW}Host User: UID=$HOST_UID, GID=$HOST_GID${NC}"
 echo ""
 
-# Project root directory (parent directory of build_scripts/)
+# Project root directory (parent directory of scripts/)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Check if Docker image exists

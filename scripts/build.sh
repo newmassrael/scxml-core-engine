@@ -47,7 +47,7 @@ show_usage() {
 run_build() {
     local build_type=$1
     local script_name=$2
-    local script_path="$SCRIPT_DIR/build_scripts/$script_name"
+    local script_path="$SCRIPT_DIR/$script_name"
 
     echo ""
     echo -e "${YELLOW}========================================${NC}"

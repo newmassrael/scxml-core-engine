@@ -22,7 +22,7 @@ visualizer/visualizer.wasm
 visualizer/visualizer.js
 visualizer/comprehensive_interactive_test.js
 
-# Visualizer symlinks created by start-server.sh (local dev only)
+# Visualizer symlinks created by scripts/start-server.sh (local dev only)
 visualizer/doom
 visualizer/resources
 visualizer/tools

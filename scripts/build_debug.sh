@@ -16,7 +16,7 @@ echo -e "${GREEN}  SCXML Core Engine - Debug Build  ${NC}"
 echo -e "${GREEN}==========================================${NC}"
 echo ""
 
-# Get absolute path to project root (parent directory of build_scripts/)
+# Get absolute path to project root (parent directory of scripts/)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Check if we're in the correct directory
