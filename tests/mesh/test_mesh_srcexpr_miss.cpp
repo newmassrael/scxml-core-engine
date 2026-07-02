@@ -35,8 +35,8 @@
 // invariant this test pins.
 
 #include "common/TestScriptEngine.h"
-#include "srcexpr_miss_sm.h"
 #include "motor_srcexpr_sm.h"
+#include "srcexpr_miss_sm.h"
 #include "srcexpr_miss_transport.h"
 
 #include <cstdio>
@@ -47,8 +47,7 @@ int main() {
     // two-engine TransportRouter construction typechecks, never stepped.
     SCE::Generated::motor_srcexpr::motor_srcexpr phantom_peer;
 
-    using Router = SCE::Generated::srcexpr_miss::TransportRouter<
-        decltype(machine), decltype(phantom_peer)>;
+    using Router = SCE::Generated::srcexpr_miss::TransportRouter<decltype(machine), decltype(phantom_peer)>;
     Router router({&machine}, phantom_peer);
 
     SCE::Test::inject_build_engine(machine);

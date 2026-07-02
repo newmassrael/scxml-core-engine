@@ -61,8 +61,7 @@ enum class CodecError : std::uint8_t {
 /// then `advance` after the construction succeeds.
 class SceCursor {
 public:
-    constexpr SceCursor(const std::uint8_t* data, std::size_t len) noexcept
-        : data_(data), len_(len), pos_(0) {}
+    constexpr SceCursor(const std::uint8_t *data, std::size_t len) noexcept : data_(data), len_(len), pos_(0) {}
 
     [[nodiscard]] constexpr std::size_t remaining() const noexcept {
         return len_ - pos_;
@@ -72,15 +71,19 @@ public:
     /// when the cursor's tail is shorter than `n`. Pair the returned
     /// pointer with the requested length — the cursor does not surface
     /// a slice abstraction at this size class.
-    [[nodiscard]] constexpr const std::uint8_t* peek_slice(std::size_t n) const noexcept {
-        if (remaining() < n) return nullptr;
+    [[nodiscard]] constexpr const std::uint8_t *peek_slice(std::size_t n) const noexcept {
+        if (remaining() < n) {
+            return nullptr;
+        }
         return data_ + pos_;
     }
 
     /// Advance the cursor by `n` bytes. Returns `false` if `n` would
     /// overrun the buffer.
     constexpr bool advance(std::size_t n) noexcept {
-        if (remaining() < n) return false;
+        if (remaining() < n) {
+            return false;
+        }
         pos_ += n;
         return true;
     }
@@ -94,11 +97,21 @@ public:
     /// `last_vle_overflow()` flag — split from the std::optional return
     /// to keep the hot decode path branch-light. Canonical Zenoh ZInt
     /// wire format (RFC §synth-5-B Appendix B): a u64 caps at 9 bytes.
-    std::optional<std::uint64_t> read_vle_u16() noexcept { return read_vle_inner(16); }
-    std::optional<std::uint64_t> read_vle_u32() noexcept { return read_vle_inner(32); }
-    std::optional<std::uint64_t> read_vle_u64() noexcept { return read_vle_inner(64); }
+    std::optional<std::uint64_t> read_vle_u16() noexcept {
+        return read_vle_inner(16);
+    }
 
-    [[nodiscard]] constexpr bool last_vle_overflow() const noexcept { return vle_overflow_; }
+    std::optional<std::uint64_t> read_vle_u32() noexcept {
+        return read_vle_inner(32);
+    }
+
+    std::optional<std::uint64_t> read_vle_u64() noexcept {
+        return read_vle_inner(64);
+    }
+
+    [[nodiscard]] constexpr bool last_vle_overflow() const noexcept {
+        return vle_overflow_;
+    }
 
 private:
     std::optional<std::uint64_t> read_vle_inner(std::uint32_t max_bits) noexcept {
@@ -110,8 +123,10 @@ private:
         std::uint64_t value = 0;
         std::uint32_t shift = 0;
         for (std::uint32_t i = 0; i < vle_len; ++i) {
-            const std::uint8_t* p = peek_slice(1);
-            if (p == nullptr) return std::nullopt;
+            const std::uint8_t *p = peek_slice(1);
+            if (p == nullptr) {
+                return std::nullopt;
+            }
             (void)advance(1);
             if (shift == final_shift) {
                 // Final byte: 8 data bits, continuation bit reused as
@@ -135,7 +150,7 @@ private:
         return std::nullopt;
     }
 
-    const std::uint8_t* data_;
+    const std::uint8_t *data_;
     std::size_t len_;
     std::size_t pos_;
     bool vle_overflow_ = false;
@@ -186,8 +201,7 @@ public:
     /// Concrete sinks raise `CodecError::BufferOverflow` when the
     /// destination has insufficient remaining capacity; growable sinks
     /// return `std::nullopt`.
-    [[nodiscard]] virtual std::optional<CodecError>
-    write_bytes(const std::uint8_t* data, std::size_t n) noexcept = 0;
+    [[nodiscard]] virtual std::optional<CodecError> write_bytes(const std::uint8_t *data, std::size_t n) noexcept = 0;
 
     /// Bytes written by this sink instance since it wrapped the
     /// destination. Used by codec emit for offset-aware writes (DMA-
@@ -247,14 +261,9 @@ public:
     /// Append a little-endian `uint64_t` (8 bytes).
     [[nodiscard]] std::optional<CodecError> write_u64_le(std::uint64_t v) noexcept {
         std::uint8_t buf[8] = {
-            static_cast<std::uint8_t>(v),
-            static_cast<std::uint8_t>(v >> 8),
-            static_cast<std::uint8_t>(v >> 16),
-            static_cast<std::uint8_t>(v >> 24),
-            static_cast<std::uint8_t>(v >> 32),
-            static_cast<std::uint8_t>(v >> 40),
-            static_cast<std::uint8_t>(v >> 48),
-            static_cast<std::uint8_t>(v >> 56),
+            static_cast<std::uint8_t>(v),       static_cast<std::uint8_t>(v >> 8),  static_cast<std::uint8_t>(v >> 16),
+            static_cast<std::uint8_t>(v >> 24), static_cast<std::uint8_t>(v >> 32), static_cast<std::uint8_t>(v >> 40),
+            static_cast<std::uint8_t>(v >> 48), static_cast<std::uint8_t>(v >> 56),
         };
         return write_bytes(buf, 8);
     }
@@ -262,14 +271,9 @@ public:
     /// Append a big-endian `uint64_t` (8 bytes).
     [[nodiscard]] std::optional<CodecError> write_u64_be(std::uint64_t v) noexcept {
         std::uint8_t buf[8] = {
-            static_cast<std::uint8_t>(v >> 56),
-            static_cast<std::uint8_t>(v >> 48),
-            static_cast<std::uint8_t>(v >> 40),
-            static_cast<std::uint8_t>(v >> 32),
-            static_cast<std::uint8_t>(v >> 24),
-            static_cast<std::uint8_t>(v >> 16),
-            static_cast<std::uint8_t>(v >> 8),
-            static_cast<std::uint8_t>(v),
+            static_cast<std::uint8_t>(v >> 56), static_cast<std::uint8_t>(v >> 48), static_cast<std::uint8_t>(v >> 40),
+            static_cast<std::uint8_t>(v >> 32), static_cast<std::uint8_t>(v >> 24), static_cast<std::uint8_t>(v >> 16),
+            static_cast<std::uint8_t>(v >> 8),  static_cast<std::uint8_t>(v),
         };
         return write_bytes(buf, 8);
     }
@@ -285,18 +289,23 @@ public:
         std::uint64_t v = value;
         std::uint32_t n = 0;
         while (v >= 0x80 && n < cont_max) {
-            if (auto _e = write_u8(static_cast<std::uint8_t>((v & 0x7F) | 0x80))) return _e;
+            if (auto _e = write_u8(static_cast<std::uint8_t>((v & 0x7F) | 0x80))) {
+                return _e;
+            }
             v >>= 7;
             ++n;
         }
         return write_u8(static_cast<std::uint8_t>(v));
     }
+
     [[nodiscard]] std::optional<CodecError> write_vle_u16(std::uint16_t v) noexcept {
         return write_vle_inner(v, 16);
     }
+
     [[nodiscard]] std::optional<CodecError> write_vle_u32(std::uint32_t v) noexcept {
         return write_vle_inner(v, 32);
     }
+
     [[nodiscard]] std::optional<CodecError> write_vle_u64(std::uint64_t v) noexcept {
         return write_vle_inner(v, 64);
     }
@@ -309,11 +318,9 @@ public:
 /// generated `encode_to_vec()` facade.
 class VectorSink final : public SceSink {
 public:
-    explicit VectorSink(std::vector<std::uint8_t>& dst) noexcept
-        : dst_(dst), start_len_(dst.size()) {}
+    explicit VectorSink(std::vector<std::uint8_t> &dst) noexcept : dst_(dst), start_len_(dst.size()) {}
 
-    [[nodiscard]] std::optional<CodecError>
-    write_bytes(const std::uint8_t* data, std::size_t n) noexcept override {
+    [[nodiscard]] std::optional<CodecError> write_bytes(const std::uint8_t *data, std::size_t n) noexcept override {
         dst_.insert(dst_.end(), data, data + n);
         return std::nullopt;
     }
@@ -323,7 +330,7 @@ public:
     }
 
 private:
-    std::vector<std::uint8_t>& dst_;
+    std::vector<std::uint8_t> &dst_;
     std::size_t start_len_;
 };
 
@@ -333,11 +340,9 @@ private:
 /// storage is owned by an upstream peripheral driver.
 class SpanSink final : public SceSink {
 public:
-    SpanSink(std::uint8_t* buf, std::size_t cap) noexcept
-        : buf_(buf), cap_(cap), pos_(0) {}
+    SpanSink(std::uint8_t *buf, std::size_t cap) noexcept : buf_(buf), cap_(cap), pos_(0) {}
 
-    [[nodiscard]] std::optional<CodecError>
-    write_bytes(const std::uint8_t* data, std::size_t n) noexcept override {
+    [[nodiscard]] std::optional<CodecError> write_bytes(const std::uint8_t *data, std::size_t n) noexcept override {
         if (cap_ - pos_ < n) {
             return CodecError::BufferOverflow;
         }
@@ -356,35 +361,47 @@ public:
     }
 
 private:
-    std::uint8_t* buf_;
+    std::uint8_t *buf_;
     std::size_t cap_;
     std::size_t pos_;
 };
 
-[[nodiscard]] inline bool is_valid_utf8(const std::uint8_t* p, std::size_t n) noexcept {
+[[nodiscard]] inline bool is_valid_utf8(const std::uint8_t *p, std::size_t n) noexcept {
     std::size_t i = 0;
     while (i < n) {
         const std::uint8_t b0 = p[i];
         if (b0 <= 0x7F) {
             i += 1;
         } else if (b0 >= 0xC2 && b0 <= 0xDF) {
-            if (i + 1 >= n) return false;
+            if (i + 1 >= n) {
+                return false;
+            }
             const std::uint8_t b1 = p[i + 1];
-            if (b1 < 0x80 || b1 > 0xBF) return false;
+            if (b1 < 0x80 || b1 > 0xBF) {
+                return false;
+            }
             i += 2;
         } else if (b0 >= 0xE0 && b0 <= 0xEF) {
-            if (i + 2 >= n) return false;
+            if (i + 2 >= n) {
+                return false;
+            }
             const std::uint8_t b1 = p[i + 1];
             const std::uint8_t b2 = p[i + 2];
             // Per RFC 3629 §4: E0 disallows overlong (b1 < 0xA0); ED
             // disallows surrogate (b1 > 0x9F = 0xA0..0xBF excluded).
             const std::uint8_t b1_min = (b0 == 0xE0) ? 0xA0 : 0x80;
             const std::uint8_t b1_max = (b0 == 0xED) ? 0x9F : 0xBF;
-            if (b1 < b1_min || b1 > b1_max) return false;
-            if (b2 < 0x80 || b2 > 0xBF) return false;
+            if (b1 < b1_min || b1 > b1_max) {
+                return false;
+            }
+            if (b2 < 0x80 || b2 > 0xBF) {
+                return false;
+            }
             i += 3;
         } else if (b0 >= 0xF0 && b0 <= 0xF4) {
-            if (i + 3 >= n) return false;
+            if (i + 3 >= n) {
+                return false;
+            }
             const std::uint8_t b1 = p[i + 1];
             const std::uint8_t b2 = p[i + 2];
             const std::uint8_t b3 = p[i + 3];
@@ -392,9 +409,15 @@ private:
             // (b1 > 0x8F = 0x90..0xBF excluded).
             const std::uint8_t b1_min = (b0 == 0xF0) ? 0x90 : 0x80;
             const std::uint8_t b1_max = (b0 == 0xF4) ? 0x8F : 0xBF;
-            if (b1 < b1_min || b1 > b1_max) return false;
-            if (b2 < 0x80 || b2 > 0xBF) return false;
-            if (b3 < 0x80 || b3 > 0xBF) return false;
+            if (b1 < b1_min || b1 > b1_max) {
+                return false;
+            }
+            if (b2 < 0x80 || b2 > 0xBF) {
+                return false;
+            }
+            if (b3 < 0x80 || b3 > 0xBF) {
+                return false;
+            }
             i += 4;
         } else {
             // Lead bytes 0x80..0xC1 (continuation in lead position +

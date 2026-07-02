@@ -77,8 +77,7 @@ inline constexpr int kProcedureMaxIterations = 1000;
 /// matching transition, `processTransition` returns `nullopt` and the
 /// procedure terminates uncompleted — W3C-correct for an unhandled
 /// internal event.
-template <typename Policy>
-ProcedureRunResult run_procedure(Policy &policy) {
+template <typename Policy> ProcedureRunResult run_procedure(Policy &policy) {
     using State = typename Policy::State;
     using Event = typename Policy::Event;
 

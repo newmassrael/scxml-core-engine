@@ -9,10 +9,10 @@
 // test_mesh_local_runtime.cpp).
 
 #include "brake_sm.h"
-#include "motor_sm.h"
 #include "brake_transport.h"
 #include "mesh/EventQueueBridge.h"
 #include "mesh/SchedulerConcepts.h"
+#include "motor_sm.h"
 
 #include <cstdio>
 #include <cstring>
@@ -22,9 +22,7 @@
 #include <utility>
 
 // Verify EventQueueBridge compiles with a concrete event type
-static_assert(
-    sizeof(SCE::Mesh::EventQueueBridge<int, 64>) > 0,
-    "EventQueueBridge must be instantiable with int");
+static_assert(sizeof(SCE::Mesh::EventQueueBridge<int, 64>) > 0, "EventQueueBridge must be instantiable with int");
 
 // Verify TransportRouter template is well-formed by instantiating
 // with a minimal mock engine that provides the getPolicy() API
@@ -35,8 +33,10 @@ struct MockEngine {
     enum class Event { dummy };
 
     struct Policy {
-        static std::optional<Event> getEventFromName(const char* name) {
-            if (std::strcmp(name, "dummy") == 0) return Event::dummy;
+        static std::optional<Event> getEventFromName(const char *name) {
+            if (std::strcmp(name, "dummy") == 0) {
+                return Event::dummy;
+            }
             return std::nullopt;
         }
     };
@@ -63,19 +63,31 @@ struct MockEngine {
     };
 
     Policy policy_;
-    Policy& getPolicy() { return policy_; }
-    std::string currentEventInvokeId() const { return {}; }
+
+    Policy &getPolicy() {
+        return policy_;
+    }
+
+    std::string currentEventInvokeId() const {
+        return {};
+    }
+
     void processEvent(Event) {}
-    void raiseExternal(Event, const std::string& = {}) {}
-    void raiseExternal(const EventWithMetadata&) {}
+
+    void raiseExternal(Event, const std::string & = {}) {}
+
+    void raiseExternal(const EventWithMetadata &) {}
+
     // TransportRouter's ctor installs the outbound dispatch hook on
     // every hosted session via this method; the mock just stores the
     // callback (ignored by this compile test).
-    using MeshSendCb = std::function<bool(const std::string&, const std::string&,
-                                          const std::string&, const std::string&,
-                                          const std::string&)>;
+    using MeshSendCb = std::function<bool(const std::string &, const std::string &, const std::string &,
+                                          const std::string &, const std::string &)>;
     MeshSendCb mesh_send_cb_;
-    void setMeshSendCallback(MeshSendCb cb) { mesh_send_cb_ = std::move(cb); }
+
+    void setMeshSendCallback(MeshSendCb cb) {
+        mesh_send_cb_ = std::move(cb);
+    }
 };
 
 // Session-first ctor injection: SenderEngine template param precedes
@@ -84,8 +96,7 @@ struct MockEngine {
 // local target engine here; production code uses different engine types.
 using Router = SCE::Generated::brake::TransportRouter<MockEngine, MockEngine>;
 
-static_assert(sizeof(Router) > 0,
-              "TransportRouter must be instantiable");
+static_assert(sizeof(Router) > 0, "TransportRouter must be instantiable");
 
 }  // namespace
 

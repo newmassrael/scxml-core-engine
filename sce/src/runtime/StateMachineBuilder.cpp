@@ -9,8 +9,7 @@ namespace SCE {
 
 std::shared_ptr<StateMachine> StateMachineBuilder::build() {
     if (!scriptEngine_) {
-        throw std::runtime_error(
-            "StateMachineBuilder::build: withScriptEngine() must be called before build()");
+        throw std::runtime_error("StateMachineBuilder::build: withScriptEngine() must be called before build()");
     }
 
     // Create StateMachine with engine injection

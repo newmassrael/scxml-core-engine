@@ -222,7 +222,7 @@ std::shared_ptr<ITransitionNode> ConcurrentStateNode::getInitialTransition() con
 
 void ConcurrentStateNode::setInitialTransition(std::shared_ptr<ITransitionNode> transition) {
     SCE_LOG_DEBUG("Setting initial transition for {} (Note: Concurrent states typically don't use initial transitions)",
-              id_);
+                  id_);
     initialTransition_ = transition;
 }
 
@@ -375,8 +375,8 @@ std::vector<ConcurrentOperationResult> ConcurrentStateNode::activateAllRegions()
         if (!result.isSuccess) {
             SCE_LOG_WARN("Failed to activate region '{}': {}", region->getId(), result.errorMessage);
         } else {
-            SCE_LOG_DEBUG("ConcurrentStateNode: Region '{}' activation result: success={}, isActive={}", region->getId(),
-                      result.isSuccess, region->isActive());
+            SCE_LOG_DEBUG("ConcurrentStateNode: Region '{}' activation result: success={}, isActive={}",
+                          region->getId(), result.isSuccess, region->isActive());
         }
     }
 
@@ -426,7 +426,7 @@ bool ConcurrentStateNode::areAllRegionsComplete() const {
     // SCXML W3C specification section 3.4: ALL regions must be in final state for completion
     // No configuration options - this is mandated by specification
     SCE_LOG_DEBUG("[TEST 570 DEBUG] areAllRegionsComplete called for parallel state '{}', regions.size()={}", id_,
-              regions_.size());
+                  regions_.size());
 
     bool isComplete =
         std::all_of(regions_.begin(), regions_.end(), [this](const std::shared_ptr<IConcurrentRegion> &region) {
@@ -440,8 +440,9 @@ bool ConcurrentStateNode::areAllRegionsComplete() const {
             return isFinal;
         });
 
-    SCE_LOG_DEBUG("[TEST 570 DEBUG] areAllRegionsComplete for '{}' returning {}, hasNotifiedCompletion_={}, hasCallback={}",
-              id_, isComplete, hasNotifiedCompletion_, (completionCallback_ ? "yes" : "no"));
+    SCE_LOG_DEBUG(
+        "[TEST 570 DEBUG] areAllRegionsComplete for '{}' returning {}, hasNotifiedCompletion_={}, hasCallback={}", id_,
+        isComplete, hasNotifiedCompletion_, (completionCallback_ ? "yes" : "no"));
 
     return isComplete;
 }

@@ -10,16 +10,16 @@
  */
 
 #include "sce_doom_hooks.h"
-#include "info.h"
-#include "sce_wrapper.h"
-#include "sce_secret_hint.h"
-#include "p_tick.h"
-#include "p_local.h"
-#include "doomstat.h"
 #include "d_player.h"
+#include "doomstat.h"
+#include "info.h"
+#include "p_local.h"
+#include "p_tick.h"
 #include "r_main.h"
-#include <string.h>
+#include "sce_secret_hint.h"
+#include "sce_wrapper.h"
 #include <emscripten.h>
+#include <string.h>
 
 /* Conditional debug logging (matches sce_sm_internal.h) */
 #ifdef SCE_DEBUG
@@ -276,7 +276,7 @@ void SCE_SecretHintToggle(void) {
 
 void SCE_SecretHintRequest(void) {
     /* Request path to current target */
-    Secret_ClearPath();  /* Clear old path first */
+    Secret_ClearPath(); /* Clear old path first */
     sce_secret_event_request();
 }
 
@@ -296,7 +296,7 @@ void SCE_SecretHintCancel(void) {
 void SCE_SecretLevelChange(void) {
     Secret_OnLevelLoad();
     sce_secret_event_level_change();
-    sce_secret_update_count();  /* Update secret count display after level load */
+    sce_secret_update_count(); /* Update secret count display after level load */
 }
 
 void SCE_SecretCheckReached(void) {
@@ -306,9 +306,7 @@ void SCE_SecretCheckReached(void) {
      * - showing: update arrow positions as player moves
      * - found: keep showing path after reaching target
      * - no_path: keep trying to find path as player moves */
-    if (state && (strcmp(state, "showing") == 0 ||
-                  strcmp(state, "found") == 0 ||
-                  strcmp(state, "no_path") == 0)) {
+    if (state && (strcmp(state, "showing") == 0 || strcmp(state, "found") == 0 || strcmp(state, "no_path") == 0)) {
         Secret_UpdateArrows();
     }
 
@@ -317,7 +315,7 @@ void SCE_SecretCheckReached(void) {
     }
 }
 
-const char* SCE_SecretGetStateName(void) {
+const char *SCE_SecretGetStateName(void) {
     return sce_secret_get_state();
 }
 
@@ -331,7 +329,7 @@ int SCE_GetPlayerKillCount(void) {
 }
 
 /* Aim Assist */
-static mobj_t *g_aim_target = NULL;  /* Current lock-on target */
+static mobj_t *g_aim_target = NULL; /* Current lock-on target */
 
 void SCE_AimAssistToggle(void) {
     sce_aim_event_toggle();
@@ -353,7 +351,7 @@ void SCE_AimAssistClearTarget(void) {
     g_aim_target = NULL;
 }
 
-mobj_t* SCE_AimAssistGetTarget(void) {
+mobj_t *SCE_AimAssistGetTarget(void) {
     /* Return target only if valid */
     if (g_aim_target && g_aim_target->health > 0) {
         return g_aim_target;
@@ -381,7 +379,7 @@ void SCE_AimAssistTick(void) {
     /* Check if target is still valid (alive and exists) */
     if (g_aim_target->health <= 0) {
         g_aim_target = NULL;
-        SCE_AimEventTargetLost();  /* SCXML: locked -> idle */
+        SCE_AimEventTargetLost(); /* SCXML: locked -> idle */
         return;
     }
 
@@ -463,7 +461,7 @@ extern int sce_combo_is_berserk(void);
 extern int sce_berserk_get_intensity(void);
 
 /* Berserk state - managed by SCXML callbacks */
-static float g_berserk_multiplier = 1.0f;  /* Damage multiplier (1.0 = normal) */
+static float g_berserk_multiplier = 1.0f; /* Damage multiplier (1.0 = normal) */
 
 boolean SCE_BerserkIsActive(void) {
     return sce_combo_is_berserk() ? true : false;
@@ -479,10 +477,14 @@ float SCE_BerserkGetMultiplier(void) {
 
 int SCE_BerserkGetAttackSpeed(void) {
     int intensity = sce_berserk_get_intensity();
-    if (intensity <= 1) return 1;
+    if (intensity <= 1) {
+        return 1;
+    }
     // Scale: x2-x3 = 2, x4-x5 = 3, x6-x7 = 4, x8-x10 = 5
     int speed = 1 + (intensity - 1) / 2;
-    if (speed > 5) speed = 5;
+    if (speed > 5) {
+        speed = 5;
+    }
     return speed;
 }
 

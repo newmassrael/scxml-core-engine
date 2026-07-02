@@ -109,8 +109,7 @@ public:
     // to begin at `outer_start` in `self`. Copies any file texts
     // `inner` registered that are not already in `self`. Mirrors
     // Rust `PositionMap::append_mapped_substring`.
-    void append_mapped_substring(const PositionMap &inner, size_t inner_start, size_t inner_end,
-                                 size_t outer_start);
+    void append_mapped_substring(const PositionMap &inner, size_t inner_start, size_t inner_end, size_t outer_start);
 
 private:
     struct Entry {

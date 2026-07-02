@@ -37,9 +37,7 @@ int main(void) {
     // No scheduler / polling needed.
     donedata_local_invoke_run(&sm);
 
-    int rc = donedata_local_invoke_in_state(&sm, DONEDATA_LOCAL_INVOKE_STATE_PASS)
-                 ? 0
-                 : 1;
+    int rc = donedata_local_invoke_in_state(&sm, DONEDATA_LOCAL_INVOKE_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
         fprintf(stderr,
                 "donedata_local_invoke: FAIL — current state is not "

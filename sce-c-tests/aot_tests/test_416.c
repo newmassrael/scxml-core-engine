@@ -3,7 +3,9 @@
 //
 // W3C SCXML test416 — C11 AOT runner.
 //
-// W3C SCXML 3.7: top-level final state halts execution — entering a child of the top-level final triggers `is_in_final_state` to return true, so process_event_queues returns immediately without firing the safety-net timeout (target=fail). Routes to pass via eventless chain.
+// W3C SCXML 3.7: top-level final state halts execution — entering a child of the top-level final triggers
+// `is_in_final_state` to return true, so process_event_queues returns immediately without firing the safety-net timeout
+// (target=fail). Routes to pass via eventless chain.
 
 #define _POSIX_C_SOURCE 199309L
 
@@ -25,8 +27,7 @@ int main(void) {
 
     while (!test416_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test416: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test416_active_states(&sm));
+            fprintf(stderr, "test416: TIMEOUT — active = 0x%08x\n", (unsigned)test416_active_states(&sm));
             test416_destroy(&sm);
             return 1;
         }
@@ -36,8 +37,7 @@ int main(void) {
 
     int rc = test416_in_state(&sm, TEST416_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test416: FAIL — active = 0x%08x\n",
-                (unsigned)test416_active_states(&sm));
+        fprintf(stderr, "test416: FAIL — active = 0x%08x\n", (unsigned)test416_active_states(&sm));
     }
     test416_destroy(&sm);
     return rc;

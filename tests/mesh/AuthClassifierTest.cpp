@@ -66,8 +66,7 @@ TEST(AuthClassifierTest, MatchesSubstringAnywhereInMessage) {
     // a wrapper that prepends a stage label or vendors a stack-trace
     // suffix still classifies correctly.
     EXPECT_TRUE(isZenohAuthFailMessage("[init] Certificate verification failed at depth 1"));
-    EXPECT_TRUE(isZenohAuthFailMessage(
-        "Failed to open zenoh::Session: TLS error: peer rejected"));
+    EXPECT_TRUE(isZenohAuthFailMessage("Failed to open zenoh::Session: TLS error: peer rejected"));
 }
 
 TEST(AuthClassifierTest, SubstringRuleAcceptsAuthorityLikeWords) {
@@ -108,7 +107,6 @@ TEST(AuthClassifierTest, EveryManifestKeywordFires) {
         msg.append(keyword.data(), keyword.size());
         msg.append("' fault");
         EXPECT_TRUE(isZenohAuthFailMessage(msg))
-            << "manifest keyword '" << keyword
-            << "' did not fire isZenohAuthFailMessage()";
+            << "manifest keyword '" << keyword << "' did not fire isZenohAuthFailMessage()";
     }
 }

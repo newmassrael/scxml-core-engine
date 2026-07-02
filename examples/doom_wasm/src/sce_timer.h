@@ -37,26 +37,42 @@ public:
     }
 
     void pause() {
-        if (type_ == Type::NONE || paused_) return;
+        if (type_ == Type::NONE || paused_) {
+            return;
+        }
         auto now = std::chrono::steady_clock::now();
-        elapsed_before_pause_ms_ +=
-            std::chrono::duration<double, std::milli>(now - start_).count();
+        elapsed_before_pause_ms_ += std::chrono::duration<double, std::milli>(now - start_).count();
         paused_ = true;
     }
 
     void resume() {
-        if (type_ == Type::NONE || !paused_) return;
+        if (type_ == Type::NONE || !paused_) {
+            return;
+        }
         paused_ = false;
         start_ = std::chrono::steady_clock::now();
     }
 
-    bool isActive() const { return type_ != Type::NONE; }
-    bool isPaused() const { return paused_; }
-    Type getType() const { return type_; }
-    double getDurationMs() const { return duration_ms_; }
+    bool isActive() const {
+        return type_ != Type::NONE;
+    }
+
+    bool isPaused() const {
+        return paused_;
+    }
+
+    Type getType() const {
+        return type_;
+    }
+
+    double getDurationMs() const {
+        return duration_ms_;
+    }
 
     double getRemainingMs() const {
-        if (type_ == Type::NONE) return 0;
+        if (type_ == Type::NONE) {
+            return 0;
+        }
         double remaining = duration_ms_ - getElapsedMs();
         return (remaining > 0) ? remaining : 0;
     }
@@ -70,8 +86,7 @@ private:
         double elapsed = elapsed_before_pause_ms_;
         if (!paused_) {
             auto now = std::chrono::steady_clock::now();
-            elapsed +=
-                std::chrono::duration<double, std::milli>(now - start_).count();
+            elapsed += std::chrono::duration<double, std::milli>(now - start_).count();
         }
         return elapsed;
     }

@@ -30,24 +30,22 @@ namespace SCE::Mesh {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Detect S::tick() method presence.
-template <typename S, typename = void>
-struct HasTickTrait : std::false_type {};
-template <typename S>
-struct HasTickTrait<S, std::void_t<decltype(std::declval<S&>().tick())>> : std::true_type {};
+template <typename S, typename = void> struct HasTickTrait : std::false_type {};
+
+template <typename S> struct HasTickTrait<S, std::void_t<decltype(std::declval<S &>().tick())>> : std::true_type {};
 
 /// Detect S::deadline() -> convertible to S::Duration.
-template <typename S, typename = void>
-struct HasDeadlineTrait : std::false_type {};
+template <typename S, typename = void> struct HasDeadlineTrait : std::false_type {};
+
 template <typename S>
-struct HasDeadlineTrait<S, std::void_t<decltype(std::declval<S&>().deadline())>> : std::true_type {};
+struct HasDeadlineTrait<S, std::void_t<decltype(std::declval<S &>().deadline())>> : std::true_type {};
 
 /// Detect S::onEvent(event) method presence.
-template <typename S, typename = void>
-struct HasOnEventTrait : std::false_type {};
+template <typename S, typename = void> struct HasOnEventTrait : std::false_type {};
+
 template <typename S>
-struct HasOnEventTrait<S, std::void_t<
-    decltype(std::declval<S&>().onEvent(std::declval<typename S::Event>()))
->> : std::true_type {};
+struct HasOnEventTrait<S, std::void_t<decltype(std::declval<S &>().onEvent(std::declval<typename S::Event>()))>>
+    : std::true_type {};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // C++20 concepts + C++17 constexpr bool aliases
@@ -74,9 +72,7 @@ struct HasOnEventTrait<S, std::void_t<
 // ─────────────────────────────────────────────────────────────────────────────
 
 template <typename S>
-concept TickScheduling = requires {
-    typename S::Duration;
-} && requires(S& s) {
+concept TickScheduling = requires { typename S::Duration; } && requires(S &s) {
     { s.tick() };
     { s.deadline() } -> std::convertible_to<typename S::Duration>;
 };
@@ -95,9 +91,7 @@ concept TickScheduling = requires {
 // ─────────────────────────────────────────────────────────────────────────────
 
 template <typename S>
-concept EventDrivenScheduling = requires {
-    typename S::Event;
-} && requires(S& s, typename S::Event event) {
+concept EventDrivenScheduling = requires { typename S::Event; } && requires(S &s, typename S::Event event) {
     { s.onEvent(event) };
 };
 
@@ -122,14 +116,11 @@ concept HasOnEvent = HasOnEventTrait<S>::value;
 // Feature detection works identically: if constexpr (HasTick<S>) { ... }
 // ─────────────────────────────────────────────────────────────────────────────
 
-template <typename S>
-inline constexpr bool HasTick = HasTickTrait<S>::value;
+template <typename S> inline constexpr bool HasTick = HasTickTrait<S>::value;
 
-template <typename S>
-inline constexpr bool HasDeadline = HasDeadlineTrait<S>::value;
+template <typename S> inline constexpr bool HasDeadline = HasDeadlineTrait<S>::value;
 
-template <typename S>
-inline constexpr bool HasOnEvent = HasOnEventTrait<S>::value;
+template <typename S> inline constexpr bool HasOnEvent = HasOnEventTrait<S>::value;
 
 #endif  // __cpp_concepts >= 202002L
 

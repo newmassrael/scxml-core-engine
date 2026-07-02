@@ -125,22 +125,21 @@ enum class ReasonCode : std::uint8_t {
 /// `SCE_MESH.md` §mesh-16.7. Adding a §mesh-16.7 row requires extending
 /// this table; the cross-doc test fails the build if the table and
 /// the markdown catalog diverge.
-inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 13>
-    kReasonCodeTable = {{
-        {ReasonCode::TransportUnavailable, "TRANSPORT_UNAVAILABLE"},
-        {ReasonCode::SendFailed, "SEND_FAILED"},
-        {ReasonCode::DeliveryExhausted, "DELIVERY_EXHAUSTED"},
-        {ReasonCode::EnvelopeCorrupt, "ENVELOPE_CORRUPT"},
-        {ReasonCode::InvokeChildLost, "INVOKE_CHILD_LOST"},
-        {ReasonCode::ParallelBarrierTimeout, "PARALLEL_BARRIER_TIMEOUT"},
-        {ReasonCode::DedupWindowOverflow, "DEDUP_WINDOW_OVERFLOW"},
-        {ReasonCode::PeerPartitioned, "PEER_PARTITIONED"},
-        {ReasonCode::BackpressureDrop, "BACKPRESSURE_DROP"},
-        {ReasonCode::Unauthorized, "UNAUTHORIZED"},
-        {ReasonCode::MissingSequence, "MISSING_SEQUENCE"},
-        {ReasonCode::OrderingGap, "ORDERING_GAP"},
-        {ReasonCode::RegionPartitioned, "REGION_PARTITIONED"},
-    }};
+inline constexpr std::array<std::pair<ReasonCode, std::string_view>, 13> kReasonCodeTable = {{
+    {ReasonCode::TransportUnavailable, "TRANSPORT_UNAVAILABLE"},
+    {ReasonCode::SendFailed, "SEND_FAILED"},
+    {ReasonCode::DeliveryExhausted, "DELIVERY_EXHAUSTED"},
+    {ReasonCode::EnvelopeCorrupt, "ENVELOPE_CORRUPT"},
+    {ReasonCode::InvokeChildLost, "INVOKE_CHILD_LOST"},
+    {ReasonCode::ParallelBarrierTimeout, "PARALLEL_BARRIER_TIMEOUT"},
+    {ReasonCode::DedupWindowOverflow, "DEDUP_WINDOW_OVERFLOW"},
+    {ReasonCode::PeerPartitioned, "PEER_PARTITIONED"},
+    {ReasonCode::BackpressureDrop, "BACKPRESSURE_DROP"},
+    {ReasonCode::Unauthorized, "UNAUTHORIZED"},
+    {ReasonCode::MissingSequence, "MISSING_SEQUENCE"},
+    {ReasonCode::OrderingGap, "ORDERING_GAP"},
+    {ReasonCode::RegionPartitioned, "REGION_PARTITIONED"},
+}};
 
 /// Map a `ReasonCode` to its canonical wire string. Linear lookup
 /// over the 13-entry table; the compiler collapses the loop under

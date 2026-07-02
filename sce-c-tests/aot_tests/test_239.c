@@ -52,8 +52,7 @@ int main(void) {
 
     while (!test239_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test239: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test239_active_states(&sm));
+            fprintf(stderr, "test239: TIMEOUT — active = 0x%08x\n", (unsigned)test239_active_states(&sm));
             test239_destroy(&sm);
             return 1;
         }
@@ -63,8 +62,7 @@ int main(void) {
 
     int rc = test239_in_state(&sm, TEST239_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test239: FAIL — active = 0x%08x\n",
-                (unsigned)test239_active_states(&sm));
+        fprintf(stderr, "test239: FAIL — active = 0x%08x\n", (unsigned)test239_active_states(&sm));
     }
     test239_destroy(&sm);
     return rc;

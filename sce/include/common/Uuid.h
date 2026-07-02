@@ -51,15 +51,23 @@ inline constexpr std::array<std::size_t, 4> kCanonicalDashPositions = {8, 13, 18
 
 [[nodiscard]] inline constexpr bool is_dash_position(std::size_t i) {
     for (auto p : kCanonicalDashPositions) {
-        if (i == p) return true;
+        if (i == p) {
+            return true;
+        }
     }
     return false;
 }
 
 [[nodiscard]] inline std::optional<std::uint8_t> parse_hex_nibble(char c) {
-    if (c >= '0' && c <= '9') return static_cast<std::uint8_t>(c - '0');
-    if (c >= 'a' && c <= 'f') return static_cast<std::uint8_t>(c - 'a' + 10);
-    if (c >= 'A' && c <= 'F') return static_cast<std::uint8_t>(c - 'A' + 10);
+    if (c >= '0' && c <= '9') {
+        return static_cast<std::uint8_t>(c - '0');
+    }
+    if (c >= 'a' && c <= 'f') {
+        return static_cast<std::uint8_t>(c - 'a' + 10);
+    }
+    if (c >= 'A' && c <= 'F') {
+        return static_cast<std::uint8_t>(c - 'A' + 10);
+    }
     return std::nullopt;
 }
 
@@ -75,7 +83,9 @@ inline constexpr std::array<std::size_t, 4> kCanonicalDashPositions = {8, 13, 18
     std::string out(detail::kCanonicalTextLen, '-');
     std::size_t byte = 0;
     for (std::size_t i = 0; i < detail::kCanonicalTextLen; ++i) {
-        if (detail::is_dash_position(i)) continue;
+        if (detail::is_dash_position(i)) {
+            continue;
+        }
         const std::uint8_t b = uuid[byte / 2];
         const bool hi_nibble = (byte % 2 == 0);
         out[i] = kHex[hi_nibble ? (b >> 4) : (b & 0x0F)];
@@ -88,18 +98,24 @@ inline constexpr std::array<std::size_t, 4> kCanonicalDashPositions = {8, 13, 18
 /// upper- and lower-case hex. Returns `std::nullopt` on any length,
 /// separator, or hex-digit mismatch. No allocations on the failure path.
 [[nodiscard]] inline std::optional<Bytes> from_string(std::string_view text) {
-    if (text.size() != detail::kCanonicalTextLen) return std::nullopt;
+    if (text.size() != detail::kCanonicalTextLen) {
+        return std::nullopt;
+    }
     Bytes out{};
     std::size_t byte = 0;
-    for (std::size_t i = 0; i < detail::kCanonicalTextLen; ) {
+    for (std::size_t i = 0; i < detail::kCanonicalTextLen;) {
         if (detail::is_dash_position(i)) {
-            if (text[i] != '-') return std::nullopt;
+            if (text[i] != '-') {
+                return std::nullopt;
+            }
             ++i;
             continue;
         }
         auto hi = detail::parse_hex_nibble(text[i]);
         auto lo = detail::parse_hex_nibble(text[i + 1]);
-        if (!hi || !lo) return std::nullopt;
+        if (!hi || !lo) {
+            return std::nullopt;
+        }
         out[byte] = static_cast<std::uint8_t>((*hi << 4) | *lo);
         ++byte;
         i += 2;

@@ -104,7 +104,7 @@ int TransitionDomainCalculator::getStateDocumentPosition(const std::string &stat
 }
 
 std::string TransitionDomainCalculator::findLCA(const std::string &sourceStateId,
-                                                 const std::string &targetStateId) const {
+                                                const std::string &targetStateId) const {
     if (!model_) {
         return "";
     }
@@ -256,7 +256,7 @@ TransitionDomainCalculator::computeExitSet(const std::string &sourceStateId, con
     // - Handles null checks defensively
 
     SCE_LOG_DEBUG("W3C SCXML: computeExitSet({} -> {}) = {} states, LCA = '{}'", sourceStateId, targetStateId,
-              result.states.size(), result.lca);
+                  result.states.size(), result.lca);
 
     return result;
 }

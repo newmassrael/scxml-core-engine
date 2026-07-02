@@ -60,9 +60,11 @@ public:
     // envelope (stage = "xml", id derived through the canonical key
     // shape, message read from `runtime_error::what()`).
     std::string_view code() const noexcept override = 0;
+
     const std::optional<SourcePos> &location() const noexcept override {
         return location_;
     }
+
     nlohmann::ordered_json to_json() const override;
 
 private:
@@ -79,9 +81,11 @@ private:
 class ParseFileNotFound : public ParseError {
 public:
     using ParseError::ParseError;
+
     std::string_view code() const noexcept override {
         return "xml/file-not-found";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<ParseFileNotFound>(*this);
     }
@@ -98,9 +102,11 @@ public:
 class ParseXmlFailed : public ParseError {
 public:
     using ParseError::ParseError;
+
     std::string_view code() const noexcept override {
         return "xml/parse";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<ParseXmlFailed>(*this);
     }
@@ -120,9 +126,11 @@ public:
 class ParseException : public ParseError {
 public:
     using ParseError::ParseError;
+
     std::string_view code() const noexcept override {
         return "xml/parse";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<ParseException>(*this);
     }
@@ -139,9 +147,11 @@ public:
 class ParseNoRootElement : public ParseError {
 public:
     using ParseError::ParseError;
+
     std::string_view code() const noexcept override {
         return "xml/parse";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<ParseNoRootElement>(*this);
     }
@@ -159,9 +169,11 @@ public:
 class ParseWrongRootElement : public ParseError {
 public:
     using ParseError::ParseError;
+
     std::string_view code() const noexcept override {
         return "xml/wrong-root-element";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<ParseWrongRootElement>(*this);
     }

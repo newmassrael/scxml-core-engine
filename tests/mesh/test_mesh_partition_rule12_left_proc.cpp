@@ -67,8 +67,7 @@ int main() {
             sm.step();
         }
         if (sm.isInFinalState() && sm.getCurrentState() == gen::State::All_done) {
-            std::printf(
-                "rule12 left (Root): PASS — done.state.root raised, SM in <final id=\"all_done\">\n");
+            std::printf("rule12 left (Root): PASS — done.state.root raised, SM in <final id=\"all_done\">\n");
             return 0;
         }
         std::this_thread::sleep_for(POLL_INTERVAL);
@@ -77,9 +76,7 @@ int main() {
     std::fprintf(stderr,
                  "rule12 left (Root): FAIL — wire-21 did not arrive within %d * %lld ms timeout. "
                  "currentState=%d isFinal=%d\n",
-                 MAX_ITERATIONS,
-                 static_cast<long long>(POLL_INTERVAL.count()),
-                 static_cast<int>(sm.getCurrentState()),
+                 MAX_ITERATIONS, static_cast<long long>(POLL_INTERVAL.count()), static_cast<int>(sm.getCurrentState()),
                  static_cast<int>(sm.isInFinalState()));
     return 11;
 }

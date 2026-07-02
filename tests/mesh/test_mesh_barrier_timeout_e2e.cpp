@@ -46,27 +46,26 @@
 
 namespace {
 
-pid_t spawn_with_arg(const char* binary, const char* arg) {
+pid_t spawn_with_arg(const char *binary, const char *arg) {
     pid_t pid = ::fork();
     if (pid < 0) {
         std::perror("fork");
         return -1;
     }
     if (pid == 0) {
-        char* argv[] = {
-            const_cast<char*>(binary),
-            const_cast<char*>(arg),
+        char *argv[] = {
+            const_cast<char *>(binary),
+            const_cast<char *>(arg),
             nullptr,
         };
         ::execv(binary, argv);
-        std::fprintf(stderr, "execv(%s %s) failed: %s\n",
-                     binary, arg, std::strerror(errno));
+        std::fprintf(stderr, "execv(%s %s) failed: %s\n", binary, arg, std::strerror(errno));
         std::_Exit(127);
     }
     return pid;
 }
 
-bool wait_child(pid_t pid, const char* tag) {
+bool wait_child(pid_t pid, const char *tag) {
     int status = 0;
     if (::waitpid(pid, &status, 0) < 0) {
         std::fprintf(stderr, "waitpid(%s) failed: %s\n", tag, std::strerror(errno));
@@ -87,7 +86,7 @@ bool wait_child(pid_t pid, const char* tag) {
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     if (argc < 2) {
         std::fprintf(stderr, "driver: usage: %s <fires|cancels>\n", argv[0]);
         return 64;
@@ -100,8 +99,8 @@ int main(int argc, char* argv[]) {
         return 65;
     }
 
-    const char* right_arg = fires ? "silent" : "sends";
-    const char* root_arg = fires ? "timeout" : "convergence";
+    const char *right_arg = fires ? "silent" : "sends";
+    const char *root_arg = fires ? "timeout" : "convergence";
 
     // Spawn the NonRoot first so the shm outbound is `Mode::Create`'d
     // before the Root starts `Mode::Open`-retrying on pump. 50 ms
@@ -128,7 +127,6 @@ int main(int argc, char* argv[]) {
     std::fprintf(stderr,
                  "SCE Mesh §16.5 barrier-timeout %s: FAIL "
                  "(root_ok=%d right_ok=%d)\n",
-                 mode.c_str(),
-                 static_cast<int>(root_ok), static_cast<int>(right_ok));
+                 mode.c_str(), static_cast<int>(root_ok), static_cast<int>(right_ok));
     return 1;
 }

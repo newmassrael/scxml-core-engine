@@ -74,8 +74,7 @@ std::string slurp(const std::string &path) {
 std::vector<std::string> parse_16_7_row_codes(const std::string &md) {
     std::vector<std::string> rows;
     const std::regex row_re{R"(^\s*\|\s*\d+\s*\|[^|]+\|\s*`([A-Z_]+)`\s*\|)",
-                            std::regex_constants::ECMAScript |
-                                std::regex_constants::multiline};
+                            std::regex_constants::ECMAScript | std::regex_constants::multiline};
     auto begin = std::sregex_iterator(md.begin(), md.end(), row_re);
     auto end = std::sregex_iterator();
     for (auto it = begin; it != end; ++it) {
@@ -93,11 +92,9 @@ TEST(ReasonCodeCatalogTest, EveryEnumVariantHasUniqueWireString) {
     std::unordered_set<std::string_view> seen_wire;
     std::unordered_set<std::uint8_t> seen_variant;
     for (const auto &[code, wire] : ::SCE::Mesh::kReasonCodeTable) {
-        EXPECT_TRUE(seen_wire.insert(wire).second)
-            << "duplicate wire string in kReasonCodeTable: " << wire;
+        EXPECT_TRUE(seen_wire.insert(wire).second) << "duplicate wire string in kReasonCodeTable: " << wire;
         EXPECT_TRUE(seen_variant.insert(static_cast<std::uint8_t>(code)).second)
-            << "duplicate enum variant in kReasonCodeTable: "
-            << static_cast<int>(code);
+            << "duplicate enum variant in kReasonCodeTable: " << static_cast<int>(code);
     }
 }
 
@@ -108,8 +105,7 @@ TEST(ReasonCodeCatalogTest, ReasonCodeStringRoundTripsEveryTableEntry) {
     // `"UNKNOWN_REASON"` would otherwise mask the gap).
     for (const auto &[code, wire] : ::SCE::Mesh::kReasonCodeTable) {
         EXPECT_EQ(::SCE::Mesh::reasonCodeString(code), wire)
-            << "reasonCodeString mismatch for variant "
-            << static_cast<int>(code);
+            << "reasonCodeString mismatch for variant " << static_cast<int>(code);
     }
 }
 
@@ -126,15 +122,13 @@ TEST(ReasonCodeCatalogTest, EnumMatchesSpecCatalogBidirectionally) {
     // (which would otherwise only fail with a "missing variant"
     // message that doesn't surface the count drift directly).
     EXPECT_EQ(spec_codes.size(), ::SCE::Mesh::kReasonCodeTable.size())
-        << "§16.7 row count (" << spec_codes.size()
-        << ") differs from kReasonCodeTable size ("
+        << "§16.7 row count (" << spec_codes.size() << ") differs from kReasonCodeTable size ("
         << ::SCE::Mesh::kReasonCodeTable.size()
         << ") — adding a row in SCE_MESH.md without extending the enum, "
            "or vice versa, drops the bidirectional binding";
 
     // Every wire string from the C++ table must appear in §16.7.
-    std::unordered_set<std::string> spec_set(spec_codes.begin(),
-                                             spec_codes.end());
+    std::unordered_set<std::string> spec_set(spec_codes.begin(), spec_codes.end());
     for (const auto &[code, wire] : ::SCE::Mesh::kReasonCodeTable) {
         EXPECT_TRUE(spec_set.count(std::string(wire)) > 0)
             << "wire string '" << wire

@@ -44,8 +44,7 @@ int main(void) {
 
     int rc = test250_in_state(&sm, TEST250_STATE_FINAL) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test250: FAIL — active = 0x%08x\n",
-                (unsigned)test250_active_states(&sm));
+        fprintf(stderr, "test250: FAIL — active = 0x%08x\n", (unsigned)test250_active_states(&sm));
     }
     test250_destroy(&sm);
     return rc;

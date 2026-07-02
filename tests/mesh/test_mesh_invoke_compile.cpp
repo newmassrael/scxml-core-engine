@@ -19,8 +19,8 @@
 // thread.
 
 #include "brake_invoke_sm.h"
-#include "motor_invoke_sm.h"
 #include "brake_invoke_transport.h"
+#include "motor_invoke_sm.h"
 
 #include <cstdio>
 
@@ -28,8 +28,7 @@ int main() {
     SCE::Generated::brake_invoke::brake_invoke brake;
     SCE::Generated::motor_invoke::motor_invoke motor;
 
-    using Router = SCE::Generated::brake_invoke::TransportRouter<
-        decltype(brake), decltype(motor)>;
+    using Router = SCE::Generated::brake_invoke::TransportRouter<decltype(brake), decltype(motor)>;
     Router router({&brake}, motor);
 
     // Force overload resolution on the two methods so a regression that

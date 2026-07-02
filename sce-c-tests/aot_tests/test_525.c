@@ -3,7 +3,9 @@
 //
 // W3C SCXML test525 — C11 AOT runner.
 //
-// W3C SCXML 4.6: `<foreach>` operates on a shallow copy — modifying `Var2` (the iterated array) inside the body does not change the iteration order or count, so the body fires exactly Var2.length times against the captured snapshot. Existing lua_foreach_body_{prologue,iter,epilogue} macros (76133c71) drive the snapshot semantics.
+// W3C SCXML 4.6: `<foreach>` operates on a shallow copy — modifying `Var2` (the iterated array) inside the body does
+// not change the iteration order or count, so the body fires exactly Var2.length times against the captured snapshot.
+// Existing lua_foreach_body_{prologue,iter,epilogue} macros (76133c71) drive the snapshot semantics.
 
 #include <stdio.h>
 

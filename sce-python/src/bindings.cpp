@@ -26,8 +26,7 @@ struct PyStatistics {
 /// and provides a Pythonic interface with properties and context manager.
 class PyEngine {
 public:
-    explicit PyEngine(std::unique_ptr<SCE::ReadySCXMLEngine> engine)
-        : engine_(std::move(engine)) {}
+    explicit PyEngine(std::unique_ptr<SCE::ReadySCXMLEngine> engine) : engine_(std::move(engine)) {}
 
     PyEngine(const PyEngine &) = delete;
     PyEngine &operator=(const PyEngine &) = delete;
@@ -39,8 +38,7 @@ public:
         auto engine = SCE::ReadySCXMLEngine::fromFile(path);
         if (!engine) {
             const auto &detail = SCE::ReadySCXMLEngine::lastFactoryError();
-            throw py::value_error("Failed to load SCXML file: " + path +
-                                  (detail.empty() ? "" : " - " + detail));
+            throw py::value_error("Failed to load SCXML file: " + path + (detail.empty() ? "" : " - " + detail));
         }
         return PyEngine(std::move(engine));
     }
@@ -49,8 +47,7 @@ public:
         auto engine = SCE::ReadySCXMLEngine::fromString(content);
         if (!engine) {
             const auto &detail = SCE::ReadySCXMLEngine::lastFactoryError();
-            throw py::value_error("Failed to parse SCXML content" +
-                                  (detail.empty() ? std::string{} : " - " + detail));
+            throw py::value_error("Failed to parse SCXML content" + (detail.empty() ? std::string{} : " - " + detail));
         }
         return PyEngine(std::move(engine));
     }
@@ -122,10 +119,9 @@ public:
             py::gil_scoped_release release;
             return engine_->setVariable(name, v);
         }
-        throw py::type_error(
-            "set_variable: unsupported type '" +
-            std::string(py::str(value.get_type().attr("__name__"))) +
-            "', expected bool, int, float, or str");
+        throw py::type_error("set_variable: unsupported type '" +
+                             std::string(py::str(value.get_type().attr("__name__"))) +
+                             "', expected bool, int, float, or str");
     }
 
     std::string getVariable(const std::string &name) const {
@@ -181,92 +177,72 @@ PYBIND11_MODULE(_sce, m) {
     m.doc() = "SCE - SCXML Core Engine Python bindings (W3C SCXML 1.0)";
 
     // Statistics struct
-    py::class_<PyStatistics>(m, "Statistics",
-        "State machine execution statistics")
-        .def_readonly("total_events", &PyStatistics::totalEvents,
-            "Total number of events processed")
-        .def_readonly("total_transitions", &PyStatistics::totalTransitions,
-            "Total number of state transitions")
-        .def_readonly("current_state", &PyStatistics::currentState,
-            "Current active state ID")
-        .def_readonly("is_running", &PyStatistics::isRunning,
-            "Whether the state machine is currently running")
+    py::class_<PyStatistics>(m, "Statistics", "State machine execution statistics")
+        .def_readonly("total_events", &PyStatistics::totalEvents, "Total number of events processed")
+        .def_readonly("total_transitions", &PyStatistics::totalTransitions, "Total number of state transitions")
+        .def_readonly("current_state", &PyStatistics::currentState, "Current active state ID")
+        .def_readonly("is_running", &PyStatistics::isRunning, "Whether the state machine is currently running")
         .def("__repr__", [](const PyStatistics &s) {
             return "<sce.Statistics events=" + std::to_string(s.totalEvents) +
-                   " transitions=" + std::to_string(s.totalTransitions) +
-                   " state='" + s.currentState + "'>";
+                   " transitions=" + std::to_string(s.totalTransitions) + " state='" + s.currentState + "'>";
         });
 
     // Engine class
     py::class_<PyEngine>(m, "Engine",
-        "W3C SCXML 1.0 compliant state machine engine.\n\n"
-        "Create from SCXML file or string, then start/stop and send events.\n"
-        "Supports context manager protocol for automatic cleanup.")
+                         "W3C SCXML 1.0 compliant state machine engine.\n\n"
+                         "Create from SCXML file or string, then start/stop and send events.\n"
+                         "Supports context manager protocol for automatic cleanup.")
 
         // Factory methods (static)
-        .def_static("from_file", &PyEngine::fromFile,
-            py::arg("path"),
-            "Create engine from an SCXML file.\n\n"
-            "Args:\n"
-            "    path: Path to the SCXML file\n\n"
-            "Raises:\n"
-            "    ValueError: If file cannot be loaded or parsed")
-        .def_static("from_string", &PyEngine::fromString,
-            py::arg("content"),
-            "Create engine from an SCXML string.\n\n"
-            "Args:\n"
-            "    content: SCXML document as string\n\n"
-            "Raises:\n"
-            "    ValueError: If content cannot be parsed")
+        .def_static("from_file", &PyEngine::fromFile, py::arg("path"),
+                    "Create engine from an SCXML file.\n\n"
+                    "Args:\n"
+                    "    path: Path to the SCXML file\n\n"
+                    "Raises:\n"
+                    "    ValueError: If file cannot be loaded or parsed")
+        .def_static("from_string", &PyEngine::fromString, py::arg("content"),
+                    "Create engine from an SCXML string.\n\n"
+                    "Args:\n"
+                    "    content: SCXML document as string\n\n"
+                    "Raises:\n"
+                    "    ValueError: If content cannot be parsed")
 
         // Core operations
-        .def("start", &PyEngine::start,
-            "Start the state machine. Returns True if started successfully.")
-        .def("stop", &PyEngine::stop,
-            "Stop the state machine.")
-        .def("send_event", &PyEngine::sendEvent,
-            py::arg("name"), py::arg("data") = "",
-            "Send an event to the state machine.\n\n"
-            "Args:\n"
-            "    name: Event name\n"
-            "    data: Optional event data as JSON string\n\n"
-            "Returns:\n"
-            "    True if event was processed successfully")
-        .def("send_external_event", &PyEngine::sendExternalEvent,
-            py::arg("name"), py::arg("data") = "",
-            "Send an external event to the state machine's external queue.\n\n"
-            "Args:\n"
-            "    name: Event name\n"
-            "    data: Optional event data as JSON string\n\n"
-            "Returns:\n"
-            "    True if event was queued successfully")
-        .def("is_in_state", &PyEngine::isInState,
-            py::arg("state_id"),
-            "Check if a specific state is currently active.")
+        .def("start", &PyEngine::start, "Start the state machine. Returns True if started successfully.")
+        .def("stop", &PyEngine::stop, "Stop the state machine.")
+        .def("send_event", &PyEngine::sendEvent, py::arg("name"), py::arg("data") = "",
+             "Send an event to the state machine.\n\n"
+             "Args:\n"
+             "    name: Event name\n"
+             "    data: Optional event data as JSON string\n\n"
+             "Returns:\n"
+             "    True if event was processed successfully")
+        .def("send_external_event", &PyEngine::sendExternalEvent, py::arg("name"), py::arg("data") = "",
+             "Send an external event to the state machine's external queue.\n\n"
+             "Args:\n"
+             "    name: Event name\n"
+             "    data: Optional event data as JSON string\n\n"
+             "Returns:\n"
+             "    True if event was queued successfully")
+        .def("is_in_state", &PyEngine::isInState, py::arg("state_id"), "Check if a specific state is currently active.")
 
         // Variable access
-        .def("set_variable", &PyEngine::setVariable,
-            py::arg("name"), py::arg("value"),
-            "Set a variable in the data model.\n\n"
-            "Accepts bool, int, float, or str values.\n"
-            "Returns True if the variable was set successfully.\n\n"
-            "Raises:\n"
-            "    TypeError: If value type is not supported")
-        .def("get_variable", &PyEngine::getVariable,
-            py::arg("name"),
-            "Get a variable from the data model as string.")
+        .def("set_variable", &PyEngine::setVariable, py::arg("name"), py::arg("value"),
+             "Set a variable in the data model.\n\n"
+             "Accepts bool, int, float, or str values.\n"
+             "Returns True if the variable was set successfully.\n\n"
+             "Raises:\n"
+             "    TypeError: If value type is not supported")
+        .def("get_variable", &PyEngine::getVariable, py::arg("name"), "Get a variable from the data model as string.")
 
         // Read-only properties
-        .def_property_readonly("running", &PyEngine::isRunning,
-            "Whether the state machine is currently running.")
+        .def_property_readonly("running", &PyEngine::isRunning, "Whether the state machine is currently running.")
         .def_property_readonly("current_state", &PyEngine::getCurrentState,
-            "Current active state ID (empty string if not started).")
-        .def_property_readonly("active_states", &PyEngine::getActiveStates,
-            "List of all currently active state IDs.")
-        .def_property_readonly("last_error", &PyEngine::getLastError,
-            "Last error message (empty string if no error).")
+                               "Current active state ID (empty string if not started).")
+        .def_property_readonly("active_states", &PyEngine::getActiveStates, "List of all currently active state IDs.")
+        .def_property_readonly("last_error", &PyEngine::getLastError, "Last error message (empty string if no error).")
         .def_property_readonly("statistics", &PyEngine::getStatistics,
-            "Execution statistics (events, transitions, state).")
+                               "Execution statistics (events, transitions, state).")
 
         // Context manager
         .def("__enter__", &PyEngine::enter, py::return_value_policy::reference)

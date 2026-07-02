@@ -47,8 +47,7 @@ using namespace SCE::Test::Mesh;
 
 // Mirrors motor's own listen endpoint (deploy_zenoh_multi.yaml ecu_motor):
 // the raw client peer below dials this address so motor's queryable receives it.
-constexpr const char* kListen =
-    SCE::Generated::motor_zenoh_multi::ZENOH_LISTEN_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::motor_zenoh_multi::ZENOH_LISTEN_ENDPOINTS[0];
 
 int run_test() {
     namespace motor_gen = SCE::Generated::motor_zenoh_multi;
@@ -83,32 +82,30 @@ int run_test() {
     // the motor engine. We verify the engine actually received the event.
     ReceivedEvents client_replies;
     {
-        auto req = make_envelope("service.request.compute_force", PK::RpcRequest,
-                                 R"({"x":10})");
+        auto req = make_envelope("service.request.compute_force", PK::RpcRequest, R"({"x":10})");
         auto req_bytes = SCE::Mesh::encodeEnvelope(req);
 
         zenoh::Session::GetOptions opts;
         opts.payload = zenoh::Bytes(std::move(req_bytes));
         client_session.get(
             zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "",
-            [&client_replies](const zenoh::Reply& reply_msg) {
+            [&client_replies](const zenoh::Reply &reply_msg) {
                 if (!reply_msg.is_ok()) {
                     return;
                 }
-                const auto& sample = reply_msg.get_ok();
+                const auto &sample = reply_msg.get_ok();
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope resp;
                 if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {
-                    client_replies.push({resp.type,
-                                         std::string(resp.data.begin(), resp.data.end())});
+                    client_replies.push({resp.type, std::string(resp.data.begin(), resp.data.end())});
                 }
             },
             [] {}, std::move(opts));
 
-        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() && v.back().type == "service.request.compute_force";
-                }),
-                "motor engine did not receive RPC request from client session.get");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.request.compute_force";
+        }),
+                          "motor engine did not receive RPC request from client session.get");
     }
 
     // ── 2. handleServerResponse → Query::reply → client receives ─────
@@ -123,13 +120,11 @@ int run_test() {
         std::array<uint8_t, 16> cid{};
         {
             std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
-            MESH_TEST_REQUIRE(!motor_router.pending_server_queries_.empty(),
-                    "queryable did not store pending Query");
+            MESH_TEST_REQUIRE(!motor_router.pending_server_queries_.empty(), "queryable did not store pending Query");
             cid = motor_router.pending_server_queries_.begin()->first.id;
         }
 
-        auto resp = make_envelope("service.response.compute_force", PK::RpcReply,
-                                  R"({"result":42})");
+        auto resp = make_envelope("service.response.compute_force", PK::RpcReply, R"({"result":42})");
         resp.correlation_id = cid;
 
         const bool replied = motor_router.handleServerResponse(resp);
@@ -138,22 +133,20 @@ int run_test() {
         // Verify pending query was consumed.
         {
             std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
-            MESH_TEST_REQUIRE(motor_router.pending_server_queries_.empty(),
-                    "pending Query not erased after reply");
+            MESH_TEST_REQUIRE(motor_router.pending_server_queries_.empty(), "pending Query not erased after reply");
         }
 
         // Client must receive the reply via zenoh.
-        MESH_TEST_REQUIRE(client_replies.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "service.response.compute_force";
-                }),
-                "client did not receive RPC reply via Query::reply");
+        MESH_TEST_REQUIRE(client_replies.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.response.compute_force";
+        }),
+                          "client did not receive RPC reply via Query::reply");
 
         // Verify payload round-trip.
         {
             std::lock_guard<std::mutex> lock(client_replies.m);
             MESH_TEST_REQUIRE(client_replies.events.back().data.find("42") != std::string::npos,
-                    "reply payload did not preserve result value");
+                              "reply payload did not preserve result value");
         }
     }
 
@@ -162,14 +155,14 @@ int run_test() {
         auto bad_resp = make_envelope("service.response.compute_force", PK::RpcReply);
         bad_resp.correlation_id = SCE::uuid::v7();
         MESH_TEST_REQUIRE(!motor_router.handleServerResponse(bad_resp),
-                "handleServerResponse should return false for unknown correlation_id");
+                          "handleServerResponse should return false for unknown correlation_id");
     }
 
     // ── 4. No-correlation_id response returns false ──────────────────
     {
         auto no_cid_resp = make_envelope("service.response.compute_force", PK::RpcReply);
         MESH_TEST_REQUIRE(!motor_router.handleServerResponse(no_cid_resp),
-                "handleServerResponse should return false when correlation_id is nullopt");
+                          "handleServerResponse should return false when correlation_id is nullopt");
     }
 
     // ── 5. FieldRead inbound on server queryable (SCE_MESH.md §8.3) ──
@@ -189,43 +182,40 @@ int run_test() {
         opts.payload = zenoh::Bytes(std::move(req_bytes));
         client_session.get(
             zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "",
-            [&field_read_replies](const zenoh::Reply& reply_msg) {
-                if (!reply_msg.is_ok()) return;
-                const auto& sample = reply_msg.get_ok();
+            [&field_read_replies](const zenoh::Reply &reply_msg) {
+                if (!reply_msg.is_ok()) {
+                    return;
+                }
+                const auto &sample = reply_msg.get_ok();
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope resp;
                 if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {
-                    field_read_replies.push({resp.type,
-                                             std::string(resp.data.begin(), resp.data.end())});
+                    field_read_replies.push({resp.type, std::string(resp.data.begin(), resp.data.end())});
                 }
             },
             [] {}, std::move(opts));
 
-        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() && v.back().type == "field.get.position";
-                }),
-                "motor engine did not receive field.get.position from client session.get");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for(
+                              [](const auto &v) { return !v.empty() && v.back().type == "field.get.position"; }),
+                          "motor engine did not receive field.get.position from client session.get");
 
         std::array<uint8_t, 16> cid{};
         {
             std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
             MESH_TEST_REQUIRE(!motor_router.pending_server_queries_.empty(),
-                    "queryable did not stash pending FieldRead Query");
+                              "queryable did not stash pending FieldRead Query");
             cid = motor_router.pending_server_queries_.begin()->first.id;
         }
 
         // Simulate the engine's paired `<raise event="field.notify.position">`
         // → injected <send> → handleServerResponse route.
-        auto notify = make_envelope("field.notify.position", PK::FieldNotify,
-                                    R"({"x":42})");
+        auto notify = make_envelope("field.notify.position", PK::FieldNotify, R"({"x":42})");
         notify.correlation_id = cid;
-        MESH_TEST_REQUIRE(motor_router.handleServerResponse(notify),
-                "handleServerResponse rejected FieldNotify reply");
+        MESH_TEST_REQUIRE(motor_router.handleServerResponse(notify), "handleServerResponse rejected FieldNotify reply");
 
-        MESH_TEST_REQUIRE(field_read_replies.wait_for([](const auto& v) {
-                    return !v.empty() && v.back().type == "field.notify.position";
-                }),
-                "client did not receive field.notify reply via Query::reply");
+        MESH_TEST_REQUIRE(field_read_replies.wait_for(
+                              [](const auto &v) { return !v.empty() && v.back().type == "field.notify.position"; }),
+                          "client did not receive field.notify reply via Query::reply");
     }
 
     // ── 6. FieldWrite inbound on server put subscriber (SCE_MESH.md §8.3) ──
@@ -236,21 +226,17 @@ int run_test() {
     // client's resolvePattern) and forwards unchanged to the engine.
     motor_engine.received_.clear();
     {
-        auto req = make_envelope("field.set.position", PK::FieldWrite,
-                                 R"({"x":99})");
+        auto req = make_envelope("field.set.position", PK::FieldWrite, R"({"x":99})");
         auto req_bytes = SCE::Mesh::encodeEnvelope(req);
-        client_session.put(zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY),
-                           zenoh::Bytes(std::move(req_bytes)));
+        client_session.put(zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), zenoh::Bytes(std::move(req_bytes)));
 
-        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() && v.back().type == "field.set.position";
-                }),
-                "motor engine did not receive field.set.position from client session.put");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for(
+                              [](const auto &v) { return !v.empty() && v.back().type == "field.set.position"; }),
+                          "motor engine did not receive field.set.position from client session.put");
         {
             std::lock_guard<std::mutex> lock(motor_engine.received_.m);
-            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("99")
-                                  != std::string::npos,
-                    "FieldWrite payload did not survive Zenoh CBOR round-trip");
+            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("99") != std::string::npos,
+                              "FieldWrite payload did not survive Zenoh CBOR round-trip");
         }
     }
 
@@ -264,7 +250,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

@@ -48,8 +48,7 @@ using namespace SCE::Test::Mesh;
 // Mirrors motor's own listen endpoint (deploy_zenoh_multi.yaml ecu_motor):
 // the throwaway probe peer below dials this address so declare_matching_listener
 // fires once motor's queryable has propagated to the shared routing table.
-constexpr const char* kListen =
-    SCE::Generated::motor_zenoh_multi::ZENOH_LISTEN_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::motor_zenoh_multi::ZENOH_LISTEN_ENDPOINTS[0];
 
 int run_test() {
     namespace brake_gen = SCE::Generated::brake_zenoh_multi;
@@ -94,23 +93,22 @@ int run_test() {
     // → correlation bridge → handleServerResponse path.
     {
         auto invoke_id = SCE::uuid::v7();
-        auto req = make_envelope("service.request.compute_force", PK::RpcRequest,
-                                 R"({"input":"brake_force"})");
+        auto req = make_envelope("service.request.compute_force", PK::RpcRequest, R"({"input":"brake_force"})");
         req.invoke_id = invoke_id;
         const bool sent = brake_router.send_zenoh(req, brake_gen::ZENOH_KEY_MOTOR, "#motor");
         MESH_TEST_REQUIRE(sent, "brake send_zenoh RpcRequest returned false");
 
         // Motor receives the request via queryable → dispatchToSender.
-        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() && v.back().type == "service.request.compute_force";
-                }),
-                "motor engine did not receive RPC request through Zenoh queryable");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.request.compute_force";
+        }),
+                          "motor engine did not receive RPC request through Zenoh queryable");
 
         // Verify the pending query is stored (keyed by invoke_id).
         {
             std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
             MESH_TEST_REQUIRE(!motor_router.pending_server_queries_.empty(),
-                    "motor queryable did not store pending Query");
+                              "motor queryable did not store pending Query");
         }
 
         // Motor responds through the mesh send callback — the same path
@@ -119,12 +117,10 @@ int run_test() {
         // parameter carries the inbound request's invoke_id (which the
         // engine propagates via currentEventInvokeId_).
         auto invoke_id_str = SCE::uuid::to_string(invoke_id);
-        MESH_TEST_REQUIRE(
-                motor_engine.mesh_send_cb_(
-                    "#motor", "service.response.compute_force",
-                    R"({"result":42})", "", invoke_id_str),
-                "motor mesh_send_cb_ returned false for server response "
-                "(resolvePattern or correlation bridge failure)");
+        MESH_TEST_REQUIRE(motor_engine.mesh_send_cb_("#motor", "service.response.compute_force", R"({"result":42})", "",
+                                                     invoke_id_str),
+                          "motor mesh_send_cb_ returned false for server response "
+                          "(resolvePattern or correlation bridge failure)");
 
         // Brake must receive the reply. The brake router's send_zenoh
         // RpcRequest path installs an on_reply closure that:
@@ -133,19 +129,18 @@ int run_test() {
         //      ("service.response.compute_force")
         //   3. Sets env.pattern = RpcReply
         //   4. Calls dispatchToSender → brake_engine.raiseExternal
-        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "service.response.compute_force";
-                }),
-                "brake engine did not receive reply event "
-                "'service.response.compute_force' from on_reply closure");
+        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.response.compute_force";
+        }),
+                          "brake engine did not receive reply event "
+                          "'service.response.compute_force' from on_reply closure");
 
         // Verify payload survived the double CBOR round-trip
         // (brake encode → motor decode → motor encode → brake decode).
         {
             std::lock_guard<std::mutex> lock(brake_engine.received_.m);
             MESH_TEST_REQUIRE(brake_engine.received_.events.back().data.find("42") != std::string::npos,
-                    "reply payload did not survive double CBOR round-trip");
+                              "reply payload did not survive double CBOR round-trip");
         }
 
         motor_engine.received_.clear();
@@ -161,20 +156,17 @@ int run_test() {
     // session.put was dropped; this test would have required a raw
     // subscriber workaround to observe the envelope.
     {
-        auto ff = make_envelope("service.fire_forget.activate", PK::FireForget,
-                                R"({"reason":"emergency"})");
+        auto ff = make_envelope("service.fire_forget.activate", PK::FireForget, R"({"reason":"emergency"})");
         const bool sent = brake_router.send_zenoh(ff, brake_gen::ZENOH_KEY_MOTOR, "#motor");
         MESH_TEST_REQUIRE(sent, "brake send_zenoh FireForget returned false");
-        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "service.fire_forget.activate";
-                }),
-                "motor engine did not receive FireForget via generated subscriber");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.fire_forget.activate";
+        }),
+                          "motor engine did not receive FireForget via generated subscriber");
         {
             std::lock_guard<std::mutex> lock(motor_engine.received_.m);
-            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("emergency")
-                                  != std::string::npos,
-                    "FireForget payload did not survive Zenoh CBOR round-trip");
+            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("emergency") != std::string::npos,
+                              "FireForget payload did not survive Zenoh CBOR round-trip");
         }
     }
 
@@ -189,7 +181,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

@@ -35,9 +35,8 @@ TEST(DonedataLocalInvokeAotTest, ParentObservesDonedataOnDoneInvoke) {
         // Aliasing constructor + no-op deleter — engine lifetime is owned
         // by ScriptEngineProvider singleton; shared_ptr is a non-owning view.
         // Mirrors SimpleAotTest's W3C-AOT pattern.
-        sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(
-            &::SCE::ScriptEngineProvider::getScriptEngine(),
-            [](::SCE::IScriptEngine *) {}));
+        sm.setScriptEngine(std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                 [](::SCE::IScriptEngine *) {}));
     }
 
     sm.initialize();
@@ -46,12 +45,10 @@ TEST(DonedataLocalInvokeAotTest, ParentObservesDonedataOnDoneInvoke) {
     // the first. `runUntilCompletion` drains the remaining invoke macrosteps.
     const bool reachedFinal = sm.runUntilCompletion(std::chrono::seconds(3));
 
-    EXPECT_TRUE(reachedFinal)
-        << "parent did not reach a final state within timeout — invoke "
-           "macrostep loop regressed on the AOT engine";
-    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass)
-        << "parent reached a final state other than Pass — donedata "
-           "envelope round-trip regressed on the AOT engine";
+    EXPECT_TRUE(reachedFinal) << "parent did not reach a final state within timeout — invoke "
+                                 "macrostep loop regressed on the AOT engine";
+    EXPECT_EQ(sm.getCurrentState(), SM::State::Pass) << "parent reached a final state other than Pass — donedata "
+                                                        "envelope round-trip regressed on the AOT engine";
 }
 
 }  // namespace SCE::Tests

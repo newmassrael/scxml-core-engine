@@ -15,19 +15,27 @@
 #if defined(SCE_SCRIPT_ENGINE_LUA)
 
 #include "scripting/LuaEngine.h"
+
 namespace {
 constexpr const char *kEngineName = "Lua 5.4";
 constexpr const char *kEngineId = "lua";
-auto &engineInstance() { return SCE::LuaEngine::instance(); }
+
+auto &engineInstance() {
+    return SCE::LuaEngine::instance();
+}
 }  // namespace
 
 #elif defined(SCE_SCRIPT_ENGINE_QUICKJS)
 
 #include "scripting/JSEngine.h"
+
 namespace {
 constexpr const char *kEngineName = "QuickJS";
 constexpr const char *kEngineId = "quickjs";
-auto &engineInstance() { return SCE::JSEngine::instance(); }
+
+auto &engineInstance() {
+    return SCE::JSEngine::instance();
+}
 }  // namespace
 
 #else
@@ -36,12 +44,20 @@ auto &engineInstance() { return SCE::JSEngine::instance(); }
 
 namespace SCE {
 
-IScriptEngine &ScriptEngineProvider::getScriptEngine() { return engineInstance(); }
+IScriptEngine &ScriptEngineProvider::getScriptEngine() {
+    return engineInstance();
+}
 
-ISessionManager &ScriptEngineProvider::getSessionManager() { return engineInstance(); }
+ISessionManager &ScriptEngineProvider::getSessionManager() {
+    return engineInstance();
+}
 
-const char *ScriptEngineProvider::getEngineName() { return kEngineName; }
+const char *ScriptEngineProvider::getEngineName() {
+    return kEngineName;
+}
 
-const char *ScriptEngineProvider::getEngineId() { return kEngineId; }
+const char *ScriptEngineProvider::getEngineId() {
+    return kEngineId;
+}
 
 }  // namespace SCE

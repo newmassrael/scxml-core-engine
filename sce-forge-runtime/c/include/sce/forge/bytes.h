@@ -53,4 +53,4 @@ typedef struct {
     size_t len;
 } sce_forge_bytes_view_t;
 
-#endif  /* SCE_FORGE_BYTES_H */
+#endif /* SCE_FORGE_BYTES_H */

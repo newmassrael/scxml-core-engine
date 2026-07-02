@@ -32,8 +32,8 @@
 // forces template instantiation of every branch without requiring
 // the script engine to actually run.
 
-#include "srcexpr_client_sm.h"
 #include "motor_srcexpr_sm.h"
+#include "srcexpr_client_sm.h"
 #include "srcexpr_client_transport.h"
 
 #include <cstdio>
@@ -42,8 +42,7 @@ int main() {
     SCE::Generated::srcexpr_client::srcexpr_client client;
     SCE::Generated::motor_srcexpr::motor_srcexpr motor;
 
-    using Router = SCE::Generated::srcexpr_client::TransportRouter<
-        decltype(client), decltype(motor)>;
+    using Router = SCE::Generated::srcexpr_client::TransportRouter<decltype(client), decltype(motor)>;
     Router router({&client}, motor);
 
     // Force overload resolution on the router's mesh-rpc method

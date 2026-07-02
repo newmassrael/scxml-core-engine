@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/HttpEventReceiver.h"
+#include "common/UniqueIdGenerator.h"
+#include "core/LogMacros.h"
 #include "events/HttpResponseUtils.h"
 #include "runtime/JsonUtils.h"
-#include "core/LogMacros.h"
-#include "common/UniqueIdGenerator.h"
 #include "scripting/IScriptEngine.h"
 #include <httplib.h>
 #include <regex>
@@ -79,7 +79,7 @@ std::unique_ptr<IEventReceiverConfig> HttpReceiverConfig::clone() const {
 HttpEventReceiver::HttpEventReceiver(const HttpReceiverConfig &config)
     : config_(config), server_(std::make_unique<httplib::Server>()) {
     SCE_LOG_DEBUG("HttpEventReceiver: Created with host='{}', port={}, basePath='{}'", config_.getSettings().host,
-              config_.getSettings().port, config_.getSettings().basePath);
+                  config_.getSettings().port, config_.getSettings().basePath);
 }
 
 HttpEventReceiver::~HttpEventReceiver() {
@@ -107,7 +107,7 @@ bool HttpEventReceiver::startReceiving() {
     }
 
     SCE_LOG_INFO("HttpEventReceiver: Starting HTTP webhook server on {}:{}{}", config_.getSettings().host,
-             config_.getSettings().port, config_.getSettings().basePath);
+                 config_.getSettings().port, config_.getSettings().basePath);
 
     // Configure server
     server_->set_read_timeout(config_.getSettings().serverTimeout);
@@ -262,7 +262,8 @@ void HttpEventReceiver::handleRequest(const httplib::Request &request, httplib::
 
         // Validate authentication
         if (!validateAuthentication(request)) {
-            SCE_LOG_WARN("HttpEventReceiver: Authentication failed for request from {}", request.get_header_value("Host"));
+            SCE_LOG_WARN("HttpEventReceiver: Authentication failed for request from {}",
+                         request.get_header_value("Host"));
             HttpResponseUtils::setErrorResponse(response, "Authentication required", 401);
             errorCount_++;
             return;
@@ -367,7 +368,7 @@ EventDescriptor HttpEventReceiver::convertRequestToEvent(const httplib::Request 
         // The bridge will include metadata in event.data
 
         SCE_LOG_DEBUG("HttpEventReceiver: Converted request to event: name='{}', data_size={}, sendId='{}'",
-                  event.eventName, event.data.size(), event.sendId);
+                      event.eventName, event.data.size(), event.sendId);
 
     } catch (const std::exception &e) {
         SCE_LOG_ERROR("HttpEventReceiver: Exception converting request to event: {}", e.what());

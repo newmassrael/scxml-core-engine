@@ -29,12 +29,9 @@ constexpr std::string_view kParseStage = "xml";
 
 nlohmann::ordered_json ParseError::to_json() const {
     const std::string_view codeStr = code();
-    const std::string fileStr = location_.has_value()
-                                    ? location_->file.string()
-                                    : std::string{};
+    const std::string fileStr = location_.has_value() ? location_->file.string() : std::string{};
     const std::string_view messageView{what()};
-    const std::string idStr = computeFnv1aDiagnosticId(
-        codeStr, kParseStage, fileStr, messageView);
+    const std::string idStr = computeFnv1aDiagnosticId(codeStr, kParseStage, fileStr, messageView);
 
     nlohmann::ordered_json out;
     out["v"] = 1;

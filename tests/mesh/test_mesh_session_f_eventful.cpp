@@ -70,13 +70,12 @@ int main() {
             return 0;
         }
         if (parent.getCurrentState() == State::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent observed `ping` but either (a) `<finalize>` "
-                         "did not run before transition selection so the cond "
-                         "evaluated against the initial `finalized=false`, or "
-                         "(b) `error.execution` fired (wire-20 / script engine "
-                         "error). Inspect the second transition's path for the "
-                         "exact ordering breach.\n");
+            std::fprintf(stderr, "FAIL: parent observed `ping` but either (a) `<finalize>` "
+                                 "did not run before transition selection so the cond "
+                                 "evaluated against the initial `finalized=false`, or "
+                                 "(b) `error.execution` fired (wire-20 / script engine "
+                                 "error). Inspect the second transition's path for the "
+                                 "exact ordering breach.\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

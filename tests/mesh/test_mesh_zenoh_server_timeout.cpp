@@ -56,8 +56,7 @@ using MotorRouterT = motor_gen::TransportRouter<TestSenderEngine>;
 // Mirrors motor's own listen endpoint (deploy_zenoh_server_timeout.yaml
 // ecu_motor): the raw client peer below dials this address so the generated
 // motor router's queryable observes the inbound request.
-constexpr const char* kMotorListen =
-    SCE::Generated::motor_zenoh_server_timeout::ZENOH_LISTEN_ENDPOINTS[0];
+constexpr const char *kMotorListen = SCE::Generated::motor_zenoh_server_timeout::ZENOH_LISTEN_ENDPOINTS[0];
 
 // Must match deploy_zenoh_server_timeout.yaml server.query_timeout_ms.
 constexpr auto kQueryTimeoutMs = std::chrono::milliseconds(500);
@@ -71,36 +70,28 @@ constexpr auto kPeerStabilization = std::chrono::milliseconds(200);
 int scenario_timeout_closes_leak() {
     TestSenderEngine motor_engine;
     MotorRouterT motor_router({&motor_engine});
-    MESH_TEST_REQUIRE(motor_router.init(),
-                      "motor_router.init() failed — zenoh listen unavailable");
+    MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed — zenoh listen unavailable");
 
     auto client_session = open_peer(/*connect=*/kMotorListen, /*listen=*/"");
     std::this_thread::sleep_for(kPeerStabilization);
 
-    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 0,
-                      "initial pending_server_size should be zero");
+    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 0, "initial pending_server_size should be zero");
 
     // Client RpcRequest — engine receives but the test NEVER replies.
-    auto req = make_envelope("service.request.compute_force", PK::RpcRequest,
-                             R"({"x":10})");
+    auto req = make_envelope("service.request.compute_force", PK::RpcRequest, R"({"x":10})");
     auto req_bytes = SCE::Mesh::encodeEnvelope(req);
 
     zenoh::Session::GetOptions opts;
     opts.payload = zenoh::Bytes(std::move(req_bytes));
     client_session.get(
-        zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "",
-        [](const zenoh::Reply&) { /* no reply expected */ },
-        [] { /* on_drop: tested elsewhere (Z3) */ },
-        std::move(opts));
+        zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "", [](const zenoh::Reply &) { /* no reply expected */ },
+        [] { /* on_drop: tested elsewhere (Z3) */ }, std::move(opts));
 
-    MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                          return !v.empty() &&
-                                 v.back().type == "service.request.compute_force";
-                      }),
+    MESH_TEST_REQUIRE(motor_engine.received_.wait_for(
+                          [](const auto &v) { return !v.empty() && v.back().type == "service.request.compute_force"; }),
                       "motor engine never received service.request.compute_force");
 
-    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 1,
-                      "pending_server_size should be 1 after dispatch");
+    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 1, "pending_server_size should be 1 after dispatch");
 
     // Wait out `query_timeout_ms + slack`. The scheduler callback must
     // erase the entry within this window.
@@ -112,8 +103,7 @@ int scenario_timeout_closes_leak() {
     motor_router.shutdown();
     std::printf("[§1 timeout] PASS: pending entry cleared within "
                 "%lld ms\n",
-                static_cast<long long>(
-                    (kQueryTimeoutMs + kTimeoutSlack).count()));
+                static_cast<long long>((kQueryTimeoutMs + kTimeoutSlack).count()));
     return 0;
 }
 
@@ -121,38 +111,34 @@ int scenario_timeout_closes_leak() {
 int scenario_happy_path_cancels_deadline() {
     TestSenderEngine motor_engine;
     MotorRouterT motor_router({&motor_engine});
-    MESH_TEST_REQUIRE(motor_router.init(),
-                      "motor_router.init() failed — zenoh listen unavailable");
+    MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed — zenoh listen unavailable");
 
     auto client_session = open_peer(/*connect=*/kMotorListen, /*listen=*/"");
     std::this_thread::sleep_for(kPeerStabilization);
 
     ReceivedEvents client_replies;
-    auto req = make_envelope("service.request.compute_force", PK::RpcRequest,
-                             R"({"x":11})");
+    auto req = make_envelope("service.request.compute_force", PK::RpcRequest, R"({"x":11})");
     auto req_bytes = SCE::Mesh::encodeEnvelope(req);
 
     zenoh::Session::GetOptions opts;
     opts.payload = zenoh::Bytes(std::move(req_bytes));
     client_session.get(
         zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "",
-        [&client_replies](const zenoh::Reply& reply_msg) {
-            if (!reply_msg.is_ok()) return;
-            const auto& sample = reply_msg.get_ok();
+        [&client_replies](const zenoh::Reply &reply_msg) {
+            if (!reply_msg.is_ok()) {
+                return;
+            }
+            const auto &sample = reply_msg.get_ok();
             auto bytes = sample.get_payload().as_vector();
             SCE::Mesh::MeshEnvelope resp;
             if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {
-                client_replies.push({resp.type,
-                                     std::string(resp.data.begin(),
-                                                 resp.data.end())});
+                client_replies.push({resp.type, std::string(resp.data.begin(), resp.data.end())});
             }
         },
         [] {}, std::move(opts));
 
-    MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                          return !v.empty() &&
-                                 v.back().type == "service.request.compute_force";
-                      }),
+    MESH_TEST_REQUIRE(motor_engine.received_.wait_for(
+                          [](const auto &v) { return !v.empty() && v.back().type == "service.request.compute_force"; }),
                       "motor engine never received request");
 
     // Baseline invariants immediately after the queryable callback
@@ -161,11 +147,9 @@ int scenario_happy_path_cancels_deadline() {
     // state where the callback inserted into one surface but not the
     // other (e.g. a future refactor that splits the register site
     // from the insert site).
-    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 1,
-                      "pending_server_size should be 1 after dispatch");
-    MESH_TEST_REQUIRE(motor_router.deadline_scheduler_size() == 1,
-                      "deadline_scheduler_ should have one armed entry "
-                      "after dispatch — register site missed the insert?");
+    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 1, "pending_server_size should be 1 after dispatch");
+    MESH_TEST_REQUIRE(motor_router.deadline_scheduler_size() == 1, "deadline_scheduler_ should have one armed entry "
+                                                                   "after dispatch — register site missed the insert?");
 
     // Pull the correlation_id through the public `server_first_cid`
     // accessor — the generated transport keeps `pending_server_queries_`
@@ -173,17 +157,14 @@ int scenario_happy_path_cancels_deadline() {
     // accessor is the documented test hook and mirrors the shape of
     // `pending_server_size`.
     auto cid_opt = motor_router.server_first_cid();
-    MESH_TEST_REQUIRE(cid_opt.has_value(),
-                      "pending Query not stashed by queryable callback");
+    MESH_TEST_REQUIRE(cid_opt.has_value(), "pending Query not stashed by queryable callback");
     const auto cid = *cid_opt;
 
-    auto resp = make_envelope("service.response.compute_force", PK::RpcReply,
-                              R"({"result":42})");
+    auto resp = make_envelope("service.response.compute_force", PK::RpcReply, R"({"result":42})");
     resp.correlation_id = cid;
 
     const bool replied = motor_router.handleServerResponse(resp);
-    MESH_TEST_REQUIRE(replied,
-                      "handleServerResponse returned false — correlation miss");
+    MESH_TEST_REQUIRE(replied, "handleServerResponse returned false — correlation miss");
 
     // Direct signal that the cancel path is live. This call runs
     // within milliseconds of `handleServerResponse` returning — far
@@ -202,10 +183,9 @@ int scenario_happy_path_cancels_deadline() {
     MESH_TEST_REQUIRE(motor_router.pending_server_size() == 0,
                       "pending_server_size should be 0 after handleServerResponse");
 
-    MESH_TEST_REQUIRE(client_replies.wait_for([](const auto& v) {
-                          return !v.empty() &&
-                                 v.back().type == "service.response.compute_force";
-                      }),
+    MESH_TEST_REQUIRE(client_replies.wait_for([](const auto &v) {
+        return !v.empty() && v.back().type == "service.response.compute_force";
+    }),
                       "client did not receive reply via Query::reply");
 
     motor_router.shutdown();
@@ -218,32 +198,24 @@ int scenario_happy_path_cancels_deadline() {
 int scenario_shutdown_with_pending_query() {
     TestSenderEngine motor_engine;
     MotorRouterT motor_router({&motor_engine});
-    MESH_TEST_REQUIRE(motor_router.init(),
-                      "motor_router.init() failed — zenoh listen unavailable");
+    MESH_TEST_REQUIRE(motor_router.init(), "motor_router.init() failed — zenoh listen unavailable");
 
     auto client_session = open_peer(/*connect=*/kMotorListen, /*listen=*/"");
     std::this_thread::sleep_for(kPeerStabilization);
 
-    auto req = make_envelope("service.request.compute_force", PK::RpcRequest,
-                             R"({"x":12})");
+    auto req = make_envelope("service.request.compute_force", PK::RpcRequest, R"({"x":12})");
     auto req_bytes = SCE::Mesh::encodeEnvelope(req);
 
     zenoh::Session::GetOptions opts;
     opts.payload = zenoh::Bytes(std::move(req_bytes));
     client_session.get(
-        zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "",
-        [](const zenoh::Reply&) {},
-        [] {},
-        std::move(opts));
+        zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "", [](const zenoh::Reply &) {}, [] {}, std::move(opts));
 
-    MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                          return !v.empty() &&
-                                 v.back().type == "service.request.compute_force";
-                      }),
+    MESH_TEST_REQUIRE(motor_engine.received_.wait_for(
+                          [](const auto &v) { return !v.empty() && v.back().type == "service.request.compute_force"; }),
                       "motor engine never received request before shutdown");
 
-    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 1,
-                      "pending_server_size should be 1 before shutdown");
+    MESH_TEST_REQUIRE(motor_router.pending_server_size() == 1, "pending_server_size should be 1 before shutdown");
 
     // Shutdown while the entry is still pending. The server shutdown
     // flag must suppress any dispatched timer callback; scheduler
@@ -263,15 +235,19 @@ int scenario_shutdown_with_pending_query() {
 
 int main() {
     try {
-        if (const int r = scenario_timeout_closes_leak(); r != 0) return r;
-        if (const int r = scenario_happy_path_cancels_deadline(); r != 0)
+        if (const int r = scenario_timeout_closes_leak(); r != 0) {
+            return r;
+        }
+        if (const int r = scenario_happy_path_cancels_deadline(); r != 0) {
             return 10 + r;
-        if (const int r = scenario_shutdown_with_pending_query(); r != 0)
+        }
+        if (const int r = scenario_shutdown_with_pending_query(); r != 0) {
             return 20 + r;
+        }
         std::printf("SCE Mesh gap Z2 server-side queryable deadline E2E: "
                     "PASS (all scenarios)\n");
         return 0;
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 99;
     }

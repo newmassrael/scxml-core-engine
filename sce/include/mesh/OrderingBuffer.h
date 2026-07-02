@@ -105,8 +105,7 @@ public:
     /// — single source of truth — and the generated `TransportRouter`
     /// initializes the buffer with that value verbatim. Tests pass the
     /// timeout explicitly (e.g. 5 ms) to keep runtime short.
-    explicit OrderingBuffer(std::chrono::milliseconds gap_timeout) noexcept
-        : gap_timeout_(gap_timeout) {}
+    explicit OrderingBuffer(std::chrono::milliseconds gap_timeout) noexcept : gap_timeout_(gap_timeout) {}
 
     /// Admit an envelope whose sender has stamped `sequence_no`.
     /// Returns envelopes ready to be dispatched to the engine in
@@ -125,10 +124,9 @@ public:
     /// algorithm — anchor on the first observed sequence, dispatch and
     /// drain contiguous buffered envelopes on the expected sequence,
     /// buffer ahead-of-sequence arrivals, drop stragglers.
-    [[nodiscard]] std::vector<MeshEnvelope>
-    admit(const std::string& source, MeshEnvelope env) {
+    [[nodiscard]] std::vector<MeshEnvelope> admit(const std::string &source, MeshEnvelope env) {
         std::lock_guard<std::mutex> lock(mutex_);
-        auto& state = state_[source];
+        auto &state = state_[source];
         const std::uint64_t seq = *env.sequence_no;
         const auto now = Clock::now();
 
@@ -186,9 +184,11 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         OrderingTickResult result;
         const auto now = Clock::now();
-        for (auto& [source, state] : state_) {
-            if (state.pending.empty()) continue;
-            const auto& [head_seq, head_pending] = *state.pending.begin();
+        for (auto &[source, state] : state_) {
+            if (state.pending.empty()) {
+                continue;
+            }
+            const auto &[head_seq, head_pending] = *state.pending.begin();
             if (head_seq == state.next_expected_seq) {
                 // A stale state: head is the expected seq but somehow
                 // didn't get released in admit. Drain it. This guards
@@ -233,10 +233,12 @@ private:
     /// contiguous with `state.next_expected_seq`. The released vector
     /// is grown in place so the admit/tick paths can return the full
     /// in-order batch to the caller. Must be called with `mutex_` held.
-    void drainContiguous(PerSender& state, std::vector<MeshEnvelope>& released) {
+    void drainContiguous(PerSender &state, std::vector<MeshEnvelope> &released) {
         while (!state.pending.empty()) {
             auto it = state.pending.begin();
-            if (it->first != state.next_expected_seq) break;
+            if (it->first != state.next_expected_seq) {
+                break;
+            }
             released.push_back(std::move(it->second.env));
             state.next_expected_seq += 1;
             state.pending.erase(it);

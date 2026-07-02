@@ -76,7 +76,7 @@ ScriptResult JSEngine::executeScriptInternal(const std::string &sessionId, const
 
 ScriptResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, const std::string &expression) {
     SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - Evaluating expression '{}' in session '{}'", expression,
-              sessionId);
+                  sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
@@ -94,7 +94,7 @@ ScriptResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, 
     // If it failed and the expression starts with '{', try wrapping in parentheses for object literals
     if (JS_IsException(result) && !expression.empty() && expression[0] == '{') {
         SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
-                  "object literal");
+                      "object literal");
         JS_FreeValue(ctx, result);  // Free the exception
 
         std::string wrappedExpression = "(" + expression + ")";
@@ -107,7 +107,7 @@ ScriptResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, 
     // expressions Test 453: ECMAScript function literals must be accepted as value expressions
     if (JS_IsException(result) && DataModelInitHelper::isFunctionExpression(expression)) {
         SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
-                  "function literal");
+                      "function literal");
         JS_FreeValue(ctx, result);  // Free the exception
 
         std::string wrappedExpression = "(" + expression + ")";
@@ -184,7 +184,7 @@ ScriptResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, 
     }
 
     SCE_LOG_TRACE("JSEngine::evaluateExpressionInternal - Expression='{}', type={}, value={}", expression, debug_type,
-              debug_value);
+                  debug_value);
 
     return ScriptResult::createSuccess(jsResult);
 }
@@ -212,7 +212,7 @@ ScriptResult JSEngine::validateExpressionInternal(const std::string &sessionId, 
 }
 
 ScriptResult JSEngine::setVariableInternal(const std::string &sessionId, const std::string &name,
-                                       const ScriptValue &value) {
+                                           const ScriptValue &value) {
     SCE_LOG_DEBUG("JSEngine::setVariableInternal - Setting variable '{}' in session '{}'", name, sessionId);
 
     SessionContext *session = getSession(sessionId);
@@ -256,8 +256,8 @@ ScriptResult JSEngine::setVariableInternal(const std::string &sessionId, const s
 
     // Check if conversion was successful
     if (JS_IsException(qjsValue)) {
-        SCE_LOG_ERROR("JSEngine::setVariableInternal - Failed to convert ScriptValue to QuickJS value for variable '{}'",
-                  name);
+        SCE_LOG_ERROR(
+            "JSEngine::setVariableInternal - Failed to convert ScriptValue to QuickJS value for variable '{}'", name);
         JS_FreeValue(ctx, global);
         return createErrorFromException(ctx);
     }
@@ -457,7 +457,7 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
     ::JSValue eventDataProperty;
     if (!session->eventObjectInitialized) {
         SCE_LOG_DEBUG("JSEngine: First event detected - initializing _event object per W3C SCXML 5.10 for session: {}",
-                  sessionId);
+                      sessionId);
         // Setup _event object now that first event is being processed
         setupEventObject(ctx, sessionId);
         session->eventObjectInitialized = true;
@@ -534,7 +534,7 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
 }
 
 ScriptResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
-                                                const std::vector<std::string> &ioProcessors) {
+                                                    const std::vector<std::string> &ioProcessors) {
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
         return ScriptResult::createError("Session not found: " + sessionId);

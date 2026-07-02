@@ -18,15 +18,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ASSERT_TRUE(cond, msg) \
-    do { if (!(cond)) { fprintf(stderr, "  FAIL: %s\n", msg); return 1; } } while (0)
+#define ASSERT_TRUE(cond, msg)                                                                                         \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            fprintf(stderr, "  FAIL: %s\n", msg);                                                                      \
+            return 1;                                                                                                  \
+        }                                                                                                              \
+    } while (0)
 
-#define ASSERT_STREQ(actual, expected, msg) \
-    do { \
-        if (strcmp((actual), (expected)) != 0) { \
-            fprintf(stderr, "  FAIL: %s — got %s, want %s\n", msg, (actual), (expected)); \
-            return 1; \
-        } \
+#define ASSERT_STREQ(actual, expected, msg)                                                                            \
+    do {                                                                                                               \
+        if (strcmp((actual), (expected)) != 0) {                                                                       \
+            fprintf(stderr, "  FAIL: %s — got %s, want %s\n", msg, (actual), (expected));                              \
+            return 1;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
 // ─── Test cases ─────────────────────────────────────────────────────
@@ -51,10 +56,9 @@ static int test_paired_and_self_close(void) {
 // DOCTYPE prologue should be skipped, the rest parses normally.  Mirrors
 // pugixml `parse_default`: DOCTYPE drops on load.
 static int test_doctype_prologue(void) {
-    const char *xml =
-        "<?xml version=\"1.0\"?>"
-        "<!DOCTYPE root SYSTEM \"root.dtd\">"
-        "<root><leaf/></root>";
+    const char *xml = "<?xml version=\"1.0\"?>"
+                      "<!DOCTYPE root SYSTEM \"root.dtd\">"
+                      "<root><leaf/></root>";
     sce_xml_doc_t *doc = sce_xml_parse(xml);
     ASSERT_TRUE(sce_xml_doc_is_valid(doc), "doc must be valid after DOCTYPE skip");
     sce_xml_node_t *root = sce_xml_doc_root(doc);
@@ -66,9 +70,8 @@ static int test_doctype_prologue(void) {
 // DOCTYPE with internal subset `[ ... ]` — must balance brackets so the
 // terminating `>` inside the subset is not mistaken for the DOCTYPE end.
 static int test_doctype_internal_subset(void) {
-    const char *xml =
-        "<!DOCTYPE root [ <!ELEMENT root (leaf*)> <!ATTLIST leaf id ID #REQUIRED> ]>"
-        "<root><leaf/></root>";
+    const char *xml = "<!DOCTYPE root [ <!ELEMENT root (leaf*)> <!ATTLIST leaf id ID #REQUIRED> ]>"
+                      "<root><leaf/></root>";
     sce_xml_doc_t *doc = sce_xml_parse(xml);
     ASSERT_TRUE(sce_xml_doc_is_valid(doc), "doc with internal subset");
     sce_xml_doc_free(doc);
@@ -79,8 +82,7 @@ static int test_doctype_internal_subset(void) {
 // characters like `<` and `&`.  pugixml exposes these as `node_cdata`
 // children; sce_xml_collect skips them (element-only).
 static int test_cdata_section(void) {
-    const char *xml =
-        "<root><leaf><![CDATA[ <not-a-tag> & </not-a-tag> ]]></leaf></root>";
+    const char *xml = "<root><leaf><![CDATA[ <not-a-tag> & </not-a-tag> ]]></leaf></root>";
     sce_xml_doc_t *doc = sce_xml_parse(xml);
     ASSERT_TRUE(sce_xml_doc_is_valid(doc), "CDATA-bearing doc");
     sce_xml_node_t *root = sce_xml_doc_root(doc);
@@ -90,8 +92,7 @@ static int test_cdata_section(void) {
     // First (only) child of <leaf> is the CDATA node.
     ASSERT_TRUE(leaf->first_child, "leaf has CDATA child");
     ASSERT_TRUE(leaf->first_child->type == SCE_XML_NODE_CDATA, "CDATA type");
-    ASSERT_STREQ(leaf->first_child->text,
-                 " <not-a-tag> & </not-a-tag> ", "CDATA verbatim");
+    ASSERT_STREQ(leaf->first_child->text, " <not-a-tag> & </not-a-tag> ", "CDATA verbatim");
     sce_xml_doc_free(doc);
     return 0;
 }
@@ -103,8 +104,7 @@ static int test_named_entities_in_attribute(void) {
     sce_xml_doc_t *doc = sce_xml_parse(xml);
     ASSERT_TRUE(sce_xml_doc_is_valid(doc), "doc must be valid");
     sce_xml_node_t *root = sce_xml_doc_root(doc);
-    ASSERT_STREQ(sce_xml_get_attribute(root, "attr"),
-                 "&<>\"'", "named entities decoded");
+    ASSERT_STREQ(sce_xml_get_attribute(root, "attr"), "&<>\"'", "named entities decoded");
     sce_xml_doc_free(doc);
     return 0;
 }
@@ -169,8 +169,7 @@ static int test_comment_in_element_body(void) {
 // getElementsByTagName must skip non-element children (PCDATA + CDATA)
 // and only collect element matches recursively.
 static int test_get_elements_skips_text_nodes(void) {
-    const char *xml =
-        "<root>text1<book title=\"a\"/>text2<![CDATA[raw]]><book title=\"b\"/></root>";
+    const char *xml = "<root>text1<book title=\"a\"/>text2<![CDATA[raw]]><book title=\"b\"/></root>";
     sce_xml_doc_t *doc = sce_xml_parse(xml);
     ASSERT_TRUE(sce_xml_doc_is_valid(doc), "doc must be valid");
     size_t count = 0;
@@ -186,6 +185,7 @@ static int test_get_elements_skips_text_nodes(void) {
 // ─── Driver ─────────────────────────────────────────────────────────
 
 typedef int (*test_fn_t)(void);
+
 typedef struct {
     const char *name;
     test_fn_t fn;

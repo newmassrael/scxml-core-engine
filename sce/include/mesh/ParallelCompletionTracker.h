@@ -88,9 +88,7 @@ public:
     /// freshly-computed `missing_regions` vector so the captured
     /// `_event.data.missing_regions` matches the tracker's current
     /// state. Implementation routes to the SM's `PullScheduler`.
-    using ArmTimerCallback =
-        std::function<void(std::uint64_t timeout_ms,
-                           std::vector<std::string> missing_regions)>;
+    using ArmTimerCallback = std::function<void(std::uint64_t timeout_ms, std::vector<std::string> missing_regions)>;
 
     /// Invoked at threshold and at `reset()` to cancel any pending
     /// §mesh-16.5 barrier timer. Safe to call when no timer is armed (the
@@ -120,13 +118,10 @@ public:
         // disqualifies the class from aggregate init (C++20 relaxes
         // this, but SCE's public headers target C++17).
         TimerHooks() = default;
-        TimerHooks(std::uint64_t timeout,
-                   std::set<std::string> region_ids,
-                   ArmTimerCallback arm_fn,
+
+        TimerHooks(std::uint64_t timeout, std::set<std::string> region_ids, ArmTimerCallback arm_fn,
                    CancelTimerCallback cancel_fn)
-            : timeout_ms(timeout),
-              expected_region_ids(std::move(region_ids)),
-              arm(std::move(arm_fn)),
+            : timeout_ms(timeout), expected_region_ids(std::move(region_ids)), arm(std::move(arm_fn)),
               cancel(std::move(cancel_fn)) {}
 
         [[nodiscard]] bool enabled() const noexcept {
@@ -145,14 +140,9 @@ public:
     /// or `onRemoteRegionComplete`, which codegen does at `<parallel>`
     /// entry as a correctness guard for the pathological input. Passing
     /// a no-op callback is legal for tests.
-    ParallelCompletionTracker(std::size_t expected_region_count,
-                              OnCompleteCallback on_complete)
-        : expected_count_(expected_region_count),
-          on_complete_(std::move(on_complete)),
-          timer_hooks_(),
-          missing_(),
-          fired_(false),
-          timer_armed_(false) {}
+    ParallelCompletionTracker(std::size_t expected_region_count, OnCompleteCallback on_complete)
+        : expected_count_(expected_region_count), on_complete_(std::move(on_complete)), timer_hooks_(), missing_(),
+          fired_(false), timer_armed_(false) {}
 
     /// Construct a tracker with §mesh-16.5 L3500 barrier-timeout hooks. The
     /// SM ctor passes a populated [`TimerHooks`] when deploy.yaml
@@ -167,14 +157,9 @@ public:
     /// `expected_region_ids` (the threshold-only ctor + the disabled
     /// timer case) leaves `missing_` empty, preserving the
     /// pre-incremental behaviour bit-for-bit.
-    ParallelCompletionTracker(std::size_t expected_region_count,
-                              OnCompleteCallback on_complete,
-                              TimerHooks timer_hooks)
-        : expected_count_(expected_region_count),
-          on_complete_(std::move(on_complete)),
-          timer_hooks_(std::move(timer_hooks)),
-          missing_(timer_hooks_.expected_region_ids),
-          fired_(false),
+    ParallelCompletionTracker(std::size_t expected_region_count, OnCompleteCallback on_complete, TimerHooks timer_hooks)
+        : expected_count_(expected_region_count), on_complete_(std::move(on_complete)),
+          timer_hooks_(std::move(timer_hooks)), missing_(timer_hooks_.expected_region_ids), fired_(false),
           timer_armed_(false) {}
 
     /// Mark a region that lives in the root partition's own address
@@ -207,10 +192,21 @@ public:
 
     /// Introspection for tests and diagnostic logging. Not part of the
     /// production dispatch path.
-    std::size_t completedCount() const { return completed_.size(); }
-    std::size_t expectedCount() const { return expected_count_; }
-    bool hasFired() const { return fired_; }
-    bool barrierTimerArmed() const { return timer_armed_; }
+    std::size_t completedCount() const {
+        return completed_.size();
+    }
+
+    std::size_t expectedCount() const {
+        return expected_count_;
+    }
+
+    bool hasFired() const {
+        return fired_;
+    }
+
+    bool barrierTimerArmed() const {
+        return timer_armed_;
+    }
 
 private:
     /// Single internal path reached from both local and remote
@@ -247,10 +243,16 @@ private:
     /// Fire the callback if the completion threshold has been reached.
     /// Single-shot: subsequent calls are no-ops within one activation.
     void maybeFire() {
-        if (fired_) return;
-        if (completed_.size() < expected_count_) return;
+        if (fired_) {
+            return;
+        }
+        if (completed_.size() < expected_count_) {
+            return;
+        }
         fired_ = true;
-        if (on_complete_) on_complete_();
+        if (on_complete_) {
+            on_complete_();
+        }
     }
 
     /// Snapshot the incrementally-maintained `missing_` set as a sorted
@@ -263,7 +265,9 @@ private:
     /// short-circuit preserves the pre-incremental contract (no payload
     /// to deliver when no arm callback is installed).
     std::vector<std::string> computeMissingRegions() const {
-        if (!timer_hooks_.enabled()) return {};
+        if (!timer_hooks_.enabled()) {
+            return {};
+        }
         return std::vector<std::string>(missing_.begin(), missing_.end());
     }
 
@@ -272,8 +276,12 @@ private:
     /// degenerate `expected_count_ == 0` `<parallel>` would never
     /// accumulate anything for the timer to guard.
     void rearmBarrierTimer() {
-        if (!timer_hooks_.enabled()) return;
-        if (expected_count_ == 0) return;
+        if (!timer_hooks_.enabled()) {
+            return;
+        }
+        if (expected_count_ == 0) {
+            return;
+        }
         cancelBarrierTimerIfArmed();
         auto missing = computeMissingRegions();
         timer_hooks_.arm(timer_hooks_.timeout_ms, std::move(missing));
@@ -281,8 +289,12 @@ private:
     }
 
     void cancelBarrierTimerIfArmed() {
-        if (!timer_armed_) return;
-        if (timer_hooks_.cancel) timer_hooks_.cancel();
+        if (!timer_armed_) {
+            return;
+        }
+        if (timer_hooks_.cancel) {
+            timer_hooks_.cancel();
+        }
         timer_armed_ = false;
     }
 

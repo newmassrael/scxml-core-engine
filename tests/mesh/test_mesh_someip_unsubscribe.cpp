@@ -102,16 +102,18 @@ constexpr auto kDrainBarrierDeadline = kDefaultTimeout;
 constexpr auto kPostUnsubscribeSlack = std::chrono::milliseconds(300);
 
 // ── Fixture constants ───────────────────────────────────────────
-constexpr int kInitialNotifyCount   = 3;
+constexpr int kInitialNotifyCount = 3;
 constexpr int kPostUnsubNotifyCount = 3;
 
 // Count envelopes whose event name matches the eventgroup the test
 // subscribes to. Declared at function scope (above first use) so the
 // reader does not have to scroll down to understand the predicate.
-auto count_vehicle_speed = [](const std::vector<ReceivedEvent>& v) {
+auto count_vehicle_speed = [](const std::vector<ReceivedEvent> &v) {
     int n = 0;
-    for (const auto& ev : v) {
-        if (ev.type == "field.notify.vehicle_speed") ++n;
+    for (const auto &ev : v) {
+        if (ev.type == "field.notify.vehicle_speed") {
+            ++n;
+        }
     }
     return n;
 };
@@ -119,8 +121,7 @@ auto count_vehicle_speed = [](const std::vector<ReceivedEvent>& v) {
 // Dispatch one sensor.update trigger to motor's engine via the router.
 // Inlining this would duplicate the envelope-construction boilerplate
 // six times (three pre-, three post-unsubscribe).
-template <typename MotorRouterT>
-void dispatch_sensor_update(MotorRouterT& motor_router) {
+template <typename MotorRouterT> void dispatch_sensor_update(MotorRouterT &motor_router) {
     SCE::Mesh::MeshEnvelope trigger;
     trigger.id = SCE::uuid::v7();
     trigger.source = "test";
@@ -169,11 +170,15 @@ int run_test() {
     struct EnginePump {
         std::atomic<bool> running{true};
         std::thread t;
+
         ~EnginePump() {
             running.store(false, std::memory_order_release);
-            if (t.joinable()) t.join();
+            if (t.joinable()) {
+                t.join();
+            }
         }
     } pump;
+
     pump.t = std::thread([&motor, &pump] {
         while (pump.running.load(std::memory_order_acquire)) {
             motor.step();
@@ -189,27 +194,25 @@ int run_test() {
         brake_router.motor_app_->register_availability_handler(
             brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
             [&](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
-                if (!is_available) return;
+                if (!is_available) {
+                    return;
+                }
                 std::lock_guard<std::mutex> lock(availability_m);
                 service_available = true;
                 availability_cv.notify_all();
             });
 
         std::unique_lock<std::mutex> lock(availability_m);
-        MESH_TEST_REQUIRE(availability_cv.wait_for(
-                              lock, std::chrono::seconds(10),
-                              [&] { return service_available; }),
+        MESH_TEST_REQUIRE(availability_cv.wait_for(lock, std::chrono::seconds(10), [&] { return service_available; }),
                           "vsomeip motor service did not become available "
                           "within 10s");
     }
 
     // Fire EventSubscribe via the generated mesh send callback. Exercises
     // the full generated path (request_event + subscribe inside send_someip).
-    MESH_TEST_REQUIRE(brake_engine.mesh_send_cb_ != nullptr,
-                      "brake_engine has no mesh send callback — router ctor did "
-                      "not install the hook");
-    MESH_TEST_REQUIRE(brake_engine.mesh_send_cb_(
-                          "#motor", "event.subscribe.speed", "", "", ""),
+    MESH_TEST_REQUIRE(brake_engine.mesh_send_cb_ != nullptr, "brake_engine has no mesh send callback — router ctor did "
+                                                             "not install the hook");
+    MESH_TEST_REQUIRE(brake_engine.mesh_send_cb_("#motor", "event.subscribe.speed", "", "", ""),
                       "send event.subscribe.speed returned false");
 
     std::this_thread::sleep_for(kSubscribeSettle);
@@ -222,11 +225,11 @@ int run_test() {
         dispatch_sensor_update(motor_router);
     }
 
-    MESH_TEST_REQUIRE(brake_engine.received_.wait_for(
-                          [](const auto& v) { return count_vehicle_speed(v) >= kInitialNotifyCount; },
-                          std::chrono::duration_cast<std::chrono::seconds>(kDrainBarrierDeadline)),
-                      "brake did not receive the initial notifications — notify "
-                      "path was not live before unsubscribe (drain barrier)");
+    MESH_TEST_REQUIRE(
+        brake_engine.received_.wait_for([](const auto &v) { return count_vehicle_speed(v) >= kInitialNotifyCount; },
+                                        std::chrono::duration_cast<std::chrono::seconds>(kDrainBarrierDeadline)),
+        "brake did not receive the initial notifications — notify "
+        "path was not live before unsubscribe (drain barrier)");
 
     int baseline_count = 0;
     {
@@ -239,8 +242,7 @@ int run_test() {
     // for every declared EventSubscribe. resolvePattern on brake maps
     // "event.unsubscribe.speed" to EventUnsubscribe, and send_someip
     // invokes app.unsubscribe on the same eventgroup.
-    MESH_TEST_REQUIRE(brake_engine.mesh_send_cb_(
-                          "#motor", "event.unsubscribe.speed", "", "", ""),
+    MESH_TEST_REQUIRE(brake_engine.mesh_send_cb_("#motor", "event.unsubscribe.speed", "", "", ""),
                       "send event.unsubscribe.speed returned false");
 
     std::this_thread::sleep_for(kVsomeipPropagationSlack);
@@ -285,7 +287,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         // Router + pump destructors handle their cleanup on unwind;
         // no explicit shutdown needed here.
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());

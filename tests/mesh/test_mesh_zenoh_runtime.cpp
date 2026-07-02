@@ -31,10 +31,9 @@ using namespace SCE::Test::Mesh;
 
 // Mirrors brake's connect endpoint (deploy_zenoh.yaml ecu1). The test's
 // raw listener binds this address so brake's generated init() dials it.
-constexpr const char* kListen   =
-    SCE::Generated::brake::ZENOH_CONNECT_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::brake::ZENOH_CONNECT_ENDPOINTS[0];
 // Must match deploy_zenoh.yaml ecu1.machines.brake.bindings.#motor.key.
-constexpr const char* kMotorKey = "sce/brake/motor/cmd";
+constexpr const char *kMotorKey = "sce/brake/motor/cmd";
 
 int run_test() {
     namespace brake_gen = SCE::Generated::brake;
@@ -48,7 +47,7 @@ int run_test() {
     CapturedEvents motor_inbox;
     auto motor_subscriber = motor_session.declare_subscriber(
         zenoh::KeyExpr(kMotorKey),
-        [&motor_inbox](const zenoh::Sample& sample) {
+        [&motor_inbox](const zenoh::Sample &sample) {
             auto bytes = sample.get_payload().as_vector();
             SCE::Mesh::MeshEnvelope env;
             if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
@@ -67,17 +66,15 @@ int run_test() {
     wait_for_peer_ready(motor_session, handshake_session);
 
     auto env = make_envelope("brake.activate", SCE::Mesh::PatternKind::FireForget);
-    MESH_TEST_REQUIRE(router.send_zenoh(env, kMotorKey, "#motor"),
-                      "send_zenoh FireForget returned false");
-    MESH_TEST_REQUIRE(motor_inbox.wait_for([](const auto& v) { return !v.empty(); }),
+    MESH_TEST_REQUIRE(router.send_zenoh(env, kMotorKey, "#motor"), "send_zenoh FireForget returned false");
+    MESH_TEST_REQUIRE(motor_inbox.wait_for([](const auto &v) { return !v.empty(); }),
                       "motor subscriber did not receive FireForget envelope");
 
     {
         std::lock_guard<std::mutex> lk(motor_inbox.m);
         MESH_TEST_REQUIRE(motor_inbox.envelopes.front().type == "brake.activate",
                           "FireForget envelope type mismatch on motor side");
-        MESH_TEST_REQUIRE(motor_inbox.envelopes.front().pattern ==
-                              SCE::Mesh::PatternKind::FireForget,
+        MESH_TEST_REQUIRE(motor_inbox.envelopes.front().pattern == SCE::Mesh::PatternKind::FireForget,
                           "FireForget envelope pattern not preserved");
     }
 
@@ -91,7 +88,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

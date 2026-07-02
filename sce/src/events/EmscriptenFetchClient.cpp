@@ -187,7 +187,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
         }
 
         SCE_LOG_DEBUG("EmscriptenFetchClient (Node.js): {} {} → {} (body {} bytes)", request.method, request.url,
-                  response.statusCode, response.body.size());
+                      response.statusCode, response.body.size());
 
         promise->set_value(std::move(response));
         return future;
@@ -295,7 +295,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
         }
 
         SCE_LOG_DEBUG("EmscriptenFetchClient: {} {} → {} (body {} bytes)", ctx->requestMethod, ctx->requestUrl,
-                  response.statusCode, response.body.size());
+                      response.statusCode, response.body.size());
 
         ctx->promise->set_value(std::move(response));
         emscripten_fetch_close(fetch);
@@ -319,7 +319,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
         response.statusCode = fetch->status;
 
         SCE_LOG_ERROR("EmscriptenFetchClient: {} {} → FAILED (status {})", ctx->requestMethod, ctx->requestUrl,
-                  fetch->status);
+                      fetch->status);
 
         ctx->promise->set_value(std::move(response));
         emscripten_fetch_close(fetch);

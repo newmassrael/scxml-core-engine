@@ -45,18 +45,14 @@ static int sce_lua_dom_gc_element(lua_State *L);
 // cpp LuaDOMBinding::pushElementObject — push an element userdata that
 // borrows from the document at `doc_stack_index`.  The element retains a
 // registry ref to that doc userdata so the tree outlives any element.
-static int sce_lua_dom_push_element(lua_State *L, sce_xml_node_t *element,
-                                    int doc_stack_index) {
-    sce_lua_dom_elem_ud_t *ud =
-        (sce_lua_dom_elem_ud_t *)lua_newuserdata(L, sizeof(*ud));
+static int sce_lua_dom_push_element(lua_State *L, sce_xml_node_t *element, int doc_stack_index) {
+    sce_lua_dom_elem_ud_t *ud = (sce_lua_dom_elem_ud_t *)lua_newuserdata(L, sizeof(*ud));
     ud->element = element;
     ud->doc_ref = LUA_NOREF;
 
     // Anchor the owning document so its tree cannot be collected while
     // any element referencing it is still reachable.
-    int abs_doc = (doc_stack_index < 0)
-                      ? lua_gettop(L) + doc_stack_index
-                      : doc_stack_index;
+    int abs_doc = (doc_stack_index < 0) ? lua_gettop(L) + doc_stack_index : doc_stack_index;
     if (abs_doc >= 1 && abs_doc <= lua_gettop(L) - 1) {
         lua_pushvalue(L, abs_doc);
         ud->doc_ref = luaL_ref(L, LUA_REGISTRYINDEX);
@@ -114,8 +110,7 @@ int sce_lua_dom_push_object(lua_State *L, const char *xml_content) {
         return 1;
     }
 
-    sce_lua_dom_doc_ud_t *ud =
-        (sce_lua_dom_doc_ud_t *)lua_newuserdata(L, sizeof(*ud));
+    sce_lua_dom_doc_ud_t *ud = (sce_lua_dom_doc_ud_t *)lua_newuserdata(L, sizeof(*ud));
     ud->doc = doc;
     ud->root = sce_xml_doc_root(doc);
 
@@ -134,8 +129,7 @@ static int sce_lua_dom_get_elements_by_tag_name(lua_State *L) {
     sce_xml_node_t **elements = NULL;
     size_t count = 0u;
 
-    sce_lua_dom_doc_ud_t *doc_ud =
-        (sce_lua_dom_doc_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_DOCUMENT_MT);
+    sce_lua_dom_doc_ud_t *doc_ud = (sce_lua_dom_doc_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_DOCUMENT_MT);
     int self_idx = 1;
     int element_owning_doc_idx = 1;
 
@@ -146,8 +140,7 @@ static int sce_lua_dom_get_elements_by_tag_name(lua_State *L) {
         // For elements pushed below, anchor against the doc userdata at
         // index 1 (self).
     } else {
-        sce_lua_dom_elem_ud_t *elem_ud = (sce_lua_dom_elem_ud_t *)luaL_testudata(
-            L, 1, SCE_LUA_DOM_ELEMENT_MT);
+        sce_lua_dom_elem_ud_t *elem_ud = (sce_lua_dom_elem_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_ELEMENT_MT);
         if (!elem_ud || !elem_ud->element) {
             return luaL_error(L, "getElementsByTagName called on invalid DOM object");
         }
@@ -178,16 +171,14 @@ static int sce_lua_dom_get_elements_by_tag_name(lua_State *L) {
 static int sce_lua_dom_get_attribute(lua_State *L) {
     const char *attr = luaL_checkstring(L, 2);
 
-    sce_lua_dom_doc_ud_t *doc_ud =
-        (sce_lua_dom_doc_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_DOCUMENT_MT);
+    sce_lua_dom_doc_ud_t *doc_ud = (sce_lua_dom_doc_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_DOCUMENT_MT);
     if (doc_ud && doc_ud->root) {
         const char *val = sce_xml_get_attribute(doc_ud->root, attr);
         lua_pushstring(L, val);
         return 1;
     }
 
-    sce_lua_dom_elem_ud_t *elem_ud =
-        (sce_lua_dom_elem_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_ELEMENT_MT);
+    sce_lua_dom_elem_ud_t *elem_ud = (sce_lua_dom_elem_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_ELEMENT_MT);
     if (elem_ud && elem_ud->element) {
         const char *val = sce_xml_get_attribute(elem_ud->element, attr);
         lua_pushstring(L, val);
@@ -199,15 +190,13 @@ static int sce_lua_dom_get_attribute(lua_State *L) {
 
 // cpp LuaDOMBinding::lua_getTagName 1:1.
 static int sce_lua_dom_get_tag_name(lua_State *L) {
-    sce_lua_dom_doc_ud_t *doc_ud =
-        (sce_lua_dom_doc_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_DOCUMENT_MT);
+    sce_lua_dom_doc_ud_t *doc_ud = (sce_lua_dom_doc_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_DOCUMENT_MT);
     if (doc_ud && doc_ud->root) {
         lua_pushstring(L, sce_xml_get_tag_name(doc_ud->root));
         return 1;
     }
 
-    sce_lua_dom_elem_ud_t *elem_ud =
-        (sce_lua_dom_elem_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_ELEMENT_MT);
+    sce_lua_dom_elem_ud_t *elem_ud = (sce_lua_dom_elem_ud_t *)luaL_testudata(L, 1, SCE_LUA_DOM_ELEMENT_MT);
     if (elem_ud && elem_ud->element) {
         lua_pushstring(L, sce_xml_get_tag_name(elem_ud->element));
         return 1;
@@ -218,8 +207,7 @@ static int sce_lua_dom_get_tag_name(lua_State *L) {
 
 // cpp LuaDOMBinding::lua_gc_document — releases the parsed tree.
 static int sce_lua_dom_gc_document(lua_State *L) {
-    sce_lua_dom_doc_ud_t *ud =
-        (sce_lua_dom_doc_ud_t *)luaL_checkudata(L, 1, SCE_LUA_DOM_DOCUMENT_MT);
+    sce_lua_dom_doc_ud_t *ud = (sce_lua_dom_doc_ud_t *)luaL_checkudata(L, 1, SCE_LUA_DOM_DOCUMENT_MT);
     if (ud) {
         sce_xml_doc_free(ud->doc);
         ud->doc = NULL;
@@ -232,8 +220,7 @@ static int sce_lua_dom_gc_document(lua_State *L) {
 // owning document becomes eligible for collection too.  The element
 // pointer itself is borrowed and must not be freed here.
 static int sce_lua_dom_gc_element(lua_State *L) {
-    sce_lua_dom_elem_ud_t *ud =
-        (sce_lua_dom_elem_ud_t *)luaL_checkudata(L, 1, SCE_LUA_DOM_ELEMENT_MT);
+    sce_lua_dom_elem_ud_t *ud = (sce_lua_dom_elem_ud_t *)luaL_checkudata(L, 1, SCE_LUA_DOM_ELEMENT_MT);
     if (ud) {
         if (ud->doc_ref != LUA_NOREF) {
             luaL_unref(L, LUA_REGISTRYINDEX, ud->doc_ref);

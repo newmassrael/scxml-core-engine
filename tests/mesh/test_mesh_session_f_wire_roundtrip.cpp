@@ -68,10 +68,9 @@ int main() {
             return 0;
         }
         if (parent.getCurrentState() == State::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent observed error.execution instead of "
-                         "done.invoke — transport is wired but the wire-15/18 "
-                         "success path did not complete.\n");
+            std::fprintf(stderr, "FAIL: parent observed error.execution instead of "
+                                 "done.invoke — transport is wired but the wire-15/18 "
+                                 "success path did not complete.\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

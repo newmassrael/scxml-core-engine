@@ -69,9 +69,11 @@ public:
     // `Diagnostic` interface. Subtypes override `code()` with their
     // wire string and `to_json()` with payload-aware serialization.
     std::string_view code() const noexcept override = 0;
+
     const std::optional<SourcePos> &location() const noexcept override {
         return location_;
     }
+
     nlohmann::ordered_json to_json() const override = 0;
 
 protected:
@@ -100,30 +102,35 @@ public:
         CompoundState,
     };
 
-    SemanticInitialStateUnknown(std::string message,
-                                std::string state_id,
-                                Scope scope,
-                                std::string parent_id,
+    SemanticInitialStateUnknown(std::string message, std::string state_id, Scope scope, std::string parent_id,
                                 std::vector<std::string> available)
-        : SemanticError(std::move(message)),
-          state_id_(std::move(state_id)),
-          scope_(scope),
-          parent_id_(std::move(parent_id)),
-          available_(std::move(available)) {}
+        : SemanticError(std::move(message)), state_id_(std::move(state_id)), scope_(scope),
+          parent_id_(std::move(parent_id)), available_(std::move(available)) {}
 
     std::string_view code() const noexcept override {
         return "validation/invalid-reference";
     }
+
     nlohmann::ordered_json to_json() const override;
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<SemanticInitialStateUnknown>(*this);
     }
 
     // In-process C++ accessors for consumers that dispatch on
     // dynamic_cast and need the typed payload.
-    const std::string &stateId() const noexcept { return state_id_; }
-    Scope scope() const noexcept { return scope_; }
-    const std::string &parentId() const noexcept { return parent_id_; }
+    const std::string &stateId() const noexcept {
+        return state_id_;
+    }
+
+    Scope scope() const noexcept {
+        return scope_;
+    }
+
+    const std::string &parentId() const noexcept {
+        return parent_id_;
+    }
+
     const std::vector<std::string> &available() const noexcept {
         return available_;
     }
@@ -142,25 +149,29 @@ private:
 // `actual` and `fix.candidates` listing the declared states.
 class SemanticTransitionTargetUnknown : public SemanticError {
 public:
-    SemanticTransitionTargetUnknown(std::string message,
-                                    std::string state,
-                                    std::string target,
+    SemanticTransitionTargetUnknown(std::string message, std::string state, std::string target,
                                     std::vector<std::string> available)
-        : SemanticError(std::move(message)),
-          state_(std::move(state)),
-          target_(std::move(target)),
+        : SemanticError(std::move(message)), state_(std::move(state)), target_(std::move(target)),
           available_(std::move(available)) {}
 
     std::string_view code() const noexcept override {
         return "validation/invalid-reference";
     }
+
     nlohmann::ordered_json to_json() const override;
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<SemanticTransitionTargetUnknown>(*this);
     }
 
-    const std::string &state() const noexcept { return state_; }
-    const std::string &target() const noexcept { return target_; }
+    const std::string &state() const noexcept {
+        return state_;
+    }
+
+    const std::string &target() const noexcept {
+        return target_;
+    }
+
     const std::vector<std::string> &available() const noexcept {
         return available_;
     }
@@ -183,7 +194,9 @@ public:
     std::string_view code() const noexcept override {
         return "validation/empty-collection";
     }
+
     nlohmann::ordered_json to_json() const override;
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<SemanticNoStates>(*this);
     }
@@ -202,17 +215,16 @@ public:
 // across the asymmetry per §wire-W5 anti-pattern #5.
 class SemanticTopLevelScriptUnloaded : public SemanticError {
 public:
-    SemanticTopLevelScriptUnloaded(std::string message,
-                                   std::optional<std::size_t> index,
+    SemanticTopLevelScriptUnloaded(std::string message, std::optional<std::size_t> index,
                                    std::optional<std::string> src)
-        : SemanticError(std::move(message)),
-          index_(std::move(index)),
-          src_(std::move(src)) {}
+        : SemanticError(std::move(message)), index_(std::move(index)), src_(std::move(src)) {}
 
     std::string_view code() const noexcept override {
         return "scxml/top-level-script-unloaded";
     }
+
     nlohmann::ordered_json to_json() const override;
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<SemanticTopLevelScriptUnloaded>(*this);
     }
@@ -220,7 +232,10 @@ public:
     const std::optional<std::size_t> &index() const noexcept {
         return index_;
     }
-    const std::optional<std::string> &src() const noexcept { return src_; }
+
+    const std::optional<std::string> &src() const noexcept {
+        return src_;
+    }
 
 private:
     std::optional<std::size_t> index_;

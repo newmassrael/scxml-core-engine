@@ -25,7 +25,7 @@ namespace SCE::Mesh {
 /// the opener (Mode::Open) only munmaps.
 class ShmSegment {
     int fd_ = -1;
-    void* addr_ = nullptr;
+    void *addr_ = nullptr;
     std::size_t size_ = 0;
     bool owner_ = false;
     std::string name_;
@@ -35,7 +35,7 @@ class ShmSegment {
 public:
     /// Create a new shared memory segment (producer/sender side).
     /// Truncates to `size` bytes and memory-maps it read/write.
-    [[nodiscard]] static ShmSegment create(const char* name, std::size_t size) noexcept {
+    [[nodiscard]] static ShmSegment create(const char *name, std::size_t size) noexcept {
         ShmSegment seg;
         seg.size_ = size;
 
@@ -60,8 +60,7 @@ public:
             return seg;
         }
 
-        seg.addr_ = ::mmap(nullptr, size, PROT_READ | PROT_WRITE,
-                           MAP_SHARED, seg.fd_, 0);
+        seg.addr_ = ::mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, seg.fd_, 0);
         if (seg.addr_ == MAP_FAILED) {
             seg.addr_ = nullptr;
             ::close(seg.fd_);
@@ -74,17 +73,18 @@ public:
     }
 
     /// Open an existing shared memory segment (consumer/receiver side).
-    [[nodiscard]] static ShmSegment open(const char* name, std::size_t size) noexcept {
+    [[nodiscard]] static ShmSegment open(const char *name, std::size_t size) noexcept {
         ShmSegment seg;
         seg.name_ = name;
         seg.size_ = size;
         seg.owner_ = false;
 
         seg.fd_ = ::shm_open(name, O_RDWR, 0);
-        if (seg.fd_ < 0) return seg;
+        if (seg.fd_ < 0) {
+            return seg;
+        }
 
-        seg.addr_ = ::mmap(nullptr, size, PROT_READ | PROT_WRITE,
-                           MAP_SHARED, seg.fd_, 0);
+        seg.addr_ = ::mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, seg.fd_, 0);
         if (seg.addr_ == MAP_FAILED) {
             seg.addr_ = nullptr;
             ::close(seg.fd_);
@@ -94,26 +94,37 @@ public:
     }
 
     ~ShmSegment() {
-        if (addr_) ::munmap(addr_, size_);
-        if (fd_ >= 0) ::close(fd_);
-        if (owner_ && !name_.empty()) ::shm_unlink(name_.c_str());
+        if (addr_) {
+            ::munmap(addr_, size_);
+        }
+        if (fd_ >= 0) {
+            ::close(fd_);
+        }
+        if (owner_ && !name_.empty()) {
+            ::shm_unlink(name_.c_str());
+        }
     }
 
     // Move-only
-    ShmSegment(ShmSegment&& o) noexcept
-        : fd_(o.fd_), addr_(o.addr_), size_(o.size_),
-          owner_(o.owner_), name_(std::move(o.name_)) {
+    ShmSegment(ShmSegment &&o) noexcept
+        : fd_(o.fd_), addr_(o.addr_), size_(o.size_), owner_(o.owner_), name_(std::move(o.name_)) {
         o.fd_ = -1;
         o.addr_ = nullptr;
         o.size_ = 0;
         o.owner_ = false;
     }
 
-    ShmSegment& operator=(ShmSegment&& o) noexcept {
+    ShmSegment &operator=(ShmSegment &&o) noexcept {
         if (this != &o) {
-            if (addr_) ::munmap(addr_, size_);
-            if (fd_ >= 0) ::close(fd_);
-            if (owner_ && !name_.empty()) ::shm_unlink(name_.c_str());
+            if (addr_) {
+                ::munmap(addr_, size_);
+            }
+            if (fd_ >= 0) {
+                ::close(fd_);
+            }
+            if (owner_ && !name_.empty()) {
+                ::shm_unlink(name_.c_str());
+            }
 
             fd_ = o.fd_;
             addr_ = o.addr_;
@@ -129,14 +140,28 @@ public:
         return *this;
     }
 
-    ShmSegment(const ShmSegment&) = delete;
-    ShmSegment& operator=(const ShmSegment&) = delete;
+    ShmSegment(const ShmSegment &) = delete;
+    ShmSegment &operator=(const ShmSegment &) = delete;
 
-    [[nodiscard]] void* data() noexcept { return addr_; }
-    [[nodiscard]] const void* data() const noexcept { return addr_; }
-    [[nodiscard]] std::size_t size() const noexcept { return size_; }
-    [[nodiscard]] bool valid() const noexcept { return addr_ != nullptr; }
-    [[nodiscard]] bool is_owner() const noexcept { return owner_; }
+    [[nodiscard]] void *data() noexcept {
+        return addr_;
+    }
+
+    [[nodiscard]] const void *data() const noexcept {
+        return addr_;
+    }
+
+    [[nodiscard]] std::size_t size() const noexcept {
+        return size_;
+    }
+
+    [[nodiscard]] bool valid() const noexcept {
+        return addr_ != nullptr;
+    }
+
+    [[nodiscard]] bool is_owner() const noexcept {
+        return owner_;
+    }
 };
 
 }  // namespace SCE::Mesh

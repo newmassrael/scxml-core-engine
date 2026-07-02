@@ -111,7 +111,7 @@ public:
     /// is novel — meaning an existing slot was overwritten by this
     /// call. Novel iff the ring still had unused slots before this
     /// insert. Duplicate iff the id matched any populated slot.
-    [[nodiscard]] Result observeWithSignal(const Id& id) noexcept {
+    [[nodiscard]] Result observeWithSignal(const Id &id) noexcept {
         const std::size_t filled = wrapped_ ? kCapacity : head_;
         for (std::size_t i = 0; i < filled; ++i) {
             if (recent_ids_[i] == id) {
@@ -135,7 +135,7 @@ public:
     /// Complexity: O(kCapacity). Linear scan over a 4 KiB array beats
     /// hash-set overhead at this size, and there is no sorting to
     /// maintain: the ring is append-only with head-rotation.
-    [[nodiscard]] bool observe(const Id& id) noexcept {
+    [[nodiscard]] bool observe(const Id &id) noexcept {
         return observeWithSignal(id) != Result::Duplicate;
     }
 
@@ -162,7 +162,7 @@ public:
     /// Returns true iff the envelope should proceed to the engine.
     /// Returns false iff the (source, id) pair was already observed
     /// within the window and the envelope should be dropped.
-    [[nodiscard]] bool admit(const std::string& source, const Id& id) {
+    [[nodiscard]] bool admit(const std::string &source, const Id &id) {
         return admitWithSignal(source, id) != DedupWindow::Result::Duplicate;
     }
 
@@ -172,7 +172,7 @@ public:
     /// (a) drop on Duplicate, (b) proceed silently on Novel,
     /// (c) proceed AND raise DEDUP_WINDOW_OVERFLOW on
     ///     NovelWithEviction.
-    [[nodiscard]] DedupWindow::Result admitWithSignal(const std::string& source, const Id& id) {
+    [[nodiscard]] DedupWindow::Result admitWithSignal(const std::string &source, const Id &id) {
         std::lock_guard<std::mutex> lock(mutex_);
         // `operator[]` value-initializes the window on first insert,
         // i.e. an all-zero ring with head_ = 0 — any non-zero UUID is

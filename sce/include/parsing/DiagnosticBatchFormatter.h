@@ -23,8 +23,6 @@
 
 namespace SCE::parsing {
 
-void emit_json_diagnostics(
-    const std::vector<std::unique_ptr<Diagnostic>> &diagnostics,
-    std::ostream &os);
+void emit_json_diagnostics(const std::vector<std::unique_ptr<Diagnostic>> &diagnostics, std::ostream &os);
 
 }  // namespace SCE::parsing

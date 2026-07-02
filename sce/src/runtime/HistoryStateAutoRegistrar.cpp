@@ -107,8 +107,8 @@ bool HistoryStateAutoRegistrar::registerSingleHistoryState(const std::string &hi
     bool success = historyManager->registerHistoryState(historyStateId, parentStateId, historyType, defaultStateId);
 
     if (success) {
-        SCE_LOG_DEBUG("Registered {} history state '{}' in parent '{}' with default '{}'", historyTypeStr, historyStateId,
-                  parentStateId, defaultStateId);
+        SCE_LOG_DEBUG("Registered {} history state '{}' in parent '{}' with default '{}'", historyTypeStr,
+                      historyStateId, parentStateId, defaultStateId);
     } else {
         SCE_LOG_ERROR("Failed to register history state '{}'", historyStateId);
     }
@@ -149,7 +149,7 @@ HistoryStateAutoRegistrar::extractHistoryStatesFromModel(const std::shared_ptr<S
                     if (trans->getEvent().empty() && !trans->getTargets().empty()) {
                         info.defaultStateId = trans->getTargets()[0];
                         SCE_LOG_DEBUG("HistoryStateAutoRegistrar: Found default '{}' from transition in history '{}'",
-                                  info.defaultStateId, info.historyStateId);
+                                      info.defaultStateId, info.historyStateId);
                         break;
                     }
                 }
@@ -159,8 +159,8 @@ HistoryStateAutoRegistrar::extractHistoryStatesFromModel(const std::shared_ptr<S
             // This is allowed by the spec - default is optional, error handling is runtime responsibility
             if (info.defaultStateId.empty()) {
                 SCE_LOG_WARN("HistoryStateAutoRegistrar: History state '{}' has no default transition - will generate "
-                         "error.platform if history is empty",
-                         info.historyStateId);
+                             "error.platform if history is empty",
+                             info.historyStateId);
             }
 
             historyStates.push_back(info);

@@ -3,16 +3,16 @@
 
 #pragma once
 
+#include "EcmaScriptToLuaTransformer.h"
 #include "IScriptEngine.h"
 #include "ISessionManager.h"
-#include "EcmaScriptToLuaTransformer.h"
 #include "runtime/ISessionObserver.h"
 #include <atomic>
+#include <climits>
 #include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
-#include <climits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -56,15 +56,14 @@ public:
                                           const ScriptValue &value) override;
     std::future<ScriptResult> getVariable(const std::string &sessionId, const std::string &name) override;
     std::future<ScriptResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
-                                                const std::string &xmlContent) override;
+                                               const std::string &xmlContent) override;
     bool hasVariable(const std::string &sessionId, const std::string &variableName) const override;
     bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
     std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                    const std::vector<std::string> &ioProcessors) override;
+                                                   const std::vector<std::string> &ioProcessors) override;
     std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
-                                               const std::shared_ptr<Event> &event) override;
-    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
-                                               const SetCurrentEventArgs &args) override;
+                                              const std::shared_ptr<Event> &event) override;
+    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const SetCurrentEventArgs &args) override;
     bool registerGlobalFunction(const std::string &functionName,
                                 std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) override;
     bool bindNativeObject(const std::string &sessionId, const std::string &objectName,
@@ -110,12 +109,14 @@ private:
         std::unordered_set<std::string> declaredVars;  // Track all declared variables (Lua nil != undeclared)
         // Bound native method storage for bindNativeObject lifetime management
         std::vector<std::unique_ptr<NativeMethod>> boundMethods;
+
         // Lua bytecode cache: compiled chunks stored in Lua registry (keyed by source string)
         // Successful compilations store the registry ref; failed compilations store the error message.
         struct ChunkCacheEntry {
-            int ref;              // Lua registry ref (>= 0) or CHUNK_COMPILE_FAILED sentinel
-            std::string error;    // Lua error message (only set on compilation failure)
+            int ref;            // Lua registry ref (>= 0) or CHUNK_COMPILE_FAILED sentinel
+            std::string error;  // Lua error message (only set on compilation failure)
         };
+
         static constexpr int CHUNK_COMPILE_FAILED = INT_MIN;
         std::unordered_map<std::string, ChunkCacheEntry> chunkCache;
 
@@ -126,6 +127,7 @@ private:
             int chunkRef;       // Lua registry ref for compiled chunk
             bool returnsValue;  // true: "return expr" form; false: assignment (ScriptUndefined)
         };
+
         std::unordered_map<std::string, ExprExecInfo> exprExecCache;
 
         // Script execution fast path: maps original script directly to compiled

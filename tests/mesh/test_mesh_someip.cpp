@@ -9,8 +9,8 @@
 // manager and network configuration.
 
 #include "brake_sm.h"
-#include "motor_sm.h"
 #include "brake_transport.h"
+#include "motor_sm.h"
 
 #include <cstdio>
 
@@ -22,10 +22,8 @@ static_assert(sizeof(SCE::Generated::brake::TransportRouter<SCE::Generated::brak
 // Verify SOME/IP service constants match deploy_someip.yaml.
 // Service/instance IDs are per-target (binding-level) and stay
 // `SOMEIP_SERVICE_<TARGET>` / `SOMEIP_INSTANCE_<TARGET>`.
-static_assert(SCE::Generated::brake::SOMEIP_SERVICE_MOTOR == 0x1234,
-              "Service ID must match deploy.yaml");
-static_assert(SCE::Generated::brake::SOMEIP_INSTANCE_MOTOR == 0x0001,
-              "Instance ID must match deploy.yaml");
+static_assert(SCE::Generated::brake::SOMEIP_SERVICE_MOTOR == 0x1234, "Service ID must match deploy.yaml");
+static_assert(SCE::Generated::brake::SOMEIP_INSTANCE_MOTOR == 0x0001, "Instance ID must match deploy.yaml");
 
 // Per-event SOME/IP constants (SCE_MESH.md §14): pattern-matched IDs are
 // generated as `SOMEIP_<KIND>_<TARGET>_<EVENT>` so the same target can

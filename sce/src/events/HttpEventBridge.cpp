@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/HttpEventBridge.h"
+#include "common/UniqueIdGenerator.h"
+#include "core/LogMacros.h"
 #include "events/HttpResponseUtils.h"
 #include "runtime/JsonUtils.h"
-#include "core/LogMacros.h"
-#include "common/UniqueIdGenerator.h"
 #include <iomanip>
 
 #include <sstream>
@@ -128,7 +128,7 @@ EventDescriptor HttpEventBridge::httpToScxmlEvent(const HttpRequest &request) {
     event.data = JsonUtils::toCompactString(eventData);
 
     SCE_LOG_DEBUG("HttpEventBridge: HTTP->SCXML: event='{}', sendId='{}', dataSize={}", event.eventName, event.sendId,
-              event.data.length());
+                  event.data.length());
     return event;
 }
 
@@ -210,7 +210,7 @@ HttpRequest HttpEventBridge::scxmlToHttpRequest(const EventDescriptor &event, co
     request.body = JsonUtils::toCompactString(jsonRequest);
 
     SCE_LOG_DEBUG("HttpEventBridge: SCXML->HTTP request: url={}, event={}, body={}", targetUrl, event.eventName,
-              request.body);
+                  request.body);
     return request;
 }
 
@@ -250,8 +250,8 @@ EventDescriptor HttpEventBridge::httpToScxmlResponse(const HttpResponse &respons
 
     event.data = JsonUtils::toCompactString(responseData);
 
-    SCE_LOG_DEBUG("HttpEventBridge: HTTP->SCXML response: event={}, sendId={}, status={}", event.eventName, event.sendId,
-              response.statusCode);
+    SCE_LOG_DEBUG("HttpEventBridge: HTTP->SCXML response: event={}, sendId={}, status={}", event.eventName,
+                  event.sendId, response.statusCode);
     return event;
 }
 

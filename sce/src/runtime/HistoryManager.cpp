@@ -62,14 +62,14 @@ bool HistoryManager::registerHistoryState(const std::string &historyStateId, con
 
     std::string typeStr = (type == HistoryType::SHALLOW) ? "shallow" : "deep";
     SCE_LOG_INFO("HistoryManager: Successfully registered {} history state: {} for parent: {}", typeStr, historyStateId,
-             parentStateId);
+                 parentStateId);
 
     return true;
 }
 
 bool HistoryManager::recordHistory(const std::string &parentStateId, const std::vector<std::string> &activeStateIds) {
     SCE_LOG_INFO("HistoryManager: Recording history for parent {} with {} active states", parentStateId,
-             activeStateIds.size());
+                 activeStateIds.size());
 
     std::lock_guard<std::mutex> lock(historyMutex_);
 
@@ -123,7 +123,7 @@ bool HistoryManager::recordHistory(const std::string &parentStateId, const std::
 
         std::string typeStr = (historyInfo.type == HistoryType::SHALLOW) ? "shallow" : "deep";
         SCE_LOG_INFO("HistoryManager: Recorded {} history with {} states for {}", typeStr, filteredStates.size(),
-                 historyInfo.historyStateId);
+                     historyInfo.historyStateId);
     }
 
     if (!recordedAny) {
@@ -156,13 +156,14 @@ HistoryRestorationResult HistoryManager::restoreHistory(const std::string &histo
     if (historyIt != recordedHistory_.end() && historyIt->second.isValid) {
         // Restore from recorded history
         const auto &entry = historyIt->second;
-        SCE_LOG_INFO("HistoryManager: Restoring {} recorded states for {}", entry.recordedStateIds.size(), historyStateId);
+        SCE_LOG_INFO("HistoryManager: Restoring {} recorded states for {}", entry.recordedStateIds.size(),
+                     historyStateId);
         return HistoryRestorationResult::createSuccess(entry.recordedStateIds, true);  // fromRecording = true
     } else {
         // Use default states
         auto defaultStates = getDefaultStates(historyInfo);
         SCE_LOG_INFO("HistoryManager: No recorded history found, using {} default states for {}", defaultStates.size(),
-                 historyStateId);
+                     historyStateId);
         return HistoryRestorationResult::createSuccess(defaultStates, false);  // fromRecording = false
     }
 }

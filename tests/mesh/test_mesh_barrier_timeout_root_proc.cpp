@@ -43,7 +43,7 @@ constexpr auto POLL_INTERVAL = std::chrono::milliseconds(10);
 
 }  // namespace
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     if (argc < 2) {
         std::fprintf(stderr, "root_proc: usage: %s <timeout|convergence>\n", argv[0]);
         return 64;
@@ -71,10 +71,8 @@ int main(int argc, char* argv[]) {
     sm.processEvent(gen::Event::Finalize_left);
     sm.step();
 
-    const gen::State expected_state =
-        expect_timeout ? gen::State::Timeout_failed : gen::State::All_done;
-    const char* expected_label =
-        expect_timeout ? "timeout_failed" : "all_done";
+    const gen::State expected_state = expect_timeout ? gen::State::Timeout_failed : gen::State::All_done;
+    const char *expected_label = expect_timeout ? "timeout_failed" : "all_done";
 
     for (int i = 0; i < MAX_ITERATIONS; ++i) {
         if (expect_convergence) {
@@ -95,8 +93,7 @@ int main(int argc, char* argv[]) {
         sm.tick();
 
         if (sm.isInFinalState() && sm.getCurrentState() == expected_state) {
-            std::printf("barrier_timeout root (%s): PASS — reached <final id=\"%s\">\n",
-                        mode.c_str(), expected_label);
+            std::printf("barrier_timeout root (%s): PASS — reached <final id=\"%s\">\n", mode.c_str(), expected_label);
             return 0;
         }
         std::this_thread::sleep_for(POLL_INTERVAL);
@@ -105,9 +102,7 @@ int main(int argc, char* argv[]) {
     std::fprintf(stderr,
                  "barrier_timeout root (%s): FAIL — did not reach <final id=\"%s\"> "
                  "within %d * %lld ms. currentState=%d isFinal=%d\n",
-                 mode.c_str(), expected_label, MAX_ITERATIONS,
-                 static_cast<long long>(POLL_INTERVAL.count()),
-                 static_cast<int>(sm.getCurrentState()),
-                 static_cast<int>(sm.isInFinalState()));
+                 mode.c_str(), expected_label, MAX_ITERATIONS, static_cast<long long>(POLL_INTERVAL.count()),
+                 static_cast<int>(sm.getCurrentState()), static_cast<int>(sm.isInFinalState()));
     return expect_timeout ? 11 : 12;
 }

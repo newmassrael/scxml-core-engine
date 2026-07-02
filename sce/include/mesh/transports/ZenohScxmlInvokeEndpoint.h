@@ -116,11 +116,9 @@ inline constexpr std::string_view SCXML_INVOKE_KEY_PREFIX = "sce/scxml_invoke";
 /// time concat would require a `fixed_string` template, which is
 /// unnecessary today (no consumer demands compile-time keys) and
 /// rejected as premature.
-inline std::string keyExprP2C(std::string_view parent_machine,
-                              std::string_view child_machine) {
+inline std::string keyExprP2C(std::string_view parent_machine, std::string_view child_machine) {
     std::string out;
-    out.reserve(SCXML_INVOKE_KEY_PREFIX.size() + 5 +
-                parent_machine.size() + child_machine.size());
+    out.reserve(SCXML_INVOKE_KEY_PREFIX.size() + 5 + parent_machine.size() + child_machine.size());
     out.append(SCXML_INVOKE_KEY_PREFIX);
     out.append("/p2c/");
     out.append(parent_machine);
@@ -138,11 +136,9 @@ inline std::string keyExprP2C(std::string_view parent_machine,
 /// (`/sce_p2c_<parent>_<child>` / `/sce_c2p_<child>_<parent>`) so a
 /// reader switching between transports sees the same direction encoded
 /// the same way.
-inline std::string keyExprC2P(std::string_view child_machine,
-                              std::string_view parent_machine) {
+inline std::string keyExprC2P(std::string_view child_machine, std::string_view parent_machine) {
     std::string out;
-    out.reserve(SCXML_INVOKE_KEY_PREFIX.size() + 5 +
-                child_machine.size() + parent_machine.size());
+    out.reserve(SCXML_INVOKE_KEY_PREFIX.size() + 5 + child_machine.size() + parent_machine.size());
     out.append(SCXML_INVOKE_KEY_PREFIX);
     out.append("/c2p/");
     out.append(child_machine);
@@ -159,7 +155,7 @@ inline std::string keyExprC2P(std::string_view child_machine,
 /// Mirrors `SCE::Mesh::Someip::ScxmlInvokeEndpoint::ReceiveCallback`
 /// and `SCE::Mesh::CustomTcp::ReceiveCallback` (SCE_MESH.md §mesh-14.4
 /// callback-thread dispatch convention).
-using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
+using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope &)>;
 
 /// Decode-error callback signature: invoked on the Zenoh runtime
 /// callback thread once per inbound sample whose CBOR decode failed.
@@ -207,19 +203,15 @@ public:
     /// before-subscribe lifecycle: `start()` calls `declare_publisher`
     /// before `declare_subscriber`, so own_pub_key is the primary
     /// identity established by this endpoint.
-    ScxmlInvokeEndpoint(zenoh::Session& session,
-                        std::string own_pub_key,
-                        std::string peer_sub_key) noexcept
-        : session_(session),
-          own_pub_key_(std::move(own_pub_key)),
-          peer_sub_key_(std::move(peer_sub_key)) {}
+    ScxmlInvokeEndpoint(zenoh::Session &session, std::string own_pub_key, std::string peer_sub_key) noexcept
+        : session_(session), own_pub_key_(std::move(own_pub_key)), peer_sub_key_(std::move(peer_sub_key)) {}
 
     ~ScxmlInvokeEndpoint() = default;
 
-    ScxmlInvokeEndpoint(const ScxmlInvokeEndpoint&) = delete;
-    ScxmlInvokeEndpoint& operator=(const ScxmlInvokeEndpoint&) = delete;
-    ScxmlInvokeEndpoint(ScxmlInvokeEndpoint&&) = delete;
-    ScxmlInvokeEndpoint& operator=(ScxmlInvokeEndpoint&&) = delete;
+    ScxmlInvokeEndpoint(const ScxmlInvokeEndpoint &) = delete;
+    ScxmlInvokeEndpoint &operator=(const ScxmlInvokeEndpoint &) = delete;
+    ScxmlInvokeEndpoint(ScxmlInvokeEndpoint &&) = delete;
+    ScxmlInvokeEndpoint &operator=(ScxmlInvokeEndpoint &&) = delete;
 
     /// Install the receive handler. Invoked on a Zenoh runtime callback
     /// thread per inbound sample on `peer_sub_key_`. Caller MUST install
@@ -249,8 +241,12 @@ public:
     /// surrounds the call with the same `try` block that wraps
     /// `zenoh::Session::open`.
     [[nodiscard]] bool start() {
-        if (!on_receive_) return false;
-        if (started_) return true;
+        if (!on_receive_) {
+            return false;
+        }
+        if (started_) {
+            return true;
+        }
 
         // Declare publisher with reliability options pinned for §mesh-9.6
         // lifecycle. `Z_CONGESTION_CONTROL_BLOCK` keeps publish calls
@@ -264,12 +260,10 @@ public:
         // `::z_internal_congestion_control_default_push()` in zenoh-c
         // — we set explicitly so a future C-ABI default flip cannot
         // silently downgrade §mesh-9.6 reliability.
-        ::zenoh::Session::PublisherOptions pub_opts =
-            ::zenoh::Session::PublisherOptions::create_default();
+        ::zenoh::Session::PublisherOptions pub_opts = ::zenoh::Session::PublisherOptions::create_default();
         pub_opts.congestion_control = Z_CONGESTION_CONTROL_BLOCK;
         pub_opts.priority = Z_PRIORITY_DATA;
-        publisher_.emplace(session_.declare_publisher(
-            ::zenoh::KeyExpr(own_pub_key_), std::move(pub_opts)));
+        publisher_.emplace(session_.declare_publisher(::zenoh::KeyExpr(own_pub_key_), std::move(pub_opts)));
 
         // Declare subscriber with on_sample + on_drop closures. The
         // on_sample closure decodes the CBOR payload and forwards the
@@ -282,8 +276,10 @@ public:
         // installs at template L4308.
         subscriber_.emplace(session_.declare_subscriber(
             ::zenoh::KeyExpr(peer_sub_key_),
-            [this](const ::zenoh::Sample& sample) {
-                if (!on_receive_) return;
+            [this](const ::zenoh::Sample &sample) {
+                if (!on_receive_) {
+                    return;
+                }
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope env;
                 if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
@@ -291,7 +287,9 @@ public:
                     // on_decode_error_ before dropping the sample so
                     // SCXML authors observe the catalog row instead
                     // of a silent drop.
-                    if (on_decode_error_) on_decode_error_();
+                    if (on_decode_error_) {
+                        on_decode_error_();
+                    }
                     return;
                 }
                 on_receive_(env);
@@ -309,16 +307,20 @@ public:
     /// (defence-in-depth — codegen always starts before the first
     /// dispatch site fires) or if the envelope encodes to an empty
     /// buffer (malformed envelope, codec contract violation).
-    [[nodiscard]] bool send(const SCE::Mesh::MeshEnvelope& env) {
-        if (!started_ || !publisher_) return false;
+    [[nodiscard]] bool send(const SCE::Mesh::MeshEnvelope &env) {
+        if (!started_ || !publisher_) {
+            return false;
+        }
         auto buf = SCE::Mesh::encodeEnvelope(env);
-        if (buf.empty()) return false;
+        if (buf.empty()) {
+            return false;
+        }
         publisher_->put(::zenoh::Bytes(std::move(buf)));
         return true;
     }
 
 private:
-    ::zenoh::Session& session_;
+    ::zenoh::Session &session_;
     std::string own_pub_key_;
     std::string peer_sub_key_;
     ReceiveCallback on_receive_;

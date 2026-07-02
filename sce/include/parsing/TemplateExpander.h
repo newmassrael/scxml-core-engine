@@ -74,11 +74,8 @@ struct TemplateExpandResult {
 // path, tried after `baseDir` and before the cwd fallback (mirrors
 // the Rust `extra_dirs` parameter of `template::expand`). Pass an
 // empty vector to resolve exactly as `absolute → base → cwd`.
-TemplateExpandResult expandString(std::string_view content,
-                                  std::string_view selfPath,
-                                  std::string_view baseDir,
-                                  const std::vector<std::string> &includeDirs,
-                                  const PositionMap &upstream);
+TemplateExpandResult expandString(std::string_view content, std::string_view selfPath, std::string_view baseDir,
+                                  const std::vector<std::string> &includeDirs, const PositionMap &upstream);
 
 namespace detail {
 
@@ -140,12 +137,11 @@ struct SubstitutionResult {
 // depth-1 collapse point RFC §6.3 Q3 mandates — every byte of a
 // successful substitution gets the *same* (callerRow, callerCol)
 // regardless of where inside the substituted value it lands.
-SubstitutionResult applySubstitutionWithTracking(
-    std::string_view body, std::size_t bodySourceOffset,
-    const std::filesystem::path &templatePath,
-    const std::unordered_map<std::string, std::string> &params,
-    const std::filesystem::path &callerFile, std::uint32_t callerRow,
-    std::uint32_t callerCol);
+SubstitutionResult applySubstitutionWithTracking(std::string_view body, std::size_t bodySourceOffset,
+                                                 const std::filesystem::path &templatePath,
+                                                 const std::unordered_map<std::string, std::string> &params,
+                                                 const std::filesystem::path &callerFile, std::uint32_t callerRow,
+                                                 std::uint32_t callerCol);
 
 // Parse a `<sce:param>` declaration node. Validates the `name`
 // pattern (XSD `paramNameType` via
@@ -155,8 +151,7 @@ SubstitutionResult applySubstitutionWithTracking(
 // offending template's href baked into the message for every
 // failure path. Mirrors
 // `sce-build/src/template.rs::parse_param_decl`.
-ParamDecl parseParamDecl(pugi::xml_node node,
-                         std::string_view templateHref);
+ParamDecl parseParamDecl(pugi::xml_node node, std::string_view templateHref);
 
 // Collect caller `<sce:use>` bindings. Every attribute other
 // than the reserved `template` and `xmlns` / `xmlns:*` namespace
@@ -165,8 +160,7 @@ ParamDecl parseParamDecl(pugi::xml_node node,
 // `sce-build/src/template.rs::collect_use_bindings` but filters
 // the pugixml-exposed namespace declarations that roxmltree
 // hides at the parser layer.
-std::unordered_map<std::string, std::string> collectUseBindings(
-    pugi::xml_node useNode);
+std::unordered_map<std::string, std::string> collectUseBindings(pugi::xml_node useNode);
 
 // Extract body byte ranges of a post-substitution, post-recursion
 // template document. Every non-`<sce:param>` child of the
@@ -177,8 +171,7 @@ std::unordered_map<std::string, std::string> collectUseBindings(
 // `TemplateMalformed` when `expandedTemplate` is not well-formed
 // or its root is not `<sce:template>`. Mirrors
 // `sce-build/src/template.rs::extract_template_body_ranges`.
-std::vector<ByteRange> extractTemplateBodyRanges(
-    std::string_view expandedTemplate, std::string_view templateHref);
+std::vector<ByteRange> extractTemplateBodyRanges(std::string_view expandedTemplate, std::string_view templateHref);
 
 // Fully render a template file's bytes into its substituted form
 // + PositionMap. Mirrors
@@ -195,13 +188,12 @@ struct SubstituteIntoTemplateResult {
     PositionMap positions;
 };
 
-SubstituteIntoTemplateResult substituteIntoTemplateWithMap(
-    std::string_view templateRaw,
-    const std::filesystem::path &templatePath,
-    std::string_view templateHref,
-    const std::unordered_map<std::string, std::string> &bound,
-    const std::filesystem::path &callerFile, std::uint32_t callerRow,
-    std::uint32_t callerCol);
+SubstituteIntoTemplateResult substituteIntoTemplateWithMap(std::string_view templateRaw,
+                                                           const std::filesystem::path &templatePath,
+                                                           std::string_view templateHref,
+                                                           const std::unordered_map<std::string, std::string> &bound,
+                                                           const std::filesystem::path &callerFile,
+                                                           std::uint32_t callerRow, std::uint32_t callerCol);
 
 // Find the byte offset one-past the closing `>` of the XML element
 // starting at `start` in `source`. `tagName` is the element's full
@@ -217,8 +209,7 @@ SubstituteIntoTemplateResult substituteIntoTemplateWithMap(
 // open-close pairing) returns `source.size()`, letting the call
 // site surface a `TemplateMalformed` instead of this scanner
 // asserting.
-std::size_t findElementEnd(std::string_view source, std::size_t start,
-                           std::string_view tagName);
+std::size_t findElementEnd(std::string_view source, std::size_t start, std::string_view tagName);
 
 // Collect byte ranges of every top-level `<sce:use>` element in
 // `source`. Top-level means "not nested inside another `<sce:use>`"

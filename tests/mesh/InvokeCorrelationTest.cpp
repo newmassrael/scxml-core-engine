@@ -32,13 +32,11 @@ using SCE::Mesh::RpcStatus;
 namespace {
 
 constexpr InvokeCorrelation::Key kUuidA = {
-    0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12,
-    0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
+    0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12, 0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
 };
 
 constexpr InvokeCorrelation::Key kUuidB = {
-    0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x70, 0x01,
-    0x90, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x70, 0x01, 0x90, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 };
 
 /// Recording callback: captures status + payload into test-local state
@@ -203,9 +201,7 @@ TEST(InvokeCorrelation, CancelAllPending_IteratesEntriesWithTargetAndErases) {
 
     std::vector<std::pair<InvokeCorrelation::Key, std::string>> seen;
     table.cancelAllPending(
-        [&](const InvokeCorrelation::Key& uuid, const std::string& target) {
-            seen.emplace_back(uuid, target);
-        });
+        [&](const InvokeCorrelation::Key &uuid, const std::string &target) { seen.emplace_back(uuid, target); });
 
     EXPECT_EQ(table.size(), 0u) << "table empty after cancelAllPending";
     EXPECT_EQ(sinkA.calls, 0) << "deliver callbacks NOT fired (cancel-style)";
@@ -216,9 +212,13 @@ TEST(InvokeCorrelation, CancelAllPending_IteratesEntriesWithTargetAndErases) {
     // assert membership rather than positional equality.
     bool found_a = false;
     bool found_b = false;
-    for (const auto& [uuid, target] : seen) {
-        if (uuid == kUuidA && target == "motor") found_a = true;
-        if (uuid == kUuidB && target == "brake") found_b = true;
+    for (const auto &[uuid, target] : seen) {
+        if (uuid == kUuidA && target == "motor") {
+            found_a = true;
+        }
+        if (uuid == kUuidB && target == "brake") {
+            found_b = true;
+        }
     }
     EXPECT_TRUE(found_a) << "kUuidA → motor surfaced";
     EXPECT_TRUE(found_b) << "kUuidB → brake surfaced";
@@ -231,10 +231,7 @@ TEST(InvokeCorrelation, CancelAllPending_OnEmptyTable_IsNoOp) {
     // not synthesize spurious row-5 events.
     InvokeCorrelation table;
     int callback_count = 0;
-    table.cancelAllPending(
-        [&](const InvokeCorrelation::Key&, const std::string&) {
-            ++callback_count;
-        });
+    table.cancelAllPending([&](const InvokeCorrelation::Key &, const std::string &) { ++callback_count; });
     EXPECT_EQ(callback_count, 0);
     EXPECT_EQ(table.size(), 0u);
 }
@@ -275,11 +272,8 @@ TEST(InvokeCorrelation, CancelAllPendingForTarget_OnlyErasesMatchingTarget) {
     EXPECT_EQ(table.size(), 3u);
 
     std::vector<InvokeCorrelation::Key> seen;
-    const std::size_t erased = table.cancelAllPendingForTarget(
-        "motor",
-        [&](const InvokeCorrelation::Key& uuid) {
-            seen.push_back(uuid);
-        });
+    const std::size_t erased =
+        table.cancelAllPendingForTarget("motor", [&](const InvokeCorrelation::Key &uuid) { seen.push_back(uuid); });
 
     EXPECT_EQ(erased, 2u) << "two motor entries erased";
     EXPECT_EQ(seen.size(), 2u);
@@ -303,9 +297,8 @@ TEST(InvokeCorrelation, CancelAllPendingForTarget_NoMatch_ReturnsZero) {
     ASSERT_TRUE(table.registerInvoke(kUuidA, "motor", sink.callback()));
 
     int callback_count = 0;
-    const std::size_t erased = table.cancelAllPendingForTarget(
-        "unknown_peer",
-        [&](const InvokeCorrelation::Key&) { ++callback_count; });
+    const std::size_t erased =
+        table.cancelAllPendingForTarget("unknown_peer", [&](const InvokeCorrelation::Key &) { ++callback_count; });
 
     EXPECT_EQ(erased, 0u);
     EXPECT_EQ(callback_count, 0);
@@ -342,15 +335,18 @@ TEST(InvokeCorrelation, ConcurrentReplyVsCancel_AtMostOneWinsExactlyOnce) {
         uuid[0] = static_cast<std::uint8_t>(i & 0xff);
         uuid[1] = static_cast<std::uint8_t>((i >> 8) & 0xff);
 
-        ASSERT_TRUE(table.registerInvoke(uuid, "motor",
-                                         [&](RpcStatus, auto) {
-            ++deliver_calls;
-        }));
+        ASSERT_TRUE(table.registerInvoke(uuid, "motor", [&](RpcStatus, auto) { ++deliver_calls; }));
 
-        std::thread t_reply(
-            [&] { if (table.handleReply(uuid, RpcStatus::Ok, {})) ++reply_winners; });
-        std::thread t_cancel(
-            [&] { if (table.handleCancel(uuid)) ++cancel_winners; });
+        std::thread t_reply([&] {
+            if (table.handleReply(uuid, RpcStatus::Ok, {})) {
+                ++reply_winners;
+            }
+        });
+        std::thread t_cancel([&] {
+            if (table.handleCancel(uuid)) {
+                ++cancel_winners;
+            }
+        });
 
         t_reply.join();
         t_cancel.join();

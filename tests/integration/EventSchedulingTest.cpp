@@ -748,7 +748,7 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
                 SCE_LOG_DEBUG("Parent state: {}, processing event: {}", currentState, name);
                 auto result = parentStateMachine->processEvent(name, data);
                 SCE_LOG_DEBUG("processEvent({}) returned success={}, fromState={}, toState={}", name, result.success,
-                          result.fromState, result.toState);
+                              result.fromState, result.toState);
                 return result.success;
             }
             SCE_LOG_WARN("Parent StateMachine not running, cannot process event: {}", name);
@@ -787,7 +787,7 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
     parentStateMachine->stop();
 
     SCE_LOG_DEBUG("High-level session isolation test completed - Child1: {}, Child2: {}, Violations: {}",
-              child1ReceivedOwnEvent.load(), child2ReceivedOwnEvent.load(), sessionIsolationViolated.load());
+                  child1ReceivedOwnEvent.load(), child2ReceivedOwnEvent.load(), sessionIsolationViolated.load());
 }
 
 /**
@@ -1051,26 +1051,44 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
 
     // Retrieve and verify event field values
     std::string parentSessionId = parentStateMachine->getSessionId();
-    auto parentName = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_name").get().getValueAsString();
-    auto parentType = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_type").get().getValueAsString();
-    auto parentSendId = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_sendid").get().getValueAsString();
-    auto parentOrigin = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_origin").get().getValueAsString();
-    auto parentOrigintype =
-        ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_origintype").get().getValueAsString();
-    auto parentInvokeid = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_invokeid").get().getValueAsString();
-    auto parentData = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_data").get().getValueAsString();
+    auto parentName =
+        ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_name").get().getValueAsString();
+    auto parentType =
+        ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_type").get().getValueAsString();
+    auto parentSendId =
+        ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_sendid").get().getValueAsString();
+    auto parentOrigin =
+        ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_origin").get().getValueAsString();
+    auto parentOrigintype = ScriptEngineProvider::getScriptEngine()
+                                .getVariable(parentSessionId, "parent_origintype")
+                                .get()
+                                .getValueAsString();
+    auto parentInvokeid = ScriptEngineProvider::getScriptEngine()
+                              .getVariable(parentSessionId, "parent_invokeid")
+                              .get()
+                              .getValueAsString();
+    auto parentData =
+        ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_data").get().getValueAsString();
 
     std::string childSessionId = SessionRegistry::instance().getInvokeSessionId(parentSessionId, "childInvokeId");
     ASSERT_FALSE(childSessionId.empty()) << "Child session should exist";
 
-    auto childName = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_name").get().getValueAsString();
-    auto childType = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_type").get().getValueAsString();
-    auto childSendId = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_sendid").get().getValueAsString();
-    auto childOrigin = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_origin").get().getValueAsString();
-    auto childOrigintype =
-        ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_origintype").get().getValueAsString();
-    auto childInvokeid = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_invokeid").get().getValueAsString();
-    auto childData = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_data").get().getValueAsString();
+    auto childName =
+        ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_name").get().getValueAsString();
+    auto childType =
+        ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_type").get().getValueAsString();
+    auto childSendId =
+        ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_sendid").get().getValueAsString();
+    auto childOrigin =
+        ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_origin").get().getValueAsString();
+    auto childOrigintype = ScriptEngineProvider::getScriptEngine()
+                               .getVariable(childSessionId, "child_origintype")
+                               .get()
+                               .getValueAsString();
+    auto childInvokeid =
+        ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_invokeid").get().getValueAsString();
+    auto childData =
+        ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_data").get().getValueAsString();
 
     // W3C SCXML 6.4: Verify ALL event fields are preserved during autoforward
     EXPECT_EQ(childName, parentName) << "Autoforwarded event.name must match original";
@@ -1208,8 +1226,10 @@ TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers
     // After cancellation, session may be destroyed but onexit should have executed
     if (!childSessionId.empty()) {
         // Child session still exists - verify onexit flags
-        auto exitedSub01 = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "exitedSub01").get().getValue<bool>();
-        auto exitedSub0 = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "exitedSub0").get().getValue<bool>();
+        auto exitedSub01 =
+            ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "exitedSub01").get().getValue<bool>();
+        auto exitedSub0 =
+            ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "exitedSub0").get().getValue<bool>();
 
         // W3C SCXML 3.13: CRITICAL VERIFICATION
         // Both sub01 AND sub0 onexit handlers must have executed

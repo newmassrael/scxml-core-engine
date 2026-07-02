@@ -62,11 +62,10 @@ int main() {
             return 0;
         }
         if (parent.getCurrentState() == ParentState::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent hit `error.execution` before reaching "
-                         "`cancelled`. Likely the onexit wire-19 emit raised an "
-                         "error path back onto the parent (check performScxmlInvokeCancel "
-                         "callback wiring).\n");
+            std::fprintf(stderr, "FAIL: parent hit `error.execution` before reaching "
+                                 "`cancelled`. Likely the onexit wire-19 emit raised an "
+                                 "error path back onto the parent (check performScxmlInvokeCancel "
+                                 "callback wiring).\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

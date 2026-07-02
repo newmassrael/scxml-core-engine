@@ -63,8 +63,7 @@ using namespace SCE::Test::Mesh;
 
 // Mirrors motor's own listen endpoint (deploy_zenoh_multi.yaml ecu_motor):
 // the raw client peer below dials this address to reach motor's router.
-constexpr const char* kListen =
-    SCE::Generated::motor_zenoh_multi::ZENOH_LISTEN_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::motor_zenoh_multi::ZENOH_LISTEN_ENDPOINTS[0];
 
 int run_test() {
     namespace motor_gen = SCE::Generated::motor_zenoh_multi;
@@ -93,11 +92,15 @@ int run_test() {
     struct EnginePump {
         std::atomic<bool> running{true};
         std::thread t;
+
         ~EnginePump() {
             running.store(false, std::memory_order_release);
-            if (t.joinable()) t.join();
+            if (t.joinable()) {
+                t.join();
+            }
         }
     } pump;
+
     pump.t = std::thread([&motor, &pump] {
         while (pump.running.load(std::memory_order_acquire)) {
             motor.step();
@@ -130,8 +133,7 @@ int run_test() {
     // which is exactly what handleServerResponse needs.
     ReceivedEvents rpc_replies;
     {
-        auto req = make_envelope("service.request.compute_force", PK::RpcRequest,
-                                 R"({"force":100})");
+        auto req = make_envelope("service.request.compute_force", PK::RpcRequest, R"({"force":100})");
         req.invoke_id = SCE::uuid::v7();
         auto req_bytes = SCE::Mesh::encodeEnvelope(req);
 
@@ -139,24 +141,24 @@ int run_test() {
         opts.payload = zenoh::Bytes(std::move(req_bytes));
         client_session.get(
             zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "",
-            [&rpc_replies](const zenoh::Reply& reply_msg) {
-                if (!reply_msg.is_ok()) return;
-                const auto& sample = reply_msg.get_ok();
+            [&rpc_replies](const zenoh::Reply &reply_msg) {
+                if (!reply_msg.is_ok()) {
+                    return;
+                }
+                const auto &sample = reply_msg.get_ok();
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope resp;
                 if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {
-                    rpc_replies.push({resp.type,
-                                      std::string(resp.data.begin(), resp.data.end())});
+                    rpc_replies.push({resp.type, std::string(resp.data.begin(), resp.data.end())});
                 }
             },
             [] {}, std::move(opts));
 
-        MESH_TEST_REQUIRE(rpc_replies.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "service.response.compute_force";
-                }),
-                "engine-driven RPC reply not received — regression in "
-                "transition→raise→injected-send→correlation chain");
+        MESH_TEST_REQUIRE(rpc_replies.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.response.compute_force";
+        }),
+                          "engine-driven RPC reply not received — regression in "
+                          "transition→raise→injected-send→correlation chain");
     }
 
     // ── §2. FieldRead roundtrip: engine-driven ────────────────────────
@@ -168,8 +170,7 @@ int run_test() {
     // the reply through handleServerResponse.
     ReceivedEvents field_replies;
     {
-        auto req = make_envelope("field.get.position", PK::FieldRead,
-                                 R"({"axis":"x"})");
+        auto req = make_envelope("field.get.position", PK::FieldRead, R"({"axis":"x"})");
         req.invoke_id = SCE::uuid::v7();
         auto req_bytes = SCE::Mesh::encodeEnvelope(req);
 
@@ -177,24 +178,23 @@ int run_test() {
         opts.payload = zenoh::Bytes(std::move(req_bytes));
         client_session.get(
             zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY), "",
-            [&field_replies](const zenoh::Reply& reply_msg) {
-                if (!reply_msg.is_ok()) return;
-                const auto& sample = reply_msg.get_ok();
+            [&field_replies](const zenoh::Reply &reply_msg) {
+                if (!reply_msg.is_ok()) {
+                    return;
+                }
+                const auto &sample = reply_msg.get_ok();
                 auto bytes = sample.get_payload().as_vector();
                 SCE::Mesh::MeshEnvelope resp;
                 if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), resp)) {
-                    field_replies.push({resp.type,
-                                        std::string(resp.data.begin(), resp.data.end())});
+                    field_replies.push({resp.type, std::string(resp.data.begin(), resp.data.end())});
                 }
             },
             [] {}, std::move(opts));
 
-        MESH_TEST_REQUIRE(field_replies.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "field.notify.position";
-                }),
-                "engine-driven FieldRead reply not received — regression in "
-                "transition<raise>→FieldNotify correlation chain");
+        MESH_TEST_REQUIRE(field_replies.wait_for(
+                              [](const auto &v) { return !v.empty() && v.back().type == "field.notify.position"; }),
+                          "engine-driven FieldRead reply not received — regression in "
+                          "transition<raise>→FieldNotify correlation chain");
     }
 
     // Teardown order matters: stop the engine pump BEFORE shutting down
@@ -218,7 +218,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

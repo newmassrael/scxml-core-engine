@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-#include "mesh/MeshEnvelope.h"
 #include "mesh/MeshEnvelopeCodec.h"
+#include "mesh/MeshEnvelope.h"
 
 #include <gtest/gtest.h>
 
@@ -19,18 +19,15 @@ using SCE::Mesh::RpcStatus;
 namespace {
 
 constexpr std::array<uint8_t, 16> kSampleId = {
-    0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12,
-    0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
+    0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12, 0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
 };
 
 constexpr std::array<uint8_t, 16> kSampleCorrelation = {
-    0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x70, 0x01,
-    0x90, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x70, 0x01, 0x90, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 };
 
 constexpr std::array<uint8_t, 16> kSampleRoutingId = {
-    0x01, 0x92, 0x3c, 0x4a, 0x5b, 0x6c, 0x70, 0x33,
-    0x80, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+    0x01, 0x92, 0x3c, 0x4a, 0x5b, 0x6c, 0x70, 0x33, 0x80, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
 };
 
 MeshEnvelope minimalEnvelope() {
@@ -160,20 +157,24 @@ TEST(MeshEnvelopeCodecTest, UnknownIntegerKeySkipped) {
     // Wire bytes built explicitly so the test would catch a regression in
     // tinycbor's advance-past-unknown behavior.
     std::vector<uint8_t> wire;
-    wire.push_back(0xA7);                          // map(7)
+    wire.push_back(0xA7);  // map(7)
 
     // 0: id (bytes16)
-    wire.push_back(0x00);                          // key 0
-    wire.push_back(0x50);                          // bytes(16)
-    for (auto b : kSampleId) wire.push_back(b);
+    wire.push_back(0x00);  // key 0
+    wire.push_back(0x50);  // bytes(16)
+    for (auto b : kSampleId) {
+        wire.push_back(b);
+    }
 
     // 1: source = "a"
     wire.push_back(0x01);
-    wire.push_back(0x61); wire.push_back('a');
+    wire.push_back(0x61);
+    wire.push_back('a');
 
     // 2: type = "b"
     wire.push_back(0x02);
-    wire.push_back(0x61); wire.push_back('b');
+    wire.push_back(0x61);
+    wire.push_back('b');
 
     // 3: pattern = 1 (FireForget)
     wire.push_back(0x03);
@@ -185,12 +186,17 @@ TEST(MeshEnvelopeCodecTest, UnknownIntegerKeySkipped) {
 
     // 5: data = empty bytes
     wire.push_back(0x05);
-    wire.push_back(0x40);                          // bytes(0)
+    wire.push_back(0x40);  // bytes(0)
 
     // 99: unknown key with text string "future" (6 bytes)
-    wire.push_back(0x18); wire.push_back(99);      // uint(99) — single byte form
-    wire.push_back(0x66); wire.push_back('f'); wire.push_back('u');
-    wire.push_back('t');  wire.push_back('u'); wire.push_back('r');
+    wire.push_back(0x18);
+    wire.push_back(99);  // uint(99) — single byte form
+    wire.push_back(0x66);
+    wire.push_back('f');
+    wire.push_back('u');
+    wire.push_back('t');
+    wire.push_back('u');
+    wire.push_back('r');
     wire.push_back('e');
 
     MeshEnvelope decoded;
@@ -210,12 +216,20 @@ TEST(MeshEnvelopeCodecTest, MissingRequiredKeyFails) {
 
     wire.push_back(0x00);
     wire.push_back(0x50);
-    for (auto b : kSampleId) wire.push_back(b);
+    for (auto b : kSampleId) {
+        wire.push_back(b);
+    }
 
-    wire.push_back(0x01); wire.push_back(0x61); wire.push_back('a');
-    wire.push_back(0x02); wire.push_back(0x61); wire.push_back('b');
-    wire.push_back(0x03); wire.push_back(0x01);
-    wire.push_back(0x04); wire.push_back(0x00);
+    wire.push_back(0x01);
+    wire.push_back(0x61);
+    wire.push_back('a');
+    wire.push_back(0x02);
+    wire.push_back(0x61);
+    wire.push_back('b');
+    wire.push_back(0x03);
+    wire.push_back(0x01);
+    wire.push_back(0x04);
+    wire.push_back(0x00);
 
     MeshEnvelope decoded;
     EXPECT_FALSE(SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), decoded));
@@ -248,18 +262,29 @@ TEST(MeshEnvelopeCodecTest, InvalidPatternKindRejected) {
     std::vector<uint8_t> wire;
     wire.push_back(0xA6);
     // key 0: id
-    wire.push_back(0x00); wire.push_back(0x50);
-    for (auto b : kSampleId) wire.push_back(b);
+    wire.push_back(0x00);
+    wire.push_back(0x50);
+    for (auto b : kSampleId) {
+        wire.push_back(b);
+    }
     // key 1: source
-    wire.push_back(0x01); wire.push_back(0x61); wire.push_back('x');
+    wire.push_back(0x01);
+    wire.push_back(0x61);
+    wire.push_back('x');
     // key 2: type
-    wire.push_back(0x02); wire.push_back(0x61); wire.push_back('y');
+    wire.push_back(0x02);
+    wire.push_back(0x61);
+    wire.push_back('y');
     // key 3: pattern = 99 (INVALID)
-    wire.push_back(0x03); wire.push_back(0x18); wire.push_back(99);
+    wire.push_back(0x03);
+    wire.push_back(0x18);
+    wire.push_back(99);
     // key 4: datacontenttype = 0
-    wire.push_back(0x04); wire.push_back(0x00);
+    wire.push_back(0x04);
+    wire.push_back(0x00);
     // key 5: data = empty
-    wire.push_back(0x05); wire.push_back(0x40);
+    wire.push_back(0x05);
+    wire.push_back(0x40);
 
     MeshEnvelope decoded;
     EXPECT_FALSE(SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), decoded));
@@ -268,14 +293,25 @@ TEST(MeshEnvelopeCodecTest, InvalidPatternKindRejected) {
 TEST(MeshEnvelopeCodecTest, InvalidPayloadCodecRejected) {
     std::vector<uint8_t> wire;
     wire.push_back(0xA6);
-    wire.push_back(0x00); wire.push_back(0x50);
-    for (auto b : kSampleId) wire.push_back(b);
-    wire.push_back(0x01); wire.push_back(0x61); wire.push_back('x');
-    wire.push_back(0x02); wire.push_back(0x61); wire.push_back('y');
-    wire.push_back(0x03); wire.push_back(0x01);  // FireForget
+    wire.push_back(0x00);
+    wire.push_back(0x50);
+    for (auto b : kSampleId) {
+        wire.push_back(b);
+    }
+    wire.push_back(0x01);
+    wire.push_back(0x61);
+    wire.push_back('x');
+    wire.push_back(0x02);
+    wire.push_back(0x61);
+    wire.push_back('y');
+    wire.push_back(0x03);
+    wire.push_back(0x01);  // FireForget
     // key 4: datacontenttype = 55 (INVALID)
-    wire.push_back(0x04); wire.push_back(0x18); wire.push_back(55);
-    wire.push_back(0x05); wire.push_back(0x40);
+    wire.push_back(0x04);
+    wire.push_back(0x18);
+    wire.push_back(55);
+    wire.push_back(0x05);
+    wire.push_back(0x40);
 
     MeshEnvelope decoded;
     EXPECT_FALSE(SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), decoded));
@@ -291,7 +327,8 @@ TEST(MeshEnvelopeCodecTest, InvalidRpcStatusRejected) {
     // Copy body from minimal (skip the 0xA6 header byte).
     wire.insert(wire.end(), bytes.begin() + 1, bytes.end());
     // key 10: rpc_status = 2 (INVALID — no such code)
-    wire.push_back(0x0A); wire.push_back(0x02);
+    wire.push_back(0x0A);
+    wire.push_back(0x02);
 
     MeshEnvelope decoded;
     EXPECT_FALSE(SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), decoded));
@@ -423,15 +460,14 @@ TEST(MeshEnvelopeCodecTest, GoldenBytesForFixedEnvelope) {
     env.data = {0xAA, 0xBB};
 
     const std::vector<uint8_t> expected = {
-        0xA6,                                            // map(6)
-        0x00, 0x50,                                      // key 0, bstr(16)
-        0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12,
-        0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,  // kSampleId
-        0x01, 0x63, 'e', 'c', 'u',                       // key 1, tstr(3) "ecu"
-        0x02, 0x63, 'e', 'v', 't',                       // key 2, tstr(3) "evt"
-        0x03, 0x01,                                      // key 3, uint(1) FireForget
-        0x04, 0x01,                                      // key 4, uint(1) Json
-        0x05, 0x42, 0xAA, 0xBB,                          // key 5, bstr(2) {AA,BB}
+        0xA6,        // map(6)
+        0x00, 0x50,  // key 0, bstr(16)
+        0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12, 0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,  // kSampleId
+        0x01, 0x63, 'e',  'c',  'u',  // key 1, tstr(3) "ecu"
+        0x02, 0x63, 'e',  'v',  't',  // key 2, tstr(3) "evt"
+        0x03, 0x01,                   // key 3, uint(1) FireForget
+        0x04, 0x01,                   // key 4, uint(1) Json
+        0x05, 0x42, 0xAA, 0xBB,       // key 5, bstr(2) {AA,BB}
     };
 
     auto bytes = SCE::Mesh::encodeEnvelope(env);
@@ -479,10 +515,9 @@ TEST(MeshEnvelopeCodecTest, InvokeErrorReplyFromWorkerShapeEncodes) {
     env.subject = "waiting.140000000000000.remote_inv";
     env.correlation_id = kSampleCorrelation;
     env.rpc_status = RpcStatus::Unimplemented;
-    env.rpc_error_message = std::string(
-        "scxml invoke from 'parent_session_f_wired' to 'worker_session_f_wired': "
-        "SESSION_F_NOT_IMPLEMENTED per SCE_MESH.md §9.6/§10.7.1 — remote "
-        "<invoke type=\"scxml\"> runtime (wire patterns 14-20) is not yet implemented");
+    env.rpc_error_message = std::string("scxml invoke from 'parent_session_f_wired' to 'worker_session_f_wired': "
+                                        "SESSION_F_NOT_IMPLEMENTED per SCE_MESH.md §9.6/§10.7.1 — remote "
+                                        "<invoke type=\"scxml\"> runtime (wire patterns 14-20) is not yet implemented");
     env.routing_id = kSampleRoutingId;
 
     auto bytes = SCE::Mesh::encodeEnvelope(env);
@@ -492,8 +527,7 @@ TEST(MeshEnvelopeCodecTest, InvokeErrorReplyFromWorkerShapeEncodes) {
     ASSERT_TRUE(SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), decoded));
     EXPECT_EQ(decoded.pattern, PatternKind::InvokeError);
     EXPECT_EQ(*decoded.rpc_status, RpcStatus::Unimplemented);
-    EXPECT_EQ(decoded.rpc_error_message->substr(0, 36),
-              "scxml invoke from 'parent_session_f_");
+    EXPECT_EQ(decoded.rpc_error_message->substr(0, 36), "scxml invoke from 'parent_session_f_");
 }
 
 TEST(MeshEnvelopeCodecTest, InvokeErrorRoundTrip) {

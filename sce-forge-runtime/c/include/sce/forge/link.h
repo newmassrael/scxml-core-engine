@@ -56,14 +56,14 @@ typedef enum {
  * file header. */
 typedef struct {
     const uint8_t *data;
-    size_t         len;
+    size_t len;
 } sce_forge_link_rx_frame_t;
 
 /* Borrowed-slice frame queued through `ops->tx`. Same lifetime
  * contract as RX: the slice must outlive the call. */
 typedef struct {
     const uint8_t *data;
-    size_t         len;
+    size_t len;
 } sce_forge_link_tx_frame_t;
 
 /* Pull the next decoded frame, if any is available without blocking.
@@ -98,8 +98,8 @@ typedef void (*sce_forge_link_poll_fn)(void *self, uint32_t deadline_us);
  * zenoh MCU consumer, this lives in `.rodata` (flash/ROM on MCU)
  * so per-instance RAM cost is just `sizeof(void *) + sizeof(void *)`. */
 typedef struct {
-    sce_forge_link_rx_fn   rx;
-    sce_forge_link_tx_fn   tx;
+    sce_forge_link_rx_fn rx;
+    sce_forge_link_tx_fn tx;
     sce_forge_link_poll_fn poll;
 } sce_forge_link_ops_t;
 
@@ -109,11 +109,11 @@ typedef struct {
  * one of these by value. */
 typedef struct {
     const sce_forge_link_ops_t *ops;
-    void                       *self;
+    void *self;
 } sce_forge_link_t;
 
 #ifdef __cplusplus
-}  /* extern "C" */
+} /* extern "C" */
 #endif
 
 #endif /* SCE_FORGE_LINK_H */

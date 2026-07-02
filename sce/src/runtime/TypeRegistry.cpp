@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/TypeRegistry.h"
-#include "core/LogMacros.h"
 #include "common/SCXMLConstants.h"
+#include "core/LogMacros.h"
 #include <algorithm>
 #include <cctype>
 #include <mutex>
@@ -35,8 +35,8 @@ bool TypeRegistry::registerType(Category category, const std::string &uri, const
     auto &categoryMap = typeMap_[category];
     auto existing = categoryMap.find(normalizedUri);
     if (existing != categoryMap.end() && existing->second != canonicalName) {
-        SCE_LOG_WARN("TypeRegistry: URI '{}' already registered with canonical name '{}', not '{}'", uri, existing->second,
-                 canonicalName);
+        SCE_LOG_WARN("TypeRegistry: URI '{}' already registered with canonical name '{}', not '{}'", uri,
+                     existing->second, canonicalName);
         return false;
     }
 
@@ -47,7 +47,7 @@ bool TypeRegistry::registerType(Category category, const std::string &uri, const
     reverseMap_[category][canonicalName].insert(normalizedUri);
 
     SCE_LOG_DEBUG("TypeRegistry: Registered type URI '{}' -> '{}' in category '{}'", uri, canonicalName,
-              categoryToString(category));
+                  categoryToString(category));
 
     return true;
 }
@@ -322,10 +322,10 @@ void TypeRegistry::initializeDefaultTypes() {
     registerType(Category::CONTENT_TYPE, "application/x-www-form-urlencoded", "form");
     registerType(Category::CONTENT_TYPE, "multipart/form-data", "multipart-form");
 
-    SCE_LOG_INFO("TypeRegistry: Initialized {} event processors, {} invoke processors, {} data models, {} content types",
-             getRegisteredTypes(Category::EVENT_PROCESSOR).size(),
-             getRegisteredTypes(Category::INVOKE_PROCESSOR).size(), getRegisteredTypes(Category::DATA_MODEL).size(),
-             getRegisteredTypes(Category::CONTENT_TYPE).size());
+    SCE_LOG_INFO(
+        "TypeRegistry: Initialized {} event processors, {} invoke processors, {} data models, {} content types",
+        getRegisteredTypes(Category::EVENT_PROCESSOR).size(), getRegisteredTypes(Category::INVOKE_PROCESSOR).size(),
+        getRegisteredTypes(Category::DATA_MODEL).size(), getRegisteredTypes(Category::CONTENT_TYPE).size());
 }
 
 std::string TypeRegistry::categoryToString(Category category) {

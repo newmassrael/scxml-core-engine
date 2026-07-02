@@ -65,6 +65,7 @@ struct ControlSlot {
     uint32_t length;
     uint32_t advance;
 };
+
 static_assert(sizeof(ControlSlot) == 12, "ControlSlot must be 12 bytes");
 
 /// Default arena size in bytes. Configurable via deploy.yaml
@@ -83,8 +84,7 @@ inline constexpr std::size_t SHM_DEFAULT_RING_CAPACITY = 256;
 ///
 /// @tparam ArenaSize    payload arena size in bytes (any value)
 /// @tparam RingCapacity control ring slot count (power of 2)
-template <std::size_t ArenaSize = SHM_DEFAULT_ARENA_BYTES,
-          std::size_t RingCapacity = SHM_DEFAULT_RING_CAPACITY>
+template <std::size_t ArenaSize = SHM_DEFAULT_ARENA_BYTES, std::size_t RingCapacity = SHM_DEFAULT_RING_CAPACITY>
 class ShmChannel {
     using ControlBridge = EventQueueBridge<ControlSlot, RingCapacity>;
 
@@ -103,7 +103,7 @@ class ShmChannel {
     static constexpr std::uint64_t READY_MAGIC = 0x5343455F4D534833ULL;
 
     ShmSegment segment_;
-    Layout* layout_ = nullptr;
+    Layout *layout_ = nullptr;
 
 #ifndef NDEBUG
     /// SPSC enforcement: the first send() call captures the producer
@@ -119,12 +119,13 @@ public:
     ///
     /// @param name POSIX shm name (e.g., "/sce_brake_motor")
     /// @param mode Create (sender) or Open (receiver)
-    ShmChannel(const char* name, Mode mode)
-        : segment_(mode == Mode::Create
-                       ? ShmSegment::create(name, sizeof(Layout))
-                       : ShmSegment::open(name, sizeof(Layout))) {
-        if (!segment_.valid()) return;
-        auto* layout = reinterpret_cast<Layout*>(segment_.data());
+    ShmChannel(const char *name, Mode mode)
+        : segment_(mode == Mode::Create ? ShmSegment::create(name, sizeof(Layout))
+                                        : ShmSegment::open(name, sizeof(Layout))) {
+        if (!segment_.valid()) {
+            return;
+        }
+        auto *layout = reinterpret_cast<Layout *>(segment_.data());
 
         if (mode == Mode::Create) {
             ::new (layout) Layout{};
@@ -144,12 +145,11 @@ public:
         // page when the last mapping is gone.
     }
 
-    ShmChannel(ShmChannel&& o) noexcept
-        : segment_(std::move(o.segment_)), layout_(o.layout_) {
+    ShmChannel(ShmChannel &&o) noexcept : segment_(std::move(o.segment_)), layout_(o.layout_) {
         o.layout_ = nullptr;
     }
 
-    ShmChannel& operator=(ShmChannel&& o) noexcept {
+    ShmChannel &operator=(ShmChannel &&o) noexcept {
         if (this != &o) {
             segment_ = std::move(o.segment_);
             layout_ = o.layout_;
@@ -158,8 +158,8 @@ public:
         return *this;
     }
 
-    ShmChannel(const ShmChannel&) = delete;
-    ShmChannel& operator=(const ShmChannel&) = delete;
+    ShmChannel(const ShmChannel &) = delete;
+    ShmChannel &operator=(const ShmChannel &) = delete;
 
     /// Send a MeshEnvelope through the shared memory channel.
     ///
@@ -175,14 +175,18 @@ public:
     ///   - control ring full
     ///
     /// Single-producer: one thread may call send() per channel instance.
-    [[nodiscard]] bool send(const MeshEnvelope& env) {
+    [[nodiscard]] bool send(const MeshEnvelope &env) {
         auto buf = encodeEnvelope(env);
-        if (buf.empty()) return false;
+        if (buf.empty()) {
+            return false;
+        }
         return sendRaw(buf.data(), buf.size());
     }
 
     /// Check if the channel is valid (shm mapped, sender ready).
-    [[nodiscard]] bool valid() const noexcept { return layout_ != nullptr; }
+    [[nodiscard]] bool valid() const noexcept {
+        return layout_ != nullptr;
+    }
 
     /// Check if the control ring is empty (receiver side).
     [[nodiscard]] bool empty() const noexcept {
@@ -204,19 +208,15 @@ public:
     /// @tparam Policy Receiver's StatePolicy (generated struct)
     /// @tparam Engine StaticExecutionEngine<Policy>
     /// @return Number of control entries drained
-    template <typename Policy, typename Engine>
-    std::size_t drain(Engine& engine) {
+    template <typename Policy, typename Engine> std::size_t drain(Engine &engine) {
         // Partition-internal wire-21 paths drive their own §mesh-16.7 row 4
         // emit through codegen `decodeEnvelope` instrumentation, so the
         // decode-error callback is a no-op here — passing a non-empty
         // handler at this layer would double-raise. The §mesh-9.6
         // invoke-lifecycle path uses `drainWith` directly with a
         // non-no-op handler to opt into the catalog row.
-        return drainWith(
-            [&engine](const MeshEnvelope& env) {
-                dispatchEnvelope<Policy>(env, engine);
-            },
-            []() noexcept {});
+        return drainWith([&engine](const MeshEnvelope &env) { dispatchEnvelope<Policy>(env, engine); },
+                         []() noexcept {});
     }
 
     /// SCE_MESH.md §mesh-9.6.2 wire-14/20 variant of `drain`: same CBOR decode
@@ -244,16 +244,17 @@ public:
     ///
     /// @return Number of control entries drained
     template <typename Handler, typename OnDecodeError>
-    std::size_t drainWith(Handler&& handler, OnDecodeError&& on_decode_error) {
-        if (!layout_) return 0;
+    std::size_t drainWith(Handler &&handler, OnDecodeError &&on_decode_error) {
+        if (!layout_) {
+            return 0;
+        }
 
         std::size_t count = 0;
         ControlSlot slot;
         while (layout_->control.try_pop(slot)) {
             MeshEnvelope env;
-            if (!decodeEnvelope(
-                    reinterpret_cast<const std::uint8_t*>(layout_->arena + slot.offset),
-                    slot.length, env)) {
+            if (!decodeEnvelope(reinterpret_cast<const std::uint8_t *>(layout_->arena + slot.offset), slot.length,
+                                env)) {
                 // Malformed CBOR — surface via on_decode_error then
                 // skip while reclaiming arena space. §mesh-16.7 row 4 raise
                 // happens in the caller-supplied callback so the
@@ -278,19 +279,21 @@ public:
 private:
     /// Write pre-encoded bytes into the arena. Implementation detail of
     /// send(const MeshEnvelope&) — not part of the public API.
-    [[nodiscard]] bool sendRaw(const uint8_t* raw, std::size_t len) noexcept {
-        if (!layout_ || len == 0) return false;
-        if (len > ArenaSize) return false;
+    [[nodiscard]] bool sendRaw(const uint8_t *raw, std::size_t len) noexcept {
+        if (!layout_ || len == 0) {
+            return false;
+        }
+        if (len > ArenaSize) {
+            return false;
+        }
 
 #ifndef NDEBUG
         std::thread::id empty{};
         std::thread::id self = std::this_thread::get_id();
-        if (!producer_tid_.compare_exchange_strong(
-                empty, self, std::memory_order_relaxed)) {
-            assert(empty == self &&
-                   "ShmChannel::send() called from multiple threads. "
-                   "SCE Mesh shm transport is SPSC (one producer per channel). "
-                   "See SCE_MESH.md Section 7.5.");
+        if (!producer_tid_.compare_exchange_strong(empty, self, std::memory_order_relaxed)) {
+            assert(empty == self && "ShmChannel::send() called from multiple threads. "
+                                    "SCE Mesh shm transport is SPSC (one producer per channel). "
+                                    "See SCE_MESH.md Section 7.5.");
         }
 #endif
 
@@ -306,12 +309,13 @@ private:
         }
         std::uint32_t advance = skip + static_cast<std::uint32_t>(len);
 
-        if ((h + advance) - t > ArenaSize) return false;
+        if ((h + advance) - t > ArenaSize) {
+            return false;
+        }
 
         std::memcpy(layout_->arena + phys, raw, len);
 
-        if (!layout_->control.try_push(
-                {phys, static_cast<std::uint32_t>(len), advance})) {
+        if (!layout_->control.try_push({phys, static_cast<std::uint32_t>(len), advance})) {
             return false;
         }
 

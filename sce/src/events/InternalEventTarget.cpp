@@ -3,11 +3,11 @@
 
 #include "events/InternalEventTarget.h"
 #include "common/EventDataHelper.h"
-#include "runtime/JsonUtils.h"
-#include "core/LogMacros.h"
 #include "common/SCXMLConstants.h"
+#include "core/LogMacros.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
+#include "runtime/JsonUtils.h"
 #include <future>
 #include <sstream>
 
@@ -21,7 +21,7 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
     SCE_LOG_DEBUG("InternalEventTarget::send() - ENTRY: event='{}', target='{}'", event.eventName, event.target);
 
     SCE_LOG_DEBUG("InternalEventTarget: Processing event - sessionId='{}', event='{}', isExternal={}", event.sessionId,
-              event.eventName, isExternal_);
+                  event.eventName, isExternal_);
 
     std::promise<SendResult> promise;
     auto future = promise.get_future();
@@ -70,22 +70,22 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
             }
 
             SCE_LOG_DEBUG("InternalEventTarget::send() - Calling raiseEventWithPriority('{}', '{}', {}, "
-                      "originSessionId='{}', sendid='{}', origintype='{}', logicalTime={}ms, timestampNs={})",
-                      eventName, eventData, (isExternal_ ? "EXTERNAL" : "INTERNAL"), sessionId_, event.sendId,
-                      originType, event.logicalExecuteTime.count(), timestampNs);
+                          "originSessionId='{}', sendid='{}', origintype='{}', logicalTime={}ms, timestampNs={})",
+                          eventName, eventData, (isExternal_ ? "EXTERNAL" : "INTERNAL"), sessionId_, event.sendId,
+                          originType, event.logicalExecuteTime.count(), timestampNs);
             // Build typed event data from typedParams if available (engine-agnostic pipeline)
             std::optional<ScriptValue> typedData;
             if (!event.typedParams.empty()) {
                 typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
             }
-            queueSuccess = eventRaiserImpl->raiseEventWithPriority(eventName, eventData, priority, sessionId_,
-                                                                   event.sendId, "", originType, timestampNs,
-                                                                   std::move(typedData));
+            queueSuccess =
+                eventRaiserImpl->raiseEventWithPriority(eventName, eventData, priority, sessionId_, event.sendId, "",
+                                                        originType, timestampNs, std::move(typedData));
         } else {
             // Fallback: Use new 5-parameter raiseEvent with origintype
             SCE_LOG_DEBUG("InternalEventTarget::send() - Calling eventRaiser_->raiseEvent('{}', '{}', sendid='{}', "
-                      "origintype='{}')",
-                      eventName, eventData, event.sendId, originType);
+                          "origintype='{}')",
+                          eventName, eventData, event.sendId, originType);
             queueSuccess = eventRaiser_->raiseEvent(eventName, eventData, event.sendId, false);
         }
 
@@ -97,11 +97,13 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
                                                                   std::chrono::steady_clock::now().time_since_epoch())
                                                                   .count());
 
-            SCE_LOG_DEBUG("InternalEventTarget: Successfully sent internal event '{}' with sendId '{}'", eventName, sendId);
+            SCE_LOG_DEBUG("InternalEventTarget: Successfully sent internal event '{}' with sendId '{}'", eventName,
+                          sendId);
             promise.set_value(SendResult::success(sendId));
         } else {
             // Only fails if EventRaiser is not ready (shutdown, etc.)
-            SCE_LOG_ERROR("InternalEventTarget: Failed to queue internal event '{}' - EventRaiser not ready", eventName);
+            SCE_LOG_ERROR("InternalEventTarget: Failed to queue internal event '{}' - EventRaiser not ready",
+                          eventName);
             promise.set_value(
                 SendResult::error("EventRaiser not ready for internal event", SendResult::ErrorType::INTERNAL_ERROR));
         }

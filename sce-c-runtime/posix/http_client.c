@@ -29,7 +29,6 @@
 
 #include <sce/http_client.h>
 
-#include <strings.h>
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netdb.h>
@@ -37,6 +36,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -199,9 +199,7 @@ static bool sce_http_send_all(int fd, const char *buf, size_t len) {
    bytes (which start the body) are copied into `*body_prefix`/
    `*body_prefix_len` so the body reader can pick up where the
    header reader stopped. */
-static ssize_t sce_http_read_headers(int fd,
-                                     char *header_buf, size_t header_cap,
-                                     char **body_prefix,
+static ssize_t sce_http_read_headers(int fd, char *header_buf, size_t header_cap, char **body_prefix,
                                      size_t *body_prefix_len) {
     size_t total = 0;
     while (total + 1 < header_cap) {
@@ -233,16 +231,13 @@ static ssize_t sce_http_read_headers(int fd,
 /* Case-insensitive substring search restricted to one header line.
    Returns a pointer into `header_block` past the colon-and-space
    separator, or NULL when not found. Mutates nothing. */
-static const char *sce_http_find_header(const char *header_block,
-                                        size_t block_len,
-                                        const char *name) {
+static const char *sce_http_find_header(const char *header_block, size_t block_len, const char *name) {
     size_t name_len = strlen(name);
     const char *cursor = header_block;
     const char *end = header_block + block_len;
 
     while (cursor + name_len + 1u < end) {
-        if (strncasecmp(cursor, name, name_len) == 0 &&
-            cursor[name_len] == ':') {
+        if (strncasecmp(cursor, name, name_len) == 0 && cursor[name_len] == ':') {
             const char *value = cursor + name_len + 1u;
             while (value < end && (*value == ' ' || *value == '\t')) {
                 value++;
@@ -281,13 +276,9 @@ static int sce_http_parse_status(const char *header_block) {
    Length when present; otherwise drains until EOF. `prefix` carries
    bytes already read by the header reader and prepended to the
    buffer before any further recv(). */
-static bool sce_http_read_body(int fd,
-                               const char *prefix, size_t prefix_len,
-                               long content_length,  /* -1 when unknown */
+static bool sce_http_read_body(int fd, const char *prefix, size_t prefix_len, long content_length, /* -1 when unknown */
                                char **out_body, size_t *out_len) {
-    size_t cap = (content_length > 0)
-                 ? (size_t)content_length + 1u
-                 : SCE_HTTP_BODY_INITIAL_CAP;
+    size_t cap = (content_length > 0) ? (size_t)content_length + 1u : SCE_HTTP_BODY_INITIAL_CAP;
     char *buf = malloc(cap);
     if (buf == NULL) {
         return false;
@@ -353,10 +344,8 @@ static bool sce_http_dechunk_inplace(char *buf, size_t *len) {
            tolerate by stopping at the first non-hex char and skipping
            to the CRLF. */
         char *size_end = read;
-        while (size_end < end &&
-               ((*size_end >= '0' && *size_end <= '9') ||
-                (*size_end >= 'a' && *size_end <= 'f') ||
-                (*size_end >= 'A' && *size_end <= 'F'))) {
+        while (size_end < end && ((*size_end >= '0' && *size_end <= '9') || (*size_end >= 'a' && *size_end <= 'f') ||
+                                  (*size_end >= 'A' && *size_end <= 'F'))) {
             size_end++;
         }
         if (size_end == read) {
@@ -401,17 +390,13 @@ static bool sce_http_dechunk_inplace(char *buf, size_t *len) {
 
 /* ── Public API: synchronous POST ───────────────────────────────── */
 
-bool sce_test_http_post(const sce_test_http_url_t *url,
-                        const char *content_type,
-                        const char *body, size_t body_len,
-                        int timeout_ms,
-                        sce_test_http_response_t *out) {
+bool sce_test_http_post(const sce_test_http_url_t *url, const char *content_type, const char *body, size_t body_len,
+                        int timeout_ms, sce_test_http_response_t *out) {
     if (out == NULL) {
         return false;
     }
     memset(out, 0, sizeof(*out));
-    if (url == NULL || content_type == NULL ||
-        (body == NULL && body_len > 0)) {
+    if (url == NULL || content_type == NULL || (body == NULL && body_len > 0)) {
         return false;
     }
 
@@ -426,13 +411,13 @@ bool sce_test_http_post(const sce_test_http_url_t *url,
        request head fits easily in 1 KiB. */
     char head[1024];
     int head_len = snprintf(head, sizeof(head),
-        "POST %s HTTP/1.1\r\n"
-        "Host: %s:%u\r\n"
-        "Content-Type: %s\r\n"
-        "Content-Length: %zu\r\n"
-        "Connection: close\r\n"
-        "\r\n",
-        url->path, url->host, (unsigned)url->port, content_type, body_len);
+                            "POST %s HTTP/1.1\r\n"
+                            "Host: %s:%u\r\n"
+                            "Content-Type: %s\r\n"
+                            "Content-Length: %zu\r\n"
+                            "Connection: close\r\n"
+                            "\r\n",
+                            url->path, url->host, (unsigned)url->port, content_type, body_len);
     if (head_len < 0 || (size_t)head_len >= sizeof(head)) {
         close(fd);
         return false;
@@ -451,10 +436,7 @@ bool sce_test_http_post(const sce_test_http_url_t *url,
     char header_buf[SCE_HTTP_HEADER_CAP];
     char *body_prefix = NULL;
     size_t body_prefix_len = 0u;
-    ssize_t header_len = sce_http_read_headers(fd, header_buf,
-                                                sizeof(header_buf),
-                                                &body_prefix,
-                                                &body_prefix_len);
+    ssize_t header_len = sce_http_read_headers(fd, header_buf, sizeof(header_buf), &body_prefix, &body_prefix_len);
     if (header_len < 0) {
         close(fd);
         return false;
@@ -475,8 +457,7 @@ bool sce_test_http_post(const sce_test_http_url_t *url,
        the unit-test stub server picks Content-Length. Both shapes
        must round-trip cleanly. */
     long content_length = -1;
-    const char *cl = sce_http_find_header(header_buf, (size_t)header_len,
-                                           "Content-Length");
+    const char *cl = sce_http_find_header(header_buf, (size_t)header_len, "Content-Length");
     if (cl != NULL) {
         char *end = NULL;
         long val = strtol(cl, &end, 10);
@@ -485,18 +466,14 @@ bool sce_test_http_post(const sce_test_http_url_t *url,
         }
     }
     bool is_chunked = false;
-    const char *te = sce_http_find_header(header_buf, (size_t)header_len,
-                                           "Transfer-Encoding");
+    const char *te = sce_http_find_header(header_buf, (size_t)header_len, "Transfer-Encoding");
     if (te != NULL) {
         /* The header value may carry a list (`chunked, gzip` etc.);
            we only honour the bare `chunked` token. The standalone
            server emits `chunked` alone; gzip/deflate isn't in the
            host-helper R3 budget. */
-        const char *eol = memchr(te, '\r',
-                                 (size_t)((header_buf + header_len) - te));
-        size_t te_len = (eol != NULL)
-                        ? (size_t)(eol - te)
-                        : (size_t)((header_buf + header_len) - te);
+        const char *eol = memchr(te, '\r', (size_t)((header_buf + header_len) - te));
+        size_t te_len = (eol != NULL) ? (size_t)(eol - te) : (size_t)((header_buf + header_len) - te);
         for (size_t i = 0u; i + 7u <= te_len; i++) {
             if (strncasecmp(te + i, "chunked", 7u) == 0) {
                 is_chunked = true;
@@ -510,9 +487,8 @@ bool sce_test_http_post(const sce_test_http_url_t *url,
     /* Drain raw bytes first; chunked uses size-prefixed framing inside
        the body so Content-Length is meaningless. When neither header
        is set, drain-until-EOF (server closes per `Connection: close`). */
-    if (!sce_http_read_body(fd, body_prefix, body_prefix_len,
-                             is_chunked ? -1 : content_length,
-                             &body_buf, &body_buf_len)) {
+    if (!sce_http_read_body(fd, body_prefix, body_prefix_len, is_chunked ? -1 : content_length, &body_buf,
+                            &body_buf_len)) {
         close(fd);
         return false;
     }
@@ -543,9 +519,7 @@ void sce_test_http_response_free(sce_test_http_response_t *r) {
 
 static bool sce_http_should_pct_encode(unsigned char c) {
     /* RFC 3986 unreserved set + spaces (handled separately). */
-    if ((c >= 'A' && c <= 'Z') ||
-        (c >= 'a' && c <= 'z') ||
-        (c >= '0' && c <= '9')) {
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
         return false;
     }
     if (c == '-' || c == '_' || c == '.' || c == '~') {
@@ -557,8 +531,7 @@ static bool sce_http_should_pct_encode(unsigned char c) {
 /* Append `s` to `body[*body_len .. cap]`, percent-encoding per RFC
    3986 unreserved-set rules. Spaces become `+` (Go/Rust harness
    parity). Returns false on overflow without partial-writing. */
-static bool sce_http_form_pct_append(char *body, size_t cap, size_t *body_len,
-                                     const char *s) {
+static bool sce_http_form_pct_append(char *body, size_t cap, size_t *body_len, const char *s) {
     static const char hex[] = "0123456789ABCDEF";
     size_t pos = *body_len;
     for (size_t i = 0; s[i] != '\0'; i++) {
@@ -589,8 +562,7 @@ static bool sce_http_form_pct_append(char *body, size_t cap, size_t *body_len,
     return true;
 }
 
-bool sce_test_http_form_append(char *body, size_t cap, size_t *body_len,
-                               const char *key, const char *value) {
+bool sce_test_http_form_append(char *body, size_t cap, size_t *body_len, const char *key, const char *value) {
     if (body == NULL || body_len == NULL || key == NULL || value == NULL) {
         return false;
     }
@@ -626,9 +598,15 @@ static const char *sce_json_skip_ws(const char *p, const char *end) {
 
 /* Hex digit → 0-15 or -1. */
 static int sce_json_hex(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
-    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return 10 + (c - 'a');
+    }
+    if (c >= 'A' && c <= 'F') {
+        return 10 + (c - 'A');
+    }
     return -1;
 }
 
@@ -669,8 +647,7 @@ static size_t sce_json_utf8_encode(uint32_t cp, char *dst) {
    `*cursor` past the closing `"`. Sets `*value_start` and `*value_len`
    to the unescaped span. Returns false on syntax error or unexpected
    EOF. */
-static bool sce_json_unescape_string(char **cursor, char *end,
-                                     char **value_start, size_t *value_len) {
+static bool sce_json_unescape_string(char **cursor, char *end, char **value_start, size_t *value_len) {
     char *p = *cursor;
     if (p >= end || *p != '"') {
         return false;
@@ -686,14 +663,38 @@ static bool sce_json_unescape_string(char **cursor, char *end,
             }
             char esc = p[1];
             switch (esc) {
-            case '"':  *write++ = '"'; p += 2; break;
-            case '\\': *write++ = '\\'; p += 2; break;
-            case '/':  *write++ = '/'; p += 2; break;
-            case 'b':  *write++ = '\b'; p += 2; break;
-            case 'f':  *write++ = '\f'; p += 2; break;
-            case 'n':  *write++ = '\n'; p += 2; break;
-            case 'r':  *write++ = '\r'; p += 2; break;
-            case 't':  *write++ = '\t'; p += 2; break;
+            case '"':
+                *write++ = '"';
+                p += 2;
+                break;
+            case '\\':
+                *write++ = '\\';
+                p += 2;
+                break;
+            case '/':
+                *write++ = '/';
+                p += 2;
+                break;
+            case 'b':
+                *write++ = '\b';
+                p += 2;
+                break;
+            case 'f':
+                *write++ = '\f';
+                p += 2;
+                break;
+            case 'n':
+                *write++ = '\n';
+                p += 2;
+                break;
+            case 'r':
+                *write++ = '\r';
+                p += 2;
+                break;
+            case 't':
+                *write++ = '\t';
+                p += 2;
+                break;
             case 'u': {
                 if (p + 6 > end) {
                     return false;
@@ -705,12 +706,10 @@ static bool sce_json_unescape_string(char **cursor, char *end,
                 if (h0 < 0 || h1 < 0 || h2 < 0 || h3 < 0) {
                     return false;
                 }
-                uint32_t cp = (uint32_t)((h0 << 12) | (h1 << 8) |
-                                          (h2 << 4) | h3);
+                uint32_t cp = (uint32_t)((h0 << 12) | (h1 << 8) | (h2 << 4) | h3);
                 /* High surrogate followed by `\uDxxx` low surrogate
                    pairs into a supplementary plane codepoint. */
-                if (cp >= 0xD800 && cp <= 0xDBFF &&
-                    p + 12 <= end && p[6] == '\\' && p[7] == 'u') {
+                if (cp >= 0xD800 && cp <= 0xDBFF && p + 12 <= end && p[6] == '\\' && p[7] == 'u') {
                     int l0 = sce_json_hex(p[8]);
                     int l1 = sce_json_hex(p[9]);
                     int l2 = sce_json_hex(p[10]);
@@ -718,12 +717,9 @@ static bool sce_json_unescape_string(char **cursor, char *end,
                     if (l0 < 0 || l1 < 0 || l2 < 0 || l3 < 0) {
                         return false;
                     }
-                    uint32_t low = (uint32_t)((l0 << 12) | (l1 << 8) |
-                                                (l2 << 4) | l3);
+                    uint32_t low = (uint32_t)((l0 << 12) | (l1 << 8) | (l2 << 4) | l3);
                     if (low >= 0xDC00 && low <= 0xDFFF) {
-                        cp = 0x10000u +
-                             ((cp - 0xD800u) << 10) +
-                             (low - 0xDC00u);
+                        cp = 0x10000u + ((cp - 0xD800u) << 10) + (low - 0xDC00u);
                         p += 12;
                     } else {
                         p += 6;
@@ -753,7 +749,7 @@ static bool sce_json_unescape_string(char **cursor, char *end,
     if (write < p) {
         *write = '\0';
     }
-    *cursor = p + 1;  /* past closing `"` */
+    *cursor = p + 1; /* past closing `"` */
     return true;
 }
 
@@ -762,8 +758,7 @@ static bool sce_json_unescape_string(char **cursor, char *end,
    inside JSON strings. Returns false on truncation/syntax error.
    Sets `*value_start` and `*value_len` to span the raw bytes
    including both delimiters. */
-static bool sce_json_capture_object(char **cursor, char *end,
-                                    char **value_start, size_t *value_len) {
+static bool sce_json_capture_object(char **cursor, char *end, char **value_start, size_t *value_len) {
     char *p = *cursor;
     *value_start = p;
     char open = *p;
@@ -817,27 +812,23 @@ static bool sce_json_skip_value(char **cursor, char *end) {
     if (*p == '"') {
         char *unused_start = NULL;
         size_t unused_len = 0u;
-        return sce_json_unescape_string(cursor, end,
-                                         &unused_start, &unused_len);
+        return sce_json_unescape_string(cursor, end, &unused_start, &unused_len);
     }
     if (*p == '{' || *p == '[') {
         char *unused_start = NULL;
         size_t unused_len = 0u;
-        return sce_json_capture_object(cursor, end,
-                                        &unused_start, &unused_len);
+        return sce_json_capture_object(cursor, end, &unused_start, &unused_len);
     }
     /* Number / true / false / null: scan to whitespace, comma, `}`,
        `]`. */
-    while (p < end && *p != ',' && *p != '}' && *p != ']' &&
-           *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
+    while (p < end && *p != ',' && *p != '}' && *p != ']' && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n') {
         p++;
     }
     *cursor = p;
     return true;
 }
 
-bool sce_test_http_parse_response(char *body, size_t body_len,
-                                  sce_test_http_json_response_t *out) {
+bool sce_test_http_parse_response(char *body, size_t body_len, sce_test_http_json_response_t *out) {
     if (out == NULL) {
         return false;
     }
@@ -878,7 +869,7 @@ bool sce_test_http_parse_response(char *body, size_t body_len,
         }
 
         bool match_event = (key_len == 5u && memcmp(key_start, "event", 5u) == 0);
-        bool match_data  = (key_len == 4u && memcmp(key_start, "data",  4u) == 0);
+        bool match_data = (key_len == 4u && memcmp(key_start, "data", 4u) == 0);
 
         if (match_event) {
             if (*p != '"') {

@@ -15,7 +15,8 @@ namespace SCE::W3C {
 
 W3CTestEventDispatcher::W3CTestEventDispatcher(const std::string &sessionId, std::shared_ptr<IEventScheduler> scheduler)
     : sessionId_(sessionId), scheduler_(scheduler) {
-    SCE_LOG_DEBUG("W3CTestEventDispatcher created for session: {} (W3C compliance mode with delay support)", sessionId_);
+    SCE_LOG_DEBUG("W3CTestEventDispatcher created for session: {} (W3C compliance mode with delay support)",
+                  sessionId_);
 
     // Create EventScheduler if not provided
     if (!scheduler_) {
@@ -30,15 +31,15 @@ W3CTestEventDispatcher::W3CTestEventDispatcher(const std::string &sessionId, std
                     auto result = target->send(event);
                     // For W3C tests, we don't need to wait for the future
                     SCE_LOG_INFO("W3CTestEventDispatcher: Scheduled event '{}' sent to target with sendId '{}'",
-                             event.eventName, sendId);
+                                 event.eventName, sendId);
                 } catch (const std::exception &e) {
                     SCE_LOG_ERROR("W3CTestEventDispatcher: Error sending event '{}' to target: {}", event.eventName,
-                              e.what());
+                                  e.what());
                     return false;
                 }
             } else {
                 SCE_LOG_INFO("W3CTestEventDispatcher: Scheduled event '{}' executed without target (sendId: '{}')",
-                         event.eventName, sendId);
+                             event.eventName, sendId);
             }
 
             return true;
@@ -54,7 +55,7 @@ std::future<SendResult> W3CTestEventDispatcher::sendEvent(const EventDescriptor 
         // W3C SCXML 6.2: Check if this is a delayed event
         if (event.delay.count() > 0) {
             SCE_LOG_DEBUG("W3CTestEventDispatcher: Event '{}' has delay {}ms - scheduling for W3C compliance",
-                      event.eventName, event.delay.count());
+                          event.eventName, event.delay.count());
             return sendEventDelayed(event, event.delay);
         }
 
@@ -77,7 +78,7 @@ bool W3CTestEventDispatcher::cancelEvent(const std::string &sendId, const std::s
 
     if (cancelled) {
         SCE_LOG_DEBUG("W3CTestEventDispatcher: Successfully cancelled event with sendId: {} (W3C SCXML 6.2 compliance)",
-                  sendId);
+                      sendId);
     } else {
         SCE_LOG_DEBUG("W3CTestEventDispatcher: Event with sendId '{}' not found or already cancelled", sendId);
     }
@@ -88,7 +89,7 @@ bool W3CTestEventDispatcher::cancelEvent(const std::string &sendId, const std::s
 std::future<SendResult> W3CTestEventDispatcher::sendEventDelayed(const EventDescriptor &event,
                                                                  std::chrono::milliseconds delay) {
     SCE_LOG_DEBUG("W3CTestEventDispatcher: Scheduling delayed event '{}' with {}ms delay (W3C compliance mode)",
-              event.eventName, delay.count());
+                  event.eventName, delay.count());
 
     try {
         // W3C SCXML 6.2: Store evaluated parameters immediately (mandatory compliance)
@@ -101,7 +102,7 @@ std::future<SendResult> W3CTestEventDispatcher::sendEventDelayed(const EventDesc
         std::string sendId = future.get();  // Get the assigned sendId
 
         SCE_LOG_DEBUG("W3CTestEventDispatcher: Event '{}' scheduled with sendId '{}' for W3C compliance testing",
-                  event.eventName, sendId);
+                      event.eventName, sendId);
 
         // Return success immediately (W3C SCXML fire-and-forget semantics)
         std::promise<SendResult> successPromise;
@@ -135,8 +136,9 @@ std::string W3CTestEventDispatcher::getStatistics() const {
 }
 
 void W3CTestEventDispatcher::shutdown() {
-    SCE_LOG_DEBUG("W3CTestEventDispatcher: Shutting down for session: {} (W3C SCXML 6.2: cancelling all pending events)",
-              sessionId_);
+    SCE_LOG_DEBUG(
+        "W3CTestEventDispatcher: Shutting down for session: {} (W3C SCXML 6.2: cancelling all pending events)",
+        sessionId_);
 
     // REFACTOR: Use EventScheduler shutdown instead of duplicate logic
     if (scheduler_) {
@@ -150,8 +152,8 @@ size_t W3CTestEventDispatcher::cancelEventsForSession(const std::string &session
     // REFACTOR: Use EventScheduler instead of duplicate logic
     size_t cancelledCount = scheduler_->cancelEventsForSession(sessionId);
 
-    SCE_LOG_INFO("W3CTestEventDispatcher: Cancelled {} events for session '{}' (W3C SCXML 6.2 compliance)", cancelledCount,
-             sessionId);
+    SCE_LOG_INFO("W3CTestEventDispatcher: Cancelled {} events for session '{}' (W3C SCXML 6.2 compliance)",
+                 cancelledCount, sessionId);
 
     return cancelledCount;
 }
@@ -177,7 +179,7 @@ std::future<SendResult> W3CTestEventDispatcher::executeEventImmediately(const Ev
         std::string sendId = future.get();  // Get the assigned sendId from EventScheduler
 
         SCE_LOG_INFO("W3CTestEventDispatcher: Event '{}' dispatched successfully with sendId '{}'", event.eventName,
-                 sendId);
+                     sendId);
 
         // Create successful result
         std::promise<SendResult> successPromise;

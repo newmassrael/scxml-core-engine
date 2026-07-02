@@ -32,9 +32,8 @@ int main(void) {
        occurs, verdict is PASS. */
     return 0;
 #else
-    (void)fprintf(stderr,
-        "test301: FAIL — expected SCE_DOCUMENT_REJECTED to be defined "
-        "(unloadable <script src> should reject the document at codegen time)\n");
+    (void)fprintf(stderr, "test301: FAIL — expected SCE_DOCUMENT_REJECTED to be defined "
+                          "(unloadable <script src> should reject the document at codegen time)\n");
     return 1;
 #endif
 }

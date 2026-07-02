@@ -7,13 +7,13 @@
 // (not stack-based), we convert between JSValue and JNI types at the boundary.
 // Session isolation and W3C SCXML builtins are handled in Kotlin.
 
-#include <jni.h>
 #include "quickjs.h"
+#include <jni.h>
 
-#include <string>
-#include <cstring>
-#include <cmath>
 #include <climits>
+#include <cmath>
+#include <cstring>
+#include <string>
 
 // ---------------------------------------------------------------------------
 // Session handle: wraps JSRuntime + JSContext pair
@@ -38,7 +38,9 @@ static inline jlong toHandle(QJSSession *session) {
 }
 
 static std::string jstringToString(JNIEnv *env, jstring jstr) {
-    if (!jstr) return "";
+    if (!jstr) {
+        return "";
+    }
     const char *chars = env->GetStringUTFChars(jstr, nullptr);
     std::string result(chars);
     env->ReleaseStringUTFChars(jstr, chars);
@@ -106,9 +108,15 @@ JNIEXPORT jlong JNICALL JNI_METHOD(createContext)(JNIEnv *, jclass) {
 
 JNIEXPORT void JNICALL JNI_METHOD(destroyContext)(JNIEnv *, jclass, jlong handle) {
     auto *session = toSession(handle);
-    if (!session) return;
-    if (session->ctx) JS_FreeContext(session->ctx);
-    if (session->rt) JS_FreeRuntime(session->rt);
+    if (!session) {
+        return;
+    }
+    if (session->ctx) {
+        JS_FreeContext(session->ctx);
+    }
+    if (session->rt) {
+        JS_FreeRuntime(session->rt);
+    }
     delete session;
 }
 
@@ -117,11 +125,12 @@ JNIEXPORT void JNICALL JNI_METHOD(destroyContext)(JNIEnv *, jclass, jlong handle
 // Execute JS code as script. Returns null on success, error message on failure.
 JNIEXPORT jstring JNICALL JNI_METHOD(eval)(JNIEnv *env, jclass, jlong handle, jstring code) {
     auto *session = toSession(handle);
-    if (!session) return toJString(env, "error: null context");
+    if (!session) {
+        return toJString(env, "error: null context");
+    }
 
     std::string js = jstringToString(env, code);
-    JSValue result = JS_Eval(session->ctx, js.c_str(), js.length(),
-                             "<eval>", JS_EVAL_TYPE_GLOBAL);
+    JSValue result = JS_Eval(session->ctx, js.c_str(), js.length(), "<eval>", JS_EVAL_TYPE_GLOBAL);
 
     if (JS_IsException(result)) {
         std::string err = getExceptionMessage(session->ctx);
@@ -144,14 +153,14 @@ JNIEXPORT jstring JNICALL JNI_METHOD(eval)(JNIEnv *env, jclass, jlong handle, js
 //   "S" + str   — string (rest of string is the value)
 //   "R" + id    — reference (stored in JS __sce_refs[id])
 //   null        — error (call getLastError)
-JNIEXPORT jstring JNICALL JNI_METHOD(evalExpression)(JNIEnv *env, jclass,
-                                                      jlong handle, jstring code) {
+JNIEXPORT jstring JNICALL JNI_METHOD(evalExpression)(JNIEnv *env, jclass, jlong handle, jstring code) {
     auto *session = toSession(handle);
-    if (!session) return nullptr;
+    if (!session) {
+        return nullptr;
+    }
 
     std::string js = jstringToString(env, code);
-    JSValue result = JS_Eval(session->ctx, js.c_str(), js.length(),
-                             "<expr>", JS_EVAL_TYPE_GLOBAL);
+    JSValue result = JS_Eval(session->ctx, js.c_str(), js.length(), "<expr>", JS_EVAL_TYPE_GLOBAL);
 
     if (JS_IsException(result)) {
         session->lastError = getExceptionMessage(session->ctx);
@@ -177,9 +186,8 @@ JNIEXPORT jstring JNICALL JNI_METHOD(evalExpression)(JNIEnv *env, jclass,
             // Float64 path — check if representable as integer
             double dval;
             JS_ToFloat64(ctx, &dval, result);
-            if (!std::isnan(dval) && !std::isinf(dval) &&
-                dval == std::floor(dval) &&
-                dval >= -9007199254740992.0 && dval <= 9007199254740992.0) {
+            if (!std::isnan(dval) && !std::isinf(dval) && dval == std::floor(dval) && dval >= -9007199254740992.0 &&
+                dval <= 9007199254740992.0) {
                 encoded = "I" + std::to_string(static_cast<int64_t>(dval));
             } else {
                 char buf[64];
@@ -190,7 +198,9 @@ JNIEXPORT jstring JNICALL JNI_METHOD(evalExpression)(JNIEnv *env, jclass,
     } else if (JS_IsString(result)) {
         const char *str = JS_ToCString(ctx, result);
         encoded = "S";
-        if (str) encoded += str;
+        if (str) {
+            encoded += str;
+        }
         JS_FreeCString(ctx, str);
     } else {
         // Object, array, function, BigInt, Symbol → store as reference
@@ -199,8 +209,7 @@ JNIEXPORT jstring JNICALL JNI_METHOD(evalExpression)(JNIEnv *env, jclass,
         if (JS_IsObject(refs)) {
             int refId = session->nextRefId++;
             // JS_SetPropertyUint32 takes ownership of the value
-            JS_SetPropertyUint32(ctx, refs, static_cast<uint32_t>(refId),
-                                 JS_DupValue(ctx, result));
+            JS_SetPropertyUint32(ctx, refs, static_cast<uint32_t>(refId), JS_DupValue(ctx, result));
             encoded = "R" + std::to_string(refId);
         } else {
             // Registry missing or corrupted — encode as "undefined"
@@ -217,14 +226,14 @@ JNIEXPORT jstring JNICALL JNI_METHOD(evalExpression)(JNIEnv *env, jclass,
 
 // Evaluate condition expression, return boolean directly.
 // Returns -1 on error, 0 for false, 1 for true.
-JNIEXPORT jint JNICALL JNI_METHOD(evalToBoolean)(JNIEnv *env, jclass,
-                                                  jlong handle, jstring code) {
+JNIEXPORT jint JNICALL JNI_METHOD(evalToBoolean)(JNIEnv *env, jclass, jlong handle, jstring code) {
     auto *session = toSession(handle);
-    if (!session) return -1;
+    if (!session) {
+        return -1;
+    }
 
     std::string js = jstringToString(env, code);
-    JSValue result = JS_Eval(session->ctx, js.c_str(), js.length(),
-                             "<cond>", JS_EVAL_TYPE_GLOBAL);
+    JSValue result = JS_Eval(session->ctx, js.c_str(), js.length(), "<cond>", JS_EVAL_TYPE_GLOBAL);
 
     if (JS_IsException(result)) {
         session->lastError = getExceptionMessage(session->ctx);
@@ -238,68 +247,65 @@ JNIEXPORT jint JNICALL JNI_METHOD(evalToBoolean)(JNIEnv *env, jclass,
 
 // === Global Variable Setters ===
 
-JNIEXPORT void JNICALL JNI_METHOD(setGlobalString)(JNIEnv *env, jclass,
-                                                    jlong handle, jstring name,
-                                                    jstring value) {
+JNIEXPORT void JNICALL JNI_METHOD(setGlobalString)(JNIEnv *env, jclass, jlong handle, jstring name, jstring value) {
     auto *session = toSession(handle);
-    if (!session) return;
+    if (!session) {
+        return;
+    }
 
     std::string n = jstringToString(env, name);
     std::string v = jstringToString(env, value);
 
     JSValue global = JS_GetGlobalObject(session->ctx);
     // JS_SetPropertyStr takes ownership of the JSValue
-    JS_SetPropertyStr(session->ctx, global, n.c_str(),
-                      JS_NewString(session->ctx, v.c_str()));
+    JS_SetPropertyStr(session->ctx, global, n.c_str(), JS_NewString(session->ctx, v.c_str()));
     JS_FreeValue(session->ctx, global);
 }
 
-JNIEXPORT void JNICALL JNI_METHOD(setGlobalInt)(JNIEnv *env, jclass,
-                                                 jlong handle, jstring name,
-                                                 jlong value) {
+JNIEXPORT void JNICALL JNI_METHOD(setGlobalInt)(JNIEnv *env, jclass, jlong handle, jstring name, jlong value) {
     auto *session = toSession(handle);
-    if (!session) return;
+    if (!session) {
+        return;
+    }
 
     std::string n = jstringToString(env, name);
 
     JSValue global = JS_GetGlobalObject(session->ctx);
-    JS_SetPropertyStr(session->ctx, global, n.c_str(),
-                      JS_NewInt64(session->ctx, static_cast<int64_t>(value)));
+    JS_SetPropertyStr(session->ctx, global, n.c_str(), JS_NewInt64(session->ctx, static_cast<int64_t>(value)));
     JS_FreeValue(session->ctx, global);
 }
 
-JNIEXPORT void JNICALL JNI_METHOD(setGlobalDouble)(JNIEnv *env, jclass,
-                                                    jlong handle, jstring name,
-                                                    jdouble value) {
+JNIEXPORT void JNICALL JNI_METHOD(setGlobalDouble)(JNIEnv *env, jclass, jlong handle, jstring name, jdouble value) {
     auto *session = toSession(handle);
-    if (!session) return;
+    if (!session) {
+        return;
+    }
 
     std::string n = jstringToString(env, name);
 
     JSValue global = JS_GetGlobalObject(session->ctx);
-    JS_SetPropertyStr(session->ctx, global, n.c_str(),
-                      JS_NewFloat64(session->ctx, value));
+    JS_SetPropertyStr(session->ctx, global, n.c_str(), JS_NewFloat64(session->ctx, value));
     JS_FreeValue(session->ctx, global);
 }
 
-JNIEXPORT void JNICALL JNI_METHOD(setGlobalBoolean)(JNIEnv *env, jclass,
-                                                     jlong handle, jstring name,
-                                                     jboolean value) {
+JNIEXPORT void JNICALL JNI_METHOD(setGlobalBoolean)(JNIEnv *env, jclass, jlong handle, jstring name, jboolean value) {
     auto *session = toSession(handle);
-    if (!session) return;
+    if (!session) {
+        return;
+    }
 
     std::string n = jstringToString(env, name);
 
     JSValue global = JS_GetGlobalObject(session->ctx);
-    JS_SetPropertyStr(session->ctx, global, n.c_str(),
-                      JS_NewBool(session->ctx, value));
+    JS_SetPropertyStr(session->ctx, global, n.c_str(), JS_NewBool(session->ctx, value));
     JS_FreeValue(session->ctx, global);
 }
 
-JNIEXPORT void JNICALL JNI_METHOD(setGlobalNull)(JNIEnv *env, jclass,
-                                                  jlong handle, jstring name) {
+JNIEXPORT void JNICALL JNI_METHOD(setGlobalNull)(JNIEnv *env, jclass, jlong handle, jstring name) {
     auto *session = toSession(handle);
-    if (!session) return;
+    if (!session) {
+        return;
+    }
 
     std::string n = jstringToString(env, name);
 
@@ -308,10 +314,11 @@ JNIEXPORT void JNICALL JNI_METHOD(setGlobalNull)(JNIEnv *env, jclass,
     JS_FreeValue(session->ctx, global);
 }
 
-JNIEXPORT void JNICALL JNI_METHOD(setGlobalUndefined)(JNIEnv *env, jclass,
-                                                       jlong handle, jstring name) {
+JNIEXPORT void JNICALL JNI_METHOD(setGlobalUndefined)(JNIEnv *env, jclass, jlong handle, jstring name) {
     auto *session = toSession(handle);
-    if (!session) return;
+    if (!session) {
+        return;
+    }
 
     std::string n = jstringToString(env, name);
 
@@ -325,7 +332,9 @@ JNIEXPORT void JNICALL JNI_METHOD(setGlobalUndefined)(JNIEnv *env, jclass,
 
 JNIEXPORT jstring JNICALL JNI_METHOD(getLastError)(JNIEnv *env, jclass, jlong handle) {
     auto *session = toSession(handle);
-    if (!session) return toJString(env, "null context");
+    if (!session) {
+        return toJString(env, "null context");
+    }
 
     if (!session->lastError.empty()) {
         jstring msg = toJString(env, session->lastError.c_str());

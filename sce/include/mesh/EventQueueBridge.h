@@ -31,14 +31,10 @@ namespace SCE::Mesh {
 ///   try_push()  — safe to call from multiple producer threads concurrently
 ///   try_pop()   — must be called from exactly one consumer thread
 ///   empty()     — safe to call from the consumer thread only
-template <typename T, std::size_t Capacity = 256>
-class EventQueueBridge {
-    static_assert(Capacity > 0 && (Capacity & (Capacity - 1)) == 0,
-                  "Capacity must be a power of 2");
-    static_assert(std::is_move_constructible<T>::value,
-                  "Event type must be move-constructible");
-    static_assert(std::is_destructible<T>::value,
-                  "Event type must be destructible");
+template <typename T, std::size_t Capacity = 256> class EventQueueBridge {
+    static_assert(Capacity > 0 && (Capacity & (Capacity - 1)) == 0, "Capacity must be a power of 2");
+    static_assert(std::is_move_constructible<T>::value, "Event type must be move-constructible");
+    static_assert(std::is_destructible<T>::value, "Event type must be destructible");
 
     static constexpr std::size_t MASK = Capacity - 1;
 
@@ -72,38 +68,36 @@ public:
     ~EventQueueBridge() {
         // In-place destroy remaining elements without requiring default constructor
         for (;;) {
-            Cell& cell = buffer_[read_pos_ & MASK];
+            Cell &cell = buffer_[read_pos_ & MASK];
             std::size_t seq = cell.sequence.load(std::memory_order_acquire);
             if (static_cast<std::ptrdiff_t>(seq - (read_pos_ + 1)) < 0) {
                 break;
             }
-            reinterpret_cast<T*>(cell.storage)->~T();
+            reinterpret_cast<T *>(cell.storage)->~T();
             cell.sequence.store(read_pos_ + Capacity, std::memory_order_relaxed);
             ++read_pos_;
         }
     }
 
-    EventQueueBridge(const EventQueueBridge&) = delete;
-    EventQueueBridge& operator=(const EventQueueBridge&) = delete;
+    EventQueueBridge(const EventQueueBridge &) = delete;
+    EventQueueBridge &operator=(const EventQueueBridge &) = delete;
 
     /// Push an event into the queue (producer side, thread-safe).
     ///
     /// @return true if the event was enqueued, false if the queue is full.
     ///         Callers should back off or drop the event on false.
     [[nodiscard]] bool try_push(T event) noexcept {
-        Cell* cell;
+        Cell *cell;
         std::size_t pos = write_pos_.load(std::memory_order_relaxed);
 
         for (;;) {
             cell = &buffer_[pos & MASK];
             std::size_t seq = cell->sequence.load(std::memory_order_acquire);
-            auto diff = static_cast<std::ptrdiff_t>(seq) -
-                        static_cast<std::ptrdiff_t>(pos);
+            auto diff = static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(pos);
 
             if (diff == 0) {
                 // Cell is available for writing — try to claim it
-                if (write_pos_.compare_exchange_weak(
-                        pos, pos + 1, std::memory_order_relaxed)) {
+                if (write_pos_.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
                     break;
                 }
                 // CAS failed — another producer claimed this cell, retry
@@ -127,11 +121,10 @@ public:
     ///
     /// @param[out] out Receives the popped event on success.
     /// @return true if an event was dequeued, false if the queue is empty.
-    [[nodiscard]] bool try_pop(T& out) noexcept {
-        Cell* cell = &buffer_[read_pos_ & MASK];
+    [[nodiscard]] bool try_pop(T &out) noexcept {
+        Cell *cell = &buffer_[read_pos_ & MASK];
         std::size_t seq = cell->sequence.load(std::memory_order_acquire);
-        auto diff = static_cast<std::ptrdiff_t>(seq) -
-                    static_cast<std::ptrdiff_t>(read_pos_ + 1);
+        auto diff = static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(read_pos_ + 1);
 
         if (diff < 0) {
             // Cell has not been written yet — queue is empty
@@ -139,7 +132,7 @@ public:
         }
 
         // Cell is ready — move the event out and destroy the in-place copy
-        T* ptr = reinterpret_cast<T*>(cell->storage);
+        T *ptr = reinterpret_cast<T *>(cell->storage);
         out = std::move(*ptr);
         ptr->~T();
 
@@ -155,10 +148,9 @@ public:
     /// the check and the caller's next action. Use try_pop() for
     /// authoritative emptiness detection.
     [[nodiscard]] bool empty() const noexcept {
-        const Cell& cell = buffer_[read_pos_ & MASK];
+        const Cell &cell = buffer_[read_pos_ & MASK];
         std::size_t seq = cell.sequence.load(std::memory_order_acquire);
-        auto diff = static_cast<std::ptrdiff_t>(seq) -
-                    static_cast<std::ptrdiff_t>(read_pos_ + 1);
+        auto diff = static_cast<std::ptrdiff_t>(seq) - static_cast<std::ptrdiff_t>(read_pos_ + 1);
         return diff < 0;
     }
 };

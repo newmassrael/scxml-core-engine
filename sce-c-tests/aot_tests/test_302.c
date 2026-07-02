@@ -29,8 +29,7 @@ int main(void) {
 
     int rc = test302_in_state(&sm, TEST302_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        (void)fprintf(stderr, "test302: FAIL — active = 0x%08x\n",
-                      (unsigned)test302_active_states(&sm));
+        (void)fprintf(stderr, "test302: FAIL — active = 0x%08x\n", (unsigned)test302_active_states(&sm));
     }
     test302_destroy(&sm);
     return rc;

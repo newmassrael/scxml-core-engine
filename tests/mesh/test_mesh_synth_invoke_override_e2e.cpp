@@ -25,10 +25,10 @@
 // Closes §16.9 F exit criterion #4: "Inline `<content>` synthesized
 // child executes on a different partition."
 
-#include "parent_synth_inline_sm.h"
-#include "parent_synth_inline_transport.h"
 #include "parent_synth_inline__sce_synth_invoke__remote_inv_sm.h"
 #include "parent_synth_inline__sce_synth_invoke__remote_inv_transport.h"
+#include "parent_synth_inline_sm.h"
+#include "parent_synth_inline_transport.h"
 
 #include <chrono>
 #include <cstdio>
@@ -43,8 +43,8 @@ int main() {
         parent_synth_inline__sce_synth_invoke__remote_inv;
     SynthEngine synth;
     synth.initialize();
-    SCE::Generated::parent_synth_inline__sce_synth_invoke__remote_inv::
-        TransportRouter<SynthEngine> synth_router({&synth});
+    SCE::Generated::parent_synth_inline__sce_synth_invoke__remote_inv::TransportRouter<SynthEngine> synth_router(
+        {&synth});
 
     using ParentEngine = SCE::Generated::parent_synth_inline::parent_synth_inline;
     ParentEngine parent;
@@ -74,10 +74,9 @@ int main() {
             return 0;
         }
         if (parent.getCurrentState() == State::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent observed error.execution instead of "
-                         "done.invoke — synth override is wired but the "
-                         "wire-15/18 success path did not complete.\n");
+            std::fprintf(stderr, "FAIL: parent observed error.execution instead of "
+                                 "done.invoke — synth override is wired but the "
+                                 "wire-15/18 success path did not complete.\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

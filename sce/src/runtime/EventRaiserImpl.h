@@ -66,11 +66,11 @@ public:
      * StateMachine reads this during processEvent() to populate _event fields.
      */
     struct EventContext {
-        std::string originSessionId;  // §scxml-5.10: _event.origin
-        std::string sendId;           // §scxml-5.10: _event.sendid
-        std::string invokeId;         // §scxml-5.10: _event.invokeid
-        std::string originType;       // §scxml-5.10: _event.origintype
-        std::string eventType;        // §scxml-5.10: "internal"/"platform"/"external"
+        std::string originSessionId;           // §scxml-5.10: _event.origin
+        std::string sendId;                    // §scxml-5.10: _event.sendid
+        std::string invokeId;                  // §scxml-5.10: _event.invokeid
+        std::string originType;                // §scxml-5.10: _event.origintype
+        std::string eventType;                 // §scxml-5.10: "internal"/"platform"/"external"
         std::optional<ScriptValue> typedData;  // Engine-agnostic typed data (avoids JSON round-trip)
 
         void clear() {
@@ -91,9 +91,11 @@ public:
         explicit EventContextGuard(EventContext ctx) {
             currentEventContext_ = std::move(ctx);
         }
+
         ~EventContextGuard() {
             currentEventContext_.clear();
         }
+
         EventContextGuard(const EventContextGuard &) = delete;
         EventContextGuard &operator=(const EventContextGuard &) = delete;
     };
@@ -290,8 +292,7 @@ public:
     bool raiseEventWithPriority(const std::string &eventName, const std::string &eventData, EventPriority priority,
                                 const std::string &originSessionId = "", const std::string &sendId = "",
                                 const std::string &invokeId = "", const std::string &originType = "",
-                                int64_t timestampNs = 0,
-                                std::optional<ScriptValue> typedData = std::nullopt);
+                                int64_t timestampNs = 0, std::optional<ScriptValue> typedData = std::nullopt);
 
 private:
     /**
@@ -332,12 +333,29 @@ public:
     }
 
     // Convenience accessors (delegate to EventContext)
-    static const std::string &getCurrentOriginSessionId() { return currentEventContext_.originSessionId; }
-    static const std::string &getCurrentSendId() { return currentEventContext_.sendId; }
-    static const std::string &getCurrentInvokeId() { return currentEventContext_.invokeId; }
-    static const std::string &getCurrentOriginType() { return currentEventContext_.originType; }
-    static const std::string &getCurrentEventType() { return currentEventContext_.eventType; }
-    static const std::optional<ScriptValue> &getCurrentTypedData() { return currentEventContext_.typedData; }
+    static const std::string &getCurrentOriginSessionId() {
+        return currentEventContext_.originSessionId;
+    }
+
+    static const std::string &getCurrentSendId() {
+        return currentEventContext_.sendId;
+    }
+
+    static const std::string &getCurrentInvokeId() {
+        return currentEventContext_.invokeId;
+    }
+
+    static const std::string &getCurrentOriginType() {
+        return currentEventContext_.originType;
+    }
+
+    static const std::string &getCurrentEventType() {
+        return currentEventContext_.eventType;
+    }
+
+    static const std::optional<ScriptValue> &getCurrentTypedData() {
+        return currentEventContext_.typedData;
+    }
 
     mutable std::mutex callbackMutex_;
 

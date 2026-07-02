@@ -2,10 +2,10 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "actions/AssignAction.h"
-#include "core/LogMacros.h"
 #include "actions/ForeachAction.h"
 #include "actions/LogAction.h"
 #include "actions/ScriptAction.h"
+#include "core/LogMacros.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
@@ -18,7 +18,8 @@ class SCXMLForeachIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         SCE::ScriptEngineProvider::getScriptEngine().reset();
-        executor = std::make_unique<ActionExecutorImpl>("foreach_integration_test", SCE::ScriptEngineProvider::getScriptEngine());
+        executor = std::make_unique<ActionExecutorImpl>("foreach_integration_test",
+                                                        SCE::ScriptEngineProvider::getScriptEngine());
 
         // Create JSEngine session following SCXML specification pattern
         // Session must be created before variable assignments can be performed

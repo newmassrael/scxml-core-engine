@@ -172,12 +172,13 @@ public:
                 scxmlFile.open(resolvedPath);
                 if (scxmlFile.is_open()) {
                     actualPath = resolvedPath.string();
-                    SCE_LOG_DEBUG("FileLoadingHelper: Resolved child SCXML relative to parent: {} (parent: {})", actualPath,
-                              parentScxmlPath);
+                    SCE_LOG_DEBUG("FileLoadingHelper: Resolved child SCXML relative to parent: {} (parent: {})",
+                                  actualPath, parentScxmlPath);
                 }
             } else {
-                SCE_LOG_ERROR("FileLoadingHelper: Relative path '{}' requires parent SCXML path for W3C SCXML compliance",
-                          actualPath);
+                SCE_LOG_ERROR(
+                    "FileLoadingHelper: Relative path '{}' requires parent SCXML path for W3C SCXML compliance",
+                    actualPath);
             }
         }
 
@@ -288,7 +289,7 @@ public:
         }
 
         SCE_LOG_INFO("FileLoadingHelper: W3C SCXML 5.8 - Loaded external script: {} (resolved to {})", srcPath,
-                 scriptPath.string());
+                     scriptPath.string());
         return true;
     }
 };

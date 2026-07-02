@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "states/ConcurrentRegion.h"
-#include "core/LogMacros.h"
 #include "actions/AssignAction.h"
 #include "actions/ScriptAction.h"
+#include "core/LogMacros.h"
 #include "mocks/MockActionExecutor.h"
 #include "model/StateNode.h"
 #include "runtime/ExecutionContextImpl.h"

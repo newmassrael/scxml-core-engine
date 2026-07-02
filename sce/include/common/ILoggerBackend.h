@@ -112,7 +112,9 @@ public:
      *
      * @return All log messages captured since the last startCapture() call
      */
-    virtual std::string getCapturedLogs() { return {}; }
+    virtual std::string getCapturedLogs() {
+        return {};
+    }
 };
 
 }  // namespace SCE

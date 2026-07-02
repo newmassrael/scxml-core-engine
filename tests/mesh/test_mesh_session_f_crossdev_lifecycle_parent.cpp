@@ -34,17 +34,16 @@
 
 #include "mesh/transports/CustomTcpTransport.h"
 
-#include <gtest/gtest.h>
 #include <chrono>
 #include <cstdlib>
+#include <gtest/gtest.h>
 #include <thread>
 
 TEST(CrossdevLifecycle, WireDoneRoundTripLandsOverCustomTcp) {
-    const char* worker_ep = std::getenv("MESH_PEER_ENDPOINT");
-    ASSERT_NE(worker_ep, nullptr)
-        << "MESH_PEER_ENDPOINT must be set by run_two_process_fixture.sh; "
-           "running this binary directly without the orchestrator is not "
-           "supported.";
+    const char *worker_ep = std::getenv("MESH_PEER_ENDPOINT");
+    ASSERT_NE(worker_ep, nullptr) << "MESH_PEER_ENDPOINT must be set by run_two_process_fixture.sh; "
+                                     "running this binary directly without the orchestrator is not "
+                                     "supported.";
     ASSERT_NE(*worker_ep, '\0') << "MESH_PEER_ENDPOINT was empty";
 
     using ParentEngine = SCE::Generated::parent_session_f_wired::parent_session_f_wired;
@@ -56,10 +55,9 @@ TEST(CrossdevLifecycle, WireDoneRoundTripLandsOverCustomTcp) {
 
     SCE::Mesh::CustomTcp::PortOverride port_override;
     port_override.peer_connect_endpoints["worker_session_f_wired"] = worker_ep;
-    ASSERT_TRUE(router.init(port_override))
-        << "parent TransportRouter::init(PortOverride) failed — usually a "
-           "bind collision on the static SCE_TEST_CROSSDEV_LIFECYCLE_PORT "
-           "(another ctest entry holding the RESOURCE_LOCK?)";
+    ASSERT_TRUE(router.init(port_override)) << "parent TransportRouter::init(PortOverride) failed — usually a "
+                                               "bind collision on the static SCE_TEST_CROSSDEV_LIFECYCLE_PORT "
+                                               "(another ctest entry holding the RESOURCE_LOCK?)";
 
     // `initialize()` enters `waiting`, whose onentry calls
     // `performScxmlInvokeStart` — this publishes wire-14 on the
@@ -82,15 +80,15 @@ TEST(CrossdevLifecycle, WireDoneRoundTripLandsOverCustomTcp) {
             SUCCEED();
             return;
         }
-        ASSERT_NE(state, ParentState::Fail)
-            << "parent observed error.execution before reaching pass. "
-               "Likely the worker-side dispatch raised back through "
-               "wire-20 instead of wire-18.";
+        ASSERT_NE(state, ParentState::Fail) << "parent observed error.execution before reaching pass. "
+                                               "Likely the worker-side dispatch raised back through "
+                                               "wire-20 instead of wire-18.";
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
     FAIL() << "parent did not reach State::Pass within 5s. "
-              "Current state=" << static_cast<int>(parent.getCurrentState())
+              "Current state="
+           << static_cast<int>(parent.getCurrentState())
            << ". Expected wire-14 → wire-15 + wire-18 across custom_tcp; "
               "a timeout here typically means the worker never received "
               "wire-14 (PortOverride did not redirect, or the connect "

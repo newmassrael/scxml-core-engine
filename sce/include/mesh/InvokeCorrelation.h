@@ -80,8 +80,7 @@ public:
     /// not raise `done`/`error` on the cancelled invoke, so the
     /// correlation table simply erases the entry and drops the
     /// callback without firing it.
-    using DeliverCallback =
-        std::function<void(RpcStatus, std::vector<std::uint8_t>)>;
+    using DeliverCallback = std::function<void(RpcStatus, std::vector<std::uint8_t>)>;
 
     /// Register an in-flight invoke. `target` is the deploy.yaml peer
     /// machine name the invoke is bound to — stored alongside the
@@ -91,11 +90,9 @@ public:
     /// — that is a caller contract violation (an invoke id must be
     /// unique per parent), and the duplicate is dropped without
     /// disturbing the first registration.
-    bool registerInvoke(const Key& uuid, std::string target,
-                        DeliverCallback deliver) {
+    bool registerInvoke(const Key &uuid, std::string target, DeliverCallback deliver) {
         std::lock_guard<std::mutex> lock(mutex_);
-        auto [it, inserted] = pending_.emplace(
-            uuid, Entry{std::move(target), std::move(deliver)});
+        auto [it, inserted] = pending_.emplace(uuid, Entry{std::move(target), std::move(deliver)});
         (void)it;
         return inserted;
     }
@@ -109,8 +106,7 @@ public:
     /// The callback runs *outside* the mutex: the transport thread
     /// that calls this should not block other correlation-table
     /// operations while the engine processes the event.
-    bool handleReply(const Key& uuid, RpcStatus status,
-                     std::vector<std::uint8_t> data) {
+    bool handleReply(const Key &uuid, RpcStatus status, std::vector<std::uint8_t> data) {
         DeliverCallback cb;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -130,7 +126,7 @@ public:
     /// Author `<cancel>` hit this invoke. Erases the entry without
     /// firing the deliver callback. Returns `true` if the entry
     /// existed (i.e. there was something to cancel).
-    bool handleCancel(const Key& uuid) {
+    bool handleCancel(const Key &uuid) {
         std::lock_guard<std::mutex> lock(mutex_);
         return pending_.erase(uuid) != 0;
     }
@@ -139,7 +135,7 @@ public:
     /// `deliver(RpcStatus::DeadlineExceeded, {})` and erases.
     /// Returns `false` if a concurrent reply or cancel already
     /// erased the entry — a benign race whose loser drops silently.
-    bool handleDeadline(const Key& uuid) {
+    bool handleDeadline(const Key &uuid) {
         return handleReply(uuid, RpcStatus::DeadlineExceeded, {});
     }
 
@@ -148,7 +144,7 @@ public:
         return pending_.size();
     }
 
-    bool contains(const Key& uuid) const {
+    bool contains(const Key &uuid) const {
         std::lock_guard<std::mutex> lock(mutex_);
         return pending_.find(uuid) != pending_.end();
     }
@@ -170,20 +166,20 @@ public:
     /// the caller-supplied notification runs (which may invoke
     /// SCXML-side raise paths that grab unrelated locks), preserving
     /// §mesh-10.10 lock-discipline.
-    void cancelAllPending(
-        const std::function<void(const Key&,
-                                 const std::string& target)>& on_each) {
+    void cancelAllPending(const std::function<void(const Key &, const std::string &target)> &on_each) {
         std::vector<std::pair<Key, std::string>> snapshot;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             snapshot.reserve(pending_.size());
-            for (auto& [uuid, entry] : pending_) {
+            for (auto &[uuid, entry] : pending_) {
                 snapshot.emplace_back(uuid, std::move(entry.target));
             }
             pending_.clear();
         }
-        if (!on_each) return;
-        for (const auto& [uuid, target] : snapshot) {
+        if (!on_each) {
+            return;
+        }
+        for (const auto &[uuid, target] : snapshot) {
             on_each(uuid, target);
         }
     }
@@ -207,23 +203,21 @@ public:
     /// loop because `std::unordered_map::erase(const Key&)` invalidates
     /// the iterator into a heterogeneous-key bucket; collect keys
     /// first, then erase.
-    std::size_t cancelAllPendingForTarget(
-        const std::string& peer,
-        const std::function<void(const Key&)>& on_each) {
+    std::size_t cancelAllPendingForTarget(const std::string &peer, const std::function<void(const Key &)> &on_each) {
         std::vector<Key> snapshot;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            for (const auto& [uuid, entry] : pending_) {
+            for (const auto &[uuid, entry] : pending_) {
                 if (entry.target == peer) {
                     snapshot.push_back(uuid);
                 }
             }
-            for (const Key& uuid : snapshot) {
+            for (const Key &uuid : snapshot) {
                 pending_.erase(uuid);
             }
         }
         if (on_each) {
-            for (const Key& uuid : snapshot) {
+            for (const Key &uuid : snapshot) {
                 on_each(uuid);
             }
         }

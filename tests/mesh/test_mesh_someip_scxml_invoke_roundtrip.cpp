@@ -42,23 +42,19 @@ int main() {
     // inited and its dispatch thread started before worker's
     // `create_application` attaches — mirrors the mesh_someip_runtime
     // ordering where motor (routing manager) initialised first.
-    using ParentEngine =
-        SCE::Generated::scxml_invoke_someip_parent::scxml_invoke_someip_parent;
+    using ParentEngine = SCE::Generated::scxml_invoke_someip_parent::scxml_invoke_someip_parent;
     ParentEngine parent;
-    SCE::Generated::scxml_invoke_someip_parent::TransportRouter<ParentEngine>
-        parent_router({&parent});
+    SCE::Generated::scxml_invoke_someip_parent::TransportRouter<ParentEngine> parent_router({&parent});
     if (!parent_router.init()) {
         std::fprintf(stderr, "FAIL: parent_router.init() returned false\n");
         return 1;
     }
 
-    using WorkerEngine =
-        SCE::Generated::scxml_invoke_someip_worker::scxml_invoke_someip_worker;
+    using WorkerEngine = SCE::Generated::scxml_invoke_someip_worker::scxml_invoke_someip_worker;
     WorkerEngine worker;
     SCE::Test::inject_build_engine(worker);
     worker.initialize();
-    SCE::Generated::scxml_invoke_someip_worker::TransportRouter<WorkerEngine>
-        worker_router({&worker});
+    SCE::Generated::scxml_invoke_someip_worker::TransportRouter<WorkerEngine> worker_router({&worker});
     if (!worker_router.init()) {
         std::fprintf(stderr, "FAIL: worker_router.init() returned false\n");
         return 1;
@@ -97,15 +93,13 @@ int main() {
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
         if (parent.getCurrentState() == State::Pass) {
-            std::printf(
-                "SCE Mesh §9.6 Session 4b SOME/IP scxml-invoke roundtrip: PASS\n");
+            std::printf("SCE Mesh §9.6 Session 4b SOME/IP scxml-invoke roundtrip: PASS\n");
             return 0;
         }
         if (parent.getCurrentState() == State::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent observed error.execution — the wire "
-                         "is present but the wire-15/18 success path did "
-                         "not complete over SOME/IP.\n");
+            std::fprintf(stderr, "FAIL: parent observed error.execution — the wire "
+                                 "is present but the wire-15/18 success path did "
+                                 "not complete over SOME/IP.\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));

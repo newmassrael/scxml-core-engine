@@ -112,14 +112,22 @@ extern "C" {
 
 EMSCRIPTEN_KEEPALIVE
 const char *sce_aim_get_state(void) {
-    if (!g_aim_sm) return "UNINITIALIZED";
+    if (!g_aim_sm) {
+        return "UNINITIALIZED";
+    }
     switch (g_aim_sm->getCurrentState()) {
-    case SCE::Generated::aim_assist_state::State::Disabled:  return "disabled";
-    case SCE::Generated::aim_assist_state::State::Enabled:   return "enabled";
-    case SCE::Generated::aim_assist_state::State::Idle:      return "idle";
-    case SCE::Generated::aim_assist_state::State::Searching: return "searching";
-    case SCE::Generated::aim_assist_state::State::Locked:    return "locked";
-    default: return "UNKNOWN";
+    case SCE::Generated::aim_assist_state::State::Disabled:
+        return "disabled";
+    case SCE::Generated::aim_assist_state::State::Enabled:
+        return "enabled";
+    case SCE::Generated::aim_assist_state::State::Idle:
+        return "idle";
+    case SCE::Generated::aim_assist_state::State::Searching:
+        return "searching";
+    case SCE::Generated::aim_assist_state::State::Locked:
+        return "locked";
+    default:
+        return "UNKNOWN";
     }
 }
 

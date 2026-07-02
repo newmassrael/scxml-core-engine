@@ -49,8 +49,7 @@ using namespace SCE::Test::Mesh;
 // ecu_brake), pinned to the peer-side listen on the same address. Raw
 // peer in this test binds the listen so brake's generated Zenoh
 // session can connect and hear the wildcard subscriber samples.
-constexpr const char* kListen =
-    SCE::Generated::brake_region_liveness::P_brake_left_part::ZENOH_CONNECT_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::brake_region_liveness::P_brake_left_part::ZENOH_CONNECT_ENDPOINTS[0];
 
 // deploy_zenoh_region_liveness.yaml lease_ms. DELETE-sample delivery
 // budget is `lease_ms + small zenoh-internal jitter`. 3× lease_ms
@@ -77,8 +76,8 @@ int run_test() {
     // partition = `brake_right_part` (the sibling to the one this
     // binary represents). The test never declares a 2-segment token
     // for this peer — row 8 must not fire for the sibling partition.
-    auto sibling_partition_token = sibling_session.liveliness_declare_token(
-        zenoh::KeyExpr("sce/live/brake_region_liveness/brake_right_part"));
+    auto sibling_partition_token =
+        sibling_session.liveliness_declare_token(zenoh::KeyExpr("sce/live/brake_region_liveness/brake_right_part"));
 
     MESH_TEST_REQUIRE(brake_router.init(), "brake_router.init() failed");
 
@@ -97,7 +96,7 @@ int run_test() {
     // `sce/live/brake_region_liveness/brake_left_part`).
     {
         std::lock_guard<std::mutex> lk(sender.received_.m);
-        for (const auto& ev : sender.received_.events) {
+        for (const auto &ev : sender.received_.events) {
             MESH_TEST_REQUIRE(ev.type != "error.communication",
                               "error.communication raised before sibling partition dropped");
         }
@@ -113,9 +112,11 @@ int run_test() {
     // Observation window: lease_ms + generous jitter. Matches the
     // row-8 sibling test's sleep sizing.
     const bool observed = sender.received_.wait_for(
-        [](const auto& events) {
-            for (const auto& ev : events) {
-                if (ev.type != "error.communication") continue;
+        [](const auto &events) {
+            for (const auto &ev : events) {
+                if (ev.type != "error.communication") {
+                    continue;
+                }
                 if (ev.data.find("\"reason\":\"REGION_PARTITIONED\"") != std::string::npos) {
                     return true;
                 }
@@ -124,32 +125,28 @@ int run_test() {
         },
         std::chrono::seconds(5));
 
-    MESH_TEST_REQUIRE(observed,
-                      "brake did not raise error.communication with "
-                      "reason REGION_PARTITIONED within 5 s of sibling "
-                      "partition drop");
+    MESH_TEST_REQUIRE(observed, "brake did not raise error.communication with "
+                                "reason REGION_PARTITIONED within 5 s of sibling "
+                                "partition drop");
 
     // Pin the extras: machine `brake_region_liveness`, partition
     // `brake_right_part`, and last_seen_ms_ago present.
     std::lock_guard<std::mutex> lk(sender.received_.m);
-    const ReceivedEvent* hit = nullptr;
-    for (const auto& ev : sender.received_.events) {
+    const ReceivedEvent *hit = nullptr;
+    for (const auto &ev : sender.received_.events) {
         if (ev.type == "error.communication" &&
             ev.data.find("\"reason\":\"REGION_PARTITIONED\"") != std::string::npos) {
             hit = &ev;
         }
     }
     MESH_TEST_REQUIRE(hit, "expected event vanished between wait_for and inspection");
-    MESH_TEST_REQUIRE(
-        hit->data.find("\"machine\":\"brake_region_liveness\"") != std::string::npos,
-        "REGION_PARTITIONED payload missing machine=\"brake_region_liveness\"");
-    MESH_TEST_REQUIRE(
-        hit->data.find("\"partition\":\"brake_right_part\"") != std::string::npos,
-        "REGION_PARTITIONED payload missing partition=\"brake_right_part\"");
-    MESH_TEST_REQUIRE(
-        hit->data.find("\"last_seen_ms_ago\":") != std::string::npos,
-        "REGION_PARTITIONED payload missing last_seen_ms_ago "
-        "(PUT sample was not observed before DELETE)");
+    MESH_TEST_REQUIRE(hit->data.find("\"machine\":\"brake_region_liveness\"") != std::string::npos,
+                      "REGION_PARTITIONED payload missing machine=\"brake_region_liveness\"");
+    MESH_TEST_REQUIRE(hit->data.find("\"partition\":\"brake_right_part\"") != std::string::npos,
+                      "REGION_PARTITIONED payload missing partition=\"brake_right_part\"");
+    MESH_TEST_REQUIRE(hit->data.find("\"last_seen_ms_ago\":") != std::string::npos,
+                      "REGION_PARTITIONED payload missing last_seen_ms_ago "
+                      "(PUT sample was not observed before DELETE)");
 
     // §16.4 orthogonality pin: PEER_PARTITIONED (row 8) must NOT
     // fire on this trace. The sibling peer never declared a 2-
@@ -157,11 +154,10 @@ int run_test() {
     // If row-8 raised anyway, the subscriber's segment-count
     // discrimination is broken — row 13 would be masquerading as
     // row 8 or the self-filter is off.
-    for (const auto& ev : sender.received_.events) {
-        MESH_TEST_REQUIRE(
-            ev.data.find("\"reason\":\"PEER_PARTITIONED\"") == std::string::npos,
-            "PEER_PARTITIONED fired on a region-partition trace — "
-            "segment-count discrimination regression");
+    for (const auto &ev : sender.received_.events) {
+        MESH_TEST_REQUIRE(ev.data.find("\"reason\":\"PEER_PARTITIONED\"") == std::string::npos,
+                          "PEER_PARTITIONED fired on a region-partition trace — "
+                          "segment-count discrimination regression");
     }
 
     brake_router.shutdown();
@@ -174,7 +170,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

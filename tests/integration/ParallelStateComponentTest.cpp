@@ -129,7 +129,7 @@ TEST_F(ParallelStateComponentTest, Performance_LargeScaleComponents) {
     // WASM: Reduce event count to avoid pthread memory exhaustion
     // Each broadcast creates 15 pthreads (2MB stack each = 30MB)
 #ifdef __EMSCRIPTEN__
-    const int numEvents = 5;       // WASM: 5 events (vs 100 native)
+    const int numEvents = 5;  // WASM: 5 events (vs 100 native)
     const int calibrationEvents = 2;
 #else
     const int numEvents = 100;

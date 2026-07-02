@@ -4,8 +4,8 @@
 // InvokeParser.cpp
 #include "InvokeParser.h"
 #include "core/LogMacros.h"
-#include "parsing/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
+#include "parsing/XmlSerializationHelper.h"
 
 #ifndef __EMSCRIPTEN__
 #endif

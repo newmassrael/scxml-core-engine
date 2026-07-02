@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-#include "runtime/HistoryManager.h"
 #include "core/LogMacros.h"
+#include "runtime/HistoryManager.h"
 #include "runtime/StateMachine.h"
 #include "scripting/ScriptEngineProvider.h"
 #include <atomic>
@@ -511,7 +511,9 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_StateRestoration_Subsequent
     ASSERT_TRUE(stateMachine->start());
 
     // Initialize data model
-    auto initResult = SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "var result = ''; var visit_count = 0;").get();
+    auto initResult = SCE::ScriptEngineProvider::getScriptEngine()
+                          .executeScript(sessionId, "var result = ''; var visit_count = 0;")
+                          .get();
     EXPECT_TRUE(initResult.isSuccess());
 
     // First visit - should use default transition
@@ -522,16 +524,19 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_StateRestoration_Subsequent
     EXPECT_TRUE(firstVisit.isSuccess());
 
     // Move to step2
-    auto moveToStep2 = SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_step2';").get();
+    auto moveToStep2 =
+        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_step2';").get();
     EXPECT_TRUE(moveToStep2.isSuccess());
 
     // Exit workflow
-    auto exitWorkflow = SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_outside';").get();
+    auto exitWorkflow =
+        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_outside';").get();
     EXPECT_TRUE(exitWorkflow.isSuccess());
 
     // Return to workflow - should restore to step2 (not default step1)
     // W3C Section 3.6: Second visit should restore previous state (step2)
-    auto returnToWorkflow = SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_step2';").get();
+    auto returnToWorkflow =
+        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_step2';").get();
     EXPECT_TRUE(returnToWorkflow.isSuccess());
 
     auto result = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sessionId, "result").get();
@@ -620,7 +625,8 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ShallowVsDeep_RestorationDi
     EXPECT_TRUE(enterShallow.isSuccess());
 
     // Exit and record that we were in level1_nested with level2_nested active
-    auto exitShallow = SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_outside';").get();
+    auto exitShallow =
+        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_outside';").get();
     EXPECT_TRUE(exitShallow.isSuccess());
 
     // Clear result for comparison
@@ -629,7 +635,8 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ShallowVsDeep_RestorationDi
 
     // Return via shallow history - should only restore level1_nested, not level2_nested
     // W3C Section 3.6: Shallow history should only restore immediate children
-    auto returnShallow = SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_l1nested';").get();
+    auto returnShallow =
+        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_l1nested';").get();
     EXPECT_TRUE(returnShallow.isSuccess());
 
     auto shallowResult = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sessionId, "result").get();
@@ -675,7 +682,8 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ExecutionOrder_OnentryBefor
     ASSERT_TRUE(stateMachine->start());
 
     // Initialize data model
-    auto initResult = SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "var execution_order = '';").get();
+    auto initResult =
+        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "var execution_order = '';").get();
     EXPECT_TRUE(initResult.isSuccess());
 
     // Simulate entering compound state with history transition
@@ -752,17 +760,20 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ParallelState_IndependentRe
     EXPECT_TRUE(initResult.isSuccess());
 
     // Enter parallel state and navigate to different states in each region
-    auto enterParallel =
-        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_a1'; result = result + '_b1';").get();
+    auto enterParallel = SCE::ScriptEngineProvider::getScriptEngine()
+                             .executeScript(sessionId, "result = result + '_a1'; result = result + '_b1';")
+                             .get();
     EXPECT_TRUE(enterParallel.isSuccess());
 
     // Navigate to a2 and b2
-    auto navigate =
-        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_a2'; result = result + '_b2';").get();
+    auto navigate = SCE::ScriptEngineProvider::getScriptEngine()
+                        .executeScript(sessionId, "result = result + '_a2'; result = result + '_b2';")
+                        .get();
     EXPECT_TRUE(navigate.isSuccess());
 
     // Exit parallel state
-    auto exitParallel = SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_outside';").get();
+    auto exitParallel =
+        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_outside';").get();
     EXPECT_TRUE(exitParallel.isSuccess());
 
     // Clear previous results
@@ -771,8 +782,9 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ParallelState_IndependentRe
 
     // Return to parallel state - each region should restore independently
     // W3C: Each parallel region should restore its own history independently
-    auto returnParallel =
-        SCE::ScriptEngineProvider::getScriptEngine().executeScript(sessionId, "result = result + '_a2'; result = result + '_b2';").get();
+    auto returnParallel = SCE::ScriptEngineProvider::getScriptEngine()
+                              .executeScript(sessionId, "result = result + '_a2'; result = result + '_b2';")
+                              .get();
     EXPECT_TRUE(returnParallel.isSuccess());
 
     auto result = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sessionId, "result").get();
@@ -934,7 +946,8 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     auto debug_result = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sessionId, "step_count").get();
     EXPECT_TRUE(debug_result.isSuccess());
 
-    auto state_result = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sessionId, "workflow_state").get();
+    auto state_result =
+        SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sessionId, "workflow_state").get();
     auto step_result = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sessionId, "step_count").get();
 
     EXPECT_TRUE(state_result.isSuccess());

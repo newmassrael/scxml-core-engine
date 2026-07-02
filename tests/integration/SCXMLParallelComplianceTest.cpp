@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-#include "factory/NodeFactory.h"
 #include "common/Logger.h"
 #include "core/LogMacros.h"
+#include "factory/NodeFactory.h"
 #include "parsing/SCXMLParser.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/StateMachine.h"
@@ -198,11 +198,13 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_DoneStateEvent_Generation) {
         std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
 
         // Verify transition occurred due to automatically generated done.state event
-        auto doneEventResult =
-            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "done_event_received").get();
+        auto doneEventResult = SCE::ScriptEngineProvider::getScriptEngine()
+                                   .evaluateExpression(sm->getSessionId(), "done_event_received")
+                                   .get();
 
-        auto parallelCompletedResult =
-            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "parallel_completed").get();
+        auto parallelCompletedResult = SCE::ScriptEngineProvider::getScriptEngine()
+                                           .evaluateExpression(sm->getSessionId(), "parallel_completed")
+                                           .get();
 
         // W3C SCXML 3.4: Verify done.state event automatic generation
         if (doneEventResult.getValueAsString() == "true" && parallelCompletedResult.getValueAsString() == "true") {
@@ -605,19 +607,22 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EventBroadcasting_AllRegions) {
         EXPECT_TRUE(result.success) << "SCXML violation: Event broadcasting failed: " << result.errorMessage;
 
         // Verify all regions received and processed the event
-        auto region1Future = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "region1_received");
+        auto region1Future =
+            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "region1_received");
         auto region1Result = region1Future.get();
         EXPECT_EQ(region1Result.getValueAsString(), "true")
             << "SCXML violation: region1 did not receive broadcast event. Expected true, got: "
             << region1Result.getValueAsString();
 
-        auto region2Future = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "region2_received");
+        auto region2Future =
+            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "region2_received");
         auto region2Result = region2Future.get();
         EXPECT_EQ(region2Result.getValueAsString(), "true")
             << "SCXML violation: region2 did not receive broadcast event. Expected true, got: "
             << region2Result.getValueAsString();
 
-        auto region3Future = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "region3_received");
+        auto region3Future =
+            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "region3_received");
         auto region3Result = region3Future.get();
         EXPECT_EQ(region3Result.getValueAsString(), "true")
             << "SCXML violation: region3 did not receive broadcast event. Expected true, got: "
@@ -687,15 +692,17 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_CompletionCriteria) {
         EXPECT_TRUE(result2.success) << "Failed to complete region 2: " << result2.errorMessage;
 
         // Verify done.state event was automatically generated and processed
-        auto parallelCompleteResult =
-            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "parallel_complete").get();
+        auto parallelCompleteResult = SCE::ScriptEngineProvider::getScriptEngine()
+                                          .evaluateExpression(sm->getSessionId(), "parallel_complete")
+                                          .get();
         EXPECT_EQ(parallelCompleteResult.getValueAsString(), "true")
             << "SCXML violation: done.state event not automatically generated when all regions completed. Expected "
                "true, got: "
             << parallelCompleteResult.getValueAsString();
 
-        auto doneEventResult =
-            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "done_event_fired").get();
+        auto doneEventResult = SCE::ScriptEngineProvider::getScriptEngine()
+                                   .evaluateExpression(sm->getSessionId(), "done_event_fired")
+                                   .get();
         EXPECT_EQ(doneEventResult.getValueAsString(), "true")
             << "SCXML violation: done.state.completion_test event not processed. Expected true, got: "
             << doneEventResult.getValueAsString();
@@ -887,7 +894,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_TransitionProcessing_Independen
 
         auto moveResult = sm->processEvent("move", "");
         SCE_LOG_INFO("Move event result - success: {}, from: {}, to: {}, error: {}", moveResult.success,
-                 moveResult.fromState, moveResult.toState, moveResult.errorMessage);
+                     moveResult.fromState, moveResult.toState, moveResult.errorMessage);
         ASSERT_TRUE(moveResult.success) << "SCXML violation: 'move' event processing failed: "
                                         << moveResult.errorMessage;
 
@@ -911,7 +918,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_TransitionProcessing_Independen
 
         auto differentResult = sm->processEvent("different_event", "");
         SCE_LOG_INFO("Different event result - success: {}, from: {}, to: {}, error: {}", differentResult.success,
-                 differentResult.fromState, differentResult.toState, differentResult.errorMessage);
+                     differentResult.fromState, differentResult.toState, differentResult.errorMessage);
         ASSERT_TRUE(differentResult.success)
             << "SCXML violation: 'different_event' processing failed: " << differentResult.errorMessage;
 

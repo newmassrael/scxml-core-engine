@@ -176,13 +176,20 @@ extern "C" {
 
 EMSCRIPTEN_KEEPALIVE
 const char *sce_get_game_state(void) {
-    if (!g_game_sm) return "UNINITIALIZED";
+    if (!g_game_sm) {
+        return "UNINITIALIZED";
+    }
     switch (g_game_sm->getCurrentState()) {
-    case SCE::Generated::game_state::State::Demoscreen:   return "DEMOSCREEN";
-    case SCE::Generated::game_state::State::Level:        return "LEVEL";
-    case SCE::Generated::game_state::State::Intermission: return "INTERMISSION";
-    case SCE::Generated::game_state::State::Finale:       return "FINALE";
-    default: return "UNKNOWN";
+    case SCE::Generated::game_state::State::Demoscreen:
+        return "DEMOSCREEN";
+    case SCE::Generated::game_state::State::Level:
+        return "LEVEL";
+    case SCE::Generated::game_state::State::Intermission:
+        return "INTERMISSION";
+    case SCE::Generated::game_state::State::Finale:
+        return "FINALE";
+    default:
+        return "UNKNOWN";
     }
 }
 
@@ -218,13 +225,13 @@ void sce_game_event_demostart(void) {
     sce_sm_aim_reset();
 }
 
-#define GAME_EVENT(name, event)                          \
-    EMSCRIPTEN_KEEPALIVE                                 \
-    void sce_game_event_##name(void) {                   \
-        if (g_game_sm) {                                 \
-            g_game_sm->raiseExternal(GameEvent::event);  \
-            g_game_sm->step();                           \
-        }                                                \
+#define GAME_EVENT(name, event)                                                                                        \
+    EMSCRIPTEN_KEEPALIVE                                                                                               \
+    void sce_game_event_##name(void) {                                                                                 \
+        if (g_game_sm) {                                                                                               \
+            g_game_sm->raiseExternal(GameEvent::event);                                                                \
+            g_game_sm->step();                                                                                         \
+        }                                                                                                              \
     }
 
 GAME_EVENT(completed, Completed)
@@ -239,23 +246,30 @@ GAME_EVENT(finale, Finale)
 
 EMSCRIPTEN_KEEPALIVE
 const char *sce_get_player_state(void) {
-    if (!g_player_sm) return "UNINITIALIZED";
+    if (!g_player_sm) {
+        return "UNINITIALIZED";
+    }
     switch (g_player_sm->getCurrentState()) {
-    case SCE::Generated::player_state::State::Alive:        return "ALIVE";
-    case SCE::Generated::player_state::State::Dead:         return "DEAD";
-    case SCE::Generated::player_state::State::Reborn:       return "REBORN";
-    case SCE::Generated::player_state::State::Invulnerable: return "INVULNERABLE";
-    default: return "UNKNOWN";
+    case SCE::Generated::player_state::State::Alive:
+        return "ALIVE";
+    case SCE::Generated::player_state::State::Dead:
+        return "DEAD";
+    case SCE::Generated::player_state::State::Reborn:
+        return "REBORN";
+    case SCE::Generated::player_state::State::Invulnerable:
+        return "INVULNERABLE";
+    default:
+        return "UNKNOWN";
     }
 }
 
-#define PLAYER_EVENT(name, event)                              \
-    EMSCRIPTEN_KEEPALIVE                                       \
-    void sce_player_event_##name(void) {                       \
-        if (g_player_sm) {                                     \
-            g_player_sm->raiseExternal(PlayerEvent::event);    \
-            g_player_sm->step();                               \
-        }                                                      \
+#define PLAYER_EVENT(name, event)                                                                                      \
+    EMSCRIPTEN_KEEPALIVE                                                                                               \
+    void sce_player_event_##name(void) {                                                                               \
+        if (g_player_sm) {                                                                                             \
+            g_player_sm->raiseExternal(PlayerEvent::event);                                                            \
+            g_player_sm->step();                                                                                       \
+        }                                                                                                              \
     }
 
 PLAYER_EVENT(killed, Killed)
@@ -281,23 +295,30 @@ void sce_player_event_respawn(void) {
 
 EMSCRIPTEN_KEEPALIVE
 const char *sce_get_weapon_state(void) {
-    if (!g_weapon_sm) return "UNINITIALIZED";
+    if (!g_weapon_sm) {
+        return "UNINITIALIZED";
+    }
     switch (g_weapon_sm->getCurrentState()) {
-    case SCE::Generated::weapon_state::State::Ready:    return "READY";
-    case SCE::Generated::weapon_state::State::Lowering: return "LOWERING";
-    case SCE::Generated::weapon_state::State::Raising:  return "RAISING";
-    case SCE::Generated::weapon_state::State::Firing:   return "FIRING";
-    default: return "UNKNOWN";
+    case SCE::Generated::weapon_state::State::Ready:
+        return "READY";
+    case SCE::Generated::weapon_state::State::Lowering:
+        return "LOWERING";
+    case SCE::Generated::weapon_state::State::Raising:
+        return "RAISING";
+    case SCE::Generated::weapon_state::State::Firing:
+        return "FIRING";
+    default:
+        return "UNKNOWN";
     }
 }
 
-#define WEAPON_EVENT(name, event)                              \
-    EMSCRIPTEN_KEEPALIVE                                       \
-    void sce_weapon_event_##name(void) {                       \
-        if (g_weapon_sm) {                                     \
-            g_weapon_sm->raiseExternal(WeaponEvent::event);    \
-            g_weapon_sm->step();                               \
-        }                                                      \
+#define WEAPON_EVENT(name, event)                                                                                      \
+    EMSCRIPTEN_KEEPALIVE                                                                                               \
+    void sce_weapon_event_##name(void) {                                                                               \
+        if (g_weapon_sm) {                                                                                             \
+            g_weapon_sm->raiseExternal(WeaponEvent::event);                                                            \
+            g_weapon_sm->step();                                                                                       \
+        }                                                                                                              \
     }
 
 WEAPON_EVENT(fire, Fire)

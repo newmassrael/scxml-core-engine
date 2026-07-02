@@ -424,7 +424,8 @@ TEST_F(SessionManagementTest, EventSchedulerCreationTest) {
         EXPECT_TRUE(dispatcher != nullptr) << "EventDispatcherImpl creation failed";
 
         // Step 5: Test if we can create ActionExecutor with dispatcher
-        auto actionExecutorWithDispatcher = std::make_shared<SCE::ActionExecutorImpl>("test_session", SCE::JSEngine::instance(), dispatcher);
+        auto actionExecutorWithDispatcher =
+            std::make_shared<SCE::ActionExecutorImpl>("test_session", SCE::JSEngine::instance(), dispatcher);
         EXPECT_TRUE(actionExecutorWithDispatcher != nullptr) << "ActionExecutor with dispatcher failed";
 
         SUCCEED() << "All event scheduling components created successfully!";

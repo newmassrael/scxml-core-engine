@@ -47,8 +47,7 @@ int main(void) {
 
     while (!test247_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test247: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test247_active_states(&sm));
+            fprintf(stderr, "test247: TIMEOUT — active = 0x%08x\n", (unsigned)test247_active_states(&sm));
             test247_destroy(&sm);
             return 1;
         }
@@ -58,8 +57,7 @@ int main(void) {
 
     int rc = test247_in_state(&sm, TEST247_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test247: FAIL — active = 0x%08x\n",
-                (unsigned)test247_active_states(&sm));
+        fprintf(stderr, "test247: FAIL — active = 0x%08x\n", (unsigned)test247_active_states(&sm));
     }
     test247_destroy(&sm);
     return rc;

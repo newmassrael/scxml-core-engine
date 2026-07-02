@@ -56,9 +56,8 @@ struct Test417_Worker : public PartitionBase {
         // wait here is a one-shot handshake grace, not a polling loop.
         std::this_thread::sleep_for(std::chrono::milliseconds(1500));
 
-        std::fprintf(stdout,
-                     "test417 worker: PASS — wire-21 ParallelRegionDone dispatched for region "
-                     "\"s1p12\"\n");
+        std::fprintf(stdout, "test417 worker: PASS — wire-21 ParallelRegionDone dispatched for region "
+                             "\"s1p12\"\n");
         return 0;
     }
 };

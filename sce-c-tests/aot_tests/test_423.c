@@ -3,7 +3,9 @@
 //
 // W3C SCXML test423 — C11 AOT runner.
 //
-// W3C SCXML 3.13 + App.D.2: external queue drains until a matching transition is found — externalEvent1 has no s0-level matching transition so it is popped and discarded, externalEvent2 (1 s delayed) eventually fires and matches the s1 transition → pass.
+// W3C SCXML 3.13 + App.D.2: external queue drains until a matching transition is found — externalEvent1 has no s0-level
+// matching transition so it is popped and discarded, externalEvent2 (1 s delayed) eventually fires and matches the s1
+// transition → pass.
 
 #define _POSIX_C_SOURCE 199309L
 
@@ -25,8 +27,7 @@ int main(void) {
 
     while (!test423_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test423: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test423_active_states(&sm));
+            fprintf(stderr, "test423: TIMEOUT — active = 0x%08x\n", (unsigned)test423_active_states(&sm));
             test423_destroy(&sm);
             return 1;
         }
@@ -36,8 +37,7 @@ int main(void) {
 
     int rc = test423_in_state(&sm, TEST423_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test423: FAIL — active = 0x%08x\n",
-                (unsigned)test423_active_states(&sm));
+        fprintf(stderr, "test423: FAIL — active = 0x%08x\n", (unsigned)test423_active_states(&sm));
     }
     test423_destroy(&sm);
     return rc;

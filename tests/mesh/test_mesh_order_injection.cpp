@@ -58,8 +58,7 @@ using namespace SCE::Generated::brake;
 using namespace SCE::Test::Mesh;
 namespace PK = SCE::Mesh;
 
-SCE::Mesh::MeshEnvelope make_ordered_env(const std::string& source,
-                                          std::uint64_t seq) {
+SCE::Mesh::MeshEnvelope make_ordered_env(const std::string &source, std::uint64_t seq) {
     SCE::Mesh::MeshEnvelope env;
     env.id = SCE::uuid::v7();
     env.source = source;
@@ -72,29 +71,33 @@ SCE::Mesh::MeshEnvelope make_ordered_env(const std::string& source,
 // `_event.data` for raised error.communication envelopes is JSON bytes;
 // substring match is sufficient to pin the reason + extras set by
 // `CommunicationError::toJsonBytes` without pulling in a JSON parser.
-bool sender_received(TestSenderEngine& sender, const std::string& type) {
+bool sender_received(TestSenderEngine &sender, const std::string &type) {
     std::lock_guard<std::mutex> lk(sender.received_.m);
-    for (const auto& ev : sender.received_.events) {
-        if (ev.type == type) return true;
+    for (const auto &ev : sender.received_.events) {
+        if (ev.type == type) {
+            return true;
+        }
     }
     return false;
 }
 
-std::string last_data_for_type(TestSenderEngine& sender, const std::string& type) {
+std::string last_data_for_type(TestSenderEngine &sender, const std::string &type) {
     std::lock_guard<std::mutex> lk(sender.received_.m);
-    for (auto it = sender.received_.events.rbegin();
-         it != sender.received_.events.rend(); ++it) {
-        if (it->type == type) return it->data;
+    for (auto it = sender.received_.events.rbegin(); it != sender.received_.events.rend(); ++it) {
+        if (it->type == type) {
+            return it->data;
+        }
     }
     return {};
 }
 
-std::size_t count_events_of_type(TestSenderEngine& sender,
-                                 const std::string& type) {
+std::size_t count_events_of_type(TestSenderEngine &sender, const std::string &type) {
     std::lock_guard<std::mutex> lk(sender.received_.m);
     std::size_t n = 0;
-    for (const auto& ev : sender.received_.events) {
-        if (ev.type == type) ++n;
+    for (const auto &ev : sender.received_.events) {
+        if (ev.type == type) {
+            ++n;
+        }
     }
     return n;
 }
@@ -117,13 +120,13 @@ int run_test() {
         // [1, 2, 3, 4] — the 3,2 reshuffle is absorbed by
         // OrderingBuffer before dispatch.
         MESH_TEST_REQUIRE(router.admitZenohInbound("#motor", make_ordered_env("motor", 1)),
-            "seq=1 must be dispatched immediately");
+                          "seq=1 must be dispatched immediately");
         MESH_TEST_REQUIRE(!router.admitZenohInbound("#motor", make_ordered_env("motor", 3)),
-            "seq=3 arriving before seq=2 must buffer");
+                          "seq=3 arriving before seq=2 must buffer");
         MESH_TEST_REQUIRE(router.admitZenohInbound("#motor", make_ordered_env("motor", 2)),
-            "seq=2 fills the gap and releases buffered envelopes");
+                          "seq=2 fills the gap and releases buffered envelopes");
         MESH_TEST_REQUIRE(router.admitZenohInbound("#motor", make_ordered_env("motor", 4)),
-            "seq=4 is the new expected — release immediately");
+                          "seq=4 is the new expected — release immediately");
 
         // Sender must have observed exactly 4 events and the order
         // must reflect the sequence numbers, not the admit order.
@@ -131,8 +134,7 @@ int run_test() {
         // first observation.
         {
             std::lock_guard<std::mutex> lk(sender.received_.m);
-            MESH_TEST_REQUIRE(sender.received_.events.size() == 4,
-                "sender must receive exactly 4 envelopes");
+            MESH_TEST_REQUIRE(sender.received_.events.size() == 4, "sender must receive exactly 4 envelopes");
             // All envelopes share the same `brake.activate` event name,
             // so we cannot use event strings to identify order. The
             // reorder guarantee is pinned instead by the dispatch
@@ -152,10 +154,9 @@ int run_test() {
         TestSenderEngine sender;
         RouterT router({&sender});
 
-        MESH_TEST_REQUIRE(router.admitZenohInbound("#motor", make_ordered_env("motor", 1)),
-            "seq=1 released");
+        MESH_TEST_REQUIRE(router.admitZenohInbound("#motor", make_ordered_env("motor", 1)), "seq=1 released");
         MESH_TEST_REQUIRE(!router.admitZenohInbound("#motor", make_ordered_env("motor", 3)),
-            "seq=3 buffered (gap at 2)");
+                          "seq=3 buffered (gap at 2)");
 
         // deploy_ordered.yaml sets gap_timeout_ms=10; sleep at least
         // 2× that to ensure a stable timeout under CI load. Was 120
@@ -164,20 +165,19 @@ int run_test() {
         // by an order of magnitude.
         std::this_thread::sleep_for(std::chrono::milliseconds(25));
         const std::size_t released = router.tickOrdering();
-        MESH_TEST_REQUIRE(released == 1,
-            "gap timeout must release the buffered seq=3");
+        MESH_TEST_REQUIRE(released == 1, "gap timeout must release the buffered seq=3");
 
         MESH_TEST_REQUIRE(sender_received(sender, "error.communication"),
-            "tickOrdering must raise error.communication on gap timeout");
+                          "tickOrdering must raise error.communication on gap timeout");
         const std::string payload = last_data_for_type(sender, "error.communication");
         MESH_TEST_REQUIRE(payload.find("\"reason\":\"ORDERING_GAP\"") != std::string::npos,
-            "error.communication reason must be ORDERING_GAP");
+                          "error.communication reason must be ORDERING_GAP");
         MESH_TEST_REQUIRE(payload.find("\"lost_seq_lo\":2") != std::string::npos,
-            "lost_seq_lo must pin the missing sequence low bound");
+                          "lost_seq_lo must pin the missing sequence low bound");
         MESH_TEST_REQUIRE(payload.find("\"lost_seq_hi\":2") != std::string::npos,
-            "lost_seq_hi must pin the missing sequence high bound");
+                          "lost_seq_hi must pin the missing sequence high bound");
         MESH_TEST_REQUIRE(payload.find("\"source\":\"motor\"") != std::string::npos,
-            "error.communication must carry the gap's source machine name");
+                          "error.communication must carry the gap's source machine name");
     }
 
     // ── 3. RpcReply bypasses the ordering buffer ───────────────────
@@ -199,11 +199,11 @@ int run_test() {
         // bypass the buffer for RpcReply regardless of whether the
         // sequence field is present.
         MESH_TEST_REQUIRE(router.admitZenohInbound("#motor", reply),
-            "RpcReply without sequence_no must bypass the ordering buffer");
+                          "RpcReply without sequence_no must bypass the ordering buffer");
         // RpcReply must NOT raise MISSING_SEQUENCE — it is bypassed
         // before the stamp check.
         MESH_TEST_REQUIRE(!sender_received(sender, "error.communication"),
-            "RpcReply bypass must not trigger a MISSING_SEQUENCE raise");
+                          "RpcReply bypass must not trigger a MISSING_SEQUENCE raise");
     }
 
     // ── 4. Unstamped envelope → error.communication MISSING_SEQUENCE
@@ -231,21 +231,21 @@ int run_test() {
         // NOT mean "the raise failed" — raise observation is always
         // performed via the sender below (author-visible signal).
         MESH_TEST_REQUIRE(!router.admitZenohInbound("#motor", unstamped),
-            "admitOrdered must return false — unstamped envelope drops from the data stream");
+                          "admitOrdered must return false — unstamped envelope drops from the data stream");
 
         MESH_TEST_REQUIRE(sender_received(sender, "error.communication"),
-            "unstamped envelope on ordered route must raise error.communication");
+                          "unstamped envelope on ordered route must raise error.communication");
         const std::string payload = last_data_for_type(sender, "error.communication");
         MESH_TEST_REQUIRE(payload.find("\"reason\":\"MISSING_SEQUENCE\"") != std::string::npos,
-            "error.communication reason must be MISSING_SEQUENCE");
+                          "error.communication reason must be MISSING_SEQUENCE");
         MESH_TEST_REQUIRE(payload.find("\"source\":\"motor\"") != std::string::npos,
-            "error.communication must carry the offending sender name");
+                          "error.communication must carry the offending sender name");
         MESH_TEST_REQUIRE(payload.find("\"envelope_id\":") != std::string::npos,
-            "error.communication must carry the envelope_id for diagnosis");
+                          "error.communication must carry the envelope_id for diagnosis");
         // The original event name must NOT have reached the engine —
         // only the error.communication should be visible.
         MESH_TEST_REQUIRE(count_events_of_type(sender, "brake.activate") == 0,
-            "unstamped envelope must not reach the engine as brake.activate");
+                          "unstamped envelope must not reach the engine as brake.activate");
     }
 
     // ── 5. Periodic tick thread recovers a stream-end gap ──────────
@@ -265,13 +265,11 @@ int run_test() {
     {
         TestSenderEngine sender;
         RouterT router({&sender});
-        MESH_TEST_REQUIRE(router.init(),
-            "router.init() must succeed — ordering tick thread start is inside init");
+        MESH_TEST_REQUIRE(router.init(), "router.init() must succeed — ordering tick thread start is inside init");
 
-        MESH_TEST_REQUIRE(router.admitZenohInbound("#motor", make_ordered_env("motor", 1)),
-            "seq=1 released");
+        MESH_TEST_REQUIRE(router.admitZenohInbound("#motor", make_ordered_env("motor", 1)), "seq=1 released");
         MESH_TEST_REQUIRE(!router.admitZenohInbound("#motor", make_ordered_env("motor", 3)),
-            "seq=3 buffered (gap at 2)");
+                          "seq=3 buffered (gap at 2)");
 
         // deploy_ordered.yaml sets gap_timeout_ms=10 + tick_period_ms=5,
         // so the worst-case recovery latency is `gap_timeout +
@@ -281,18 +279,18 @@ int run_test() {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
         MESH_TEST_REQUIRE(sender_received(sender, "error.communication"),
-            "periodic tick must raise error.communication on stream-end gap");
+                          "periodic tick must raise error.communication on stream-end gap");
         const std::string payload = last_data_for_type(sender, "error.communication");
         MESH_TEST_REQUIRE(payload.find("\"reason\":\"ORDERING_GAP\"") != std::string::npos,
-            "periodic tick reason must be ORDERING_GAP");
+                          "periodic tick reason must be ORDERING_GAP");
         MESH_TEST_REQUIRE(payload.find("\"lost_seq_lo\":2") != std::string::npos,
-            "periodic tick lost_seq_lo must pin the missing sequence");
+                          "periodic tick lost_seq_lo must pin the missing sequence");
 
         // The buffered seq=3 must also have been released by the
         // periodic tick — sender receives exactly one brake.activate
         // envelope (seq=1) plus the fast-forwarded seq=3.
         MESH_TEST_REQUIRE(count_events_of_type(sender, "brake.activate") == 2,
-            "periodic tick must release buffered seq=3 after fast-forward");
+                          "periodic tick must release buffered seq=3 after fast-forward");
 
         router.shutdown();  // joins ordering_tick_thread_; idempotent with dtor
     }
@@ -306,7 +304,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: unexpected exception: %s\n", ex.what());
         return 1;
     } catch (...) {

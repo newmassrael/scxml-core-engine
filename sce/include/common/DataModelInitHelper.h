@@ -96,8 +96,8 @@ public:
      *
      * §scxml-5.2.2: Load content from external source and initialize
      */
-    static bool initializeVariableFromSrc(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &varId,
-                                          const std::string &src, const std::string &basePath,
+    static bool initializeVariableFromSrc(IScriptEngine &jsEngine, const std::string &sessionId,
+                                          const std::string &varId, const std::string &src, const std::string &basePath,
                                           std::function<void(const std::string &)> errorCallback);
 
     /**
@@ -112,8 +112,8 @@ public:
      *
      * §scxml-5.2.2: Evaluate expr and assign to variable
      */
-    static bool initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &varId,
-                                           const std::string &expr,
+    static bool initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId,
+                                           const std::string &varId, const std::string &expr,
                                            std::function<void(const std::string &)> errorCallback);
 };
 

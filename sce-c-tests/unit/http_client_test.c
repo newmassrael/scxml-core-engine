@@ -28,34 +28,37 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define ASSERT_TRUE(cond, msg) \
-    do { if (!(cond)) { fprintf(stderr, "  FAIL: %s\n", msg); return 1; } } while (0)
-
-#define ASSERT_STREQ(actual, expected, msg) \
-    do { \
-        if (strcmp((actual), (expected)) != 0) { \
-            fprintf(stderr, "  FAIL: %s — got '%s', want '%s'\n", msg, (actual), (expected)); \
-            return 1; \
-        } \
+#define ASSERT_TRUE(cond, msg)                                                                                         \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            fprintf(stderr, "  FAIL: %s\n", msg);                                                                      \
+            return 1;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
-#define ASSERT_MEMEQ(actual, actual_len, expected, msg) \
-    do { \
-        size_t _exp_len = strlen(expected); \
-        if ((actual_len) != _exp_len || memcmp((actual), (expected), _exp_len) != 0) { \
-            fprintf(stderr, "  FAIL: %s — got '%.*s' (%zu B), want '%s' (%zu B)\n", \
-                    msg, (int)(actual_len), (actual), (size_t)(actual_len), \
-                    (expected), _exp_len); \
-            return 1; \
-        } \
+#define ASSERT_STREQ(actual, expected, msg)                                                                            \
+    do {                                                                                                               \
+        if (strcmp((actual), (expected)) != 0) {                                                                       \
+            fprintf(stderr, "  FAIL: %s — got '%s', want '%s'\n", msg, (actual), (expected));                          \
+            return 1;                                                                                                  \
+        }                                                                                                              \
+    } while (0)
+
+#define ASSERT_MEMEQ(actual, actual_len, expected, msg)                                                                \
+    do {                                                                                                               \
+        size_t _exp_len = strlen(expected);                                                                            \
+        if ((actual_len) != _exp_len || memcmp((actual), (expected), _exp_len) != 0) {                                 \
+            fprintf(stderr, "  FAIL: %s — got '%.*s' (%zu B), want '%s' (%zu B)\n", msg, (int)(actual_len), (actual),  \
+                    (size_t)(actual_len), (expected), _exp_len);                                                       \
+            return 1;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
 /* ── URL parser ─────────────────────────────────────────────────── */
 
 static int test_url_parse_basic(void) {
     sce_test_http_url_t url;
-    ASSERT_TRUE(sce_test_http_url_parse("http://localhost:8080/test", &url),
-                "parse must succeed");
+    ASSERT_TRUE(sce_test_http_url_parse("http://localhost:8080/test", &url), "parse must succeed");
     ASSERT_STREQ(url.host, "localhost", "host");
     ASSERT_TRUE(url.port == 8080, "port == 8080");
     ASSERT_STREQ(url.path, "/test", "path");
@@ -64,8 +67,7 @@ static int test_url_parse_basic(void) {
 
 static int test_url_parse_default_port(void) {
     sce_test_http_url_t url;
-    ASSERT_TRUE(sce_test_http_url_parse("http://example.com/api", &url),
-                "parse must succeed");
+    ASSERT_TRUE(sce_test_http_url_parse("http://example.com/api", &url), "parse must succeed");
     ASSERT_STREQ(url.host, "example.com", "host");
     ASSERT_TRUE(url.port == 80, "default port 80");
     ASSERT_STREQ(url.path, "/api", "path");
@@ -74,8 +76,7 @@ static int test_url_parse_default_port(void) {
 
 static int test_url_parse_no_path(void) {
     sce_test_http_url_t url;
-    ASSERT_TRUE(sce_test_http_url_parse("http://localhost:8080", &url),
-                "parse must succeed");
+    ASSERT_TRUE(sce_test_http_url_parse("http://localhost:8080", &url), "parse must succeed");
     ASSERT_TRUE(url.port == 8080, "port == 8080");
     ASSERT_STREQ(url.path, "/", "default path /");
     return 0;
@@ -83,21 +84,16 @@ static int test_url_parse_no_path(void) {
 
 static int test_url_parse_rejects_https(void) {
     sce_test_http_url_t url;
-    ASSERT_TRUE(!sce_test_http_url_parse("https://localhost/x", &url),
-                "https:// must be rejected");
+    ASSERT_TRUE(!sce_test_http_url_parse("https://localhost/x", &url), "https:// must be rejected");
     return 0;
 }
 
 static int test_url_parse_rejects_garbage(void) {
     sce_test_http_url_t url;
-    ASSERT_TRUE(!sce_test_http_url_parse("not-a-url", &url),
-                "non-http scheme must fail");
-    ASSERT_TRUE(!sce_test_http_url_parse("http://", &url),
-                "empty host must fail");
-    ASSERT_TRUE(!sce_test_http_url_parse("http://host:0/x", &url),
-                "port 0 must fail");
-    ASSERT_TRUE(!sce_test_http_url_parse("http://host:99999/x", &url),
-                "port > 65535 must fail");
+    ASSERT_TRUE(!sce_test_http_url_parse("not-a-url", &url), "non-http scheme must fail");
+    ASSERT_TRUE(!sce_test_http_url_parse("http://", &url), "empty host must fail");
+    ASSERT_TRUE(!sce_test_http_url_parse("http://host:0/x", &url), "port 0 must fail");
+    ASSERT_TRUE(!sce_test_http_url_parse("http://host:99999/x", &url), "port > 65535 must fail");
     return 0;
 }
 
@@ -107,12 +103,8 @@ static int test_form_encode_basic(void) {
     char buf[256];
     buf[0] = '\0';
     size_t len = 0u;
-    ASSERT_TRUE(sce_test_http_form_append(buf, sizeof(buf), &len,
-                                          "_scxmleventname", "test"),
-                "append k1");
-    ASSERT_TRUE(sce_test_http_form_append(buf, sizeof(buf), &len,
-                                          "param1", "2"),
-                "append k2");
+    ASSERT_TRUE(sce_test_http_form_append(buf, sizeof(buf), &len, "_scxmleventname", "test"), "append k1");
+    ASSERT_TRUE(sce_test_http_form_append(buf, sizeof(buf), &len, "param1", "2"), "append k2");
     ASSERT_STREQ(buf, "_scxmleventname=test&param1=2", "joined body");
     return 0;
 }
@@ -123,9 +115,7 @@ static int test_form_encode_pct_encoding(void) {
     size_t len = 0u;
     /* Space → +, special chars → %XX (RFC 3986 unreserved set
        preserved). */
-    ASSERT_TRUE(sce_test_http_form_append(buf, sizeof(buf), &len,
-                                          "k", "a b/c=d&e"),
-                "append");
+    ASSERT_TRUE(sce_test_http_form_append(buf, sizeof(buf), &len, "k", "a b/c=d&e"), "append");
     ASSERT_STREQ(buf, "k=a+b%2Fc%3Dd%26e", "encoded body");
     return 0;
 }
@@ -134,8 +124,7 @@ static int test_form_encode_overflow(void) {
     char buf[16];
     buf[0] = '\0';
     size_t len = 0u;
-    ASSERT_TRUE(!sce_test_http_form_append(buf, sizeof(buf), &len,
-                                           "verylongkey", "verylongvalue"),
+    ASSERT_TRUE(!sce_test_http_form_append(buf, sizeof(buf), &len, "verylongkey", "verylongvalue"),
                 "must reject overflow");
     return 0;
 }
@@ -145,8 +134,7 @@ static int test_form_encode_overflow(void) {
 static int test_json_event_only(void) {
     char body[] = "{\"event\":\"test\"}";
     sce_test_http_json_response_t resp;
-    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp),
-                "parse");
+    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp), "parse");
     ASSERT_TRUE(resp.ok, "ok");
     ASSERT_MEMEQ(resp.event_name, resp.event_name_len, "test", "event_name");
     ASSERT_TRUE(resp.event_data == NULL, "no data");
@@ -154,31 +142,25 @@ static int test_json_event_only(void) {
 }
 
 static int test_json_event_and_data_string(void) {
-    char body[] =
-        "{\"status\":\"success\","
-        "\"event\":\"HTTP.POST\","
-        "\"data\":\"some content\","
-        "\"timestamp\":1234}";
+    char body[] = "{\"status\":\"success\","
+                  "\"event\":\"HTTP.POST\","
+                  "\"data\":\"some content\","
+                  "\"timestamp\":1234}";
     sce_test_http_json_response_t resp;
-    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp),
-                "parse");
+    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp), "parse");
     ASSERT_MEMEQ(resp.event_name, resp.event_name_len, "HTTP.POST", "event");
     ASSERT_TRUE(resp.data_is_string, "data_is_string");
-    ASSERT_MEMEQ(resp.event_data, resp.event_data_len,
-                 "some content", "event_data");
+    ASSERT_MEMEQ(resp.event_data, resp.event_data_len, "some content", "event_data");
     return 0;
 }
 
 static int test_json_event_and_data_object(void) {
     /* test567 shape: data is a JSON object containing form params. */
-    char body[] =
-        "{\"event\":\"test\",\"data\":{\"param1\":2,\"_scxmleventname\":\"test\"}}";
+    char body[] = "{\"event\":\"test\",\"data\":{\"param1\":2,\"_scxmleventname\":\"test\"}}";
     sce_test_http_json_response_t resp;
-    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp),
-                "parse");
+    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp), "parse");
     ASSERT_TRUE(!resp.data_is_string, "data is object, not string");
-    ASSERT_MEMEQ(resp.event_data, resp.event_data_len,
-                 "{\"param1\":2,\"_scxmleventname\":\"test\"}",
+    ASSERT_MEMEQ(resp.event_data, resp.event_data_len, "{\"param1\":2,\"_scxmleventname\":\"test\"}",
                  "raw object span");
     return 0;
 }
@@ -188,10 +170,8 @@ static int test_json_data_with_embedded_brace(void) {
        inside a JSON string value. */
     char body[] = "{\"event\":\"x\",\"data\":{\"k\":\"a}b}c\"}}";
     sce_test_http_json_response_t resp;
-    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp),
-                "parse");
-    ASSERT_MEMEQ(resp.event_data, resp.event_data_len,
-                 "{\"k\":\"a}b}c\"}", "object captured intact");
+    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp), "parse");
+    ASSERT_MEMEQ(resp.event_data, resp.event_data_len, "{\"k\":\"a}b}c\"}", "object captured intact");
     return 0;
 }
 
@@ -199,28 +179,23 @@ static int test_json_string_unescape(void) {
     /* Verify in-place unescape handles \" / \\ / \n / \uXXXX. */
     char body[] = "{\"event\":\"line\\nbreak\",\"data\":\"hi \\u00E9!\"}";
     sce_test_http_json_response_t resp;
-    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp),
-                "parse");
-    ASSERT_MEMEQ(resp.event_name, resp.event_name_len,
-                 "line\nbreak", "event newline");
-    ASSERT_MEMEQ(resp.event_data, resp.event_data_len,
-                 "hi \xC3\xA9!", "data UTF-8 e-acute");
+    ASSERT_TRUE(sce_test_http_parse_response(body, strlen(body), &resp), "parse");
+    ASSERT_MEMEQ(resp.event_name, resp.event_name_len, "line\nbreak", "event newline");
+    ASSERT_MEMEQ(resp.event_data, resp.event_data_len, "hi \xC3\xA9!", "data UTF-8 e-acute");
     return 0;
 }
 
 static int test_json_missing_event_rejected(void) {
     char body[] = "{\"status\":\"success\",\"data\":\"x\"}";
     sce_test_http_json_response_t resp;
-    ASSERT_TRUE(!sce_test_http_parse_response(body, strlen(body), &resp),
-                "missing event rejected");
+    ASSERT_TRUE(!sce_test_http_parse_response(body, strlen(body), &resp), "missing event rejected");
     return 0;
 }
 
 static int test_json_non_object_rejected(void) {
     char body[] = "[\"event\",\"test\"]";
     sce_test_http_json_response_t resp;
-    ASSERT_TRUE(!sce_test_http_parse_response(body, strlen(body), &resp),
-                "top-level array rejected");
+    ASSERT_TRUE(!sce_test_http_parse_response(body, strlen(body), &resp), "top-level array rejected");
     return 0;
 }
 
@@ -252,8 +227,7 @@ static void *stub_server_thread(void *arg) {
        kernel net stack apart and split the request across calls —
        breaking out as soon as `\r\n\r\n` is seen drops the body. */
     while (s->captured_len + 1u < sizeof(s->captured)) {
-        ssize_t n = recv(client, s->captured + s->captured_len,
-                          sizeof(s->captured) - s->captured_len - 1u, 0);
+        ssize_t n = recv(client, s->captured + s->captured_len, sizeof(s->captured) - s->captured_len - 1u, 0);
         if (n <= 0) {
             break;
         }
@@ -278,8 +252,7 @@ static void *stub_server_thread(void *arg) {
             content_length = (size_t)strtoul(cl_pos, NULL, 10);
         }
 
-        size_t body_received = s->captured_len -
-                               (size_t)(headers_end + 4 - s->captured);
+        size_t body_received = s->captured_len - (size_t)(headers_end + 4 - s->captured);
         if (body_received >= content_length) {
             break;
         }
@@ -312,7 +285,7 @@ static int stub_server_start(stub_server_t *s, const char *reply) {
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = 0;  /* OS-assigned */
+    addr.sin_port = 0; /* OS-assigned */
     if (bind(s->listen_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         close(s->listen_fd);
         return -1;
@@ -338,13 +311,12 @@ static void stub_server_stop(stub_server_t *s) {
 }
 
 static int test_post_roundtrip(void) {
-    static const char reply[] =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: application/json\r\n"
-        "Content-Length: 51\r\n"
-        "Connection: close\r\n"
-        "\r\n"
-        "{\"status\":\"success\",\"event\":\"echoed\",\"data\":\"hi\"}";
+    static const char reply[] = "HTTP/1.1 200 OK\r\n"
+                                "Content-Type: application/json\r\n"
+                                "Content-Length: 51\r\n"
+                                "Connection: close\r\n"
+                                "\r\n"
+                                "{\"status\":\"success\",\"event\":\"echoed\",\"data\":\"hi\"}";
 
     stub_server_t s;
     if (stub_server_start(&s, reply) < 0) {
@@ -364,20 +336,15 @@ static int test_post_roundtrip(void) {
     ASSERT_TRUE(sce_test_http_url_parse(url_str, &url), "url parse");
 
     sce_test_http_response_t resp;
-    bool ok = sce_test_http_post(&url,
-                                 "application/x-www-form-urlencoded",
-                                 "_scxmleventname=test", 20u,
-                                 5000, &resp);
+    bool ok = sce_test_http_post(&url, "application/x-www-form-urlencoded", "_scxmleventname=test", 20u, 5000, &resp);
     pthread_join(th, NULL);
     stub_server_stop(&s);
 
     if (!ok) {
-        fprintf(stderr,
-                "  diag: ok=%d status=%d body_len=%zu captured_len=%zu\n",
-                ok, resp.status_code, resp.body_len, s.captured_len);
+        fprintf(stderr, "  diag: ok=%d status=%d body_len=%zu captured_len=%zu\n", ok, resp.status_code, resp.body_len,
+                s.captured_len);
         if (s.captured_len > 0) {
-            fprintf(stderr, "  diag captured: '%.*s'\n",
-                    (int)s.captured_len, s.captured);
+            fprintf(stderr, "  diag captured: '%.*s'\n", (int)s.captured_len, s.captured);
         }
     }
     ASSERT_TRUE(ok, "post must succeed");
@@ -385,26 +352,19 @@ static int test_post_roundtrip(void) {
     ASSERT_TRUE(resp.body != NULL, "body present");
 
     /* Verify the request the server saw carried the expected body. */
-    ASSERT_TRUE(strstr(s.captured, "POST /test HTTP/1.1") != NULL,
-                "request line");
+    ASSERT_TRUE(strstr(s.captured, "POST /test HTTP/1.1") != NULL, "request line");
     ASSERT_TRUE(strstr(s.captured, "Content-Type: "
-                                    "application/x-www-form-urlencoded")
-                  != NULL,
+                                   "application/x-www-form-urlencoded") != NULL,
                 "content-type header");
-    ASSERT_TRUE(strstr(s.captured, "_scxmleventname=test") != NULL,
-                "request body present");
+    ASSERT_TRUE(strstr(s.captured, "_scxmleventname=test") != NULL, "request body present");
 
     /* Now extract event/data from the response body (mutates body
        in place to unescape strings). */
     sce_test_http_json_response_t parsed;
-    ASSERT_TRUE(sce_test_http_parse_response(resp.body, resp.body_len,
-                                              &parsed),
-                "parse response");
-    ASSERT_MEMEQ(parsed.event_name, parsed.event_name_len,
-                 "echoed", "event_name");
+    ASSERT_TRUE(sce_test_http_parse_response(resp.body, resp.body_len, &parsed), "parse response");
+    ASSERT_MEMEQ(parsed.event_name, parsed.event_name_len, "echoed", "event_name");
     ASSERT_TRUE(parsed.data_is_string, "data is string");
-    ASSERT_MEMEQ(parsed.event_data, parsed.event_data_len,
-                 "hi", "event_data");
+    ASSERT_MEMEQ(parsed.event_data, parsed.event_data_len, "hi", "event_data");
 
     sce_test_http_response_free(&resp);
     return 0;
@@ -419,16 +379,15 @@ static int test_post_roundtrip_chunked(void) {
        single 0x1c chunk plus the terminator. The test pins the
        dechunk path against drift in the standalone server's
        framing choice. */
-    static const char reply[] =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: application/json\r\n"
-        "Transfer-Encoding: chunked\r\n"
-        "Connection: close\r\n"
-        "\r\n"
-        "1c\r\n"
-        "{\"event\":\"test\",\"data\":\"hi\"}\r\n"
-        "0\r\n"
-        "\r\n";
+    static const char reply[] = "HTTP/1.1 200 OK\r\n"
+                                "Content-Type: application/json\r\n"
+                                "Transfer-Encoding: chunked\r\n"
+                                "Connection: close\r\n"
+                                "\r\n"
+                                "1c\r\n"
+                                "{\"event\":\"test\",\"data\":\"hi\"}\r\n"
+                                "0\r\n"
+                                "\r\n";
 
     stub_server_t s;
     if (stub_server_start(&s, reply) < 0) {
@@ -448,8 +407,7 @@ static int test_post_roundtrip_chunked(void) {
     ASSERT_TRUE(sce_test_http_url_parse(url_str, &url), "url parse");
 
     sce_test_http_response_t resp;
-    bool ok = sce_test_http_post(&url, "application/x-www-form-urlencoded",
-                                  "x=y", 3u, 5000, &resp);
+    bool ok = sce_test_http_post(&url, "application/x-www-form-urlencoded", "x=y", 3u, 5000, &resp);
     pthread_join(th, NULL);
     stub_server_stop(&s);
 
@@ -459,13 +417,9 @@ static int test_post_roundtrip_chunked(void) {
     ASSERT_TRUE(resp.body_len == 28u, "dechunked body length");
 
     sce_test_http_json_response_t parsed;
-    ASSERT_TRUE(sce_test_http_parse_response(resp.body, resp.body_len,
-                                              &parsed),
-                "parse dechunked response");
-    ASSERT_MEMEQ(parsed.event_name, parsed.event_name_len,
-                 "test", "event_name");
-    ASSERT_MEMEQ(parsed.event_data, parsed.event_data_len,
-                 "hi", "event_data");
+    ASSERT_TRUE(sce_test_http_parse_response(resp.body, resp.body_len, &parsed), "parse dechunked response");
+    ASSERT_MEMEQ(parsed.event_name, parsed.event_name_len, "test", "event_name");
+    ASSERT_MEMEQ(parsed.event_data, parsed.event_data_len, "hi", "event_data");
 
     sce_test_http_response_free(&resp);
     return 0;
@@ -478,24 +432,25 @@ int main(void) {
         const char *name;
         int (*fn)(void);
     } tests[] = {
-        {"url_parse_basic",              test_url_parse_basic},
-        {"url_parse_default_port",       test_url_parse_default_port},
-        {"url_parse_no_path",            test_url_parse_no_path},
-        {"url_parse_rejects_https",      test_url_parse_rejects_https},
-        {"url_parse_rejects_garbage",    test_url_parse_rejects_garbage},
-        {"form_encode_basic",            test_form_encode_basic},
-        {"form_encode_pct_encoding",     test_form_encode_pct_encoding},
-        {"form_encode_overflow",         test_form_encode_overflow},
-        {"json_event_only",              test_json_event_only},
-        {"json_event_and_data_string",   test_json_event_and_data_string},
-        {"json_event_and_data_object",   test_json_event_and_data_object},
-        {"json_data_with_embedded_brace",test_json_data_with_embedded_brace},
-        {"json_string_unescape",         test_json_string_unescape},
-        {"json_missing_event_rejected",  test_json_missing_event_rejected},
-        {"json_non_object_rejected",     test_json_non_object_rejected},
-        {"post_roundtrip",               test_post_roundtrip},
-        {"post_roundtrip_chunked",       test_post_roundtrip_chunked},
+        {"url_parse_basic", test_url_parse_basic},
+        {"url_parse_default_port", test_url_parse_default_port},
+        {"url_parse_no_path", test_url_parse_no_path},
+        {"url_parse_rejects_https", test_url_parse_rejects_https},
+        {"url_parse_rejects_garbage", test_url_parse_rejects_garbage},
+        {"form_encode_basic", test_form_encode_basic},
+        {"form_encode_pct_encoding", test_form_encode_pct_encoding},
+        {"form_encode_overflow", test_form_encode_overflow},
+        {"json_event_only", test_json_event_only},
+        {"json_event_and_data_string", test_json_event_and_data_string},
+        {"json_event_and_data_object", test_json_event_and_data_object},
+        {"json_data_with_embedded_brace", test_json_data_with_embedded_brace},
+        {"json_string_unescape", test_json_string_unescape},
+        {"json_missing_event_rejected", test_json_missing_event_rejected},
+        {"json_non_object_rejected", test_json_non_object_rejected},
+        {"post_roundtrip", test_post_roundtrip},
+        {"post_roundtrip_chunked", test_post_roundtrip_chunked},
     };
+
     const size_t n = sizeof(tests) / sizeof(tests[0]);
     size_t failed = 0u;
     for (size_t i = 0; i < n; ++i) {

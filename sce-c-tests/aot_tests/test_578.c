@@ -28,8 +28,7 @@ int main(void) {
 
     int rc = test578_in_state(&sm, TEST578_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test578: FAIL — active = 0x%08x\n",
-                (unsigned)test578_active_states(&sm));
+        fprintf(stderr, "test578: FAIL — active = 0x%08x\n", (unsigned)test578_active_states(&sm));
     }
     test578_destroy(&sm);
     return rc;

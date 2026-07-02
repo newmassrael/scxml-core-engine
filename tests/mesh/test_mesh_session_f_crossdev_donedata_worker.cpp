@@ -23,12 +23,12 @@
 // naive round-robin pump is free of priority inversion.
 
 #include "common/TestScriptEngine.h"
-#include "worker_session_f_donedata_param_sm.h"
-#include "worker_session_f_donedata_param_transport.h"
 #include "worker_session_f_donedata_content_sm.h"
 #include "worker_session_f_donedata_content_transport.h"
 #include "worker_session_f_donedata_nested_sm.h"
 #include "worker_session_f_donedata_nested_transport.h"
+#include "worker_session_f_donedata_param_sm.h"
+#include "worker_session_f_donedata_param_transport.h"
 
 #include <chrono>
 #include <csignal>
@@ -37,7 +37,10 @@
 
 namespace {
 volatile std::sig_atomic_t g_signalled = 0;
-void on_signal(int) { g_signalled = 1; }
+
+void on_signal(int) {
+    g_signalled = 1;
+}
 }  // namespace
 
 int main() {
@@ -94,12 +97,9 @@ int main() {
     // router, then the shared LISTEN_READY barrier. All four lines
     // flushed together so the orchestrator's grep of the stderr file
     // sees a consistent snapshot (see run_two_process_fixture.sh).
-    std::fprintf(stderr, "LISTEN_ENDPOINT_worker_session_f_donedata_param=%s\n",
-                 ep_param->c_str());
-    std::fprintf(stderr, "LISTEN_ENDPOINT_worker_session_f_donedata_content=%s\n",
-                 ep_content->c_str());
-    std::fprintf(stderr, "LISTEN_ENDPOINT_worker_session_f_donedata_nested=%s\n",
-                 ep_nested->c_str());
+    std::fprintf(stderr, "LISTEN_ENDPOINT_worker_session_f_donedata_param=%s\n", ep_param->c_str());
+    std::fprintf(stderr, "LISTEN_ENDPOINT_worker_session_f_donedata_content=%s\n", ep_content->c_str());
+    std::fprintf(stderr, "LISTEN_ENDPOINT_worker_session_f_donedata_nested=%s\n", ep_nested->c_str());
     std::fprintf(stderr, "LISTEN_READY\n");
     std::fflush(stderr);
 

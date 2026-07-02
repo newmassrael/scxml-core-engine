@@ -66,11 +66,8 @@ namespace SCE::Mesh::ThirdParty {
 /// Production code passes the live `std::shared_ptr<vsomeip::application>`;
 /// the template parameter is inferred and adds no ABI surface.
 template <typename App>
-inline void probeAndDispatch(
-    const std::shared_ptr<App>& app,
-    vsomeip::service_t service,
-    vsomeip::instance_t instance,
-    const vsomeip::availability_handler_t& handler) {
+inline void probeAndDispatch(const std::shared_ptr<App> &app, vsomeip::service_t service, vsomeip::instance_t instance,
+                             const vsomeip::availability_handler_t &handler) {
     app->register_availability_handler(service, instance, handler);
     handler(service, instance, app->is_available(service, instance));
 }

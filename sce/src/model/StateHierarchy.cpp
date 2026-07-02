@@ -134,7 +134,7 @@ bool SCE::StateHierarchy::validateRelationships() const {
 
             if (!foundAsChild) {
                 SCE_LOG_ERROR("State '{}' has parent '{}' but is not in parent's children list", state->getId(),
-                          parent->getId());
+                              parent->getId());
                 return false;
             }
         }
@@ -147,7 +147,8 @@ bool SCE::StateHierarchy::validateRelationships() const {
             while (iss >> initialStateId) {
                 // Search in entire state hierarchy (not just direct children)
                 if (!findStateById(initialStateId)) {
-                    SCE_LOG_ERROR("State '{}' references non-existent initial state '{}'", state->getId(), initialStateId);
+                    SCE_LOG_ERROR("State '{}' references non-existent initial state '{}'", state->getId(),
+                                  initialStateId);
                     return false;
                 }
             }
@@ -255,7 +256,7 @@ void SCE::StateHierarchy::printStateHierarchy(SCE::IStateNode *state, int depth)
     // Output transition information
     for (const auto &transition : state->getTransitions()) {
         SCE_LOG_INFO("{}  Transition: {} -> ", indent,
-                 (transition->getEvent().empty() ? "<no event>" : transition->getEvent()));
+                     (transition->getEvent().empty() ? "<no event>" : transition->getEvent()));
 
         const auto &targets = transition->getTargets();
         if (targets.empty()) {

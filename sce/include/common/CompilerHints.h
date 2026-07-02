@@ -25,9 +25,9 @@
  */
 
 #if __cplusplus >= 202002L
-  #define SCE_LIKELY [[likely]]
-  #define SCE_UNLIKELY [[unlikely]]
+#define SCE_LIKELY [[likely]]
+#define SCE_UNLIKELY [[unlikely]]
 #else
-  #define SCE_LIKELY
-  #define SCE_UNLIKELY
+#define SCE_LIKELY
+#define SCE_UNLIKELY
 #endif

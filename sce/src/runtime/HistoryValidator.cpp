@@ -15,7 +15,7 @@ HistoryValidator::HistoryValidator(std::function<std::shared_ptr<IStateNode>(con
 bool HistoryValidator::validateRegistration(const std::string &historyStateId, const std::string &parentStateId,
                                             HistoryType type) const {
     SCE_LOG_DEBUG("Validating registration - history: {}, parent: {}, type: {}", historyStateId, parentStateId,
-              static_cast<int>(type));
+                  static_cast<int>(type));
 
     // Check for empty IDs
     if (historyStateId.empty() || parentStateId.empty()) {
@@ -83,7 +83,7 @@ bool HistoryValidator::validateRegistrationWithDefault(const std::string &histor
                 }
                 if (!isValid) {
                     SCE_LOG_ERROR("Shallow history default must be direct child: {} not child of {}", defaultStateId,
-                              parentStateId);
+                                  parentStateId);
                     return false;
                 }
             } else if (type == HistoryType::DEEP) {
@@ -91,7 +91,7 @@ bool HistoryValidator::validateRegistrationWithDefault(const std::string &histor
                 isValid = isDescendantOf(defaultStateId, parentStateId);
                 if (!isValid) {
                     SCE_LOG_ERROR("Deep history default must be descendant: {} not descendant of {}", defaultStateId,
-                              parentStateId);
+                                  parentStateId);
                     return false;
                 }
             }

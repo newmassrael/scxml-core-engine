@@ -19,9 +19,9 @@
  * - sce_hud (SCE_HUD_SetCombo, SCE_HUD_SetBerserk, SCE_HUD_SetComboTimer)
  */
 
+#include "sce_hud.h"
 #include "sce_sm_internal.h"
 #include "sce_timer.h"
-#include "sce_hud.h"
 
 #include "combo_state_sm.h"
 
@@ -88,8 +88,7 @@ struct ComboCallbacks {
         g_timer_pause_ui_sent = false;
 
         if (g_berserk_intensity > 0) {
-            SCE_LOG("[COMBO] Combo ended - resetting berserk intensity from %d to 0\n",
-                   g_berserk_intensity);
+            SCE_LOG("[COMBO] Combo ended - resetting berserk intensity from %d to 0\n", g_berserk_intensity);
             g_berserk_intensity = 0;
             notify_berserk_update(0, false);
         }
@@ -122,8 +121,7 @@ struct BerserkCallbacks {
 
         g_berserk_intensity++;
 
-        int capped = (g_berserk_intensity > BERSERK_MAX_INTENSITY)
-                     ? BERSERK_MAX_INTENSITY : g_berserk_intensity;
+        int capped = (g_berserk_intensity > BERSERK_MAX_INTENSITY) ? BERSERK_MAX_INTENSITY : g_berserk_intensity;
         float multiplier = (float)capped;
 
         SCE_BerserkSetMultiplier(multiplier);
@@ -134,8 +132,8 @@ struct BerserkCallbacks {
         g_timer.start(PausableTimer::Type::BERSERK, BERSERK_TIMEOUT_MS);
         g_timer_pause_ui_sent = false;
 
-        SCE_LOG("[BERSERK] Activated! Intensity=%d, Multiplier=x%.0f, Timer=%.0fms (pausable)\n",
-               g_berserk_intensity, multiplier, BERSERK_TIMEOUT_MS);
+        SCE_LOG("[BERSERK] Activated! Intensity=%d, Multiplier=x%.0f, Timer=%.0fms (pausable)\n", g_berserk_intensity,
+                multiplier, BERSERK_TIMEOUT_MS);
     }
 
     void onExit() {
@@ -176,7 +174,9 @@ static bool is_real_gameplay(void) {
 // ============================================
 
 void sce_sm_combo_on_kill(void) {
-    if (!g_combo_sm || !is_real_gameplay()) return;
+    if (!g_combo_sm || !is_real_gameplay()) {
+        return;
+    }
 
     g_combo_sm->raiseExternal(ComboEvent::Kill);
     g_combo_sm->step();
@@ -186,8 +186,7 @@ void sce_sm_combo_on_kill(void) {
     if (new_state == ComboState::Normal) {
         g_combo_count++;
 
-        SCE_LOG("[COMBO] Kill #%d in NORMAL mode - external timer restarted (5s)\n",
-               g_combo_count);
+        SCE_LOG("[COMBO] Kill #%d in NORMAL mode - external timer restarted (5s)\n", g_combo_count);
 
         if (g_combo_count >= BERSERK_TRIGGER_COMBO) {
             SCE_LOG("[COMBO] Combo >= %d, triggering BERSERK!\n", BERSERK_TRIGGER_COMBO);
@@ -200,8 +199,8 @@ void sce_sm_combo_on_kill(void) {
     } else if (new_state == ComboState::Berserk) {
         g_combo_count++;
 
-        SCE_LOG("[BERSERK] Kill #%d - external timer restarted (10s), intensity=%d\n",
-               g_combo_count, g_berserk_intensity);
+        SCE_LOG("[BERSERK] Kill #%d - external timer restarted (10s), intensity=%d\n", g_combo_count,
+                g_berserk_intensity);
 
         notify_combo_update(g_combo_count, true);
     }
@@ -229,33 +228,47 @@ extern "C" {
 
 EMSCRIPTEN_KEEPALIVE
 const char *sce_combo_get_state(void) {
-    if (!g_combo_sm) return "UNINITIALIZED";
+    if (!g_combo_sm) {
+        return "UNINITIALIZED";
+    }
     switch (g_combo_sm->getCurrentState()) {
-    case ComboState::Idle:    return "idle";
-    case ComboState::Normal:  return "normal";
-    case ComboState::Berserk: return "berserk";
-    default: return "UNKNOWN";
+    case ComboState::Idle:
+        return "idle";
+    case ComboState::Normal:
+        return "normal";
+    case ComboState::Berserk:
+        return "berserk";
+    default:
+        return "UNKNOWN";
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
-int sce_combo_get_count(void) { return g_combo_count; }
+int sce_combo_get_count(void) {
+    return g_combo_count;
+}
 
 EMSCRIPTEN_KEEPALIVE
 int sce_combo_is_active(void) {
-    if (!g_combo_sm) return 0;
+    if (!g_combo_sm) {
+        return 0;
+    }
     ComboState state = g_combo_sm->getCurrentState();
     return (state == ComboState::Normal || state == ComboState::Berserk) ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE
 int sce_combo_is_berserk(void) {
-    if (!g_combo_sm) return 0;
+    if (!g_combo_sm) {
+        return 0;
+    }
     return (g_combo_sm->getCurrentState() == ComboState::Berserk) ? 1 : 0;
 }
 
 EMSCRIPTEN_KEEPALIVE
-int sce_berserk_get_intensity(void) { return g_berserk_intensity; }
+int sce_berserk_get_intensity(void) {
+    return g_berserk_intensity;
+}
 
 // ============================================
 // Timer Tick Processing (called at 35Hz from G_Ticker)
@@ -263,19 +276,20 @@ int sce_berserk_get_intensity(void) { return g_berserk_intensity; }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_process_tic(void) {
-    if (!g_combo_sm || !is_real_gameplay()) return;
+    if (!g_combo_sm || !is_real_gameplay()) {
+        return;
+    }
 
     if (g_timer.isActive() && !g_timer.isPaused()) {
         if (g_timer.isExpired()) {
             ComboState prev_state = g_combo_sm->getCurrentState();
 
             if (g_timer.getType() == PausableTimer::Type::COMBO) {
-                SCE_LOG("[COMBO] External timer expired (%.0fms) - raising combo_timeout\n",
-                       g_timer.getDurationMs());
+                SCE_LOG("[COMBO] External timer expired (%.0fms) - raising combo_timeout\n", g_timer.getDurationMs());
                 g_combo_sm->raiseExternal(ComboEvent::Combo_timeout);
             } else if (g_timer.getType() == PausableTimer::Type::BERSERK) {
                 SCE_LOG("[BERSERK] External timer expired (%.0fms) - raising berserk_timeout\n",
-                       g_timer.getDurationMs());
+                        g_timer.getDurationMs());
                 g_combo_sm->raiseExternal(ComboEvent::Berserk_timeout);
             }
 
@@ -284,8 +298,7 @@ void sce_process_tic(void) {
             ComboState current_state = g_combo_sm->getCurrentState();
             if (current_state == ComboState::Idle && prev_state != ComboState::Idle) {
                 SCE_LOG("[COMBO/BERSERK] State: %s -> idle, resetting combo from %d to 0\n",
-                       prev_state == ComboState::Normal ? "normal" : "berserk",
-                       g_combo_count);
+                        prev_state == ComboState::Normal ? "normal" : "berserk", g_combo_count);
                 g_combo_count = 0;
                 notify_combo_update(0, false);
                 notify_combo_timer(-1, 0);
@@ -308,8 +321,7 @@ void sce_process_tic(void) {
 
 EMSCRIPTEN_KEEPALIVE
 void sce_combo_timer_pause(void) {
-    SCE_LOG("[TIMER] sce_combo_timer_pause() CALLED - active=%d, paused=%d\n",
-           g_timer.isActive(), g_timer.isPaused());
+    SCE_LOG("[TIMER] sce_combo_timer_pause() CALLED - active=%d, paused=%d\n", g_timer.isActive(), g_timer.isPaused());
 
     if (!g_timer.isActive() || g_timer.isPaused()) {
         SCE_LOG("[TIMER] Early return - no timer or already paused\n");
@@ -319,18 +331,20 @@ void sce_combo_timer_pause(void) {
     g_timer.pause();
     g_timer_pause_ui_sent = false;
 
-    SCE_LOG("[TIMER] Paused at %.0fms / %.0fms\n",
-           g_timer.getDurationMs() - g_timer.getRemainingMs(), g_timer.getDurationMs());
+    SCE_LOG("[TIMER] Paused at %.0fms / %.0fms\n", g_timer.getDurationMs() - g_timer.getRemainingMs(),
+            g_timer.getDurationMs());
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_combo_timer_resume(void) {
-    if (!g_timer.isActive() || !g_timer.isPaused()) return;
+    if (!g_timer.isActive() || !g_timer.isPaused()) {
+        return;
+    }
 
     g_timer.resume();
 
-    SCE_LOG("[TIMER] Resumed at %.0fms / %.0fms\n",
-           g_timer.getDurationMs() - g_timer.getRemainingMs(), g_timer.getDurationMs());
+    SCE_LOG("[TIMER] Resumed at %.0fms / %.0fms\n", g_timer.getDurationMs() - g_timer.getRemainingMs(),
+            g_timer.getDurationMs());
 }
 
 EMSCRIPTEN_KEEPALIVE

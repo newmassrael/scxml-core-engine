@@ -42,7 +42,7 @@ namespace SCE::Mesh {
 using MeshUuidKey = std::array<std::uint8_t, 16>;
 
 struct MeshUuidKeyHash {
-    std::size_t operator()(const MeshUuidKey& k) const noexcept {
+    std::size_t operator()(const MeshUuidKey &k) const noexcept {
         std::size_t h = 14695981039346656037ULL;
         for (std::uint8_t b : k) {
             h ^= b;

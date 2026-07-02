@@ -3,7 +3,10 @@
 //
 // W3C SCXML test521 — C11 AOT runner.
 //
-// W3C SCXML 6.2: dispatching `<send target="#_session_<missing>">` against a non-existent session URI raises `error.communication` — the C11 targetexpr arm's unreachable-fallback clause classifies the literal as not-empty / not-#_internal / not-!-prefixed and falls through to the error-communication raise. Receiving transition matches and routes to pass. Same code path test496 already pins.
+// W3C SCXML 6.2: dispatching `<send target="#_session_<missing>">` against a non-existent session URI raises
+// `error.communication` — the C11 targetexpr arm's unreachable-fallback clause classifies the literal as not-empty /
+// not-#_internal / not-!-prefixed and falls through to the error-communication raise. Receiving transition matches and
+// routes to pass. Same code path test496 already pins.
 
 #include <stdio.h>
 

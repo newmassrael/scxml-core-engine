@@ -65,9 +65,8 @@ size_t line_index_for(const std::vector<size_t> &line_starts, size_t value) {
 // scalar-value count for the line prefix. For ASCII input this
 // collapses to byte counting, matching the Rust `chars().count()`
 // behaviour on the same content.
-std::pair<uint32_t, uint32_t> offset_to_rowcol(std::string_view text,
-                                                const std::vector<size_t> &line_starts,
-                                                size_t byte_offset) {
+std::pair<uint32_t, uint32_t> offset_to_rowcol(std::string_view text, const std::vector<size_t> &line_starts,
+                                               size_t byte_offset) {
     const size_t clamped = std::min(byte_offset, text.size());
     const size_t row_idx = line_index_for(line_starts, clamped);
     const uint32_t row = static_cast<uint32_t>(row_idx) + 1;
@@ -90,8 +89,7 @@ PositionMap PositionMap::identity(std::filesystem::path file, std::string_view t
     PositionMap m;
     const size_t len = text.size();
     m.register_file(file, text);
-    m.push_entry(0, len,
-                 FileOrigin{std::move(file), 0});
+    m.push_entry(0, len, FileOrigin{std::move(file), 0});
     return m;
 }
 
@@ -100,13 +98,11 @@ SourcePos PositionMap::lookup(size_t expanded_offset) const {
     const Entry &entry = entry_for(expanded_offset);
     if (std::holds_alternative<FileOrigin>(entry.origin)) {
         const auto &origin = std::get<FileOrigin>(entry.origin);
-        const size_t delta =
-            expanded_offset > entry.expanded_start ? (expanded_offset - entry.expanded_start) : 0;
+        const size_t delta = expanded_offset > entry.expanded_start ? (expanded_offset - entry.expanded_start) : 0;
         const size_t src_offset = origin.source_offset + delta;
         auto it = files_.find(origin.path.string());
-        assert(it != files_.end() &&
-               "FileOrigin referenced a path with no stored text — PositionMap "
-               "construction must register the file before adding the entry");
+        assert(it != files_.end() && "FileOrigin referenced a path with no stored text — PositionMap "
+                                     "construction must register the file before adding the entry");
         const auto &ft = it->second;
         auto [row, col] = offset_to_rowcol(ft.text, ft.line_starts, src_offset);
         return SourcePos{origin.path, row, col};
@@ -139,16 +135,15 @@ void PositionMap::register_file(std::filesystem::path path, std::string_view tex
 void PositionMap::push_entry(size_t expanded_start, size_t expanded_end, Origin origin) {
     assert(expanded_end >= expanded_start && "entry ranges must be non-negative");
     if (!entries_.empty()) {
-        assert(entries_.back().expanded_end == expanded_start &&
-               "entries must be contiguous");
+        assert(entries_.back().expanded_end == expanded_start && "entries must be contiguous");
     } else {
         assert(expanded_start == 0 && "first entry must start at expanded offset 0");
     }
     entries_.push_back(Entry{expanded_start, expanded_end, std::move(origin)});
 }
 
-void PositionMap::append_mapped_substring(const PositionMap &inner, size_t inner_start,
-                                          size_t inner_end, size_t outer_start) {
+void PositionMap::append_mapped_substring(const PositionMap &inner, size_t inner_start, size_t inner_end,
+                                          size_t outer_start) {
     assert(inner_end >= inner_start && "inner range must be non-negative");
     // Copy inner's file texts — idempotent.
     for (const auto &[path_key, ft] : inner.files_) {
@@ -194,9 +189,7 @@ const PositionMap::Entry &PositionMap::entry_for(size_t offset) const {
     // (mirrors Rust `.min(entries.len() - 1)` + roxmltree
     // text_pos_at EOF behaviour).
     auto it = std::lower_bound(entries_.begin(), entries_.end(), offset,
-                               [](const Entry &e, size_t off) {
-                                   return e.expanded_end <= off;
-                               });
+                               [](const Entry &e, size_t off) { return e.expanded_end <= off; });
     if (it == entries_.end()) {
         return entries_.back();
     }
@@ -216,9 +209,7 @@ size_t rowcol_to_offset(std::string_view expanded_text, uint32_t row, uint32_t c
     // not the last; the last line runs to EOF. Mirrors Rust's
     // `line_starts.get(line_idx + 1).map(|&s| s - 1)` fallback to
     // `expanded_text.len()`.
-    const size_t line_end = (line_idx + 1 < line_starts.size())
-                                ? line_starts[line_idx + 1] - 1
-                                : expanded_text.size();
+    const size_t line_end = (line_idx + 1 < line_starts.size()) ? line_starts[line_idx + 1] - 1 : expanded_text.size();
     const std::string_view line_slice = expanded_text.substr(line_start, line_end - line_start);
     // Walk col0 scalar values into line_slice, clamping at line end.
     size_t bytes_into_line = line_slice.size();

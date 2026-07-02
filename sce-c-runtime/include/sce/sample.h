@@ -83,29 +83,28 @@ extern "C" {
 // downstream tooling can read directly.
 
 #if defined(__has_attribute)
-#  if __has_attribute(consumable) && __has_attribute(callable_when) \
-      && __has_attribute(set_typestate) && __has_attribute(param_typestate) \
-      && __has_attribute(warn_unused_result)
-#    define SCE_OWNERSHIP_ATTRS_AVAILABLE 1
-#  else
-#    define SCE_OWNERSHIP_ATTRS_AVAILABLE 0
-#  endif
+#if __has_attribute(consumable) && __has_attribute(callable_when) && __has_attribute(set_typestate) &&                 \
+    __has_attribute(param_typestate) && __has_attribute(warn_unused_result)
+#define SCE_OWNERSHIP_ATTRS_AVAILABLE 1
 #else
-#  define SCE_OWNERSHIP_ATTRS_AVAILABLE 0
+#define SCE_OWNERSHIP_ATTRS_AVAILABLE 0
+#endif
+#else
+#define SCE_OWNERSHIP_ATTRS_AVAILABLE 0
 #endif
 
 #if SCE_OWNERSHIP_ATTRS_AVAILABLE
-#  define SCE_CONSUMABLE         __attribute__((consumable(unconsumed)))
-#  define SCE_CALLABLE_WHEN(s)   __attribute__((callable_when(s)))
-#  define SCE_SET_TYPESTATE(s)   __attribute__((set_typestate(s)))
-#  define SCE_PARAM_TYPESTATE(s) __attribute__((param_typestate(s)))
-#  define SCE_WARN_UNUSED        __attribute__((warn_unused_result))
+#define SCE_CONSUMABLE __attribute__((consumable(unconsumed)))
+#define SCE_CALLABLE_WHEN(s) __attribute__((callable_when(s)))
+#define SCE_SET_TYPESTATE(s) __attribute__((set_typestate(s)))
+#define SCE_PARAM_TYPESTATE(s) __attribute__((param_typestate(s)))
+#define SCE_WARN_UNUSED __attribute__((warn_unused_result))
 #else
-#  define SCE_CONSUMABLE
-#  define SCE_CALLABLE_WHEN(s)
-#  define SCE_SET_TYPESTATE(s)
-#  define SCE_PARAM_TYPESTATE(s)
-#  define SCE_WARN_UNUSED
+#define SCE_CONSUMABLE
+#define SCE_CALLABLE_WHEN(s)
+#define SCE_SET_TYPESTATE(s)
+#define SCE_PARAM_TYPESTATE(s)
+#define SCE_WARN_UNUSED
 #endif
 
 // ── Configure-time self-check ─────────────────────────────────────
@@ -119,8 +118,7 @@ extern "C" {
 // compiles also surface the gap; the operator can then upgrade
 // Clang, fix flags, or accept Layer 2/3 substitution.
 #if defined(__clang__) && !SCE_OWNERSHIP_ATTRS_AVAILABLE
-#  warning \
-      "<sce/sample.h>: Clang detected but the consumable typestate " \
+#warning "<sce/sample.h>: Clang detected but the consumable typestate " \
       "attributes are unavailable; Layer 1 ownership analysis is " \
       "silently inert. Upgrade to Clang ≥ 9 or compile with " \
       "-fthread-safety; otherwise rely on Layer 2 (PC-Lint / " \
@@ -166,7 +164,7 @@ typedef enum {
 
 typedef struct {
     sce_slot_state_t state;
-    size_t           idx;
+    size_t idx;
 } sce_slot_handle_t;
 
 // ── Result type for take operations ──────────────────────────────
@@ -178,11 +176,7 @@ typedef struct {
 // failure modes land as additional discriminants — a value not
 // listed here today must not be returned by any conforming
 // implementation.
-typedef enum {
-    SCE_RESULT_OK = 0,
-    SCE_RESULT_ERR_BUFFER_TOO_SMALL = 1,
-    SCE_RESULT_ERR_INVALID_SAMPLE = 2
-} sce_result_t;
+typedef enum { SCE_RESULT_OK = 0, SCE_RESULT_ERR_BUFFER_TOO_SMALL = 1, SCE_RESULT_ERR_INVALID_SAMPLE = 2 } sce_result_t;
 
 // ── sce_sample_t ─────────────────────────────────────────────────
 //
@@ -193,17 +187,17 @@ typedef enum {
 // `-Wconsumed` flags any attempt to re-use a `consumed` sample.
 typedef struct SCE_CONSUMABLE {
     /// Protocol-decoded key expression (opaque to SCE).
-    const sce_keyexpr_t* key_expr;
+    const sce_keyexpr_t *key_expr;
     /// Payload byte slice — valid only while the sample is unconsumed.
-    const uint8_t*       payload;
+    const uint8_t *payload;
     /// Length of `payload`.
-    size_t               payload_len;
+    size_t payload_len;
     /// Source timestamp (opaque to SCE).
-    const sce_timestamp_t* timestamp;
+    const sce_timestamp_t *timestamp;
     /// Pool slot handle backing the borrow. Authors must not read or
     /// modify this field directly; it exists so `sce_sample_take`
     /// can drive the FSM transition under the runtime tag check.
-    sce_slot_handle_t    _slot;
+    sce_slot_handle_t _slot;
 } sce_sample_t;
 
 // ── 3 function declarations (RFC §synth-5-E lines 1318-1334) ───────────
@@ -214,8 +208,7 @@ typedef struct SCE_CONSUMABLE {
 /// `-Wconsumed -Wthread-safety` and undefined behaviour without
 /// the analyzer.
 SCE_CALLABLE_WHEN("unconsumed")
-const uint8_t* sce_sample_payload(const sce_sample_t* sample
-                                  SCE_PARAM_TYPESTATE("unconsumed"));
+const uint8_t *sce_sample_payload(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"));
 
 /// Consume the sample — copies its payload into the caller-owned
 /// buffer at `dst` (capacity `dst_cap`), writes the byte count to
@@ -227,18 +220,14 @@ const uint8_t* sce_sample_payload(const sce_sample_t* sample
 SCE_WARN_UNUSED
 SCE_CALLABLE_WHEN("unconsumed")
 SCE_SET_TYPESTATE("consumed")
-sce_result_t sce_sample_take(const sce_sample_t* sample
-                             SCE_PARAM_TYPESTATE("unconsumed"),
-                             uint8_t* dst, size_t dst_cap,
-                             size_t* out_len);
+sce_result_t sce_sample_take(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"), uint8_t *dst, size_t dst_cap,
+                             size_t *out_len);
 
 /// Subscriber callback typedef — consumers register a function of
 /// this signature with the link's RX path. The `sample` parameter
 /// is `param_typestate("unconsumed")` so Clang flags any callback
 /// that lets the borrow escape its scope without a `take`.
-typedef void (*sce_sub_callback_t)(const sce_sample_t* sample
-                                   SCE_PARAM_TYPESTATE("unconsumed"),
-                                   void* ctx);
+typedef void (*sce_sub_callback_t)(const sce_sample_t *sample SCE_PARAM_TYPESTATE("unconsumed"), void *ctx);
 
 // ── _Static_assert invariants ────────────────────────────────────
 //
@@ -252,33 +241,24 @@ typedef void (*sce_sub_callback_t)(const sce_sample_t* sample
 // peek under the typedef-redeclaration aliasing rule resolves
 // identically across all consumer translation units.
 
-_Static_assert(SCE_SLOT_FREE == 0,
-               "sce_slot_state_t: SCE_SLOT_FREE must be the 0 discriminant "
-               "(buffer_pool.h.jinja2 line 80; per-pool zero-init relies on it)");
-_Static_assert(SCE_SLOT_CPU_MUT == 1,
-               "sce_slot_state_t: SCE_SLOT_CPU_MUT discriminant drifted from "
-               "buffer_pool.h.jinja2 line 81");
-_Static_assert(SCE_SLOT_DMA_ARMED_TX == 2,
-               "sce_slot_state_t: SCE_SLOT_DMA_ARMED_TX discriminant drifted "
-               "from buffer_pool.h.jinja2 line 82");
-_Static_assert(SCE_SLOT_DMA_BUSY_TX == 3,
-               "sce_slot_state_t: SCE_SLOT_DMA_BUSY_TX discriminant drifted "
-               "from buffer_pool.h.jinja2 line 83");
-_Static_assert(SCE_SLOT_DMA_ARMED_RX == 4,
-               "sce_slot_state_t: SCE_SLOT_DMA_ARMED_RX discriminant drifted "
-               "from buffer_pool.h.jinja2 line 84");
-_Static_assert(SCE_SLOT_DMA_BUSY_RX == 5,
-               "sce_slot_state_t: SCE_SLOT_DMA_BUSY_RX discriminant drifted "
-               "from buffer_pool.h.jinja2 line 85");
-_Static_assert(SCE_SLOT_CPU_REF == 6,
-               "sce_slot_state_t: SCE_SLOT_CPU_REF discriminant drifted from "
-               "buffer_pool.h.jinja2 line 86");
-_Static_assert(SCE_SLOT_INVALID == 0xFF,
-               "sce_slot_state_t: SCE_SLOT_INVALID sentinel must remain 0xFF "
-               "(buffer_pool.h.jinja2 line 87; consumed-handle marker)");
-_Static_assert(offsetof(sce_slot_handle_t, state) == 0,
-               "sce_slot_handle_t: state field must be at offset 0 so "
-               "tag-check peeks alias correctly across redeclared TUs");
+_Static_assert(SCE_SLOT_FREE == 0, "sce_slot_state_t: SCE_SLOT_FREE must be the 0 discriminant "
+                                   "(buffer_pool.h.jinja2 line 80; per-pool zero-init relies on it)");
+_Static_assert(SCE_SLOT_CPU_MUT == 1, "sce_slot_state_t: SCE_SLOT_CPU_MUT discriminant drifted from "
+                                      "buffer_pool.h.jinja2 line 81");
+_Static_assert(SCE_SLOT_DMA_ARMED_TX == 2, "sce_slot_state_t: SCE_SLOT_DMA_ARMED_TX discriminant drifted "
+                                           "from buffer_pool.h.jinja2 line 82");
+_Static_assert(SCE_SLOT_DMA_BUSY_TX == 3, "sce_slot_state_t: SCE_SLOT_DMA_BUSY_TX discriminant drifted "
+                                          "from buffer_pool.h.jinja2 line 83");
+_Static_assert(SCE_SLOT_DMA_ARMED_RX == 4, "sce_slot_state_t: SCE_SLOT_DMA_ARMED_RX discriminant drifted "
+                                           "from buffer_pool.h.jinja2 line 84");
+_Static_assert(SCE_SLOT_DMA_BUSY_RX == 5, "sce_slot_state_t: SCE_SLOT_DMA_BUSY_RX discriminant drifted "
+                                          "from buffer_pool.h.jinja2 line 85");
+_Static_assert(SCE_SLOT_CPU_REF == 6, "sce_slot_state_t: SCE_SLOT_CPU_REF discriminant drifted from "
+                                      "buffer_pool.h.jinja2 line 86");
+_Static_assert(SCE_SLOT_INVALID == 0xFF, "sce_slot_state_t: SCE_SLOT_INVALID sentinel must remain 0xFF "
+                                         "(buffer_pool.h.jinja2 line 87; consumed-handle marker)");
+_Static_assert(offsetof(sce_slot_handle_t, state) == 0, "sce_slot_handle_t: state field must be at offset 0 so "
+                                                        "tag-check peeks alias correctly across redeclared TUs");
 
 #ifdef __cplusplus
 }

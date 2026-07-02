@@ -27,18 +27,18 @@ namespace SCE::Mesh {
 
 struct MeshEnvelope {
     // ── Required (CloudEvents core + SCE pattern discriminator) ──
-    std::array<uint8_t, 16> id{};       // CE 'id'              — UUID v7 (v4 fallback)
-    std::string             source;     // CE 'source'          — sender machine name
-    std::string             type;       // CE 'type'            — SCXML event name
-    PatternKind             pattern     = PatternKind::FireForget;  // SCE extension — pattern discriminator
-    PayloadCodec            datacontenttype = PayloadCodec::None;   // CE 'datacontenttype' — payload codec
-    std::vector<uint8_t>    data;       // CE 'data'            — payload bytes (codec-encoded; may be empty)
+    std::array<uint8_t, 16> id{};                       // CE 'id'              — UUID v7 (v4 fallback)
+    std::string source;                                 // CE 'source'          — sender machine name
+    std::string type;                                   // CE 'type'            — SCXML event name
+    PatternKind pattern = PatternKind::FireForget;      // SCE extension — pattern discriminator
+    PayloadCodec datacontenttype = PayloadCodec::None;  // CE 'datacontenttype' — payload codec
+    std::vector<uint8_t> data;  // CE 'data'            — payload bytes (codec-encoded; may be empty)
 
     // ── Optional ──
-    std::optional<std::string>             subject;             // CE 'subject' — interaction key (someip method_id, zenoh key)
-    std::optional<std::array<uint8_t, 16>> correlation_id;      // RPC req↔resp matching (UUID v7)
-    std::optional<std::string>             reply_to;            // CE-extension — response routing endpoint
-    std::optional<std::array<uint8_t, 16>> invoke_id;           // RESERVED for <invoke type="sce:mesh-rpc"> lifecycle
+    std::optional<std::string> subject;  // CE 'subject' — interaction key (someip method_id, zenoh key)
+    std::optional<std::array<uint8_t, 16>> correlation_id;  // RPC req↔resp matching (UUID v7)
+    std::optional<std::string> reply_to;                    // CE-extension — response routing endpoint
+    std::optional<std::array<uint8_t, 16>> invoke_id;       // RESERVED for <invoke type="sce:mesh-rpc"> lifecycle
     /// SCE-extension — per-session routing identifier (UUID v7, generated
     /// once per TransportRouter construction). `source` carries the stable
     /// document identity (machine_name); `routing_id` discriminates sessions
@@ -49,14 +49,14 @@ struct MeshEnvelope {
     /// unstamped envelope never collides with the local session. Document
     /// identity invariant lives in SCE_MESH.md §mesh-10.9.
     std::optional<std::array<uint8_t, 16>> routing_id;
-    std::optional<RpcStatus>               rpc_status;          // RpcReply only (absent ⇒ Ok)
-    std::optional<std::string>             rpc_error_message;   // RpcReply non-Ok detail
-    std::optional<uint64_t>                deadline_unix_ms;    // RPC absolute deadline
+    std::optional<RpcStatus> rpc_status;           // RpcReply only (absent ⇒ Ok)
+    std::optional<std::string> rpc_error_message;  // RpcReply non-Ok detail
+    std::optional<uint64_t> deadline_unix_ms;      // RPC absolute deadline
     /// NOT YET SERIALIZED: present in-memory only. encode/decode silently
     /// drops this field. Do not rely on round-trip equality when qos is set.
     /// Wire serialization (CBOR key 13) is added in Session C/D together
     /// with the first transport that consumes QoS hints.
-    std::optional<QosHints>                qos;
+    std::optional<QosHints> qos;
     /// Per-(source, target) monotonic sequence number stamped by the
     /// sender's mesh-send-callback when the route requires ordering. Wire
     /// serialization is CBOR integer key 14 (SCE_MESH.md §mesh-10.6.3). Absent
@@ -65,7 +65,7 @@ struct MeshEnvelope {
     /// OrderingBuffer drop envelopes missing this field and raise
     /// error.communication.missing_sequence (pre-release wire format; no
     /// backward-compat shim).
-    std::optional<std::uint64_t>           sequence_no;
+    std::optional<std::uint64_t> sequence_no;
 
     /// SCE_MESH.md §mesh-16.5 wire-21 region routing — replaces the earlier
     /// `subject = "parallel_id/region_id"` string-concat subject field.
@@ -76,8 +76,8 @@ struct MeshEnvelope {
     /// check both `has_value()` and silently drop otherwise — a wire-21
     /// envelope missing either field violates the sender contract.
     /// CBOR integer keys 16 (parallel_id) and 17 (region_id).
-    std::optional<std::string>             parallel_id;
-    std::optional<std::string>             region_id;
+    std::optional<std::string> parallel_id;
+    std::optional<std::string> region_id;
 
     /// SCE_MESH.md §mesh-9.6.2 wire-15 `InvokeStarted` — carries the child
     /// session's URI endpoint back to the parent. Format per §mesh-9.6.1 L1410:
@@ -87,28 +87,16 @@ struct MeshEnvelope {
     /// with it (§mesh-9.6.3), and (b) finalize/autoforward matching against
     /// the child's identity survives across process boundaries. Absent on
     /// every other wire. CBOR integer key 18.
-    std::optional<std::string>             child_session_id;
+    std::optional<std::string> child_session_id;
 
     bool operator==(const MeshEnvelope &other) const noexcept {
-        return id                == other.id
-            && source            == other.source
-            && type              == other.type
-            && pattern           == other.pattern
-            && datacontenttype   == other.datacontenttype
-            && data              == other.data
-            && subject           == other.subject
-            && correlation_id    == other.correlation_id
-            && reply_to          == other.reply_to
-            && invoke_id         == other.invoke_id
-            && rpc_status        == other.rpc_status
-            && rpc_error_message == other.rpc_error_message
-            && deadline_unix_ms  == other.deadline_unix_ms
-            && qos               == other.qos
-            && sequence_no       == other.sequence_no
-            && routing_id        == other.routing_id
-            && parallel_id       == other.parallel_id
-            && region_id         == other.region_id
-            && child_session_id  == other.child_session_id;
+        return id == other.id && source == other.source && type == other.type && pattern == other.pattern &&
+               datacontenttype == other.datacontenttype && data == other.data && subject == other.subject &&
+               correlation_id == other.correlation_id && reply_to == other.reply_to && invoke_id == other.invoke_id &&
+               rpc_status == other.rpc_status && rpc_error_message == other.rpc_error_message &&
+               deadline_unix_ms == other.deadline_unix_ms && qos == other.qos && sequence_no == other.sequence_no &&
+               routing_id == other.routing_id && parallel_id == other.parallel_id && region_id == other.region_id &&
+               child_session_id == other.child_session_id;
     }
 };
 

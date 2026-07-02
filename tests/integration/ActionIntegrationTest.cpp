@@ -7,8 +7,8 @@
 #include <memory>
 #include <thread>
 
-#include "core/LogMacros.h"
 #include "common/TestUtils.h"
+#include "core/LogMacros.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineBuilder.h"
@@ -27,9 +27,8 @@ protected:
         auto eventRaiser = std::make_shared<EventRaiserImpl>();
 
         StateMachineBuilder builder;
-        auto stateMachine = builder.withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine())
-                                .withEventRaiser(eventRaiser)
-                                .build();
+        auto stateMachine =
+            builder.withScriptEngine(SCE::ScriptEngineProvider::getScriptEngine()).withEventRaiser(eventRaiser).build();
 
         // Wrap in StateMachineContext for RAII cleanup
         smContext_ = std::make_unique<StateMachineContext>(std::move(stateMachine));

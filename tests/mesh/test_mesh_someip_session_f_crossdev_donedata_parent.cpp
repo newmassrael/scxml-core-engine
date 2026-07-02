@@ -45,11 +45,9 @@ int main() {
     // defence-in-depth pattern as Session 5b lifecycle.
     SCE::Test::Mesh::wipe_stale_vsomeip_sockets();
 
-    using ParentEngine =
-        SCE::Generated::parent_session_f_donedata::parent_session_f_donedata;
+    using ParentEngine = SCE::Generated::parent_session_f_donedata::parent_session_f_donedata;
     ParentEngine parent;
-    SCE::Generated::parent_session_f_donedata::TransportRouter<ParentEngine>
-        parent_router({&parent});
+    SCE::Generated::parent_session_f_donedata::TransportRouter<ParentEngine> parent_router({&parent});
     if (!parent_router.init()) {
         std::fprintf(stderr, "FAIL: parent_router.init() returned false\n");
         return 1;
@@ -80,18 +78,16 @@ int main() {
         parent_router.pumpScxmlInvokeReplies();
         parent.step();
         if (parent.getCurrentState() == State::Pass) {
-            std::printf(
-                "SCE Mesh §9.6 Session 5c SOME/IP donedata crossdev: PASS\n");
+            std::printf("SCE Mesh §9.6 Session 5c SOME/IP donedata crossdev: PASS\n");
             return 0;
         }
         if (parent.getCurrentState() == State::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent took the fail transition. One of the "
-                         "three donedata conds did not match the wire-18 "
-                         "payload over SOME/IP — either the param shape "
-                         "lost the name/value pair, the content shape "
-                         "dropped the primitive string, or the nested shape "
-                         "regressed the canonical-JSON contract.\n");
+            std::fprintf(stderr, "FAIL: parent took the fail transition. One of the "
+                                 "three donedata conds did not match the wire-18 "
+                                 "payload over SOME/IP — either the param shape "
+                                 "lost the name/value pair, the content shape "
+                                 "dropped the primitive string, or the nested shape "
+                                 "regressed the canonical-JSON contract.\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));

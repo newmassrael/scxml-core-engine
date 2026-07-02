@@ -80,8 +80,7 @@ int main() {
     // SCE Mesh §16.7 row 5 sub-atomic C peer-down emit. This is the
     // direct call the TransportRouter peer-down handlers issue per
     // session (`sessions_[i]->getPolicy().failScxmlRemoteInvokesForPeer(...)`).
-    parent.getPolicy().failScxmlRemoteInvokesForPeer(
-        "worker_session_f_peer_drop", parent);
+    parent.getPolicy().failScxmlRemoteInvokesForPeer("worker_session_f_peer_drop", parent);
 
     // Drive the parent's macrostep to consume the error.communication
     // event we just enqueued. One step should suffice; loop a few
@@ -115,8 +114,7 @@ int main() {
     // parent's `lost` state is a `<final>`, so no transition selection
     // happens regardless — but we still verify that step() does not
     // surface an unexpected event drain.
-    parent.getPolicy().failScxmlRemoteInvokesForPeer(
-        "worker_session_f_peer_drop", parent);
+    parent.getPolicy().failScxmlRemoteInvokesForPeer("worker_session_f_peer_drop", parent);
     parent.step();
 
     if (parent.getCurrentState() != ParentState::Lost) {

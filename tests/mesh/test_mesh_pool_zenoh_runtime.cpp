@@ -61,14 +61,13 @@ using namespace SCE::Test::Mesh;
 // dials it. CMake RESOURCE_LOCK zenoh_pool_port_17452 serializes this
 // test against anything else that binds that port — there is no other
 // fixture on it today, so the lock is reserved for future co-location safety.
-constexpr const char* kListen =
-    SCE::Generated::pool_zenoh_client::ZENOH_CONNECT_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::pool_zenoh_client::ZENOH_CONNECT_ENDPOINTS[0];
 
 // The pool's key template is `sce/player/{id}` with the sample
 // invoke passing `id="42"`. This literal MUST match what the
 // runtime substitution produces — a mismatch is the signal the
 // runtime concat path silently mutated or skipped the placeholder.
-constexpr const char* kSubstitutedKey = "sce/player/42";
+constexpr const char *kSubstitutedKey = "sce/player/42";
 
 int run_test() {
     namespace client_gen = SCE::Generated::pool_zenoh_client;
@@ -86,17 +85,21 @@ int run_test() {
 
     auto queryable = harness_session.declare_queryable(
         zenoh::KeyExpr(kSubstitutedKey),
-        [](zenoh::Query& query) {
+        [](zenoh::Query &query) {
             // Decode the inbound envelope so we can copy env.invoke_id
             // into the reply. invoke_correlation_.handleReply on the
             // client side keys on the UUID the client stamped at
             // invoke time — the reply must preserve it verbatim or
             // the correlation table entry never clears.
             auto payload_opt = query.get_payload();
-            if (!payload_opt) return;
+            if (!payload_opt) {
+                return;
+            }
             auto bytes = payload_opt->get().as_vector();
             SCE::Mesh::MeshEnvelope req;
-            if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), req)) return;
+            if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), req)) {
+                return;
+            }
 
             SCE::Mesh::MeshEnvelope reply;
             reply.id = SCE::uuid::v7();
@@ -108,8 +111,7 @@ int run_test() {
             auto reply_bytes = SCE::Mesh::encodeEnvelope(reply);
 
             zenoh::Query::ReplyOptions reply_opts;
-            query.reply(query.get_keyexpr(), zenoh::Bytes(std::move(reply_bytes)),
-                        std::move(reply_opts));
+            query.reply(query.get_keyexpr(), zenoh::Bytes(std::move(reply_bytes)), std::move(reply_opts));
         },
         []() noexcept {});
 
@@ -142,11 +144,15 @@ int run_test() {
     struct EnginePump {
         std::atomic<bool> running{true};
         std::thread t;
+
         ~EnginePump() {
             running.store(false, std::memory_order_release);
-            if (t.joinable()) t.join();
+            if (t.joinable()) {
+                t.join();
+            }
         }
     } pump;
+
     pump.t = std::thread([&client, &pump] {
         while (pump.running.load(std::memory_order_acquire)) {
             client.step();
@@ -170,15 +176,16 @@ int run_test() {
     using std::chrono::steady_clock;
     const auto deadline = steady_clock::now() + kDefaultTimeout;
     while (steady_clock::now() < deadline) {
-        if (client.getCurrentState() == Client::State::Ok) break;
+        if (client.getCurrentState() == Client::State::Ok) {
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    MESH_TEST_REQUIRE(client.getCurrentState() == Client::State::Ok,
-                     "pool_zenoh_client did not reach State::Ok — "
-                     "regression in the §14.4 runtime KeyExpr "
-                     "substitution, pool dispatch, or "
-                     "admitZenohInbound → handleReply chain");
+    MESH_TEST_REQUIRE(client.getCurrentState() == Client::State::Ok, "pool_zenoh_client did not reach State::Ok — "
+                                                                     "regression in the §14.4 runtime KeyExpr "
+                                                                     "substitution, pool dispatch, or "
+                                                                     "admitZenohInbound → handleReply chain");
 
     pump.running.store(false, std::memory_order_release);
     pump.t.join();
@@ -192,7 +199,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

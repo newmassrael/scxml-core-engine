@@ -37,8 +37,7 @@ int main(void) {
 
     int rc = test459_in_state(&sm, TEST459_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test459: FAIL — active = 0x%08x\n",
-                (unsigned)test459_active_states(&sm));
+        fprintf(stderr, "test459: FAIL — active = 0x%08x\n", (unsigned)test459_active_states(&sm));
     }
     test459_destroy(&sm);
     return rc;

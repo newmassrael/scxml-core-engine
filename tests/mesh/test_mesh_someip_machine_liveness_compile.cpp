@@ -57,38 +57,28 @@ int main() {
 #if defined(SCE_F4_MACHINE_ALPHA)
     namespace gen = SCE::Generated::alpha_machine_liveness;
 
-    static_assert(
-        gen::SCE_MACHINE_LIVENESS_SERVICE_SELF >= 0x8280 &&
-            gen::SCE_MACHINE_LIVENESS_SERVICE_SELF <= 0x82FF,
-        "SCE_MACHINE_LIVENESS_SERVICE_SELF must land in F.X-4 D1 reservation [0x8280, 0x82FF]");
-    static_assert(
-        gen::SCE_MACHINE_LIVENESS_SERVICE_SELF == 0x8280,
-        "alpha's machine-level liveness service must be 0x8280 (lex-sorted counter base)");
-    static_assert(
-        gen::SCE_MACHINE_LIVENESS_SERVICE_PEER_BETA_MACHINE_LIVENESS == 0x8281,
-        "alpha's peer (beta) machine-level liveness service must be 0x8281");
-    static_assert(
-        gen::SCE_MACHINE_LIVENESS_SERVICE_SELF !=
-            gen::SCE_MACHINE_LIVENESS_SERVICE_PEER_BETA_MACHINE_LIVENESS,
-        "self and peer service IDs must be distinct so offer/subscribe cannot collide");
+    static_assert(gen::SCE_MACHINE_LIVENESS_SERVICE_SELF >= 0x8280 && gen::SCE_MACHINE_LIVENESS_SERVICE_SELF <= 0x82FF,
+                  "SCE_MACHINE_LIVENESS_SERVICE_SELF must land in F.X-4 D1 reservation [0x8280, 0x82FF]");
+    static_assert(gen::SCE_MACHINE_LIVENESS_SERVICE_SELF == 0x8280,
+                  "alpha's machine-level liveness service must be 0x8280 (lex-sorted counter base)");
+    static_assert(gen::SCE_MACHINE_LIVENESS_SERVICE_PEER_BETA_MACHINE_LIVENESS == 0x8281,
+                  "alpha's peer (beta) machine-level liveness service must be 0x8281");
+    static_assert(gen::SCE_MACHINE_LIVENESS_SERVICE_SELF !=
+                      gen::SCE_MACHINE_LIVENESS_SERVICE_PEER_BETA_MACHINE_LIVENESS,
+                  "self and peer service IDs must be distinct so offer/subscribe cannot collide");
 #endif
 #if defined(SCE_F4_MACHINE_BETA)
     namespace gen = SCE::Generated::beta_machine_liveness;
 
-    static_assert(
-        gen::SCE_MACHINE_LIVENESS_SERVICE_SELF >= 0x8280 &&
-            gen::SCE_MACHINE_LIVENESS_SERVICE_SELF <= 0x82FF,
-        "SCE_MACHINE_LIVENESS_SERVICE_SELF must land in F.X-4 D1 reservation [0x8280, 0x82FF]");
-    static_assert(
-        gen::SCE_MACHINE_LIVENESS_SERVICE_SELF == 0x8281,
-        "beta's machine-level liveness service must be 0x8281 (lex-sorted counter +1)");
-    static_assert(
-        gen::SCE_MACHINE_LIVENESS_SERVICE_PEER_ALPHA_MACHINE_LIVENESS == 0x8280,
-        "beta's peer (alpha) machine-level liveness service must be 0x8280");
-    static_assert(
-        gen::SCE_MACHINE_LIVENESS_SERVICE_SELF !=
-            gen::SCE_MACHINE_LIVENESS_SERVICE_PEER_ALPHA_MACHINE_LIVENESS,
-        "self and peer service IDs must be distinct so offer/subscribe cannot collide");
+    static_assert(gen::SCE_MACHINE_LIVENESS_SERVICE_SELF >= 0x8280 && gen::SCE_MACHINE_LIVENESS_SERVICE_SELF <= 0x82FF,
+                  "SCE_MACHINE_LIVENESS_SERVICE_SELF must land in F.X-4 D1 reservation [0x8280, 0x82FF]");
+    static_assert(gen::SCE_MACHINE_LIVENESS_SERVICE_SELF == 0x8281,
+                  "beta's machine-level liveness service must be 0x8281 (lex-sorted counter +1)");
+    static_assert(gen::SCE_MACHINE_LIVENESS_SERVICE_PEER_ALPHA_MACHINE_LIVENESS == 0x8280,
+                  "beta's peer (alpha) machine-level liveness service must be 0x8280");
+    static_assert(gen::SCE_MACHINE_LIVENESS_SERVICE_SELF !=
+                      gen::SCE_MACHINE_LIVENESS_SERVICE_PEER_ALPHA_MACHINE_LIVENESS,
+                  "self and peer service IDs must be distinct so offer/subscribe cannot collide");
 #endif
 
     // Cross-subsystem disjointness on the wire-side constants
@@ -96,15 +86,13 @@ int main() {
     static_assert(
         gen::SCE_MACHINE_LIVENESS_SERVICE_SELF >= 0x8280,
         "F.X-4 sub-range must not overlap F.X-1 invoke [0x8100, 0x817F] or F.X-3 region-liveness [0x8180, 0x81FF]");
-    static_assert(
-        gen::SCE_MACHINE_LIVENESS_INSTANCE == 0x0001,
-        "SCE_MACHINE_LIVENESS_INSTANCE is fixed at 0x0001 per RFC F.X-4 §2 wire shape");
+    static_assert(gen::SCE_MACHINE_LIVENESS_INSTANCE == 0x0001,
+                  "SCE_MACHINE_LIVENESS_INSTANCE is fixed at 0x0001 per RFC F.X-4 §2 wire shape");
 
     using RouterT = gen::TransportRouter<SCE::Test::Mesh::TestSenderEngine>;
-    static_assert(sizeof(RouterT) > 0,
-                  "TransportRouter must be a complete type — instantiation drags the "
-                  "consolidated SCE app field + register_availability_handler closure "
-                  "through the front end");
+    static_assert(sizeof(RouterT) > 0, "TransportRouter must be a complete type — instantiation drags the "
+                                       "consolidated SCE app field + register_availability_handler closure "
+                                       "through the front end");
 
     std::printf("SCE Mesh §16.7 row 8 machine liveness compile verification (SOME/IP): PASS\n");
     return 0;

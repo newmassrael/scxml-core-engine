@@ -117,20 +117,14 @@ public:
         std::string target;
     };
 
-    RetryingDispatcher(MeshDeadlineScheduler& scheduler,
-                       Policy policy,
-                       InnerDispatcher inner,
-                       ErrorRaiseCallback raise)
-        : scheduler_(scheduler),
-          policy_(std::move(policy)),
-          inner_(std::move(inner)),
-          raise_(std::move(raise)),
+    RetryingDispatcher(MeshDeadlineScheduler &scheduler, Policy policy, InnerDispatcher inner, ErrorRaiseCallback raise)
+        : scheduler_(scheduler), policy_(std::move(policy)), inner_(std::move(inner)), raise_(std::move(raise)),
           rng_(std::random_device{}()) {}
 
-    RetryingDispatcher(const RetryingDispatcher&) = delete;
-    RetryingDispatcher& operator=(const RetryingDispatcher&) = delete;
-    RetryingDispatcher(RetryingDispatcher&&) = delete;
-    RetryingDispatcher& operator=(RetryingDispatcher&&) = delete;
+    RetryingDispatcher(const RetryingDispatcher &) = delete;
+    RetryingDispatcher &operator=(const RetryingDispatcher &) = delete;
+    RetryingDispatcher(RetryingDispatcher &&) = delete;
+    RetryingDispatcher &operator=(RetryingDispatcher &&) = delete;
 
     /// Dispatcher entry point — installed AS the OutboundBuffer's
     /// dispatcher closure. Returns `SendResult::success()` whenever the
@@ -149,7 +143,7 @@ public:
     /// SCE_MESH.md §mesh-16.7 row 3: entry to the DELIVERY_EXHAUSTED retry
     /// layer — one synchronous attempt, then queue for exponential-backoff
     /// retry; exhaustion raises `error.communication` reason DELIVERY_EXHAUSTED.
-    SendResult send_with_retry(const MeshEnvelope& env) {
+    SendResult send_with_retry(const MeshEnvelope &env) {
         SendResult result = inner_(env);
         if (result.ok) {
             return SendResult::success();
@@ -166,7 +160,7 @@ public:
             return SendResult::success();
         }
         // Transient with retries available: stash + schedule first retry.
-        const auto& key = env.id;
+        const auto &key = env.id;
         std::chrono::milliseconds next_backoff;
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
@@ -186,8 +180,7 @@ public:
             next_backoff = jitter(st.next_backoff);
             state_.emplace(key, std::move(st));
         }
-        const bool scheduled = scheduler_.registerDeadline(
-            key, next_backoff, [this, key]() { onRetryFire(key); });
+        const bool scheduled = scheduler_.registerDeadline(key, next_backoff, [this, key]() { onRetryFire(key); });
         if (!scheduled) {
             // Scheduler refused (shutting down or duplicate). Roll
             // back state and fail through to SEND_FAILED so the
@@ -204,7 +197,7 @@ public:
     /// raced by the deadline's own `error.invoke.<id>` raise).
     /// Idempotent: returns `true` when an entry was erased, `false`
     /// when the id was never registered or already exhausted/fired.
-    bool cancelEnvelopeRetry(const MeshDeadlineScheduler::Key& envelope_id) {
+    bool cancelEnvelopeRetry(const MeshDeadlineScheduler::Key &envelope_id) {
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
             if (state_.erase(envelope_id) == 0) {
@@ -233,7 +226,7 @@ private:
     /// SCE_MESH.md §mesh-16.7 row 3: the retry-timer callback that re-sends a
     /// queued envelope, re-arms exponential backoff, and raises
     /// DELIVERY_EXHAUSTED once `max_retries` attempts are reached.
-    void onRetryFire(const MeshDeadlineScheduler::Key& key) {
+    void onRetryFire(const MeshDeadlineScheduler::Key &key) {
         MeshEnvelope env_copy;
         {
             std::lock_guard<std::mutex> lock(state_mutex_);
@@ -262,7 +255,7 @@ private:
                 // Cancelled between the unlock above and re-acquire.
                 return;
             }
-            auto& st = it->second;
+            auto &st = it->second;
             st.attempts += 1;
             st.last_transport_error = result.transport_error;
             if (!result.retryable || st.attempts > policy_.max_retries) {
@@ -277,22 +270,18 @@ private:
                 state_.erase(it);
             } else {
                 // Bump backoff with multiplier cap.
-                const auto raw_next = static_cast<long long>(
-                    static_cast<double>(st.next_backoff.count())
-                    * policy_.backoff_multiplier);
-                const auto capped = std::min<long long>(
-                    raw_next, policy_.max_backoff.count());
+                const auto raw_next =
+                    static_cast<long long>(static_cast<double>(st.next_backoff.count()) * policy_.backoff_multiplier);
+                const auto capped = std::min<long long>(raw_next, policy_.max_backoff.count());
                 st.next_backoff = std::chrono::milliseconds(capped);
                 next_backoff = jitter(st.next_backoff);
             }
         }
         if (exhausted) {
-            emitExhausted(exhausted_env, exhausted_attempts,
-                          std::move(exhausted_error));
+            emitExhausted(exhausted_env, exhausted_attempts, std::move(exhausted_error));
             return;
         }
-        const bool scheduled = scheduler_.registerDeadline(
-            key, next_backoff, [this, key]() { onRetryFire(key); });
+        const bool scheduled = scheduler_.registerDeadline(key, next_backoff, [this, key]() { onRetryFire(key); });
         if (!scheduled) {
             // Scheduler is shutting down. Drop state — §mesh-9.5 "benign
             // drop" matches MeshDeadlineScheduler::shutdown semantics.
@@ -301,8 +290,7 @@ private:
         }
     }
 
-    void emitExhausted(const MeshEnvelope& env,
-                       std::uint32_t attempts,
+    void emitExhausted(const MeshEnvelope &env, std::uint32_t attempts,
                        std::optional<std::string> last_transport_error) {
         if (!raise_) {
             return;
@@ -340,7 +328,7 @@ private:
         return std::chrono::milliseconds(std::max<long long>(1, jittered));
     }
 
-    MeshDeadlineScheduler& scheduler_;
+    MeshDeadlineScheduler &scheduler_;
     Policy policy_;
     InnerDispatcher inner_;
     ErrorRaiseCallback raise_;
