@@ -167,7 +167,7 @@ The C11 backend mirrors the 4-tier shape with a small adaptation. Generated C11 
 | Tier 3 (Scripting) | `sce_c_scripting` | STATIC, optional | Lua-bound bridges over `sce_c_base` + platform impl; gated by `SCE_ENABLE_LUA` |
 | Tier 4 (Platform) | `sce_c_runtime_posix` | STATIC, optional | POSIX reference impl (`posix/clock.c`, `posix/http_client.c`); gated by `SCE_C_RUNTIME_POSIX` (default ON for host) |
 
-Bare-metal / RTOS consumers (e.g. `consumer_watching_zenoh.md`) opt out of `sce_c_runtime_posix` and supply their own `sce_c_runtime_<target>` library providing the same symbol contract (`_sce_clock_now_ms` for the W3C 6.2 scheduler; HTTP impl optional). The interface contract in `sce-c-runtime/include/sce/` is the single source of truth — the test runner (`sce-c-tests`) is the contract-test consumer that pins the API against drift.
+Bare-metal / RTOS consumers (e.g. `consumer_watching_zenoh.md`) opt out of `sce_c_runtime_posix` and supply their own `sce_c_runtime_<target>` library providing the same symbol contract (`_sce_clock_now_ms` for the W3C 6.2 scheduler; HTTP impl optional). The interface contract in `backends/c/runtime/include/sce/` is the single source of truth — the test runner (`backends/c/tests`) is the contract-test consumer that pins the API against drift.
 
 **Generated C11 code** consumes these tiers via stable headers (`#include <sce/clock.h>` etc.), never via host-relative paths — the headers and their impls are decoupled by the `sce_c_runtime` INTERFACE include path.
 
@@ -478,9 +478,9 @@ Bridges ECMAScript syntax in W3C SCXML `datamodel="ecmascript"` to Lua evaluatio
 | Backend | Embedding Mechanism | When |
 |---------|-------------------|------|
 | C++ | CMake `EmbedLuaScript.cmake` → `json_builtins_lua.h` string literal | Compile-time |
-| Rust | `include_str!("../../sce/include/scripting/json_builtins.lua")` | Compile-time |
+| Rust | `include_str!("../../../../sce/include/scripting/json_builtins.lua")` | Compile-time |
 | Kotlin | Gradle `copyJsonBuiltins` → classpath resource `/scripting/json_builtins.lua` | Runtime (lazy) |
-| Go | `//go:embed json_builtins.lua` in `sce-go-lua/` | Compile-time |
+| Go | `//go:embed json_builtins.lua` in `backends/go/lua/` | Compile-time |
 
 Do NOT duplicate JSON logic in backend-specific code. All five backends load the same file.
 
@@ -581,7 +581,7 @@ BasicHTTP Event I/O Processor support for `<send type="BasicHTTPEventProcessor">
 Python bindings wrap the C++ `ReadySCXMLEngine` interpreter via pybind11:
 
 ```
-sce-python/
+backends/python/bindings/
 ├── src/bindings.cpp          PyEngine wrapper (GIL management, context manager)
 ├── python/sce/__init__.py    Python package (Engine, Statistics exports)
 ├── tests/test_w3c.py         W3C conformance tests (202/202, HTTP included)
@@ -604,14 +604,37 @@ sce-python/
 
 **Build**: `cmake -DBUILD_PYTHON_BINDINGS=ON` (requires Python 3.9+, pybind11 v2.13.6 via FetchContent)
 
+### Backend directory layout
+
+Every per-language backend lives under `backends/<lang>/` — the single
+source of truth for the runtime + tests + Forge runtime of each language.
+The C++ reference implementation (`sce/`) and the code generator
+(`sce-build/`) stay at the repo root; they are the compiler components, not
+per-language backends.
+
+```
+backends/
+  c/{runtime, tests, forge-runtime}
+  cpp/{forge-runtime}                         # C++ core lives in sce/
+  go/{runtime, lua, tests, forge-runtime}
+  kotlin/{runtime, lua, quickjs, rhino, tests, benchmark, spring-boot-starter, android-app, forge-runtime}
+  python/{bindings, runtime, tests, forge-runtime}
+  rust/{runtime, lua, tests, link-runtime, portable-bytes, forge-runtime, probes/*}
+```
+
+Package/module identities are stable across the move: Cargo crate names
+(`sce-rust-runtime`), Gradle modules (`:sce-kotlin-runtime`), and Go module
+paths (`github.com/newmassrael/sce-go-runtime`) are unchanged — only the
+directory locations moved.
+
 ### Rust AOT Backend
 
 Rust backend generates native Rust state machines from the same SCXML sources:
 
 ```
-sce-rust-runtime/     Core engine (StaticExecutionEngine, event queue, policy traits)
-sce-rust-lua/         Lua 5.4 script engine (mlua vendored build)
-sce-rust-tests/       W3C conformance tests (202/202, linkme-based registration)
+backends/rust/runtime/     Core engine (StaticExecutionEngine, event queue, policy traits)
+backends/rust/lua/         Lua 5.4 script engine (mlua vendored build)
+backends/rust/tests/       W3C conformance tests (202/202, linkme-based registration)
 Cargo.toml            Workspace (Rust 1.75+, edition 2021)
 ```
 
@@ -619,7 +642,7 @@ Cargo.toml            Workspace (Rust 1.75+, edition 2021)
 - **Code Generator**: `sce-codegen generate -l rust` + `templates/rust/*.rs.jinja2`
 - **Template Parity**: 1:1 port of C++ Jinja2 templates (state_machine, actions, invoke, etc.)
 - **Scripting**: Lua 5.4 via `mlua` crate (vendored, same as C++ default engine)
-- **JSON Builtins**: `include_str!("../../sce/include/scripting/json_builtins.lua")` — shared with C++/Kotlin
+- **JSON Builtins**: `include_str!("../../../../sce/include/scripting/json_builtins.lua")` — shared with C++/Kotlin
 - **Test Registration**: `linkme` crate for compile-time test registration (equivalent to C++ `AotTestRegistrar`)
 
 ### Kotlin/JVM & Android
@@ -627,14 +650,14 @@ Cargo.toml            Workspace (Rust 1.75+, edition 2021)
 Kotlin/JVM modules provide the same W3C SCXML compliance (202/202) on JVM and Android:
 
 ```
-sce-kotlin-runtime      ScxmlScriptEngine interface (Kotlin Multiplatform)
-sce-kotlin-rhino        Rhino ECMAScript engine (pure JVM, fastest on server)
-sce-kotlin-lua           Lua 5.4 engine via JNI (fastest on Android)
-sce-kotlin-quickjs      QuickJS engine via JNI (full ES6, native)
-sce-spring-boot-starter Spring Boot auto-configuration (@AutoConfiguration)
-sce-kotlin-tests        W3C conformance (202/202, all 3 engines)
-sce-kotlin-benchmark    JMH benchmarks (3-engine comparison)
-sce-android-app         Android real-device benchmark (Compose UI)
+backends/kotlin/runtime      ScxmlScriptEngine interface (Kotlin Multiplatform)
+backends/kotlin/rhino        Rhino ECMAScript engine (pure JVM, fastest on server)
+backends/kotlin/lua           Lua 5.4 engine via JNI (fastest on Android)
+backends/kotlin/quickjs      QuickJS engine via JNI (full ES6, native)
+backends/kotlin/spring-boot-starter Spring Boot auto-configuration (@AutoConfiguration)
+backends/kotlin/tests        W3C conformance (202/202, all 3 engines)
+backends/kotlin/benchmark    JMH benchmarks (3-engine comparison)
+backends/kotlin/android-app         Android real-device benchmark (Compose UI)
 ```
 
 **Engine selection per platform**:
@@ -649,9 +672,9 @@ sce-android-app         Android real-device benchmark (Compose UI)
 Go backend generates native Go state machines with Go 1.22+ generics:
 
 ```
-sce-go-runtime      StatePolicy[S,E] interface, Engine[S,E] generic execution engine
-sce-go-lua          Lua script engine via Shopify/go-lua (pure Go, no CGo)
-sce-go-tests        W3C conformance (202/202)
+backends/go/runtime      StatePolicy[S,E] interface, Engine[S,E] generic execution engine
+backends/go/lua          Lua script engine via Shopify/go-lua (pure Go, no CGo)
+backends/go/tests        W3C conformance (202/202)
 ```
 
 - **Templates**: `tools/codegen/templates/go/*.go.jinja2` — 1:1 port of Rust templates
@@ -666,33 +689,33 @@ sce-go-tests        W3C conformance (202/202)
 Python AOT generates native Python state machines from the same SCXML sources, mirroring Rust/Go/Kotlin/C11. Distinct from the **Python Bindings (pybind11)** channel above: that path runs the C++ Interpreter at runtime; this path runs Python code emitted at build time.
 
 ```
-sce-python-runtime    Engine[S,E] generic execution + StatePolicy ABC + IScriptEngine
+backends/python/runtime    Engine[S,E] generic execution + StatePolicy ABC + IScriptEngine
                       └── sce_runtime/scripting/lua_engine.py   Lua 5.4 via lupa
-sce-python-tests      W3C conformance (202/202), pytest harness, in-process HTTP echo server
+backends/python/tests      W3C conformance (202/202), pytest harness, in-process HTTP echo server
 sce-forge-runtime/    Non-MCU Forge kinds: codec / filter / interpolation / lookup /
-  python/             observer / procedure / timer (mirrors `sce-forge-runtime/rust/src/`)
+  python/             observer / procedure / timer (mirrors `backends/rust/forge-runtime/src/`)
 ```
 
-**Channel separation (sce-python-runtime/README.md)**:
+**Channel separation (backends/python/runtime/README.md)**:
 
 | Package | Mode | Mechanism |
 |---|---|---|
-| `sce` (`sce-python/`) | **Interpreter** | pybind11 → C++ Interpreter parses SCXML at runtime |
-| `sce_runtime` (`sce-python-runtime/`) | **AOT** | Generated `*_sm.py` is the SM; this runtime is a generic driver |
+| `sce` (`backends/python/bindings/`) | **Interpreter** | pybind11 → C++ Interpreter parses SCXML at runtime |
+| `sce_runtime` (`backends/python/runtime/`) | **AOT** | Generated `*_sm.py` is the SM; this runtime is a generic driver |
 
 **Architecture**:
 - **Code Generator**: `sce-codegen generate-w3c -l python` + `tools/codegen/templates/python/*.py.jinja2`
 - **Template Parity**: 1:1 port of Rust templates (state_machine / entry_exit_actions / process_transition / scriptengine_helpers / conflict_resolution / invoke_methods). Per-action emission lives in `tools/codegen/templates/python/actions/{assign,cancel,log,raise,script,send}.py.jinja2`; recursive `<if>` / `<foreach>` stay in `_actions.py.jinja2` so nested children can recurse through `emit` without a circular Jinja2 macro import
-- **Scripting**: Lua 5.4 via `lupa` (PyPI), same ECMAScript→Lua transformer (`to_lua_expr` / `to_lua_guard` / `to_lua_script`) every other Lua-family backend uses. DOM bridge (`getElementsByTagName` / `getAttribute`) uses `xml.etree.ElementTree` + a thin `_DomElement` wrapper in `lua_engine.py`, mirroring `sce-rust-lua::dom::XmlRef`
+- **Scripting**: Lua 5.4 via `lupa` (PyPI), same ECMAScript→Lua transformer (`to_lua_expr` / `to_lua_guard` / `to_lua_script`) every other Lua-family backend uses. DOM bridge (`getElementsByTagName` / `getAttribute`) uses `xml.etree.ElementTree` + a thin `_DomElement` wrapper in `lua_engine.py`, mirroring `backends/rust/lua::dom::XmlRef`
 - **State/Event**: `IntEnum` members named in UPPER_SNAKE_CASE; identifiers normalised via `to_python_const` filter
-- **HTTP**: `sce-python-tests/conftest.py` spawns an in-process `http.server.HTTPServer` on port 8080 mirroring `tests/w3c/standalone_http_server.js` — no Node.js dependency in the AOT CI lane
+- **HTTP**: `backends/python/tests/conftest.py` spawns an in-process `http.server.HTTPServer` on port 8080 mirroring `tests/w3c/standalone_http_server.js` — no Node.js dependency in the AOT CI lane
 - **Mesh**: Permanently rejected at codegen via `reject_python_unsupported_features` per C++-first mesh policy (same as Go / Kotlin)
 - **Forge kinds**: Same admission as C++/Kotlin/Go — non-MCU kinds (Statechart / Transform / Lookup / Condition / Procedure / Aoi / Stream / BoundedCollection) ship; MCU-class kinds (Link / BufferPool / Worker) are rust+c11-only per `forge/codegen_matrix.rs::kind_class`
 
 **Build & Test**:
 - Codegen: `cargo build --bin sce-codegen --features cli --release -p sce-build && ./target/release/sce-codegen generate-w3c -l python`
-- Install runtime: `pip install -e sce-python-runtime/` (single hard dep: `lupa>=2.0`)
-- Run W3C suite: `pytest sce-python-tests/generated/` — 202/202, ~1.5 s wall clock
+- Install runtime: `pip install -e backends/python/runtime/` (single hard dep: `lupa>=2.0`)
+- Run W3C suite: `pytest backends/python/tests/generated/` — 202/202, ~1.5 s wall clock
 - CI: `.github/workflows/w3c-tests.yml::test-python` (family-member AOT lane, sibling to `test-rust` / `test-kotlin` / `test-go`); the pybind channel rides `test-python-bindings`
 
 ---

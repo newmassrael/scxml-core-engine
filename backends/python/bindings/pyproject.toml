@@ -1,0 +1,28 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.13"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "sce"
+version = "1.0.0"
+description = "SCE - SCXML Core Engine: W3C SCXML 1.0 compliant state machine for Python"
+readme = "README.md"
+license = {text = "LGPL-2.1-or-later"}
+requires-python = ">=3.9"
+authors = [
+    {name = "newmassrael", email = "newmassrael@gmail.com"},
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: C++",
+    "Topic :: Software Development :: Libraries",
+]
+
+[tool.scikit-build]
+# Must be invoked from backends/python/bindings/ directory: cd backends/python/bindings && pip install .
+cmake.source-dir = "../.."
+cmake.build-type = "Release"
+cmake.define = {BUILD_PYTHON_BINDINGS = "ON", BUILD_TESTS = "OFF", BUILD_EXAMPLES = "OFF"}
+wheel.packages = ["python/sce"]

@@ -74,7 +74,7 @@ tempfile = "3"
 
 [lib]
 # `rlib` only for native builds. Native consumers (workspace runtime
-# crates, downstream `build.rs` users like sce-forge-runtime/rust)
+# crates, downstream `build.rs` users like backends/rust/forge-runtime)
 # link as a regular Rust library, so producing a `cdylib` here in
 # the default configuration only invites cargo issue #6313 output-
 # path collisions when the same package gets compiled twice (once

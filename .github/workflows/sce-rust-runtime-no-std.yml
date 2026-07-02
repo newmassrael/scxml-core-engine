@@ -5,7 +5,7 @@ name: sce-rust-runtime no_std MCU target build
 # not just the host toolchain. Catches accidental `std::*` reintroduction in
 # the runtime crate or any of its helpers as a hard CI failure.
 #
-# Trigger: source changes under `sce-rust-runtime/` or `sce-build/`'s templates
+# Trigger: source changes under `backends/rust/runtime/` or `sce-build/`'s templates
 # (which emit code that compiles against the no_std runtime). The Cargo lockfile
 # and the cargo target registration also gate the workflow so toolchain or
 # linker drift is caught.
@@ -18,11 +18,11 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'sce-rust-runtime/**'
+      - 'backends/rust/runtime/**'
       - 'tools/codegen/templates/rust/**'
-      - 'sce-nostd-build-probe/**'
-      - 'sce-portable-emit-probe/**'
-      - 'sce-nostd-queue-size-probe/**'
+      - 'backends/rust/probes/nostd-build/**'
+      - 'backends/rust/probes/portable-emit/**'
+      - 'backends/rust/probes/nostd-queue-size/**'
       - 'sce-build/tests/fixtures/no_std/**'
       - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
       - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'
@@ -33,11 +33,11 @@ on:
   pull_request:
     branches: [ main ]
     paths:
-      - 'sce-rust-runtime/**'
+      - 'backends/rust/runtime/**'
       - 'tools/codegen/templates/rust/**'
-      - 'sce-nostd-build-probe/**'
-      - 'sce-portable-emit-probe/**'
-      - 'sce-nostd-queue-size-probe/**'
+      - 'backends/rust/probes/nostd-build/**'
+      - 'backends/rust/probes/portable-emit/**'
+      - 'backends/rust/probes/nostd-queue-size/**'
       - 'sce-build/tests/fixtures/no_std/**'
       - 'sce-build/tests/fixtures/event_schema/statechart_native_action.scxml'
       - 'sce-build/tests/fixtures/event_schema/schema_fragment.scxml'
@@ -74,7 +74,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-no-std-${{ hashFiles('Cargo.lock', 'sce-rust-runtime/**/*.rs', 'sce-rust-runtime/Cargo.toml') }}
+        key: ${{ runner.os }}-cargo-no-std-${{ hashFiles('Cargo.lock', 'backends/rust/runtime/**/*.rs', 'backends/rust/runtime/Cargo.toml') }}
         restore-keys: |
           ${{ runner.os }}-cargo-no-std-
 
@@ -113,20 +113,20 @@ jobs:
     # historically std-coupled constructs (nested parallel + conflict
     # resolution, shallow/deep history, many transitions) for the bare-metal
     # target with no `#[global_allocator]`; any reachable `alloc` symbol is a
-    # hard compile error. See sce-nostd-build-probe/README.md.
+    # hard compile error. See backends/rust/probes/nostd-build/README.md.
     - name: Build sce-codegen
       run: cargo build --bin sce-codegen --features cli --release -p sce-build
 
     - name: Generate the no_std probe machine
       run: |
         target/release/sce-codegen --workspace-root . generate -l rust --no-std \
-          --output-dir sce-nostd-build-probe/src \
+          --output-dir backends/rust/probes/nostd-build/src \
           sce-build/tests/fixtures/no_std/parallel_history_probe.scxml
 
     - name: Compile the generated no_std machine (MCU target, no allocator)
       run: |
         cargo build \
-          --manifest-path sce-nostd-build-probe/Cargo.toml \
+          --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
           --target=thumbv7em-none-eabihf
 
     # W3C SCXML G.7 <sce:action>: prove native host-trait dispatch is
@@ -142,12 +142,12 @@ jobs:
           --output-dir /tmp/na-probe \
           sce-build/tests/fixtures/event_schema/statechart_native_action.scxml
         cp /tmp/na-probe/statechart_native_action_sm.rs \
-          sce-nostd-build-probe/src/parallel_history_probe_sm.rs
+          backends/rust/probes/nostd-build/src/parallel_history_probe_sm.rs
 
     - name: Compile the generated no_std native-action machine (MCU target, no allocator)
       run: |
         cargo build \
-          --manifest-path sce-nostd-build-probe/Cargo.toml \
+          --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
           --target=thumbv7em-none-eabihf
 
     # Watching-zenoh RFC §5.J.2 single-emit portability: prove ONE `--no-std`
@@ -160,25 +160,25 @@ jobs:
     # `sce_rust_runtime::heapless::*` re-export and failed `E0433: cannot find
     # heapless in sce_rust_runtime` against the std runtime. The fixture combines
     # a typed bytes/string payload with nested parallel regions so one machine
-    # exercises every alias. See sce-portable-emit-probe/README.md.
+    # exercises every alias. See backends/rust/probes/portable-emit/README.md.
     - name: Generate the portability probe machine
       run: |
         target/release/sce-codegen --workspace-root . generate -l rust --no-std \
-          --output-dir sce-portable-emit-probe/src \
+          --output-dir backends/rust/probes/portable-emit/src \
           sce-build/tests/fixtures/no_std/portable_probe.scxml
 
     # AP profile — the no_std emission compiled against the STD runtime (host).
     # This is the regression gate for the bytes-field E0433.
     - name: Compile the portability probe against the std runtime (host)
       run: |
-        cargo build --manifest-path sce-portable-emit-probe/Cargo.toml
+        cargo build --manifest-path backends/rust/probes/portable-emit/Cargo.toml
 
     # MCU profile — the SAME emission compiled against the no_std runtime (thumb,
     # no allocator). Proves the typed bytes/string payload stays allocator-free.
     - name: Compile the portability probe against the no_std runtime (MCU target)
       run: |
         cargo build \
-          --manifest-path sce-portable-emit-probe/Cargo.toml \
+          --manifest-path backends/rust/probes/portable-emit/Cargo.toml \
           --target=thumbv7em-none-eabihf \
           --features mcu
 
@@ -188,15 +188,15 @@ jobs:
     # `StatePolicy::EventQueue` to the bare (depth-64) form — the depth-64 form
     # still compiles. This crate const-asserts `size_of::<Engine<P>>()`, so the
     # reversion (watching-zenoh's MCU SRAM blocker) fails the build here.
-    # See sce-nostd-queue-size-probe/README.md.
+    # See backends/rust/probes/nostd-queue-size/README.md.
     - name: Generate the queue-size probe machine (sce:capacity=2)
       run: |
         target/release/sce-codegen --workspace-root . generate -l rust --no-std \
-          --output-dir sce-nostd-queue-size-probe/machine/src \
+          --output-dir backends/rust/probes/nostd-queue-size/machine/src \
           sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml
 
     - name: Compile the queue-size gate (MCU target — const size assertion)
       run: |
         cargo build \
-          --manifest-path sce-nostd-queue-size-probe/Cargo.toml \
+          --manifest-path backends/rust/probes/nostd-queue-size/Cargo.toml \
           --target=thumbv7em-none-eabihf

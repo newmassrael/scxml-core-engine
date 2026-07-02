@@ -45,7 +45,7 @@
            can construct DOM userdata via `sce_lua_dom_push_object`.
            Mirrors cpp `LuaEngine::initializeSession` registerMetatable
            hook (sce/src/scripting/LuaEngine.cpp:385). The helper is
-           defined in sce-c-tests/support/lua_dom_binding.c and lives
+           defined in backends/c/tests/support/lua_dom_binding.c and lives
            outside the C11 runtime — only fixtures flagged NEEDS_DOM
            link against it. */
         sce_lua_dom_register_metatable(sm->L);
@@ -356,7 +356,7 @@
         {% elif var.src %}
         /* W3C SCXML 5.2.2: <data id="{{ var.id }}" src="{{ var.src }}">.
            C11 codegen-time file read (RFC §synth-5-J-1 R3 zero-deps: no runtime
-           fopen in sce-c-runtime). Mirrors cpp
+           fopen in backends/c/runtime). Mirrors cpp
            `DataModelInitHelper::initializeVariableFromSrc` (sce/src/common/
            DataModelInitHelper.cpp:159-181), which loads the file and
            dispatches to `initializeVariable` — the C11 codegen reads the

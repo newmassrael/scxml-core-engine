@@ -795,10 +795,10 @@ enum Commands {
     /// Parallel to `generate-w3c` but reads from
     /// `integration_resources/` (separate §synth-6.2.6 input-root from W3C
     /// `resources/`) and emits into each backend's integration tree:
-    ///   - Rust:    `sce-rust-tests/src/integration/<stem>/`            (committed)
-    ///   - Kotlin:  `sce-kotlin-tests/src/main/kotlin/com/sce/integration/<stem>/` (committed)
-    ///   - Go:      `sce-go-tests/integration/<stem>/`                  (committed)
-    ///   - Python:  `sce-python-tests/integration/<stem>/`              (.gitignored, CI regen)
+    ///   - Rust:    `backends/rust/tests/src/integration/<stem>/`            (committed)
+    ///   - Kotlin:  `backends/kotlin/tests/src/main/kotlin/com/sce/integration/<stem>/` (committed)
+    ///   - Go:      `backends/go/tests/integration/<stem>/`                  (committed)
+    ///   - Python:  `backends/python/tests/integration/<stem>/`              (.gitignored, CI regen)
     ///
     /// Python mirrors the W3C IRP pattern: `generate-w3c -l python`
     /// is already `.gitignored` + CI-regenerated, and the integration
@@ -3243,7 +3243,7 @@ struct RustBackend {
 
 impl RustBackend {
     fn new(project_root: &Path) -> Self {
-        let tests_crate = project_root.join("sce-rust-tests");
+        let tests_crate = project_root.join("backends/rust/tests");
         Self {
             sm_base: tests_crate.join("src/generated"),
             test_dir: tests_crate.join("tests"),
@@ -3414,7 +3414,7 @@ impl W3cBackend for RustBackend {
         // so addr2sce still maps back into the generated tree.
         //
         // Hand-curated non-W3C-IRP fixtures live under
-        // `sce-rust-tests/src/integration/` with their own hand-authored
+        // `backends/rust/tests/src/integration/` with their own hand-authored
         // `mod.rs`, so this aggregator only owns the W3C suite — the
         // generated/ tree is "codegen output, full overwrite" and the
         // integration/ tree is "hand-authored mod.rs over codegen-
@@ -3473,7 +3473,7 @@ struct GoBackend {
 
 impl GoBackend {
     fn new(project_root: &Path) -> Self {
-        let tests_module = project_root.join("sce-go-tests");
+        let tests_module = project_root.join("backends/go/tests");
         Self {
             sm_base: tests_module.join("generated"),
             tmpl_dir: sce_build::find_template_dir_for(Language::Go),
@@ -3614,7 +3614,7 @@ struct KotlinBackend {
 
 impl KotlinBackend {
     fn new(project_root: &Path) -> Self {
-        let tests_module = project_root.join("sce-kotlin-tests");
+        let tests_module = project_root.join("backends/kotlin/tests");
         Self {
             sm_base: tests_module.join("src/main/kotlin/com/sce/generated"),
             test_dir: tests_module.join("src/test/kotlin/com/sce/w3c"),
@@ -3901,7 +3901,7 @@ impl W3cBackend for CppBackend {
 // so any W3C fixture exercising invoke surfaces a clean InvalidConfig
 // at this layer and is reported as a generation failure rather than a
 // silent skip. Tests that pass the codegen filter land at
-// `sce-python-tests/generated/test{id}/test{id}_sm.py` and can be
+// `backends/python/tests/generated/test{id}/test{id}_sm.py` and can be
 // driven by an external pytest harness (the harness wrapper itself
 // is consumer-gated).
 
@@ -3913,7 +3913,7 @@ struct PythonBackend {
 impl PythonBackend {
     fn new(project_root: &Path) -> Self {
         Self {
-            sm_base: project_root.join("sce-python-tests/generated"),
+            sm_base: project_root.join("backends/python/tests/generated"),
             tmpl_dir: sce_build::find_template_dir_for(Language::Python),
         }
     }
@@ -3953,7 +3953,7 @@ impl W3cBackend for PythonBackend {
     }
 
     // The pytest wrapper lives alongside the generated `*_sm.py`
-    // in `sce-python-tests/generated/test{N}/test_w3c_{N}.py`. The
+    // in `backends/python/tests/generated/test{N}/test_w3c_{N}.py`. The
     // wrapper imports the SM module by relative path (using sys.path
     // insertion at the test's own parent), instantiates an engine via
     // the generated `create_engine()` factory, drives time forward
@@ -4003,7 +4003,7 @@ impl W3cBackend for PythonBackend {
         let pass_literal = pass_state.to_ascii_lowercase();
         let pass_literal = pass_literal.as_str();
         // §scxml-C-2 — documents that use BasicHTTP transport take
-        // the `setup_http` fixture from sce-python-tests/conftest.py,
+        // the `setup_http` fixture from backends/python/tests/conftest.py,
         // which spawns the W3C echo server (port 8080) and registers
         // the HTTP dispatch callback on the engine. Non-HTTP fixtures
         // omit the parameter so the server only starts when actually
@@ -4036,7 +4036,7 @@ impl W3cBackend for PythonBackend {
              \n\
              _HERE = Path(__file__).resolve().parent\n\
              sys.path.insert(0, str(_HERE))\n\
-             sys.path.insert(0, str(_HERE.parents[2] / \"sce-python-runtime\"))\n\
+             sys.path.insert(0, str(_HERE.parents[2] / \"runtime\"))\n\
              \n\
              import {input_stem}_sm as _sm  # noqa: E402 — path inserted above\n\
              \n\

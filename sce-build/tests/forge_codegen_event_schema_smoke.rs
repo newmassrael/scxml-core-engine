@@ -267,7 +267,7 @@ fn statechart_native_lowering_emits_engine_free_typed_guard() {
 // ECMAScript cond (`===` is not Go) and never the `p.evaluateGuard(...)`
 // script path. `gofmt -e` is the syntactic gate; the substring assertions pin
 // the lowering shape. The real compile+run is the committed integration gate
-// `sce-go-tests/integration/event_schema_native` (regen:
+// `backends/go/tests/integration/event_schema_native` (regen:
 // scripts/regen_event_schema_native_go.sh).
 #[test]
 fn statechart_native_lowering_go_emits_engine_free_typed_guard() {
@@ -413,7 +413,7 @@ fn statechart_native_lowering_kotlin_emits_engine_free_typed_guard() {
     let Some(jar) = find_kotlin_runtime_jar() else {
         eprintln!(
             "SKIP statechart_native_lowering_kotlin compile: runtime jar missing under \
-             sce-kotlin-runtime/build/libs (run `./gradlew :sce-kotlin-runtime:assemble`)",
+             backends/kotlin/runtime/build/libs (run `./gradlew :sce-kotlin-runtime:assemble`)",
         );
         return;
     };
@@ -447,7 +447,7 @@ fn statechart_native_lowering_kotlin_emits_engine_free_typed_guard() {
 // `self._pending_<event>_payload is not None and (…)` guard — never the
 // `self._guard(engine, …)` script path. `py_compile` is the syntactic gate; the
 // substring assertions pin the lowering shape. The real run is the committed
-// integration gate `sce-python-tests/integration/event_schema_native`
+// integration gate `backends/python/tests/integration/event_schema_native`
 // (regen: scripts/regen_event_schema_native_python.sh).
 #[test]
 fn statechart_native_lowering_python_emits_engine_free_typed_guard() {
@@ -674,7 +674,7 @@ fn statechart_native_lowering_c11_compiles_freestanding() {
         "the raw ECMAScript guard must be fully lowered away"
     );
 
-    let runtime_inc = repo_root().join("sce-c-runtime/include");
+    let runtime_inc = repo_root().join("backends/c/runtime/include");
     // Strict MCU profile + freestanding: the no-script-engine value path
     // must build with no hosted-libc assumption (A5 MCU gate).
     let mut cmd = Command::new(&cc);
@@ -772,7 +772,7 @@ fn smoke_go() {
 }
 
 fn find_kotlin_runtime_jar() -> Option<PathBuf> {
-    let libs = repo_root().join("sce-kotlin-runtime/build/libs");
+    let libs = repo_root().join("backends/kotlin/runtime/build/libs");
     let entries = std::fs::read_dir(&libs).ok()?;
     let mut candidates: Vec<PathBuf> = entries
         .flatten()
@@ -796,7 +796,7 @@ fn smoke_kotlin() {
     };
     let Some(jar) = find_kotlin_runtime_jar() else {
         eprintln!(
-            "SKIP smoke_kotlin: runtime jar missing under sce-kotlin-runtime/build/libs \
+            "SKIP smoke_kotlin: runtime jar missing under backends/kotlin/runtime/build/libs \
              (run `./gradlew :sce-kotlin-runtime:assemble`)",
         );
         return;

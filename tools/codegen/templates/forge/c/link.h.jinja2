@@ -10,7 +10,7 @@
 /*
  * watching-zenoh RFC §synth-5-C byte-stream link endpoint. The wrapper
  * composes a `sce_forge_link_t` driver handle (from
- * `sce-c-runtime`-adjacent contract `sce/forge/link.h`) and routes
+ * `backends/c/runtime`-adjacent contract `sce/forge/link.h`) and routes
  * RX bytes through the §synth-5-B framer codec's decode + injects the
  * configured SCXML event, while TX pulls bytes from the framer's
  * encode and submits them through the driver's `tx`. The c11

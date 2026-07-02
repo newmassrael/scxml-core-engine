@@ -158,7 +158,7 @@ endfunction()
 #   synth-invoke `_sm.c` children that the parent's translation unit
 #   #includes. Caller wires the resulting source list into an
 #   `add_executable` target via the conventional integration runner
-#   under `sce-c-tests/integration/test_<stem>.c`.
+#   under `backends/c/tests/integration/test_<stem>.c`.
 #
 # Args:
 #   STEM        Fixture stem (`donedata_local_invoke` etc.). Canonical

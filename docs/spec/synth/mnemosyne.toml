@@ -76,7 +76,7 @@ severity = "warn"
 #                                cites pass — the scxml R3 rollout pattern.
 #
 # Enrolled paths are the authored cite-bearing surfaces. Committed GENERATED
-# trees (tests/forge/expected, sce-rust-tests/src/generated) are deliberately
+# trees (tests/forge/expected, backends/rust/tests/src/generated) are deliberately
 # NOT enrolled: their cites are emitted by the enrolled templates, so gating
 # the templates gates them, and the §6.2.6 drift gate keeps the trees in
 # lockstep with the templates.
@@ -85,9 +85,14 @@ paths = [
     "tools/codegen/templates",
     "sce-build/src",
     "sce-build/tests",
-    "sce-rust-runtime/src",
-    "sce-forge-runtime",
-    "sce-c-runtime/include",
+    "backends/rust/runtime/src",
+    "backends/c/forge-runtime",
+    "backends/cpp/forge-runtime",
+    "backends/go/forge-runtime",
+    "backends/kotlin/forge-runtime",
+    "backends/python/forge-runtime",
+    "backends/rust/forge-runtime",
+    "backends/c/runtime/include",
     "tests/forge/resources",
     "scripts",
     "schemas",

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Regenerate sce-rust-tests/src/integration/native_action/ from the canonical
+# Regenerate backends/rust/tests/src/integration/native_action/ from the canonical
 # W3C SCXML G.7 `<sce:action>` fixture at
 # sce-build/tests/fixtures/event_schema/statechart_native_action.scxml.
 #
@@ -27,7 +27,7 @@ cd "$REPO_ROOT"
 
 CODEGEN="target/release/sce-codegen"
 FIXTURE="sce-build/tests/fixtures/event_schema/statechart_native_action.scxml"
-GENERATED_DIR="sce-rust-tests/src/integration/native_action"
+GENERATED_DIR="backends/rust/tests/src/integration/native_action"
 
 if [[ ! -x "$CODEGEN" ]]; then
     cargo build --bin sce-codegen --features cli --release -p sce-build

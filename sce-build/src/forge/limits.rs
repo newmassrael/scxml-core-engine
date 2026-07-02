@@ -5,14 +5,14 @@
 //!
 //! Single source of truth (Rust side) for the default `bytes` slot
 //! capacity. The C mirror lives at
-//! `sce-forge-runtime/c/include/sce/forge/limits.h`; the lockstep test
+//! `backends/c/forge-runtime/include/sce/forge/limits.h`; the lockstep test
 //! in this module reads the C header at compile time and asserts both
 //! constants resolve to the same value.
 
 /// Default capacity for `bytes`-typed Forge slots when the SCXML author
 /// has not declared a per-slot `sce:max-size` annotation. Aligned with
 /// `SCE_FORGE_BYTES_DEFAULT_MAX` in
-/// `sce-forge-runtime/c/include/sce/forge/limits.h`.
+/// `backends/c/forge-runtime/include/sce/forge/limits.h`.
 pub const BYTES_DEFAULT_MAX: u32 = 256;
 
 /// Default element-count cap for `<sce:repeat>` codec fields (RFC §synth-5-B
@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn c_header_matches_rust_constant() {
         const C_HEADER: &str =
-            include_str!("../../../sce-forge-runtime/c/include/sce/forge/limits.h");
+            include_str!("../../../backends/c/forge-runtime/include/sce/forge/limits.h");
 
         let line = C_HEADER
             .lines()

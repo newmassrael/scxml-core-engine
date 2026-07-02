@@ -29,7 +29,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
 EXPECTED="tests/forge/expected"
-RUNTIME="$REPO_ROOT/sce-forge-runtime/rust"
+RUNTIME="$REPO_ROOT/backends/rust/forge-runtime"
 
 # Build dir under target/ (gitignored) so the workspace stays clean.
 WORK="$REPO_ROOT/target/noalloc_codec_check"

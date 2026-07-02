@@ -46,7 +46,7 @@ echo "==> Integration trees (Rust / Kotlin / Go committed; Python gitignored)"
 "$CODEGEN" generate-integration -l python
 
 echo "==> Forge round-trip Go codec tree"
-sce-forge-runtime/go/round_trip/generate.sh
+backends/go/forge-runtime/round_trip/generate.sh
 
 # EventSchema native-lowering gates (NL→IR C1 Path A). Per-backend committed
 # trees driven by their own regen scripts (not the `generate-integration`

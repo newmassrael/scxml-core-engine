@@ -4,7 +4,7 @@
 {{ sce_map.source_marker(source_location, "c", module_level=true) }}
 
 /* SCE Forge: Auto-generated from Extended SCXML (sce:kind="worker") */
-/* Runtime: sce-c-runtime atomics (sce_atomic_*_u32 family). */
+/* Runtime: backends/c/runtime atomics (sce_atomic_*_u32 family). */
 /* Do not edit — regenerate from the source SCXML file. */
 /*
  * watching-zenoh RFC §synth-5-D worker primitive impl translation unit.
@@ -28,8 +28,8 @@
  * however, SCE's spec contract is to honor the author's choice
  * verbatim, so we forward-declare both `acquire/release` and
  * `relaxed` variants and let the codegen select the per-op pair
- * below. The sce-c-runtime impl is the implementation source of
- * truth (see `sce-c-runtime/include/sce/atomic.h`). */
+ * below. The backends/c/runtime impl is the implementation source of
+ * truth (see `backends/c/runtime/include/sce/atomic.h`). */
 extern uint32_t sce_atomic_load_acquire_u32(const volatile uint32_t *p);
 extern void sce_atomic_store_release_u32(volatile uint32_t *p, uint32_t v);
 extern uint32_t sce_atomic_load_relaxed_u32(const volatile uint32_t *p);

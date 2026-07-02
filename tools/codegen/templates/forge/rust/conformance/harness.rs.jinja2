@@ -50,7 +50,7 @@ use fixtures::{{ f.name }}::{{ f.name | to_pascal_case }};
 fn load_reference() -> serde_json::Value {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../tests/forge/conformance/numerical_reference.json"
+        "/../../../tests/forge/conformance/numerical_reference.json"
     );
     let text = std::fs::read_to_string(path)
         .unwrap_or_else(|e| panic!("failed to read {path}: {e}"));

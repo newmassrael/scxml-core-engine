@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "source_hash": "f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9",
+  "template_hash": "b5e91c83753cb468c86997c5541ac646288562f682111eb4bbd825060d84bc2e",
+  "symbols": {
+    "test413_____machine": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "",
+      "scxml_xpath": "//scxml",
+      "line_range": [
+        7,
+        7
+      ],
+      "kind": "machine"
+    },
+    "test413__fail___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "fail",
+      "scxml_xpath": "//state[@id='fail']",
+      "line_range": [
+        47,
+        47
+      ],
+      "kind": "state"
+    },
+    "test413__pass___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "pass",
+      "scxml_xpath": "//state[@id='pass']",
+      "line_range": [
+        46,
+        46
+      ],
+      "kind": "state"
+    },
+    "test413__s1___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s1",
+      "scxml_xpath": "//state[@id='s1']",
+      "line_range": [
+        9,
+        9
+      ],
+      "kind": "state"
+    },
+    "test413__s1___transition_0": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s1",
+      "scxml_xpath": "//state[@id='s1']/transition[1]",
+      "line_range": [
+        10,
+        10
+      ],
+      "kind": "transition"
+    },
+    "test413__s2___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2",
+      "scxml_xpath": "//state[@id='s2']",
+      "line_range": [
+        13,
+        13
+      ],
+      "kind": "state"
+    },
+    "test413__s2p111___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p111",
+      "scxml_xpath": "//state[@id='s2p111']",
+      "line_range": [
+        21,
+        21
+      ],
+      "kind": "state"
+    },
+    "test413__s2p111___transition_0": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p111",
+      "scxml_xpath": "//state[@id='s2p111']/transition[1]",
+      "line_range": [
+        22,
+        22
+      ],
+      "kind": "transition"
+    },
+    "test413__s2p112___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p112",
+      "scxml_xpath": "//state[@id='s2p112']",
+      "line_range": [
+        25,
+        25
+      ],
+      "kind": "state"
+    },
+    "test413__s2p112___transition_0": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p112",
+      "scxml_xpath": "//state[@id='s2p112']/transition[1]",
+      "line_range": [
+        26,
+        26
+      ],
+      "kind": "transition"
+    },
+    "test413__s2p11___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p11",
+      "scxml_xpath": "//state[@id='s2p11']",
+      "line_range": [
+        20,
+        20
+      ],
+      "kind": "state"
+    },
+    "test413__s2p121___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p121",
+      "scxml_xpath": "//state[@id='s2p121']",
+      "line_range": [
+        32,
+        32
+      ],
+      "kind": "state"
+    },
+    "test413__s2p121___transition_0": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p121",
+      "scxml_xpath": "//state[@id='s2p121']/transition[1]",
+      "line_range": [
+        33,
+        33
+      ],
+      "kind": "transition"
+    },
+    "test413__s2p122___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p122",
+      "scxml_xpath": "//state[@id='s2p122']",
+      "line_range": [
+        36,
+        36
+      ],
+      "kind": "state"
+    },
+    "test413__s2p122___transition_0": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p122",
+      "scxml_xpath": "//state[@id='s2p122']/transition[1]",
+      "line_range": [
+        37,
+        37
+      ],
+      "kind": "transition"
+    },
+    "test413__s2p12___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p12",
+      "scxml_xpath": "//state[@id='s2p12']",
+      "line_range": [
+        31,
+        31
+      ],
+      "kind": "state"
+    },
+    "test413__s2p1___state_body": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p1",
+      "scxml_xpath": "//state[@id='s2p1']",
+      "line_range": [
+        15,
+        15
+      ],
+      "kind": "state"
+    },
+    "test413__s2p1___transition_0": {
+      "scxml_file": "test413.scxml",
+      "scxml_state_path": "s2p1",
+      "scxml_xpath": "//state[@id='s2p1']/transition[1]",
+      "line_range": [
+        18,
+        18
+      ],
+      "kind": "transition"
+    }
+  }
+}
