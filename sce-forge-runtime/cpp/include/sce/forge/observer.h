@@ -37,8 +37,13 @@ public:
         return false;
     }
 
-    bool active() const noexcept { return active_; }
-    void reset() noexcept { active_ = false; }
+    bool active() const noexcept {
+        return active_;
+    }
+
+    void reset() noexcept {
+        active_ = false;
+    }
 
 private:
     bool active_ = false;
@@ -48,45 +53,69 @@ private:
 /// declares a nested `enum Tag { ... };` listing all event names valid in
 /// the domain. Different domains produce incompatible Event<> types — this
 /// is the static type-safety mechanism for cross-file event composition.
-template <typename Domain>
-struct Event {
+template <typename Domain> struct Event {
     typename Domain::Tag tag;
 
     constexpr Event() noexcept : tag{} {}
+
     constexpr Event(typename Domain::Tag t) noexcept : tag(t) {}
-    constexpr operator typename Domain::Tag() const noexcept { return tag; }
+
+    constexpr operator typename Domain::Tag() const noexcept {
+        return tag;
+    }
 };
 
 /// Fixed-capacity FIFO of Event<Domain>. Returned by value from observer
 /// update() methods. Default capacity (8) covers one push per monitor for the
 /// monitor counts seen in current generated code; generators may instantiate
 /// with a larger capacity if needed.
-template <typename Domain, std::size_t Capacity = 8>
-class EventQueue {
+template <typename Domain, std::size_t Capacity = 8> class EventQueue {
 public:
     using value_type = Event<Domain>;
 
     bool push(typename Domain::Tag tag) noexcept {
-        if (size_ >= Capacity) return false;
+        if (size_ >= Capacity) {
+            return false;
+        }
         buffer_[size_++] = Event<Domain>(tag);
         return true;
     }
 
-    std::size_t size() const noexcept { return size_; }
-    bool empty() const noexcept { return size_ == 0; }
-    constexpr std::size_t capacity() const noexcept { return Capacity; }
+    std::size_t size() const noexcept {
+        return size_;
+    }
 
-    const value_type &operator[](std::size_t i) const noexcept { return buffer_[i]; }
-    value_type &operator[](std::size_t i) noexcept { return buffer_[i]; }
+    bool empty() const noexcept {
+        return size_ == 0;
+    }
 
-    const value_type *begin() const noexcept { return buffer_.data(); }
-    const value_type *end() const noexcept { return buffer_.data() + size_; }
+    constexpr std::size_t capacity() const noexcept {
+        return Capacity;
+    }
 
-    void clear() noexcept { size_ = 0; }
+    const value_type &operator[](std::size_t i) const noexcept {
+        return buffer_[i];
+    }
+
+    value_type &operator[](std::size_t i) noexcept {
+        return buffer_[i];
+    }
+
+    const value_type *begin() const noexcept {
+        return buffer_.data();
+    }
+
+    const value_type *end() const noexcept {
+        return buffer_.data() + size_;
+    }
+
+    void clear() noexcept {
+        size_ = 0;
+    }
 
 private:
     std::array<value_type, Capacity> buffer_{};
     std::size_t size_ = 0;
 };
 
-} // namespace SCE::Forge
+}  // namespace SCE::Forge

@@ -76,7 +76,9 @@ public:
 
     // === Lifecycle Management ===
 
-    bool initialize() override { return true; }
+    bool initialize() override {
+        return true;
+    }
 
     /**
      * @brief Check if engine is properly initialized
@@ -164,7 +166,8 @@ public:
      * @param value Variable value
      * @return Future indicating success/failure
      */
-    std::future<ScriptResult> setVariable(const std::string &sessionId, const std::string &name, const ScriptValue &value) override;
+    std::future<ScriptResult> setVariable(const std::string &sessionId, const std::string &name,
+                                          const ScriptValue &value) override;
 
     /**
      * @brief Set a variable to an XML DOM object (§scxml-B-2)
@@ -174,7 +177,7 @@ public:
      * @return Future indicating success/failure
      */
     std::future<ScriptResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
-                                           const std::string &xmlContent) override;
+                                               const std::string &xmlContent) override;
 
     /**
      * @brief Get a variable from the specified session
@@ -203,7 +206,8 @@ public:
      * @param event Event object with full metadata (name, type, data, sendid, origin, etc.)
      * @return Future indicating success/failure
      */
-    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const std::shared_ptr<Event> &event) override;
+    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
+                                              const std::shared_ptr<Event> &event) override;
 
     /**
      * @brief Set current event object in JavaScript context (§scxml-5.10)
@@ -224,7 +228,7 @@ public:
      * @return Future indicating success/failure
      */
     std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                               const std::vector<std::string> &ioProcessors) override;
+                                                   const std::vector<std::string> &ioProcessors) override;
 
     /**
      * @brief Register a native function accessible from JavaScript
@@ -510,7 +514,7 @@ private:
     ScriptResult getVariableInternal(const std::string &sessionId, const std::string &name);
     ScriptResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
     ScriptResult setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
-                                          const std::vector<std::string> &ioProcessors);
+                                              const std::vector<std::string> &ioProcessors);
 
     // Context management
     bool createSessionInternal(const std::string &sessionId, const std::string &parentSessionId);

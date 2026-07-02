@@ -22,8 +22,7 @@ int main(void) {
 
     int rc = test304_in_state(&sm, TEST304_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        (void)fprintf(stderr, "test304: FAIL — active = 0x%08x\n",
-                      (unsigned)test304_active_states(&sm));
+        (void)fprintf(stderr, "test304: FAIL — active = 0x%08x\n", (unsigned)test304_active_states(&sm));
     }
     test304_destroy(&sm);
     return rc;

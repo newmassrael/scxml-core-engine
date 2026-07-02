@@ -88,8 +88,7 @@ TEST(DedupWindow, OldestIdEvictedAfterCapacity) {
     for (std::uint32_t n = 1; n <= DedupWindow::kCapacity; ++n) {
         ASSERT_TRUE(w.observe(id_of(n))) << "fill failed at " << n;
     }
-    EXPECT_TRUE(w.observe(id_of(DedupWindow::kCapacity + 1)))
-        << "(kCapacity + 1)-th distinct id should be novel";
+    EXPECT_TRUE(w.observe(id_of(DedupWindow::kCapacity + 1))) << "(kCapacity + 1)-th distinct id should be novel";
     EXPECT_TRUE(w.observe(id_of(1))) << "first id should have been evicted and so be novel again";
 }
 
@@ -146,11 +145,9 @@ TEST(DedupWindow, ObserveWithSignalEnumPathing) {
         ASSERT_EQ(w.observeWithSignal(id_of(n)), DedupWindow::Result::Novel)
             << "id " << n << " inside pre-wrap window must be Novel";
     }
-    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity + 1)),
-              DedupWindow::Result::NovelWithEviction)
+    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity + 1)), DedupWindow::Result::NovelWithEviction)
         << "first eviction must surface NovelWithEviction";
-    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity)),
-              DedupWindow::Result::Duplicate)
+    EXPECT_EQ(w.observeWithSignal(id_of(DedupWindow::kCapacity)), DedupWindow::Result::Duplicate)
         << "still-resident recent id must surface Duplicate";
 }
 
@@ -160,11 +157,9 @@ TEST(DedupRouter, AdmitWithSignalRaisesOverflowOnFirstEviction) {
     // when the result is NovelWithEviction.
     DedupRouter r;
     for (std::uint32_t n = 1; n <= DedupWindow::kCapacity; ++n) {
-        ASSERT_EQ(r.admitWithSignal("motor", id_of(n)),
-                  DedupWindow::Result::Novel);
+        ASSERT_EQ(r.admitWithSignal("motor", id_of(n)), DedupWindow::Result::Novel);
     }
-    EXPECT_EQ(r.admitWithSignal("motor", id_of(DedupWindow::kCapacity + 1)),
-              DedupWindow::Result::NovelWithEviction);
+    EXPECT_EQ(r.admitWithSignal("motor", id_of(DedupWindow::kCapacity + 1)), DedupWindow::Result::NovelWithEviction);
 }
 
 TEST(DedupRouter, BoolAdmitContractUnchanged) {
@@ -174,12 +169,10 @@ TEST(DedupRouter, BoolAdmitContractUnchanged) {
     // the eviction case to false.
     DedupRouter r;
     for (std::uint32_t n = 1; n <= DedupWindow::kCapacity + 1; ++n) {
-        EXPECT_TRUE(r.admit("motor", id_of(n)))
-            << "bool admit must accept all novel ids including the "
-               "post-wrap (kCapacity+1)-th";
+        EXPECT_TRUE(r.admit("motor", id_of(n))) << "bool admit must accept all novel ids including the "
+                                                   "post-wrap (kCapacity+1)-th";
     }
-    EXPECT_FALSE(r.admit("motor", id_of(DedupWindow::kCapacity)))
-        << "still-resident recent id must be filtered";
+    EXPECT_FALSE(r.admit("motor", id_of(DedupWindow::kCapacity))) << "still-resident recent id must be filtered";
 }
 
 TEST(DedupRouter, ConcurrentAdmitsNeverDoubleAdmit) {
@@ -204,7 +197,7 @@ TEST(DedupRouter, ConcurrentAdmitsNeverDoubleAdmit) {
             (void)t;
         });
     }
-    for (auto& w : workers) {
+    for (auto &w : workers) {
         w.join();
     }
     EXPECT_EQ(admitted.load(), kTotalIds);

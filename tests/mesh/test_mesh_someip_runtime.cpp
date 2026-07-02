@@ -86,16 +86,16 @@ int run_test() {
         brake_router.motor_app_->register_availability_handler(
             brake_gen::SOMEIP_SERVICE_MOTOR, brake_gen::SOMEIP_INSTANCE_MOTOR,
             [&](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
-                if (!is_available) return;
+                if (!is_available) {
+                    return;
+                }
                 std::lock_guard<std::mutex> lock(availability_m);
                 service_available = true;
                 availability_cv.notify_all();
             });
 
         std::unique_lock<std::mutex> lock(availability_m);
-        MESH_TEST_REQUIRE(availability_cv.wait_for(
-                              lock, std::chrono::seconds(10),
-                              [&] { return service_available; }),
+        MESH_TEST_REQUIRE(availability_cv.wait_for(lock, std::chrono::seconds(10), [&] { return service_available; }),
                           "vsomeip service motor_control did not become "
                           "available within 10s (routing manager handshake stuck)");
     }
@@ -115,26 +115,23 @@ int run_test() {
         env.correlation_id = cid;
         {
             std::lock_guard<std::mutex> lock(brake_router.correlation_mutex_);
-            brake_router.pending_rpcs_[BrakeRouterT::CorrelationKey{cid}] =
-                "service.response.compute_force";
+            brake_router.pending_rpcs_[BrakeRouterT::CorrelationKey{cid}] = "service.response.compute_force";
         }
 
         const bool sent = brake_router.route_send("#motor", env);
         MESH_TEST_REQUIRE(sent, "brake route_send RpcRequest returned false");
 
         // Motor receives the request via register_message_handler.
-        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "service.request.compute_force";
-                }),
-                "motor engine did not receive RPC request via SOME/IP");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.request.compute_force";
+        }),
+                          "motor engine did not receive RPC request via SOME/IP");
 
         // Motor responds via handleServerResponse.
         std::array<uint8_t, 16> server_cid{};
         {
             std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
-            MESH_TEST_REQUIRE(!motor_router.pending_server_requests_.empty(),
-                    "motor did not store pending request");
+            MESH_TEST_REQUIRE(!motor_router.pending_server_requests_.empty(), "motor did not store pending request");
             server_cid = motor_router.pending_server_requests_.begin()->first.id;
         }
 
@@ -148,21 +145,19 @@ int run_test() {
         resp.data.assign(resp_payload.begin(), resp_payload.end());
         resp.correlation_id = server_cid;
 
-        MESH_TEST_REQUIRE(motor_router.handleServerResponse(resp),
-                "handleServerResponse returned false");
+        MESH_TEST_REQUIRE(motor_router.handleServerResponse(resp), "handleServerResponse returned false");
 
         // Brake receives the correlated reply.
-        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "service.response.compute_force";
-                }),
-                "brake engine did not receive RPC reply via SOME/IP");
+        MESH_TEST_REQUIRE(brake_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.response.compute_force";
+        }),
+                          "brake engine did not receive RPC reply via SOME/IP");
 
         // Verify payload survived CBOR round-trip.
         {
             std::lock_guard<std::mutex> lock(brake_engine.received_.m);
             MESH_TEST_REQUIRE(brake_engine.received_.events.back().data.find("42") != std::string::npos,
-                    "reply payload did not survive SOME/IP CBOR round-trip");
+                              "reply payload did not survive SOME/IP CBOR round-trip");
         }
     }
 
@@ -183,18 +178,15 @@ int run_test() {
         std::string payload = R"({"reason":"emergency"})";
         env.data.assign(payload.begin(), payload.end());
 
-        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env),
-                          "brake route_send FireForget returned false");
-        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "service.fire_forget.activate";
-                }),
-                "motor engine did not receive FireForget via SOME/IP server handler");
+        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env), "brake route_send FireForget returned false");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto &v) {
+            return !v.empty() && v.back().type == "service.fire_forget.activate";
+        }),
+                          "motor engine did not receive FireForget via SOME/IP server handler");
         {
             std::lock_guard<std::mutex> lock(motor_engine.received_.m);
-            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("emergency")
-                                  != std::string::npos,
-                    "FireForget payload did not survive SOME/IP CBOR round-trip");
+            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("emergency") != std::string::npos,
+                              "FireForget payload did not survive SOME/IP CBOR round-trip");
         }
     }
 
@@ -214,17 +206,14 @@ int run_test() {
         env.pattern = PK::FieldRead;
         env.datacontenttype = SCE::Mesh::PayloadCodec::None;
 
-        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env),
-                          "brake route_send FieldRead returned false");
-        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "field.get.vehicle_speed";
-                }),
-                "motor engine did not receive FieldRead via SOME/IP server getter handler");
+        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env), "brake route_send FieldRead returned false");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for(
+                              [](const auto &v) { return !v.empty() && v.back().type == "field.get.vehicle_speed"; }),
+                          "motor engine did not receive FieldRead via SOME/IP server getter handler");
         {
             std::lock_guard<std::mutex> lock(motor_router.server_pending_mutex_);
             MESH_TEST_REQUIRE(!motor_router.pending_server_requests_.empty(),
-                    "motor did not stash pending getter request for reply correlation");
+                              "motor did not stash pending getter request for reply correlation");
         }
     }
 
@@ -240,18 +229,14 @@ int run_test() {
         std::string payload = R"({"value":55})";
         env.data.assign(payload.begin(), payload.end());
 
-        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env),
-                          "brake route_send FieldWrite returned false");
-        MESH_TEST_REQUIRE(motor_engine.received_.wait_for([](const auto& v) {
-                    return !v.empty() &&
-                           v.back().type == "field.set.target_speed";
-                }),
-                "motor engine did not receive FieldWrite via SOME/IP server setter handler");
+        MESH_TEST_REQUIRE(brake_router.route_send("#motor", env), "brake route_send FieldWrite returned false");
+        MESH_TEST_REQUIRE(motor_engine.received_.wait_for(
+                              [](const auto &v) { return !v.empty() && v.back().type == "field.set.target_speed"; }),
+                          "motor engine did not receive FieldWrite via SOME/IP server setter handler");
         {
             std::lock_guard<std::mutex> lock(motor_engine.received_.m);
-            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("55")
-                                  != std::string::npos,
-                    "FieldWrite payload did not survive SOME/IP CBOR round-trip");
+            MESH_TEST_REQUIRE(motor_engine.received_.events.back().data.find("55") != std::string::npos,
+                              "FieldWrite payload did not survive SOME/IP CBOR round-trip");
         }
     }
 
@@ -266,7 +251,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

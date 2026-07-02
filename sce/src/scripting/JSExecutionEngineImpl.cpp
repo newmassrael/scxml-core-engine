@@ -94,7 +94,8 @@ bool JSExecutionEngineImpl::isInitialized() const {
 
 // === Core JavaScript Execution ===
 
-std::future<ScriptResult> JSExecutionEngineImpl::executeScript(const std::string &sessionId, const std::string &script) {
+std::future<ScriptResult> JSExecutionEngineImpl::executeScript(const std::string &sessionId,
+                                                               const std::string &script) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::EXECUTE_SCRIPT, sessionId);
     request->code = script;
     auto future = request->promise.get_future();
@@ -109,7 +110,7 @@ std::future<ScriptResult> JSExecutionEngineImpl::executeScript(const std::string
 }
 
 std::future<ScriptResult> JSExecutionEngineImpl::evaluateExpression(const std::string &sessionId,
-                                                                const std::string &expression) {
+                                                                    const std::string &expression) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::EVALUATE_EXPRESSION, sessionId);
     request->code = expression;
     auto future = request->promise.get_future();
@@ -124,7 +125,7 @@ std::future<ScriptResult> JSExecutionEngineImpl::evaluateExpression(const std::s
 }
 
 std::future<ScriptResult> JSExecutionEngineImpl::validateExpression(const std::string &sessionId,
-                                                                const std::string &expression) {
+                                                                    const std::string &expression) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::VALIDATE_EXPRESSION, sessionId);
     request->code = expression;
     auto future = request->promise.get_future();
@@ -139,7 +140,7 @@ std::future<ScriptResult> JSExecutionEngineImpl::validateExpression(const std::s
 }
 
 std::future<ScriptResult> JSExecutionEngineImpl::setVariable(const std::string &sessionId, const std::string &name,
-                                                         const ScriptValue &value) {
+                                                             const ScriptValue &value) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SET_VARIABLE, sessionId);
     request->variableName = name;
     request->variableValue = value;
@@ -169,8 +170,8 @@ std::future<ScriptResult> JSExecutionEngineImpl::getVariable(const std::string &
 }
 
 std::future<ScriptResult> JSExecutionEngineImpl::setupSystemVariables(const std::string &sessionId,
-                                                                  const std::string &sessionName,
-                                                                  const std::vector<std::string> &ioProcessors) {
+                                                                      const std::string &sessionName,
+                                                                      const std::vector<std::string> &ioProcessors) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SETUP_SYSTEM_VARIABLES, sessionId);
     request->sessionName = sessionName;
     request->ioProcessors = ioProcessors;
@@ -200,8 +201,9 @@ bool JSExecutionEngineImpl::registerGlobalFunction(
 }
 
 bool JSExecutionEngineImpl::bindNativeObject(const std::string & /*sessionId*/, const std::string & /*objectName*/,
-                                              const std::vector<std::pair<std::string, NativeMethod>> & /*methods*/) {
-    SCE_LOG_WARN("JSExecutionEngineImpl::bindNativeObject: Use StateMachineBindObject.h with ClassBinder for full JS object binding");
+                                             const std::vector<std::pair<std::string, NativeMethod>> & /*methods*/) {
+    SCE_LOG_WARN("JSExecutionEngineImpl::bindNativeObject: Use StateMachineBindObject.h with ClassBinder for full JS "
+                 "object binding");
     return false;
 }
 
@@ -279,7 +281,8 @@ void JSExecutionEngineImpl::onSessionSystemVariablesUpdated(const std::string &s
             SCE_LOG_ERROR("JSExecutionEngineImpl: Failed to update system variables for session: {}", sessionId);
         }
     } catch (const std::exception &e) {
-        SCE_LOG_ERROR("JSExecutionEngineImpl: Exception updating system variables for session {}: {}", sessionId, e.what());
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Exception updating system variables for session {}: {}", sessionId,
+                      e.what());
     }
 }
 
@@ -308,7 +311,7 @@ void JSExecutionEngineImpl::removeStateMachine(const std::string &sessionId) {
 
 void JSExecutionEngineImpl::executionWorker() {
     SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker LOOP START - Thread ID: {}",
-              std::hash<std::thread::id>{}(std::this_thread::get_id()));
+                  std::hash<std::thread::id>{}(std::this_thread::get_id()));
 
     if (!runtime_) {
         SCE_LOG_ERROR("JSExecutionEngineImpl: Worker thread started without QuickJS runtime");
@@ -320,19 +323,20 @@ void JSExecutionEngineImpl::executionWorker() {
 
     while (!shouldStop_) {
         std::unique_lock<std::mutex> lock(queueMutex_);
-        SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker loop iteration - shouldStop: {}, queue size: {}", shouldStop_.load(),
-                  requestQueue_.size());
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker loop iteration - shouldStop: {}, queue size: {}",
+                      shouldStop_.load(), requestQueue_.size());
 
         queueCondition_.wait(lock, [this] { return !requestQueue_.empty() || shouldStop_; });
 
         if (shouldStop_) {
-            SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker woke up - shouldStop: true, queue size: {}", requestQueue_.size());
+            SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker woke up - shouldStop: true, queue size: {}",
+                          requestQueue_.size());
             break;
         }
 
         if (!requestQueue_.empty()) {
             SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker woke up - shouldStop: false, queue size: {}",
-                      requestQueue_.size());
+                          requestQueue_.size());
             auto request = std::move(requestQueue_.front());
             requestQueue_.pop();
             lock.unlock();

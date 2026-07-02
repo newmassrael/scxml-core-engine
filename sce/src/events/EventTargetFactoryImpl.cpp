@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/EventTargetFactoryImpl.h"
-#include "core/LogMacros.h"
 #include "common/SendHelper.h"
+#include "core/LogMacros.h"
 #include "events/EventRaiserService.h"
 #include "events/InternalEventTarget.h"
 #include "events/InvokeEventTarget.h"
@@ -48,13 +48,13 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
         return target;
     });
 
-  #ifdef __EMSCRIPTEN__
+#ifdef __EMSCRIPTEN__
     SCE_LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal, HTTP, and HTTPS target support (WASM with "
-              "EmscriptenFetchClient)");
-  #else
+                  "EmscriptenFetchClient)");
+#else
     SCE_LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal, HTTP, and HTTPS target support (Native with "
-              "cpp-httplib)");
-  #endif
+                  "cpp-httplib)");
+#endif
 #else
     SCE_LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal target support (HTTP disabled)");
 #endif
@@ -112,7 +112,7 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createTarget(const std::st
             auto errors = target->validate();
             if (!errors.empty()) {
                 SCE_LOG_ERROR("EventTargetFactoryImpl: Target validation failed for URI '{}': {}", targetUri,
-                          errors.front());
+                              errors.front());
                 return nullptr;
             }
 
@@ -221,10 +221,10 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createInternalTarget(const
             if (sessionEventRaiser) {
                 targetEventRaiser = sessionEventRaiser;
                 SCE_LOG_DEBUG("EventTargetFactoryImpl: Found session-specific EventRaiser for session: '{}', ready={}",
-                          sessionId, sessionEventRaiser->isReady());
+                              sessionId, sessionEventRaiser->isReady());
             } else {
                 SCE_LOG_DEBUG("EventTargetFactoryImpl: Session EventRaiser not found for session: '{}', using default",
-                          sessionId);
+                              sessionId);
             }
         }
 
@@ -232,7 +232,8 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createInternalTarget(const
         auto target =
             std::make_shared<InternalEventTarget>(targetEventRaiser, false, sessionId);  // Internal queue priority
 
-        SCE_LOG_DEBUG("EventTargetFactoryImpl: Created internal target for URI: {} with session: {}", targetUri, sessionId);
+        SCE_LOG_DEBUG("EventTargetFactoryImpl: Created internal target for URI: {} with session: {}", targetUri,
+                      sessionId);
         return target;
 
     } catch (const std::exception &e) {
@@ -250,12 +251,13 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createExternalTarget(const
             auto sessionEventRaiser = EventRaiserService::getInstance().getEventRaiser(sessionId);
             if (sessionEventRaiser) {
                 targetEventRaiser = sessionEventRaiser;
-                SCE_LOG_DEBUG("EventTargetFactoryImpl: Using session-specific EventRaiser for EXTERNAL target, session: {}",
-                          sessionId);
+                SCE_LOG_DEBUG(
+                    "EventTargetFactoryImpl: Using session-specific EventRaiser for EXTERNAL target, session: {}",
+                    sessionId);
             } else {
                 SCE_LOG_DEBUG("EventTargetFactoryImpl: Session EventRaiser not found for EXTERNAL target, session: {}, "
-                          "using default",
-                          sessionId);
+                              "using default",
+                              sessionId);
             }
         }
 
@@ -265,7 +267,7 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createExternalTarget(const
             std::make_shared<InternalEventTarget>(targetEventRaiser, true, sessionId);  // External queue priority
 
         SCE_LOG_DEBUG("EventTargetFactoryImpl: Created external target for W3C SCXML compliance with session: {}",
-                  sessionId);
+                      sessionId);
         return target;
 
     } catch (const std::exception &e) {
@@ -290,7 +292,7 @@ std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createParentTarg
         auto target = std::make_shared<SCE::ParentEventTarget>(childSessionId, eventRaiser_, scheduler_);
 
         SCE_LOG_DEBUG("EventTargetFactoryImpl: Created parent target for URI: {} with child session: {}", targetUri,
-                  childSessionId);
+                      childSessionId);
         return target;
 
     } catch (const std::exception &e) {
@@ -305,7 +307,8 @@ std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createInvokeTarg
         // Create invoke event target for routing to child session
         auto target = std::make_shared<SCE::InvokeEventTarget>(invokeId, sessionId);
 
-        SCE_LOG_DEBUG("EventTargetFactoryImpl: Created invoke target for ID '{}' from session '{}'", invokeId, sessionId);
+        SCE_LOG_DEBUG("EventTargetFactoryImpl: Created invoke target for ID '{}' from session '{}'", invokeId,
+                      sessionId);
         return target;
 
     } catch (const std::exception &e) {

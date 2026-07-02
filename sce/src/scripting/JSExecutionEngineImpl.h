@@ -54,13 +54,13 @@ public:
     std::future<ScriptResult> validateExpression(const std::string &sessionId, const std::string &expression) override;
 
     std::future<ScriptResult> setVariable(const std::string &sessionId, const std::string &name,
-                                      const ScriptValue &value) override;
+                                          const ScriptValue &value) override;
     std::future<ScriptResult> getVariable(const std::string &sessionId, const std::string &name) override;
     bool hasVariable(const std::string &sessionId, const std::string &variableName) const override;
     bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
 
     std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                               const std::vector<std::string> &ioProcessors) override;
+                                                   const std::vector<std::string> &ioProcessors) override;
 
     bool registerGlobalFunction(const std::string &functionName,
                                 std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) override;
@@ -177,7 +177,7 @@ private:
     ScriptResult getVariableInternal(const std::string &sessionId, const std::string &name);
     ScriptResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
     ScriptResult setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
-                                          const std::vector<std::string> &ioProcessors);
+                                              const std::vector<std::string> &ioProcessors);
 
     // Context management
     bool createSessionContextInternal(const std::string &sessionId, const std::string &parentSessionId);

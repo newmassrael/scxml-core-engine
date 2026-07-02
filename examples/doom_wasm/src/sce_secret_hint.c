@@ -10,18 +10,18 @@
  */
 
 #include "sce_secret_hint.h"
-#include "doomstat.h"
 #include "doomdata.h"
-#include "r_state.h"
-#include "r_main.h"
+#include "doomstat.h"
+#include "info.h"
+#include "m_fixed.h"
 #include "p_local.h"
 #include "p_mobj.h"
 #include "p_tick.h"
-#include "info.h"
+#include "r_main.h"
+#include "r_state.h"
 #include "tables.h"
-#include "m_fixed.h"
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* Forward declaration for P_MobjThinker (used to identify mobj thinkers) */
 void P_MobjThinker(mobj_t *mobj);
@@ -106,7 +106,7 @@ static boolean CheckLineOfSight(fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2) 
  * Get the blocking line from the last CheckLineOfSight call.
  * @return The line that blocked, or NULL if path was clear
  */
-static line_t* GetBlockingLine(void) {
+static line_t *GetBlockingLine(void) {
     return s_blocking_line;
 }
 
@@ -115,10 +115,8 @@ static line_t* GetBlockingLine(void) {
  * Tests both vertices of the wall with offsets in both directions.
  * Chooses the waypoint that is reachable from start AND can reach destination.
  */
-static void FindWaypointAroundWall(line_t *wall,
-                                    fixed_t start_x, fixed_t start_y,
-                                    fixed_t dest_x, fixed_t dest_y,
-                                    fixed_t *out_x, fixed_t *out_y) {
+static void FindWaypointAroundWall(line_t *wall, fixed_t start_x, fixed_t start_y, fixed_t dest_x, fixed_t dest_y,
+                                   fixed_t *out_x, fixed_t *out_y) {
     fixed_t v1_x = wall->v1->x;
     fixed_t v1_y = wall->v1->y;
     fixed_t v2_x = wall->v2->x;
@@ -140,7 +138,7 @@ static void FindWaypointAroundWall(line_t *wall,
         ty = FixedDiv(wall_dy, wall_len);
     }
 
-    fixed_t offset = 48 * FRACUNIT;  /* 48 units offset from wall */
+    fixed_t offset = 48 * FRACUNIT; /* 48 units offset from wall */
 
     /* Determine which side of the wall the destination is on */
     /* Using cross product: (dest - v1) x (v2 - v1) */
@@ -154,6 +152,7 @@ static void FindWaypointAroundWall(line_t *wall,
         boolean can_reach_dest;
         fixed_t total_dist;
     } candidates[4];
+
     int num_candidates = 0;
 
     /* For each vertex, create waypoint that goes around the wall end toward destination */
@@ -180,28 +179,24 @@ static void FindWaypointAroundWall(line_t *wall,
 
     /* Check reachability for all candidates */
     for (int i = 0; i < num_candidates; i++) {
-        candidates[i].reachable_from_start = CheckLineOfSight(start_x, start_y,
-                                                               candidates[i].x, candidates[i].y);
-        candidates[i].can_reach_dest = CheckLineOfSight(candidates[i].x, candidates[i].y,
-                                                         dest_x, dest_y);
-        candidates[i].total_dist =
-            P_AproxDistance(start_x - candidates[i].x, start_y - candidates[i].y) +
-            P_AproxDistance(candidates[i].x - dest_x, candidates[i].y - dest_y);
+        candidates[i].reachable_from_start = CheckLineOfSight(start_x, start_y, candidates[i].x, candidates[i].y);
+        candidates[i].can_reach_dest = CheckLineOfSight(candidates[i].x, candidates[i].y, dest_x, dest_y);
+        candidates[i].total_dist = P_AproxDistance(start_x - candidates[i].x, start_y - candidates[i].y) +
+                                   P_AproxDistance(candidates[i].x - dest_x, candidates[i].y - dest_y);
     }
 
     /* Debug: log all candidates */
-    SECRET_DEBUG("[SECRET] FindWaypoint: dest_sign=%d, dest=(%d,%d)\n",
-           dest_sign, dest_x >> FRACBITS, dest_y >> FRACBITS);
+    SECRET_DEBUG("[SECRET] FindWaypoint: dest_sign=%d, dest=(%d,%d)\n", dest_sign, dest_x >> FRACBITS,
+                 dest_y >> FRACBITS);
     for (int i = 0; i < num_candidates; i++) {
-        SECRET_DEBUG("[SECRET]   Candidate %d: (%d,%d) reach_start=%d reach_dest=%d\n",
-               i, candidates[i].x >> FRACBITS, candidates[i].y >> FRACBITS,
-               candidates[i].reachable_from_start, candidates[i].can_reach_dest);
+        SECRET_DEBUG("[SECRET]   Candidate %d: (%d,%d) reach_start=%d reach_dest=%d\n", i, candidates[i].x >> FRACBITS,
+                     candidates[i].y >> FRACBITS, candidates[i].reachable_from_start, candidates[i].can_reach_dest);
     }
 
     /* Priority 1: Reachable from start AND can reach dest (prefer dest_sign side first) */
     int best = -1;
     fixed_t best_dist = INT_MAX;
-    for (int i = 0; i < 2; i++) {  /* Check dest_sign side first (candidates 0,1) */
+    for (int i = 0; i < 2; i++) { /* Check dest_sign side first (candidates 0,1) */
         if (candidates[i].reachable_from_start && candidates[i].can_reach_dest) {
             if (candidates[i].total_dist < best_dist) {
                 best = i;
@@ -210,7 +205,7 @@ static void FindWaypointAroundWall(line_t *wall,
         }
     }
     if (best < 0) {
-        for (int i = 2; i < 4; i++) {  /* Then check opposite side */
+        for (int i = 2; i < 4; i++) { /* Then check opposite side */
             if (candidates[i].reachable_from_start && candidates[i].can_reach_dest) {
                 if (candidates[i].total_dist < best_dist) {
                     best = i;
@@ -268,19 +263,21 @@ static void FindWaypointAroundWall(line_t *wall,
 }
 
 /* Sector adjacency cache (built per level) */
-static int *s_adjacency_list = NULL;    /* Flat array of adjacent sector indices */
-static int *s_adjacency_offset = NULL;  /* Start offset for each sector */
-static int *s_adjacency_count = NULL;   /* Count of adjacent sectors for each */
+static int *s_adjacency_list = NULL;   /* Flat array of adjacent sector indices */
+static int *s_adjacency_offset = NULL; /* Start offset for each sector */
+static int *s_adjacency_count = NULL;  /* Count of adjacent sectors for each */
 static int s_adjacency_total = 0;
 static boolean s_adjacency_dirty = true; /* Rebuild when doors/lifts change */
 
 /* Track blocked sector connections (1-sided walls blocking BFS paths) */
 #define MAX_BLOCKED_CONNECTIONS 32
+
 typedef struct {
     int sector_a;
     int sector_b;
-    int blocking_line;  /* The 1-sided wall line index */
+    int blocking_line; /* The 1-sided wall line index */
 } blocked_connection_t;
+
 static blocked_connection_t s_blocked_connections[MAX_BLOCKED_CONNECTIONS];
 static int s_num_blocked_connections = 0;
 
@@ -290,10 +287,8 @@ static int s_num_blocked_connections = 0;
 static boolean IsConnectionBlocked(int sector_a, int sector_b) {
     int i;
     for (i = 0; i < s_num_blocked_connections; i++) {
-        if ((s_blocked_connections[i].sector_a == sector_a &&
-             s_blocked_connections[i].sector_b == sector_b) ||
-            (s_blocked_connections[i].sector_a == sector_b &&
-             s_blocked_connections[i].sector_b == sector_a)) {
+        if ((s_blocked_connections[i].sector_a == sector_a && s_blocked_connections[i].sector_b == sector_b) ||
+            (s_blocked_connections[i].sector_a == sector_b && s_blocked_connections[i].sector_b == sector_a)) {
             return true;
         }
     }
@@ -308,11 +303,9 @@ static void AddBlockedConnection(int sector_a, int sector_b, int blocking_line) 
 
     /* Check if already blocked */
     for (i = 0; i < s_num_blocked_connections; i++) {
-        if ((s_blocked_connections[i].sector_a == sector_a &&
-             s_blocked_connections[i].sector_b == sector_b) ||
-            (s_blocked_connections[i].sector_a == sector_b &&
-             s_blocked_connections[i].sector_b == sector_a)) {
-            return;  /* Already tracked */
+        if ((s_blocked_connections[i].sector_a == sector_a && s_blocked_connections[i].sector_b == sector_b) ||
+            (s_blocked_connections[i].sector_a == sector_b && s_blocked_connections[i].sector_b == sector_a)) {
+            return; /* Already tracked */
         }
     }
 
@@ -321,8 +314,8 @@ static void AddBlockedConnection(int sector_a, int sector_b, int blocking_line) 
         s_blocked_connections[s_num_blocked_connections].sector_b = sector_b;
         s_blocked_connections[s_num_blocked_connections].blocking_line = blocking_line;
         s_num_blocked_connections++;
-        SECRET_DEBUG("[SECRET] Added blocked connection: sector %d <-> %d (line %d), total=%d\n",
-               sector_a, sector_b, blocking_line, s_num_blocked_connections);
+        SECRET_DEBUG("[SECRET] Added blocked connection: sector %d <-> %d (line %d), total=%d\n", sector_a, sector_b,
+                     blocking_line, s_num_blocked_connections);
     }
 }
 
@@ -349,17 +342,17 @@ static fixed_t s_last_enemy_y = 0;
 
 /* Threshold for enemy movement to trigger path recalculation (2 map units) */
 #define ENEMY_MOVE_THRESHOLD (2 * FRACUNIT)
-#define PLAYER_MOVE_THRESHOLD (16 * FRACUNIT)  /* Update arrows when moved 16+ units */
+#define PLAYER_MOVE_THRESHOLD (16 * FRACUNIT) /* Update arrows when moved 16+ units */
 
 /* Target storage for selection system */
 static target_info_t s_targets[TARGET_TYPE_COUNT][SECRET_MAX_TARGETS];
 static int s_target_counts[TARGET_TYPE_COUNT] = {0};
 static target_type_t s_current_type = TARGET_SECRET;
 static int s_current_index = 0;
-static path_dest_mode_t s_dest_mode = DEST_TRIGGER;  /* Path to trigger by default */
+static path_dest_mode_t s_dest_mode = DEST_TRIGGER; /* Path to trigger by default */
 
 /* Original secret sector tracking (preserves info after discovery) */
-static int s_original_secret_sectors[SECRET_MAX_TARGETS];  /* Sector indices that were originally secrets */
+static int s_original_secret_sectors[SECRET_MAX_TARGETS]; /* Sector indices that were originally secrets */
 static int s_original_secret_count = 0;
 
 /* Static name buffers for target display */
@@ -382,17 +375,32 @@ static void GetSectorCenter(int sector_idx, fixed_t *out_x, fixed_t *out_y) {
         /* Check if this line belongs to our sector */
         if ((line->frontsector && (line->frontsector - sectors) == sector_idx) ||
             (line->backsector && (line->backsector - sectors) == sector_idx)) {
-
             /* Include both vertices of the line */
-            if (line->v1->x < min_x) min_x = line->v1->x;
-            if (line->v1->x > max_x) max_x = line->v1->x;
-            if (line->v1->y < min_y) min_y = line->v1->y;
-            if (line->v1->y > max_y) max_y = line->v1->y;
+            if (line->v1->x < min_x) {
+                min_x = line->v1->x;
+            }
+            if (line->v1->x > max_x) {
+                max_x = line->v1->x;
+            }
+            if (line->v1->y < min_y) {
+                min_y = line->v1->y;
+            }
+            if (line->v1->y > max_y) {
+                max_y = line->v1->y;
+            }
 
-            if (line->v2->x < min_x) min_x = line->v2->x;
-            if (line->v2->x > max_x) max_x = line->v2->x;
-            if (line->v2->y < min_y) min_y = line->v2->y;
-            if (line->v2->y > max_y) max_y = line->v2->y;
+            if (line->v2->x < min_x) {
+                min_x = line->v2->x;
+            }
+            if (line->v2->x > max_x) {
+                max_x = line->v2->x;
+            }
+            if (line->v2->y < min_y) {
+                min_y = line->v2->y;
+            }
+            if (line->v2->y > max_y) {
+                max_y = line->v2->y;
+            }
 
             found = true;
         }
@@ -475,10 +483,12 @@ static boolean CanPassLine(line_t *line) {
      * Player can step up max 24 units. Use absolute floor difference.
      */
     floor_diff = back_floor - front_floor;
-    if (floor_diff < 0) floor_diff = -floor_diff;  /* abs() */
+    if (floor_diff < 0) {
+        floor_diff = -floor_diff; /* abs() */
+    }
 
     if (floor_diff > 24 * FRACUNIT) {
-        return false;  /* Too much height difference for BFS */
+        return false; /* Too much height difference for BFS */
     }
 
     return true;
@@ -508,15 +518,23 @@ static void BuildSectorAdjacency(void) {
     }
 
     /* Allocate count arrays */
-    s_adjacency_count = (int*)calloc(numsectors, sizeof(int));
-    s_adjacency_offset = (int*)malloc(numsectors * sizeof(int));
-    temp_counts = (int*)calloc(numsectors, sizeof(int));
+    s_adjacency_count = (int *)calloc(numsectors, sizeof(int));
+    s_adjacency_offset = (int *)malloc(numsectors * sizeof(int));
+    temp_counts = (int *)calloc(numsectors, sizeof(int));
 
     if (!s_adjacency_count || !s_adjacency_offset || !temp_counts) {
         /* Clean up partial allocations on failure */
-        if (s_adjacency_count) { free(s_adjacency_count); s_adjacency_count = NULL; }
-        if (s_adjacency_offset) { free(s_adjacency_offset); s_adjacency_offset = NULL; }
-        if (temp_counts) { free(temp_counts); }
+        if (s_adjacency_count) {
+            free(s_adjacency_count);
+            s_adjacency_count = NULL;
+        }
+        if (s_adjacency_offset) {
+            free(s_adjacency_offset);
+            s_adjacency_offset = NULL;
+        }
+        if (temp_counts) {
+            free(temp_counts);
+        }
         return;
     }
 
@@ -525,9 +543,7 @@ static void BuildSectorAdjacency(void) {
         line_t *line = &lines[i];
 
         /* Check if player can walk through this line */
-        if (line->frontsector && line->backsector &&
-            line->frontsector != line->backsector &&
-            CanPassLine(line)) {
+        if (line->frontsector && line->backsector && line->frontsector != line->backsector && CanPassLine(line)) {
             int front_idx = line->frontsector - sectors;
             int back_idx = line->backsector - sectors;
 
@@ -544,12 +560,14 @@ static void BuildSectorAdjacency(void) {
     }
 
     /* Allocate flat adjacency list */
-    s_adjacency_list = (int*)malloc(s_adjacency_total * sizeof(int));
+    s_adjacency_list = (int *)malloc(s_adjacency_total * sizeof(int));
     if (!s_adjacency_list) {
         /* Clean up all allocations on failure */
         free(temp_counts);
-        free(s_adjacency_count); s_adjacency_count = NULL;
-        free(s_adjacency_offset); s_adjacency_offset = NULL;
+        free(s_adjacency_count);
+        s_adjacency_count = NULL;
+        free(s_adjacency_offset);
+        s_adjacency_offset = NULL;
         return;
     }
 
@@ -562,9 +580,7 @@ static void BuildSectorAdjacency(void) {
     for (i = 0; i < numlines; i++) {
         line_t *line = &lines[i];
 
-        if (line->frontsector && line->backsector &&
-            line->frontsector != line->backsector &&
-            CanPassLine(line)) {
+        if (line->frontsector && line->backsector && line->frontsector != line->backsector && CanPassLine(line)) {
             int front_idx = line->frontsector - sectors;
             int back_idx = line->backsector - sectors;
 
@@ -581,7 +597,7 @@ static void BuildSectorAdjacency(void) {
     }
 
     free(temp_counts);
-    s_adjacency_dirty = false;  /* Mark as up-to-date */
+    s_adjacency_dirty = false; /* Mark as up-to-date */
 }
 
 /**
@@ -627,8 +643,7 @@ static int FindConnectingLine(int sector1, int sector2) {
         if (line->frontsector && line->backsector) {
             int front_idx = line->frontsector - sectors;
             int back_idx = line->backsector - sectors;
-            if ((front_idx == sector1 && back_idx == sector2) ||
-                (front_idx == sector2 && back_idx == sector1)) {
+            if ((front_idx == sector1 && back_idx == sector2) || (front_idx == sector2 && back_idx == sector1)) {
                 return i;
             }
         }
@@ -664,9 +679,9 @@ static void GetPortalWaypoint(int line_idx, int dest_sector, fixed_t *out_x, fix
     fixed_t dy = line->v2->y - line->v1->y;
 
     /* Normal vectors (both directions) */
-    fixed_t nx1 = -dy;  /* Perpendicular direction 1 */
+    fixed_t nx1 = -dy; /* Perpendicular direction 1 */
     fixed_t ny1 = dx;
-    fixed_t nx2 = dy;   /* Perpendicular direction 2 */
+    fixed_t nx2 = dy; /* Perpendicular direction 2 */
     fixed_t ny2 = -dx;
 
     /* Normalize and scale by offset (32 units = player radius) */
@@ -677,7 +692,7 @@ static void GetPortalWaypoint(int line_idx, int dest_sector, fixed_t *out_x, fix
         return;
     }
 
-    #define PORTAL_OFFSET (48 * FRACUNIT)  /* Push 48 units into sector */
+#define PORTAL_OFFSET (48 * FRACUNIT) /* Push 48 units into sector */
 
     fixed_t offset_x1 = FixedDiv(FixedMul(nx1, PORTAL_OFFSET), len);
     fixed_t offset_y1 = FixedDiv(FixedMul(ny1, PORTAL_OFFSET), len);
@@ -741,12 +756,16 @@ static boolean BFSFindPath(int start_sector, int target_sector, secret_path_t *o
     /* Get target sector center for distance calculation */
     GetSectorCenter(target_sector, &target_x, &target_y);
 
-    queue = (bfs_node_t*)malloc(numsectors * sizeof(bfs_node_t));
-    visited = (boolean*)calloc(numsectors, sizeof(boolean));
+    queue = (bfs_node_t *)malloc(numsectors * sizeof(bfs_node_t));
+    visited = (boolean *)calloc(numsectors, sizeof(boolean));
 
     if (!queue || !visited) {
-        if (queue) free(queue);
-        if (visited) free(visited);
+        if (queue) {
+            free(queue);
+        }
+        if (visited) {
+            free(visited);
+        }
         return false;
     }
 
@@ -843,12 +862,16 @@ static boolean BFSFindSecret(int start_sector, secret_path_t *out_path) {
     }
 
     /* Allocate BFS structures */
-    queue = (bfs_node_t*)malloc(numsectors * sizeof(bfs_node_t));
-    visited = (boolean*)calloc(numsectors, sizeof(boolean));
+    queue = (bfs_node_t *)malloc(numsectors * sizeof(bfs_node_t));
+    visited = (boolean *)calloc(numsectors, sizeof(boolean));
 
     if (!queue || !visited) {
-        if (queue) free(queue);
-        if (visited) free(visited);
+        if (queue) {
+            free(queue);
+        }
+        if (visited) {
+            free(visited);
+        }
         return false;
     }
 
@@ -872,7 +895,7 @@ static boolean BFSFindSecret(int start_sector, secret_path_t *out_path) {
         fixed_t curr_x, curr_y;
         GetSectorCenter(current, &curr_x, &curr_y);
         for (i = 0; i < numsectors; i++) {
-            if (sectors[i].special == 9) {  /* Secret sector */
+            if (sectors[i].special == 9) { /* Secret sector */
                 fixed_t secret_x, secret_y;
                 GetSectorCenter(i, &secret_x, &secret_y);
                 fixed_t dist = P_AproxDistance(curr_x - secret_x, curr_y - secret_y);
@@ -943,42 +966,42 @@ static boolean BFSFindSecret(int start_sector, secret_path_t *out_path) {
 static boolean IsDoorSpecial(int special) {
     switch (special) {
     /* Push/Use doors (DR type) - common for hidden doors */
-    case 1:    /* DR Door Open Wait Close */
-    case 31:   /* D1 Door Open Stay */
-    case 117:  /* DR Door Blazing Open Wait Close */
-    case 118:  /* D1 Door Blazing Open Stay */
+    case 1:   /* DR Door Open Wait Close */
+    case 31:  /* D1 Door Open Stay */
+    case 117: /* DR Door Blazing Open Wait Close */
+    case 118: /* D1 Door Blazing Open Stay */
     /* Keyed doors */
-    case 26:   /* DR Blue Door */
-    case 27:   /* DR Yellow Door */
-    case 28:   /* DR Red Door */
-    case 32:   /* D1 Blue Door Open Stay */
-    case 33:   /* D1 Red Door Open Stay */
-    case 34:   /* D1 Yellow Door Open Stay */
+    case 26: /* DR Blue Door */
+    case 27: /* DR Yellow Door */
+    case 28: /* DR Red Door */
+    case 32: /* D1 Blue Door Open Stay */
+    case 33: /* D1 Red Door Open Stay */
+    case 34: /* D1 Yellow Door Open Stay */
     /* Switch doors */
-    case 103:  /* S1 Door Open Stay */
-    case 29:   /* S1 Door Raise */
-    case 50:   /* S1 Door Close */
+    case 103: /* S1 Door Open Stay */
+    case 29:  /* S1 Door Raise */
+    case 50:  /* S1 Door Close */
     /* Walk-trigger doors */
-    case 2:    /* W1 Door Open Stay */
-    case 3:    /* W1 Door Close */
-    case 4:    /* W1 Door Raise */
-    case 16:   /* W1 Door Close Wait Open */
-    case 90:   /* WR Door Raise */
-    case 46:   /* GR Door Open Stay (gunfire) */
+    case 2:  /* W1 Door Open Stay */
+    case 3:  /* W1 Door Close */
+    case 4:  /* W1 Door Raise */
+    case 16: /* W1 Door Close Wait Open */
+    case 90: /* WR Door Raise */
+    case 46: /* GR Door Open Stay (gunfire) */
     /* Lifts/Platforms - also common for secret access */
-    case 10:   /* W1 Lift */
-    case 21:   /* S1 Lift Lower Wait Raise */
-    case 62:   /* SR Lift Lower Wait Raise */
-    case 88:   /* WR Lift */
-    case 120:  /* WR Lift Fast */
-    case 121:  /* W1 Lift Fast */
-    case 122:  /* S1 Lift Fast */
-    case 123:  /* SR Lift Fast */
+    case 10:  /* W1 Lift */
+    case 21:  /* S1 Lift Lower Wait Raise */
+    case 62:  /* SR Lift Lower Wait Raise */
+    case 88:  /* WR Lift */
+    case 120: /* WR Lift Fast */
+    case 121: /* W1 Lift Fast */
+    case 122: /* S1 Lift Fast */
+    case 123: /* SR Lift Fast */
     /* Floor lower/raise - might reveal secrets */
-    case 19:   /* W1 Floor Lower to Highest */
-    case 36:   /* W1 Floor Lower to 8 above Highest */
-    case 37:   /* W1 Floor Lower to Lowest Change */
-    case 38:   /* W1 Floor Lower to Lowest */
+    case 19: /* W1 Floor Lower to Highest */
+    case 36: /* W1 Floor Lower to 8 above Highest */
+    case 37: /* W1 Floor Lower to Lowest Change */
+    case 38: /* W1 Floor Lower to Lowest */
         return true;
     default:
         return false;
@@ -990,14 +1013,14 @@ static boolean IsDoorSpecial(int special) {
  */
 static boolean IsLiftSpecial(int special) {
     switch (special) {
-    case 10:   /* W1 Lift */
-    case 21:   /* S1 Lift */
-    case 62:   /* SR Lift */
-    case 88:   /* WR Lift */
-    case 120:  /* WR Lift Fast */
-    case 121:  /* W1 Lift Fast */
-    case 122:  /* S1 Lift Fast */
-    case 123:  /* SR Lift Fast */
+    case 10:  /* W1 Lift */
+    case 21:  /* S1 Lift */
+    case 62:  /* SR Lift */
+    case 88:  /* WR Lift */
+    case 120: /* WR Lift Fast */
+    case 121: /* W1 Lift Fast */
+    case 122: /* S1 Lift Fast */
+    case 123: /* SR Lift Fast */
         return true;
     default:
         return false;
@@ -1045,14 +1068,18 @@ static int FindLiftToSecret(int target_secret, int *out_access_sector) {
     for (i = 0; i < numlines; i++) {
         line_t *line = &lines[i];
 
-        if (!IsLiftSpecial(line->special)) continue;
+        if (!IsLiftSpecial(line->special)) {
+            continue;
+        }
 
         /* Check if this lift's tag matches any sector at secret's height */
         if (line->tag > 0) {
             for (j = 0; j < numsectors; j++) {
                 if (sectors[j].tag == line->tag) {
                     fixed_t height_diff = sectors[j].floorheight - secret_floor;
-                    if (height_diff < 0) height_diff = -height_diff;
+                    if (height_diff < 0) {
+                        height_diff = -height_diff;
+                    }
 
                     if (height_diff <= 24 * FRACUNIT) {
                         /* This lift could provide access! Find the lower side */
@@ -1075,8 +1102,12 @@ static int FindLiftToSecret(int target_secret, int *out_access_sector) {
         if (line->frontsector && line->backsector) {
             fixed_t front_diff = line->frontsector->floorheight - secret_floor;
             fixed_t back_diff = line->backsector->floorheight - secret_floor;
-            if (front_diff < 0) front_diff = -front_diff;
-            if (back_diff < 0) back_diff = -back_diff;
+            if (front_diff < 0) {
+                front_diff = -front_diff;
+            }
+            if (back_diff < 0) {
+                back_diff = -back_diff;
+            }
 
             if (front_diff <= 24 * FRACUNIT || back_diff <= 24 * FRACUNIT) {
                 if (line->frontsector->floorheight < line->backsector->floorheight) {
@@ -1122,7 +1153,7 @@ static int FindHiddenDoorToSecret(int sector_idx) {
         /* If the other side is a secret and line has door special */
         if (other_sector >= 0 && IsUndiscoveredSecret(other_sector)) {
             if (IsDoorSpecial(line->special)) {
-                return i;  /* Found hidden door to secret */
+                return i; /* Found hidden door to secret */
             }
         }
     }
@@ -1140,8 +1171,8 @@ static void DebugPrintSecretLinedefs(void) {
 
     for (i = 0; i < numsectors; i++) {
         if (sectors[i].special == 9) {
-            printf("[SECRET DEBUG] Secret sector %d found (floor=%d, ceil=%d)\n",
-                   i, sectors[i].floorheight >> 16, sectors[i].ceilingheight >> 16);
+            printf("[SECRET DEBUG] Secret sector %d found (floor=%d, ceil=%d)\n", i, sectors[i].floorheight >> 16,
+                   sectors[i].ceilingheight >> 16);
 
             /* Find all linedefs touching this sector */
             for (j = 0; j < numlines; j++) {
@@ -1167,12 +1198,11 @@ static void DebugPrintSecretLinedefs(void) {
                         fixed_t low_ceil = (f_ceil < b_ceil) ? f_ceil : b_ceil;
                         fixed_t opening = (low_ceil - high_floor) >> 16;
 
-                        printf("  Line %d: special=%d, flags=%d, other=%d, opening=%d units, passable=%s\n",
-                               j, line->special, line->flags, other, (int)opening,
-                               CanPassLine(line) ? "YES" : "NO");
+                        printf("  Line %d: special=%d, flags=%d, other=%d, opening=%d units, passable=%s\n", j,
+                               line->special, line->flags, other, (int)opening, CanPassLine(line) ? "YES" : "NO");
                     } else {
-                        printf("  Line %d: special=%d, flags=%d, other=%d, one-sided\n",
-                               j, line->special, line->flags, other);
+                        printf("  Line %d: special=%d, flags=%d, other=%d, one-sided\n", j, line->special, line->flags,
+                               other);
                     }
                 }
             }
@@ -1201,12 +1231,16 @@ static boolean BFSFindHiddenDoor(int start_sector, secret_path_t *out_path, int 
     }
 
     /* Allocate BFS structures */
-    queue = (bfs_node_t*)malloc(numsectors * sizeof(bfs_node_t));
-    visited = (boolean*)calloc(numsectors, sizeof(boolean));
+    queue = (bfs_node_t *)malloc(numsectors * sizeof(bfs_node_t));
+    visited = (boolean *)calloc(numsectors, sizeof(boolean));
 
     if (!queue || !visited) {
-        if (queue) free(queue);
-        if (visited) free(visited);
+        if (queue) {
+            free(queue);
+        }
+        if (visited) {
+            free(visited);
+        }
         return false;
     }
 
@@ -1285,9 +1319,9 @@ static int s_hidden_door_line = -1;
 
 /* Track if current path is blocked by an impassable wall */
 static boolean s_path_blocked = false;
-static int s_blocking_wall_line = -1;  /* Line index of blocking wall */
-static int s_blocking_check_counter = 0;  /* Counter for periodic rechecks */
-#define BLOCKING_RECHECK_INTERVAL 35  /* Check every ~1 second (35 tics) */
+static int s_blocking_wall_line = -1;    /* Line index of blocking wall */
+static int s_blocking_check_counter = 0; /* Counter for periodic rechecks */
+#define BLOCKING_RECHECK_INTERVAL 35     /* Check every ~1 second (35 tics) */
 
 /* Note: 1-sided wall blocking no longer triggers recalculation.
  * Instead, we keep partial path to guide player toward secret. */
@@ -1327,10 +1361,8 @@ static void GetLinedefCenter(int line_idx, fixed_t *out_x, fixed_t *out_y, fixed
  * Calculate squared distance from point to line segment.
  * Returns the closest point on the segment in out_closest_x/y.
  */
-static fixed_t PointToLineDistSq(fixed_t px, fixed_t py,
-                                  fixed_t x1, fixed_t y1,
-                                  fixed_t x2, fixed_t y2,
-                                  fixed_t *out_closest_x, fixed_t *out_closest_y) {
+static fixed_t PointToLineDistSq(fixed_t px, fixed_t py, fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2,
+                                 fixed_t *out_closest_x, fixed_t *out_closest_y) {
     fixed_t dx = x2 - x1;
     fixed_t dy = y2 - y1;
     fixed_t len_sq = FixedMul(dx, dx) + FixedMul(dy, dy);
@@ -1345,15 +1377,23 @@ static fixed_t PointToLineDistSq(fixed_t px, fixed_t py,
     } else {
         /* Project point onto line, clamped to segment */
         t = FixedDiv(FixedMul(px - x1, dx) + FixedMul(py - y1, dy), len_sq);
-        if (t < 0) t = 0;
-        if (t > FRACUNIT) t = FRACUNIT;
+        if (t < 0) {
+            t = 0;
+        }
+        if (t > FRACUNIT) {
+            t = FRACUNIT;
+        }
 
         closest_x = x1 + FixedMul(t, dx);
         closest_y = y1 + FixedMul(t, dy);
     }
 
-    if (out_closest_x) *out_closest_x = closest_x;
-    if (out_closest_y) *out_closest_y = closest_y;
+    if (out_closest_x) {
+        *out_closest_x = closest_x;
+    }
+    if (out_closest_y) {
+        *out_closest_y = closest_y;
+    }
 
     dist_x = px - closest_x;
     dist_y = py - closest_y;
@@ -1426,10 +1466,7 @@ static void PushArrowFromWalls(secret_arrow_t *arrow) {
         }
 
         /* Calculate distance to this wall */
-        dist_sq = PointToLineDistSq(px, py,
-                                     line->v1->x, line->v1->y,
-                                     line->v2->x, line->v2->y,
-                                     &closest_x, &closest_y);
+        dist_sq = PointToLineDistSq(px, py, line->v1->x, line->v1->y, line->v2->x, line->v2->y, &closest_x, &closest_y);
 
         /* Skip if too far */
         if (dist_sq > margin_sq) {
@@ -1449,14 +1486,20 @@ static void PushArrowFromWalls(secret_arrow_t *arrow) {
             push_dir_x = -ldy;
             push_dir_y = ldx;
             dist = P_AproxDistance(push_dir_x, push_dir_y);
-            if (dist < FRACUNIT) dist = FRACUNIT;
+            if (dist < FRACUNIT) {
+                dist = FRACUNIT;
+            }
         }
 
         /* Normalize and scale push by how close we are */
         /* Closer = stronger push */
         push_strength = WALL_MARGIN - P_AproxDistance(px - closest_x, py - closest_y);
-        if (push_strength < 0) push_strength = 0;
-        if (push_strength > WALL_MARGIN) push_strength = WALL_MARGIN;
+        if (push_strength < 0) {
+            push_strength = 0;
+        }
+        if (push_strength > WALL_MARGIN) {
+            push_strength = WALL_MARGIN;
+        }
 
         /* Accumulate push */
         push_len = FixedDiv(push_strength, dist);
@@ -1489,9 +1532,8 @@ static void PushPathFromWalls(secret_path_t *path) {
  * Internal function - does not check for wall collisions.
  * Returns number of arrows added.
  */
-static int AddIntermediateArrowsDirect(secret_path_t *path, int start_idx,
-                                        fixed_t x1, fixed_t y1, fixed_t z1,
-                                        fixed_t x2, fixed_t y2, fixed_t z2) {
+static int AddIntermediateArrowsDirect(secret_path_t *path, int start_idx, fixed_t x1, fixed_t y1, fixed_t z1,
+                                       fixed_t x2, fixed_t y2, fixed_t z2) {
     fixed_t dx = x2 - x1;
     fixed_t dy = y2 - y1;
     fixed_t dist = P_AproxDistance(dx, dy);
@@ -1507,16 +1549,18 @@ static int AddIntermediateArrowsDirect(secret_path_t *path, int start_idx,
 
     /* Check if we need sprites based on horizontal distance OR height change */
     if (dist < ARROW_SPACING && dz < HEIGHT_THRESHOLD) {
-        return 0;  /* Points are close enough AND no significant height change */
+        return 0; /* Points are close enough AND no significant height change */
     }
 
     /* Calculate segments based on both horizontal distance and height change */
     int horiz_segments = (dist > 0) ? ((dist + ARROW_SPACING - 1) / ARROW_SPACING) : 0;
     int vert_segments = (dz > 0) ? ((dz + HEIGHT_THRESHOLD - 1) / HEIGHT_THRESHOLD) : 0;
-    
+
     /* Use the larger of the two to ensure coverage */
     num_segments = (horiz_segments > vert_segments) ? horiz_segments : vert_segments;
-    if (num_segments < 2) num_segments = 2;
+    if (num_segments < 2) {
+        num_segments = 2;
+    }
 
     /* Add intermediate points (skip first point, include last) */
     for (i = 1; i <= num_segments && (start_idx + added) < SECRET_MAX_ARROWS; i++) {
@@ -1603,17 +1647,17 @@ static int AddIntermediateArrowsDirect(secret_path_t *path, int start_idx,
  * Uses recursion with depth limit to handle multiple walls.
  * Returns number of arrows added.
  */
-static int AddIntermediateArrows(secret_path_t *path, int start_idx,
-                                  fixed_t x1, fixed_t y1, fixed_t z1,
-                                  fixed_t x2, fixed_t y2, fixed_t z2) {
+static int AddIntermediateArrows(secret_path_t *path, int start_idx, fixed_t x1, fixed_t y1, fixed_t z1, fixed_t x2,
+                                 fixed_t y2, fixed_t z2) {
     int added = 0;
     int depth = 0;
-    const int MAX_DEPTH = 8;  /* Prevent infinite recursion */
+    const int MAX_DEPTH = 8; /* Prevent infinite recursion */
 
     /* Waypoint stack for iterative processing */
     struct {
         fixed_t x, y, z;
     } waypoints[MAX_DEPTH + 2];
+
     int num_waypoints = 0;
 
     /* Start with destination as first target */
@@ -1635,26 +1679,22 @@ static int AddIntermediateArrows(secret_path_t *path, int start_idx,
         /* Check if direct path is clear */
         if (CheckLineOfSight(curr_x, curr_y, target_x, target_y)) {
             /* Path is clear - add arrows directly */
-            SECRET_DEBUG("[SECRET] LOS clear: (%d,%d) -> (%d,%d)\n",
-                   curr_x >> FRACBITS, curr_y >> FRACBITS,
-                   target_x >> FRACBITS, target_y >> FRACBITS);
-            added += AddIntermediateArrowsDirect(path, start_idx + added,
-                                                  curr_x, curr_y, curr_z,
-                                                  target_x, target_y, target_z);
+            SECRET_DEBUG("[SECRET] LOS clear: (%d,%d) -> (%d,%d)\n", curr_x >> FRACBITS, curr_y >> FRACBITS,
+                         target_x >> FRACBITS, target_y >> FRACBITS);
+            added += AddIntermediateArrowsDirect(path, start_idx + added, curr_x, curr_y, curr_z, target_x, target_y,
+                                                 target_z);
             curr_x = target_x;
             curr_y = target_y;
             curr_z = target_z;
-            num_waypoints--;  /* Remove processed waypoint */
+            num_waypoints--; /* Remove processed waypoint */
         } else {
             /* Path blocked - find waypoint around wall */
             line_t *wall = GetBlockingLine();
-            SECRET_DEBUG("[SECRET] LOS BLOCKED: (%d,%d) -> (%d,%d), wall=%p\n",
-                   curr_x >> FRACBITS, curr_y >> FRACBITS,
-                   target_x >> FRACBITS, target_y >> FRACBITS, (void*)wall);
+            SECRET_DEBUG("[SECRET] LOS BLOCKED: (%d,%d) -> (%d,%d), wall=%p\n", curr_x >> FRACBITS, curr_y >> FRACBITS,
+                         target_x >> FRACBITS, target_y >> FRACBITS, (void *)wall);
             if (wall) {
-                SECRET_DEBUG("[SECRET]   Wall vertices: (%d,%d) -> (%d,%d)\n",
-                       wall->v1->x >> FRACBITS, wall->v1->y >> FRACBITS,
-                       wall->v2->x >> FRACBITS, wall->v2->y >> FRACBITS);
+                SECRET_DEBUG("[SECRET]   Wall vertices: (%d,%d) -> (%d,%d)\n", wall->v1->x >> FRACBITS,
+                             wall->v1->y >> FRACBITS, wall->v2->x >> FRACBITS, wall->v2->y >> FRACBITS);
             }
             if (wall && num_waypoints < MAX_DEPTH + 1) {
                 fixed_t wp_x, wp_y;
@@ -1671,7 +1711,7 @@ static int AddIntermediateArrows(secret_path_t *path, int start_idx,
                     fixed_t old_dist = P_AproxDistance(curr_x - target_x, curr_y - target_y);
                     fixed_t new_dist = P_AproxDistance(wp_x - target_x, wp_y - target_y);
                     if (new_dist >= old_dist) {
-                        is_stuck = true;  /* Not making progress */
+                        is_stuck = true; /* Not making progress */
                     }
                 }
 
@@ -1682,10 +1722,11 @@ static int AddIntermediateArrows(secret_path_t *path, int start_idx,
                          * Instead of stopping, skip to the next waypoint and continue.
                          * The BFS path is valid, we just can't draw a direct line here. */
                         SECRET_DEBUG("[SECRET]   1-sided wall at (%d,%d), skipping direct path to this waypoint\n",
-                               wp_x >> FRACBITS, wp_y >> FRACBITS);
+                                     wp_x >> FRACBITS, wp_y >> FRACBITS);
 
                         /* Skip this waypoint - move to current position closer to waypoint */
-                        /* Don't try to draw through the wall, just accept we can't reach this intermediate point directly */
+                        /* Don't try to draw through the wall, just accept we can't reach this intermediate point
+                         * directly */
                         num_waypoints--;
 
                         /* If this was the last waypoint (final target), mark as blocked for polling */
@@ -1693,38 +1734,35 @@ static int AddIntermediateArrows(secret_path_t *path, int start_idx,
                             SECRET_DEBUG("[SECRET]   Final target blocked by 1-sided wall, storing for recheck\n");
                             s_path_blocked = true;
                             s_blocking_wall_line = wall - lines;
-                            SECRET_DEBUG("[SECRET]   Stored blocking wall line=%d for recheck\n",
-                                   s_blocking_wall_line);
+                            SECRET_DEBUG("[SECRET]   Stored blocking wall line=%d for recheck\n", s_blocking_wall_line);
                         }
                     } else {
                         /* Door/lift that can be opened - draw direct line through it */
-                        SECRET_DEBUG("[SECRET]   Openable door/lift at (%d,%d), drawing through\n",
-                               wp_x >> FRACBITS, wp_y >> FRACBITS);
-                        added += AddIntermediateArrowsDirect(path, start_idx + added,
-                                                              curr_x, curr_y, curr_z,
-                                                              target_x, target_y, target_z);
+                        SECRET_DEBUG("[SECRET]   Openable door/lift at (%d,%d), drawing through\n", wp_x >> FRACBITS,
+                                     wp_y >> FRACBITS);
+                        added += AddIntermediateArrowsDirect(path, start_idx + added, curr_x, curr_y, curr_z, target_x,
+                                                             target_y, target_z);
                         curr_x = target_x;
                         curr_y = target_y;
                         curr_z = target_z;
                         num_waypoints--;
                     }
                 } else {
-                    SECRET_DEBUG("[SECRET]   Adding waypoint around wall: (%d,%d), depth=%d\n",
-                           wp_x >> FRACBITS, wp_y >> FRACBITS, depth);
+                    SECRET_DEBUG("[SECRET]   Adding waypoint around wall: (%d,%d), depth=%d\n", wp_x >> FRACBITS,
+                                 wp_y >> FRACBITS, depth);
 
                     /* Insert new waypoint before current target */
                     waypoints[num_waypoints].x = wp_x;
                     waypoints[num_waypoints].y = wp_y;
-                    waypoints[num_waypoints].z = curr_z;  /* Use current Z */
+                    waypoints[num_waypoints].z = curr_z; /* Use current Z */
                     num_waypoints++;
                     depth++;
                 }
             } else {
                 /* No wall info or max depth - force direct path */
                 SECRET_DEBUG("[SECRET]   Forcing direct path (no wall or max depth)\n");
-                added += AddIntermediateArrowsDirect(path, start_idx + added,
-                                                      curr_x, curr_y, curr_z,
-                                                      target_x, target_y, target_z);
+                added += AddIntermediateArrowsDirect(path, start_idx + added, curr_x, curr_y, curr_z, target_x,
+                                                     target_y, target_z);
                 curr_x = target_x;
                 curr_y = target_y;
                 curr_z = target_z;
@@ -1770,13 +1808,13 @@ static void GenerateArrows(secret_path_t *path) {
         prev_x = player->mo->x;
         prev_y = player->mo->y;
         prev_z = player->mo->z;
-        SECRET_DEBUG("[SECRET] GenerateArrows: Starting from player pos (%d, %d)\n",
-               prev_x >> FRACBITS, prev_y >> FRACBITS);
+        SECRET_DEBUG("[SECRET] GenerateArrows: Starting from player pos (%d, %d)\n", prev_x >> FRACBITS,
+                     prev_y >> FRACBITS);
     } else {
         GetSectorCenter(path->path[0], &prev_x, &prev_y);
         prev_z = sectors[path->path[0]].floorheight;
-        SECRET_DEBUG("[SECRET] GenerateArrows: No player->mo, using sector center (%d, %d)\n",
-               prev_x >> FRACBITS, prev_y >> FRACBITS);
+        SECRET_DEBUG("[SECRET] GenerateArrows: No player->mo, using sector center (%d, %d)\n", prev_x >> FRACBITS,
+                     prev_y >> FRACBITS);
     }
     prev_sector = path->path[0];
 
@@ -1785,7 +1823,7 @@ static void GenerateArrows(secret_path_t *path) {
         path->arrows[arrow_count].x = prev_x;
         path->arrows[arrow_count].y = prev_y;
         path->arrows[arrow_count].z = prev_z;
-        path->arrows[arrow_count].angle = 0;  /* Will be updated below */
+        path->arrows[arrow_count].angle = 0; /* Will be updated below */
         arrow_count++;
     }
 
@@ -1815,9 +1853,8 @@ static void GenerateArrows(secret_path_t *path) {
                 if (connecting_line >= 0) {
                     /* Add portal waypoint first */
                     GetPortalWaypoint(connecting_line, sector_idx, &portal_x, &portal_y);
-                    arrow_count += AddIntermediateArrows(path, arrow_count,
-                                                          prev_x, prev_y, prev_z,
-                                                          portal_x, portal_y, sectors[sector_idx].floorheight);
+                    arrow_count += AddIntermediateArrows(path, arrow_count, prev_x, prev_y, prev_z, portal_x, portal_y,
+                                                         sectors[sector_idx].floorheight);
                     prev_x = portal_x;
                     prev_y = portal_y;
                     prev_z = sectors[sector_idx].floorheight;
@@ -1837,9 +1874,8 @@ static void GenerateArrows(secret_path_t *path) {
                     GetLineMidpoint(connecting_line, &portal_x, &portal_y);
 
                     /* Go to linedef center first */
-                    arrow_count += AddIntermediateArrows(path, arrow_count,
-                                                          prev_x, prev_y, prev_z,
-                                                          portal_x, portal_y, curr_z);
+                    arrow_count +=
+                        AddIntermediateArrows(path, arrow_count, prev_x, prev_y, prev_z, portal_x, portal_y, curr_z);
                     prev_x = portal_x;
                     prev_y = portal_y;
                 }
@@ -1851,9 +1887,7 @@ static void GenerateArrows(secret_path_t *path) {
         }
 
         /* Add arrows to current waypoint */
-        arrow_count += AddIntermediateArrows(path, arrow_count,
-                                              prev_x, prev_y, prev_z,
-                                              curr_x, curr_y, curr_z);
+        arrow_count += AddIntermediateArrows(path, arrow_count, prev_x, prev_y, prev_z, curr_x, curr_y, curr_z);
 
         prev_x = curr_x;
         prev_y = curr_y;
@@ -1865,18 +1899,16 @@ static void GenerateArrows(secret_path_t *path) {
     if (path->path_length == 1 && (path->target_x != 0 || path->target_y != 0)) {
         fixed_t target_z = sectors[path->path[0]].floorheight;
         SECRET_DEBUG("[SECRET] GenerateArrows: path_length=1, adding direct arrows to target (%d, %d)\n",
-               path->target_x >> FRACBITS, path->target_y >> FRACBITS);
-        arrow_count += AddIntermediateArrowsDirect(path, arrow_count,
-                                                    prev_x, prev_y, prev_z,
-                                                    path->target_x, path->target_y, target_z);
+                     path->target_x >> FRACBITS, path->target_y >> FRACBITS);
+        arrow_count += AddIntermediateArrowsDirect(path, arrow_count, prev_x, prev_y, prev_z, path->target_x,
+                                                   path->target_y, target_z);
     }
 
     path->num_arrows = arrow_count;
 
     /* Update first arrow's angle to point to second arrow (if exists) */
     if (arrow_count >= 2) {
-        path->arrows[0].angle = CalcAngle(path->arrows[0].x, path->arrows[0].y,
-                                           path->arrows[1].x, path->arrows[1].y);
+        path->arrows[0].angle = CalcAngle(path->arrows[0].x, path->arrows[0].y, path->arrows[1].x, path->arrows[1].y);
     }
 
     /* Push arrows away from walls to avoid clipping */
@@ -1885,8 +1917,8 @@ static void GenerateArrows(secret_path_t *path) {
     /* If blocked by same wall as before, preserve the counter to allow polling */
     if (s_path_blocked && s_blocking_wall_line == prev_blocking_wall && prev_blocking_wall >= 0) {
         s_blocking_check_counter = prev_counter;
-        SECRET_DEBUG("[SECRET] Same blocking wall line=%d, preserved counter=%d\n",
-               s_blocking_wall_line, s_blocking_check_counter);
+        SECRET_DEBUG("[SECRET] Same blocking wall line=%d, preserved counter=%d\n", s_blocking_wall_line,
+                     s_blocking_check_counter);
     } else if (s_path_blocked) {
         /* New blocking wall - reset counter */
         s_blocking_check_counter = 0;
@@ -1911,8 +1943,9 @@ static void GenerateArrows(secret_path_t *path) {
                 /* Check if blocking line's frontsector is involved in this path segment */
                 if (curr_sector == line_front_sector || next_sector == line_front_sector) {
                     AddBlockedConnection(curr_sector, next_sector, s_blocking_wall_line);
-                    SECRET_DEBUG("[SECRET] 1-sided wall blocks path segment %d -> %d, keeping %d arrows as partial path\n",
-                           curr_sector, next_sector, path->num_arrows);
+                    SECRET_DEBUG(
+                        "[SECRET] 1-sided wall blocks path segment %d -> %d, keeping %d arrows as partial path\n",
+                        curr_sector, next_sector, path->num_arrows);
                     /* Don't recalc - keep partial path that guides toward secret */
                     break;
                 }
@@ -1933,7 +1966,7 @@ static void GenerateArrows(secret_path_t *path) {
                     int prev_sect = path->path[path->path_length - 2];
                     AddBlockedConnection(prev_sect, last_sector, s_blocking_wall_line);
                     SECRET_DEBUG("[SECRET] 1-sided wall blocks final segment %d -> %d (proximity), keeping %d arrows\n",
-                           prev_sect, last_sector, path->num_arrows);
+                                 prev_sect, last_sector, path->num_arrows);
                     /* Don't recalc - keep partial path */
                 }
             }
@@ -1962,7 +1995,7 @@ static void RemoveHintSprites(void) {
 static void SpawnHintSprites(secret_path_t *path) {
     int i;
     mobj_t *mobj;
-    fixed_t height_offset = 16 * FRACUNIT;  /* Float 16 units above floor */
+    fixed_t height_offset = 16 * FRACUNIT; /* Float 16 units above floor */
 
     /* Remove any existing sprites first */
     RemoveHintSprites();
@@ -1972,17 +2005,12 @@ static void SpawnHintSprites(secret_path_t *path) {
     }
 
     /* Log first sprite position */
-    SECRET_DEBUG("[SECRET] SpawnHintSprites: First arrow at (%d, %d), total %d arrows\n",
-           path->arrows[0].x >> FRACBITS, path->arrows[0].y >> FRACBITS, path->num_arrows);
+    SECRET_DEBUG("[SECRET] SpawnHintSprites: First arrow at (%d, %d), total %d arrows\n", path->arrows[0].x >> FRACBITS,
+                 path->arrows[0].y >> FRACBITS, path->num_arrows);
 
     for (i = 0; i < path->num_arrows && i < SECRET_MAX_ARROWS; i++) {
         /* Spawn an imp fireball at this waypoint (SPR_BAL1 - always available) */
-        mobj = P_SpawnMobj(
-            path->arrows[i].x,
-            path->arrows[i].y,
-            path->arrows[i].z + height_offset,
-            MT_TROOPSHOT
-        );
+        mobj = P_SpawnMobj(path->arrows[i].x, path->arrows[i].y, path->arrows[i].z + height_offset, MT_TROOPSHOT);
 
         if (mobj) {
             /* Make it a static decoration (not a dangerous missile) */
@@ -1999,7 +2027,6 @@ static void SpawnHintSprites(secret_path_t *path) {
             s_num_sprites++;
         }
     }
-
 }
 
 /* Public API Implementation */
@@ -2024,8 +2051,8 @@ void Secret_OnLevelLoad(void) {
     s_adjacency_dirty = true;
     EnsureAdjacencyValid();
     s_path_active = false;
-    s_last_player_sector = -1;  /* Reset sector tracking */
-    s_last_player_x = 0;        /* Reset position tracking */
+    s_last_player_sector = -1; /* Reset sector tracking */
+    s_last_player_x = 0;       /* Reset position tracking */
     s_last_player_y = 0;
     memset(&s_current_path, 0, sizeof(s_current_path));
 
@@ -2105,11 +2132,10 @@ boolean Secret_FindPath(secret_path_t *out_path) {
         boolean is_secret = (sectors[out_path->target_sector].special == 9);
 
         if (is_secret) {
-            SECRET_DEBUG("[SECRET] Path to secret %d found (%d steps)\n",
-                   out_path->target_sector, out_path->path_length);
+            SECRET_DEBUG("[SECRET] Path to secret %d found (%d steps)\n", out_path->target_sector,
+                         out_path->path_length);
         } else {
-            SECRET_DEBUG("[SECRET] Partial path (%d steps) - closest reachable to secrets\n",
-                   out_path->path_length);
+            SECRET_DEBUG("[SECRET] Partial path (%d steps) - closest reachable to secrets\n", out_path->path_length);
         }
 
         GenerateArrows(out_path);
@@ -2138,11 +2164,14 @@ boolean Secret_FindPath(secret_path_t *out_path) {
                 int is_back = (line->backsector && (line->backsector - sectors) == s);
                 if (is_front || is_back) {
                     int other = -1;
-                    if (is_front && line->backsector) other = line->backsector - sectors;
-                    else if (is_back && line->frontsector) other = line->frontsector - sectors;
+                    if (is_front && line->backsector) {
+                        other = line->backsector - sectors;
+                    } else if (is_back && line->frontsector) {
+                        other = line->frontsector - sectors;
+                    }
                     if (other >= 0) {
-                        printf("  -> Sector %d (floor=%d) via line %d (special=%d)\n",
-                               other, sectors[other].floorheight >> 16, j, line->special);
+                        printf("  -> Sector %d (floor=%d) via line %d (special=%d)\n", other,
+                               sectors[other].floorheight >> 16, j, line->special);
                     }
                 }
             }
@@ -2153,7 +2182,7 @@ boolean Secret_FindPath(secret_path_t *out_path) {
     return false;
 }
 
-const secret_path_t* Secret_GetCurrentPath(void) {
+const secret_path_t *Secret_GetCurrentPath(void) {
     if (s_path_active && s_current_path.valid) {
         return &s_current_path;
     }
@@ -2193,7 +2222,7 @@ boolean Secret_CheckReached(void) {
         /* Keep path visible even after secret discovery */
         /* Path will only be cleared when user selects a different target */
 
-        return true;  /* Signal that a secret was reached */
+        return true; /* Signal that a secret was reached */
     }
 
     return false;
@@ -2250,8 +2279,8 @@ static boolean RecalculatePathToTarget(int current_sector, boolean force_adjacen
         }
     }
 
-    SECRET_DEBUG("[SECRET] RecalculatePath: current=%d, target=%d, discovered=%d\n",
-                 current_sector, target_sector, info.discovered);
+    SECRET_DEBUG("[SECRET] RecalculatePath: current=%d, target=%d, discovered=%d\n", current_sector, target_sector,
+                 info.discovered);
 
     /* Special case: already at target sector */
     if (current_sector == target_sector) {
@@ -2289,19 +2318,17 @@ static boolean RecalculatePathToTarget(int current_sector, boolean force_adjacen
     }
 
     /* BFS failed - keep existing path if we have one */
-    SECRET_DEBUG("[SECRET] RecalculatePath: BFS failed from %d to %d\n",
-                 current_sector, target_sector);
+    SECRET_DEBUG("[SECRET] RecalculatePath: BFS failed from %d to %d\n", current_sector, target_sector);
 
     if (s_current_path.valid && s_current_path.num_arrows > 0) {
-        SECRET_DEBUG("[SECRET] RecalculatePath: keeping existing path with %d arrows\n",
-                     s_current_path.num_arrows);
+        SECRET_DEBUG("[SECRET] RecalculatePath: keeping existing path with %d arrows\n", s_current_path.num_arrows);
         GenerateArrows(&s_current_path);
         SpawnHintSprites(&s_current_path);
-        return true;  /* Treat as success to prevent retry spam */
+        return true; /* Treat as success to prevent retry spam */
     }
 
     SECRET_DEBUG("[SECRET] RecalculatePath: no existing path to keep\n");
-    return true;  /* Still return true to prevent retry spam */
+    return true; /* Still return true to prevent retry spam */
 }
 
 void Secret_UpdateArrows(void) {
@@ -2336,7 +2363,7 @@ void Secret_UpdateArrows(void) {
      * Throttle to avoid BFS every frame (performance). */
     if (is_no_path) {
         static int no_path_throttle = 0;
-        #define NO_PATH_RECALC_INTERVAL 5  /* ~140ms at 35 tics/sec */
+#define NO_PATH_RECALC_INTERVAL 5 /* ~140ms at 35 tics/sec */
 
         if (++no_path_throttle < NO_PATH_RECALC_INTERVAL) {
             return;
@@ -2374,17 +2401,15 @@ void Secret_UpdateArrows(void) {
     boolean need_arrow_update = (dist_moved >= PLAYER_MOVE_THRESHOLD);
 
     /* Check if enemy target has moved (for TARGET_ENEMY) */
-    if (s_current_type == TARGET_ENEMY && 
-        s_current_index >= 0 && s_current_index < s_target_counts[TARGET_ENEMY]) {
+    if (s_current_type == TARGET_ENEMY && s_current_index >= 0 && s_current_index < s_target_counts[TARGET_ENEMY]) {
         target_info_t *enemy_target = &s_targets[TARGET_ENEMY][s_current_index];
         if (enemy_target->mobj && enemy_target->mobj->health > 0) {
             fixed_t enemy_dx = enemy_target->mobj->x - s_last_enemy_x;
             fixed_t enemy_dy = enemy_target->mobj->y - s_last_enemy_y;
             fixed_t enemy_dist_moved = P_AproxDistance(enemy_dx, enemy_dy);
-            
+
             if (enemy_dist_moved >= ENEMY_MOVE_THRESHOLD) {
-                SECRET_DEBUG("[SECRET] Enemy moved %d units, triggering recalculation\n",
-                       enemy_dist_moved >> FRACBITS);
+                SECRET_DEBUG("[SECRET] Enemy moved %d units, triggering recalculation\n", enemy_dist_moved >> FRACBITS);
                 /* Update stored target position */
                 enemy_target->x = enemy_target->mobj->x;
                 enemy_target->y = enemy_target->mobj->y;
@@ -2413,7 +2438,7 @@ void Secret_UpdateArrows(void) {
             s_blocking_check_counter++;
             if (s_blocking_check_counter >= BLOCKING_RECHECK_INTERVAL) {
                 SECRET_DEBUG("[SECRET] Polling check for blocking wall line=%d (counter reached %d)\n",
-                       s_blocking_wall_line, BLOCKING_RECHECK_INTERVAL);
+                             s_blocking_wall_line, BLOCKING_RECHECK_INTERVAL);
                 s_blocking_check_counter = 0;
 
                 /* Check if blocking wall is still impassable using both methods:
@@ -2428,9 +2453,8 @@ void Secret_UpdateArrows(void) {
                 } else {
                     /* 2-sided line: check actual vertical opening */
                     P_LineOpening(blocking_line);
-                    SECRET_DEBUG("[SECRET]   2-sided line: openrange=%d (need >%d)\n",
-                           openrange >> FRACBITS, 40);
-                    if (openrange > 40 * FRACUNIT) {  /* Enough space to walk through */
+                    SECRET_DEBUG("[SECRET]   2-sided line: openrange=%d (need >%d)\n", openrange >> FRACBITS, 40);
+                    if (openrange > 40 * FRACUNIT) { /* Enough space to walk through */
                         is_still_blocked = false;
                         SECRET_DEBUG("[SECRET]   Vertical opening sufficient - wall is now passable\n");
                     }
@@ -2439,15 +2463,15 @@ void Secret_UpdateArrows(void) {
                 if (!is_still_blocked) {
                     /* Wall became passable (door/lift opened) - force recalculation */
                     SECRET_DEBUG("[SECRET] Blocking wall line=%d is now passable! Forcing recalculation\n",
-                           s_blocking_wall_line);
+                                 s_blocking_wall_line);
                     s_path_blocked = false;
                     s_blocking_wall_line = -1;
                     need_recalc = true;
-                    s_last_player_sector = -1;  /* Force recalc by invalidating sector cache */
-                    s_adjacency_dirty = true;   /* Rebuild adjacency to include new connection */
+                    s_last_player_sector = -1; /* Force recalc by invalidating sector cache */
+                    s_adjacency_dirty = true;  /* Rebuild adjacency to include new connection */
                 } else {
                     SECRET_DEBUG("[SECRET]   Wall still blocked, will check again in %d tics\n",
-                           BLOCKING_RECHECK_INTERVAL);
+                                 BLOCKING_RECHECK_INTERVAL);
                 }
             }
         }
@@ -2455,8 +2479,8 @@ void Secret_UpdateArrows(void) {
 
     /* Debug: log sector changes */
     if (need_recalc) {
-        SECRET_DEBUG("[SECRET] UpdateArrows: sector changed %d -> %d, triggering recalculation\n",
-               s_last_player_sector, current_sector);
+        SECRET_DEBUG("[SECRET] UpdateArrows: sector changed %d -> %d, triggering recalculation\n", s_last_player_sector,
+                     current_sector);
     }
 
     if (need_recalc || need_arrow_update) {
@@ -2517,47 +2541,47 @@ boolean Secret_IsPathToHiddenDoor(void) {
 static boolean IsSwitchSpecial(int special) {
     /* General switches (S1 = once, SR = repeatable) */
     switch (special) {
-    case 7:    /* S1 Build Stairs */
-    case 9:    /* S1 Donut */
-    case 14:   /* S1 Floor Raise */
-    case 15:   /* S1 Floor Lower to Highest */
-    case 18:   /* S1 Floor Raise to Next Higher */
-    case 20:   /* S1 Floor Raise to Next Higher (texture) */
-    case 21:   /* S1 Lift */
-    case 22:   /* S1 Floor Raise to Next */
-    case 23:   /* S1 Floor Lower to Lowest */
-    case 29:   /* S1 Door Raise */
-    case 41:   /* S1 Ceiling Lower to Floor */
-    case 42:   /* SR Door Close */
-    case 43:   /* SR Ceiling Lower to Floor */
-    case 45:   /* SR Floor Lower to Highest */
-    case 49:   /* S1 Ceiling Crush and Raise */
-    case 50:   /* S1 Door Close */
-    case 51:   /* S1 Secret Exit */
-    case 55:   /* S1 Floor Raise Crush */
-    case 60:   /* SR Floor Lower to Lowest */
-    case 61:   /* SR Door Open */
-    case 62:   /* SR Lift */
-    case 63:   /* SR Door Raise */
-    case 64:   /* SR Floor Raise */
-    case 65:   /* SR Floor Raise Crush */
-    case 66:   /* SR Floor Raise x24 */
-    case 67:   /* SR Floor Raise x32 */
-    case 68:   /* SR Floor Raise to Next (texture) */
-    case 69:   /* SR Floor Raise to Next */
-    case 70:   /* SR Floor Lower to Next */
-    case 71:   /* S1 Floor Lower to Next Fast */
-    case 102:  /* S1 Floor Lower to Highest */
-    case 103:  /* S1 Door Open Stay */
-    case 111:  /* S1 Lift Fast */
-    case 112:  /* S1 Lift Fast */
-    case 113:  /* S1 Lift Fast */
-    case 114:  /* SR Lift Fast */
-    case 115:  /* SR Lift Fast */
-    case 116:  /* SR Lift Fast */
-    case 122:  /* S1 Lift Fast */
-    case 123:  /* SR Lift Fast */
-    case 127:  /* S1 Stairs Fast */
+    case 7:   /* S1 Build Stairs */
+    case 9:   /* S1 Donut */
+    case 14:  /* S1 Floor Raise */
+    case 15:  /* S1 Floor Lower to Highest */
+    case 18:  /* S1 Floor Raise to Next Higher */
+    case 20:  /* S1 Floor Raise to Next Higher (texture) */
+    case 21:  /* S1 Lift */
+    case 22:  /* S1 Floor Raise to Next */
+    case 23:  /* S1 Floor Lower to Lowest */
+    case 29:  /* S1 Door Raise */
+    case 41:  /* S1 Ceiling Lower to Floor */
+    case 42:  /* SR Door Close */
+    case 43:  /* SR Ceiling Lower to Floor */
+    case 45:  /* SR Floor Lower to Highest */
+    case 49:  /* S1 Ceiling Crush and Raise */
+    case 50:  /* S1 Door Close */
+    case 51:  /* S1 Secret Exit */
+    case 55:  /* S1 Floor Raise Crush */
+    case 60:  /* SR Floor Lower to Lowest */
+    case 61:  /* SR Door Open */
+    case 62:  /* SR Lift */
+    case 63:  /* SR Door Raise */
+    case 64:  /* SR Floor Raise */
+    case 65:  /* SR Floor Raise Crush */
+    case 66:  /* SR Floor Raise x24 */
+    case 67:  /* SR Floor Raise x32 */
+    case 68:  /* SR Floor Raise to Next (texture) */
+    case 69:  /* SR Floor Raise to Next */
+    case 70:  /* SR Floor Lower to Next */
+    case 71:  /* S1 Floor Lower to Next Fast */
+    case 102: /* S1 Floor Lower to Highest */
+    case 103: /* S1 Door Open Stay */
+    case 111: /* S1 Lift Fast */
+    case 112: /* S1 Lift Fast */
+    case 113: /* S1 Lift Fast */
+    case 114: /* SR Lift Fast */
+    case 115: /* SR Lift Fast */
+    case 116: /* SR Lift Fast */
+    case 122: /* S1 Lift Fast */
+    case 123: /* SR Lift Fast */
+    case 127: /* S1 Stairs Fast */
         return true;
     default:
         return false;
@@ -2566,26 +2590,26 @@ static boolean IsSwitchSpecial(int special) {
 
 static boolean IsTeleporterSpecial(int special) {
     switch (special) {
-    case 39:   /* W1 Teleport */
-    case 97:   /* WR Teleport */
-    case 125:  /* W1 Teleport Monsters Only */
-    case 126:  /* WR Teleport Monsters Only */
-    case 174:  /* Teleport (ACS) */
-    case 195:  /* SR Teleport */
-    case 207:  /* W1 Teleport (silent) */
-    case 208:  /* WR Teleport (silent) */
-    case 209:  /* S1 Teleport (silent) */
-    case 210:  /* SR Teleport (silent) */
-    case 243:  /* W1 Teleport (silent, line-to-line) */
-    case 244:  /* WR Teleport (silent, line-to-line) */
-    case 262:  /* W1 Teleport (silent, line-to-line, reversed) */
-    case 263:  /* WR Teleport (silent, line-to-line, reversed) */
-    case 264:  /* W1 Teleport (monsters, silent, line-to-line, reversed) */
-    case 265:  /* WR Teleport (monsters, silent, line-to-line, reversed) */
-    case 266:  /* W1 Teleport (silent, line-to-line) */
-    case 267:  /* WR Teleport (silent, line-to-line) */
-    case 268:  /* W1 Teleport (monsters, silent, line-to-line) */
-    case 269:  /* WR Teleport (monsters, silent, line-to-line) */
+    case 39:  /* W1 Teleport */
+    case 97:  /* WR Teleport */
+    case 125: /* W1 Teleport Monsters Only */
+    case 126: /* WR Teleport Monsters Only */
+    case 174: /* Teleport (ACS) */
+    case 195: /* SR Teleport */
+    case 207: /* W1 Teleport (silent) */
+    case 208: /* WR Teleport (silent) */
+    case 209: /* S1 Teleport (silent) */
+    case 210: /* SR Teleport (silent) */
+    case 243: /* W1 Teleport (silent, line-to-line) */
+    case 244: /* WR Teleport (silent, line-to-line) */
+    case 262: /* W1 Teleport (silent, line-to-line, reversed) */
+    case 263: /* WR Teleport (silent, line-to-line, reversed) */
+    case 264: /* W1 Teleport (monsters, silent, line-to-line, reversed) */
+    case 265: /* WR Teleport (monsters, silent, line-to-line, reversed) */
+    case 266: /* W1 Teleport (silent, line-to-line) */
+    case 267: /* WR Teleport (silent, line-to-line) */
+    case 268: /* W1 Teleport (monsters, silent, line-to-line) */
+    case 269: /* WR Teleport (monsters, silent, line-to-line) */
         return true;
     default:
         return false;
@@ -2594,12 +2618,12 @@ static boolean IsTeleporterSpecial(int special) {
 
 static boolean IsExitSpecial(int special) {
     switch (special) {
-    case 11:   /* S1 Exit Normal */
-    case 51:   /* S1 Exit Secret */
-    case 52:   /* W1 Exit Normal */
-    case 124:  /* W1 Exit Secret */
-    case 197:  /* G1 Exit Normal */
-    case 198:  /* G1 Exit Secret */
+    case 11:  /* S1 Exit Normal */
+    case 51:  /* S1 Exit Secret */
+    case 52:  /* W1 Exit Normal */
+    case 124: /* W1 Exit Secret */
+    case 197: /* G1 Exit Normal */
+    case 198: /* G1 Exit Secret */
         return true;
     default:
         return false;
@@ -2608,32 +2632,42 @@ static boolean IsExitSpecial(int special) {
 
 static boolean IsKeyDoorSpecial(int special) {
     switch (special) {
-    case 26:   /* DR Blue Door */
-    case 27:   /* DR Yellow Door */
-    case 28:   /* DR Red Door */
-    case 32:   /* D1 Blue Door Open Stay */
-    case 33:   /* D1 Red Door Open Stay */
-    case 34:   /* D1 Yellow Door Open Stay */
-    case 99:   /* SR Blue Door */
-    case 100:  /* WR Blue Door */
-    case 133:  /* S1 Blue Door */
-    case 134:  /* SR Red Door */
-    case 135:  /* S1 Red Door */
-    case 136:  /* SR Yellow Door */
-    case 137:  /* S1 Yellow Door */
+    case 26:  /* DR Blue Door */
+    case 27:  /* DR Yellow Door */
+    case 28:  /* DR Red Door */
+    case 32:  /* D1 Blue Door Open Stay */
+    case 33:  /* D1 Red Door Open Stay */
+    case 34:  /* D1 Yellow Door Open Stay */
+    case 99:  /* SR Blue Door */
+    case 100: /* WR Blue Door */
+    case 133: /* S1 Blue Door */
+    case 134: /* SR Red Door */
+    case 135: /* S1 Red Door */
+    case 136: /* SR Yellow Door */
+    case 137: /* S1 Yellow Door */
         return true;
     default:
         return false;
     }
 }
 
-static const char* GetKeyDoorColor(int special) {
+static const char *GetKeyDoorColor(int special) {
     switch (special) {
-    case 26: case 32: case 99: case 100: case 133:
+    case 26:
+    case 32:
+    case 99:
+    case 100:
+    case 133:
         return "Blue";
-    case 28: case 33: case 134: case 135:
+    case 28:
+    case 33:
+    case 134:
+    case 135:
         return "Red";
-    case 27: case 34: case 136: case 137:
+    case 27:
+    case 34:
+    case 136:
+    case 137:
         return "Yellow";
     default:
         return "";
@@ -2649,7 +2683,6 @@ static void GetLineCenter(int line_idx, fixed_t *out_x, fixed_t *out_y) {
     *out_x = (line->v1->x + line->v2->x) / 2;
     *out_y = (line->v1->y + line->v2->y) / 2;
 }
-
 
 /* Get the center of a tagged sector from a trigger linedef.
  * Returns true if a tagged sector was found, false otherwise.
@@ -2704,7 +2737,7 @@ void Secret_ScanTargets(void) {
     for (i = 0; i < s_original_secret_count && secret_num < SECRET_MAX_TARGETS; i++) {
         int sector_idx = s_original_secret_sectors[i];
         target_info_t *t = &s_targets[TARGET_SECRET][secret_num];
-        memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
+        memset(t, 0, sizeof(target_info_t)); /* Zero-initialize all fields */
         t->type = TARGET_SECRET;
         t->index = sector_idx;
         GetSectorCenter(sector_idx, &t->x, &t->y);
@@ -2713,7 +2746,7 @@ void Secret_ScanTargets(void) {
         /* Check if secret has been discovered (special changes from 9 to 0) */
         t->discovered = (sectors[sector_idx].special != 9);
         t->reachable = true;
-        t->sector_index = -1;  /* No sector for secrets */
+        t->sector_index = -1; /* No sector for secrets */
         secret_num++;
     }
     s_target_counts[TARGET_SECRET] = secret_num;
@@ -2726,7 +2759,9 @@ void Secret_ScanTargets(void) {
         fixed_t line_x, line_y;
         boolean is_duplicate;
 
-        if (special == 0) continue;
+        if (special == 0) {
+            continue;
+        }
 
         /* Get line center for duplicate check */
         GetLineCenter(i, &line_x, &line_y);
@@ -2745,14 +2780,14 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_KEY_DOOR][keydoor_num];
-                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
+                memset(t, 0, sizeof(target_info_t)); /* Zero-initialize all fields */
                 t->type = TARGET_KEY_DOOR;
                 t->index = i;
                 t->x = line_x;
                 t->y = line_y;
                 t->discovered = false;
                 t->reachable = true;
-                t->sector_index = -1;  /* Default: no sector */
+                t->sector_index = -1; /* Default: no sector */
                 /* Get tagged sector (door sector) */
                 GetTaggedSectorCenter(i, &t->sector_x, &t->sector_y, &t->sector_index);
                 /* Set door opening method (includes key requirement) */
@@ -2785,7 +2820,7 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_EXIT][exit_num];
-                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
+                memset(t, 0, sizeof(target_info_t)); /* Zero-initialize all fields */
                 t->type = TARGET_EXIT;
                 t->index = i;
                 t->x = line_x;
@@ -2793,7 +2828,7 @@ void Secret_ScanTargets(void) {
                 t->name = (special == 51 || special == 124 || special == 198) ? "Secret Exit" : "Exit";
                 t->discovered = false;
                 t->reachable = true;
-                t->sector_index = -1;  /* No sector for exits */
+                t->sector_index = -1; /* No sector for exits */
                 exit_num++;
             }
         }
@@ -2810,7 +2845,7 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_TELEPORTER][teleporter_num];
-                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
+                memset(t, 0, sizeof(target_info_t)); /* Zero-initialize all fields */
                 t->type = TARGET_TELEPORTER;
                 t->index = i;
                 t->x = line_x;
@@ -2818,7 +2853,7 @@ void Secret_ScanTargets(void) {
                 t->name = "Teleporter";
                 t->discovered = false;
                 t->reachable = true;
-                t->sector_index = -1;  /* No sector for teleporters */
+                t->sector_index = -1; /* No sector for teleporters */
                 teleporter_num++;
             }
         }
@@ -2835,29 +2870,29 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_LIFT][lift_num];
-                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
+                memset(t, 0, sizeof(target_info_t)); /* Zero-initialize all fields */
                 t->type = TARGET_LIFT;
                 t->index = i;
                 t->x = line_x;
                 t->y = line_y;
                 t->discovered = false;
                 t->reachable = true;
-                t->sector_index = -1;  /* Default: no sector */
+                t->sector_index = -1; /* Default: no sector */
                 /* Get tagged sector (lift destination) */
                 GetTaggedSectorCenter(i, &t->sector_x, &t->sector_y, &t->sector_index);
                 /* Determine lift activation method */
                 door_open_method_t lift_method;
                 switch (special) {
-                case 10:   /* W1 Lift */
-                case 88:   /* WR Lift */
-                case 120:  /* WR Lift Fast */
-                case 121:  /* W1 Lift Fast */
+                case 10:  /* W1 Lift */
+                case 88:  /* WR Lift */
+                case 120: /* WR Lift Fast */
+                case 121: /* W1 Lift Fast */
                     lift_method = DOOR_OPEN_WALK;
                     break;
-                case 21:   /* S1 Lift */
-                case 62:   /* SR Lift */
-                case 122:  /* S1 Lift Fast */
-                case 123:  /* SR Lift Fast */
+                case 21:  /* S1 Lift */
+                case 62:  /* SR Lift */
+                case 122: /* S1 Lift Fast */
+                case 123: /* SR Lift Fast */
                     lift_method = DOOR_OPEN_USE;
                     break;
                 default:
@@ -2870,8 +2905,8 @@ void Secret_ScanTargets(void) {
                 /* Generate name with activation method */
                 const char *method_name = Secret_GetDoorOpenMethodName(lift_method);
                 if (method_name[0] != '\0') {
-                    snprintf(s_target_names[lift_num + SECRET_MAX_TARGETS/2], 32, "Lift (%s)", method_name);
-                    t->name = s_target_names[lift_num + SECRET_MAX_TARGETS/2];
+                    snprintf(s_target_names[lift_num + SECRET_MAX_TARGETS / 2], 32, "Lift (%s)", method_name);
+                    t->name = s_target_names[lift_num + SECRET_MAX_TARGETS / 2];
                 } else {
                     t->name = "Lift";
                 }
@@ -2891,7 +2926,7 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_SWITCH][switch_num];
-                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
+                memset(t, 0, sizeof(target_info_t)); /* Zero-initialize all fields */
                 t->type = TARGET_SWITCH;
                 t->index = i;
                 t->x = line_x;
@@ -2899,12 +2934,13 @@ void Secret_ScanTargets(void) {
                 t->name = "Switch";
                 t->discovered = false;
                 t->reachable = true;
-                t->sector_index = -1;  /* No sector for switches */
+                t->sector_index = -1; /* No sector for switches */
                 switch_num++;
             }
         }
         /* Regular doors (non-key) */
-        else if (IsDoorSpecial(special) && !IsKeyDoorSpecial(special) && !IsLiftSpecial(special) && door_num < SECRET_MAX_TARGETS) {
+        else if (IsDoorSpecial(special) && !IsKeyDoorSpecial(special) && !IsLiftSpecial(special) &&
+                 door_num < SECRET_MAX_TARGETS) {
             is_duplicate = false;
             for (j = 0; j < door_num; j++) {
                 fixed_t dx = line_x - s_targets[TARGET_DOOR][j].x;
@@ -2916,7 +2952,7 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_DOOR][door_num];
-                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
+                memset(t, 0, sizeof(target_info_t)); /* Zero-initialize all fields */
                 t->type = TARGET_DOOR;
                 t->index = i;
                 t->x = line_x;
@@ -2933,8 +2969,8 @@ void Secret_ScanTargets(void) {
                 t->linked_secret = secret_idx;
                 /* Generate descriptive name */
                 if (t->is_hidden && secret_idx >= 0) {
-                    snprintf(s_target_names[door_num], 32, "Hidden→Secret %d (%s)", 
-                             secret_idx + 1, Secret_GetDoorOpenMethodName(t->open_method));
+                    snprintf(s_target_names[door_num], 32, "Hidden→Secret %d (%s)", secret_idx + 1,
+                             Secret_GetDoorOpenMethodName(t->open_method));
                 } else {
                     const char *method_name = Secret_GetDoorOpenMethodName(t->open_method);
                     if (method_name[0] != '\0') {
@@ -2981,30 +3017,47 @@ void Secret_ScanTargets(void) {
  * Target Selection
  * ============================================ */
 
-const char* Secret_GetTargetTypeName(target_type_t type) {
+const char *Secret_GetTargetTypeName(target_type_t type) {
     switch (type) {
-    case TARGET_SECRET:     return "Secret";
-    case TARGET_DOOR:       return "Door";
-    case TARGET_LIFT:       return "Lift";
-    case TARGET_SWITCH:     return "Switch";
-    case TARGET_TELEPORTER: return "Teleporter";
-    case TARGET_EXIT:       return "Exit";
-    case TARGET_KEY_DOOR:   return "Key Door";
-    case TARGET_ENEMY:      return "Enemy";
-    default:                return "Unknown";
+    case TARGET_SECRET:
+        return "Secret";
+    case TARGET_DOOR:
+        return "Door";
+    case TARGET_LIFT:
+        return "Lift";
+    case TARGET_SWITCH:
+        return "Switch";
+    case TARGET_TELEPORTER:
+        return "Teleporter";
+    case TARGET_EXIT:
+        return "Exit";
+    case TARGET_KEY_DOOR:
+        return "Key Door";
+    case TARGET_ENEMY:
+        return "Enemy";
+    default:
+        return "Unknown";
     }
 }
 
-const char* Secret_GetDoorOpenMethodName(door_open_method_t method) {
+const char *Secret_GetDoorOpenMethodName(door_open_method_t method) {
     switch (method) {
-    case DOOR_OPEN_USE:        return "Use";
-    case DOOR_OPEN_WALK:       return "Walk";
-    case DOOR_OPEN_SHOOT:      return "Shoot";
-    case DOOR_OPEN_SWITCH:     return "Switch";
-    case DOOR_OPEN_BLUE_KEY:   return "Blue Key";
-    case DOOR_OPEN_RED_KEY:    return "Red Key";
-    case DOOR_OPEN_YELLOW_KEY: return "Yellow Key";
-    default:                   return "";
+    case DOOR_OPEN_USE:
+        return "Use";
+    case DOOR_OPEN_WALK:
+        return "Walk";
+    case DOOR_OPEN_SHOOT:
+        return "Shoot";
+    case DOOR_OPEN_SWITCH:
+        return "Switch";
+    case DOOR_OPEN_BLUE_KEY:
+        return "Blue Key";
+    case DOOR_OPEN_RED_KEY:
+        return "Red Key";
+    case DOOR_OPEN_YELLOW_KEY:
+        return "Yellow Key";
+    default:
+        return "";
     }
 }
 
@@ -3016,56 +3069,56 @@ const char* Secret_GetDoorOpenMethodName(door_open_method_t method) {
 static door_open_method_t GetDoorOpenMethod(int special) {
     switch (special) {
     /* Use doors (DR/D1 types) - press Use key */
-    case 1:    /* DR Door Open Wait Close */
-    case 31:   /* D1 Door Open Stay */
-    case 117:  /* DR Door Blazing Open Wait Close */
-    case 118:  /* D1 Door Blazing Open Stay */
-    case 103:  /* S1 Door Open Stay (switch-like but Use activated) */
+    case 1:   /* DR Door Open Wait Close */
+    case 31:  /* D1 Door Open Stay */
+    case 117: /* DR Door Blazing Open Wait Close */
+    case 118: /* D1 Door Blazing Open Stay */
+    case 103: /* S1 Door Open Stay (switch-like but Use activated) */
         return DOOR_OPEN_USE;
 
     /* Walk-trigger doors (W1/WR types) */
-    case 2:    /* W1 Door Open Stay */
-    case 3:    /* W1 Door Close */
-    case 4:    /* W1 Door Raise */
-    case 16:   /* W1 Door Close Wait Open */
-    case 90:   /* WR Door Raise */
-    case 86:   /* WR Door Open Stay */
+    case 2:  /* W1 Door Open Stay */
+    case 3:  /* W1 Door Close */
+    case 4:  /* W1 Door Raise */
+    case 16: /* W1 Door Close Wait Open */
+    case 90: /* WR Door Raise */
+    case 86: /* WR Door Open Stay */
         return DOOR_OPEN_WALK;
 
     /* Gunfire doors (GR types) */
-    case 46:   /* GR Door Open Stay */
+    case 46: /* GR Door Open Stay */
         return DOOR_OPEN_SHOOT;
 
     /* Switch-activated doors (S1/SR types) */
-    case 29:   /* S1 Door Raise */
-    case 50:   /* S1 Door Close */
-    case 42:   /* SR Door Close */
-    case 61:   /* SR Door Open Stay */
-    case 63:   /* SR Door Raise */
+    case 29: /* S1 Door Raise */
+    case 50: /* S1 Door Close */
+    case 42: /* SR Door Close */
+    case 61: /* SR Door Open Stay */
+    case 63: /* SR Door Raise */
         return DOOR_OPEN_SWITCH;
 
     /* Blue key doors */
-    case 26:   /* DR Blue Door */
-    case 32:   /* D1 Blue Door Open Stay */
-    case 99:   /* SR Blue Blazing Door */
-    case 133:  /* S1 Blue Blazing Door Open Stay */
+    case 26:  /* DR Blue Door */
+    case 32:  /* D1 Blue Door Open Stay */
+    case 99:  /* SR Blue Blazing Door */
+    case 133: /* S1 Blue Blazing Door Open Stay */
         return DOOR_OPEN_BLUE_KEY;
 
     /* Red key doors */
-    case 28:   /* DR Red Door */
-    case 33:   /* D1 Red Door Open Stay */
-    case 134:  /* SR Red Blazing Door */
-    case 135:  /* S1 Red Blazing Door Open Stay */
+    case 28:  /* DR Red Door */
+    case 33:  /* D1 Red Door Open Stay */
+    case 134: /* SR Red Blazing Door */
+    case 135: /* S1 Red Blazing Door Open Stay */
         return DOOR_OPEN_RED_KEY;
 
     /* Yellow key doors */
-    case 27:   /* DR Yellow Door */
-    case 34:   /* D1 Yellow Door Open Stay */
-    case 136:  /* SR Yellow Blazing Door */
-    case 137:  /* S1 Yellow Blazing Door Open Stay */
+    case 27:  /* DR Yellow Door */
+    case 34:  /* D1 Yellow Door Open Stay */
+    case 136: /* SR Yellow Blazing Door */
+    case 137: /* S1 Yellow Blazing Door Open Stay */
         return DOOR_OPEN_YELLOW_KEY;
 
-    /* NOTE: Lifts are handled separately in Secret_ScanTargets() with proper W1/S1 detection */
+        /* NOTE: Lifts are handled separately in Secret_ScanTargets() with proper W1/S1 detection */
 
     default:
         return DOOR_OPEN_UNKNOWN;
@@ -3126,7 +3179,9 @@ int Secret_GetTargetCount(target_type_t type) {
         }
         return total;
     }
-    if (type < 0 || type >= TARGET_TYPE_COUNT) return 0;
+    if (type < 0 || type >= TARGET_TYPE_COUNT) {
+        return 0;
+    }
     return s_target_counts[type];
 }
 
@@ -3164,11 +3219,8 @@ boolean Secret_SelectNextTarget(void) {
     if (changed) {
         target_info_t info;
         if (Secret_GetCurrentTarget(&info)) {
-            SECRET_DEBUG("[SECRET] Selected: %s (%s %d/%d)\n",
-                   info.name,
-                   Secret_GetTargetTypeName(s_current_type),
-                   s_current_index + 1,
-                   s_target_counts[s_current_type]);
+            SECRET_DEBUG("[SECRET] Selected: %s (%s %d/%d)\n", info.name, Secret_GetTargetTypeName(s_current_type),
+                         s_current_index + 1, s_target_counts[s_current_type]);
         }
     }
 
@@ -3200,11 +3252,8 @@ boolean Secret_SelectPrevTarget(void) {
     if (changed) {
         target_info_t info;
         if (Secret_GetCurrentTarget(&info)) {
-            SECRET_DEBUG("[SECRET] Selected: %s (%s %d/%d)\n",
-                   info.name,
-                   Secret_GetTargetTypeName(s_current_type),
-                   s_current_index + 1,
-                   s_target_counts[s_current_type]);
+            SECRET_DEBUG("[SECRET] Selected: %s (%s %d/%d)\n", info.name, Secret_GetTargetTypeName(s_current_type),
+                         s_current_index + 1, s_target_counts[s_current_type]);
         }
     }
 
@@ -3241,11 +3290,8 @@ boolean Secret_SelectTarget(target_type_t type, int index) {
     /* Log selection */
     target_info_t info;
     if (Secret_GetCurrentTarget(&info)) {
-        SECRET_DEBUG("[SECRET] Selected %s %d/%d: %s\n",
-               Secret_GetTargetTypeName(s_current_type),
-               s_current_index + 1,
-               s_target_counts[s_current_type],
-               info.name);
+        SECRET_DEBUG("[SECRET] Selected %s %d/%d: %s\n", Secret_GetTargetTypeName(s_current_type), s_current_index + 1,
+                     s_target_counts[s_current_type], info.name);
     }
 
     /* Initialize enemy position tracking for TARGET_ENEMY */
@@ -3270,9 +3316,15 @@ boolean Secret_GetCurrentTarget(target_info_t *out_info) {
 }
 
 void Secret_GetSelectionInfo(target_type_t *out_type, int *out_index, int *out_total) {
-    if (out_type) *out_type = s_current_type;
-    if (out_index) *out_index = s_current_index;
-    if (out_total) *out_total = s_target_counts[s_current_type];
+    if (out_type) {
+        *out_type = s_current_type;
+    }
+    if (out_index) {
+        *out_index = s_current_index;
+    }
+    if (out_total) {
+        *out_total = s_target_counts[s_current_type];
+    }
 }
 
 boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
@@ -3307,8 +3359,8 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
 
     player_sector = GetSectorAt(player->mo->x, player->mo->y);
     if (player_sector < 0) {
-        SECRET_DEBUG("[SECRET] FindPath: Invalid player sector (x=%d y=%d)\n",
-                     player->mo->x >> FRACBITS, player->mo->y >> FRACBITS);
+        SECRET_DEBUG("[SECRET] FindPath: Invalid player sector (x=%d y=%d)\n", player->mo->x >> FRACBITS,
+                     player->mo->y >> FRACBITS);
         return false;
     }
 
@@ -3346,8 +3398,8 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
             /* Use sector center as destination coordinates */
             info.x = info.sector_x;
             info.y = info.sector_y;
-            SECRET_DEBUG("[SECRET] Using DEST_SECTOR mode: sector %d at (%d, %d)\n",
-                         target_sector, info.x >> FRACBITS, info.y >> FRACBITS);
+            SECRET_DEBUG("[SECRET] Using DEST_SECTOR mode: sector %d at (%d, %d)\n", target_sector, info.x >> FRACBITS,
+                         info.y >> FRACBITS);
         } else {
             /* Path to trigger linedef (default) */
             line_t *line = &lines[info.index];
@@ -3413,8 +3465,8 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
         out_path->target_y = info.y;
 
         if (is_partial) {
-            SECRET_DEBUG("[SECRET] Partial path to %s (%d steps, closest reachable)\n",
-                   info.name, out_path->path_length);
+            SECRET_DEBUG("[SECRET] Partial path to %s (%d steps, closest reachable)\n", info.name,
+                         out_path->path_length);
             /* For partial paths, don't set hidden door - just go as far as possible */
             s_path_to_hidden_door = false;
             s_hidden_door_line = -1;
@@ -3425,7 +3477,7 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
             /* Enemies and secrets don't have linedef indices */
             if (info.type != TARGET_SECRET && info.type != TARGET_ENEMY) {
                 s_path_to_hidden_door = true;
-                s_hidden_door_line = info.index;  /* info.index is linedef index for triggers */
+                s_hidden_door_line = info.index; /* info.index is linedef index for triggers */
             } else {
                 s_path_to_hidden_door = false;
                 s_hidden_door_line = -1;
@@ -3438,15 +3490,17 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
         for (int i = 0; i < out_path->path_length && i < 10; i++) {
             SECRET_DEBUG("%d ", out_path->path[i]);
         }
-        if (out_path->path_length > 10) SECRET_DEBUG("...");
+        if (out_path->path_length > 10) {
+            SECRET_DEBUG("...");
+        }
         SECRET_DEBUG("\n");
 #endif
 
         GenerateArrows(out_path);
         memcpy(&s_current_path, out_path, sizeof(secret_path_t));
         s_path_active = true;
-        s_last_player_sector = player_sector;  /* Set initial sector */
-        s_last_player_x = player->mo->x;       /* Set initial position */
+        s_last_player_sector = player_sector; /* Set initial sector */
+        s_last_player_x = player->mo->x;      /* Set initial position */
         s_last_player_y = player->mo->y;
 
         SpawnHintSprites(&s_current_path);
@@ -3454,8 +3508,7 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
     }
 
     /* This should rarely happen now - only if completely surrounded */
-    SECRET_DEBUG("[SECRET] Cannot find any path from sector %d to target sector %d\n",
-                 player_sector, target_sector);
+    SECRET_DEBUG("[SECRET] Cannot find any path from sector %d to target sector %d\n", player_sector, target_sector);
     /* out_path already initialized at function start */
     return false;
 }
@@ -3465,29 +3518,50 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
  * ============================================ */
 
 /* Get short name for monster type */
-static const char* GetMonsterShortName(mobjtype_t type) {
+static const char *GetMonsterShortName(mobjtype_t type) {
     switch (type) {
-    case MT_POSSESSED:  return "Zombie";
-    case MT_SHOTGUY:    return "Shotgun";
-    case MT_VILE:       return "Archvile";
-    case MT_UNDEAD:     return "Revenant";
-    case MT_FATSO:      return "Mancubus";
-    case MT_CHAINGUY:   return "Chaingun";
-    case MT_TROOP:      return "Imp";
-    case MT_SERGEANT:   return "Demon";
-    case MT_SHADOWS:    return "Spectre";
-    case MT_HEAD:       return "Cacodemon";
-    case MT_BRUISER:    return "Baron";
-    case MT_KNIGHT:     return "HellKnight";
-    case MT_SKULL:      return "LostSoul";
-    case MT_SPIDER:     return "Spider";
-    case MT_BABY:       return "Arachno";
-    case MT_CYBORG:     return "Cyberdemon";
-    case MT_PAIN:       return "Pain";
-    case MT_WOLFSS:     return "SS";
-    case MT_KEEN:       return "Keen";
-    case MT_BOSSBRAIN:  return "Brain";
-    default:            return "Enemy";
+    case MT_POSSESSED:
+        return "Zombie";
+    case MT_SHOTGUY:
+        return "Shotgun";
+    case MT_VILE:
+        return "Archvile";
+    case MT_UNDEAD:
+        return "Revenant";
+    case MT_FATSO:
+        return "Mancubus";
+    case MT_CHAINGUY:
+        return "Chaingun";
+    case MT_TROOP:
+        return "Imp";
+    case MT_SERGEANT:
+        return "Demon";
+    case MT_SHADOWS:
+        return "Spectre";
+    case MT_HEAD:
+        return "Cacodemon";
+    case MT_BRUISER:
+        return "Baron";
+    case MT_KNIGHT:
+        return "HellKnight";
+    case MT_SKULL:
+        return "LostSoul";
+    case MT_SPIDER:
+        return "Spider";
+    case MT_BABY:
+        return "Arachno";
+    case MT_CYBORG:
+        return "Cyberdemon";
+    case MT_PAIN:
+        return "Pain";
+    case MT_WOLFSS:
+        return "SS";
+    case MT_KEEN:
+        return "Keen";
+    case MT_BOSSBRAIN:
+        return "Brain";
+    default:
+        return "Enemy";
     }
 }
 
@@ -3514,16 +3588,16 @@ void Secret_RefreshEnemyTargets(void) {
             /* Only include live monsters (MF_COUNTKILL flag and health > 0) */
             if ((mobj->flags & MF_COUNTKILL) && mobj->health > 0) {
                 target_info_t *t = &s_targets[TARGET_ENEMY][enemy_num];
-                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
+                memset(t, 0, sizeof(target_info_t)); /* Zero-initialize all fields */
                 t->type = TARGET_ENEMY;
                 t->index = enemy_num;
                 t->x = mobj->x;
                 t->y = mobj->y;
                 t->name = GetMonsterShortName(mobj->type);
-                t->discovered = false;  /* Not applicable for enemies */
-                t->reachable = true;    /* Assume reachable */
+                t->discovered = false; /* Not applicable for enemies */
+                t->reachable = true;   /* Assume reachable */
                 t->mobj = mobj;
-                t->sector_index = -1;   /* No sector for enemies */
+                t->sector_index = -1; /* No sector for enemies */
                 enemy_num++;
             }
         }
@@ -3554,7 +3628,6 @@ boolean Secret_IsEnemyAlive(int index) {
     target_info_t *t = &s_targets[TARGET_ENEMY][index];
     return (t->mobj && t->mobj->health > 0);
 }
-
 
 /* ============================================
  * Path Destination Mode API

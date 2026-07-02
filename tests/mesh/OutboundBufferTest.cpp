@@ -41,9 +41,9 @@
 // raise FIRES under the right precondition and that the captured
 // fields match the catalog.
 
+#include "mesh/OutboundBuffer.h"
 #include "mesh/CommunicationError.h"
 #include "mesh/MeshEnvelope.h"
-#include "mesh/OutboundBuffer.h"
 
 #include <gtest/gtest.h>
 
@@ -82,20 +82,21 @@ TEST(OutboundBufferTest, BackpressureOverflowRaisesRow9) {
     // deterministic and the captured `queue_depth` predictable.
     ErrorSink sink;
     OutboundBuffer buf(
-        /* target          */ "motor",
+        /* target          */
+        "motor",
         /* max_pending     */ 2,
         /* transport_name  */ "someip",
-        /* dispatch        */ [](const MeshEnvelope&) { return SendResult::success(); },
+        /* dispatch        */ [](const MeshEnvelope &) { return SendResult::success(); },
         /* raise_error     */ std::ref(sink));
 
     MeshEnvelope env{};
 
-    EXPECT_TRUE(buf.admit(env));    // queue depth 1, accepted
-    EXPECT_TRUE(buf.admit(env));    // queue depth 2 (== max_pending), accepted
+    EXPECT_TRUE(buf.admit(env));  // queue depth 1, accepted
+    EXPECT_TRUE(buf.admit(env));  // queue depth 2 (== max_pending), accepted
     EXPECT_EQ(buf.queue_depth(), 2u);
     EXPECT_EQ(sink.call_count, 0);  // no overflow yet
 
-    EXPECT_FALSE(buf.admit(env));   // queue_.size() >= max_pending_ → overflow + drop
+    EXPECT_FALSE(buf.admit(env));  // queue_.size() >= max_pending_ → overflow + drop
     EXPECT_EQ(buf.queue_depth(), 2u) << "newest dropped — depth unchanged";
 
     ASSERT_EQ(sink.call_count, 1) << "exactly one raise per overflow admit";
@@ -106,8 +107,7 @@ TEST(OutboundBufferTest, BackpressureOverflowRaisesRow9) {
     ASSERT_TRUE(sink.last->transport.has_value());
     EXPECT_EQ(*sink.last->transport, "someip");
     ASSERT_TRUE(sink.last->queue_depth.has_value());
-    EXPECT_EQ(*sink.last->queue_depth, 2)
-        << "depth captured at the moment of overflow, before drop";
+    EXPECT_EQ(*sink.last->queue_depth, 2) << "depth captured at the moment of overflow, before drop";
 }
 
 TEST(OutboundBufferTest, SustainedOverflowRaisesPerAdmit) {
@@ -119,15 +119,14 @@ TEST(OutboundBufferTest, SustainedOverflowRaisesPerAdmit) {
     // silently throttled into a single error event.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 1, "zenoh",
-        [](const MeshEnvelope&) { return SendResult::success(); },
+        "motor", /*max_pending*/ 1, "zenoh", [](const MeshEnvelope &) { return SendResult::success(); },
         std::ref(sink));
 
     MeshEnvelope env{};
-    EXPECT_TRUE(buf.admit(env));    // queue depth 1
-    EXPECT_FALSE(buf.admit(env));   // overflow #1
-    EXPECT_FALSE(buf.admit(env));   // overflow #2
-    EXPECT_FALSE(buf.admit(env));   // overflow #3
+    EXPECT_TRUE(buf.admit(env));   // queue depth 1
+    EXPECT_FALSE(buf.admit(env));  // overflow #1
+    EXPECT_FALSE(buf.admit(env));  // overflow #2
+    EXPECT_FALSE(buf.admit(env));  // overflow #3
 
     EXPECT_EQ(sink.call_count, 3) << "one raise per overflow admit, no coalescing";
 }
@@ -143,16 +142,14 @@ TEST(OutboundBufferTest, MarkNotReadyFromInitialStateDoesNotRaise) {
     // (true→false after a real markReady) raises Row 1.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, "someip",
-        [](const MeshEnvelope&) { return SendResult::success(); },
+        "motor", /*max_pending*/ 4, "someip", [](const MeshEnvelope &) { return SendResult::success(); },
         std::ref(sink));
 
-    buf.markNotReady();   // initial false → false: no transition
-    buf.markNotReady();   // still false → false: still no transition
+    buf.markNotReady();  // initial false → false: no transition
+    buf.markNotReady();  // still false → false: still no transition
     buf.markNotReady();
 
-    EXPECT_EQ(sink.call_count, 0)
-        << "row 1 fires per Active→Disconnected transition, not per callback";
+    EXPECT_EQ(sink.call_count, 0) << "row 1 fires per Active→Disconnected transition, not per callback";
     EXPECT_FALSE(buf.ready());
 }
 
@@ -168,15 +165,13 @@ TEST(OutboundBufferTest, MarkNotReadyAfterReadyRaisesRow1) {
     // lifecycle transition signal from the FIFO drain path.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, "zenoh",
-        [](const MeshEnvelope&) { return SendResult::success(); },
+        "motor", /*max_pending*/ 4, "zenoh", [](const MeshEnvelope &) { return SendResult::success(); },
         std::ref(sink));
 
-    buf.markReady();                     // Ready → Active anchor
-    EXPECT_EQ(sink.call_count, 0)
-        << "Ready→Active is the entry edge; only Active→Disconnected raises";
+    buf.markReady();  // Ready → Active anchor
+    EXPECT_EQ(sink.call_count, 0) << "Ready→Active is the entry edge; only Active→Disconnected raises";
 
-    buf.markNotReady();                  // Active → Disconnected → row 1
+    buf.markNotReady();  // Active → Disconnected → row 1
     ASSERT_EQ(sink.call_count, 1);
     ASSERT_TRUE(sink.last.has_value());
     EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::TransportUnavailable);
@@ -184,8 +179,7 @@ TEST(OutboundBufferTest, MarkNotReadyAfterReadyRaisesRow1) {
     EXPECT_EQ(*sink.last->target, "motor");
     ASSERT_TRUE(sink.last->transport.has_value());
     EXPECT_EQ(*sink.last->transport, "zenoh");
-    EXPECT_FALSE(sink.last->queue_depth.has_value())
-        << "row 1 reports the disconnection itself, not queue state";
+    EXPECT_FALSE(sink.last->queue_depth.has_value()) << "row 1 reports the disconnection itself, not queue state";
     EXPECT_FALSE(sink.last->source.has_value())
         << "row 1 is observed at transport layer, not bound to an inbound envelope";
 }
@@ -199,17 +193,17 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchFailRaisesRow2) {
     // retry (§10.10 contract; row 3 DELIVERY_EXHAUSTED is orthogonal).
     ErrorSink sink;
     OutboundBuffer buf(
-        /* target          */ "motor",
+        /* target          */
+        "motor",
         /* max_pending     */ 4,
         /* transport_name  */ "someip",
-        /* dispatch        */ [](const MeshEnvelope&) { return SendResult::failure(); },
+        /* dispatch        */ [](const MeshEnvelope &) { return SendResult::failure(); },
         /* raise_error     */ std::ref(sink));
 
     buf.markReady();  // Ready→Active so admit takes fast path
 
     MeshEnvelope env{};
-    EXPECT_FALSE(buf.admit(env))
-        << "dispatcher declined: admit returns false to caller";
+    EXPECT_FALSE(buf.admit(env)) << "dispatcher declined: admit returns false to caller";
 
     ASSERT_EQ(sink.call_count, 1);
     EXPECT_EQ(sink.last->reason, ::SCE::Mesh::ReasonCode::SendFailed);
@@ -232,10 +226,7 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchFailRelaysTransportError) {
     ErrorSink sink;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 4, "zenoh",
-        [](const MeshEnvelope&) {
-            return SendResult::failure("ZException: closed session");
-        },
-        std::ref(sink));
+        [](const MeshEnvelope &) { return SendResult::failure("ZException: closed session"); }, std::ref(sink));
 
     buf.markReady();
     MeshEnvelope env{};
@@ -254,8 +245,7 @@ TEST(OutboundBufferTest, AdmitFastPathDispatchSuccessDoesNotRaise) {
     // would spam SCXML authors on every successful send.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, "someip",
-        [](const MeshEnvelope&) { return SendResult::success(); },
+        "motor", /*max_pending*/ 4, "someip", [](const MeshEnvelope &) { return SendResult::success(); },
         std::ref(sink));
 
     buf.markReady();
@@ -274,7 +264,7 @@ TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRaisesRow2PerEnvelope) {
     ErrorSink sink;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 8, "someip",
-        [](const MeshEnvelope&) { return SendResult::failure(); },  // always declines
+        [](const MeshEnvelope &) { return SendResult::failure(); },  // always declines
         std::ref(sink));
 
     // Seed three envelopes under ready_=false. They wait for the
@@ -309,10 +299,9 @@ TEST(OutboundBufferTest, MarkReadyDrainDispatchFailRelaysPerEnvelopeTransportErr
     std::vector<std::optional<std::string>> captured_errors;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 8, "zenoh",
-        [&](const MeshEnvelope&) {
+        [&](const MeshEnvelope &) {
             const int idx = call_index++;
-            return SendResult::failure(
-                "ZException env#" + std::to_string(idx));
+            return SendResult::failure("ZException env#" + std::to_string(idx));
         },
         [&](CommunicationError err) {
             captured_errors.push_back(err.transport_error);
@@ -347,11 +336,9 @@ TEST(OutboundBufferTest, MarkReadyDrainMixedSuccessAndFailureRaisesPerFailure) {
     ErrorSink sink;
     OutboundBuffer buf(
         "motor", /*max_pending*/ 8, "someip",
-        [&](const MeshEnvelope&) {
+        [&](const MeshEnvelope &) {
             // Indices: 0=ok, 1=fail, 2=ok, 3=fail
-            return ((call_index++ % 2) == 0)
-                       ? SendResult::success()
-                       : SendResult::failure();
+            return ((call_index++ % 2) == 0) ? SendResult::success() : SendResult::failure();
         },
         std::ref(sink));
 
@@ -378,20 +365,18 @@ TEST(OutboundBufferTest, RepeatedMarkNotReadyRaisesPerTransitionOnly) {
     // disconnection event and earns its own raise.
     ErrorSink sink;
     OutboundBuffer buf(
-        "motor", /*max_pending*/ 4, "someip",
-        [](const MeshEnvelope&) { return SendResult::success(); },
+        "motor", /*max_pending*/ 4, "someip", [](const MeshEnvelope &) { return SendResult::success(); },
         std::ref(sink));
 
     buf.markReady();
-    buf.markNotReady();   // transition #1 → raise
-    buf.markNotReady();   // already not-ready: no raise
-    buf.markNotReady();   // still no raise
+    buf.markNotReady();  // transition #1 → raise
+    buf.markNotReady();  // already not-ready: no raise
+    buf.markNotReady();  // still no raise
 
     EXPECT_EQ(sink.call_count, 1) << "transitions are deduplicated by the buffer";
 
-    buf.markReady();      // Disconnected → Active reconnect: no raise per §10.4.1
-    buf.markNotReady();   // transition #2 → raise
+    buf.markReady();     // Disconnected → Active reconnect: no raise per §10.4.1
+    buf.markNotReady();  // transition #2 → raise
 
-    EXPECT_EQ(sink.call_count, 2)
-        << "each Active→Disconnected edge raises; reconnect is transparent";
+    EXPECT_EQ(sink.call_count, 2) << "each Active→Disconnected edge raises; reconnect is transparent";
 }

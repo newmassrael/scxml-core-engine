@@ -41,7 +41,10 @@
 
 namespace {
 volatile std::sig_atomic_t g_signalled = 0;
-void on_signal(int) { g_signalled = 1; }
+
+void on_signal(int) {
+    g_signalled = 1;
+}
 }  // namespace
 
 int main() {
@@ -65,9 +68,8 @@ int main() {
     // already. Defensive but not expected to trigger in practice.
     auto ep = router.custom_tcp_local_endpoint();
     if (!ep) {
-        std::fprintf(stderr,
-                     "worker: custom_tcp_local_endpoint() returned nullopt "
-                     "after init — Server bind likely failed\n");
+        std::fprintf(stderr, "worker: custom_tcp_local_endpoint() returned nullopt "
+                             "after init — Server bind likely failed\n");
         return 2;
     }
     std::fprintf(stderr, "LISTEN_ENDPOINT=%s\n", ep->c_str());

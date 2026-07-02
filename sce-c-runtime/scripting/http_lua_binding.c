@@ -27,14 +27,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <lua.h>
 #include <lauxlib.h>
+#include <lua.h>
 
 /* ── Internal state ─────────────────────────────────────────────── */
 
 typedef struct {
-    const char *p;          /* cursor */
-    const char *end;        /* one-past-end */
+    const char *p;   /* cursor */
+    const char *end; /* one-past-end */
 } sce_json_state_t;
 
 /* Forward declarations. */
@@ -43,17 +43,21 @@ static bool push_value(lua_State *L, sce_json_state_t *s);
 /* ── Whitespace + character primitives ──────────────────────────── */
 
 static void skip_ws(sce_json_state_t *s) {
-    while (s->p < s->end &&
-           (*s->p == ' ' || *s->p == '\t' ||
-            *s->p == '\r' || *s->p == '\n')) {
+    while (s->p < s->end && (*s->p == ' ' || *s->p == '\t' || *s->p == '\r' || *s->p == '\n')) {
         s->p++;
     }
 }
 
 static int hex_digit(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
-    if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return 10 + (c - 'a');
+    }
+    if (c >= 'A' && c <= 'F') {
+        return 10 + (c - 'A');
+    }
     return -1;
 }
 
@@ -93,10 +97,10 @@ static size_t utf8_encode(uint32_t cp, char *dst) {
    caller's automatic frame so no free() in the happy path. */
 typedef struct {
     char inline_buf[256];
-    char *heap;       /* malloc'd when inline overflows; NULL otherwise */
-    size_t cap;       /* cap of whichever buffer is active */
-    size_t len;       /* bytes written */
-    char *active;     /* points into inline_buf or heap */
+    char *heap;   /* malloc'd when inline overflows; NULL otherwise */
+    size_t cap;   /* cap of whichever buffer is active */
+    size_t len;   /* bytes written */
+    char *active; /* points into inline_buf or heap */
 } decode_buf_t;
 
 static void decode_buf_init(decode_buf_t *b) {
@@ -159,14 +163,54 @@ static bool decode_string(sce_json_state_t *s, decode_buf_t *out) {
             }
             char esc = s->p[1];
             switch (esc) {
-            case '"':  if (!decode_buf_push(out, '"')) return false; s->p += 2; break;
-            case '\\': if (!decode_buf_push(out, '\\')) return false; s->p += 2; break;
-            case '/':  if (!decode_buf_push(out, '/')) return false; s->p += 2; break;
-            case 'b':  if (!decode_buf_push(out, '\b')) return false; s->p += 2; break;
-            case 'f':  if (!decode_buf_push(out, '\f')) return false; s->p += 2; break;
-            case 'n':  if (!decode_buf_push(out, '\n')) return false; s->p += 2; break;
-            case 'r':  if (!decode_buf_push(out, '\r')) return false; s->p += 2; break;
-            case 't':  if (!decode_buf_push(out, '\t')) return false; s->p += 2; break;
+            case '"':
+                if (!decode_buf_push(out, '"')) {
+                    return false;
+                }
+                s->p += 2;
+                break;
+            case '\\':
+                if (!decode_buf_push(out, '\\')) {
+                    return false;
+                }
+                s->p += 2;
+                break;
+            case '/':
+                if (!decode_buf_push(out, '/')) {
+                    return false;
+                }
+                s->p += 2;
+                break;
+            case 'b':
+                if (!decode_buf_push(out, '\b')) {
+                    return false;
+                }
+                s->p += 2;
+                break;
+            case 'f':
+                if (!decode_buf_push(out, '\f')) {
+                    return false;
+                }
+                s->p += 2;
+                break;
+            case 'n':
+                if (!decode_buf_push(out, '\n')) {
+                    return false;
+                }
+                s->p += 2;
+                break;
+            case 'r':
+                if (!decode_buf_push(out, '\r')) {
+                    return false;
+                }
+                s->p += 2;
+                break;
+            case 't':
+                if (!decode_buf_push(out, '\t')) {
+                    return false;
+                }
+                s->p += 2;
+                break;
             case 'u': {
                 if (s->p + 6 > s->end) {
                     return false;
@@ -178,11 +222,8 @@ static bool decode_string(sce_json_state_t *s, decode_buf_t *out) {
                 if (h0 < 0 || h1 < 0 || h2 < 0 || h3 < 0) {
                     return false;
                 }
-                uint32_t cp = (uint32_t)((h0 << 12) | (h1 << 8) |
-                                          (h2 << 4) | h3);
-                if (cp >= 0xD800u && cp <= 0xDBFFu &&
-                    s->p + 12 <= s->end &&
-                    s->p[6] == '\\' && s->p[7] == 'u') {
+                uint32_t cp = (uint32_t)((h0 << 12) | (h1 << 8) | (h2 << 4) | h3);
+                if (cp >= 0xD800u && cp <= 0xDBFFu && s->p + 12 <= s->end && s->p[6] == '\\' && s->p[7] == 'u') {
                     int l0 = hex_digit(s->p[8]);
                     int l1 = hex_digit(s->p[9]);
                     int l2 = hex_digit(s->p[10]);
@@ -190,12 +231,9 @@ static bool decode_string(sce_json_state_t *s, decode_buf_t *out) {
                     if (l0 < 0 || l1 < 0 || l2 < 0 || l3 < 0) {
                         return false;
                     }
-                    uint32_t low = (uint32_t)((l0 << 12) | (l1 << 8) |
-                                                (l2 << 4) | l3);
+                    uint32_t low = (uint32_t)((l0 << 12) | (l1 << 8) | (l2 << 4) | l3);
                     if (low >= 0xDC00u && low <= 0xDFFFu) {
-                        cp = 0x10000u +
-                             ((cp - 0xD800u) << 10) +
-                             (low - 0xDC00u);
+                        cp = 0x10000u + ((cp - 0xD800u) << 10) + (low - 0xDC00u);
                         s->p += 12;
                     } else {
                         s->p += 6;
@@ -223,7 +261,7 @@ static bool decode_string(sce_json_state_t *s, decode_buf_t *out) {
     if (s->p >= s->end) {
         return false;
     }
-    s->p++;  /* past closing `"` */
+    s->p++; /* past closing `"` */
     return true;
 }
 
@@ -247,10 +285,8 @@ static bool push_number(lua_State *L, sce_json_state_t *s) {
     if (*s->p == '-') {
         s->p++;
     }
-    while (s->p < s->end &&
-           ((*s->p >= '0' && *s->p <= '9') ||
-            *s->p == '.' || *s->p == 'e' || *s->p == 'E' ||
-            *s->p == '+' || *s->p == '-')) {
+    while (s->p < s->end && ((*s->p >= '0' && *s->p <= '9') || *s->p == '.' || *s->p == 'e' || *s->p == 'E' ||
+                             *s->p == '+' || *s->p == '-')) {
         if (*s->p == '.' || *s->p == 'e' || *s->p == 'E') {
             has_fraction = true;
         }
@@ -291,8 +327,7 @@ static bool push_number(lua_State *L, sce_json_state_t *s) {
 
 /* ── JSON literals: true / false / null ─────────────────────────── */
 
-static bool push_literal(lua_State *L, sce_json_state_t *s,
-                         const char *kw, size_t kw_len, int kind) {
+static bool push_literal(lua_State *L, sce_json_state_t *s, const char *kw, size_t kw_len, int kind) {
     if (s->p + kw_len > s->end) {
         return false;
     }

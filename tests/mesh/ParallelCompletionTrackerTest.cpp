@@ -111,9 +111,8 @@ struct ArmCall {
     std::vector<std::string> missing_regions;
 };
 
-ParallelCompletionTracker::TimerHooks
-makeHooks(std::uint64_t timeout_ms, std::vector<std::string> region_ids,
-          std::vector<ArmCall> *arm_log, int *cancel_count) {
+ParallelCompletionTracker::TimerHooks makeHooks(std::uint64_t timeout_ms, std::vector<std::string> region_ids,
+                                                std::vector<ArmCall> *arm_log, int *cancel_count) {
     ParallelCompletionTracker::TimerHooks hooks;
     hooks.timeout_ms = timeout_ms;
     hooks.expected_region_ids.insert(region_ids.begin(), region_ids.end());
@@ -131,9 +130,7 @@ TEST(ParallelCompletionTracker, TimerHooksArmOnFirstAndCancelOnThreshold) {
     int cancels = 0;
     int fires = 0;
 
-    ParallelCompletionTracker tracker(
-        2, [&] { ++fires; },
-        makeHooks(5000, {"left", "right"}, &arms, &cancels));
+    ParallelCompletionTracker tracker(2, [&] { ++fires; }, makeHooks(5000, {"left", "right"}, &arms, &cancels));
 
     EXPECT_FALSE(tracker.barrierTimerArmed());
     EXPECT_EQ(arms.size(), 0u);
@@ -162,13 +159,11 @@ TEST(ParallelCompletionTracker, TimerHooksRearmWithFreshMissingRegions) {
     int fires = 0;
 
     ParallelCompletionTracker tracker(
-        3, [&] { ++fires; },
-        makeHooks(2500, {"left", "middle", "right"}, &arms, &cancels));
+        3, [&] { ++fires; }, makeHooks(2500, {"left", "middle", "right"}, &arms, &cancels));
 
     tracker.onLocalRegionComplete("left");
     ASSERT_EQ(arms.size(), 1u);
-    EXPECT_EQ(arms[0].missing_regions,
-              (std::vector<std::string>{"middle", "right"}));
+    EXPECT_EQ(arms[0].missing_regions, (std::vector<std::string>{"middle", "right"}));
     EXPECT_EQ(cancels, 0);
 
     tracker.onRemoteRegionComplete("middle");
@@ -189,8 +184,7 @@ TEST(ParallelCompletionTracker, TimerHooksRearmWithFreshMissingRegions) {
 TEST(ParallelCompletionTracker, TimerHooksResetCancelsArmedTimer) {
     std::vector<ArmCall> arms;
     int cancels = 0;
-    ParallelCompletionTracker tracker(
-        2, [] {}, makeHooks(1000, {"left", "right"}, &arms, &cancels));
+    ParallelCompletionTracker tracker(2, [] {}, makeHooks(1000, {"left", "right"}, &arms, &cancels));
 
     tracker.onLocalRegionComplete("left");
     EXPECT_TRUE(tracker.barrierTimerArmed());

@@ -17,8 +17,7 @@ int main(void) {
 
     int rc = test534_in_state(&sm, TEST534_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test534: FAIL — active = 0x%08x\n",
-                (unsigned)test534_active_states(&sm));
+        fprintf(stderr, "test534: FAIL — active = 0x%08x\n", (unsigned)test534_active_states(&sm));
     }
     test534_destroy(&sm);
     return rc;

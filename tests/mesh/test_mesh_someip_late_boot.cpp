@@ -93,8 +93,7 @@ int run_test() {
     // Assert the buffer is present and empty before the first send so
     // any future regression that elides the codegen member surfaces at
     // this line rather than hiding in a passing-by-accident happy path.
-    MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0,
-                      "outbound buffer should start empty");
+    MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0, "outbound buffer should start empty");
     MESH_TEST_REQUIRE(!brake_router.motor_outbound_.ready(),
                       "outbound buffer should start NOT ready (motor not booted)");
 
@@ -110,9 +109,8 @@ int run_test() {
         env.data.assign(payload.begin(), payload.end());
 
         const bool accepted = brake_router.route_send("#motor", env);
-        MESH_TEST_REQUIRE(accepted,
-                          "pre-boot route_send must return true — admit "
-                          "enqueues when buffer capacity remains");
+        MESH_TEST_REQUIRE(accepted, "pre-boot route_send must return true — admit "
+                                    "enqueues when buffer capacity remains");
     }
 
     // Buffer must now hold the pre-boot envelope — direct verification
@@ -138,25 +136,19 @@ int run_test() {
     // drains the enqueued envelope through the dispatch closure —
     // vsomeip `app.send` on the outbound path, then vsomeip worker
     // delivers to motor's FireForget handler.
-    MESH_TEST_REQUIRE(
-        motor_engine.received_.wait_for(
-            [](const auto& v) {
-                return !v.empty() &&
-                       v.back().type == "service.fire_forget.activate";
-            },
-            kReceiveTimeout),
-        "motor engine did not receive the buffered FireForget envelope "
-        "after late boot — §10.10 OutboundBuffer drain regression");
+    MESH_TEST_REQUIRE(motor_engine.received_.wait_for(
+                          [](const auto &v) { return !v.empty() && v.back().type == "service.fire_forget.activate"; },
+                          kReceiveTimeout),
+                      "motor engine did not receive the buffered FireForget envelope "
+                      "after late boot — §10.10 OutboundBuffer drain regression");
 
     // Post-drain invariant: the buffer must be empty (drain consumed
     // the pre-boot envelope) and ready_ = true (availability fired).
     // A racing admit between drain and this check would be a test bug,
     // not a runtime bug — no concurrent sends happen between the wait
     // above returning and this line.
-    MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0,
-                      "buffer should be empty after drain");
-    MESH_TEST_REQUIRE(brake_router.motor_outbound_.ready(),
-                      "buffer should report ready after availability fired");
+    MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0, "buffer should be empty after drain");
+    MESH_TEST_REQUIRE(brake_router.motor_outbound_.ready(), "buffer should report ready after availability fired");
 
     // ── Post-boot send: fast path, no buffering. ─────────────────────
     // Proves markReady did flip the ready_ flag, not just drain once.
@@ -181,25 +173,25 @@ int run_test() {
         // dispatch under the mutex before returning, so by the time
         // admit returns true the envelope has either been dispatched
         // (queue empty) or enqueued (ready was false — regression).
-        MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0,
-                          "post-boot send must take the fast path, "
-                          "not re-enqueue (ready flag regressed?)");
+        MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0, "post-boot send must take the fast path, "
+                                                                           "not re-enqueue (ready flag regressed?)");
     }
 
     // Confirm motor observed at least two FireForget envelopes — the
     // pre-boot buffered one plus the post-boot fast-path one.
-    MESH_TEST_REQUIRE(
-        motor_engine.received_.wait_for(
-            [](const auto& v) {
-                std::size_t count = 0;
-                for (const auto& ev : v) {
-                    if (ev.type == "service.fire_forget.activate") ++count;
-                }
-                return count >= 2;
-            },
-            kReceiveTimeout),
-        "motor engine did not receive the post-boot FireForget envelope — "
-        "availability-driven fast path regression");
+    MESH_TEST_REQUIRE(motor_engine.received_.wait_for(
+                          [](const auto &v) {
+                              std::size_t count = 0;
+                              for (const auto &ev : v) {
+                                  if (ev.type == "service.fire_forget.activate") {
+                                      ++count;
+                                  }
+                              }
+                              return count >= 2;
+                          },
+                          kReceiveTimeout),
+                      "motor engine did not receive the post-boot FireForget envelope — "
+                      "availability-driven fast path regression");
 
     brake_router.shutdown();
     motor_router.shutdown();
@@ -212,7 +204,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

@@ -40,10 +40,11 @@ public:
      * @return true if state is parallel, false otherwise
      */
 #if __cpp_concepts >= 202002L
-    template <typename StateType, ParallelStatePolicy PolicyType> static bool isParallelState(StateType state) {
+    template <typename StateType, ParallelStatePolicy PolicyType>
 #else
-    template <typename StateType, typename PolicyType> static bool isParallelState(StateType state) {
+    template <typename StateType, typename PolicyType>
 #endif
+    static bool isParallelState(StateType state) {
         return PolicyType::isParallelState(state);
     }
 
@@ -78,10 +79,11 @@ public:
      * @return Document order index (0-based)
      */
 #if __cpp_concepts >= 202002L
-    template <typename StateType, ParallelStatePolicy PolicyType> static int getDocumentOrder(StateType state) {
+    template <typename StateType, ParallelStatePolicy PolicyType>
 #else
-    template <typename StateType, typename PolicyType> static int getDocumentOrder(StateType state) {
+    template <typename StateType, typename PolicyType>
 #endif
+    static int getDocumentOrder(StateType state) {
         return PolicyType::getDocumentOrder(state);
     }
 

@@ -50,9 +50,7 @@ public:
     /// autoforward path (invoke_methods.jinja2:287) and does not propagate
     /// sendid into the child. Promoting full `_event.sendid` forwarding is
     /// a separate landing shared with the local-invoke path.
-    virtual bool raiseExternal(const std::string& eventName,
-                                const std::string& data,
-                                const std::string& sendId) = 0;
+    virtual bool raiseExternal(const std::string &eventName, const std::string &data, const std::string &sendId) = 0;
 
     /// Return true when the child has reached a top-level `<final>` state
     /// (StaticExecutionEngine::isGlobalFinalState). WorkerSessionHost polls
@@ -75,25 +73,25 @@ public:
     /// `<parent_device>:<parent_machine>:<invoke_id>`). Stamped into every
     /// wire-16 envelope's `child_session_id` field for finalize / autoforward
     /// matching on the parent (§mesh-9.6.3 L1463).
-    virtual const std::string& sessionId() const = 0;
+    virtual const std::string &sessionId() const = 0;
 
     /// Deploy.yaml machine name hosted by this session.
-    virtual const std::string& machineName() const = 0;
+    virtual const std::string &machineName() const = 0;
 
     /// Parent peer name (deploy.yaml machine name of the invoker). Used by
     /// WorkerSessionHost to route outbound wire-16/18 envelopes back to the
     /// parent that originated the wire-14.
-    virtual const std::string& parentPeer() const = 0;
+    virtual const std::string &parentPeer() const = 0;
 
     /// SCXML-side invoke id from the parent (§scxml-6.4.1 format,
     /// `stateid.platformid.index`). Mirrored into every outbound wire-16/18
     /// envelope so the parent's `activeInvokes_[...]` lookup matches.
-    virtual const std::string& invokeIdString() const = 0;
+    virtual const std::string &invokeIdString() const = 0;
 
     /// Invoke UUID (16-byte wire form). Parent side keyed the correlation
     /// with this UUID; child-side adapter stamps it into every outbound
     /// wire-16/18 envelope.
-    virtual const std::array<uint8_t, 16>& invokeUuid() const = 0;
+    virtual const std::array<uint8_t, 16> &invokeUuid() const = 0;
 };
 
 }  // namespace SCE::Mesh

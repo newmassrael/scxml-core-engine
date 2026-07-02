@@ -8,16 +8,15 @@
 // No runtime shm_open calls — compilation success IS the test.
 
 #include "brake_sm.h"
-#include "motor_sm.h"
 #include "brake_transport.h"
 #include "mesh/ShmChannel.h"
 #include "mesh/ShmSegment.h"
+#include "motor_sm.h"
 
 #include <cstdio>
 
 // Control slot is 12 bytes (offset + length + advance).
-static_assert(sizeof(SCE::Mesh::ControlSlot) == 12,
-              "ControlSlot must be 12 bytes");
+static_assert(sizeof(SCE::Mesh::ControlSlot) == 12, "ControlSlot must be 12 bytes");
 
 // TransportRouter is always templated on the sender engine. The
 // generated brake engine exposes setMeshSendCallback, so we instantiate
@@ -30,8 +29,7 @@ static_assert(SCE::Generated::brake::SHM_CHANNEL_MOTOR[0] == '/',
               "Channel name must start with '/' (POSIX shm requirement)");
 
 // Verify ShmChannel template instantiation with default parameters
-static_assert(sizeof(SCE::Mesh::ShmChannel<>) > 0,
-              "ShmChannel<> must be instantiable");
+static_assert(sizeof(SCE::Mesh::ShmChannel<>) > 0, "ShmChannel<> must be instantiable");
 
 int main() {
     std::printf("SCE Mesh shm_transport compile verification: PASS\n");

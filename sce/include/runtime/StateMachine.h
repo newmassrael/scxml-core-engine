@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "core/LogMacros.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/InvokeHelper.h"  // §scxml-6.4: Shared invoke lifecycle logic (Zero Duplication)
+#include "core/LogMacros.h"
 #include "events/IEventDispatcher.h"
 #include "model/IStateNode.h"
 #include "model/SCXMLModel.h"
@@ -491,7 +491,9 @@ public:
      * @brief Get the last error from SCXML loading/parsing
      * @return Error detail string, empty if no error
      */
-    const std::string &getLastLoadError() const { return lastLoadError_; }
+    const std::string &getLastLoadError() const {
+        return lastLoadError_;
+    }
 
     /**
      * @brief Restore state machine from snapshot (complete restoration)

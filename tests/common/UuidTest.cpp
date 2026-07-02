@@ -17,8 +17,12 @@ namespace {
 struct U128 {
     uint64_t hi;
     uint64_t lo;
-    bool operator==(const U128 &other) const { return hi == other.hi && lo == other.lo; }
+
+    bool operator==(const U128 &other) const {
+        return hi == other.hi && lo == other.lo;
+    }
 };
+
 struct U128Hash {
     size_t operator()(const U128 &v) const noexcept {
         return std::hash<uint64_t>{}(v.hi) ^ (std::hash<uint64_t>{}(v.lo) << 1);
@@ -27,15 +31,19 @@ struct U128Hash {
 
 U128 pack(const SCE::uuid::Bytes &b) {
     U128 out{0, 0};
-    for (int i = 0; i < 8; ++i) out.hi = (out.hi << 8) | b[i];
-    for (int i = 0; i < 8; ++i) out.lo = (out.lo << 8) | b[8 + i];
+    for (int i = 0; i < 8; ++i) {
+        out.hi = (out.hi << 8) | b[i];
+    }
+    for (int i = 0; i < 8; ++i) {
+        out.lo = (out.lo << 8) | b[8 + i];
+    }
     return out;
 }
 
 // Extract the 48-bit timestamp prefix from a v7 UUID (bytes 0-5, big-endian).
 uint64_t timestamp_ms(const SCE::uuid::Bytes &b) {
-    return (uint64_t(b[0]) << 40) | (uint64_t(b[1]) << 32) | (uint64_t(b[2]) << 24) |
-           (uint64_t(b[3]) << 16) | (uint64_t(b[4]) << 8)  | uint64_t(b[5]);
+    return (uint64_t(b[0]) << 40) | (uint64_t(b[1]) << 32) | (uint64_t(b[2]) << 24) | (uint64_t(b[3]) << 16) |
+           (uint64_t(b[4]) << 8) | uint64_t(b[5]);
 }
 
 }  // namespace
@@ -88,10 +96,11 @@ TEST(UuidTest, V7StrictlyMonotonicIntraMs) {
     constexpr size_t N = 4000;  // < 4096 (12-bit counter capacity per ms)
     std::vector<U128> ids;
     ids.reserve(N);
-    for (size_t i = 0; i < N; ++i) ids.push_back(pack(SCE::uuid::v7()));
+    for (size_t i = 0; i < N; ++i) {
+        ids.push_back(pack(SCE::uuid::v7()));
+    }
     for (size_t i = 1; i < N; ++i) {
-        ASSERT_TRUE(ids[i - 1].hi < ids[i].hi ||
-                    (ids[i - 1].hi == ids[i].hi && ids[i - 1].lo < ids[i].lo))
+        ASSERT_TRUE(ids[i - 1].hi < ids[i].hi || (ids[i - 1].hi == ids[i].hi && ids[i - 1].lo < ids[i].lo))
             << "v7 not strictly monotonic at index " << i;
     }
 }
@@ -135,8 +144,7 @@ TEST(UuidTest, ToStringCanonicalFormat) {
     // Fixed fixture taken from RFC 4122 §3 example, verifying exact byte →
     // character mapping including dash positions.
     SCE::uuid::Bytes fixture = {
-        0xf8, 0x1d, 0x4f, 0xae, 0x7d, 0xec, 0x11, 0xd0,
-        0xa7, 0x65, 0x00, 0xa0, 0xc9, 0x1e, 0x6b, 0xf6,
+        0xf8, 0x1d, 0x4f, 0xae, 0x7d, 0xec, 0x11, 0xd0, 0xa7, 0x65, 0x00, 0xa0, 0xc9, 0x1e, 0x6b, 0xf6,
     };
     EXPECT_EQ(SCE::uuid::to_string(fixture), "f81d4fae-7dec-11d0-a765-00a0c91e6bf6");
 }
@@ -171,15 +179,11 @@ TEST(UuidTest, FromStringRejectsWrongLength) {
 TEST(UuidTest, FromStringRejectsMisplacedDashes) {
     // 36 chars total but dashes shifted — rejects instead of silently mapping
     // the wrong bytes.
-    EXPECT_FALSE(
-        SCE::uuid::from_string("f81d4fae7-dec-11d0-a765-00a0c91e6bf6").has_value());
-    EXPECT_FALSE(
-        SCE::uuid::from_string("f81d4fa-e7dec-11d0-a765-00a0c91e6bf6").has_value());
+    EXPECT_FALSE(SCE::uuid::from_string("f81d4fae7-dec-11d0-a765-00a0c91e6bf6").has_value());
+    EXPECT_FALSE(SCE::uuid::from_string("f81d4fa-e7dec-11d0-a765-00a0c91e6bf6").has_value());
 }
 
 TEST(UuidTest, FromStringRejectsNonHex) {
-    EXPECT_FALSE(
-        SCE::uuid::from_string("f81d4fae-7dec-11d0-z765-00a0c91e6bf6").has_value());
-    EXPECT_FALSE(
-        SCE::uuid::from_string("XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX").has_value());
+    EXPECT_FALSE(SCE::uuid::from_string("f81d4fae-7dec-11d0-z765-00a0c91e6bf6").has_value());
+    EXPECT_FALSE(SCE::uuid::from_string("XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX").has_value());
 }

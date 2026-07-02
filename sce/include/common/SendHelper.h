@@ -390,7 +390,7 @@ public:
     template <typename ParentStateMachine, typename EventType>
     static bool sendToParent(ParentStateMachine *parent, EventType event, const std::string &invokeId) {
         SCE_LOG_DEBUG("SendHelper::sendToParent called - parent={}, event={}, invokeId={}", (void *)parent,
-                  static_cast<int>(event), invokeId);
+                      static_cast<int>(event), invokeId);
         if (parent) {
             // §scxml-5.10.1: Create event with invokeid metadata
             typename ParentStateMachine::EventWithMetadata eventWithMetadata(event);
@@ -423,9 +423,10 @@ public:
     template <typename ParentStateMachine, typename EventType>
     static bool sendToParentWithOrigin(ParentStateMachine *parent, EventType event, const std::string &invokeId,
                                        const std::string &childSessionId, const std::string &eventData = "") {
-        SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin called - parent={}, event={}, invokeId={}, childSessionId={}, "
-                  "eventData='{}'",
-                  (void *)parent, static_cast<int>(event), invokeId, childSessionId, eventData);
+        SCE_LOG_DEBUG(
+            "SendHelper::sendToParentWithOrigin called - parent={}, event={}, invokeId={}, childSessionId={}, "
+            "eventData='{}'",
+            (void *)parent, static_cast<int>(event), invokeId, childSessionId, eventData);
         if (parent) {
             // §scxml-5.10.1: Create event with invokeid metadata
             // §scxml-6.5: Add origin (child session ID) for finalize support
@@ -523,7 +524,7 @@ public:
 
         return payload;
     }
-#endif // SCE_ENABLE_HTTP
+#endif  // SCE_ENABLE_HTTP
 };
 
 }  // namespace SCE

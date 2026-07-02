@@ -40,8 +40,7 @@
 int main() {
     SCE::Generated::motor_pool::motor_pool motor_a;
     SCE::Generated::motor_pool::motor_pool motor_b;
-    using Router = SCE::Generated::motor_pool::TransportRouter<
-        SCE::Generated::motor_pool::motor_pool>;
+    using Router = SCE::Generated::motor_pool::TransportRouter<SCE::Generated::motor_pool::motor_pool>;
 
     // Parse accepted `instances: [1, 2]` and codegen emitted a
     // 2-element instance array. A future change that reverts to the
@@ -60,8 +59,7 @@ int main() {
     // while keeping two offered instances would be silent at runtime
     // (both instances would route to sessions_[0]) — pin it at compile
     // time.
-    static_assert(Router::N_SESSIONS == 2,
-                  "server pool N_SESSIONS must match offered-instance count");
+    static_assert(Router::N_SESSIONS == 2, "server pool N_SESSIONS must match offered-instance count");
 
     // Service + method ids stay single-valued — only the instance
     // dimension is multi-valued for a pool. vsomeip_motor_pool.json is
@@ -75,10 +73,8 @@ int main() {
     // array positions; an unknown instance must return the
     // `N_SESSIONS` sentinel so the inbound handler's drift guard
     // catches vsomeip dispatching for an un-offered instance.
-    static_assert(Router::session_index_for_instance(0x0001) == 0,
-                  "instance 0x0001 must map to sessions_[0]");
-    static_assert(Router::session_index_for_instance(0x0002) == 1,
-                  "instance 0x0002 must map to sessions_[1]");
+    static_assert(Router::session_index_for_instance(0x0001) == 0, "instance 0x0001 must map to sessions_[0]");
+    static_assert(Router::session_index_for_instance(0x0002) == 1, "instance 0x0002 must map to sessions_[1]");
     static_assert(Router::session_index_for_instance(0x00FF) == Router::N_SESSIONS,
                   "unknown instance must return N_SESSIONS sentinel");
 

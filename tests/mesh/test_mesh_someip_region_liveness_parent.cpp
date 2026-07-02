@@ -35,9 +35,11 @@
 
 namespace {
 
-bool received_region_partitioned(const auto& events_log) {
-    for (const auto& ev : events_log) {
-        if (ev.type != "error.communication") continue;
+bool received_region_partitioned(const auto &events_log) {
+    for (const auto &ev : events_log) {
+        if (ev.type != "error.communication") {
+            continue;
+        }
         if (ev.data.find("\"reason\":\"REGION_PARTITIONED\"") != std::string::npos) {
             return true;
         }
@@ -45,9 +47,11 @@ bool received_region_partitioned(const auto& events_log) {
     return false;
 }
 
-bool received_peer_partitioned(const auto& events_log) {
-    for (const auto& ev : events_log) {
-        if (ev.type != "error.communication") continue;
+bool received_peer_partitioned(const auto &events_log) {
+    for (const auto &ev : events_log) {
+        if (ev.type != "error.communication") {
+            continue;
+        }
         if (ev.data.find("\"reason\":\"PEER_PARTITIONED\"") != std::string::npos) {
             return true;
         }
@@ -76,26 +80,22 @@ int main() {
     // parent's init(). The 8 s budget covers worst-case SD repetitions
     // (3 × repetitions_base_delay = 300 ms) plus generous CI jitter.
     const bool observed = sender.received_.wait_for(
-        [](const auto& events) {
-            return received_region_partitioned(events);
-        },
-        std::chrono::seconds(8));
+        [](const auto &events) { return received_region_partitioned(events); }, std::chrono::seconds(8));
 
     if (!observed) {
-        std::fprintf(stderr,
-            "FAIL: parent did not observe error.communication / "
-            "REGION_PARTITIONED within 8 s of init(). Likely causes:\n"
-            "  1. SOMEIP-SD never converged across the veth pair — check\n"
-            "     that setup_crossdev_netns.sh added the multicast route\n"
-            "     (224.0.0.0/4 default) and that worker's vsomeip RM\n"
-            "     emitted the initial Offer for service 0x8181.\n"
-            "  2. Worker did not call shutdown() cleanly — the codegen\n"
-            "     handler only fires on the SD-loss edge; a hard kill\n"
-            "     would force parent to wait for the 5 s ttl expiry.\n"
-            "  3. Codegen emitted the wrong sibling SCE_LIVENESS_SERVICE_PEER_*\n"
-            "     constant for brake_left_part — verify\n"
-            "     SCE_LIVENESS_SERVICE_PEER_BRAKE_RIGHT_PART = 0x8181\n"
-            "     in brake_region_liveness_transport.h.\n");
+        std::fprintf(stderr, "FAIL: parent did not observe error.communication / "
+                             "REGION_PARTITIONED within 8 s of init(). Likely causes:\n"
+                             "  1. SOMEIP-SD never converged across the veth pair — check\n"
+                             "     that setup_crossdev_netns.sh added the multicast route\n"
+                             "     (224.0.0.0/4 default) and that worker's vsomeip RM\n"
+                             "     emitted the initial Offer for service 0x8181.\n"
+                             "  2. Worker did not call shutdown() cleanly — the codegen\n"
+                             "     handler only fires on the SD-loss edge; a hard kill\n"
+                             "     would force parent to wait for the 5 s ttl expiry.\n"
+                             "  3. Codegen emitted the wrong sibling SCE_LIVENESS_SERVICE_PEER_*\n"
+                             "     constant for brake_left_part — verify\n"
+                             "     SCE_LIVENESS_SERVICE_PEER_BRAKE_RIGHT_PART = 0x8181\n"
+                             "     in brake_region_liveness_transport.h.\n");
         return 1;
     }
 
@@ -103,20 +103,18 @@ int main() {
     // codegen template's `err.machine = \"{{ machine_name }}\"` /
     // `err.partition = \"{{ peer.partition }}\"` substitution.
     std::lock_guard<std::mutex> lk(sender.received_.m);
-    const ReceivedEvent* hit = nullptr;
-    for (const auto& ev : sender.received_.events) {
+    const ReceivedEvent *hit = nullptr;
+    for (const auto &ev : sender.received_.events) {
         if (ev.type == "error.communication" &&
             ev.data.find("\"reason\":\"REGION_PARTITIONED\"") != std::string::npos) {
             hit = &ev;
         }
     }
     MESH_TEST_REQUIRE(hit, "expected REGION_PARTITIONED event vanished between wait_for and inspection");
-    MESH_TEST_REQUIRE(
-        hit->data.find("\"machine\":\"brake_region_liveness\"") != std::string::npos,
-        "REGION_PARTITIONED payload missing machine=\"brake_region_liveness\"");
-    MESH_TEST_REQUIRE(
-        hit->data.find("\"partition\":\"brake_right_part\"") != std::string::npos,
-        "REGION_PARTITIONED payload missing partition=\"brake_right_part\"");
+    MESH_TEST_REQUIRE(hit->data.find("\"machine\":\"brake_region_liveness\"") != std::string::npos,
+                      "REGION_PARTITIONED payload missing machine=\"brake_region_liveness\"");
+    MESH_TEST_REQUIRE(hit->data.find("\"partition\":\"brake_right_part\"") != std::string::npos,
+                      "REGION_PARTITIONED payload missing partition=\"brake_right_part\"");
 
     // §16.4 row-orthogonality pin: row 8 PEER_PARTITIONED is deferred
     // for SOMEIP (RFC F.X-3 D10 / F.X-4 scope). It must NOT fire on a
@@ -124,13 +122,11 @@ int main() {
     // segment-count ambiguity to disambiguate, so a stray row 8 raise
     // here would mean the codegen confused machine-axis with partition-
     // axis emission.
-    MESH_TEST_REQUIRE(
-        !received_peer_partitioned(sender.received_.events),
-        "PEER_PARTITIONED fired on a row-13 SOMEIP trace — F.X-3 explicitly "
-        "defers row 8 SOMEIP to F.X-4; this is a codegen axis-confusion regression");
+    MESH_TEST_REQUIRE(!received_peer_partitioned(sender.received_.events),
+                      "PEER_PARTITIONED fired on a row-13 SOMEIP trace — F.X-3 explicitly "
+                      "defers row 8 SOMEIP to F.X-4; this is a codegen axis-confusion regression");
 
     router.shutdown();
-    std::printf(
-        "SCE Mesh §16.4 region-partition liveness REGION_PARTITIONED E2E (SOME/IP): PASS\n");
+    std::printf("SCE Mesh §16.4 region-partition liveness REGION_PARTITIONED E2E (SOME/IP): PASS\n");
     return 0;
 }

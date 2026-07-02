@@ -73,15 +73,16 @@ public:
     /// payload-free.
     using Callback = std::function<void()>;
 
-    MeshDeadlineScheduler()
-        : worker_([this]{ run(); }) {}
+    MeshDeadlineScheduler() : worker_([this] { run(); }) {}
 
-    ~MeshDeadlineScheduler() { shutdown(); }
+    ~MeshDeadlineScheduler() {
+        shutdown();
+    }
 
-    MeshDeadlineScheduler(const MeshDeadlineScheduler&) = delete;
-    MeshDeadlineScheduler& operator=(const MeshDeadlineScheduler&) = delete;
-    MeshDeadlineScheduler(MeshDeadlineScheduler&&) = delete;
-    MeshDeadlineScheduler& operator=(MeshDeadlineScheduler&&) = delete;
+    MeshDeadlineScheduler(const MeshDeadlineScheduler &) = delete;
+    MeshDeadlineScheduler &operator=(const MeshDeadlineScheduler &) = delete;
+    MeshDeadlineScheduler(MeshDeadlineScheduler &&) = delete;
+    MeshDeadlineScheduler &operator=(MeshDeadlineScheduler &&) = delete;
 
     /// Register a deadline for `uuid`. When `delay` elapses, `callback`
     /// is invoked on the scheduler thread with no arguments. A duplicate
@@ -90,14 +91,16 @@ public:
     /// replace a pending deadline.
     ///
     /// Returns `false` if the scheduler has already been shut down.
-    bool registerDeadline(const Key& uuid,
-                          std::chrono::milliseconds delay,
-                          Callback callback) {
+    bool registerDeadline(const Key &uuid, std::chrono::milliseconds delay, Callback callback) {
         const auto deadline = std::chrono::steady_clock::now() + delay;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (shutting_down_) return false;
-            if (active_.count(uuid) != 0) return false;
+            if (shutting_down_) {
+                return false;
+            }
+            if (active_.count(uuid) != 0) {
+                return false;
+            }
             const auto seq = next_seq_++;
             active_.emplace(uuid, seq);
             heap_.push(Entry{deadline, seq, uuid, std::move(callback)});
@@ -113,10 +116,12 @@ public:
     /// The heap entry is not physically removed — it is identified as
     /// stale the next time it reaches the front, by comparing its seq
     /// to the current `active_[uuid]` (missing after cancel).
-    bool cancelDeadline(const Key& uuid) {
+    bool cancelDeadline(const Key &uuid) {
         std::lock_guard<std::mutex> lock(mutex_);
         const auto erased = active_.erase(uuid);
-        if (erased != 0) cv_.notify_all();
+        if (erased != 0) {
+            cv_.notify_all();
+        }
         return erased != 0;
     }
 
@@ -136,11 +141,15 @@ public:
     void shutdown() {
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            if (shutting_down_) return;
+            if (shutting_down_) {
+                return;
+            }
             shutting_down_ = true;
         }
         cv_.notify_all();
-        if (worker_.joinable()) worker_.join();
+        if (worker_.joinable()) {
+            worker_.join();
+        }
     }
 
 private:
@@ -155,8 +164,10 @@ private:
     /// max-heap by default, so the comparator returns `true` when `a`
     /// should come AFTER `b` — i.e. when `a.deadline > b.deadline`.
     struct Compare {
-        bool operator()(const Entry& a, const Entry& b) const noexcept {
-            if (a.deadline != b.deadline) return a.deadline > b.deadline;
+        bool operator()(const Entry &a, const Entry &b) const noexcept {
+            if (a.deadline != b.deadline) {
+                return a.deadline > b.deadline;
+            }
             return a.seq > b.seq;
         }
     };
@@ -171,7 +182,7 @@ private:
     /// register-after-cancel with the same uuid). Must be called with
     /// `mutex_` held.
     bool topIsLive() const {
-        const auto& top = heap_.top();
+        const auto &top = heap_.top();
         const auto it = active_.find(top.uuid);
         return it != active_.end() && it->second == top.seq;
     }
@@ -180,7 +191,7 @@ private:
         std::unique_lock<std::mutex> lock(mutex_);
         while (!shutting_down_) {
             if (heap_.empty()) {
-                cv_.wait(lock, [this]{ return shutting_down_ || !heap_.empty(); });
+                cv_.wait(lock, [this] { return shutting_down_ || !heap_.empty(); });
                 continue;
             }
             if (!topIsLive()) {
@@ -200,10 +211,12 @@ private:
                 continue;
             }
             active_.erase(heap_.top().uuid);
-            Callback cb = std::move(const_cast<Entry&>(heap_.top()).callback);
+            Callback cb = std::move(const_cast<Entry &>(heap_.top()).callback);
             heap_.pop();
             lock.unlock();
-            if (cb) cb();
+            if (cb) {
+                cb();
+            }
             lock.lock();
         }
     }

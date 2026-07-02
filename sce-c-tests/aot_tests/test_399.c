@@ -35,8 +35,7 @@ int main(void) {
 
     int rc = test399_in_state(&sm, TEST399_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test399: FAIL — active = 0x%08x\n",
-                (unsigned)test399_active_states(&sm));
+        fprintf(stderr, "test399: FAIL — active = 0x%08x\n", (unsigned)test399_active_states(&sm));
     }
     test399_destroy(&sm);
     return rc;

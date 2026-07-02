@@ -25,7 +25,8 @@ StateMachineContext::~StateMachineContext() {
 
         // With shared_ptr ownership, callbacks using weak_ptr are safe
         // No sleep needed - callbacks will check weak_ptr validity
-        SCE_LOG_DEBUG("StateMachineContext: Releasing StateMachine (shared_ptr, use_count: {})", stateMachine_.use_count());
+        SCE_LOG_DEBUG("StateMachineContext: Releasing StateMachine (shared_ptr, use_count: {})",
+                      stateMachine_.use_count());
         stateMachine_.reset();
     }
 

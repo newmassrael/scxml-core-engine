@@ -41,9 +41,11 @@
 
 namespace {
 
-bool received_peer_partitioned(const auto& events_log) {
-    for (const auto& ev : events_log) {
-        if (ev.type != "error.communication") continue;
+bool received_peer_partitioned(const auto &events_log) {
+    for (const auto &ev : events_log) {
+        if (ev.type != "error.communication") {
+            continue;
+        }
         if (ev.data.find("\"reason\":\"PEER_PARTITIONED\"") != std::string::npos) {
             return true;
         }
@@ -51,9 +53,11 @@ bool received_peer_partitioned(const auto& events_log) {
     return false;
 }
 
-bool received_region_partitioned(const auto& events_log) {
-    for (const auto& ev : events_log) {
-        if (ev.type != "error.communication") continue;
+bool received_region_partitioned(const auto &events_log) {
+    for (const auto &ev : events_log) {
+        if (ev.type != "error.communication") {
+            continue;
+        }
         if (ev.data.find("\"reason\":\"REGION_PARTITIONED\"") != std::string::npos) {
             return true;
         }
@@ -82,43 +86,37 @@ int main() {
     // parent's init(). The 8 s budget covers worst-case SD repetitions
     // (3 × repetitions_base_delay = 300 ms) plus generous CI jitter.
     const bool observed = sender.received_.wait_for(
-        [](const auto& events) {
-            return received_peer_partitioned(events);
-        },
-        std::chrono::seconds(8));
+        [](const auto &events) { return received_peer_partitioned(events); }, std::chrono::seconds(8));
 
     if (!observed) {
-        std::fprintf(stderr,
-            "FAIL: parent did not observe error.communication / "
-            "PEER_PARTITIONED within 8 s of init(). Likely causes:\n"
-            "  1. SOMEIP-SD never converged across the veth pair — check\n"
-            "     that setup_crossdev_netns.sh added the multicast route\n"
-            "     (224.0.0.0/4 default) and that worker's vsomeip RM\n"
-            "     emitted the initial Offer for service 0x8281.\n"
-            "  2. Worker did not call shutdown() cleanly — the codegen\n"
-            "     handler only fires on the SD-loss edge; a hard kill\n"
-            "     would force parent to wait for the 5 s ttl expiry.\n"
-            "  3. Codegen emitted the wrong peer-machine\n"
-            "     SCE_MACHINE_LIVENESS_SERVICE_PEER_* constant for alpha —\n"
-            "     verify SCE_MACHINE_LIVENESS_SERVICE_PEER_BETA_MACHINE_LIVENESS\n"
-            "     = 0x8281 in alpha_machine_liveness_transport.h.\n");
+        std::fprintf(stderr, "FAIL: parent did not observe error.communication / "
+                             "PEER_PARTITIONED within 8 s of init(). Likely causes:\n"
+                             "  1. SOMEIP-SD never converged across the veth pair — check\n"
+                             "     that setup_crossdev_netns.sh added the multicast route\n"
+                             "     (224.0.0.0/4 default) and that worker's vsomeip RM\n"
+                             "     emitted the initial Offer for service 0x8281.\n"
+                             "  2. Worker did not call shutdown() cleanly — the codegen\n"
+                             "     handler only fires on the SD-loss edge; a hard kill\n"
+                             "     would force parent to wait for the 5 s ttl expiry.\n"
+                             "  3. Codegen emitted the wrong peer-machine\n"
+                             "     SCE_MACHINE_LIVENESS_SERVICE_PEER_* constant for alpha —\n"
+                             "     verify SCE_MACHINE_LIVENESS_SERVICE_PEER_BETA_MACHINE_LIVENESS\n"
+                             "     = 0x8281 in alpha_machine_liveness_transport.h.\n");
         return 1;
     }
 
     // Pin the row-8 payload extras: target naming matches the codegen
     // template's `err.target = \"{{ peer.machine }}\"` substitution.
     std::lock_guard<std::mutex> lk(sender.received_.m);
-    const ReceivedEvent* hit = nullptr;
-    for (const auto& ev : sender.received_.events) {
-        if (ev.type == "error.communication" &&
-            ev.data.find("\"reason\":\"PEER_PARTITIONED\"") != std::string::npos) {
+    const ReceivedEvent *hit = nullptr;
+    for (const auto &ev : sender.received_.events) {
+        if (ev.type == "error.communication" && ev.data.find("\"reason\":\"PEER_PARTITIONED\"") != std::string::npos) {
             hit = &ev;
         }
     }
     MESH_TEST_REQUIRE(hit, "expected PEER_PARTITIONED event vanished between wait_for and inspection");
-    MESH_TEST_REQUIRE(
-        hit->data.find("\"target\":\"beta_machine_liveness\"") != std::string::npos,
-        "PEER_PARTITIONED payload missing target=\"beta_machine_liveness\"");
+    MESH_TEST_REQUIRE(hit->data.find("\"target\":\"beta_machine_liveness\"") != std::string::npos,
+                      "PEER_PARTITIONED payload missing target=\"beta_machine_liveness\"");
 
     // §16.4 ↔ §16.7 row-orthogonality pin: under F.X-4 D4-shape-1 the
     // single-partition shape has zero F.X-3 region-liveness participants
@@ -127,14 +125,12 @@ int main() {
     // stray row-13 raise here would mean the codegen confused the
     // machine-axis with the partition-axis emission, or the assigner
     // narrowing regressed.
-    MESH_TEST_REQUIRE(
-        !received_region_partitioned(sender.received_.events),
-        "REGION_PARTITIONED fired on a row-8 SOMEIP trace — F.X-4 single-partition "
-        "shape must have zero row-13 participants; a row-13 raise here is a codegen "
-        "axis-confusion regression or an assigner-narrowing regression");
+    MESH_TEST_REQUIRE(!received_region_partitioned(sender.received_.events),
+                      "REGION_PARTITIONED fired on a row-8 SOMEIP trace — F.X-4 single-partition "
+                      "shape must have zero row-13 participants; a row-13 raise here is a codegen "
+                      "axis-confusion regression or an assigner-narrowing regression");
 
     router.shutdown();
-    std::printf(
-        "SCE Mesh §16.7 row 8 machine-level liveness PEER_PARTITIONED E2E (SOME/IP): PASS\n");
+    std::printf("SCE Mesh §16.7 row 8 machine-level liveness PEER_PARTITIONED E2E (SOME/IP): PASS\n");
     return 0;
 }

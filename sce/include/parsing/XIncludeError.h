@@ -41,8 +41,7 @@ namespace SCE::parsing {
 // unchanged — the existing message-string ctor stays the throw-site
 // API so the 10 expander throw sites read as before.
 
-class XIncludeExpansionError : public std::runtime_error,
-                               public Diagnostic {
+class XIncludeExpansionError : public std::runtime_error, public Diagnostic {
 public:
     using std::runtime_error::runtime_error;
 
@@ -63,9 +62,11 @@ public:
     // the same envelope (stage = "xml", id derived through the same
     // canonical key shape, message read from `runtime_error::what()`).
     std::string_view code() const noexcept override = 0;
+
     const std::optional<SourcePos> &location() const noexcept override {
         return location_;
     }
+
     nlohmann::ordered_json to_json() const override;
 
 private:
@@ -84,9 +85,11 @@ private:
 class XIncludeMissingHref : public XIncludeExpansionError {
 public:
     using XIncludeExpansionError::XIncludeExpansionError;
+
     std::string_view code() const noexcept override {
         return "xml/xinclude-missing-href";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeMissingHref>(*this);
     }
@@ -104,9 +107,11 @@ public:
 class XIncludeNotFound : public XIncludeExpansionError {
 public:
     using XIncludeExpansionError::XIncludeExpansionError;
+
     std::string_view code() const noexcept override {
         return "xml/xinclude-not-found";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeNotFound>(*this);
     }
@@ -123,9 +128,11 @@ public:
 class XIncludeReadError : public XIncludeExpansionError {
 public:
     using XIncludeExpansionError::XIncludeExpansionError;
+
     std::string_view code() const noexcept override {
         return "xml/xinclude-read-error";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeReadError>(*this);
     }
@@ -144,9 +151,11 @@ public:
 class XIncludeCycle : public XIncludeExpansionError {
 public:
     using XIncludeExpansionError::XIncludeExpansionError;
+
     std::string_view code() const noexcept override {
         return "xml/xinclude-cycle";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeCycle>(*this);
     }
@@ -162,9 +171,11 @@ public:
 class XIncludeTooDeep : public XIncludeExpansionError {
 public:
     using XIncludeExpansionError::XIncludeExpansionError;
+
     std::string_view code() const noexcept override {
         return "xml/xinclude-too-deep";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeTooDeep>(*this);
     }
@@ -181,9 +192,11 @@ public:
 class XIncludeMalformed : public XIncludeExpansionError {
 public:
     using XIncludeExpansionError::XIncludeExpansionError;
+
     std::string_view code() const noexcept override {
         return "xml/xinclude-malformed";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeMalformed>(*this);
     }
@@ -200,9 +213,11 @@ public:
 class XIncludeUnsupported : public XIncludeExpansionError {
 public:
     using XIncludeExpansionError::XIncludeExpansionError;
+
     std::string_view code() const noexcept override {
         return "xml/xinclude-unsupported";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<XIncludeUnsupported>(*this);
     }

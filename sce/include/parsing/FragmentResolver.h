@@ -24,10 +24,9 @@ namespace SCE::parsing {
 // candidate tried (in order) to `searched` so the caller can render its
 // own NotFound diagnostic trail (XInclude and template expansion emit
 // different diagnostic codes for the same physical miss).
-inline std::filesystem::path resolveFragment(
-    std::string_view name, const std::filesystem::path &baseDir,
-    const std::vector<std::string> &includeDirs,
-    std::vector<std::string> &searched) {
+inline std::filesystem::path resolveFragment(std::string_view name, const std::filesystem::path &baseDir,
+                                             const std::vector<std::string> &includeDirs,
+                                             std::vector<std::string> &searched) {
     const std::filesystem::path path{std::string{name}};
     // Non-throwing `exists` (error_code overload) so an unreadable
     // parent directory yields "not found" rather than a thrown

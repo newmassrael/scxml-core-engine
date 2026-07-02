@@ -10,8 +10,8 @@
 // which routes through `expandString`.
 
 #include "parsing/PugiXMLParser.h"
-#include "parsing/TemplateExpander.h"
 #include "parsing/TemplateError.h"
+#include "parsing/TemplateExpander.h"
 
 #include <pugixml.hpp>
 
@@ -44,18 +44,15 @@ TEST(TemplateExpander, FindElementEndSelfClosing) {
     const std::size_t start = source.find("<sce:use");
     ASSERT_NE(start, std::string::npos);
     const std::size_t end = findElementEnd(source, start, "sce:use");
-    EXPECT_EQ(source.substr(start, end - start),
-              R"(<sce:use template="t"/>)");
+    EXPECT_EQ(source.substr(start, end - start), R"(<sce:use template="t"/>)");
 }
 
 // ── findElementEnd: open-close pair ─────────────────────────────────
 TEST(TemplateExpander, FindElementEndOpenClose) {
-    const std::string source =
-        R"(<root><sce:use template="t">body</sce:use></root>)";
+    const std::string source = R"(<root><sce:use template="t">body</sce:use></root>)";
     const std::size_t start = source.find("<sce:use");
     const std::size_t end = findElementEnd(source, start, "sce:use");
-    EXPECT_EQ(source.substr(start, end - start),
-              R"(<sce:use template="t">body</sce:use>)");
+    EXPECT_EQ(source.substr(start, end - start), R"(<sce:use template="t">body</sce:use>)");
 }
 
 // ── findElementEnd: nested same-tag depth tracking ──────────────────
@@ -64,12 +61,10 @@ TEST(TemplateExpander, FindElementEndOpenClose) {
 // with the first `</sce:use>` before falling through to the outer
 // close.
 TEST(TemplateExpander, FindElementEndNestedSameTag) {
-    const std::string source =
-        R"(<r><sce:use><sce:use template="t"/></sce:use></r>)";
+    const std::string source = R"(<r><sce:use><sce:use template="t"/></sce:use></r>)";
     const std::size_t start = source.find("<sce:use");
     const std::size_t end = findElementEnd(source, start, "sce:use");
-    EXPECT_EQ(source.substr(start, end - start),
-              R"(<sce:use><sce:use template="t"/></sce:use>)");
+    EXPECT_EQ(source.substr(start, end - start), R"(<sce:use><sce:use template="t"/></sce:use>)");
 }
 
 // ── findElementEnd: nested open-close pair requires depth counter ───
@@ -80,34 +75,26 @@ TEST(TemplateExpander, FindElementEndNestedSameTag) {
 // test — self-closing inner forms do not exercise that code path, so
 // a dedicated open-close-pair fixture is necessary.
 TEST(TemplateExpander, FindElementEndNestedOpenCloseRequiresDepth) {
-    const std::string source =
-        R"(<r><sce:use template="a"><sce:use template="b"></sce:use></sce:use></r>)";
+    const std::string source = R"(<r><sce:use template="a"><sce:use template="b"></sce:use></sce:use></r>)";
     const std::size_t start = source.find("<sce:use");
     const std::size_t end = findElementEnd(source, start, "sce:use");
-    EXPECT_EQ(
-        source.substr(start, end - start),
-        R"(<sce:use template="a"><sce:use template="b"></sce:use></sce:use>)");
+    EXPECT_EQ(source.substr(start, end - start), R"(<sce:use template="a"><sce:use template="b"></sce:use></sce:use>)");
 }
 
 // ── findElementEnd: `>` inside quoted attribute must not terminate ──
 TEST(TemplateExpander, FindElementEndQuotedAngleInAttr) {
-    const std::string source =
-        R"(<root><sce:use template="t" label="a>b"/></root>)";
+    const std::string source = R"(<root><sce:use template="t" label="a>b"/></root>)";
     const std::size_t start = source.find("<sce:use");
     const std::size_t end = findElementEnd(source, start, "sce:use");
-    EXPECT_EQ(source.substr(start, end - start),
-              R"(<sce:use template="t" label="a>b"/>)");
+    EXPECT_EQ(source.substr(start, end - start), R"(<sce:use template="t" label="a>b"/>)");
 }
 
 // ── findElementEnd: comment body containing `</sce:use>` ignored ────
 TEST(TemplateExpander, FindElementEndCommentShieldsCloseTag) {
-    const std::string source =
-        R"(<r><sce:use template="t"><!-- </sce:use> -->x</sce:use></r>)";
+    const std::string source = R"(<r><sce:use template="t"><!-- </sce:use> -->x</sce:use></r>)";
     const std::size_t start = source.find("<sce:use");
     const std::size_t end = findElementEnd(source, start, "sce:use");
-    EXPECT_EQ(
-        source.substr(start, end - start),
-        R"(<sce:use template="t"><!-- </sce:use> -->x</sce:use>)");
+    EXPECT_EQ(source.substr(start, end - start), R"(<sce:use template="t"><!-- </sce:use> -->x</sce:use>)");
 }
 
 // ── collectTopLevelSceUseRanges: single element ─────────────────────
@@ -115,8 +102,7 @@ TEST(TemplateExpander, CollectTopLevelSceUseRangesSingle) {
     const std::string source = R"(<root><sce:use template="t"/></root>)";
     const auto ranges = collectTopLevelSceUseRanges(source);
     ASSERT_EQ(ranges.size(), 1u);
-    EXPECT_EQ(source.substr(ranges[0].start, ranges[0].end - ranges[0].start),
-              R"(<sce:use template="t"/>)");
+    EXPECT_EQ(source.substr(ranges[0].start, ranges[0].end - ranges[0].start), R"(<sce:use template="t"/>)");
 }
 
 // ── collectTopLevelSceUseRanges: skips nested (top-level only) ──────
@@ -124,8 +110,7 @@ TEST(TemplateExpander, CollectTopLevelSceUseRangesSingle) {
 // the path, its children are expanded by the recursive call, not by
 // the outer walker. The caller expects one range here, not two.
 TEST(TemplateExpander, CollectTopLevelSceUseRangesSkipsNested) {
-    const std::string source =
-        R"(<r><sce:use template="t"><sce:use template="inner"/></sce:use></r>)";
+    const std::string source = R"(<r><sce:use template="t"><sce:use template="inner"/></sce:use></r>)";
     const auto ranges = collectTopLevelSceUseRanges(source);
     ASSERT_EQ(ranges.size(), 1u);
     EXPECT_EQ(source.substr(ranges[0].start, ranges[0].end - ranges[0].start),
@@ -134,14 +119,11 @@ TEST(TemplateExpander, CollectTopLevelSceUseRangesSkipsNested) {
 
 // ── collectTopLevelSceUseRanges: multiple siblings in order ─────────
 TEST(TemplateExpander, CollectTopLevelSceUseRangesSiblings) {
-    const std::string source =
-        R"(<r><sce:use template="a"/><x/><sce:use template="b"/></r>)";
+    const std::string source = R"(<r><sce:use template="a"/><x/><sce:use template="b"/></r>)";
     const auto ranges = collectTopLevelSceUseRanges(source);
     ASSERT_EQ(ranges.size(), 2u);
-    EXPECT_EQ(source.substr(ranges[0].start, ranges[0].end - ranges[0].start),
-              R"(<sce:use template="a"/>)");
-    EXPECT_EQ(source.substr(ranges[1].start, ranges[1].end - ranges[1].start),
-              R"(<sce:use template="b"/>)");
+    EXPECT_EQ(source.substr(ranges[0].start, ranges[0].end - ranges[0].start), R"(<sce:use template="a"/>)");
+    EXPECT_EQ(source.substr(ranges[1].start, ranges[1].end - ranges[1].start), R"(<sce:use template="b"/>)");
 }
 
 // ── collectTopLevelSceUseRanges: no `<sce:use>` → empty ─────────────
@@ -160,8 +142,7 @@ TEST(TemplateExpander, CollectTopLevelSceUseRangesMalformedThrows) {
 // ── expandString: fast path returns identity on no `<sce:use>` ──────
 TEST(TemplateExpander, ExpandStringNoSceUseReturnsIdentity) {
     const std::string source = R"(<root><state id="s1"/></root>)";
-    const auto upstream =
-        SCE::parsing::PositionMap::identity("main.scxml", source);
+    const auto upstream = SCE::parsing::PositionMap::identity("main.scxml", source);
     const auto result = expandString(source, "main.scxml", ".", {}, upstream);
     EXPECT_EQ(result.expanded_text, source);
     EXPECT_TRUE(result.positions.is_identity());
@@ -174,19 +155,17 @@ TEST(TemplateExpander, ExpandStringNoSceUseReturnsIdentity) {
 TEST(TemplateExpander, ApplySubstitutionBasicOrigins) {
     const std::string body = "before{$x}after";
     std::unordered_map<std::string, std::string> params{{"x", "VAL"}};
-    const auto result = applySubstitutionWithTracking(
-        body, /*bodySourceOffset=*/100,
-        std::filesystem::path("tmpl.scxml"), params,
-        std::filesystem::path("caller.scxml"),
-        /*callerRow=*/7, /*callerCol=*/3);
+    const auto result =
+        applySubstitutionWithTracking(body, /*bodySourceOffset=*/100, std::filesystem::path("tmpl.scxml"), params,
+                                      std::filesystem::path("caller.scxml"),
+                                      /*callerRow=*/7, /*callerCol=*/3);
     EXPECT_EQ(result.substituted, "beforeVALafter");
     ASSERT_EQ(result.entries.size(), 3u);
 
     // Entry 0: "before" — FileOrigin(tmpl, offset 100).
     EXPECT_EQ(result.entries[0].out_start, 0u);
     EXPECT_EQ(result.entries[0].out_end, 6u);
-    const auto *fileOrigin0 =
-        std::get_if<FileOrigin>(&result.entries[0].origin);
+    const auto *fileOrigin0 = std::get_if<FileOrigin>(&result.entries[0].origin);
     ASSERT_NE(fileOrigin0, nullptr);
     EXPECT_EQ(fileOrigin0->path, std::filesystem::path("tmpl.scxml"));
     EXPECT_EQ(fileOrigin0->source_offset, 100u);
@@ -194,8 +173,7 @@ TEST(TemplateExpander, ApplySubstitutionBasicOrigins) {
     // Entry 1: "VAL" — CallSiteOrigin(caller, 7, 3).
     EXPECT_EQ(result.entries[1].out_start, 6u);
     EXPECT_EQ(result.entries[1].out_end, 9u);
-    const auto *callSite =
-        std::get_if<CallSiteOrigin>(&result.entries[1].origin);
+    const auto *callSite = std::get_if<CallSiteOrigin>(&result.entries[1].origin);
     ASSERT_NE(callSite, nullptr);
     EXPECT_EQ(callSite->path, std::filesystem::path("caller.scxml"));
     EXPECT_EQ(callSite->row, 7u);
@@ -203,8 +181,7 @@ TEST(TemplateExpander, ApplySubstitutionBasicOrigins) {
 
     // Entry 2: "after" — FileOrigin(tmpl, offset 100+10=110). The
     // body-local offset of "after" is 10 (after the closing `}`).
-    const auto *fileOrigin2 =
-        std::get_if<FileOrigin>(&result.entries[2].origin);
+    const auto *fileOrigin2 = std::get_if<FileOrigin>(&result.entries[2].origin);
     ASSERT_NE(fileOrigin2, nullptr);
     EXPECT_EQ(fileOrigin2->source_offset, 110u);
 }
@@ -216,9 +193,8 @@ TEST(TemplateExpander, ApplySubstitutionBasicOrigins) {
 TEST(TemplateExpander, ApplySubstitutionEmptyValueSkipsEntry) {
     const std::string body = "x{$p}y";
     std::unordered_map<std::string, std::string> params{{"p", ""}};
-    const auto result = applySubstitutionWithTracking(
-        body, 0, std::filesystem::path("t"), params,
-        std::filesystem::path("c"), 1, 1);
+    const auto result =
+        applySubstitutionWithTracking(body, 0, std::filesystem::path("t"), params, std::filesystem::path("c"), 1, 1);
     EXPECT_EQ(result.substituted, "xy");
     ASSERT_EQ(result.entries.size(), 2u);
     EXPECT_TRUE(std::holds_alternative<FileOrigin>(result.entries[0].origin));
@@ -233,9 +209,8 @@ TEST(TemplateExpander, ApplySubstitutionEmptyValueSkipsEntry) {
 TEST(TemplateExpander, ApplySubstitutionUndeclaredEmitsLiteralBrace) {
     const std::string body = "before{$unknown}after";
     std::unordered_map<std::string, std::string> params;  // no bindings
-    const auto result = applySubstitutionWithTracking(
-        body, 0, std::filesystem::path("t"), params,
-        std::filesystem::path("c"), 1, 1);
+    const auto result =
+        applySubstitutionWithTracking(body, 0, std::filesystem::path("t"), params, std::filesystem::path("c"), 1, 1);
     EXPECT_EQ(result.substituted, body);
     for (const auto &entry : result.entries) {
         EXPECT_TRUE(std::holds_alternative<FileOrigin>(entry.origin));
@@ -247,8 +222,7 @@ TEST(TemplateExpander, ParseParamDeclBasic) {
     pugi::xml_document doc;
     const char *xml = R"(<sce:param name="port" required="true"/>)";
     ASSERT_TRUE(doc.load_string(xml));
-    const ParamDecl decl =
-        parseParamDecl(doc.document_element(), "tmpl");
+    const ParamDecl decl = parseParamDecl(doc.document_element(), "tmpl");
     EXPECT_EQ(decl.name, "port");
     EXPECT_TRUE(decl.required);
     EXPECT_FALSE(decl.hasDefault);
@@ -257,11 +231,9 @@ TEST(TemplateExpander, ParseParamDeclBasic) {
 // ── parseParamDecl: required + default mutual exclusion ─────────────
 TEST(TemplateExpander, ParseParamDeclRequiredAndDefaultRejected) {
     pugi::xml_document doc;
-    const char *xml =
-        R"(<sce:param name="p" required="true" default="x"/>)";
+    const char *xml = R"(<sce:param name="p" required="true" default="x"/>)";
     ASSERT_TRUE(doc.load_string(xml));
-    EXPECT_THROW(parseParamDecl(doc.document_element(), "tmpl"),
-                 TemplateMalformed);
+    EXPECT_THROW(parseParamDecl(doc.document_element(), "tmpl"), TemplateMalformed);
 }
 
 // ── parseParamDecl: invalid name pattern ────────────────────────────
@@ -269,15 +241,13 @@ TEST(TemplateExpander, ParseParamDeclInvalidNameRejected) {
     pugi::xml_document doc;
     const char *xml = R"(<sce:param name="9bad"/>)";
     ASSERT_TRUE(doc.load_string(xml));
-    EXPECT_THROW(parseParamDecl(doc.document_element(), "tmpl"),
-                 TemplateMalformed);
+    EXPECT_THROW(parseParamDecl(doc.document_element(), "tmpl"), TemplateMalformed);
 }
 
 // ── collectUseBindings: skips template + xmlns attributes ───────────
 TEST(TemplateExpander, CollectUseBindingsFiltersReserved) {
     pugi::xml_document doc;
-    const char *xml =
-        R"(<sce:use xmlns:sce="http://sce.dev/ext" template="t" port="80" host="h"/>)";
+    const char *xml = R"(<sce:use xmlns:sce="http://sce.dev/ext" template="t" port="80" host="h"/>)";
     ASSERT_TRUE(doc.load_string(xml));
     const auto bindings = collectUseBindings(doc.document_element());
     EXPECT_EQ(bindings.size(), 2u);
@@ -293,17 +263,14 @@ TEST(TemplateExpander, ExtractTemplateBodyRangesBasic) {
         R"(<sce:template xmlns:sce="http://sce.dev/ext"><sce:param name="p"/><a/><b/></sce:template>)";
     const auto ranges = extractTemplateBodyRanges(expanded, "tmpl");
     ASSERT_EQ(ranges.size(), 2u);
-    EXPECT_EQ(expanded.substr(ranges[0].start, ranges[0].end - ranges[0].start),
-              "<a/>");
-    EXPECT_EQ(expanded.substr(ranges[1].start, ranges[1].end - ranges[1].start),
-              "<b/>");
+    EXPECT_EQ(expanded.substr(ranges[0].start, ranges[0].end - ranges[0].start), "<a/>");
+    EXPECT_EQ(expanded.substr(ranges[1].start, ranges[1].end - ranges[1].start), "<b/>");
 }
 
 // ── extractTemplateBodyRanges: wrong-root throws ────────────────────
 TEST(TemplateExpander, ExtractTemplateBodyRangesWrongRootThrows) {
     const std::string expanded = R"(<root><a/></root>)";
-    EXPECT_THROW(extractTemplateBodyRanges(expanded, "tmpl"),
-                 TemplateMalformed);
+    EXPECT_THROW(extractTemplateBodyRanges(expanded, "tmpl"), TemplateMalformed);
 }
 
 // ── expandString: end-to-end simple substitution ────────────────────
@@ -312,8 +279,7 @@ TEST(TemplateExpander, ExtractTemplateBodyRangesWrongRootThrows) {
 // the substituted value and the PositionMap lookups resolve as
 // expected (body bytes → template file; substituted bytes → caller).
 TEST(TemplateExpander, ExpandStringSimpleSubstitution) {
-    const auto tmpDir = std::filesystem::temp_directory_path() /
-                        "sce_template_expander_test_simple";
+    const auto tmpDir = std::filesystem::temp_directory_path() / "sce_template_expander_test_simple";
     std::filesystem::create_directories(tmpDir);
     const auto tmplPath = tmpDir / "t.scxml";
     const std::string tmplBody =
@@ -322,16 +288,11 @@ TEST(TemplateExpander, ExpandStringSimpleSubstitution) {
         std::ofstream out(tmplPath, std::ios::binary);
         out << tmplBody;
     }
-    const std::string caller =
-        R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml" x="S1"/></root>)";
-    const auto upstream = SCE::parsing::PositionMap::identity(
-        (tmpDir / "caller.scxml").string(), caller);
-    const auto result =
-        expandString(caller, (tmpDir / "caller.scxml").string(),
-                     tmpDir.string(), {}, upstream);
+    const std::string caller = R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml" x="S1"/></root>)";
+    const auto upstream = SCE::parsing::PositionMap::identity((tmpDir / "caller.scxml").string(), caller);
+    const auto result = expandString(caller, (tmpDir / "caller.scxml").string(), tmpDir.string(), {}, upstream);
     EXPECT_FALSE(result.positions.is_identity());
-    EXPECT_NE(result.expanded_text.find("<state id=\"S1\"/>"),
-              std::string::npos);
+    EXPECT_NE(result.expanded_text.find("<state id=\"S1\"/>"), std::string::npos);
 
     // Byte inside `S1` should resolve back to the caller file (the
     // CallSiteOrigin depth-1 collapse).
@@ -352,29 +313,23 @@ TEST(TemplateExpander, ExpandStringSimpleSubstitution) {
 
 // ── expandString: missing required param throws ────────────────────
 TEST(TemplateExpander, ExpandStringMissingRequiredParamThrows) {
-    const auto tmpDir = std::filesystem::temp_directory_path() /
-                        "sce_template_expander_test_missing";
+    const auto tmpDir = std::filesystem::temp_directory_path() / "sce_template_expander_test_missing";
     std::filesystem::create_directories(tmpDir);
     const auto tmplPath = tmpDir / "t.scxml";
     {
         std::ofstream out(tmplPath, std::ios::binary);
         out << R"(<sce:template xmlns:sce="http://sce.dev/ext"><sce:param name="x" required="true"/><a/></sce:template>)";
     }
-    const std::string caller =
-        R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml"/></root>)";
-    const auto upstream = SCE::parsing::PositionMap::identity(
-        (tmpDir / "caller.scxml").string(), caller);
-    EXPECT_THROW(
-        expandString(caller, (tmpDir / "caller.scxml").string(),
-                     tmpDir.string(), {}, upstream),
-        SCE::parsing::TemplateMissingParam);
+    const std::string caller = R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml"/></root>)";
+    const auto upstream = SCE::parsing::PositionMap::identity((tmpDir / "caller.scxml").string(), caller);
+    EXPECT_THROW(expandString(caller, (tmpDir / "caller.scxml").string(), tmpDir.string(), {}, upstream),
+                 SCE::parsing::TemplateMissingParam);
     std::filesystem::remove_all(tmpDir);
 }
 
 // ── expandString: unknown caller binding throws ────────────────────
 TEST(TemplateExpander, ExpandStringUnknownBindingThrows) {
-    const auto tmpDir = std::filesystem::temp_directory_path() /
-                        "sce_template_expander_test_unknown";
+    const auto tmpDir = std::filesystem::temp_directory_path() / "sce_template_expander_test_unknown";
     std::filesystem::create_directories(tmpDir);
     const auto tmplPath = tmpDir / "t.scxml";
     {
@@ -383,12 +338,9 @@ TEST(TemplateExpander, ExpandStringUnknownBindingThrows) {
     }
     const std::string caller =
         R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="t.scxml" x="v" bogus="b"/></root>)";
-    const auto upstream = SCE::parsing::PositionMap::identity(
-        (tmpDir / "caller.scxml").string(), caller);
-    EXPECT_THROW(
-        expandString(caller, (tmpDir / "caller.scxml").string(),
-                     tmpDir.string(), {}, upstream),
-        SCE::parsing::TemplateUnknownParam);
+    const auto upstream = SCE::parsing::PositionMap::identity((tmpDir / "caller.scxml").string(), caller);
+    EXPECT_THROW(expandString(caller, (tmpDir / "caller.scxml").string(), tmpDir.string(), {}, upstream),
+                 SCE::parsing::TemplateUnknownParam);
     std::filesystem::remove_all(tmpDir);
 }
 
@@ -396,11 +348,8 @@ TEST(TemplateExpander, ExpandStringUnknownBindingThrows) {
 TEST(TemplateExpander, ExpandStringNotFoundThrows) {
     const std::string caller =
         R"(<root xmlns:sce="http://sce.dev/ext"><sce:use template="does_not_exist.scxml"/></root>)";
-    const auto upstream =
-        SCE::parsing::PositionMap::identity("/tmp/caller.scxml", caller);
-    EXPECT_THROW(
-        expandString(caller, "/tmp/caller.scxml", "/tmp", {}, upstream),
-        SCE::parsing::TemplateNotFound);
+    const auto upstream = SCE::parsing::PositionMap::identity("/tmp/caller.scxml", caller);
+    EXPECT_THROW(expandString(caller, "/tmp/caller.scxml", "/tmp", {}, upstream), SCE::parsing::TemplateNotFound);
 }
 
 // ── PugiXMLDocument::processSceTemplate: roundtrip through parser ──
@@ -411,8 +360,7 @@ TEST(TemplateExpander, ExpandStringNotFoundThrows) {
 // #1 contract (processSceTemplate returns PositionMap) with a
 // consumer exercising the threaded member.
 TEST(ProcessSceTemplate, RoundtripResolvesBodyAndCallsite) {
-    const auto tmpDir = std::filesystem::temp_directory_path() /
-                        "sce_process_sce_template_test_roundtrip";
+    const auto tmpDir = std::filesystem::temp_directory_path() / "sce_process_sce_template_test_roundtrip";
     std::filesystem::create_directories(tmpDir);
     const auto tmplPath = tmpDir / "t.scxml";
     const auto callerPath = tmpDir / "caller.scxml";
@@ -444,13 +392,11 @@ TEST(ProcessSceTemplate, RoundtripResolvesBodyAndCallsite) {
 // second line pointing at a missing template should produce a
 // TemplateNotFound whose location() names the caller file at row 2.
 TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
-    const std::string callerSource =
-        "<root xmlns:sce=\"http://sce.dev/ext\">\n"
-        "  <sce:use template=\"does_not_exist.scxml\"/>\n"
-        "</root>";
+    const std::string callerSource = "<root xmlns:sce=\"http://sce.dev/ext\">\n"
+                                     "  <sce:use template=\"does_not_exist.scxml\"/>\n"
+                                     "</root>";
     const std::string callerPath = "/tmp/p2_location_test_caller.scxml";
-    const auto upstream =
-        SCE::parsing::PositionMap::identity(callerPath, callerSource);
+    const auto upstream = SCE::parsing::PositionMap::identity(callerPath, callerSource);
     try {
         expandString(callerSource, callerPath, "/tmp", {}, upstream);
         FAIL() << "expected TemplateNotFound";
@@ -482,8 +428,7 @@ TEST(TemplateExpander, ErrorLocationPointsAtCallerSceUse) {
 // pre-composition shape) reds the assertion below — the fragment
 // byte then resolves to `main.xml` instead of `frag.xml`.
 TEST(ProcessSceTemplate, ThreadsUpstreamMapForNoSceUseDoc) {
-    const auto tmpDir = std::filesystem::temp_directory_path() /
-                        "sce_process_sce_template_threads_upstream";
+    const auto tmpDir = std::filesystem::temp_directory_path() / "sce_process_sce_template_threads_upstream";
     std::filesystem::create_directories(tmpDir);
     const auto fragPath = tmpDir / "frag.xml";
     const auto mainPath = tmpDir / "main.xml";
@@ -522,18 +467,16 @@ TEST(ProcessSceTemplate, ThreadsUpstreamMapForNoSceUseDoc) {
             break;
         }
     }
-    ASSERT_TRUE(foundFragByte)
-        << "upstream PositionMap from processXInclude must attribute "
-           "at least one byte to frag.xml";
+    ASSERT_TRUE(foundFragByte) << "upstream PositionMap from processXInclude must attribute "
+                                  "at least one byte to frag.xml";
 
     const auto tPositions = doc.processSceTemplate(xPositions);
 
     const auto upstreamPos = xPositions.lookup(fragByte);
     const auto downstreamPos = tPositions.lookup(fragByte);
-    EXPECT_EQ(upstreamPos.file, downstreamPos.file)
-        << "fragment-byte origin must survive processSceTemplate's "
-           "no-`<sce:use>` fast path — upstream-map "
-           "passthrough contract";
+    EXPECT_EQ(upstreamPos.file, downstreamPos.file) << "fragment-byte origin must survive processSceTemplate's "
+                                                       "no-`<sce:use>` fast path — upstream-map "
+                                                       "passthrough contract";
     EXPECT_EQ(upstreamPos.row, downstreamPos.row);
     EXPECT_EQ(upstreamPos.col, downstreamPos.col);
 

@@ -63,10 +63,9 @@ constexpr auto kZ3ObservationBudget = std::chrono::milliseconds(2000);
 
 // Mirrors brake's own listen endpoint (deploy_zenoh_on_drop.yaml ecu_brake):
 // the raw motor peer in §2 dials this address to sit on brake's routing table.
-constexpr const char* kBrakeListen =
-    SCE::Generated::brake_zenoh_on_drop::ZENOH_LISTEN_ENDPOINTS[0];
+constexpr const char *kBrakeListen = SCE::Generated::brake_zenoh_on_drop::ZENOH_LISTEN_ENDPOINTS[0];
 // Must match deploy_zenoh_on_drop.yaml brake binding key.
-constexpr const char* kMotorKey = "sce/brake_on_drop/motor/compute_force";
+constexpr const char *kMotorKey = "sce/brake_on_drop/motor/compute_force";
 
 // §1 No peer at all — brake's session has nothing to route queries to.
 // Zenoh short-circuits the query and fires on_drop effectively
@@ -78,7 +77,8 @@ int scenario_no_peer() {
     if (!brake_router.init()) {
         std::fprintf(stderr,
                      "FAIL [§1 no-peer]: brake_router.init() failed — zenoh "
-                     "session open could not bind to %s.\n", kBrakeListen);
+                     "session open could not bind to %s.\n",
+                     kBrakeListen);
         return 1;
     }
 
@@ -87,25 +87,27 @@ int scenario_no_peer() {
     const auto start = std::chrono::steady_clock::now();
     brake.processEvent(BrakeEvent::Go);
     while (std::chrono::steady_clock::now() - start < kZ3ObservationBudget) {
-        if (brake.getCurrentState() == BrakeState::Failed) break;
+        if (brake.getCurrentState() == BrakeState::Failed) {
+            break;
+        }
         brake.step();
-        if (brake.getCurrentState() == BrakeState::Failed) break;
+        if (brake.getCurrentState() == BrakeState::Failed) {
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
-    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start).count();
+    const auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 
     if (brake.getCurrentState() != BrakeState::Failed) {
         std::fprintf(stderr, "FAIL [§1 no-peer]: brake stuck at state=%d after %lld ms.\n",
-                     static_cast<int>(brake.getCurrentState()),
-                     static_cast<long long>(elapsed_ms));
+                     static_cast<int>(brake.getCurrentState()), static_cast<long long>(elapsed_ms));
         brake_router.shutdown();
         return 2;
     }
 
     brake_router.shutdown();
-    std::printf("[§1 no-peer] PASS: error.invoke observed in %lld ms\n",
-                static_cast<long long>(elapsed_ms));
+    std::printf("[§1 no-peer] PASS: error.invoke observed in %lld ms\n", static_cast<long long>(elapsed_ms));
     return 0;
 }
 
@@ -129,7 +131,8 @@ int scenario_peer_silent() {
         std::fprintf(stderr,
                      "FAIL [§2 peer-silent]: brake_router.init() failed — "
                      "zenoh session open could not bind to %s. "
-                     "Leftover listener from §1?\n", kBrakeListen);
+                     "Leftover listener from §1?\n",
+                     kBrakeListen);
         return 1;
     }
 
@@ -161,7 +164,7 @@ int scenario_peer_silent() {
 
     [[maybe_unused]] auto silent_queryable = motor_session.declare_queryable(
         zenoh::KeyExpr(kMotorKey),
-        [&query_hits, &held_mutex, &held_queries](const zenoh::Query& q) {
+        [&query_hits, &held_mutex, &held_queries](const zenoh::Query &q) {
             query_hits.fetch_add(1, std::memory_order_relaxed);
             std::lock_guard<std::mutex> lk(held_mutex);
             held_queries.push_back(q.clone());
@@ -177,20 +180,23 @@ int scenario_peer_silent() {
     const auto start = std::chrono::steady_clock::now();
     brake.processEvent(BrakeEvent::Go);
     while (std::chrono::steady_clock::now() - start < kZ3ObservationBudget) {
-        if (brake.getCurrentState() == BrakeState::Failed) break;
+        if (brake.getCurrentState() == BrakeState::Failed) {
+            break;
+        }
         brake.step();
-        if (brake.getCurrentState() == BrakeState::Failed) break;
+        if (brake.getCurrentState() == BrakeState::Failed) {
+            break;
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
-    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start).count();
+    const auto elapsed_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
 
     if (brake.getCurrentState() != BrakeState::Failed) {
         std::fprintf(stderr,
                      "FAIL [§2 peer-silent]: brake stuck at state=%d after "
                      "%lld ms (queryable hits=%d).\n",
-                     static_cast<int>(brake.getCurrentState()),
-                     static_cast<long long>(elapsed_ms),
+                     static_cast<int>(brake.getCurrentState()), static_cast<long long>(elapsed_ms),
                      query_hits.load(std::memory_order_relaxed));
         brake_router.shutdown();
         return 2;
@@ -202,11 +208,10 @@ int scenario_peer_silent() {
     // same thing as §1 and the extra setup is noise.
     const int hits = query_hits.load(std::memory_order_relaxed);
     if (hits == 0) {
-        std::fprintf(stderr,
-                     "FAIL [§2 peer-silent]: queryable callback never fired "
-                     "(hits=0). Scenario degenerated to §1 — peer discovery "
-                     "incomplete when Go was dispatched. Increase the 200 ms "
-                     "stabilization sleep or investigate zenoh routing.\n");
+        std::fprintf(stderr, "FAIL [§2 peer-silent]: queryable callback never fired "
+                             "(hits=0). Scenario degenerated to §1 — peer discovery "
+                             "incomplete when Go was dispatched. Increase the 200 ms "
+                             "stabilization sleep or investigate zenoh routing.\n");
         brake_router.shutdown();
         return 3;
     }
@@ -222,12 +227,16 @@ int scenario_peer_silent() {
 
 int main() {
     try {
-        if (const int r1 = scenario_no_peer(); r1 != 0) return r1;
-        if (const int r2 = scenario_peer_silent(); r2 != 0) return 10 + r2;
+        if (const int r1 = scenario_no_peer(); r1 != 0) {
+            return r1;
+        }
+        if (const int r2 = scenario_peer_silent(); r2 != 0) {
+            return 10 + r2;
+        }
         std::printf("SCE Mesh gap Z3 on_drop early-cancel E2E: PASS "
                     "(both scenarios)\n");
         return 0;
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

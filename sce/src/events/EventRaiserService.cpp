@@ -60,7 +60,7 @@ EventRaiserService::EventRaiserService(std::shared_ptr<IEventRaiserRegistry> reg
 
 bool EventRaiserService::registerEventRaiser(const std::string &sessionId, std::shared_ptr<IEventRaiser> eventRaiser) {
     SCE_LOG_DEBUG("EventRaiserService: Registering EventRaiser for sessionId='{}', eventRaiser={}", sessionId,
-              (eventRaiser ? "valid" : "null"));
+                  (eventRaiser ? "valid" : "null"));
 
     if (sessionId.empty()) {
         SCE_LOG_ERROR("EventRaiserService: Cannot register EventRaiser - session ID is empty");
@@ -68,7 +68,8 @@ bool EventRaiserService::registerEventRaiser(const std::string &sessionId, std::
     }
 
     if (!eventRaiser) {
-        SCE_LOG_ERROR("EventRaiserService: Cannot register EventRaiser - eventRaiser is null for session: {}", sessionId);
+        SCE_LOG_ERROR("EventRaiserService: Cannot register EventRaiser - eventRaiser is null for session: {}",
+                      sessionId);
         return false;
     }
 
@@ -82,7 +83,8 @@ bool EventRaiserService::registerEventRaiser(const std::string &sessionId, std::
 
     // Check if already registered to avoid duplicates
     bool alreadyRegistered = registry_->hasEventRaiser(sessionId);
-    SCE_LOG_DEBUG("EventRaiserService: EventRaiser already registered for session '{}': {}", sessionId, alreadyRegistered);
+    SCE_LOG_DEBUG("EventRaiserService: EventRaiser already registered for session '{}': {}", sessionId,
+                  alreadyRegistered);
 
     if (alreadyRegistered) {
         SCE_LOG_DEBUG("EventRaiserService: EventRaiser already registered for session: {}", sessionId);
@@ -93,7 +95,7 @@ bool EventRaiserService::registerEventRaiser(const std::string &sessionId, std::
     bool success = registry_->registerEventRaiser(sessionId, eventRaiser);
     if (success) {
         SCE_LOG_DEBUG("EventRaiserService: Successfully registered EventRaiser for session: '{}', ready={}", sessionId,
-                  eventRaiser->isReady());
+                      eventRaiser->isReady());
     } else {
         SCE_LOG_ERROR("EventRaiserService: Failed to register EventRaiser for session: {}", sessionId);
     }
@@ -111,7 +113,7 @@ std::shared_ptr<IEventRaiser> EventRaiserService::getEventRaiser(const std::stri
 
     auto result = registry_->getEventRaiser(sessionId);
     SCE_LOG_DEBUG("EventRaiserService: EventRaiser lookup result - sessionId='{}', found={}, ready={}", sessionId,
-              (result != nullptr), (result ? result->isReady() : false));
+                  (result != nullptr), (result ? result->isReady() : false));
 
     return result;
 }

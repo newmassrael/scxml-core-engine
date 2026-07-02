@@ -33,29 +33,27 @@ using namespace std::chrono_literals;
 namespace {
 
 constexpr MeshDeadlineScheduler::Key kUuidA = {
-    0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12,
-    0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
+    0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12, 0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
 };
 
 constexpr MeshDeadlineScheduler::Key kUuidB = {
-    0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x70, 0x01,
-    0x90, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x70, 0x01, 0x90, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
 };
 
 constexpr MeshDeadlineScheduler::Key kUuidC = {
-    0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x70, 0x03,
-    0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
+    0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x70, 0x03, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x11,
 };
 
 /// Busy-wait helper bounded by `budget`: polls `pred` every millisecond
 /// so tests do not rely on a single `sleep_for` being long enough on a
 /// slow CI worker. Returns true if the predicate became true before the
 /// budget expired.
-template <typename Pred>
-bool waitFor(std::chrono::milliseconds budget, Pred pred) {
+template <typename Pred> bool waitFor(std::chrono::milliseconds budget, Pred pred) {
     const auto giveUp = std::chrono::steady_clock::now() + budget;
     while (std::chrono::steady_clock::now() < giveUp) {
-        if (pred()) return true;
+        if (pred()) {
+            return true;
+        }
         std::this_thread::sleep_for(1ms);
     }
     return pred();
@@ -67,19 +65,19 @@ TEST(MeshDeadlineScheduler, RegisterAndFireAfterDelay) {
     MeshDeadlineScheduler scheduler;
     std::atomic<int> fired{0};
 
-    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 25ms, [&fired]{ ++fired; }));
+    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 25ms, [&fired] { ++fired; }));
     EXPECT_EQ(scheduler.size(), 1u);
 
-    ASSERT_TRUE(waitFor(500ms, [&]{ return fired.load() == 1; }));
+    ASSERT_TRUE(waitFor(500ms, [&] { return fired.load() == 1; }));
     // After firing, size must drop — entry has been consumed.
-    EXPECT_TRUE(waitFor(100ms, [&]{ return scheduler.size() == 0u; }));
+    EXPECT_TRUE(waitFor(100ms, [&] { return scheduler.size() == 0u; }));
 }
 
 TEST(MeshDeadlineScheduler, CancelBeforeFireSuppressesCallback) {
     MeshDeadlineScheduler scheduler;
     std::atomic<int> fired{0};
 
-    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 50ms, [&fired]{ ++fired; }));
+    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 50ms, [&fired] { ++fired; }));
     ASSERT_TRUE(scheduler.cancelDeadline(kUuidA));
     EXPECT_EQ(scheduler.size(), 0u);
 
@@ -98,9 +96,9 @@ TEST(MeshDeadlineScheduler, DuplicateRegisterReturnsFalse) {
     std::atomic<int> firedA{0};
     std::atomic<int> firedB{0};
 
-    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 200ms, [&firedA]{ ++firedA; }));
+    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 200ms, [&firedA] { ++firedA; }));
     // Second call with same uuid: rejected; original registration untouched.
-    EXPECT_FALSE(scheduler.registerDeadline(kUuidA, 10ms, [&firedB]{ ++firedB; }));
+    EXPECT_FALSE(scheduler.registerDeadline(kUuidA, 10ms, [&firedB] { ++firedB; }));
 
     // The first registration's 200ms must still be honoured; the bogus
     // 10ms deadline of the rejected second call must not fire.
@@ -108,7 +106,7 @@ TEST(MeshDeadlineScheduler, DuplicateRegisterReturnsFalse) {
     EXPECT_EQ(firedA.load(), 0);
     EXPECT_EQ(firedB.load(), 0);
 
-    ASSERT_TRUE(waitFor(500ms, [&]{ return firedA.load() == 1; }));
+    ASSERT_TRUE(waitFor(500ms, [&] { return firedA.load() == 1; }));
     EXPECT_EQ(firedB.load(), 0);
 }
 
@@ -120,20 +118,20 @@ TEST(MeshDeadlineScheduler, MultipleDeadlinesFireInEarliestFirstOrder) {
     // Register in reverse deadline order (B first with 80ms, then A
     // with 20ms) to prove the heap, not insertion order, picks the
     // dispatch sequence.
-    ASSERT_TRUE(scheduler.registerDeadline(kUuidB, 80ms, [&]{
+    ASSERT_TRUE(scheduler.registerDeadline(kUuidB, 80ms, [&] {
         std::lock_guard<std::mutex> lock(order_mutex);
         order.push_back(2);
     }));
-    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 20ms, [&]{
+    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 20ms, [&] {
         std::lock_guard<std::mutex> lock(order_mutex);
         order.push_back(1);
     }));
-    ASSERT_TRUE(scheduler.registerDeadline(kUuidC, 150ms, [&]{
+    ASSERT_TRUE(scheduler.registerDeadline(kUuidC, 150ms, [&] {
         std::lock_guard<std::mutex> lock(order_mutex);
         order.push_back(3);
     }));
 
-    ASSERT_TRUE(waitFor(1000ms, [&]{
+    ASSERT_TRUE(waitFor(1000ms, [&] {
         std::lock_guard<std::mutex> lock(order_mutex);
         return order.size() == 3;
     }));
@@ -154,11 +152,11 @@ TEST(MeshDeadlineScheduler, ReregisterAfterCancelHonoursNewDeadline) {
     std::atomic<int> firedOld{0};
     std::atomic<int> firedNew{0};
 
-    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 10s, [&firedOld]{ ++firedOld; }));
+    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 10s, [&firedOld] { ++firedOld; }));
     ASSERT_TRUE(scheduler.cancelDeadline(kUuidA));
-    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 25ms, [&firedNew]{ ++firedNew; }));
+    ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 25ms, [&firedNew] { ++firedNew; }));
 
-    ASSERT_TRUE(waitFor(500ms, [&]{ return firedNew.load() == 1; }));
+    ASSERT_TRUE(waitFor(500ms, [&] { return firedNew.load() == 1; }));
     EXPECT_EQ(firedOld.load(), 0);
 }
 
@@ -178,11 +176,16 @@ TEST(MeshDeadlineScheduler, ConcurrentCancelVsFireAtMostOneOutcome) {
         uuid[1] = static_cast<std::uint8_t>(i & 0xff);
 
         std::atomic<int> thisFired{0};
-        ASSERT_TRUE(scheduler.registerDeadline(uuid, 1ms, [&]{ ++thisFired; ++fired; }));
+        ASSERT_TRUE(scheduler.registerDeadline(uuid, 1ms, [&] {
+            ++thisFired;
+            ++fired;
+        }));
         // Cancel races with fire: ~1ms deadline with immediate cancel
         // produces a mix of wins on either side.
-        if (scheduler.cancelDeadline(uuid)) ++cancelled;
-        (void)waitFor(50ms, [&]{ return thisFired.load() + (cancelled.load() > 0 ? 0 : 0) >= 0; });
+        if (scheduler.cancelDeadline(uuid)) {
+            ++cancelled;
+        }
+        (void)waitFor(50ms, [&] { return thisFired.load() + (cancelled.load() > 0 ? 0 : 0) >= 0; });
     }
 
     // Give any trailing in-flight callbacks time to settle.
@@ -198,8 +201,8 @@ TEST(MeshDeadlineScheduler, ShutdownWithPendingDropsCallbacks) {
     std::atomic<int> fired{0};
     {
         MeshDeadlineScheduler scheduler;
-        ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 10s, [&fired]{ ++fired; }));
-        ASSERT_TRUE(scheduler.registerDeadline(kUuidB, 10s, [&fired]{ ++fired; }));
+        ASSERT_TRUE(scheduler.registerDeadline(kUuidA, 10s, [&fired] { ++fired; }));
+        ASSERT_TRUE(scheduler.registerDeadline(kUuidB, 10s, [&fired] { ++fired; }));
         // Destructor invokes shutdown() → joins worker → no callback
         // can still be running. Pending deadlines are dropped.
     }
@@ -209,5 +212,5 @@ TEST(MeshDeadlineScheduler, ShutdownWithPendingDropsCallbacks) {
 TEST(MeshDeadlineScheduler, RegisterAfterShutdownReturnsFalse) {
     MeshDeadlineScheduler scheduler;
     scheduler.shutdown();
-    EXPECT_FALSE(scheduler.registerDeadline(kUuidA, 10ms, []{}));
+    EXPECT_FALSE(scheduler.registerDeadline(kUuidA, 10ms, [] {}));
 }

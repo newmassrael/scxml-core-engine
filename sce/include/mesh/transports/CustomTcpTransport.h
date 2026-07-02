@@ -43,9 +43,9 @@
 #include <cstring>
 #include <functional>
 #include <mutex>
-#include <optional>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <optional>
 #include <string>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -60,7 +60,7 @@ namespace SCE::Mesh::CustomTcp {
 /// Receive callback signature: invoked on a transport thread once per
 /// successfully decoded envelope. The callback owns dispatch to the
 /// engine; this layer does no policy interpretation.
-using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
+using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope &)>;
 
 /// Decode-error callback signature: invoked on a per-connection read
 /// thread when an inbound frame's CBOR decode fails. Codegen wires
@@ -102,17 +102,21 @@ namespace detail {
 /// to be consumed, so `"127.0.0.1:8080abc"` and `"127.0.0.1:8080 "` are
 /// rejected at parse time rather than silently truncating to 8080 (the
 /// behaviour `std::stoi` would have).
-inline bool parse_endpoint(const std::string& endpoint, sockaddr_in& out) {
+inline bool parse_endpoint(const std::string &endpoint, sockaddr_in &out) {
     auto colon = endpoint.find(':');
     if (colon == std::string::npos || colon == 0 || colon + 1 >= endpoint.size()) {
         return false;
     }
-    const char* port_begin = endpoint.data() + colon + 1;
-    const char* port_end = endpoint.data() + endpoint.size();
+    const char *port_begin = endpoint.data() + colon + 1;
+    const char *port_end = endpoint.data() + endpoint.size();
     int port = 0;
     auto [parse_end, ec] = std::from_chars(port_begin, port_end, port);
-    if (ec != std::errc{} || parse_end != port_end) return false;
-    if (port < 0 || port > 65535) return false;
+    if (ec != std::errc{} || parse_end != port_end) {
+        return false;
+    }
+    if (port < 0 || port > 65535) {
+        return false;
+    }
     std::string host = endpoint.substr(0, colon);
     std::memset(&out, 0, sizeof(out));
     out.sin_family = AF_INET;
@@ -128,13 +132,17 @@ inline bool parse_endpoint(const std::string& endpoint, sockaddr_in& out) {
 /// loop. Returns false on EOF (peer closed) or unrecoverable error so the
 /// reader thread can exit cleanly. `EINTR` is retried (signal during a
 /// blocking read is not a transport fault).
-inline bool read_exact(int fd, void* buf, std::size_t n) {
-    auto* p = static_cast<unsigned char*>(buf);
+inline bool read_exact(int fd, void *buf, std::size_t n) {
+    auto *p = static_cast<unsigned char *>(buf);
     while (n > 0) {
         ssize_t got = ::recv(fd, p, n, 0);
-        if (got == 0) return false;          // EOF: peer closed cleanly
+        if (got == 0) {
+            return false;  // EOF: peer closed cleanly
+        }
         if (got < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR) {
+                continue;
+            }
             return false;
         }
         p += got;
@@ -146,12 +154,14 @@ inline bool read_exact(int fd, void* buf, std::size_t n) {
 /// Write exactly `n` bytes from `buf` to `fd`. Mirrors `read_exact` for
 /// writers. `MSG_NOSIGNAL` suppresses SIGPIPE so a broken peer surfaces
 /// as `EPIPE` to the caller rather than terminating the process.
-inline bool write_exact(int fd, const void* buf, std::size_t n) {
-    const auto* p = static_cast<const unsigned char*>(buf);
+inline bool write_exact(int fd, const void *buf, std::size_t n) {
+    const auto *p = static_cast<const unsigned char *>(buf);
     while (n > 0) {
         ssize_t put = ::send(fd, p, n, MSG_NOSIGNAL);
         if (put <= 0) {
-            if (put < 0 && errno == EINTR) continue;
+            if (put < 0 && errno == EINTR) {
+                continue;
+            }
             return false;
         }
         p += put;
@@ -187,33 +197,37 @@ enum class ReadResult {
     DecodeError,
 };
 
-inline ReadResult read_envelope(int fd, SCE::Mesh::MeshEnvelope& out,
-                                std::vector<uint8_t>& scratch) {
+inline ReadResult read_envelope(int fd, SCE::Mesh::MeshEnvelope &out, std::vector<uint8_t> &scratch) {
     uint32_t net_len = 0;
-    if (!read_exact(fd, &net_len, sizeof(net_len))) return ReadResult::SocketClosed;
+    if (!read_exact(fd, &net_len, sizeof(net_len))) {
+        return ReadResult::SocketClosed;
+    }
     uint32_t len = ntohl(net_len);
     // Cap at the SCE-mesh wire ceiling exported by MeshEnvelopeCodec.h.
     // Rebinding the literal here would be ownership-inversion via
     // co-declaration with the CBOR decoder's identical check —
     // consume the single source instead so any future spec change
     // moves both sites together.
-    if (len == 0 ||
-        static_cast<std::size_t>(len) > ::SCE::Mesh::kMaxEnvelopeBytes) {
+    if (len == 0 || static_cast<std::size_t>(len) > ::SCE::Mesh::kMaxEnvelopeBytes) {
         return ReadResult::SocketClosed;
     }
     scratch.resize(len);
-    if (!read_exact(fd, scratch.data(), len)) return ReadResult::SocketClosed;
-    return SCE::Mesh::decodeEnvelope(scratch.data(), scratch.size(), out)
-               ? ReadResult::Ok
-               : ReadResult::DecodeError;
+    if (!read_exact(fd, scratch.data(), len)) {
+        return ReadResult::SocketClosed;
+    }
+    return SCE::Mesh::decodeEnvelope(scratch.data(), scratch.size(), out) ? ReadResult::Ok : ReadResult::DecodeError;
 }
 
 /// Encode `env` and write it as a length-prefixed frame on `fd`.
-inline bool write_envelope(int fd, const SCE::Mesh::MeshEnvelope& env) {
+inline bool write_envelope(int fd, const SCE::Mesh::MeshEnvelope &env) {
     auto buf = SCE::Mesh::encodeEnvelope(env);
-    if (buf.empty()) return false;
+    if (buf.empty()) {
+        return false;
+    }
     uint32_t net_len = htonl(static_cast<uint32_t>(buf.size()));
-    if (!write_exact(fd, &net_len, sizeof(net_len))) return false;
+    if (!write_exact(fd, &net_len, sizeof(net_len))) {
+        return false;
+    }
     return write_exact(fd, buf.data(), buf.size());
 }
 
@@ -228,19 +242,20 @@ inline bool write_envelope(int fd, const SCE::Mesh::MeshEnvelope& env) {
 /// shutting down the listener and any open connections.
 class Server {
 public:
-    Server(const std::string& listen_endpoint, ReceiveCallback on_receive)
-        : on_receive_(std::move(on_receive)) {
+    Server(const std::string &listen_endpoint, ReceiveCallback on_receive) : on_receive_(std::move(on_receive)) {
         sockaddr_in addr{};
         if (!detail::parse_endpoint(listen_endpoint, addr)) {
             return;  // valid_ stays false
         }
         listen_fd_ = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-        if (listen_fd_ < 0) return;
+        if (listen_fd_ < 0) {
+            return;
+        }
         // SO_REUSEADDR keeps tests deterministic across rapid teardowns
         // (a port in TIME_WAIT would otherwise reject the next bind).
         int one = 1;
         ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-        if (::bind(listen_fd_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+        if (::bind(listen_fd_, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) != 0) {
             ::close(listen_fd_);
             listen_fd_ = -1;
             return;
@@ -254,12 +269,16 @@ public:
         accept_thread_ = std::thread([this] { acceptLoop(); });
     }
 
-    ~Server() { shutdown(); }
+    ~Server() {
+        shutdown();
+    }
 
-    Server(const Server&) = delete;
-    Server& operator=(const Server&) = delete;
+    Server(const Server &) = delete;
+    Server &operator=(const Server &) = delete;
 
-    [[nodiscard]] bool valid() const noexcept { return valid_; }
+    [[nodiscard]] bool valid() const noexcept {
+        return valid_;
+    }
 
     /// Return the actually-bound `host:port` after bind. When the server
     /// was constructed with `host:0` the kernel assigns an ephemeral port
@@ -272,13 +291,17 @@ public:
     /// teardown may observe a nullopt; serialise externally if a stable
     /// readback across teardown is required.
     [[nodiscard]] std::optional<std::string> local_endpoint() const {
-        if (!valid_ || listen_fd_ < 0) return std::nullopt;
-        sockaddr_in addr{};
-        socklen_t len = sizeof(addr);
-        if (::getsockname(listen_fd_, reinterpret_cast<sockaddr*>(&addr), &len) != 0) {
+        if (!valid_ || listen_fd_ < 0) {
             return std::nullopt;
         }
-        if (addr.sin_family != AF_INET) return std::nullopt;
+        sockaddr_in addr{};
+        socklen_t len = sizeof(addr);
+        if (::getsockname(listen_fd_, reinterpret_cast<sockaddr *>(&addr), &len) != 0) {
+            return std::nullopt;
+        }
+        if (addr.sin_family != AF_INET) {
+            return std::nullopt;
+        }
         char host[INET_ADDRSTRLEN] = {};
         if (::inet_ntop(AF_INET, &addr.sin_addr, host, sizeof(host)) == nullptr) {
             return std::nullopt;
@@ -291,7 +314,9 @@ public:
 
     void shutdown() {
         bool expected = false;
-        if (!stopping_.compare_exchange_strong(expected, true)) return;
+        if (!stopping_.compare_exchange_strong(expected, true)) {
+            return;
+        }
         if (listen_fd_ >= 0) {
             // Closing the listen socket unblocks the accept thread; it
             // observes accept() failing with EBADF/EINVAL and exits.
@@ -299,7 +324,9 @@ public:
             ::close(listen_fd_);
             listen_fd_ = -1;
         }
-        if (accept_thread_.joinable()) accept_thread_.join();
+        if (accept_thread_.joinable()) {
+            accept_thread_.join();
+        }
         // Tear down accepted connections after the accept thread is gone
         // so the connection list cannot grow concurrently.
         std::vector<Connection> taken;
@@ -307,12 +334,14 @@ public:
             std::lock_guard<std::mutex> lock(connections_mutex_);
             taken = std::move(connections_);
         }
-        for (auto& c : taken) {
+        for (auto &c : taken) {
             if (c.fd >= 0) {
                 ::shutdown(c.fd, SHUT_RDWR);
                 ::close(c.fd);
             }
-            if (c.reader.joinable()) c.reader.join();
+            if (c.reader.joinable()) {
+                c.reader.join();
+            }
         }
     }
 
@@ -326,10 +355,14 @@ private:
         while (!stopping_.load()) {
             sockaddr_in peer{};
             socklen_t plen = sizeof(peer);
-            int conn = ::accept(listen_fd_, reinterpret_cast<sockaddr*>(&peer), &plen);
+            int conn = ::accept(listen_fd_, reinterpret_cast<sockaddr *>(&peer), &plen);
             if (conn < 0) {
-                if (stopping_.load()) return;
-                if (errno == EINTR) continue;
+                if (stopping_.load()) {
+                    return;
+                }
+                if (errno == EINTR) {
+                    continue;
+                }
                 return;  // unrecoverable: listener is gone
             }
             // Disable Nagle to keep harness latencies deterministic; tests
@@ -344,7 +377,7 @@ private:
             // reads (the slot itself is move-relocated, but the fd value
             // it carries was already copied into the closure).
             std::lock_guard<std::mutex> lock(connections_mutex_);
-            auto& slot = connections_.emplace_back();
+            auto &slot = connections_.emplace_back();
             slot.fd = conn;
             slot.reader = std::thread([this, conn] { readLoop(conn); });
         }
@@ -358,18 +391,24 @@ private:
         std::vector<uint8_t> scratch;
         while (!stopping_.load()) {
             auto result = detail::read_envelope(fd, env, scratch);
-            if (result == detail::ReadResult::SocketClosed) break;
+            if (result == detail::ReadResult::SocketClosed) {
+                break;
+            }
             if (result == detail::ReadResult::DecodeError) {
                 // §mesh-16.7 row 4: malformed CBOR on a successfully-read
                 // frame. Raise then keep the connection alive — a
                 // single bad envelope is recoverable; only a framing-
                 // level fault (reported as SocketClosed) tears down
                 // the stream.
-                if (on_decode_error_) on_decode_error_();
+                if (on_decode_error_) {
+                    on_decode_error_();
+                }
                 env = {};
                 continue;
             }
-            if (on_receive_) on_receive_(env);
+            if (on_receive_) {
+                on_receive_(env);
+            }
             env = {};
         }
     }
@@ -408,13 +447,14 @@ private:
 class Client {
 public:
     Client(std::string connect_endpoint, ReceiveCallback on_receive)
-        : connect_endpoint_(std::move(connect_endpoint)),
-          on_receive_(std::move(on_receive)) {}
+        : connect_endpoint_(std::move(connect_endpoint)), on_receive_(std::move(on_receive)) {}
 
-    ~Client() { shutdown(); }
+    ~Client() {
+        shutdown();
+    }
 
-    Client(const Client&) = delete;
-    Client& operator=(const Client&) = delete;
+    Client(const Client &) = delete;
+    Client &operator=(const Client &) = delete;
 
     /// Replace the connect endpoint before the first `send()` has been
     /// issued. Intended for runtime overrides: deploy.yaml bakes a
@@ -429,16 +469,20 @@ public:
     /// state on entry.
     [[nodiscard]] bool set_connect_endpoint(std::string endpoint) {
         std::lock_guard<std::mutex> lock(send_mutex_);
-        if (fd_ >= 0 || stopping_.load()) return false;
+        if (fd_ >= 0 || stopping_.load()) {
+            return false;
+        }
         connect_endpoint_ = std::move(endpoint);
         return true;
     }
 
     /// Encode and send the envelope. Connects on demand; subsequent calls
     /// reuse the same socket. Returns false on connect / send failure.
-    [[nodiscard]] bool send(const SCE::Mesh::MeshEnvelope& env) {
+    [[nodiscard]] bool send(const SCE::Mesh::MeshEnvelope &env) {
         std::lock_guard<std::mutex> lock(send_mutex_);
-        if (fd_ < 0 && !connect()) return false;
+        if (fd_ < 0 && !connect()) {
+            return false;
+        }
         if (!detail::write_envelope(fd_, env)) {
             // Tear down on first send error so a subsequent send() retries
             // cleanly rather than reusing a broken half-open socket. The
@@ -451,7 +495,9 @@ public:
 
     void shutdown() {
         bool expected = false;
-        if (!stopping_.compare_exchange_strong(expected, true)) return;
+        if (!stopping_.compare_exchange_strong(expected, true)) {
+            return;
+        }
         std::lock_guard<std::mutex> lock(send_mutex_);
         tearDownLocked();
     }
@@ -459,9 +505,13 @@ public:
 private:
     bool connect() {
         sockaddr_in addr{};
-        if (!detail::parse_endpoint(connect_endpoint_, addr)) return false;
+        if (!detail::parse_endpoint(connect_endpoint_, addr)) {
+            return false;
+        }
         int s = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
-        if (s < 0) return false;
+        if (s < 0) {
+            return false;
+        }
         // Retry connect briefly: in tests the server may still be
         // racing through bind() when the client first tries to dial.
         // Up to 1s of total wait covers ctest startup jitter without
@@ -470,11 +520,13 @@ private:
         constexpr auto kSleep = std::chrono::milliseconds(50);
         bool connected = false;
         for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
-            if (::connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
+            if (::connect(s, reinterpret_cast<sockaddr *>(&addr), sizeof(addr)) == 0) {
                 connected = true;
                 break;
             }
-            if (errno != ECONNREFUSED && errno != ECONNRESET && errno != EINTR) break;
+            if (errno != ECONNREFUSED && errno != ECONNRESET && errno != EINTR) {
+                break;
+            }
             std::this_thread::sleep_for(kSleep);
         }
         if (!connected) {
@@ -496,12 +548,16 @@ private:
         std::vector<uint8_t> scratch;  // reused across iterations
         while (!stopping_.load() && fd_snapshot >= 0) {
             auto result = detail::read_envelope(fd_snapshot, env, scratch);
-            if (result == detail::ReadResult::SocketClosed) break;
+            if (result == detail::ReadResult::SocketClosed) {
+                break;
+            }
             if (result == detail::ReadResult::DecodeError) {
                 // §mesh-16.7 row 4: malformed CBOR on a successfully-read
                 // frame. Raise then keep the connection alive — see
                 // Server::readLoop for the same rationale.
-                if (on_decode_error_) on_decode_error_();
+                if (on_decode_error_) {
+                    on_decode_error_();
+                }
                 env = {};
                 continue;
             }
@@ -524,7 +580,6 @@ public:
     }
 
 private:
-
     /// Caller MUST hold `send_mutex_`. Idempotent; safe to call from
     /// shutdown() and the failure path of send().
     ///

@@ -31,19 +31,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "sce/forge/codec.h"
 #include "codec_default_marker_arm_a.h"
 #include "codec_default_marker_arm_b.h"
 #include "codec_variant_default_marker.h"
+#include "sce/forge/codec.h"
 
 static int failures = 0;
 
-#define EXPECT(cond, msg)                                                    \
-    do {                                                                     \
-        if (!(cond)) {                                                       \
-            ++failures;                                                      \
-            fprintf(stderr, "FAIL %s:%d %s\n", __FILE__, __LINE__, msg);     \
-        }                                                                    \
+#define EXPECT(cond, msg)                                                                                              \
+    do {                                                                                                               \
+        if (!(cond)) {                                                                                                 \
+            ++failures;                                                                                                \
+            fprintf(stderr, "FAIL %s:%d %s\n", __FILE__, __LINE__, msg);                                               \
+        }                                                                                                              \
     } while (0)
 
 int main(void) {
@@ -57,28 +57,20 @@ int main(void) {
     uint8_t encoded_bytes[CODEC_VARIANT_DEFAULT_MARKER_MAX_BYTES];
     size_t encoded_len = 0;
     sce_forge_codec_status_t enc_st =
-        codec_variant_default_marker_encode_to_buf(
-            &original, encoded_bytes, sizeof(encoded_bytes), &encoded_len);
-    EXPECT(enc_st == SCE_FORGE_CODEC_OK,
-           "encode_to_buf must succeed when buffer >= MAX_BYTES");
-    EXPECT(encoded_len == 3,
-           "default-emit + arm B (uint16 payload) must produce 3 wire bytes");
-    EXPECT((encoded_bytes[0] & 0x03) == 0x02,
-           "first byte low 2 bits must encode arm B's MID (0x02) — "
-           "if 0 the inner _DEFAULT_INIT macro didn't bake the header byte; "
-           "β-c11 emission contract is broken");
+        codec_variant_default_marker_encode_to_buf(&original, encoded_bytes, sizeof(encoded_bytes), &encoded_len);
+    EXPECT(enc_st == SCE_FORGE_CODEC_OK, "encode_to_buf must succeed when buffer >= MAX_BYTES");
+    EXPECT(encoded_len == 3, "default-emit + arm B (uint16 payload) must produce 3 wire bytes");
+    EXPECT((encoded_bytes[0] & 0x03) == 0x02, "first byte low 2 bits must encode arm B's MID (0x02) — "
+                                              "if 0 the inner _DEFAULT_INIT macro didn't bake the header byte; "
+                                              "β-c11 emission contract is broken");
 
-    sce_forge_cursor_t cursor =
-        sce_forge_cursor_init(encoded_bytes, encoded_len);
+    sce_forge_cursor_t cursor = sce_forge_cursor_init(encoded_bytes, encoded_len);
     codec_variant_default_marker_t decoded;
     memset(&decoded, 0, sizeof(decoded));
-    sce_forge_codec_status_t st =
-        codec_variant_default_marker_decode(&cursor, &decoded);
-    EXPECT(st == SCE_FORGE_CODEC_OK,
-           "freshly-constructed codec must decode without error");
-    EXPECT(sce_forge_cursor_remaining(&cursor) == 0,
-           "decode must consume every emitted byte; leftover means an "
-           "arm-type mismatch on dispatch");
+    sce_forge_codec_status_t st = codec_variant_default_marker_decode(&cursor, &decoded);
+    EXPECT(st == SCE_FORGE_CODEC_OK, "freshly-constructed codec must decode without error");
+    EXPECT(sce_forge_cursor_remaining(&cursor) == 0, "decode must consume every emitted byte; leftover means an "
+                                                     "arm-type mismatch on dispatch");
 
     EXPECT(decoded.body.kind == CODEC_VARIANT_DEFAULT_MARKER_BODY_KIND_CODEC_DEFAULT_MARKER_ARM_B,
            "round-trip must land in arm B (the marked-default arm) — "
@@ -87,13 +79,10 @@ int main(void) {
 
     uint8_t re_encoded_bytes[CODEC_VARIANT_DEFAULT_MARKER_MAX_BYTES];
     size_t re_encoded_len = 0;
-    sce_forge_codec_status_t re_st =
-        codec_variant_default_marker_encode_to_buf(
-            &decoded, re_encoded_bytes, sizeof(re_encoded_bytes), &re_encoded_len);
-    EXPECT(re_st == SCE_FORGE_CODEC_OK,
-           "re-encode_to_buf must succeed");
-    EXPECT(re_encoded_len == encoded_len,
-           "re-encode length must match original");
+    sce_forge_codec_status_t re_st = codec_variant_default_marker_encode_to_buf(
+        &decoded, re_encoded_bytes, sizeof(re_encoded_bytes), &re_encoded_len);
+    EXPECT(re_st == SCE_FORGE_CODEC_OK, "re-encode_to_buf must succeed");
+    EXPECT(re_encoded_len == encoded_len, "re-encode length must match original");
     EXPECT(memcmp(re_encoded_bytes, encoded_bytes, encoded_len) == 0,
            "re-encoded bytes must match original byte-for-byte");
 
@@ -102,24 +91,19 @@ int main(void) {
     {
         uint8_t direct_bytes[CODEC_VARIANT_DEFAULT_MARKER_MAX_BYTES];
         sce_forge_writer_t w = sce_forge_writer_init_buf(direct_bytes, sizeof(direct_bytes));
-        sce_forge_codec_status_t direct_st =
-            codec_variant_default_marker_encode(&decoded, &w);
-        EXPECT(direct_st == SCE_FORGE_CODEC_OK,
-               "writer-direct encode must succeed when cap >= MAX_BYTES");
-        EXPECT(sce_forge_writer_position(&w) == encoded_len,
-               "writer position must equal facade encoded length");
-        EXPECT(memcmp(direct_bytes, encoded_bytes, encoded_len) == 0,
-               "writer-direct bytes must equal facade output");
+        sce_forge_codec_status_t direct_st = codec_variant_default_marker_encode(&decoded, &w);
+        EXPECT(direct_st == SCE_FORGE_CODEC_OK, "writer-direct encode must succeed when cap >= MAX_BYTES");
+        EXPECT(sce_forge_writer_position(&w) == encoded_len, "writer position must equal facade encoded length");
+        EXPECT(memcmp(direct_bytes, encoded_bytes, encoded_len) == 0, "writer-direct bytes must equal facade output");
     }
 
     /* Bounded-buffer BufferOverflow path: a writer sized strictly
      * smaller than the actual wire length must surface the typed
      * error (validates the encode-side typed error contract). */
     if (encoded_len > 0) {
-        uint8_t tiny[2] = {0};  /* less than encoded_len=3 */
+        uint8_t tiny[2] = {0}; /* less than encoded_len=3 */
         sce_forge_writer_t w_tiny = sce_forge_writer_init_buf(tiny, sizeof(tiny));
-        sce_forge_codec_status_t over_st =
-            codec_variant_default_marker_encode(&decoded, &w_tiny);
+        sce_forge_codec_status_t over_st = codec_variant_default_marker_encode(&decoded, &w_tiny);
         EXPECT(over_st == SCE_FORGE_CODEC_BUFFER_OVERFLOW,
                "writer encode must surface BUFFER_OVERFLOW when cap < bytes");
     }

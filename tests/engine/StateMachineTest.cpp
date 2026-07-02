@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/StateMachine.h"
-#include "runtime/StateMachineBindObject.h"  // Engine-agnostic bindObject with GenericClassBinder
 #include "common/Logger.h"
 #include "core/LogMacros.h"
+#include "runtime/StateMachineBindObject.h"  // Engine-agnostic bindObject with GenericClassBinder
 #include "runtime/StateMachineFactory.h"
 #include "scripting/JSEngine.h"
 #include <fstream>

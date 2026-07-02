@@ -63,8 +63,7 @@
 
 namespace {
 
-pid_t spawn_partition(const char *binary, const char *test_id, const char *partition,
-                      const char *deploy_dir) {
+pid_t spawn_partition(const char *binary, const char *test_id, const char *partition, const char *deploy_dir) {
     pid_t pid = ::fork();
     if (pid < 0) {
         std::perror("fork");
@@ -77,14 +76,8 @@ pid_t spawn_partition(const char *binary, const char *test_id, const char *parti
         char arg_tid[] = "--test-id";
         char arg_par[] = "--partition";
         char arg_dep[] = "--deploy-dir";
-        char *const argv[] = {const_cast<char *>(binary),
-                              arg_tid,
-                              const_cast<char *>(test_id),
-                              arg_par,
-                              const_cast<char *>(partition),
-                              arg_dep,
-                              const_cast<char *>(deploy_dir),
-                              nullptr};
+        char *const argv[] = {const_cast<char *>(binary),    arg_tid, const_cast<char *>(test_id),    arg_par,
+                              const_cast<char *>(partition), arg_dep, const_cast<char *>(deploy_dir), nullptr};
         ::execv(binary, argv);
         std::fprintf(stderr, "execv(%s) failed: %s\n", binary, std::strerror(errno));
         std::_Exit(127);
@@ -102,16 +95,14 @@ ChildResult wait_child(pid_t pid) {
     ChildResult r{pid, -1, false};
     int status = 0;
     if (::waitpid(pid, &status, 0) < 0) {
-        std::fprintf(stderr, "waitpid(%d) failed: %s\n", static_cast<int>(pid),
-                     std::strerror(errno));
+        std::fprintf(stderr, "waitpid(%d) failed: %s\n", static_cast<int>(pid), std::strerror(errno));
         return r;
     }
     if (WIFEXITED(status)) {
         r.normal_exit = true;
         r.exit_code = WEXITSTATUS(status);
     } else if (WIFSIGNALED(status)) {
-        std::fprintf(stderr, "child %d killed by signal %d\n", static_cast<int>(pid),
-                     WTERMSIG(status));
+        std::fprintf(stderr, "child %d killed by signal %d\n", static_cast<int>(pid), WTERMSIG(status));
     }
     return r;
 }
@@ -123,15 +114,13 @@ int main() {
     const char *deploy_dir = SCE_W3C_DIST_DEPLOY_DIR;
 
     // Launch worker first (creates shm segment), then main (opens it).
-    pid_t worker_pid = spawn_partition(SCE_W3C_DIST_WORKER_BIN, test_id,
-                                       SCE_W3C_DIST_WORKER_PARTITION, deploy_dir);
+    pid_t worker_pid = spawn_partition(SCE_W3C_DIST_WORKER_BIN, test_id, SCE_W3C_DIST_WORKER_PARTITION, deploy_dir);
     if (worker_pid < 0) {
         return 200;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    pid_t main_pid = spawn_partition(SCE_W3C_DIST_MAIN_BIN, test_id,
-                                     SCE_W3C_DIST_MAIN_PARTITION, deploy_dir);
+    pid_t main_pid = spawn_partition(SCE_W3C_DIST_MAIN_BIN, test_id, SCE_W3C_DIST_MAIN_PARTITION, deploy_dir);
     if (main_pid < 0) {
         // Reap the worker already in flight before we exit — ctest's
         // process table should not have to carry our zombies.
@@ -142,13 +131,10 @@ int main() {
     ChildResult main_res = wait_child(main_pid);
     ChildResult worker_res = wait_child(worker_pid);
 
-    bool ok = main_res.normal_exit && main_res.exit_code == 0 && worker_res.normal_exit &&
-              worker_res.exit_code == 0;
+    bool ok = main_res.normal_exit && main_res.exit_code == 0 && worker_res.normal_exit && worker_res.exit_code == 0;
 
     if (ok) {
-        std::fprintf(stdout,
-                     "SCE Mesh §16.8 distributed conformance: test%s PASS (main=0 worker=0)\n",
-                     test_id);
+        std::fprintf(stdout, "SCE Mesh §16.8 distributed conformance: test%s PASS (main=0 worker=0)\n", test_id);
         return 0;
     }
 

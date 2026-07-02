@@ -43,10 +43,8 @@ private:
 
 }  // namespace
 
-std::string
-computeFnv1aDiagnosticId(std::string_view code, std::string_view stage,
-                         std::string_view file,
-                         std::string_view messageFragment) {
+std::string computeFnv1aDiagnosticId(std::string_view code, std::string_view stage, std::string_view file,
+                                     std::string_view messageFragment) {
     // Canonical key shape mirrors `compute_id` in
     // `sce-build/src/forge/diagnostic.rs`:
     //   code | stage | file_or_empty <0x1f> messageFragment
@@ -67,9 +65,8 @@ computeFnv1aDiagnosticId(std::string_view code, std::string_view stage,
     hasher.write(messageFragment);
 
     std::array<char, 32> buffer{};
-    const int written = std::snprintf(
-        buffer.data(), buffer.size(), "fnv1a:%016lx",
-        static_cast<unsigned long>(hasher.finish()));
+    const int written =
+        std::snprintf(buffer.data(), buffer.size(), "fnv1a:%016lx", static_cast<unsigned long>(hasher.finish()));
     return std::string(buffer.data(), static_cast<std::size_t>(written));
 }
 
@@ -86,8 +83,7 @@ std::string Diagnostic::to_canonical_json_string() const {
     // diff parity test pins against Rust's --error-format=json
     // output. §wire-W2 deliverable item #3.
     const auto record = to_json();
-    const auto canonical =
-        nlohmann::json::parse(record.dump());
+    const auto canonical = nlohmann::json::parse(record.dump());
     return canonical.dump(-1, ' ', false);
 }
 

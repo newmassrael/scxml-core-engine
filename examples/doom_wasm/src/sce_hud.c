@@ -17,12 +17,12 @@
 #include "sce_doom_hooks.h"
 #include "sce_wrapper.h"
 
+#include "d_loop.h"
 #include "doomdef.h"
 #include "hu_stuff.h"
+#include "i_swap.h"
 #include "i_video.h"
 #include "v_video.h"
-#include "i_swap.h"
-#include "d_loop.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -35,16 +35,16 @@ extern int M_StringWidth(char *string);
 extern patch_t *hu_font[HU_FONTSIZE];
 
 /* Palette color indices for drawing primitives */
-#define COLOR_ORANGE   215
-#define COLOR_RED      176
-#define COLOR_BLACK    0
-#define COLOR_GRAY     96
+#define COLOR_ORANGE 215
+#define COLOR_RED 176
+#define COLOR_BLACK 0
+#define COLOR_GRAY 96
 
 /* Pulse periods in tics (35 tics/sec) */
-#define PULSE_SLOW     35    /* 1.0s period - berserk intensity 1-3 */
-#define PULSE_MID      21    /* 0.6s period - berserk intensity 4-6 */
-#define PULSE_FAST     10    /* 0.3s period - berserk intensity 7+ */
-#define COMBO_PULSE_LEN 10   /* 0.3s combo hit pulse */
+#define PULSE_SLOW 35      /* 1.0s period - berserk intensity 1-3 */
+#define PULSE_MID 21       /* 0.6s period - berserk intensity 4-6 */
+#define PULSE_FAST 10      /* 0.3s period - berserk intensity 7+ */
+#define COMBO_PULSE_LEN 10 /* 0.3s combo hit pulse */
 
 /* Track when last combo kill happened for pulse animation */
 static int hud_last_combo_count = 0;
@@ -84,24 +84,35 @@ void SCE_HUD_SetBerserk(int intensity, boolean active) {
 }
 
 int SCE_HUD_GetBerserkPalette(void) {
-    if (!SCE_BerserkIsActive())
+    if (!SCE_BerserkIsActive()) {
         return 0;
+    }
 
     int intensity = SCE_BerserkGetIntensity();
-    if (intensity <= 0) return 0;
+    if (intensity <= 0) {
+        return 0;
+    }
 
     /* Determine pulse period based on intensity */
     int period;
-    if (intensity <= 3) period = PULSE_SLOW;
-    else if (intensity <= 6) period = PULSE_MID;
-    else period = PULSE_FAST;
+    if (intensity <= 3) {
+        period = PULSE_SLOW;
+    } else if (intensity <= 6) {
+        period = PULSE_MID;
+    } else {
+        period = PULSE_FAST;
+    }
 
     /* Pulsing: alternate between two palette levels using gametic */
     int phase = gametic % period;
     boolean pulse_high = (phase < period / 2);
 
-    if (intensity <= 3) return pulse_high ? 2 : 1;
-    if (intensity <= 6) return pulse_high ? 3 : 2;
+    if (intensity <= 3) {
+        return pulse_high ? 2 : 1;
+    }
+    if (intensity <= 6) {
+        return pulse_high ? 3 : 2;
+    }
     return pulse_high ? 4 : 3;
 }
 
@@ -112,19 +123,33 @@ int SCE_HUD_GetBerserkPalette(void) {
 static void SCE_HUD_DrawTextCentered(int center_x, int y, const char *text) {
     int w = M_StringWidth((char *)text);
     int x = center_x - w / 2;
-    if (x < 0) x = 0;
+    if (x < 0) {
+        x = 0;
+    }
     M_WriteText(x, y, (char *)text);
 }
 
 static void SCE_HUD_DrawBar(int x, int y, int w, int h, int fill_w, int bg_color, int fill_color) {
-    if (x < 0) x = 0;
-    if (y < 0) y = 0;
-    if (x + w > SCREENWIDTH) w = SCREENWIDTH - x;
-    if (y + h > SCREENHEIGHT) h = SCREENHEIGHT - y;
-    if (w <= 0 || h <= 0) return;
+    if (x < 0) {
+        x = 0;
+    }
+    if (y < 0) {
+        y = 0;
+    }
+    if (x + w > SCREENWIDTH) {
+        w = SCREENWIDTH - x;
+    }
+    if (y + h > SCREENHEIGHT) {
+        h = SCREENHEIGHT - y;
+    }
+    if (w <= 0 || h <= 0) {
+        return;
+    }
 
     V_DrawFilledBox(x, y, w, h, bg_color);
-    if (fill_w > w) fill_w = w;
+    if (fill_w > w) {
+        fill_w = w;
+    }
     if (fill_w > 0) {
         V_DrawFilledBox(x, y, fill_w, h, fill_color);
     }
@@ -155,8 +180,7 @@ void SCE_HUD_Drawer(void) {
     boolean show_hud = (combo_count > 1 && (combo_active || timer_active));
 
     /* Combo hit pulse: check if within pulse window */
-    boolean in_combo_pulse = (hud_combo_pulse_tic > 0 &&
-                              (gametic - hud_combo_pulse_tic) < COMBO_PULSE_LEN);
+    boolean in_combo_pulse = (hud_combo_pulse_tic > 0 && (gametic - hud_combo_pulse_tic) < COMBO_PULSE_LEN);
 
     /* === Combo Counter Display === */
     if (show_hud) {
@@ -165,9 +189,13 @@ void SCE_HUD_Drawer(void) {
 
             /* Berserk text pulse: toggle visibility based on gametic */
             int period;
-            if (berserk_intensity <= 3) period = PULSE_SLOW;
-            else if (berserk_intensity <= 6) period = PULSE_MID;
-            else period = PULSE_FAST;
+            if (berserk_intensity <= 3) {
+                period = PULSE_SLOW;
+            } else if (berserk_intensity <= 6) {
+                period = PULSE_MID;
+            } else {
+                period = PULSE_FAST;
+            }
 
             boolean text_visible = ((gametic % period) < (period * 7 / 10));
 
@@ -195,8 +223,12 @@ void SCE_HUD_Drawer(void) {
         int bar_y = berserk_active ? 42 : 40;
 
         double ratio = timer_remaining / timer_total;
-        if (ratio > 1.0) ratio = 1.0;
-        if (ratio < 0.0) ratio = 0.0;
+        if (ratio > 1.0) {
+            ratio = 1.0;
+        }
+        if (ratio < 0.0) {
+            ratio = 0.0;
+        }
         int fill_w = (int)(bar_w * ratio);
 
         int fill_color = berserk_active ? COLOR_RED : COLOR_ORANGE;

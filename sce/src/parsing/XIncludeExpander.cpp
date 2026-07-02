@@ -53,15 +53,13 @@ bool isIncludeElement(const pugi::xml_node &child) {
 // `<`. pugixml occasionally reports the offset one past `<` for
 // elements after a quoted-attribute heavy parent; the same
 // normalisation is applied in TemplateExpander.cpp:746-749.
-std::size_t leadingAngleOffset(const pugi::xml_node &child,
-                               std::string_view content) {
+std::size_t leadingAngleOffset(const pugi::xml_node &child, std::string_view content) {
     const auto signedOffset = child.offset_debug();
     if (signedOffset < 0) {
         return std::string_view::npos;
     }
     std::size_t start = static_cast<std::size_t>(signedOffset);
-    if (start > 0 && start < content.size() && content[start] != '<' &&
-        content[start - 1] == '<') {
+    if (start > 0 && start < content.size() && content[start] != '<' && content[start - 1] == '<') {
         start -= 1;
     }
     return start;
@@ -73,8 +71,7 @@ std::size_t leadingAngleOffset(const pugi::xml_node &child,
 // recursion at that branch — nested includes inside the included
 // fragment are handled by the outer recursion in `expandImpl`.
 // Mirrors `sce-build/src/xinclude.rs::collect_includes_into`.
-void collectIncludesInto(pugi::xml_node node, std::string_view content,
-                         std::vector<XIncludeHit> &out) {
+void collectIncludesInto(pugi::xml_node node, std::string_view content, std::vector<XIncludeHit> &out) {
     for (const auto &child : node.children()) {
         if (child.type() != pugi::node_element) {
             continue;
@@ -85,8 +82,7 @@ void collectIncludesInto(pugi::xml_node node, std::string_view content,
                 continue;
             }
             const std::string fullName = child.name();
-            const std::size_t end =
-                detail::findElementEnd(content, start, fullName);
+            const std::size_t end = detail::findElementEnd(content, start, fullName);
             out.push_back(XIncludeHit{ByteRange{start, end}, child});
             continue;
         }
@@ -110,14 +106,12 @@ struct RootChildrenRender {
     std::size_t end;
 };
 
-RootChildrenRender renderRootChildren(std::string_view expanded,
-                                      std::string_view href) {
+RootChildrenRender renderRootChildren(std::string_view expanded, std::string_view href) {
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(expanded.data(), expanded.size());
     if (!parseResult) {
-        throw XIncludeMalformed(
-            "<xi:include href=\"" + std::string(href) +
-            "\">: included file is malformed: " + parseResult.description());
+        throw XIncludeMalformed("<xi:include href=\"" + std::string(href) +
+                                "\">: included file is malformed: " + parseResult.description());
     }
     const auto root = doc.document_element();
     if (!root || !root.first_child()) {
@@ -166,8 +160,7 @@ RootChildrenRender renderRootChildren(std::string_view expanded,
         }
         const std::string rootName = root.name();
         const std::string closeNeedle = "</" + rootName;
-        const std::size_t closePos =
-            std::string_view(expanded).rfind(closeNeedle, expanded.size());
+        const std::size_t closePos = std::string_view(expanded).rfind(closeNeedle, expanded.size());
         if (closePos == std::string_view::npos || closePos < rootStart) {
             return RootChildrenRender{std::string(), 0, 0};
         }
@@ -177,16 +170,14 @@ RootChildrenRender renderRootChildren(std::string_view expanded,
     if (end <= start) {
         return RootChildrenRender{std::string(), 0, 0};
     }
-    return RootChildrenRender{
-        std::string(expanded.substr(start, end - start)), start, end};
+    return RootChildrenRender{std::string(expanded.substr(start, end - start)), start, end};
 }
 
 // Render the cycle chain for a `Cycle` diagnostic. Joins the live
 // stack plus the offending next entry with U+2192 ` → ` separators
 // — same shape as Rust `render_chain`
 // (sce-build/src/xinclude.rs:514-518).
-std::string renderCycleChain(const std::vector<std::filesystem::path> &stack,
-                             const std::filesystem::path &next) {
+std::string renderCycleChain(const std::vector<std::filesystem::path> &stack, const std::filesystem::path &next) {
     std::string out;
     for (const auto &entry : stack) {
         if (!out.empty()) {
@@ -206,22 +197,18 @@ std::string renderCycleChain(const std::vector<std::filesystem::path> &stack,
 // and `<xi:fallback>` children. The C++ expander preserves the
 // same rejection set so AOT and Interpreter agree on which inputs
 // are accepted.
-void rejectUnsupportedFeatures(const pugi::xml_node &node,
-                               std::string_view href) {
+void rejectUnsupportedFeatures(const pugi::xml_node &node, std::string_view href) {
     const auto parseAttr = node.attribute("parse");
     if (parseAttr) {
         const std::string mode = parseAttr.value();
         if (!mode.empty() && mode != "xml") {
-            throw XIncludeUnsupported(
-                "<xi:include href=\"" + std::string(href) +
-                "\">: unsupported feature: parse=\"" + mode +
-                "\" (only parse=\"xml\" is supported)");
+            throw XIncludeUnsupported("<xi:include href=\"" + std::string(href) + "\">: unsupported feature: parse=\"" +
+                                      mode + "\" (only parse=\"xml\" is supported)");
         }
     }
     if (node.attribute("xpointer")) {
-        throw XIncludeUnsupported(
-            "<xi:include href=\"" + std::string(href) +
-            "\">: unsupported feature: xpointer selection is not implemented");
+        throw XIncludeUnsupported("<xi:include href=\"" + std::string(href) +
+                                  "\">: unsupported feature: xpointer selection is not implemented");
     }
     for (const auto &child : node.children()) {
         if (child.type() != pugi::node_element) {
@@ -229,23 +216,19 @@ void rejectUnsupportedFeatures(const pugi::xml_node &node,
         }
         const std::string n = child.name();
         if (n == "fallback" || n == "xi:fallback") {
-            throw XIncludeUnsupported(
-                "<xi:include href=\"" + std::string(href) +
-                "\">: unsupported feature: <xi:fallback> alternative content "
-                "is not implemented");
+            throw XIncludeUnsupported("<xi:include href=\"" + std::string(href) +
+                                      "\">: unsupported feature: <xi:fallback> alternative content "
+                                      "is not implemented");
         }
     }
 }
 
 // Read the full text of `path`. Throws `XIncludeReadError` with
 // the offending href baked into the message on read failure.
-std::string readFragmentText(const std::filesystem::path &path,
-                             std::string_view href) {
+std::string readFragmentText(const std::filesystem::path &path, std::string_view href) {
     std::ifstream ifs(path, std::ios::binary);
     if (!ifs) {
-        throw XIncludeReadError(
-            "<xi:include href=\"" + std::string(href) +
-            "\">: cannot read file: " + path.string());
+        throw XIncludeReadError("<xi:include href=\"" + std::string(href) + "\">: cannot read file: " + path.string());
     }
     std::ostringstream buf;
     buf << ifs.rdbuf();
@@ -255,24 +238,17 @@ std::string readFragmentText(const std::filesystem::path &path,
 // Recursive expander. Mirrors `sce-build/src/xinclude.rs::expand_impl`
 // line-for-line. Public entry is `expandStringX`, which seeds the
 // cycle stack and invokes this with `depth = 0`.
-XIncludeExpandResult expandImpl(std::string_view content,
-                                const std::filesystem::path &contentFile,
-                                const std::filesystem::path &baseDir,
-                                const std::vector<std::string> &includeDirs,
-                                unsigned depth,
-                                std::vector<std::filesystem::path> &stack) {
+XIncludeExpandResult expandImpl(std::string_view content, const std::filesystem::path &contentFile,
+                                const std::filesystem::path &baseDir, const std::vector<std::string> &includeDirs,
+                                unsigned depth, std::vector<std::filesystem::path> &stack) {
     if (depth >= MAX_XINCLUDE_DEPTH) {
-        throw XIncludeTooDeep(
-            "<xi:include> nesting exceeds depth limit of " +
-            std::to_string(MAX_XINCLUDE_DEPTH));
+        throw XIncludeTooDeep("<xi:include> nesting exceeds depth limit of " + std::to_string(MAX_XINCLUDE_DEPTH));
     }
 
     pugi::xml_document doc;
     const auto parseResult = doc.load_buffer(content.data(), content.size());
     if (!parseResult) {
-        throw XIncludeMalformed(
-            std::string("<xi:include> source document is malformed: ") +
-            parseResult.description());
+        throw XIncludeMalformed(std::string("<xi:include> source document is malformed: ") + parseResult.description());
     }
 
     std::vector<XIncludeHit> includes;
@@ -285,9 +261,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
         // Identity short-circuit: output is a 1:1 copy of `content`
         // from `contentFile`. Mirrors Rust early return at
         // sce-build/src/xinclude.rs:228-235.
-        return XIncludeExpandResult{
-            std::string(content),
-            PositionMap::identity(contentFile, content)};
+        return XIncludeExpandResult{std::string(content), PositionMap::identity(contentFile, content)};
     }
 
     std::string out;
@@ -306,8 +280,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
         if (cursor < range.start) {
             const std::size_t outStart = out.size();
             out.append(content.substr(cursor, range.start - cursor));
-            map.push_entry(outStart, out.size(),
-                           FileOrigin{contentFile, cursor});
+            map.push_entry(outStart, out.size(), FileOrigin{contentFile, cursor});
         }
 
         // href validation comes before unsupported-feature rejection
@@ -317,8 +290,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
         const auto hrefAttr = node.attribute("href");
         const std::string href = hrefAttr ? hrefAttr.value() : std::string();
         if (href.empty()) {
-            throw XIncludeMissingHref(
-                "<xi:include> missing or empty `href` attribute");
+            throw XIncludeMissingHref("<xi:include> missing or empty `href` attribute");
         }
 
         rejectUnsupportedFeatures(node, href);
@@ -333,9 +305,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
                 }
                 trail.append(entry);
             }
-            throw XIncludeNotFound(
-                "<xi:include href=\"" + href +
-                "\">: file not found (searched: " + trail + ")");
+            throw XIncludeNotFound("<xi:include href=\"" + href + "\">: file not found (searched: " + trail + ")");
         }
 
         // Cycle detection. Canonicalise so `./foo.xml` and `foo.xml`
@@ -348,10 +318,8 @@ XIncludeExpandResult expandImpl(std::string_view content,
         }
         for (const auto &entry : stack) {
             if (entry == canon) {
-                throw XIncludeCycle(
-                    "<xi:include href=\"" + href +
-                    "\">: cycle detected (" + renderCycleChain(stack, canon) +
-                    ")");
+                throw XIncludeCycle("<xi:include href=\"" + href + "\">: cycle detected (" +
+                                    renderCycleChain(stack, canon) + ")");
             }
         }
 
@@ -361,23 +329,20 @@ XIncludeExpandResult expandImpl(std::string_view content,
         XIncludeExpandResult nested;
         try {
             const std::filesystem::path nestedBase = resolved.parent_path();
-            nested =
-                expandImpl(raw, resolved, nestedBase, includeDirs, depth + 1, stack);
+            nested = expandImpl(raw, resolved, nestedBase, includeDirs, depth + 1, stack);
         } catch (...) {
             stack.pop_back();
             throw;
         }
         stack.pop_back();
 
-        const auto rendered =
-            renderRootChildren(nested.expanded_text, href);
+        const auto rendered = renderRootChildren(nested.expanded_text, href);
         const std::size_t spliceStart = out.size();
         out.append(rendered.text);
         // Compose nested map for the bytes just spliced in: clip
         // nested entries to `[rendered.start, rendered.end)`, then
         // shift them so they land at `spliceStart` in the outer map.
-        map.append_mapped_substring(nested.positions, rendered.start,
-                                    rendered.end, spliceStart);
+        map.append_mapped_substring(nested.positions, rendered.start, rendered.end, spliceStart);
 
         cursor = range.end;
     }
@@ -386,8 +351,7 @@ XIncludeExpandResult expandImpl(std::string_view content,
     if (cursor < content.size()) {
         const std::size_t outStart = out.size();
         out.append(content.substr(cursor));
-        map.push_entry(outStart, out.size(),
-                       FileOrigin{contentFile, cursor});
+        map.push_entry(outStart, out.size(), FileOrigin{contentFile, cursor});
     }
 
     return XIncludeExpandResult{std::move(out), std::move(map)};
@@ -395,19 +359,15 @@ XIncludeExpandResult expandImpl(std::string_view content,
 
 }  // namespace
 
-XIncludeExpandResult expandStringX(std::string_view content,
-                                   std::string_view selfPath,
-                                   std::string_view baseDir,
+XIncludeExpandResult expandStringX(std::string_view content, std::string_view selfPath, std::string_view baseDir,
                                    const std::vector<std::string> &includeDirs) {
     // Fast path: a document with no "include" substring cannot
     // contain `<xi:include>` or `<include>`, so the output is the
     // identity. Mirrors Rust `expand` at
     // sce-build/src/xinclude.rs:181-186.
     if (content.find("include") == std::string_view::npos) {
-        return XIncludeExpandResult{
-            std::string(content),
-            PositionMap::identity(std::filesystem::path(std::string(selfPath)),
-                                  content)};
+        return XIncludeExpandResult{std::string(content),
+                                    PositionMap::identity(std::filesystem::path(std::string(selfPath)), content)};
     }
 
     const std::filesystem::path selfFile{std::string(selfPath)};
@@ -420,8 +380,7 @@ XIncludeExpandResult expandStringX(std::string_view content,
         stack.push_back(ec ? selfFile : canon);
     }
 
-    return expandImpl(content, selfFile, baseFile, includeDirs, /*depth=*/0,
-                      stack);
+    return expandImpl(content, selfFile, baseFile, includeDirs, /*depth=*/0, stack);
 }
 
 }  // namespace SCE::parsing

@@ -4,7 +4,6 @@
 #include "actions/CancelAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
-#include "runtime/JsonUtils.h"
 #include "common/SendSchedulingHelper.h"
 #include "common/TestUtils.h"
 #include "events/EventDispatcherImpl.h"
@@ -16,6 +15,7 @@
 #include "mocks/MockEventRaiser.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/ExecutionContextImpl.h"
+#include "runtime/JsonUtils.h"
 #include "scripting/ScriptEngineProvider.h"
 #include <chrono>
 #include <gtest/gtest.h>
@@ -220,8 +220,7 @@ TEST_F(SCXMLEventTest, SendActionWithComplexData) {
     EXPECT_EQ(raisedEvents_[0].first, "data.update");
     // JSON key order varies by engine (insertion order in JS, sorted in Lua)
     auto data = raisedEvents_[0].second;
-    EXPECT_TRUE(data.find("\"name\":\"John\"") != std::string::npos &&
-                data.find("\"age\":30") != std::string::npos)
+    EXPECT_TRUE(data.find("\"name\":\"John\"") != std::string::npos && data.find("\"age\":30") != std::string::npos)
         << "Actual data: " << data;
 }
 

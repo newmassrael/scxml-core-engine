@@ -220,7 +220,8 @@ StepResult InteractiveTestRunner::attemptReplayFromCache() {
 
     if (restoreSnapshot(*nextSnapshot)) {
         currentStep_++;
-        SCE_LOG_INFO("InteractiveTestRunner: REPLAY MODE - Restored to step {} from cache (no side effects)", currentStep_);
+        SCE_LOG_INFO("InteractiveTestRunner: REPLAY MODE - Restored to step {} from cache (no side effects)",
+                     currentStep_);
         return StepResult::SUCCESS;
     } else {
         SCE_LOG_ERROR("InteractiveTestRunner: REPLAY MODE - Failed to restore snapshot for step {}", currentStep_ + 1);
@@ -245,9 +246,10 @@ void InteractiveTestRunner::pollSchedulerIfNeeded() {
             size_t polledCount = schedulerImpl->forcePoll();
             SCE_LOG_DEBUG("InteractiveTestRunner::pollSchedulerIfNeeded() - forcePoll() returned {}", polledCount);
             if (polledCount > 0) {
-                SCE_LOG_DEBUG("InteractiveTestRunner: Polled {} scheduled events (logical time advanced, events executed "
-                          "synchronously)",
-                          polledCount);
+                SCE_LOG_DEBUG(
+                    "InteractiveTestRunner: Polled {} scheduled events (logical time advanced, events executed "
+                    "synchronously)",
+                    polledCount);
             }
         }
     }
@@ -332,11 +334,11 @@ StepResult InteractiveTestRunner::processQueuedEventStep() {
         snapshotManager_.updateSnapshotOutgoing(currentStep_ - 1, lastTransitionSource_, lastTransitionTarget_,
                                                 lastEventName_);
         SCE_LOG_DEBUG("InteractiveTestRunner: Updated snapshot {} outgoing transition: {} -> {}", currentStep_ - 1,
-                  lastTransitionSource_, lastTransitionTarget_);
+                      lastTransitionSource_, lastTransitionTarget_);
     }
 
     SCE_LOG_DEBUG("InteractiveTestRunner: Step {} - event '{}' processed (transition: {} -> {})", currentStep_,
-              lastEventName_, lastTransitionSource_, lastTransitionTarget_);
+                  lastEventName_, lastTransitionSource_, lastTransitionTarget_);
     return StepResult::SUCCESS;
 }
 
@@ -370,11 +372,11 @@ StepResult InteractiveTestRunner::processEventlessTransitionStep() {
         snapshotManager_.updateSnapshotOutgoing(currentStep_ - 1, lastTransitionSource_, lastTransitionTarget_,
                                                 lastEventName_);
         SCE_LOG_DEBUG("InteractiveTestRunner: Updated snapshot {} outgoing transition: {} -> {}", currentStep_ - 1,
-                  lastTransitionSource_, lastTransitionTarget_);
+                      lastTransitionSource_, lastTransitionTarget_);
     }
 
-    SCE_LOG_DEBUG("InteractiveTestRunner: Step {} - eventless transition: {} -> {}", currentStep_, lastTransitionSource_,
-              lastTransitionTarget_);
+    SCE_LOG_DEBUG("InteractiveTestRunner: Step {} - eventless transition: {} -> {}", currentStep_,
+                  lastTransitionSource_, lastTransitionTarget_);
     return StepResult::SUCCESS;
 }
 
@@ -419,7 +421,7 @@ bool InteractiveTestRunner::stepBackward() {
         retrievedStatesStr += state;
     }
     SCE_LOG_DEBUG("[SNAPSHOT RETRIEVAL] Retrieved snapshot {} with states: [{}]", prevSnapshot->stepNumber,
-              retrievedStatesStr);
+                  retrievedStatesStr);
 
     // Restore snapshot
     if (!restoreSnapshot(*prevSnapshot)) {
@@ -432,7 +434,7 @@ bool InteractiveTestRunner::stepBackward() {
     // UI can display outgoing transition separately if needed via getSnapshot()->outgoingTransitionEvent
     if (!prevSnapshot->outgoingTransitionSource.empty()) {
         SCE_LOG_DEBUG("InteractiveTestRunner: Step backward - cancelled transition: {} -> {}",
-                  prevSnapshot->outgoingTransitionSource, prevSnapshot->outgoingTransitionTarget);
+                      prevSnapshot->outgoingTransitionSource, prevSnapshot->outgoingTransitionTarget);
     }
 
     currentStep_--;
@@ -450,10 +452,11 @@ void InteractiveTestRunner::reset() {
     // Log scheduler state before reset
     if (scheduler_) {
         auto currentScheduledEvents = scheduler_->getScheduledEvents();
-        SCE_LOG_DEBUG("[RESET] Current scheduler has {} scheduled events before restore", currentScheduledEvents.size());
+        SCE_LOG_DEBUG("[RESET] Current scheduler has {} scheduled events before restore",
+                      currentScheduledEvents.size());
         for (const auto &event : currentScheduledEvents) {
             SCE_LOG_DEBUG("[RESET] Current scheduled event: '{}' (sendId: {}, remainingTime: {}ms)", event.eventName,
-                      event.sendId, event.remainingTime.count());
+                          event.sendId, event.remainingTime.count());
         }
     }
 
@@ -467,7 +470,8 @@ void InteractiveTestRunner::reset() {
         // Time-travel debugging: Snapshots are the "recording" of first execution
         // stepForward() after reset will replay from cached snapshots (deterministic)
 
-        SCE_LOG_INFO("InteractiveTestRunner: Reset complete - returned to step 0 (forward snapshots preserved for replay)");
+        SCE_LOG_INFO(
+            "InteractiveTestRunner: Reset complete - returned to step 0 (forward snapshots preserved for replay)");
     } else {
         SCE_LOG_ERROR("InteractiveTestRunner: Failed to restore initial snapshot");
     }
@@ -483,8 +487,8 @@ void InteractiveTestRunner::raiseEvent(const std::string &eventName, const std::
     // This prevents REPLAY MODE from using stale snapshots that don't account for injected event
     snapshotManager_.removeSnapshotsAfter(currentStep_);
     SCE_LOG_INFO("InteractiveTestRunner: HISTORY BRANCHING - Removed {} future snapshot(s) after step {} (event '{}' "
-             "injected by user)",
-             snapshotManager_.size(), currentStep_, eventName);
+                 "injected by user)",
+                 snapshotManager_.size(), currentStep_, eventName);
 
     // W3C SCXML 3.13: Event queuing is NOT a microstep
     // Step only increments when event is actually processed in stepForward()
@@ -492,7 +496,7 @@ void InteractiveTestRunner::raiseEvent(const std::string &eventName, const std::
     captureSnapshot();
 
     SCE_LOG_DEBUG("InteractiveTestRunner: Queued external event '{}' via EventRaiser (current step: {})", eventName,
-              currentStep_);
+                  currentStep_);
 }
 
 bool InteractiveTestRunner::removeInternalEvent(int index) {
@@ -503,7 +507,7 @@ bool InteractiveTestRunner::removeInternalEvent(int index) {
     // Validate index
     if (index < 0 || index >= static_cast<int>(internalQueue.size())) {
         SCE_LOG_WARN("InteractiveTestRunner: Invalid internal queue index {} (queue size: {})", index,
-                 internalQueue.size());
+                     internalQueue.size());
         return false;
     }
 
@@ -525,7 +529,7 @@ bool InteractiveTestRunner::removeInternalEvent(int index) {
     captureSnapshot();
 
     SCE_LOG_DEBUG("InteractiveTestRunner: Removed internal event '{}' at index {} (current step: {})", removedEventName,
-              index, currentStep_);
+                  index, currentStep_);
     return true;
 }
 
@@ -537,7 +541,7 @@ bool InteractiveTestRunner::removeExternalEvent(int index) {
     // Validate index
     if (index < 0 || index >= static_cast<int>(externalQueue.size())) {
         SCE_LOG_WARN("InteractiveTestRunner: Invalid external queue index {} (queue size: {})", index,
-                 externalQueue.size());
+                     externalQueue.size());
         return false;
     }
 
@@ -559,7 +563,7 @@ bool InteractiveTestRunner::removeExternalEvent(int index) {
     captureSnapshot();
 
     SCE_LOG_DEBUG("InteractiveTestRunner: Removed external event '{}' at index {} (current step: {})", removedEventName,
-              index, currentStep_);
+                  index, currentStep_);
     return true;
 }
 
@@ -581,8 +585,9 @@ size_t InteractiveTestRunner::pollScheduler() {
     // In MANUAL mode, logical time must be explicitly advanced for time-travel debugging
     size_t polledCount = schedulerImpl->forcePoll();
     if (polledCount > 0) {
-        SCE_LOG_DEBUG("InteractiveTestRunner::pollScheduler: Moved {} scheduled events to queue (logical time advanced)",
-                  polledCount);
+        SCE_LOG_DEBUG(
+            "InteractiveTestRunner::pollScheduler: Moved {} scheduled events to queue (logical time advanced)",
+            polledCount);
     }
 
     return polledCount;
@@ -678,8 +683,9 @@ void InteractiveTestRunner::captureSnapshot() {
                                                   event.remainingTime.count(), event.sessionId, event.targetUri,
                                                   event.eventType, event.eventData, event.content, paramsMap);
 
-            SCE_LOG_DEBUG("[SNAPSHOT CAPTURE] Scheduled event: '{}' (sendId: {}, originalDelay: {}ms, remainingTime: {}ms)",
-                      event.eventName, event.sendId, event.originalDelay.count(), event.remainingTime.count());
+            SCE_LOG_DEBUG(
+                "[SNAPSHOT CAPTURE] Scheduled event: '{}' (sendId: {}, originalDelay: {}ms, remainingTime: {}ms)",
+                event.eventName, event.sendId, event.originalDelay.count(), event.remainingTime.count());
         }
     }
 
@@ -713,8 +719,8 @@ void InteractiveTestRunner::captureSnapshot() {
         }
         statesStr += state;
     }
-    SCE_LOG_DEBUG("[SNAPSHOT CAPTURE] Storing snapshot at index {} with states: [{}], lastEventName: '{}'", currentStep_,
-              statesStr, lastEventName_);
+    SCE_LOG_DEBUG("[SNAPSHOT CAPTURE] Storing snapshot at index {} with states: [{}], lastEventName: '{}'",
+                  currentStep_, statesStr, lastEventName_);
 
     snapshotManager_.captureSnapshot(activeStates, dataModel, internalQueue, externalQueue, pendingUIEvents,
                                      scheduledEventsSnapshots, activeInvokes, executedEvents_, currentStep_,
@@ -777,7 +783,7 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
         for (const auto &event : currentScheduledEvents) {
             scheduler_->cancelEvent(event.sendId);
             SCE_LOG_DEBUG("InteractiveTestRunner: Canceled scheduled event '{}' (sendId: {}) before restore",
-                      event.eventName, event.sendId);
+                          event.eventName, event.sendId);
         }
 
         // Clear suspended events (we're restoring exact state to scheduler)
@@ -798,20 +804,22 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
         const std::string &currentSessionId = stateMachine_->getSessionId();
 
         SCE_LOG_DEBUG("[SNAPSHOT RESTORE] Restoring {} scheduled events from snapshot (step: {})",
-                  snapshot.scheduledEvents.size(), snapshot.stepNumber);
+                      snapshot.scheduledEvents.size(), snapshot.stepNumber);
 
         for (const auto &eventSnapshot : snapshot.scheduledEvents) {
             // Skip events that belong to child (child will restore them)
             if (childEventSendIds.count(eventSnapshot.sendId) > 0) {
-                SCE_LOG_DEBUG("InteractiveTestRunner: Skipping child event '{}' (sendId: {}) - will be restored by child",
-                          eventSnapshot.eventName, eventSnapshot.sendId);
+                SCE_LOG_DEBUG(
+                    "InteractiveTestRunner: Skipping child event '{}' (sendId: {}) - will be restored by child",
+                    eventSnapshot.eventName, eventSnapshot.sendId);
                 continue;
             }
 
-            SCE_LOG_DEBUG("[SNAPSHOT RESTORE] Restoring event '{}' (sendId: {}, originalDelay: {}ms, remainingTime: {}ms, "
-                      "step: {})",
-                      eventSnapshot.eventName, eventSnapshot.sendId, eventSnapshot.originalDelayMs,
-                      eventSnapshot.remainingTimeMs, snapshot.stepNumber);
+            SCE_LOG_DEBUG(
+                "[SNAPSHOT RESTORE] Restoring event '{}' (sendId: {}, originalDelay: {}ms, remainingTime: {}ms, "
+                "step: {})",
+                eventSnapshot.eventName, eventSnapshot.sendId, eventSnapshot.originalDelayMs,
+                eventSnapshot.remainingTimeMs, snapshot.stepNumber);
 
             // W3C SCXML 6.2.4: Recreate send operation with remaining time
             EventDescriptor event;
@@ -836,13 +844,13 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
             auto future = eventDispatcher_->sendEventDelayed(event, delay);
 
             SCE_LOG_DEBUG("InteractiveTestRunner: Restored parent scheduled event '{}' (sendId: {}, delay: {}ms, "
-                      "remainingTime: {}ms, originalDelay: {}ms, step: {})",
-                      eventSnapshot.eventName, eventSnapshot.sendId, delay.count(), eventSnapshot.remainingTimeMs,
-                      eventSnapshot.originalDelayMs, snapshot.stepNumber);
+                          "remainingTime: {}ms, originalDelay: {}ms, step: {})",
+                          eventSnapshot.eventName, eventSnapshot.sendId, delay.count(), eventSnapshot.remainingTimeMs,
+                          eventSnapshot.originalDelayMs, snapshot.stepNumber);
         }
 
         SCE_LOG_DEBUG("InteractiveTestRunner: Restored {} scheduled events to scheduler with exact remainingTime",
-                  snapshot.scheduledEvents.size());
+                      snapshot.scheduledEvents.size());
     }
 
     // W3C SCXML 3.13: Restore scheduler logical time for MANUAL mode deterministic stepping
@@ -853,7 +861,7 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
         if (schedulerImpl) {
             schedulerImpl->setLogicalTime(std::chrono::milliseconds(snapshot.schedulerLogicalTimeMs));
             SCE_LOG_DEBUG("[SNAPSHOT RESTORE] Scheduler logical time restored to {}ms (step: {})",
-                      snapshot.schedulerLogicalTimeMs, snapshot.stepNumber);
+                          snapshot.schedulerLogicalTimeMs, snapshot.stepNumber);
         }
     }
 
@@ -878,7 +886,7 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
     executedEvents_ = snapshot.executedEvents;
 
     SCE_LOG_INFO("InteractiveTestRunner: State restored to step {} via direct restoration (no side effects)",
-             snapshot.stepNumber);
+                 snapshot.stepNumber);
 
     // Verify restoration by checking actual active states
     auto actualStates = stateMachine_->getActiveStates();
@@ -959,7 +967,7 @@ std::map<std::string, std::string> InteractiveTestRunner::extractDataModel() con
                 SCE_LOG_DEBUG("InteractiveTestRunner: Extracted variable '{}' = '{}'", varName, dataModel[varName]);
             } else {
                 SCE_LOG_WARN("InteractiveTestRunner: Failed to extract variable '{}': {}", varName,
-                         result.getErrorMessage());
+                             result.getErrorMessage());
             }
         } catch (const std::exception &e) {
             SCE_LOG_ERROR("InteractiveTestRunner: Exception extracting variable '{}': {}", varName, e.what());
@@ -994,7 +1002,7 @@ void InteractiveTestRunner::extractEventQueues(std::vector<EventSnapshot> &outIn
 
     eventRaiser->getEventQueues(outInternal, outExternal);
     SCE_LOG_DEBUG("InteractiveTestRunner: Extracted queues - internal: {}, external: {}", outInternal.size(),
-              outExternal.size());
+                  outExternal.size());
 }
 
 void InteractiveTestRunner::restoreEventQueues(const std::vector<EventSnapshot> &internal,
@@ -1042,8 +1050,9 @@ void InteractiveTestRunner::restoreEventQueues(const std::vector<EventSnapshot> 
 
     // W3C SCXML 3.13: Keep immediate mode disabled for interactive debugging
     // Events must be processed only via explicit stepForward() calls
-    SCE_LOG_DEBUG("InteractiveTestRunner: Restored queues - internal: {}, external: {} (immediate mode remains disabled)",
-              internal.size(), external.size());
+    SCE_LOG_DEBUG(
+        "InteractiveTestRunner: Restored queues - internal: {}, external: {} (immediate mode remains disabled)",
+        internal.size(), external.size());
 }
 
 #ifdef __EMSCRIPTEN__
@@ -1452,7 +1461,7 @@ void InteractiveTestRunner::analyzeSubSCXML(std::shared_ptr<SCXMLModel> parentMo
 
                 if (!childModel) {
                     SCE_LOG_WARN("  Failed to parse sub-SCXML inline content in state '{}' - skipping visualization",
-                             state->getId());
+                                 state->getId());
                     continue;
                 }
 
@@ -1816,7 +1825,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                 invokesArray.call<void>("push", invokeObj);
 
                 SCE_LOG_DEBUG("buildStructureFromModel: State '{}' has invoke (type='{}', src='{}', id='{}')", stateId,
-                          type.empty() ? typeExpr : type, src.empty() ? srcExpr : src, id);
+                              type.empty() ? typeExpr : type, src.empty() ? srcExpr : src, id);
             }
 
             stateObj.set("invokes", invokesArray);
@@ -1882,7 +1891,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                     }
 
                     SCE_LOG_DEBUG("  → Adding targetless eventless transition: {} (self) (id={})", stateId,
-                              transitionId - 1);
+                                  transitionId - 1);
                     transitionsArray.call<void>("push", transObj);
                 } else {
                     for (const auto &target : targets) {
@@ -1903,7 +1912,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                         }
 
                         SCE_LOG_DEBUG("  → Adding eventless transition: {} → {} (id={})", stateId, target,
-                                  transitionId - 1);
+                                      transitionId - 1);
                         transitionsArray.call<void>("push", transObj);
                     }
                 }
@@ -1929,7 +1938,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                         }
 
                         SCE_LOG_DEBUG("  → Adding targetless transition: {} (self) event='{}' (id={})", stateId, event,
-                                  transitionId - 1);
+                                      transitionId - 1);
                         transitionsArray.call<void>("push", transObj);
                     } else {
                         for (const auto &target : targets) {
@@ -1949,8 +1958,8 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                                 transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
                             }
 
-                            SCE_LOG_DEBUG("  → Adding event transition: {} → {} event='{}' (id={})", stateId, target, event,
-                                      transitionId - 1);
+                            SCE_LOG_DEBUG("  → Adding event transition: {} → {} event='{}' (id={})", stateId, target,
+                                          event, transitionId - 1);
                             transitionsArray.call<void>("push", transObj);
                         }
                     }

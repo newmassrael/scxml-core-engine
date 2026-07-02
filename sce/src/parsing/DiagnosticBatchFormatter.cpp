@@ -7,9 +7,7 @@
 
 namespace SCE::parsing {
 
-void emit_json_diagnostics(
-    const std::vector<std::unique_ptr<Diagnostic>> &diagnostics,
-    std::ostream &os) {
+void emit_json_diagnostics(const std::vector<std::unique_ptr<Diagnostic>> &diagnostics, std::ostream &os) {
     // NDJSON line shape: each call to `to_json().dump()` produces
     // one record body with no trailing newline, then we append
     // '\n' to delimit. No array wrapper, no separator commas —

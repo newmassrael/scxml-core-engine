@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "states/StateExitExecutor.h"
-#include "core/LogMacros.h"
 #include "actions/IActionNode.h"
+#include "core/LogMacros.h"
 #include "model/IStateNode.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/IActionExecutor.h"
@@ -142,9 +142,10 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
                         bool actionResult = exitAction->execute(*executionContext);
 
                         if (!actionResult) {
-                            SCE_LOG_WARN("W3C SCXML 3.9: Exit action failed for state: {}, stopping remaining actions in "
-                                     "THIS block only",
-                                     state->getId());
+                            SCE_LOG_WARN(
+                                "W3C SCXML 3.9: Exit action failed for state: {}, stopping remaining actions in "
+                                "THIS block only",
+                                state->getId());
                             break;  // §scxml-3.9: stop remaining actions in this block
                         }
 

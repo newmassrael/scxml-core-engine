@@ -62,14 +62,22 @@ public:
      * §scxml-B-2: Legal values for 'item' attribute are legal ECMAScript variable names
      */
     static inline bool isLegalVariableName(const std::string &name) {
-        if (name.empty()) return false;
+        if (name.empty()) {
+            return false;
+        }
         // Must not be quoted (e.g., 'continue' or "continue")
-        if (name.front() == '\'' || name.front() == '"') return false;
+        if (name.front() == '\'' || name.front() == '"') {
+            return false;
+        }
         // Must start with letter, underscore, or dollar sign
-        if (!std::isalpha(name[0]) && name[0] != '_' && name[0] != '$') return false;
+        if (!std::isalpha(name[0]) && name[0] != '_' && name[0] != '$') {
+            return false;
+        }
         // Must contain only alphanumeric, underscore, or dollar sign
         for (char c : name) {
-            if (!std::isalnum(c) && c != '_' && c != '$') return false;
+            if (!std::isalnum(c) && c != '_' && c != '$') {
+                return false;
+            }
         }
         return true;
     }
@@ -182,8 +190,7 @@ public:
 
             std::string arrayCheckExpr = "(" + arrayExpr + ") instanceof Array";
             auto arrayCheckResult = jsEngine.evaluateExpression(sessionId, arrayCheckExpr).get();
-            if (!arrayCheckResult.isSuccess() ||
-                !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
+            if (!arrayCheckResult.isSuccess() || !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
                 !std::get<bool>(arrayCheckResult.getInternalValue())) {
                 SCE_LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr);
                 return std::nullopt;

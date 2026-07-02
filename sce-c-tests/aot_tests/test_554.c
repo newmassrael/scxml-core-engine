@@ -52,8 +52,7 @@ int main(void) {
 
     while (!test554_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test554: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test554_active_states(&sm));
+            fprintf(stderr, "test554: TIMEOUT — active = 0x%08x\n", (unsigned)test554_active_states(&sm));
             test554_destroy(&sm);
             return 1;
         }
@@ -63,8 +62,7 @@ int main(void) {
 
     int rc = test554_in_state(&sm, TEST554_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test554: FAIL — active = 0x%08x\n",
-                (unsigned)test554_active_states(&sm));
+        fprintf(stderr, "test554: FAIL — active = 0x%08x\n", (unsigned)test554_active_states(&sm));
     }
     test554_destroy(&sm);
     return rc;

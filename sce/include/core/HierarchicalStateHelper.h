@@ -30,19 +30,17 @@ namespace SCE::Core {
 // C++17-compatible trait for ParallelStatePolicy detection
 // Used in if constexpr to check if a policy supports parallel state operations.
 // ═══════════════════════════════════════════════════════════════════════════════
-template<typename P, typename = void>
-struct IsParallelStatePolicyTrait : std::false_type {};
-template<typename P>
-struct IsParallelStatePolicyTrait<P, std::void_t<
-    decltype(P::isParallelState(std::declval<typename P::State>())),
-    decltype(P::getParallelRegions(std::declval<typename P::State>())),
-    decltype(P::isDescendantOf(std::declval<typename P::State>(), std::declval<typename P::State>())),
-    decltype(P::getDocumentOrder(std::declval<typename P::State>())),
-    decltype(P::isFinalState(std::declval<typename P::State>()))
->> : std::true_type {};
+template <typename P, typename = void> struct IsParallelStatePolicyTrait : std::false_type {};
 
-template<typename P>
-inline constexpr bool IsParallelStatePolicy = IsParallelStatePolicyTrait<P>::value;
+template <typename P>
+struct IsParallelStatePolicyTrait<
+    P, std::void_t<decltype(P::isParallelState(std::declval<typename P::State>())),
+                   decltype(P::getParallelRegions(std::declval<typename P::State>())),
+                   decltype(P::isDescendantOf(std::declval<typename P::State>(), std::declval<typename P::State>())),
+                   decltype(P::getDocumentOrder(std::declval<typename P::State>())),
+                   decltype(P::isFinalState(std::declval<typename P::State>()))>> : std::true_type {};
+
+template <typename P> inline constexpr bool IsParallelStatePolicy = IsParallelStatePolicyTrait<P>::value;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Unified Hierarchical Algorithms (Single Source of Truth)
@@ -61,7 +59,6 @@ inline constexpr bool IsParallelStatePolicy = IsParallelStatePolicyTrait<P>::val
  * - Single Source of Truth: All hierarchical algorithms centralized here
  */
 struct HierarchicalAlgorithms {
-
     /**
      * @brief Find Least Common Ancestor of two states (§scxml-3.13)
      *
@@ -71,7 +68,7 @@ struct HierarchicalAlgorithms {
      */
     template <typename StateType, typename GetParentFn>
     [[nodiscard]] static std::optional<StateType> findLCA(const StateType &state1, const StateType &state2,
-                                                           GetParentFn getParent) {
+                                                          GetParentFn getParent) {
         if (state1 == state2) {
             return state1;
         }
@@ -117,9 +114,8 @@ struct HierarchicalAlgorithms {
      * @return Exit chain in child → parent order (excluding stopBeforeState)
      */
     template <typename StateType, typename GetParentFn>
-    [[nodiscard]] static std::vector<StateType> buildExitChain(const StateType &fromState,
-                                                                const StateType &stopBeforeState,
-                                                                GetParentFn getParent) {
+    [[nodiscard]] static std::vector<StateType>
+    buildExitChain(const StateType &fromState, const StateType &stopBeforeState, GetParentFn getParent) {
         std::vector<StateType> chain;
         chain.reserve(8);
 
@@ -142,9 +138,8 @@ struct HierarchicalAlgorithms {
      * @return Entry chain in parent → child order (excluding ancestorState)
      */
     template <typename StateType, typename GetParentFn>
-    [[nodiscard]] static std::vector<StateType> buildEntryChainFromAncestor(const StateType &targetState,
-                                                                             const StateType &ancestorState,
-                                                                             GetParentFn getParent) {
+    [[nodiscard]] static std::vector<StateType>
+    buildEntryChainFromAncestor(const StateType &targetState, const StateType &ancestorState, GetParentFn getParent) {
         std::vector<StateType> chain;
         chain.reserve(8);
 
@@ -167,7 +162,7 @@ struct HierarchicalAlgorithms {
      */
     template <typename StateType, typename GetParentFn>
     [[nodiscard]] static bool isDescendantOf(const StateType &descendant, const StateType &ancestor,
-                                              GetParentFn getParent) {
+                                             GetParentFn getParent) {
         StateType current = descendant;
         while (true) {
             auto parent = getParent(current);
@@ -203,6 +198,7 @@ template <HierarchyPolicy StatePolicy> class HierarchicalStateHelper {
 #else
 template <typename StatePolicy> class HierarchicalStateHelper {
 #endif
+
 public:
     using State = typename StatePolicy::State;
 
@@ -211,23 +207,24 @@ private:
     static void addParallelRegions(std::vector<State> &chain, State leafState) {
         if constexpr (IsParallelStatePolicy<StatePolicy>) {
             SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Checking if leafState {} is parallel",
-                      static_cast<int>(leafState));
+                          static_cast<int>(leafState));
             if (StatePolicy::isParallelState(leafState)) {
                 SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - leafState {} IS parallel, adding regions",
-                          static_cast<int>(leafState));
+                              static_cast<int>(leafState));
                 auto regions = StatePolicy::getParallelRegions(leafState);
                 SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Found {} regions", regions.size());
                 for (const auto &region : regions) {
-                    SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding region {}", static_cast<int>(region));
+                    SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding region {}",
+                                  static_cast<int>(region));
                     chain.push_back(region);
 
                     if (StatePolicy::isCompoundState(region)) {
                         State regionInitialChild = StatePolicy::getInitialChild(region);
                         SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Region {} initial child: {}",
-                                  static_cast<int>(region), static_cast<int>(regionInitialChild));
+                                      static_cast<int>(region), static_cast<int>(regionInitialChild));
                         if (regionInitialChild != region) {
                             SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding initial child {}",
-                                      static_cast<int>(regionInitialChild));
+                                          static_cast<int>(regionInitialChild));
                             chain.push_back(regionInitialChild);
                         }
                     }
@@ -237,7 +234,6 @@ private:
     }
 
 public:
-
     /**
      * @brief Build entry chain from leaf state to root
      *
@@ -311,9 +307,9 @@ public:
         // Safety check: detect cyclic parent relationships
         if (depth >= MAX_DEPTH) {
             SCE_LOG_ERROR("HierarchicalStateHelper::buildEntryChain() - Maximum depth ({}) exceeded for state. "
-                      "Cyclic parent relationship detected in state machine definition. "
-                      "This indicates a bug in the code generator or corrupted SCXML.",
-                      MAX_DEPTH);
+                          "Cyclic parent relationship detected in state machine definition. "
+                          "This indicates a bug in the code generator or corrupted SCXML.",
+                          MAX_DEPTH);
             throw std::runtime_error("Cyclic parent relationship detected in state hierarchy");
         }
 
@@ -497,8 +493,8 @@ public:
      * - Used for external transitions with proper LCA calculation
      */
     static std::vector<State> buildExitChain(State fromState, State stopBeforeState) {
-        return HierarchicalAlgorithms::buildExitChain(
-            fromState, stopBeforeState, [](State s) { return StatePolicy::getParent(s); });
+        return HierarchicalAlgorithms::buildExitChain(fromState, stopBeforeState,
+                                                      [](State s) { return StatePolicy::getParent(s); });
     }
 
     /**
@@ -539,8 +535,8 @@ public:
      * Matches Interpreter's hierarchical entry after LCA calculation.
      */
     static std::vector<State> buildEntryChainFromParent(State targetState, State parentState) {
-        return HierarchicalAlgorithms::buildEntryChainFromAncestor(
-            targetState, parentState, [](State s) { return StatePolicy::getParent(s); });
+        return HierarchicalAlgorithms::buildEntryChainFromAncestor(targetState, parentState,
+                                                                   [](State s) { return StatePolicy::getParent(s); });
     }
 
     /**
@@ -578,8 +574,7 @@ public:
      * Matches Interpreter's findLCA() behavior for external transitions.
      */
     static std::optional<State> findLCA(State state1, State state2) {
-        return HierarchicalAlgorithms::findLCA(
-            state1, state2, [](State s) { return StatePolicy::getParent(s); });
+        return HierarchicalAlgorithms::findLCA(state1, state2, [](State s) { return StatePolicy::getParent(s); });
     }
 
     static std::optional<State> getParent(State state) {
@@ -620,8 +615,8 @@ public:
      * - Otherwise -> t2 preempts t1 (document order)
      */
     static bool isDescendantOf(State descendant, State ancestor) {
-        return HierarchicalAlgorithms::isDescendantOf(
-            descendant, ancestor, [](State s) { return StatePolicy::getParent(s); });
+        return HierarchicalAlgorithms::isDescendantOf(descendant, ancestor,
+                                                      [](State s) { return StatePolicy::getParent(s); });
     }
 };
 

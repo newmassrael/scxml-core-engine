@@ -16,10 +16,10 @@
 // This closes the "wire format defined" → "data reaches SCXML guards" gap.
 // Without this test, prior "data forwarding" work was not verified E2E.
 
-#include "common/TestScriptEngine.h"
 #include "brake_payload_sm.h"
-#include "motor_payload_sm.h"
 #include "brake_payload_transport.h"
+#include "common/TestScriptEngine.h"
+#include "motor_payload_sm.h"
 
 #include "mesh/ShmChannel.h"
 
@@ -33,12 +33,10 @@
 //   shm_arena_bytes: 131072
 //   shm_ring_capacity: 512
 // These must override the library defaults (65536 / 256).
-static_assert(
-    SCE::Generated::brake_payload::SHM_ARENA_BYTES_MOTOR_PAYLOAD == 131072,
-    "deploy.yaml shm_arena_bytes override failed to reach generated code");
-static_assert(
-    SCE::Generated::brake_payload::SHM_RING_CAPACITY_MOTOR_PAYLOAD == 512,
-    "deploy.yaml shm_ring_capacity override failed to reach generated code");
+static_assert(SCE::Generated::brake_payload::SHM_ARENA_BYTES_MOTOR_PAYLOAD == 131072,
+              "deploy.yaml shm_arena_bytes override failed to reach generated code");
+static_assert(SCE::Generated::brake_payload::SHM_RING_CAPACITY_MOTOR_PAYLOAD == 512,
+              "deploy.yaml shm_ring_capacity override failed to reach generated code");
 
 #include <sys/wait.h>
 #include <unistd.h>
@@ -53,9 +51,7 @@ int runReceiver() {
     for (int attempt = 0; attempt < OPEN_RETRIES; ++attempt) {
         // Match the sender's template parameters via the generated typedef.
         using Channel = SCE::Generated::brake_payload::MotorPayloadShmChannel;
-        Channel channel(
-            SCE::Generated::brake_payload::SHM_CHANNEL_MOTOR_PAYLOAD,
-            Channel::Mode::Open);
+        Channel channel(SCE::Generated::brake_payload::SHM_CHANNEL_MOTOR_PAYLOAD, Channel::Mode::Open);
         if (!channel.valid()) {
             std::this_thread::sleep_for(POLL_INTERVAL);
             continue;
@@ -66,8 +62,7 @@ int runReceiver() {
         motor.initialize();
 
         for (int drain = 0; drain < DRAIN_RETRIES; ++drain) {
-            std::size_t drained =
-                channel.drain<SCE::Generated::motor_payload::motor_payloadPolicy>(motor);
+            std::size_t drained = channel.drain<SCE::Generated::motor_payload::motor_payloadPolicy>(motor);
             if (drained > 0) {
                 motor.step();
                 auto state = motor.getCurrentState();
@@ -76,11 +71,10 @@ int runReceiver() {
                 }
                 if (state == SCE::Generated::motor_payload::State::Wrong_payload) {
                     std::fprintf(stderr, "receiver: payload mismatch "
-                                 "(cond '_event.data.force == 42' failed)\n");
+                                         "(cond '_event.data.force == 42' failed)\n");
                     return 21;
                 }
-                std::fprintf(stderr, "receiver: unexpected state %d after drain\n",
-                             static_cast<int>(state));
+                std::fprintf(stderr, "receiver: unexpected state %d after drain\n", static_cast<int>(state));
                 return 22;
             }
             std::this_thread::sleep_for(POLL_INTERVAL);

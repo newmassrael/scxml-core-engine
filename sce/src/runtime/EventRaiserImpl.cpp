@@ -4,8 +4,8 @@
 #include "runtime/EventRaiserImpl.h"
 #include "common/EventDataHelper.h"
 #include "common/EventTypeHelper.h"
-#include "core/LogMacros.h"
 #include "common/StringUtils.h"
+#include "core/LogMacros.h"
 #include "events/IEventDispatcher.h"
 #include "events/PlatformEventRaiserHelper.h"
 #include "runtime/StateSnapshot.h"
@@ -20,7 +20,7 @@ EventRaiserImpl::EventRaiserImpl(EventCallback callback)
     : eventCallback_(std::move(callback)), scheduler_(nullptr), shutdownRequested_(false), isRunning_(false),
       immediateMode_(false) {
     SCE_LOG_DEBUG("EventRaiserImpl: Created with callback: {} (instance: {})", (eventCallback_ ? "set" : "none"),
-              (void *)this);
+                  (void *)this);
 
     // Zero Duplication Principle: Platform-specific initialization through Helper
     // Note: scheduler_ will be set later via setScheduler() for delayed event polling support
@@ -78,7 +78,7 @@ size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionI
         if (event.origin == originSessionId) {
             cancelledCount++;
             SCE_LOG_DEBUG("EventRaiserImpl: Cancelled queued event '{}' from session: {}", event.eventName,
-                      originSessionId);
+                          originSessionId);
         } else {
             // Keep events from other sessions
             remaining.push_back(event);
@@ -188,8 +188,8 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
                                  const std::string &originType) {
     // [EVENT ROUTING] Entry point logging - track calls from InvokeEventTarget
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() ENTRY - event='{}', origin='{}', invokeId='{}', "
-             "originType='{}', EventRaiser instance={}",
-             eventName, originSessionId, invokeId, originType, (void *)this);
+                 "originType='{}', EventRaiser instance={}",
+                 eventName, originSessionId, invokeId, originType, (void *)this);
 
     // §scxml-5.10: Raise event with full metadata (origin, invoke ID, and origintype)
     // W3C SCXML Test 230: Platform events (done.*, error.*) must be queued, not processed immediately
@@ -205,7 +205,7 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
     }
 
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() calling raiseEventWithPriority() - priority={}",
-             (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
+                 (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
 
     return raiseEventWithPriority(eventName, eventData, priority, originSessionId, "", invokeId, originType);
 }
@@ -222,13 +222,13 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     }
 
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEventWithPriority() ENTRY - event='{}', priority={}, isRunning={}, "
-             "immediateMode={}, EventRaiser instance={}",
-             eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), isRunning_.load(),
-             immediateMode_.load(), (void *)this);
+                 "immediateMode={}, EventRaiser instance={}",
+                 eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), isRunning_.load(),
+                 immediateMode_.load(), (void *)this);
 
     SCE_LOG_DEBUG("EventRaiserImpl::raiseEventWithPriority called - event: '{}', data: '{}', priority: {}, EventRaiser "
-              "instance: {}",
-              eventName, eventData, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), (void *)this);
+                  "instance: {}",
+                  eventName, eventData, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), (void *)this);
 
     if (!isRunning_.load()) {
         SCE_LOG_ERROR("[EVENT ROUTING] FAILED: EventRaiser is NOT RUNNING - cannot raise event '{}'", eventName);
@@ -263,8 +263,8 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                 queueSize = synchronousQueue_.size();
             }
             SCE_LOG_DEBUG("EventRaiserImpl: Processing {} event '{}' immediately (SCXML mode, hasInternalEvents={}, "
-                      "queueSize={})",
-                      (isInternal ? "INTERNAL" : "EXTERNAL"), eventName, hasInternalEvents, queueSize);
+                          "queueSize={})",
+                          (isInternal ? "INTERNAL" : "EXTERNAL"), eventName, hasInternalEvents, queueSize);
 
             // Get callback under lock
             EventCallback callback;
@@ -330,10 +330,12 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
             }
         }
 
-        SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' queued with priority {} (reason: {}) - queue size now: {}", eventName,
-                  (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), reason, synchronousQueue_.size());
-        SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' queued for synchronous processing (SCXML compliance) with {} priority",
-                  eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
+        SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' queued with priority {} (reason: {}) - queue size now: {}",
+                      eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), reason,
+                      synchronousQueue_.size());
+        SCE_LOG_DEBUG(
+            "EventRaiserImpl: Event '{}' queued for synchronous processing (SCXML compliance) with {} priority",
+            eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
         SCE_LOG_DEBUG("EventRaiserImpl: Synchronous queue size after queueing: {}", synchronousQueue_.size());
     }
 
@@ -451,13 +453,13 @@ void EventRaiserImpl::processQueuedEvents() {
     for (size_t i = 0; i < eventsToProcess.size(); ++i) {
         const auto &event = eventsToProcess[i];
         SCE_LOG_DEBUG("EventRaiserImpl: [W3C193 DEBUG] Event processing order[{}]: '{}' with priority {}", i,
-                  event.eventName, (event.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
+                      event.eventName, (event.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
     }
 
     // Process events without holding the queue lock
     for (const auto &event : eventsToProcess) {
         SCE_LOG_DEBUG("EventRaiserImpl: Synchronously processing queued event '{}' with {} priority", event.eventName,
-                  (event.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
+                      (event.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
 
         // Use common callback execution method
         executeEventCallback(event);
@@ -525,7 +527,7 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
 
     try {
         SCE_LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data '{}' from origin '{}'", event.eventName,
-                  event.eventData, event.origin);
+                      event.eventData, event.origin);
 
         // §scxml-5.10: RAII guard sets all event context fields and clears on scope exit
         bool isExternal = (event.priority == EventPriority::EXTERNAL);
@@ -613,7 +615,7 @@ void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
     }
 
     SCE_LOG_DEBUG("EventRaiserImpl: Queue snapshot retrieved - internal: {}, external: {}", outInternal.size(),
-              outExternal.size());
+                  outExternal.size());
 }
 
 void EventRaiserImpl::clearQueue() {

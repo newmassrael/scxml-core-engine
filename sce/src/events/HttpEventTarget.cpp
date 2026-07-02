@@ -2,9 +2,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/HttpEventTarget.h"
-#include "core/LogMacros.h"
 #include "common/SendHelper.h"
 #include "common/UrlEncodingHelper.h"
+#include "core/LogMacros.h"
 #include <algorithm>
 #include <chrono>
 #include <iomanip>
@@ -29,7 +29,7 @@ HttpEventTarget::HttpEventTarget(const std::string &targetUri, std::chrono::mill
     }
 
     SCE_LOG_DEBUG("HttpEventTarget: Created for URI '{}' with timeout {}ms, {} retries", targetUri_, timeoutMs_.count(),
-              maxRetries_);
+                  maxRetries_);
 }
 
 std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
@@ -128,7 +128,7 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
             auto eventRaiser = SCE::EventRaiserService::getInstance().getEventRaiser(event.sessionId);
             if (!eventRaiser) {
                 SCE_LOG_ERROR("HttpEventTarget: No EventRaiser for session '{}' - cannot deliver HTTP response event",
-                          event.sessionId);
+                              event.sessionId);
                 return SendResult::error("No EventRaiser for session: " + event.sessionId,
                                          SendResult::ErrorType::INTERNAL_ERROR);
             }
@@ -158,14 +158,15 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
 #ifdef __EMSCRIPTEN__
             // WASM memory investigation: Log thread completion (exception path)
             SCE_LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (exception) for event '{}'",
-                     event.eventName);
+                         event.eventName);
 #endif
             return SendResult::error("HTTP send exception: " + std::string(e.what()),
                                      SendResult::ErrorType::INTERNAL_ERROR);
         }
 #ifdef __EMSCRIPTEN__
         // WASM memory investigation: Log thread completion (success path)
-        SCE_LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (success) for event '{}'", event.eventName);
+        SCE_LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (success) for event '{}'",
+                     event.eventName);
 #endif
     });
 }
@@ -278,7 +279,8 @@ bool HttpEventTarget::parseTargetUri() {
     // Parse path
     path_ = match[4].matched ? match[4].str() : "/";
 
-    SCE_LOG_DEBUG("HttpEventTarget: Parsed URI - scheme='{}', host='{}', port={}, path='{}'", scheme_, host_, port_, path_);
+    SCE_LOG_DEBUG("HttpEventTarget: Parsed URI - scheme='{}', host='{}', port={}, path='{}'", scheme_, host_, port_,
+                  path_);
 
     return true;
 }
@@ -411,7 +413,7 @@ httplib::Result HttpEventTarget::performRequestWithRetry(httplib::Client &client
 
         if (result) {
             SCE_LOG_DEBUG("HttpEventTarget: HTTP POST completed, status: {}, response body: {}", result->status,
-                      result->body);
+                          result->body);
         } else {
             SCE_LOG_ERROR("HttpEventTarget: HTTP POST failed, error: {}", static_cast<int>(result.error()));
         }
@@ -426,7 +428,7 @@ httplib::Result HttpEventTarget::performRequestWithRetry(httplib::Client &client
             // Wait before retry (exponential backoff)
             auto waitTime = std::chrono::milliseconds(100 * attempts);
             SCE_LOG_DEBUG("HttpEventTarget: Retrying in {}ms (attempt {} of {})", waitTime.count(), attempts,
-                      maxRetries_ + 1);
+                          maxRetries_ + 1);
             std::this_thread::sleep_for(waitTime);
         }
     }
@@ -481,7 +483,7 @@ SendResult HttpEventTarget::convertHttpResponse(const httplib::Result &result, c
     // Check HTTP status code
     if (result->status >= 200 && result->status < 300) {
         SCE_LOG_INFO("HttpEventTarget: Event '{}' sent successfully to '{}', status {}", event.eventName, targetUri_,
-                 result->status);
+                     result->status);
         return SendResult::success(event.sendId);
     } else {
         std::string errorMsg = "HTTP " + std::to_string(result->status) + ": " + result->reason;

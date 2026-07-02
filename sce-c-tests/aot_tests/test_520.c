@@ -17,8 +17,7 @@ int main(void) {
 
     int rc = test520_in_state(&sm, TEST520_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test520: FAIL — active = 0x%08x\n",
-                (unsigned)test520_active_states(&sm));
+        fprintf(stderr, "test520: FAIL — active = 0x%08x\n", (unsigned)test520_active_states(&sm));
     }
     test520_destroy(&sm);
     return rc;

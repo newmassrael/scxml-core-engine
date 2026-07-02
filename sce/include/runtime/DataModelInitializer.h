@@ -45,8 +45,7 @@ public:
      * @param sessionId Script session ID for variable operations
      * @param scriptEngine Script engine for expression evaluation and variable management
      */
-    DataModelInitializer(std::shared_ptr<SCXMLModel> model, const std::string &sessionId,
-                         IScriptEngine &scriptEngine);
+    DataModelInitializer(std::shared_ptr<SCXMLModel> model, const std::string &sessionId, IScriptEngine &scriptEngine);
 
     /**
      * @brief Set EventRaiser for error.execution event reporting

@@ -99,8 +99,7 @@ public:
      * (§wire-W1 audit finding #1 closure / W2 deliverable). Returns
      * empty vector for parse paths that surface only string errors.
      */
-    const std::vector<std::unique_ptr<SCE::parsing::Diagnostic>> &
-    getDiagnostics() const noexcept;
+    const std::vector<std::unique_ptr<SCE::parsing::Diagnostic>> &getDiagnostics() const noexcept;
 
     /**
      * @brief Return state node parser

@@ -3,7 +3,9 @@
 //
 // W3C SCXML test185 — C11 AOT runner.
 //
-// W3C SCXML 6.2: <send> respects the delay specification — onentry sends event2 with delay=1s then event1 immediately; the immediate event1 fires first (routes s0→s1), then the 1s timer fires event2 → pass. If the scheduler ignored delay, event2 would land first against the s0 wildcard → fail. Tests scheduled_push fire_time_ms-keyed sort (옵션 σ).
+// W3C SCXML 6.2: <send> respects the delay specification — onentry sends event2 with delay=1s then event1 immediately;
+// the immediate event1 fires first (routes s0→s1), then the 1s timer fires event2 → pass. If the scheduler ignored
+// delay, event2 would land first against the s0 wildcard → fail. Tests scheduled_push fire_time_ms-keyed sort (옵션 σ).
 
 #define _POSIX_C_SOURCE 199309L
 
@@ -25,8 +27,7 @@ int main(void) {
 
     while (!test185_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test185: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test185_active_states(&sm));
+            fprintf(stderr, "test185: TIMEOUT — active = 0x%08x\n", (unsigned)test185_active_states(&sm));
             test185_destroy(&sm);
             return 1;
         }
@@ -36,8 +37,7 @@ int main(void) {
 
     int rc = test185_in_state(&sm, TEST185_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test185: FAIL — active = 0x%08x\n",
-                (unsigned)test185_active_states(&sm));
+        fprintf(stderr, "test185: FAIL — active = 0x%08x\n", (unsigned)test185_active_states(&sm));
     }
     test185_destroy(&sm);
     return rc;

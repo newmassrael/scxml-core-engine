@@ -46,12 +46,12 @@
 #include "common/TestScriptEngine.h"
 #include "parent_session_f_donedata_sm.h"
 #include "parent_session_f_donedata_transport.h"
-#include "worker_session_f_donedata_param_sm.h"
-#include "worker_session_f_donedata_param_transport.h"
 #include "worker_session_f_donedata_content_sm.h"
 #include "worker_session_f_donedata_content_transport.h"
 #include "worker_session_f_donedata_nested_sm.h"
 #include "worker_session_f_donedata_nested_transport.h"
+#include "worker_session_f_donedata_param_sm.h"
+#include "worker_session_f_donedata_param_transport.h"
 
 #include <chrono>
 #include <cstdio>
@@ -65,22 +65,21 @@ int main() {
     ParamWorker worker_param;
     SCE::Test::inject_build_engine(worker_param);
     worker_param.initialize();
-    SCE::Generated::worker_session_f_donedata_param::TransportRouter<ParamWorker>
-        worker_param_router({&worker_param});
+    SCE::Generated::worker_session_f_donedata_param::TransportRouter<ParamWorker> worker_param_router({&worker_param});
 
     using ContentWorker = SCE::Generated::worker_session_f_donedata_content::worker_session_f_donedata_content;
     ContentWorker worker_content;
     SCE::Test::inject_build_engine(worker_content);
     worker_content.initialize();
-    SCE::Generated::worker_session_f_donedata_content::TransportRouter<ContentWorker>
-        worker_content_router({&worker_content});
+    SCE::Generated::worker_session_f_donedata_content::TransportRouter<ContentWorker> worker_content_router(
+        {&worker_content});
 
     using NestedWorker = SCE::Generated::worker_session_f_donedata_nested::worker_session_f_donedata_nested;
     NestedWorker worker_nested;
     SCE::Test::inject_build_engine(worker_nested);
     worker_nested.initialize();
-    SCE::Generated::worker_session_f_donedata_nested::TransportRouter<NestedWorker>
-        worker_nested_router({&worker_nested});
+    SCE::Generated::worker_session_f_donedata_nested::TransportRouter<NestedWorker> worker_nested_router(
+        {&worker_nested});
 
     using ParentEngine = SCE::Generated::parent_session_f_donedata::parent_session_f_donedata;
     ParentEngine parent;
@@ -102,17 +101,16 @@ int main() {
             return 0;
         }
         if (parent.getCurrentState() == ParentState::Fail) {
-            std::fprintf(stderr,
-                         "FAIL: parent reached `fail`. Check the conds "
-                         "`_event.data.result == 42` (param branch), "
-                         "`_event.data == 'hello_content'` (content "
-                         "branch), or `_event.data.result.codes[1] == "
-                         "200 and .codes[2] == 201` (nested branch). "
-                         "Empty `_event.data` means the stash / "
-                         "getDonedata / emitWire18 / onInvokeDone chain "
-                         "dropped the payload; a nested-branch failure "
-                         "points at the `DoneDataHelper::evaluateContent` "
-                         "canonical-JSON contract.\n");
+            std::fprintf(stderr, "FAIL: parent reached `fail`. Check the conds "
+                                 "`_event.data.result == 42` (param branch), "
+                                 "`_event.data == 'hello_content'` (content "
+                                 "branch), or `_event.data.result.codes[1] == "
+                                 "200 and .codes[2] == 201` (nested branch). "
+                                 "Empty `_event.data` means the stash / "
+                                 "getDonedata / emitWire18 / onInvokeDone chain "
+                                 "dropped the payload; a nested-branch failure "
+                                 "points at the `DoneDataHelper::evaluateContent` "
+                                 "canonical-JSON contract.\n");
             return 1;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));

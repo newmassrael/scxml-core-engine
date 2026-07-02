@@ -29,12 +29,9 @@ constexpr std::string_view kSemanticStage = "validation";
 
 nlohmann::ordered_json SemanticError::baseEnvelope() const {
     const std::string_view codeStr = code();
-    const std::string fileStr = location().has_value()
-                                    ? location()->file.string()
-                                    : std::string{};
+    const std::string fileStr = location().has_value() ? location()->file.string() : std::string{};
     const std::string_view messageView{what()};
-    const std::string idStr = computeFnv1aDiagnosticId(
-        codeStr, kSemanticStage, fileStr, messageView);
+    const std::string idStr = computeFnv1aDiagnosticId(codeStr, kSemanticStage, fileStr, messageView);
 
     nlohmann::ordered_json out;
     out["v"] = 1;
@@ -61,8 +58,7 @@ namespace {
 // by both `SemanticInitialStateUnknown` and `SemanticTransitionTargetUnknown`
 // — they share the same payload shape because the wire code itself
 // is shared (W4 D4 fold).
-void appendInvalidReferenceFields(nlohmann::ordered_json &out,
-                                  const std::string &actual,
+void appendInvalidReferenceFields(nlohmann::ordered_json &out, const std::string &actual,
                                   const std::vector<std::string> &available) {
     out["actual"] = actual;
     if (!available.empty()) {

@@ -100,8 +100,8 @@
    types into invoke-free fixtures. */
 #include <stddef.h>
 #include <string.h>
-SCE_C_UNUSED static inline void
-sce_copy_bounded_id(char *dst, const char *src) {
+
+SCE_C_UNUSED static inline void sce_copy_bounded_id(char *dst, const char *src) {
     const char *s = src != NULL ? src : "";
     size_t n = 0;
     while (n < (size_t)SCE_MAX_ID_LEN - 1u && s[n] != '\0') {

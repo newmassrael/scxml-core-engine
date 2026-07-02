@@ -126,9 +126,8 @@ TEST_F(DonedataLocalInvokeTest, ParentObservesDonedataOnDoneInvoke) {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    ASSERT_FALSE(sm->isRunning())
-        << "parent did not halt within 5s — done.invoke was not emitted or "
-        << "the parent is stuck in phase_param/phase_content";
+    ASSERT_FALSE(sm->isRunning()) << "parent did not halt within 5s — done.invoke was not emitted or "
+                                  << "the parent is stuck in phase_param/phase_content";
 
     EXPECT_EQ(sm->getCurrentState(), "pass")
         << "parent reached `fail`: `_event.data.result === 42` (param branch) or "

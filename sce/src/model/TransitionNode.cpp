@@ -78,7 +78,8 @@ void SCE::TransitionNode::parseTargets() const {
 }
 
 void SCE::TransitionNode::setGuard(const std::string &guard) {
-    SCE_LOG_DEBUG("Setting guard for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_, guard);
+    SCE_LOG_DEBUG("Setting guard for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
+                  guard);
     guard_ = guard;
 }
 
@@ -88,7 +89,7 @@ const std::string &SCE::TransitionNode::getGuard() const {
 
 void SCE::TransitionNode::addActionNode(std::shared_ptr<SCE::IActionNode> actionNode) {
     SCE_LOG_DEBUG("Adding ActionNode to transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
-              (actionNode ? actionNode->getActionType() : "null"));
+                  (actionNode ? actionNode->getActionType() : "null"));
     if (actionNode) {
         actionNodes_.push_back(actionNode);
     }
@@ -99,8 +100,8 @@ const std::vector<std::shared_ptr<SCE::IActionNode>> &SCE::TransitionNode::getAc
 }
 
 void SCE::TransitionNode::setInternal(bool internal) {
-    SCE_LOG_DEBUG("Setting internal flag for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
-              (internal ? "true" : "false"));
+    SCE_LOG_DEBUG("Setting internal flag for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_),
+                  target_, (internal ? "true" : "false"));
     internal_ = internal;
 }
 
@@ -110,7 +111,7 @@ bool SCE::TransitionNode::isInternal() const {
 
 void SCE::TransitionNode::setAttribute(const std::string &name, const std::string &value) {
     SCE_LOG_DEBUG("Setting attribute for transition {} -> {}: {}={}", (event_.empty() ? "<no event>" : event_), target_,
-              name, value);
+                  name, value);
     attributes_[name] = value;
 }
 

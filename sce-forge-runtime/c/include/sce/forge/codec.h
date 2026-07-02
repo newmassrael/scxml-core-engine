@@ -78,8 +78,8 @@ typedef enum {
  * fixed offsets without an accessor call per field. */
 typedef struct {
     const uint8_t *data;
-    size_t         len;
-    size_t         pos;
+    size_t len;
+    size_t pos;
 } sce_forge_cursor_t;
 
 static inline sce_forge_cursor_t sce_forge_cursor_init(const uint8_t *data, size_t len) {
@@ -97,14 +97,18 @@ static inline size_t sce_forge_cursor_remaining(const sce_forge_cursor_t *c) {
 /* Peek the next `n` bytes without advancing. Returns NULL when the
  * cursor's tail is shorter than `n`. */
 static inline const uint8_t *sce_forge_cursor_peek(const sce_forge_cursor_t *c, size_t n) {
-    if (sce_forge_cursor_remaining(c) < n) return NULL;
+    if (sce_forge_cursor_remaining(c) < n) {
+        return NULL;
+    }
     return c->data + c->pos;
 }
 
 /* Advance the cursor by `n` bytes. Returns false if `n` would
  * overrun the buffer. */
 static inline bool sce_forge_cursor_advance(sce_forge_cursor_t *c, size_t n) {
-    if (sce_forge_cursor_remaining(c) < n) return false;
+    if (sce_forge_cursor_remaining(c) < n) {
+        return false;
+    }
     c->pos += n;
     return true;
 }
@@ -120,15 +124,17 @@ static inline bool sce_forge_cursor_advance(sce_forge_cursor_t *c, size_t n) {
  * Returns SCE_FORGE_CODEC_OK on success, SCE_FORGE_CODEC_NEED_MORE_BYTES
  * on truncation, SCE_FORGE_CODEC_VLE_WIDTH_OVERFLOW when the final byte
  * of a sub-octet tail (u16 / u32) overflows max_bits. */
-static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_inner(
-    sce_forge_cursor_t *c, uint32_t max_bits, uint64_t *out) {
+static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_inner(sce_forge_cursor_t *c, uint32_t max_bits,
+                                                                       uint64_t *out) {
     uint32_t vle_len = (max_bits - 1u + 6u) / 7u;
     uint32_t final_shift = 7u * (vle_len - 1u);
     uint64_t value = 0;
     uint32_t shift = 0;
     for (uint32_t i = 0; i < vle_len; ++i) {
         const uint8_t *p = sce_forge_cursor_peek(c, 1);
-        if (p == NULL) return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        if (p == NULL) {
+            return SCE_FORGE_CODEC_NEED_MORE_BYTES;
+        }
         (void)sce_forge_cursor_advance(c, 1);
         if (shift == final_shift) {
             /* Final byte: 8 data bits, continuation bit reused as data.
@@ -154,14 +160,18 @@ static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_inner(
 static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u16(sce_forge_cursor_t *c, uint16_t *out) {
     uint64_t v;
     sce_forge_codec_status_t st = sce_forge_cursor_read_vle_inner(c, 16, &v);
-    if (st == SCE_FORGE_CODEC_OK) *out = (uint16_t)v;
+    if (st == SCE_FORGE_CODEC_OK) {
+        *out = (uint16_t)v;
+    }
     return st;
 }
 
 static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u32(sce_forge_cursor_t *c, uint32_t *out) {
     uint64_t v;
     sce_forge_codec_status_t st = sce_forge_cursor_read_vle_inner(c, 32, &v);
-    if (st == SCE_FORGE_CODEC_OK) *out = (uint32_t)v;
+    if (st == SCE_FORGE_CODEC_OK) {
+        *out = (uint32_t)v;
+    }
     return st;
 }
 
@@ -182,8 +192,8 @@ static inline sce_forge_codec_status_t sce_forge_cursor_read_vle_u64(sce_forge_c
  * below without an accessor call per byte. */
 typedef struct {
     uint8_t *bytes;
-    size_t   cap;
-    size_t   pos;
+    size_t cap;
+    size_t pos;
 } sce_forge_writer_t;
 
 /* Wrap `buf` with write position 0. Caller owns the storage; the
@@ -215,20 +225,27 @@ static inline size_t sce_forge_writer_remaining(const sce_forge_writer_t *w) {
  * insufficient remaining capacity. Zero-length writes succeed even at
  * exact saturation (codec emit sites pass zero counts for absent
  * optional fields). */
-static inline sce_forge_codec_status_t sce_forge_writer_write_bytes(
-    sce_forge_writer_t *w, const uint8_t *data, size_t n) {
-    if (n == 0) return SCE_FORGE_CODEC_OK;
-    if (w->cap - w->pos < n) return SCE_FORGE_CODEC_BUFFER_OVERFLOW;
-    for (size_t i = 0; i < n; ++i) w->bytes[w->pos + i] = data[i];
+static inline sce_forge_codec_status_t sce_forge_writer_write_bytes(sce_forge_writer_t *w, const uint8_t *data,
+                                                                    size_t n) {
+    if (n == 0) {
+        return SCE_FORGE_CODEC_OK;
+    }
+    if (w->cap - w->pos < n) {
+        return SCE_FORGE_CODEC_BUFFER_OVERFLOW;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        w->bytes[w->pos + i] = data[i];
+    }
     w->pos += n;
     return SCE_FORGE_CODEC_OK;
 }
 
 /* Append a single byte. Inlined to keep the codec emit hot path one
  * branch per write. */
-static inline sce_forge_codec_status_t sce_forge_writer_write_u8(
-    sce_forge_writer_t *w, uint8_t v) {
-    if (w->pos >= w->cap) return SCE_FORGE_CODEC_BUFFER_OVERFLOW;
+static inline sce_forge_codec_status_t sce_forge_writer_write_u8(sce_forge_writer_t *w, uint8_t v) {
+    if (w->pos >= w->cap) {
+        return SCE_FORGE_CODEC_BUFFER_OVERFLOW;
+    }
     w->bytes[w->pos++] = v;
     return SCE_FORGE_CODEC_OK;
 }
@@ -239,73 +256,66 @@ static inline sce_forge_codec_status_t sce_forge_writer_write_u8(
  * at most VLE_LEN-1 continuation bytes) carries a full 8 data bits with
  * no flag, so a u64 caps at 9 bytes — canonical Zenoh ZInt (RFC
  * §synth-5-B Appendix B). VLE_LEN = ceil((max_bits-1)/7). */
-static inline sce_forge_codec_status_t sce_forge_writer_write_vle_inner(
-    sce_forge_writer_t *w, uint64_t value, uint32_t max_bits) {
+static inline sce_forge_codec_status_t sce_forge_writer_write_vle_inner(sce_forge_writer_t *w, uint64_t value,
+                                                                        uint32_t max_bits) {
     uint32_t cont_max = (max_bits - 1u + 6u) / 7u - 1u;
     uint64_t v = value;
     uint32_t n = 0u;
     while (v >= 0x80u && n < cont_max) {
         sce_forge_codec_status_t st = sce_forge_writer_write_u8(w, (uint8_t)((v & 0x7Fu) | 0x80u));
-        if (st != SCE_FORGE_CODEC_OK) return st;
+        if (st != SCE_FORGE_CODEC_OK) {
+            return st;
+        }
         v >>= 7;
         n++;
     }
     return sce_forge_writer_write_u8(w, (uint8_t)v);
 }
-static inline sce_forge_codec_status_t sce_forge_writer_write_vle_u16(
-    sce_forge_writer_t *w, uint16_t v) {
+
+static inline sce_forge_codec_status_t sce_forge_writer_write_vle_u16(sce_forge_writer_t *w, uint16_t v) {
     return sce_forge_writer_write_vle_inner(w, (uint64_t)v, 16u);
 }
-static inline sce_forge_codec_status_t sce_forge_writer_write_vle_u32(
-    sce_forge_writer_t *w, uint32_t v) {
+
+static inline sce_forge_codec_status_t sce_forge_writer_write_vle_u32(sce_forge_writer_t *w, uint32_t v) {
     return sce_forge_writer_write_vle_inner(w, (uint64_t)v, 32u);
 }
-static inline sce_forge_codec_status_t sce_forge_writer_write_vle_u64(
-    sce_forge_writer_t *w, uint64_t v) {
+
+static inline sce_forge_codec_status_t sce_forge_writer_write_vle_u64(sce_forge_writer_t *w, uint64_t v) {
     return sce_forge_writer_write_vle_inner(w, v, 64u);
 }
 
 /* Multi-byte helpers — explicit endianness, no host-byte-order
  * dependence. Forwards to `write_bytes` so the bounded check fires
  * once per call. */
-static inline sce_forge_codec_status_t sce_forge_writer_write_u16_le(
-    sce_forge_writer_t *w, uint16_t v) {
-    uint8_t buf[2] = { (uint8_t)v, (uint8_t)(v >> 8) };
+static inline sce_forge_codec_status_t sce_forge_writer_write_u16_le(sce_forge_writer_t *w, uint16_t v) {
+    uint8_t buf[2] = {(uint8_t)v, (uint8_t)(v >> 8)};
     return sce_forge_writer_write_bytes(w, buf, 2);
 }
-static inline sce_forge_codec_status_t sce_forge_writer_write_u16_be(
-    sce_forge_writer_t *w, uint16_t v) {
-    uint8_t buf[2] = { (uint8_t)(v >> 8), (uint8_t)v };
+
+static inline sce_forge_codec_status_t sce_forge_writer_write_u16_be(sce_forge_writer_t *w, uint16_t v) {
+    uint8_t buf[2] = {(uint8_t)(v >> 8), (uint8_t)v};
     return sce_forge_writer_write_bytes(w, buf, 2);
 }
-static inline sce_forge_codec_status_t sce_forge_writer_write_u32_le(
-    sce_forge_writer_t *w, uint32_t v) {
-    uint8_t buf[4] = {
-        (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24)
-    };
+
+static inline sce_forge_codec_status_t sce_forge_writer_write_u32_le(sce_forge_writer_t *w, uint32_t v) {
+    uint8_t buf[4] = {(uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24)};
     return sce_forge_writer_write_bytes(w, buf, 4);
 }
-static inline sce_forge_codec_status_t sce_forge_writer_write_u32_be(
-    sce_forge_writer_t *w, uint32_t v) {
-    uint8_t buf[4] = {
-        (uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8), (uint8_t)v
-    };
+
+static inline sce_forge_codec_status_t sce_forge_writer_write_u32_be(sce_forge_writer_t *w, uint32_t v) {
+    uint8_t buf[4] = {(uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8), (uint8_t)v};
     return sce_forge_writer_write_bytes(w, buf, 4);
 }
-static inline sce_forge_codec_status_t sce_forge_writer_write_u64_le(
-    sce_forge_writer_t *w, uint64_t v) {
-    uint8_t buf[8] = {
-        (uint8_t)v,         (uint8_t)(v >> 8),  (uint8_t)(v >> 16), (uint8_t)(v >> 24),
-        (uint8_t)(v >> 32), (uint8_t)(v >> 40), (uint8_t)(v >> 48), (uint8_t)(v >> 56)
-    };
+
+static inline sce_forge_codec_status_t sce_forge_writer_write_u64_le(sce_forge_writer_t *w, uint64_t v) {
+    uint8_t buf[8] = {(uint8_t)v,         (uint8_t)(v >> 8),  (uint8_t)(v >> 16), (uint8_t)(v >> 24),
+                      (uint8_t)(v >> 32), (uint8_t)(v >> 40), (uint8_t)(v >> 48), (uint8_t)(v >> 56)};
     return sce_forge_writer_write_bytes(w, buf, 8);
 }
-static inline sce_forge_codec_status_t sce_forge_writer_write_u64_be(
-    sce_forge_writer_t *w, uint64_t v) {
-    uint8_t buf[8] = {
-        (uint8_t)(v >> 56), (uint8_t)(v >> 48), (uint8_t)(v >> 40), (uint8_t)(v >> 32),
-        (uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8),  (uint8_t)v
-    };
+
+static inline sce_forge_codec_status_t sce_forge_writer_write_u64_be(sce_forge_writer_t *w, uint64_t v) {
+    uint8_t buf[8] = {(uint8_t)(v >> 56), (uint8_t)(v >> 48), (uint8_t)(v >> 40), (uint8_t)(v >> 32),
+                      (uint8_t)(v >> 24), (uint8_t)(v >> 16), (uint8_t)(v >> 8),  (uint8_t)v};
     return sce_forge_writer_write_bytes(w, buf, 8);
 }
 
@@ -316,10 +326,11 @@ static inline sce_forge_codec_status_t sce_forge_writer_write_u64_be(
  * the runtime header (not generated per-codec) so its semantics are
  * reviewable in one place. Local `_sce_fw_st` is name-mangled to keep
  * it from clashing with caller-scoped locals. */
-#define SCE_FORGE_TRY_WRITE(expr)                                      \
-    do {                                                               \
-        sce_forge_codec_status_t _sce_fw_st = (expr);                  \
-        if (_sce_fw_st != SCE_FORGE_CODEC_OK) return _sce_fw_st;       \
+#define SCE_FORGE_TRY_WRITE(expr)                                                                                      \
+    do {                                                                                                               \
+        sce_forge_codec_status_t _sce_fw_st = (expr);                                                                  \
+        if (_sce_fw_st != SCE_FORGE_CODEC_OK)                                                                          \
+            return _sce_fw_st;                                                                                         \
     } while (0)
 
 /* RFC §synth-5-B string primitive — validate that `[p, p + n)` is a well-formed
@@ -343,29 +354,47 @@ static inline bool sce_forge_is_valid_utf8(const uint8_t *p, size_t n) {
         if (b0 <= 0x7Fu) {
             i += 1;
         } else if (b0 >= 0xC2u && b0 <= 0xDFu) {
-            if (i + 1 >= n) return false;
+            if (i + 1 >= n) {
+                return false;
+            }
             const uint8_t b1 = p[i + 1];
-            if (b1 < 0x80u || b1 > 0xBFu) return false;
+            if (b1 < 0x80u || b1 > 0xBFu) {
+                return false;
+            }
             i += 2;
         } else if (b0 >= 0xE0u && b0 <= 0xEFu) {
-            if (i + 2 >= n) return false;
+            if (i + 2 >= n) {
+                return false;
+            }
             const uint8_t b1 = p[i + 1];
             const uint8_t b2 = p[i + 2];
             const uint8_t b1_min = (b0 == 0xE0u) ? 0xA0u : 0x80u;
             const uint8_t b1_max = (b0 == 0xEDu) ? 0x9Fu : 0xBFu;
-            if (b1 < b1_min || b1 > b1_max) return false;
-            if (b2 < 0x80u || b2 > 0xBFu) return false;
+            if (b1 < b1_min || b1 > b1_max) {
+                return false;
+            }
+            if (b2 < 0x80u || b2 > 0xBFu) {
+                return false;
+            }
             i += 3;
         } else if (b0 >= 0xF0u && b0 <= 0xF4u) {
-            if (i + 3 >= n) return false;
+            if (i + 3 >= n) {
+                return false;
+            }
             const uint8_t b1 = p[i + 1];
             const uint8_t b2 = p[i + 2];
             const uint8_t b3 = p[i + 3];
             const uint8_t b1_min = (b0 == 0xF0u) ? 0x90u : 0x80u;
             const uint8_t b1_max = (b0 == 0xF4u) ? 0x8Fu : 0xBFu;
-            if (b1 < b1_min || b1 > b1_max) return false;
-            if (b2 < 0x80u || b2 > 0xBFu) return false;
-            if (b3 < 0x80u || b3 > 0xBFu) return false;
+            if (b1 < b1_min || b1 > b1_max) {
+                return false;
+            }
+            if (b2 < 0x80u || b2 > 0xBFu) {
+                return false;
+            }
+            if (b3 < 0x80u || b3 > 0xBFu) {
+                return false;
+            }
             i += 4;
         } else {
             return false;

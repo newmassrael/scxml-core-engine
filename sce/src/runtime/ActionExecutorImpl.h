@@ -5,8 +5,8 @@
 
 #include "IActionExecutor.h"
 #include "IEventRaiser.h"
-#include "runtime/TypeRegistry.h"
 #include "core/EventMetadata.h"
+#include "runtime/TypeRegistry.h"
 #include "scripting/IScriptEngine.h"
 #include <functional>
 #include <memory>
@@ -115,12 +115,12 @@ private:
     std::string sessionId_;
     std::string currentEventName_;
     std::string currentEventData_;
-    std::string currentEventType_;        // §scxml-5.10.1: _event.type ("internal", "platform", "external")
-    std::string currentSendId_;           // §scxml-5.10.1: _event.sendid from send element
-    std::string currentInvokeId_;         // §scxml-5.10.1: _event.invokeid from invoked child process
-    std::string currentOriginType_;       // §scxml-5.10.1: _event.origintype from event processor
-    std::string currentOriginSessionId_;               // §scxml-5.10.1: _event.origin session ID
-    std::optional<ScriptValue> currentTypedData_;      // §scxml-5.10: Typed event data (engine-agnostic)
+    std::string currentEventType_;                 // §scxml-5.10.1: _event.type ("internal", "platform", "external")
+    std::string currentSendId_;                    // §scxml-5.10.1: _event.sendid from send element
+    std::string currentInvokeId_;                  // §scxml-5.10.1: _event.invokeid from invoked child process
+    std::string currentOriginType_;                // §scxml-5.10.1: _event.origintype from event processor
+    std::string currentOriginSessionId_;           // §scxml-5.10.1: _event.origin session ID
+    std::optional<ScriptValue> currentTypedData_;  // §scxml-5.10: Typed event data (engine-agnostic)
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
 

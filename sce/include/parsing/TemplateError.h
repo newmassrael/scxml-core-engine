@@ -62,9 +62,11 @@ public:
     // bind `const auto &loc = *err.location();` — unchanged on the
     // consumer side.
     std::string_view code() const noexcept override = 0;
+
     const std::optional<SourcePos> &location() const noexcept override {
         return location_;
     }
+
     nlohmann::ordered_json to_json() const override;
 
 private:
@@ -83,9 +85,11 @@ private:
 class TemplateUnknownParam : public TemplateError {
 public:
     using TemplateError::TemplateError;
+
     std::string_view code() const noexcept override {
         return "xml/template-unknown-param";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<TemplateUnknownParam>(*this);
     }
@@ -99,9 +103,11 @@ public:
 class TemplateMissingParam : public TemplateError {
 public:
     using TemplateError::TemplateError;
+
     std::string_view code() const noexcept override {
         return "xml/template-missing-param";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<TemplateMissingParam>(*this);
     }
@@ -120,9 +126,11 @@ public:
 class TemplateCycle : public TemplateError {
 public:
     using TemplateError::TemplateError;
+
     std::string_view code() const noexcept override {
         return "xml/template-cycle";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<TemplateCycle>(*this);
     }
@@ -140,9 +148,11 @@ public:
 class TemplateTooDeep : public TemplateError {
 public:
     using TemplateError::TemplateError;
+
     std::string_view code() const noexcept override {
         return "xml/template-too-deep";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<TemplateTooDeep>(*this);
     }
@@ -159,9 +169,11 @@ public:
 class TemplateNotFound : public TemplateError {
 public:
     using TemplateError::TemplateError;
+
     std::string_view code() const noexcept override {
         return "xml/template-not-found";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<TemplateNotFound>(*this);
     }
@@ -178,9 +190,11 @@ public:
 class TemplateReadError : public TemplateError {
 public:
     using TemplateError::TemplateError;
+
     std::string_view code() const noexcept override {
         return "xml/template-read-error";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<TemplateReadError>(*this);
     }
@@ -202,9 +216,11 @@ public:
 class TemplateMalformed : public TemplateError {
 public:
     using TemplateError::TemplateError;
+
     std::string_view code() const noexcept override {
         return "xml/template-malformed";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<TemplateMalformed>(*this);
     }
@@ -225,9 +241,11 @@ public:
 class TemplateMissingAttribute : public TemplateError {
 public:
     using TemplateError::TemplateError;
+
     std::string_view code() const noexcept override {
         return "xml/template-missing-attribute";
     }
+
     std::unique_ptr<Diagnostic> clone() const override {
         return std::make_unique<TemplateMissingAttribute>(*this);
     }

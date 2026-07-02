@@ -38,8 +38,8 @@ public:
      * enabling context-sensitive transformations (e.g., truthiness wrapping for guards).
      */
     enum class ExpressionContext {
-        General,    // Assignment, log, data init — no truthiness wrapping
-        Guard       // Transition cond, if/elseif — may need truthiness wrapping
+        General,  // Assignment, log, data init — no truthiness wrapping
+        Guard     // Transition cond, if/elseif — may need truthiness wrapping
     };
 
     EcmaScriptToLuaTransformer() = default;
@@ -76,6 +76,7 @@ private:
         std::string processed;
         std::vector<std::string> literals;
     };
+
     ProtectedString protectStringLiterals(const std::string &input) const;
     std::string restoreStringLiterals(const std::string &processed, const std::vector<std::string> &literals) const;
 

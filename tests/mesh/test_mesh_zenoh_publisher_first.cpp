@@ -61,11 +61,10 @@ using namespace SCE::Test::Mesh;
 // Mirrors brake's connect endpoint, pinned in deploy_zenoh_publisher_first.yaml
 // to motor's ecu_motor listen. The raw motor peer co-locates on the same
 // address so the Zenoh peer-mesh handshake converges deterministically.
-constexpr const char* kListen =
-    SCE::Generated::brake_zenoh_publisher_first::ZENOH_CONNECT_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::brake_zenoh_publisher_first::ZENOH_CONNECT_ENDPOINTS[0];
 
 // Must match deploy_zenoh_publisher_first.yaml binding key for #motor.
-constexpr const char* kMotorKey = "sce/brake_pub_first/motor/cmd";
+constexpr const char *kMotorKey = "sce/brake_pub_first/motor/cmd";
 
 // Upper bound on the buffered envelope's arrival after the subscriber
 // declares. Zenoh's matching_listener typically fires within tens of
@@ -95,24 +94,20 @@ int run_test() {
     // Readiness must start false: no subscriber has declared on
     // kMotorKey, so the matching listener reports false, get_matching_status
     // confirms, and the OutboundBuffer stays in the unready state.
-    MESH_TEST_REQUIRE(!brake_router.motor_outbound_.ready(),
-                      "outbound buffer should start NOT ready "
-                      "(no subscriber on kMotorKey yet)");
-    MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0,
-                      "outbound buffer should start empty");
+    MESH_TEST_REQUIRE(!brake_router.motor_outbound_.ready(), "outbound buffer should start NOT ready "
+                                                             "(no subscriber on kMotorKey yet)");
+    MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0, "outbound buffer should start empty");
 
     // ── Pre-subscriber send: buffered, not published. ────────────────
     {
-        auto env = make_envelope("warmup.tick",
-                                 SCE::Mesh::PatternKind::FireForget);
+        auto env = make_envelope("warmup.tick", SCE::Mesh::PatternKind::FireForget);
         std::string payload = R"({"phase":"pre-subscriber"})";
         env.data.assign(payload.begin(), payload.end());
         env.datacontenttype = SCE::Mesh::PayloadCodec::Json;
 
         const bool accepted = brake_router.route_send("#motor", env);
-        MESH_TEST_REQUIRE(accepted,
-                          "pre-subscriber route_send must return true — "
-                          "admit enqueues when buffer capacity remains");
+        MESH_TEST_REQUIRE(accepted, "pre-subscriber route_send must return true — "
+                                    "admit enqueues when buffer capacity remains");
     }
 
     MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 1,
@@ -128,7 +123,7 @@ int run_test() {
     CapturedEvents received;
     auto subscriber = motor_session.declare_subscriber(
         zenoh::KeyExpr(kMotorKey),
-        [&received](const zenoh::Sample& sample) {
+        [&received](const zenoh::Sample &sample) {
             auto bytes = sample.get_payload().as_vector();
             SCE::Mesh::MeshEnvelope env;
             if (SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
@@ -147,25 +142,18 @@ int run_test() {
     // enqueued envelope through the dispatch closure —
     // publisher.put(encoded), routed to the subscriber callback above.
     MESH_TEST_REQUIRE(
-        received.wait_for(
-            [](const auto& v) {
-                return !v.empty() && v.back().type == "warmup.tick";
-            },
-            kReceiveTimeout),
+        received.wait_for([](const auto &v) { return !v.empty() && v.back().type == "warmup.tick"; }, kReceiveTimeout),
         "motor subscriber did not receive the buffered FireForget "
         "envelope after declaring — §10.10 OutboundBuffer drain regression");
 
     // Post-drain invariants.
-    MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0,
-                      "buffer should be empty after drain");
-    MESH_TEST_REQUIRE(brake_router.motor_outbound_.ready(),
-                      "buffer should report ready after matching_listener fired");
+    MESH_TEST_REQUIRE(brake_router.motor_outbound_.queue_depth() == 0, "buffer should be empty after drain");
+    MESH_TEST_REQUIRE(brake_router.motor_outbound_.ready(), "buffer should report ready after matching_listener fired");
 
     // ── Post-subscriber send: fast path, no buffering. ───────────────
     // Proves markReady flipped ready_ to true, not just drained once.
     {
-        auto env = make_envelope("warmup.tick",
-                                 SCE::Mesh::PatternKind::FireForget);
+        auto env = make_envelope("warmup.tick", SCE::Mesh::PatternKind::FireForget);
         std::string payload = R"({"phase":"post-subscriber"})";
         env.data.assign(payload.begin(), payload.end());
         env.datacontenttype = SCE::Mesh::PayloadCodec::Json;
@@ -177,18 +165,19 @@ int run_test() {
                           "not re-enqueue (ready flag regressed?)");
     }
 
-    MESH_TEST_REQUIRE(
-        received.wait_for(
-            [](const auto& v) {
-                std::size_t count = 0;
-                for (const auto& ev : v) {
-                    if (ev.type == "warmup.tick") ++count;
-                }
-                return count >= 2;
-            },
-            kReceiveTimeout),
-        "motor subscriber did not receive the post-subscriber envelope — "
-        "matching-listener-driven fast path regression");
+    MESH_TEST_REQUIRE(received.wait_for(
+                          [](const auto &v) {
+                              std::size_t count = 0;
+                              for (const auto &ev : v) {
+                                  if (ev.type == "warmup.tick") {
+                                      ++count;
+                                  }
+                              }
+                              return count >= 2;
+                          },
+                          kReceiveTimeout),
+                      "motor subscriber did not receive the post-subscriber envelope — "
+                      "matching-listener-driven fast path regression");
 
     brake_router.shutdown();
     std::printf("SCE Mesh §10.10 Zenoh publisher-first outbound buffer: PASS\n");
@@ -200,7 +189,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

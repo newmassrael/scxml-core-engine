@@ -76,7 +76,7 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
     textContent = ParsingCommon::trimString(textContent);
     if (!textContent.empty()) {
         SCE_LOG_DEBUG("Found text content: {}",
-                  (textContent.length() > 30 ? textContent.substr(0, 27) + "..." : textContent));
+                      (textContent.length() > 30 ? textContent.substr(0, 27) + "..." : textContent));
     }
 
     // expr and content cannot be used together

@@ -98,9 +98,7 @@ public:
 // byte-equivalent to Rust's id for the same logical error. Lifting
 // structured fields onto the C++ subtypes is W3+ scope (RFC §1 Q5)
 // and would be the only way to make ids byte-match across sides.
-std::string
-computeFnv1aDiagnosticId(std::string_view code, std::string_view stage,
-                         std::string_view file,
-                         std::string_view messageFragment);
+std::string computeFnv1aDiagnosticId(std::string_view code, std::string_view stage, std::string_view file,
+                                     std::string_view messageFragment);
 
 }  // namespace SCE::parsing

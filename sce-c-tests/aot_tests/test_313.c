@@ -3,7 +3,9 @@
 //
 // W3C SCXML test313 — C11 AOT runner.
 //
-// W3C SCXML 5.4: `<assign>` to an undeclared variable raises `error.execution` — the existing scriptengine.jinja2 lua_assign macro's rc-checked luaL_dostring (8b1bb1e9) catches the chunk failure and enqueues the platform error, which the receiving transition matches before the wildcard fallback fires.
+// W3C SCXML 5.4: `<assign>` to an undeclared variable raises `error.execution` — the existing scriptengine.jinja2
+// lua_assign macro's rc-checked luaL_dostring (8b1bb1e9) catches the chunk failure and enqueues the platform error,
+// which the receiving transition matches before the wildcard fallback fires.
 
 #include <stdio.h>
 

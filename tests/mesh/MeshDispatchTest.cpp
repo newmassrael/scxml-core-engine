@@ -42,7 +42,7 @@ struct RecordingEngine {
     enum class Event { Request, Reply, ErrorExecution, Unknown };
 
     struct Policy {
-        static std::optional<Event> getEventFromName(const char* name) {
+        static std::optional<Event> getEventFromName(const char *name) {
             if (std::strcmp(name, "service.request.compute_force") == 0) {
                 return Event::Request;
             }
@@ -78,15 +78,17 @@ struct RecordingEngine {
     void raiseExternal(Event ev) {
         events.push_back({ev, {}, {}});
     }
-    void raiseExternal(Event ev, const std::string& data) {
+
+    void raiseExternal(Event ev, const std::string &data) {
         events.push_back({ev, data, {}});
     }
+
     void raiseExternal(EventWithMetadata meta) {
         events.push_back({meta.event, std::move(meta.data), std::move(meta.invokeId)});
     }
 };
 
-MeshEnvelope makeRequest(const std::string& type, std::vector<std::uint8_t> data = {}) {
+MeshEnvelope makeRequest(const std::string &type, std::vector<std::uint8_t> data = {}) {
     MeshEnvelope env;
     env.pattern = PatternKind::RpcRequest;
     env.type = type;
@@ -108,8 +110,7 @@ TEST(MeshDispatchTest, RpcRequestIsDeliveredEmptyPayload) {
 
 TEST(MeshDispatchTest, RpcRequestPreservesPayload) {
     RecordingEngine engine;
-    auto env = makeRequest("service.request.compute_force",
-                           {'{', '"', 'x', '"', ':', '1', '}'});
+    auto env = makeRequest("service.request.compute_force", {'{', '"', 'x', '"', ':', '1', '}'});
 
     EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
     ASSERT_EQ(engine.events.size(), 1u);
@@ -141,8 +142,7 @@ TEST(MeshDispatchTest, RpcRequestPreservesInvokeIdAsStringifiedUuid) {
     auto env = makeRequest("service.request.compute_force");
     // Fixed UUID so the stringified _event.invokeid is stable for assertion.
     env.invoke_id = std::array<std::uint8_t, 16>{
-        0xf8, 0x1d, 0x4f, 0xae, 0x7d, 0xec, 0x11, 0xd0,
-        0xa7, 0x65, 0x00, 0xa0, 0xc9, 0x1e, 0x6b, 0xf6,
+        0xf8, 0x1d, 0x4f, 0xae, 0x7d, 0xec, 0x11, 0xd0, 0xa7, 0x65, 0x00, 0xa0, 0xc9, 0x1e, 0x6b, 0xf6,
     };
 
     EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
@@ -173,8 +173,7 @@ TEST(MeshDispatchTest, OutboundOnlyPatternsAreRejected) {
     // getter/setter request and dispatches it to the engine so the matching
     // `<transition event="field.get.X">` / `<transition event="field.set.X">`
     // fires. Covered by `DispatchesFieldAccessInboundOnServerRole` below.
-    for (auto pattern : {PatternKind::EventSubscribe,
-                         PatternKind::EventUnsubscribe}) {
+    for (auto pattern : {PatternKind::EventSubscribe, PatternKind::EventUnsubscribe}) {
         RecordingEngine engine;
         MeshEnvelope env;
         env.pattern = pattern;
@@ -199,8 +198,7 @@ TEST(MeshDispatchTest, InvokeErrorRaisesErrorExecutionOnParent) {
     env.rpc_status = RpcStatus::Unimplemented;
     env.rpc_error_message = "SESSION_F_NOT_IMPLEMENTED";
     env.invoke_id = std::array<std::uint8_t, 16>{
-        0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12,
-        0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
+        0x01, 0x82, 0xb1, 0x4d, 0xa3, 0x5c, 0x70, 0x12, 0xb4, 0xde, 0xf0, 0x42, 0x9a, 0x88, 0x77, 0x66,
     };
 
     EXPECT_TRUE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
@@ -237,8 +235,7 @@ TEST(MeshDispatchTest, InvokeStartIsRejectedAtDispatchLayer) {
     env.pattern = PatternKind::InvokeStart;
     env.type = "scxml";
     env.invoke_id = std::array<std::uint8_t, 16>{
-        0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x70, 0x01,
-        0x90, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+        0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x70, 0x01, 0x90, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
     };
 
     EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));

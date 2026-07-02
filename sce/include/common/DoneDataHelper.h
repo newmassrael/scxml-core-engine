@@ -223,8 +223,8 @@ public:
                 // §scxml-5.5 + B.2: Use canonical JSON serializer so nested
                 // ScriptObject/ScriptArray param values round-trip through the
                 // wire / local JSON-fallback paths identically to typedData.
-                jsonBuilder << "\"" << escapeJsonString(paramName) << "\":"
-                            << EventDataHelper::scriptValueToJsonString(value);
+                jsonBuilder << "\"" << escapeJsonString(paramName)
+                            << "\":" << EventDataHelper::scriptValueToJsonString(value);
 
                 // Preserve typed value for engine-agnostic pipeline
                 if (typedObj) {
@@ -289,7 +289,6 @@ public:
         }
         return escaped.str();
     }
-
 };
 
 }  // namespace SCE

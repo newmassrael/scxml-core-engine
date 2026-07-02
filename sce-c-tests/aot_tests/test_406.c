@@ -3,7 +3,9 @@
 //
 // W3C SCXML test406 — C11 AOT runner.
 //
-// W3C SCXML 3.13: states are entered in entry order — parents before children with document order breaking ties; the entry chain walk-up (bc021036) builds parent→child, walk-down fires onentry per ancestor; the receiving cond confirms the order from accumulated raises before the safety-net timeout (target=fail).
+// W3C SCXML 3.13: states are entered in entry order — parents before children with document order breaking ties; the
+// entry chain walk-up (bc021036) builds parent→child, walk-down fires onentry per ancestor; the receiving cond confirms
+// the order from accumulated raises before the safety-net timeout (target=fail).
 
 #define _POSIX_C_SOURCE 199309L
 
@@ -25,8 +27,7 @@ int main(void) {
 
     while (!test406_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test406: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test406_active_states(&sm));
+            fprintf(stderr, "test406: TIMEOUT — active = 0x%08x\n", (unsigned)test406_active_states(&sm));
             test406_destroy(&sm);
             return 1;
         }
@@ -36,8 +37,7 @@ int main(void) {
 
     int rc = test406_in_state(&sm, TEST406_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test406: FAIL — active = 0x%08x\n",
-                (unsigned)test406_active_states(&sm));
+        fprintf(stderr, "test406: FAIL — active = 0x%08x\n", (unsigned)test406_active_states(&sm));
     }
     test406_destroy(&sm);
     return rc;

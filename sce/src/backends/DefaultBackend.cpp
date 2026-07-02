@@ -77,7 +77,9 @@ void DefaultBackend::setLevel(LogLevel level) {
     currentLevel_ = level;
 }
 
-bool DefaultBackend::shouldLog(LogLevel level) const { return level >= currentLevel_; }
+bool DefaultBackend::shouldLog(LogLevel level) const {
+    return level >= currentLevel_;
+}
 
 void DefaultBackend::flush() {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -138,8 +140,7 @@ std::string DefaultBackend::getTimestamp() {
 
     // C++17-compatible timestamp formatting using snprintf
     char buf[16];
-    std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d",
-                  tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
+    std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d", tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
                   static_cast<int>(now_ms.count()));
     return std::string(buf);
 }

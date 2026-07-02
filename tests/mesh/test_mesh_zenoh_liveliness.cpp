@@ -33,8 +33,7 @@ using namespace SCE::Test::Mesh;
 // Mirrors brake's connect endpoint (deploy_zenoh_liveliness.yaml ecu_brake),
 // pinned to motor's ecu_motor listen. Putting the raw motor peer on the same
 // address is what keeps the Zenoh routing state hermetic for this E2E.
-constexpr const char* kListen =
-    SCE::Generated::brake_zenoh_liveliness::ZENOH_CONNECT_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::brake_zenoh_liveliness::ZENOH_CONNECT_ENDPOINTS[0];
 // deploy_zenoh_liveliness.yaml lease_ms. The DELETE-sample delivery
 // budget is `lease_ms + small zenoh-internal jitter`. Test tolerates up
 // to 3× lease_ms before declaring flake, matching the pattern used in
@@ -54,8 +53,7 @@ int run_test() {
     // test drops the token: letting `motor_session` go out of scope
     // emits the DELETE sample.
     auto motor_session = open_peer(/*connect=*/"", /*listen=*/kListen);
-    auto motor_token = motor_session.liveliness_declare_token(
-        zenoh::KeyExpr("sce/live/motor"));
+    auto motor_token = motor_session.liveliness_declare_token(zenoh::KeyExpr("sce/live/motor"));
 
     MESH_TEST_REQUIRE(brake_router.init(), "brake_router.init() failed");
 
@@ -71,9 +69,8 @@ int run_test() {
     // `sce/live/brake_zenoh_liveliness`.
     {
         std::lock_guard<std::mutex> lk(sender.received_.m);
-        for (const auto& ev : sender.received_.events) {
-            MESH_TEST_REQUIRE(ev.type != "error.communication",
-                              "error.communication raised before motor dropped");
+        for (const auto &ev : sender.received_.events) {
+            MESH_TEST_REQUIRE(ev.type != "error.communication", "error.communication raised before motor dropped");
         }
     }
 
@@ -86,9 +83,11 @@ int run_test() {
     // Observation window: lease_ms + generous jitter. Matches the
     // sleep sizing for mesh_order_injection case 5.
     const bool observed = sender.received_.wait_for(
-        [](const auto& events) {
-            for (const auto& ev : events) {
-                if (ev.type != "error.communication") continue;
+        [](const auto &events) {
+            for (const auto &ev : events) {
+                if (ev.type != "error.communication") {
+                    continue;
+                }
                 // Substring match keeps the test JSON-parser-free.
                 // reason field check is the definitive signal; the
                 // other extras are asserted below only when the
@@ -101,18 +100,16 @@ int run_test() {
         },
         std::chrono::seconds(5));
 
-    MESH_TEST_REQUIRE(observed,
-                      "brake did not raise error.communication with "
-                      "reason PEER_PARTITIONED within 5 s of motor drop");
+    MESH_TEST_REQUIRE(observed, "brake did not raise error.communication with "
+                                "reason PEER_PARTITIONED within 5 s of motor drop");
 
     // Pin the extras: target "motor" (from the keyexpr suffix) and
     // last_seen_ms_ago present (because motor's PUT was observed during
     // the initial stabilization sleep above).
     std::lock_guard<std::mutex> lk(sender.received_.m);
-    const auto* hit = static_cast<const ReceivedEvent*>(nullptr);
-    for (const auto& ev : sender.received_.events) {
-        if (ev.type == "error.communication" &&
-            ev.data.find("\"reason\":\"PEER_PARTITIONED\"") != std::string::npos) {
+    const auto *hit = static_cast<const ReceivedEvent *>(nullptr);
+    for (const auto &ev : sender.received_.events) {
+        if (ev.type == "error.communication" && ev.data.find("\"reason\":\"PEER_PARTITIONED\"") != std::string::npos) {
             hit = &ev;
         }
     }
@@ -133,7 +130,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

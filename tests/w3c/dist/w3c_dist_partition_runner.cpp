@@ -70,14 +70,12 @@ bool parse_args(int argc, char **argv, CliArgs &out) {
 int main(int argc, char **argv) {
     CliArgs args;
     if (!parse_args(argc, argv, args)) {
-        std::fprintf(stderr,
-                     "usage: w3c_dist_<testid>_<partition> --test-id <id> --partition <name> "
-                     "[--deploy-dir <path>]\n");
+        std::fprintf(stderr, "usage: w3c_dist_<testid>_<partition> --test-id <id> --partition <name> "
+                             "[--deploy-dir <path>]\n");
         return 2;
     }
 
-    auto partition = SCE::W3C::Dist::PartitionRegistry::instance().create(args.test_id,
-                                                                         args.partition);
+    auto partition = SCE::W3C::Dist::PartitionRegistry::instance().create(args.test_id, args.partition);
     if (!partition) {
         std::fprintf(stderr,
                      "no partition registered for (test_id=%s, partition=%s). "

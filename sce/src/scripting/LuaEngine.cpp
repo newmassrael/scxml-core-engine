@@ -2,15 +2,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "scripting/LuaEngine.h"
+#include "SCXMLTypes.h"
 #include "common/EventDataHelper.h"
 #include "core/LogMacros.h"
+#include "events/EventRaiserService.h"
 #include "runtime/DataContentHelpers.h"
-#include "SCXMLTypes.h"
 #include "scripting/EcmaScriptToLuaTransformer.h"
 #include "scripting/LuaDOMBinding.h"
 #include "scripting/ScriptResult.h"
 #include "scripting/SessionRegistry.h"
-#include "events/EventRaiserService.h"
 
 extern "C" {
 #include <lauxlib.h>
@@ -60,20 +60,22 @@ int globalFuncCall(lua_State *Ls) {
         }
     }
     ScriptValue result = (*fn)(args);
-    std::visit([Ls](auto &&val) {
-        using T = std::decay_t<decltype(val)>;
-        if constexpr (std::is_same_v<T, bool>) {
-            lua_pushboolean(Ls, val ? 1 : 0);
-        } else if constexpr (std::is_same_v<T, int64_t>) {
-            lua_pushinteger(Ls, val);
-        } else if constexpr (std::is_same_v<T, double>) {
-            lua_pushnumber(Ls, val);
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            lua_pushstring(Ls, val.c_str());
-        } else {
-            lua_pushnil(Ls);
-        }
-    }, result);
+    std::visit(
+        [Ls](auto &&val) {
+            using T = std::decay_t<decltype(val)>;
+            if constexpr (std::is_same_v<T, bool>) {
+                lua_pushboolean(Ls, val ? 1 : 0);
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                lua_pushinteger(Ls, val);
+            } else if constexpr (std::is_same_v<T, double>) {
+                lua_pushnumber(Ls, val);
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                lua_pushstring(Ls, val.c_str());
+            } else {
+                lua_pushnil(Ls);
+            }
+        },
+        result);
     return 1;
 }
 
@@ -97,17 +99,20 @@ void pushGlobalFuncClosure(lua_State *L, const GlobalFuncCallback &func) {
 namespace SCE {
 
 // W3C SCXML: Helper to check if a single identifier is undeclared
-static bool isUndeclaredIdentifier(const std::string &name,
-                                   const std::unordered_set<std::string> &declaredVars,
+static bool isUndeclaredIdentifier(const std::string &name, const std::unordered_set<std::string> &declaredVars,
                                    lua_State *L) {
     // Exclude Lua keywords (true, false, nil, etc.)
     static const std::unordered_set<std::string> luaKeywords = {
-        "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto",
-        "if",  "in",    "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while"};
-    if (luaKeywords.count(name)) return false;
+        "and", "break", "do",  "else", "elseif", "end",    "false",  "for",  "function", "goto",  "if",
+        "in",  "local", "nil", "not",  "or",     "repeat", "return", "then", "true",     "until", "while"};
+    if (luaKeywords.count(name)) {
+        return false;
+    }
 
     // If declared via setVariable, it's valid (even if nil)
-    if (declaredVars.count(name) > 0) return false;
+    if (declaredVars.count(name) > 0) {
+        return false;
+    }
 
     // Check if it's a Lua standard library global (math, string, table, etc.)
     lua_getglobal(L, name.c_str());
@@ -120,18 +125,23 @@ static bool isUndeclaredIdentifier(const std::string &name,
 // W3C SCXML: Helper to detect undeclared variable references in Lua expressions.
 // JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
 // Handles both simple identifiers (Var1) and member access (Var1.bar, Var1["key"]).
-static bool isUndeclaredSimpleVariable(const std::string &expr,
-                                       const std::unordered_set<std::string> &declaredVars,
+static bool isUndeclaredSimpleVariable(const std::string &expr, const std::unordered_set<std::string> &declaredVars,
                                        lua_State *L) {
-    if (expr.empty()) return false;
-    if (!std::isalpha(static_cast<unsigned char>(expr[0])) && expr[0] != '_') return false;
+    if (expr.empty()) {
+        return false;
+    }
+    if (!std::isalpha(static_cast<unsigned char>(expr[0])) && expr[0] != '_') {
+        return false;
+    }
 
     // Extract base identifier (before first '.' or '[')
     size_t baseEnd = 0;
     while (baseEnd < expr.size() && (std::isalnum(static_cast<unsigned char>(expr[baseEnd])) || expr[baseEnd] == '_')) {
         ++baseEnd;
     }
-    if (baseEnd == 0) return false;
+    if (baseEnd == 0) {
+        return false;
+    }
 
     std::string baseName = expr.substr(0, baseEnd);
 
@@ -157,14 +167,18 @@ LuaEngine::~LuaEngine() {
 // === Engine Lifecycle ===
 
 bool LuaEngine::initialize() {
-    if (initialized_) return true;
+    if (initialized_) {
+        return true;
+    }
     SCE_LOG_INFO("LuaEngine: Initializing Lua 5.4 scripting engine");
     initialized_ = true;
     return true;
 }
 
 void LuaEngine::shutdown() {
-    if (!initialized_) return;
+    if (!initialized_) {
+        return;
+    }
     SCE_LOG_INFO("LuaEngine: Shutting down");
 
     {
@@ -376,7 +390,9 @@ std::string LuaEngine::getParentSessionId(const std::string &sessionId) const {
 
 lua_State *LuaEngine::createLuaState() {
     lua_State *L = luaL_newstate();
-    if (!L) return nullptr;
+    if (!L) {
+        return nullptr;
+    }
 
     // Open standard libraries
     luaL_openlibs(L);
@@ -474,7 +490,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
                 lua_pushboolean(Ls, 1);
                 return 1;
             }
-            lua_pop(Ls, 2); // pop nil + metatable
+            lua_pop(Ls, 2);  // pop nil + metatable
         }
         // Heuristic: table with consecutive integer keys starting at 0 or 1
         lua_pushboolean(Ls, lua_rawlen(Ls, 1) > 0 ? 1 : 0);
@@ -506,7 +522,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
             lua_rawgeti(Ls, 1, i);
             if (lua_compare(Ls, -1, 2, LUA_OPEQ)) {
                 lua_pop(Ls, 1);
-                lua_pushinteger(Ls, i - 1); // 0-based return
+                lua_pushinteger(Ls, i - 1);  // 0-based return
                 return 1;
             }
             lua_pop(Ls, 1);
@@ -520,7 +536,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
     lua_pushcfunction(L, [](lua_State *Ls) -> int {
         lua_newtable(Ls);
         int outIdx = 1;
-        int nargs = lua_gettop(Ls) - 1; // -1 for result table
+        int nargs = lua_gettop(Ls) - 1;  // -1 for result table
 
         for (int arg = 1; arg <= nargs; ++arg) {
             if (lua_istable(Ls, arg)) {
@@ -545,7 +561,7 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
         char *endptr = nullptr;
         long long val = strtoll(str, &endptr, base);
         if (endptr == str) {
-            lua_pushnil(Ls); // NaN equivalent
+            lua_pushnil(Ls);  // NaN equivalent
         } else {
             lua_pushinteger(Ls, static_cast<lua_Integer>(val));
         }
@@ -644,10 +660,10 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
         end
     )LUA");
 
-    // §scxml-B-2: JSON.stringify / JSON.parse (Single Source of Truth)
-    // Shared with Rust sce-rust-lua via sce/include/scripting/json_builtins.lua
-    // CMake generates json_builtins_lua.h with the Lua source as a C++ raw string literal
-    #include "json_builtins_lua.h"
+// §scxml-B-2: JSON.stringify / JSON.parse (Single Source of Truth)
+// Shared with Rust sce-rust-lua via sce/include/scripting/json_builtins.lua
+// CMake generates json_builtins_lua.h with the Lua source as a C++ raw string literal
+#include "json_builtins_lua.h"
     luaL_dostring(L, JSON_BUILTINS_LUA);
 }
 
@@ -685,16 +701,14 @@ std::future<ScriptResult> LuaEngine::executeScript(const std::string &sessionId,
     return promise.get_future();
 }
 
-std::future<ScriptResult> LuaEngine::evaluateExpression(const std::string &sessionId,
-                                                          const std::string &expression) {
+std::future<ScriptResult> LuaEngine::evaluateExpression(const std::string &sessionId, const std::string &expression) {
     auto result = evaluateExpressionInternal(sessionId, expression);
     std::promise<ScriptResult> promise;
     promise.set_value(std::move(result));
     return promise.get_future();
 }
 
-std::future<ScriptResult> LuaEngine::validateExpression(const std::string &sessionId,
-                                                          const std::string &expression) {
+std::future<ScriptResult> LuaEngine::validateExpression(const std::string &sessionId, const std::string &expression) {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
@@ -829,8 +843,8 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
     bool looksLikeAssignment = false;
     for (size_t i = 0; i < luaExpr.size(); ++i) {
         if (luaExpr[i] == '=' &&
-            (i == 0 || (luaExpr[i - 1] != '~' && luaExpr[i - 1] != '<' &&
-                        luaExpr[i - 1] != '>' && luaExpr[i - 1] != '=')) &&
+            (i == 0 ||
+             (luaExpr[i - 1] != '~' && luaExpr[i - 1] != '<' && luaExpr[i - 1] != '>' && luaExpr[i - 1] != '=')) &&
             (i + 1 >= luaExpr.size() || luaExpr[i + 1] != '=')) {
             looksLikeAssignment = true;
             break;
@@ -875,7 +889,7 @@ ScriptResult LuaEngine::luaResultToScriptResult(lua_State *L, int status) {
 // === Variable Management ===
 
 std::future<ScriptResult> LuaEngine::setVariable(const std::string &sessionId, const std::string &name,
-                                                   const ScriptValue &value) {
+                                                 const ScriptValue &value) {
     auto result = setVariableInternal(sessionId, name, value);
     std::promise<ScriptResult> p;
     p.set_value(std::move(result));
@@ -890,7 +904,7 @@ std::future<ScriptResult> LuaEngine::getVariable(const std::string &sessionId, c
 }
 
 ScriptResult LuaEngine::setVariableInternal(const std::string &sessionId, const std::string &name,
-                                              const ScriptValue &value) {
+                                            const ScriptValue &value) {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
@@ -927,7 +941,7 @@ ScriptResult LuaEngine::getVariableInternal(const std::string &sessionId, const 
 }
 
 std::future<ScriptResult> LuaEngine::setVariableAsDOM(const std::string &sessionId, const std::string &name,
-                                                        const std::string &xmlContent) {
+                                                      const std::string &xmlContent) {
     // §scxml-B-2: XML DOM as Lua userdata with getElementsByTagName/getAttribute methods
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
@@ -949,18 +963,24 @@ std::future<ScriptResult> LuaEngine::setVariableAsDOM(const std::string &session
 bool LuaEngine::hasVariable(const std::string &sessionId, const std::string &variableName) const {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
-    if (it == sessions_.end()) return false;
+    if (it == sessions_.end()) {
+        return false;
+    }
 
     bool isDottedPath = variableName.find('.') != std::string::npos;
 
     // Check explicit tracking first (simple names only)
     if (!isDottedPath) {
-        if (it->second->declaredVars.count(variableName) > 0) return true;
+        if (it->second->declaredVars.count(variableName) > 0) {
+            return true;
+        }
     }
 
     // Check Lua state: simple globals or dotted path traversal
     lua_State *L = it->second->L;
-    if (!L) return false;
+    if (!L) {
+        return false;
+    }
 
     if (!isDottedPath) {
         // Simple variable name — check global table directly
@@ -976,7 +996,9 @@ bool LuaEngine::hasVariable(const std::string &sessionId, const std::string &var
     int pushCount = 0;
 
     // Get root variable
-    if (!std::getline(stream, segment, '.') || segment.empty()) return false;
+    if (!std::getline(stream, segment, '.') || segment.empty()) {
+        return false;
+    }
     lua_getglobal(L, segment.c_str());
     ++pushCount;
 
@@ -1014,9 +1036,8 @@ bool LuaEngine::isVariablePreInitialized(const std::string &sessionId, const std
 
 // === SCXML System Variables ===
 
-std::future<ScriptResult> LuaEngine::setupSystemVariables(const std::string &sessionId,
-                                                            const std::string &sessionName,
-                                                            const std::vector<std::string> &ioProcessors) {
+std::future<ScriptResult> LuaEngine::setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
+                                                          const std::vector<std::string> &ioProcessors) {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
@@ -1070,7 +1091,7 @@ std::future<ScriptResult> LuaEngine::setupSystemVariables(const std::string &ses
 // === Event Management ===
 
 std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionId,
-                                                       const std::shared_ptr<Event> &event) {
+                                                     const std::shared_ptr<Event> &event) {
     if (!event) {
         std::promise<ScriptResult> p;
         p.set_value(ScriptResult::createSuccess(true));
@@ -1128,13 +1149,12 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
 
     // No typedData — delegate to string overload's full data parsing path
     // (XML DOM / Lua expression / JSON / plain text, §scxml-B-2).
-    return setCurrentEvent(sessionId, SetCurrentEventArgs{event->getName(), event->getDataAsString(),
-                                                          event->getType(), event->getSendId(), event->getOrigin(),
+    return setCurrentEvent(sessionId, SetCurrentEventArgs{event->getName(), event->getDataAsString(), event->getType(),
+                                                          event->getSendId(), event->getOrigin(),
                                                           event->getOriginType(), event->getInvokeId()});
 }
 
-std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionId,
-                                                       const SetCurrentEventArgs &args) {
+std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionId, const SetCurrentEventArgs &args) {
     const std::string &eventName = args.eventName;
     const std::string &eventData = args.eventData;
     const std::string &eventType = args.eventType;
@@ -1189,7 +1209,7 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
             if (luaL_dostring(L, loadExpr.c_str()) == LUA_OK) {
                 lua_setfield(L, -2, "data");
             } else {
-                lua_pop(L, 1); // Pop error
+                lua_pop(L, 1);  // Pop error
                 // §scxml-B-2: Try JSON parsing for structured event data
                 // JSON syntax ({"key":"value"}) is not valid Lua, requires explicit conversion
                 auto parsed = EventDataHelper::jsonStringToScriptValue(eventData);
@@ -1219,7 +1239,7 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
 // === Global Function Registration ===
 
 bool LuaEngine::registerGlobalFunction(const std::string &functionName,
-                                         std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) {
+                                       std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) {
     // Lock order: sessionMutex_ → globalFuncMutex_ (consistent with createSession → registerBuiltins)
     std::lock_guard<std::mutex> sessLock(sessionMutex_);
     std::lock_guard<std::mutex> gfLock(globalFuncMutex_);
@@ -1237,7 +1257,7 @@ bool LuaEngine::registerGlobalFunction(const std::string &functionName,
 }
 
 bool LuaEngine::bindNativeObject(const std::string &sessionId, const std::string &objectName,
-                                   const std::vector<std::pair<std::string, NativeMethod>> &methods) {
+                                 const std::vector<std::pair<std::string, NativeMethod>> &methods) {
     std::lock_guard<std::mutex> lock(sessionMutex_);
 
     auto it = sessions_.find(sessionId);
@@ -1275,22 +1295,22 @@ bool LuaEngine::bindNativeObject(const std::string &sessionId, const std::string
                 args.reserve(nargs);
                 for (int i = 1; i <= nargs; ++i) {
                     switch (lua_type(Ls, i)) {
-                        case LUA_TBOOLEAN:
-                            args.emplace_back(static_cast<bool>(lua_toboolean(Ls, i)));
-                            break;
-                        case LUA_TNUMBER:
-                            if (lua_isinteger(Ls, i)) {
-                                args.emplace_back(static_cast<int64_t>(lua_tointeger(Ls, i)));
-                            } else {
-                                args.emplace_back(lua_tonumber(Ls, i));
-                            }
-                            break;
-                        case LUA_TSTRING:
-                            args.emplace_back(std::string(lua_tostring(Ls, i)));
-                            break;
-                        default:
-                            args.emplace_back(ScriptUndefined{});
-                            break;
+                    case LUA_TBOOLEAN:
+                        args.emplace_back(static_cast<bool>(lua_toboolean(Ls, i)));
+                        break;
+                    case LUA_TNUMBER:
+                        if (lua_isinteger(Ls, i)) {
+                            args.emplace_back(static_cast<int64_t>(lua_tointeger(Ls, i)));
+                        } else {
+                            args.emplace_back(lua_tonumber(Ls, i));
+                        }
+                        break;
+                    case LUA_TSTRING:
+                        args.emplace_back(std::string(lua_tostring(Ls, i)));
+                        break;
+                    default:
+                        args.emplace_back(ScriptUndefined{});
+                        break;
                     }
                 }
 
@@ -1323,7 +1343,8 @@ bool LuaEngine::bindNativeObject(const std::string &sessionId, const std::string
 
         // Verify stack integrity after each method binding
         if (lua_gettop(L) != stackTop + 1) {
-            SCE_LOG_ERROR("LuaEngine::bindNativeObject: Stack corruption after binding method '{}' for object '{}' in session '{}'",
+            SCE_LOG_ERROR("LuaEngine::bindNativeObject: Stack corruption after binding method '{}' for object '{}' in "
+                          "session '{}'",
                           methodName, objectName, sessionId);
             lua_settop(L, stackTop);
             return false;
@@ -1345,94 +1366,96 @@ void LuaEngine::setStateQueryCallback(StateQueryCallback callback, const std::st
 // === Type Conversion ===
 
 void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
-    std::visit([L](auto &&val) {
-        using T = std::decay_t<decltype(val)>;
-        if constexpr (std::is_same_v<T, ScriptUndefined>) {
-            lua_pushnil(L);
-        } else if constexpr (std::is_same_v<T, ScriptNull>) {
-            // §scxml-B-2: Push null sentinel to preserve typeof semantics
-            lua_pushlightuserdata(L, &NULL_SENTINEL_TAG);
-        } else if constexpr (std::is_same_v<T, bool>) {
-            lua_pushboolean(L, val ? 1 : 0);
-        } else if constexpr (std::is_same_v<T, int64_t>) {
-            lua_pushinteger(L, static_cast<lua_Integer>(val));
-        } else if constexpr (std::is_same_v<T, double>) {
-            lua_pushnumber(L, val);
-        } else if constexpr (std::is_same_v<T, std::string>) {
-            lua_pushstring(L, val.c_str());
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<ScriptArray>>) {
-            lua_newtable(L);
-            if (val) {
-                for (size_t i = 0; i < val->elements.size(); ++i) {
-                    // §scxml-B-2: Use undefined sentinel in arrays to prevent nil holes
-                    if (std::holds_alternative<ScriptUndefined>(val->elements[i])) {
-                        lua_pushlightuserdata(L, &UNDEFINED_SENTINEL_TAG);
-                    } else {
-                        pushScriptValue(L, val->elements[i]);
+    std::visit(
+        [L](auto &&val) {
+            using T = std::decay_t<decltype(val)>;
+            if constexpr (std::is_same_v<T, ScriptUndefined>) {
+                lua_pushnil(L);
+            } else if constexpr (std::is_same_v<T, ScriptNull>) {
+                // §scxml-B-2: Push null sentinel to preserve typeof semantics
+                lua_pushlightuserdata(L, &NULL_SENTINEL_TAG);
+            } else if constexpr (std::is_same_v<T, bool>) {
+                lua_pushboolean(L, val ? 1 : 0);
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                lua_pushinteger(L, static_cast<lua_Integer>(val));
+            } else if constexpr (std::is_same_v<T, double>) {
+                lua_pushnumber(L, val);
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                lua_pushstring(L, val.c_str());
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<ScriptArray>>) {
+                lua_newtable(L);
+                if (val) {
+                    for (size_t i = 0; i < val->elements.size(); ++i) {
+                        // §scxml-B-2: Use undefined sentinel in arrays to prevent nil holes
+                        if (std::holds_alternative<ScriptUndefined>(val->elements[i])) {
+                            lua_pushlightuserdata(L, &UNDEFINED_SENTINEL_TAG);
+                        } else {
+                            pushScriptValue(L, val->elements[i]);
+                        }
+                        lua_rawseti(L, -2, static_cast<int>(i + 1));
                     }
-                    lua_rawseti(L, -2, static_cast<int>(i + 1));
+                }
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<ScriptObject>>) {
+                lua_newtable(L);
+                if (val) {
+                    for (auto &[key, objVal] : val->properties) {
+                        pushScriptValue(L, objVal);
+                        lua_setfield(L, -2, key.c_str());
+                    }
                 }
             }
-        } else if constexpr (std::is_same_v<T, std::shared_ptr<ScriptObject>>) {
-            lua_newtable(L);
-            if (val) {
-                for (auto &[key, objVal] : val->properties) {
-                    pushScriptValue(L, objVal);
-                    lua_setfield(L, -2, key.c_str());
-                }
-            }
-        }
-    }, value);
+        },
+        value);
 }
 
 ScriptValue LuaEngine::luaToScriptValue(lua_State *L, int index) {
     switch (lua_type(L, index)) {
-        case LUA_TNIL:
-            return ScriptUndefined{};
-        case LUA_TBOOLEAN:
-            return static_cast<bool>(lua_toboolean(L, index));
-        case LUA_TNUMBER:
-            if (lua_isinteger(L, index)) {
-                return static_cast<int64_t>(lua_tointeger(L, index));
-            }
-            return lua_tonumber(L, index);
-        case LUA_TSTRING:
-            return std::string(lua_tostring(L, index));
-        case LUA_TTABLE: {
-            // Check if it's an array (sequential integer keys)
-            int len = static_cast<int>(lua_rawlen(L, index));
-            if (len > 0) {
-                auto arr = std::make_shared<ScriptArray>();
-                for (int i = 1; i <= len; ++i) {
-                    lua_rawgeti(L, index, i);
-                    arr->elements.push_back(luaToScriptValue(L, -1));
-                    lua_pop(L, 1);
-                }
-                return ScriptValue(arr);
-            }
-            // Object
-            auto obj = std::make_shared<ScriptObject>();
-            int absIndex = index < 0 ? lua_gettop(L) + index + 1 : index;
-            lua_pushnil(L);
-            while (lua_next(L, absIndex) != 0) {
-                if (lua_isstring(L, -2)) {
-                    std::string key = lua_tostring(L, -2);
-                    obj->properties[key] = luaToScriptValue(L, -1);
-                }
+    case LUA_TNIL:
+        return ScriptUndefined{};
+    case LUA_TBOOLEAN:
+        return static_cast<bool>(lua_toboolean(L, index));
+    case LUA_TNUMBER:
+        if (lua_isinteger(L, index)) {
+            return static_cast<int64_t>(lua_tointeger(L, index));
+        }
+        return lua_tonumber(L, index);
+    case LUA_TSTRING:
+        return std::string(lua_tostring(L, index));
+    case LUA_TTABLE: {
+        // Check if it's an array (sequential integer keys)
+        int len = static_cast<int>(lua_rawlen(L, index));
+        if (len > 0) {
+            auto arr = std::make_shared<ScriptArray>();
+            for (int i = 1; i <= len; ++i) {
+                lua_rawgeti(L, index, i);
+                arr->elements.push_back(luaToScriptValue(L, -1));
                 lua_pop(L, 1);
             }
-            return ScriptValue(obj);
+            return ScriptValue(arr);
         }
-        case LUA_TLIGHTUSERDATA: {
-            // §scxml-B-2: Convert null/undefined sentinels back to ScriptValue types
-            void *p = lua_touserdata(L, index);
-            if (p == &NULL_SENTINEL_TAG) {
-                return ScriptNull{};
+        // Object
+        auto obj = std::make_shared<ScriptObject>();
+        int absIndex = index < 0 ? lua_gettop(L) + index + 1 : index;
+        lua_pushnil(L);
+        while (lua_next(L, absIndex) != 0) {
+            if (lua_isstring(L, -2)) {
+                std::string key = lua_tostring(L, -2);
+                obj->properties[key] = luaToScriptValue(L, -1);
             }
-            return ScriptUndefined{};
+            lua_pop(L, 1);
         }
-        default:
-            return ScriptUndefined{};
+        return ScriptValue(obj);
+    }
+    case LUA_TLIGHTUSERDATA: {
+        // §scxml-B-2: Convert null/undefined sentinels back to ScriptValue types
+        void *p = lua_touserdata(L, index);
+        if (p == &NULL_SENTINEL_TAG) {
+            return ScriptNull{};
+        }
+        return ScriptUndefined{};
+    }
+    default:
+        return ScriptUndefined{};
     }
 }
 

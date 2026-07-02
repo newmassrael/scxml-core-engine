@@ -33,7 +33,7 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
     std::string target = transElement->hasAttribute("target") ? transElement->getAttribute("target") : "";
 
     SCE_LOG_DEBUG("Parsing transition: {} -> {}", (event.empty() ? "<no event>" : event),
-              (target.empty() ? "<internal>" : target));
+                  (target.empty() ? "<internal>" : target));
 
     // Treat as internal transition if target is empty
     bool isInternal = target.empty();

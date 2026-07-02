@@ -45,8 +45,7 @@ using namespace SCE::Test::Mesh;
 
 // Mirrors motor's own listen endpoint (deploy_zenoh_multi.yaml ecu_motor):
 // the raw client peer below dials this address to reach motor's router.
-constexpr const char* kListen =
-    SCE::Generated::motor_zenoh_multi::ZENOH_LISTEN_ENDPOINTS[0];
+constexpr const char *kListen = SCE::Generated::motor_zenoh_multi::ZENOH_LISTEN_ENDPOINTS[0];
 
 int run_test() {
     namespace motor_gen = SCE::Generated::motor_zenoh_multi;
@@ -65,11 +64,15 @@ int run_test() {
     struct EnginePump {
         std::atomic<bool> running{true};
         std::thread t;
+
         ~EnginePump() {
             running.store(false, std::memory_order_release);
-            if (t.joinable()) t.join();
+            if (t.joinable()) {
+                t.join();
+            }
         }
     } pump;
+
     pump.t = std::thread([&motor, &pump] {
         while (pump.running.load(std::memory_order_acquire)) {
             motor.step();
@@ -96,15 +99,16 @@ int run_test() {
     ReceivedEvents notify_events;
     auto subscriber = client_session.declare_subscriber(
         zenoh::KeyExpr(motor_gen::ZENOH_SERVER_KEY),
-        [&notify_events](const zenoh::Sample& sample) {
+        [&notify_events](const zenoh::Sample &sample) {
             auto bytes = sample.get_payload().as_vector();
             SCE::Mesh::MeshEnvelope env;
-            if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) return;
+            if (!SCE::Mesh::decodeEnvelope(bytes.data(), bytes.size(), env)) {
+                return;
+            }
             // Only collect field.notify events (ignore any other traffic
             // on the server key — e.g. queryable replies).
             if (env.type.rfind("field.notify.", 0) == 0) {
-                notify_events.push({env.type,
-                                    std::string(env.data.begin(), env.data.end())});
+                notify_events.push({env.type, std::string(env.data.begin(), env.data.end())});
             }
         },
         [] {});
@@ -125,12 +129,10 @@ int run_test() {
         (void)motor_router.dispatchToSession(trigger, 0);
     }
 
-    MESH_TEST_REQUIRE(notify_events.wait_for([](const auto& v) {
-                return !v.empty() &&
-                       v.back().type == "field.notify.position";
-            }),
-            "eventgroup notification not received — regression in "
-            "spontaneous raise→injected-send→publishEventgroupNotify chain");
+    MESH_TEST_REQUIRE(
+        notify_events.wait_for([](const auto &v) { return !v.empty() && v.back().type == "field.notify.position"; }),
+        "eventgroup notification not received — regression in "
+        "spontaneous raise→injected-send→publishEventgroupNotify chain");
 
     // Teardown: stop pump before transport shutdown.
     pump.running.store(false, std::memory_order_release);
@@ -145,7 +147,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

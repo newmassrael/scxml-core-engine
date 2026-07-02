@@ -66,8 +66,7 @@ public:
         entries_[Key{std::move(test_id), std::move(partition)}] = std::move(factory);
     }
 
-    std::unique_ptr<PartitionBase> create(const std::string &test_id,
-                                          const std::string &partition) const {
+    std::unique_ptr<PartitionBase> create(const std::string &test_id, const std::string &partition) const {
         auto it = entries_.find(Key{test_id, partition});
         return it != entries_.end() ? it->second() : nullptr;
     }
@@ -85,8 +84,8 @@ private:
 /// manifest's partition names avoids a second mapping layer.
 template <typename T> struct PartitionRegistrar {
     PartitionRegistrar() {
-        PartitionRegistry::instance().registerPartition(
-            T::TEST_ID, T::PARTITION, []() { return std::make_unique<T>(); });
+        PartitionRegistry::instance().registerPartition(T::TEST_ID, T::PARTITION,
+                                                        []() { return std::make_unique<T>(); });
     }
 };
 

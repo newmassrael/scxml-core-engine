@@ -53,8 +53,7 @@ public:
 
     std::shared_ptr<IXMLElement> getRootElement() override;
     SCE::parsing::PositionMap processXInclude() override;
-    SCE::parsing::PositionMap processSceTemplate(
-        const SCE::parsing::PositionMap &upstream) override;
+    SCE::parsing::PositionMap processSceTemplate(const SCE::parsing::PositionMap &upstream) override;
     bool isValid() const override;
 
     // Internal: Set base path for XInclude resolution

@@ -64,13 +64,11 @@ constexpr const char *kShortName = "user.click";
 
 // Long name: 44 chars — exceeds SSO. Decoder allocates a heap buffer
 // for `type` per envelope, freed at envelope destruction.
-constexpr const char *kLongName =
-    "application.module.event.subscription.ack";
+constexpr const char *kLongName = "application.module.event.subscription.ack";
 
 ::SCE::Mesh::MeshEnvelope makeEnvelope(const char *type_name) {
     ::SCE::Mesh::MeshEnvelope env;
-    env.id = {{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-               0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}};
+    env.id = {{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10}};
     env.source = "bench_sender";
     env.type = type_name;
     env.pattern = ::SCE::Mesh::PatternKind::FireForget;
@@ -86,14 +84,14 @@ static void BM_DecodeShortName(benchmark::State &state) {
     const auto wire = ::SCE::Mesh::encodeEnvelope(env);
     for (auto _ : state) {
         ::SCE::Mesh::MeshEnvelope out;
-        const bool ok =
-            ::SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), out);
+        const bool ok = ::SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), out);
         bool ok_local = ok;
         const auto *out_ptr = &out;
         benchmark::DoNotOptimize(ok_local);
         benchmark::DoNotOptimize(out_ptr);
     }
 }
+
 BENCHMARK(BM_DecodeShortName);
 
 // ─── B. Decode-only, long `type` (heap alloc on `type`) ───────────────
@@ -102,14 +100,14 @@ static void BM_DecodeLongName(benchmark::State &state) {
     const auto wire = ::SCE::Mesh::encodeEnvelope(env);
     for (auto _ : state) {
         ::SCE::Mesh::MeshEnvelope out;
-        const bool ok =
-            ::SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), out);
+        const bool ok = ::SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), out);
         bool ok_local = ok;
         const auto *out_ptr = &out;
         benchmark::DoNotOptimize(ok_local);
         benchmark::DoNotOptimize(out_ptr);
     }
 }
+
 BENCHMARK(BM_DecodeLongName);
 
 // ─── C. Roundtrip — encode + decode, short `type` ────────────────────
@@ -118,14 +116,14 @@ static void BM_RoundtripShort(benchmark::State &state) {
     for (auto _ : state) {
         const auto wire = ::SCE::Mesh::encodeEnvelope(env);
         ::SCE::Mesh::MeshEnvelope out;
-        const bool ok =
-            ::SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), out);
+        const bool ok = ::SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), out);
         bool ok_local = ok;
         const auto *out_ptr = &out;
         benchmark::DoNotOptimize(ok_local);
         benchmark::DoNotOptimize(out_ptr);
     }
 }
+
 BENCHMARK(BM_RoundtripShort);
 
 // ─── D. Roundtrip — encode + decode, long `type` ─────────────────────
@@ -134,14 +132,14 @@ static void BM_RoundtripLong(benchmark::State &state) {
     for (auto _ : state) {
         const auto wire = ::SCE::Mesh::encodeEnvelope(env);
         ::SCE::Mesh::MeshEnvelope out;
-        const bool ok =
-            ::SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), out);
+        const bool ok = ::SCE::Mesh::decodeEnvelope(wire.data(), wire.size(), out);
         bool ok_local = ok;
         const auto *out_ptr = &out;
         benchmark::DoNotOptimize(ok_local);
         benchmark::DoNotOptimize(out_ptr);
     }
 }
+
 BENCHMARK(BM_RoundtripLong);
 
 BENCHMARK_MAIN();

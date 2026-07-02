@@ -17,8 +17,10 @@ namespace SCE::Test::Mesh {
 // from missing/already-unlinked files are ignored.
 inline void wipe_stale_vsomeip_sockets() {
     std::error_code ec;
-    for (const auto& entry : std::filesystem::directory_iterator("/tmp", ec)) {
-        if (ec) return;
+    for (const auto &entry : std::filesystem::directory_iterator("/tmp", ec)) {
+        if (ec) {
+            return;
+        }
         const auto name = entry.path().filename().string();
         if (name.rfind("vsomeip-", 0) == 0) {
             std::filesystem::remove(entry.path(), ec);

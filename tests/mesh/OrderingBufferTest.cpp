@@ -25,7 +25,7 @@ using SCE::Mesh::PayloadCodec;
 
 namespace {
 
-MeshEnvelope make_env(const std::string& source, std::uint64_t seq) {
+MeshEnvelope make_env(const std::string &source, std::uint64_t seq) {
     MeshEnvelope env{};
     env.source = source;
     env.type = "t";

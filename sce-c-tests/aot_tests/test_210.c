@@ -30,8 +30,7 @@ int main(void) {
 
     while (!test210_is_in_final_state(&sm)) {
         if (_sce_clock_now_ms() - start_ms > timeout_ms) {
-            fprintf(stderr, "test210: TIMEOUT — active = 0x%08x\n",
-                    (unsigned)test210_active_states(&sm));
+            fprintf(stderr, "test210: TIMEOUT — active = 0x%08x\n", (unsigned)test210_active_states(&sm));
             test210_destroy(&sm);
             return 1;
         }
@@ -41,8 +40,7 @@ int main(void) {
 
     int rc = test210_in_state(&sm, TEST210_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test210: FAIL — active = 0x%08x\n",
-                (unsigned)test210_active_states(&sm));
+        fprintf(stderr, "test210: FAIL — active = 0x%08x\n", (unsigned)test210_active_states(&sm));
     }
     test210_destroy(&sm);
     return rc;

@@ -74,10 +74,10 @@ bool sce_test_http_url_parse(const char *url, sce_test_http_url_t *out);
  * path is uniform).
  */
 typedef struct {
-    bool ok;             /* transport-level success — set even on 4xx/5xx */
-    int status_code;     /* parsed `HTTP/1.1 <code>` status; 0 if untransmitted */
-    char *body;          /* malloc'd, may be empty string but not NULL when ok */
-    size_t body_len;     /* bytes in body, excluding the trailing NUL */
+    bool ok;         /* transport-level success — set even on 4xx/5xx */
+    int status_code; /* parsed `HTTP/1.1 <code>` status; 0 if untransmitted */
+    char *body;      /* malloc'd, may be empty string but not NULL when ok */
+    size_t body_len; /* bytes in body, excluding the trailing NUL */
 } sce_test_http_response_t;
 
 /**
@@ -116,11 +116,8 @@ typedef struct {
  *         set whenever the status line was decoded, regardless of
  *         the 2xx/non-2xx split.
  */
-bool sce_test_http_post(const sce_test_http_url_t *url,
-                        const char *content_type,
-                        const char *body, size_t body_len,
-                        int timeout_ms,
-                        sce_test_http_response_t *out);
+bool sce_test_http_post(const sce_test_http_url_t *url, const char *content_type, const char *body, size_t body_len,
+                        int timeout_ms, sce_test_http_response_t *out);
 
 /** Release the `body` buffer of `r` and reset the struct to zero. */
 void sce_test_http_response_free(sce_test_http_response_t *r);
@@ -141,8 +138,7 @@ void sce_test_http_response_free(sce_test_http_response_t *r);
  * names (`_scxmleventname=<name>`) and `<param>` values into the
  * POST body the same way Go/Rust harnesses do.
  */
-bool sce_test_http_form_append(char *body, size_t cap, size_t *body_len,
-                               const char *key, const char *value);
+bool sce_test_http_form_append(char *body, size_t cap, size_t *body_len, const char *key, const char *value);
 
 /* ── Standalone server response JSON extractor ──────────────────── */
 
@@ -165,11 +161,11 @@ bool sce_test_http_form_append(char *body, size_t cap, size_t *body_len,
  */
 typedef struct {
     bool ok;
-    const char *event_name;       /* points into response_body */
+    const char *event_name; /* points into response_body */
     size_t event_name_len;
-    const char *event_data;       /* points into response_body, NULL if absent */
+    const char *event_data; /* points into response_body, NULL if absent */
     size_t event_data_len;
-    bool data_is_string;          /* true when "data" was a JSON string */
+    bool data_is_string; /* true when "data" was a JSON string */
 } sce_test_http_json_response_t;
 
 /**
@@ -192,11 +188,10 @@ typedef struct {
  *         when `event` is missing — both indicate a server error
  *         that the fixture surface treats as transport failure.
  */
-bool sce_test_http_parse_response(char *body, size_t body_len,
-                                  sce_test_http_json_response_t *out);
+bool sce_test_http_parse_response(char *body, size_t body_len, sce_test_http_json_response_t *out);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif  /* SCE_C_TESTS_SUPPORT_HTTP_CLIENT_H */
+#endif /* SCE_C_TESTS_SUPPORT_HTTP_CLIENT_H */

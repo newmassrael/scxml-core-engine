@@ -87,8 +87,8 @@ public:
                 errorCallback(errorMsg);
                 return false;
             }
-            SCE_LOG_DEBUG("AssignmentExecutionHelper: Successfully assigned {} = {} (system variable reference)", location,
-                      expr);
+            SCE_LOG_DEBUG("AssignmentExecutionHelper: Successfully assigned {} = {} (system variable reference)",
+                          location, expr);
             return true;
         }
 

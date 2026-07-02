@@ -85,12 +85,9 @@ public:
         cv_.notify_all();
     }
 
-    bool wait_for_status(RpcStatus expected,
-                         std::chrono::milliseconds timeout) {
+    bool wait_for_status(RpcStatus expected, std::chrono::milliseconds timeout) {
         std::unique_lock<std::mutex> lock(mu_);
-        return cv_.wait_for(lock, timeout, [&] {
-            return !statuses_.empty() && statuses_.front() == expected;
-        });
+        return cv_.wait_for(lock, timeout, [&] { return !statuses_.empty() && statuses_.front() == expected; });
     }
 
     std::size_t count() const {
@@ -106,12 +103,10 @@ private:
 
 // Distinct envelope and invoke uuids — mirrors the split-uuid layout
 // invokeMeshRpc emits per §16.7 row 3 follow-up.
-constexpr std::array<std::uint8_t, 16> kInvokeUuid = {
-    0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11,
-    0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
-constexpr std::array<std::uint8_t, 16> kEnvelopeUuid = {
-    0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-    0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00};
+constexpr std::array<std::uint8_t, 16> kInvokeUuid = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11,
+                                                      0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99};
+constexpr std::array<std::uint8_t, 16> kEnvelopeUuid = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
+                                                        0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00};
 
 MeshEnvelope make_envelope() {
     MeshEnvelope env;
@@ -147,28 +142,22 @@ TEST(DeadlinePreemptsRetryTest, DeadlineLambdaCancelsPendingRetry) {
 
     // Inner closure: always fails (retryable) so send_with_retry queues
     // the retry attempt rather than completing synchronously.
-    auto inner = [](const MeshEnvelope&) {
-        return SendResult::failure("simulated transient", /*retryable=*/true);
-    };
+    auto inner = [](const MeshEnvelope &) { return SendResult::failure("simulated transient", /*retryable=*/true); };
 
     RetryingDispatcher dispatcher(scheduler, make_policy(), inner,
-                                  [&recorder](CommunicationError err) {
-                                      recorder(std::move(err));
-                                  });
+                                  [&recorder](CommunicationError err) { recorder(std::move(err)); });
 
     auto env = make_envelope();
-    ASSERT_NE(env.id, kInvokeUuid)
-        << "fixture invariant — envelope and invoke uuids must differ";
+    ASSERT_NE(env.id, kInvokeUuid) << "fixture invariant — envelope and invoke uuids must differ";
 
     // Register the invoke correlation entry first — mirrors the
     // codegen order: registerInvoke BEFORE route_send so a synchronous
     // reply (or here, a synchronous deadline) cannot race the entry's
     // creation. Correlation keys off the INVOKE uuid (matches
     // env.invoke_id).
-    correlation.registerInvoke(kInvokeUuid, "#motor",
-        [&deliver](RpcStatus status, std::vector<std::uint8_t> data) {
-            deliver(status, std::move(data));
-        });
+    correlation.registerInvoke(kInvokeUuid, "#motor", [&deliver](RpcStatus status, std::vector<std::uint8_t> data) {
+        deliver(status, std::move(data));
+    });
 
     // Arm the deadline BEFORE send_with_retry — same order the
     // codegen-emitted invokeMeshRpc uses (registerDeadline before
@@ -177,9 +166,8 @@ TEST(DeadlinePreemptsRetryTest, DeadlineLambdaCancelsPendingRetry) {
     // the ENVELOPE uuid. The split is what makes this composition
     // work — pre-row-3-followup the two were aliased and retry
     // would refuse to register, collapsing into SEND_FAILED.
-    const bool scheduled = scheduler.registerDeadline(
-        kInvokeUuid, std::chrono::milliseconds(50),
-        [&correlation, &dispatcher]() {
+    const bool scheduled =
+        scheduler.registerDeadline(kInvokeUuid, std::chrono::milliseconds(50), [&correlation, &dispatcher]() {
             (void)correlation.handleDeadline(kInvokeUuid);
             (void)dispatcher.cancelEnvelopeRetry(kEnvelopeUuid);
         });
@@ -189,28 +177,23 @@ TEST(DeadlinePreemptsRetryTest, DeadlineLambdaCancelsPendingRetry) {
     // Retry's internal registerDeadline keys off env.id (envelope_uuid)
     // and MUST succeed — disjoint from the invoke deadline above.
     SendResult initial = dispatcher.send_with_retry(env);
-    ASSERT_TRUE(initial.ok)
-        << "retry layer must suppress SEND_FAILED while retries remain "
-           "(the split-uuid invariant prevents the row 3 collision)";
-    ASSERT_EQ(dispatcher.pendingCount(), 1u)
-        << "retry layer must queue exactly one pending retry";
+    ASSERT_TRUE(initial.ok) << "retry layer must suppress SEND_FAILED while retries remain "
+                               "(the split-uuid invariant prevents the row 3 collision)";
+    ASSERT_EQ(dispatcher.pendingCount(), 1u) << "retry layer must queue exactly one pending retry";
 
     // Wait for the deadline to fire and deliver DeadlineExceeded.
     ASSERT_TRUE(deliver.wait_for_status(RpcStatus::DeadlineExceeded, 2s))
         << "deadline did not surface DeadlineExceeded within 2s";
 
     // The cancel half must have erased the retry queue entry.
-    EXPECT_EQ(dispatcher.pendingCount(), 0u)
-        << "deadline lambda must call cancelEnvelopeRetry; retry entry "
-           "should be erased";
+    EXPECT_EQ(dispatcher.pendingCount(), 0u) << "deadline lambda must call cancelEnvelopeRetry; retry entry "
+                                                "should be erased";
 
     // Wait past one backoff window to prove the queued retry stays
     // cancelled rather than firing late.
     std::this_thread::sleep_for(2500ms);
     EXPECT_EQ(dispatcher.pendingCount(), 0u);
-    EXPECT_EQ(recorder.count(), 0u)
-        << "DELIVERY_EXHAUSTED must NOT fire after the deadline preempted "
-           "the retry chain";
-    EXPECT_EQ(deliver.count(), 1u)
-        << "exactly one delivery (the DeadlineExceeded raise) must occur";
+    EXPECT_EQ(recorder.count(), 0u) << "DELIVERY_EXHAUSTED must NOT fire after the deadline preempted "
+                                       "the retry chain";
+    EXPECT_EQ(deliver.count(), 1u) << "exactly one delivery (the DeadlineExceeded raise) must occur";
 }

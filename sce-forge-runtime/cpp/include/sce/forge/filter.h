@@ -16,8 +16,7 @@
 
 namespace SCE::Forge {
 
-template <typename T, std::size_t Window>
-class MovingAverage {
+template <typename T, std::size_t Window> class MovingAverage {
 public:
     static_assert(Window >= 1, "MovingAverage window must be >= 1");
 
@@ -49,8 +48,7 @@ private:
 
 /// First-order exponential low-pass: y[n] = alpha * x[n] + (1 - alpha) * y[n-1].
 /// On the first sample, y[0] = x[0] (no warm-up bias toward zero).
-template <typename T>
-class LowPass {
+template <typename T> class LowPass {
 public:
     explicit LowPass(T alpha) noexcept : alpha_(alpha) {}
 
@@ -77,8 +75,7 @@ private:
 
 /// Output latches to a new value only after `Window` consecutive identical
 /// samples. Until the buffer fills, the most recent input passes through.
-template <typename T, std::size_t Window>
-class Debounce {
+template <typename T, std::size_t Window> class Debounce {
 public:
     static_assert(Window >= 1, "Debounce window must be >= 1");
 
@@ -120,4 +117,4 @@ private:
     T output_ = T{};
 };
 
-} // namespace SCE::Forge
+}  // namespace SCE::Forge

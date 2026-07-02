@@ -71,7 +71,8 @@ public:
 #ifdef __EMSCRIPTEN__
             size_t processedCount = static_cast<EventSchedulerImpl *>(scheduler_.get())->poll();
             if (processedCount > 0) {
-                SCE_LOG_DEBUG("PlatformEventRaiserHelper: Scheduler polled, processed {} delayed events", processedCount);
+                SCE_LOG_DEBUG("PlatformEventRaiserHelper: Scheduler polled, processed {} delayed events",
+                              processedCount);
             }
 #endif
         }

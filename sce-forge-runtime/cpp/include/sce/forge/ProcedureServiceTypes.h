@@ -72,8 +72,7 @@ struct ProcedureServiceResponse {
 /// });
 /// auto result = sm.runToCompletion();
 /// @endcode
-using ProcedureServiceHandler =
-    std::function<ProcedureServiceResponse(const ProcedureServiceRequest&)>;
+using ProcedureServiceHandler = std::function<ProcedureServiceResponse(const ProcedureServiceRequest &)>;
 
 /// Result of a Level 2 procedure execution via runToCompletion().
 /// Contains the final state name and done data parameters.

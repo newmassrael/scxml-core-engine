@@ -3,7 +3,9 @@
 //
 // W3C SCXML test533 — C11 AOT runner.
 //
-// W3C SCXML 3.13: an internal transition whose source is a non-compound (atomic) state still exits its source — there is no special-case carve-out for atomic source states. The compute_exit_set internal-to-descendant branch (no-op for atomic source) covers the case; the receiving transition confirms the source's onexit fired exactly once.
+// W3C SCXML 3.13: an internal transition whose source is a non-compound (atomic) state still exits its source — there
+// is no special-case carve-out for atomic source states. The compute_exit_set internal-to-descendant branch (no-op for
+// atomic source) covers the case; the receiving transition confirms the source's onexit fired exactly once.
 
 #include <stdio.h>
 

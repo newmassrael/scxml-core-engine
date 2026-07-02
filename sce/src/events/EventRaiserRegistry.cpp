@@ -14,7 +14,8 @@ bool EventRaiserRegistry::registerEventRaiser(const std::string &sessionId, std:
     }
 
     if (!eventRaiser) {
-        SCE_LOG_ERROR("EventRaiserRegistry: Cannot register EventRaiser - eventRaiser is null for session: {}", sessionId);
+        SCE_LOG_ERROR("EventRaiserRegistry: Cannot register EventRaiser - eventRaiser is null for session: {}",
+                      sessionId);
         return false;
     }
 
@@ -30,7 +31,7 @@ bool EventRaiserRegistry::registerEventRaiser(const std::string &sessionId, std:
     // Register new EventRaiser
     eventRaisers_[sessionId] = eventRaiser;
     SCE_LOG_DEBUG("EventRaiserRegistry: Successfully registered EventRaiser for session: {} (total: {})", sessionId,
-              eventRaisers_.size());
+                  eventRaisers_.size());
 
     return true;
 }
@@ -65,7 +66,7 @@ bool EventRaiserRegistry::unregisterEventRaiser(const std::string &sessionId) {
     if (it != eventRaisers_.end()) {
         eventRaisers_.erase(it);
         SCE_LOG_DEBUG("EventRaiserRegistry: Successfully unregistered EventRaiser for session: {} (remaining: {})",
-                  sessionId, eventRaisers_.size());
+                      sessionId, eventRaisers_.size());
         return true;
     }
 

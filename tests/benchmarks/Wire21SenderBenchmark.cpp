@@ -65,10 +65,10 @@
 //   - Failure paths (`runtime_error` throw when callback is unset or
 //     returns false). Cold path, not what a regression guard tracks.
 
-#include "static/StaticExecutionEngine.h"
 #include "mesh/MeshEnvelope.h"
 #include "mesh/PatternKind.h"
 #include "mesh/PayloadCodec.h"
+#include "static/StaticExecutionEngine.h"
 
 #include <benchmark/benchmark.h>
 
@@ -98,14 +98,33 @@ struct MinimalPolicy {
 
     MinimalPolicy() = default;
 
-    [[nodiscard]] static constexpr State initialState() noexcept { return State::S0; }
-    [[nodiscard]] static constexpr bool isFinalState(State s) noexcept { return s == State::Done; }
-    [[nodiscard]] static constexpr std::optional<State> getParent(State) noexcept { return std::nullopt; }
-    [[nodiscard]] static constexpr bool isCompoundState(State) noexcept { return false; }
-    [[nodiscard]] static constexpr State getInitialChild(State s) noexcept { return s; }
+    [[nodiscard]] static constexpr State initialState() noexcept {
+        return State::S0;
+    }
 
-    [[nodiscard]] std::string getEventName(Event) const { return ""; }
-    [[nodiscard]] std::optional<Event> getEventFromName(const std::string&) const { return std::nullopt; }
+    [[nodiscard]] static constexpr bool isFinalState(State s) noexcept {
+        return s == State::Done;
+    }
+
+    [[nodiscard]] static constexpr std::optional<State> getParent(State) noexcept {
+        return std::nullopt;
+    }
+
+    [[nodiscard]] static constexpr bool isCompoundState(State) noexcept {
+        return false;
+    }
+
+    [[nodiscard]] static constexpr State getInitialChild(State s) noexcept {
+        return s;
+    }
+
+    [[nodiscard]] std::string getEventName(Event) const {
+        return "";
+    }
+
+    [[nodiscard]] std::optional<Event> getEventFromName(const std::string &) const {
+        return std::nullopt;
+    }
 };
 
 // Hand-rolled SM mirroring the NonRoot wire-21 block emitted by
@@ -122,15 +141,13 @@ class Wire21SenderSm : public ::SCE::Static::StaticExecutionEngine<MinimalPolicy
 public:
     Wire21SenderSm() {
         this->setParallelRegionRemoteSendCallback(
-            [this](const std::string& parallel_id, const std::string& region_id,
-                   const std::string& donedata) {
+            [this](const std::string &parallel_id, const std::string &region_id, const std::string &donedata) {
                 this->sendParallelRegionDone(parallel_id, region_id, donedata);
             });
     }
 
-    void sendParallelRegionDone(const std::string& parallel_id,
-                                const std::string& region_id,
-                                const std::string& donedata) {
+    void sendParallelRegionDone(const std::string &parallel_id, const std::string &region_id,
+                                const std::string &donedata) {
         ::SCE::Mesh::MeshEnvelope env;
         env.pattern = ::SCE::Mesh::PatternKind::ParallelRegionDone;
         env.parallel_id = parallel_id;
@@ -142,13 +159,12 @@ public:
         }
     }
 
-    void setParallelRegionDoneCallback(
-        std::function<bool(const ::SCE::Mesh::MeshEnvelope&)> cb) {
+    void setParallelRegionDoneCallback(std::function<bool(const ::SCE::Mesh::MeshEnvelope &)> cb) {
         parallel_region_done_callback_ = std::move(cb);
     }
 
 private:
-    std::function<bool(const ::SCE::Mesh::MeshEnvelope&)> parallel_region_done_callback_;
+    std::function<bool(const ::SCE::Mesh::MeshEnvelope &)> parallel_region_done_callback_;
 };
 
 // Inputs are kept on the stack outside the benchmark loop so per-iter
@@ -157,8 +173,8 @@ private:
 // `state.donedata`-absent branch in `parallel_final.jinja2:42` which
 // is the common case.
 const std::string kParallelId = "bench_parallel";
-const std::string kRegionId   = "bench_region";
-const std::string kDonedata   = "";
+const std::string kRegionId = "bench_region";
+const std::string kDonedata = "";
 
 }  // namespace
 
@@ -168,20 +184,20 @@ const std::string kDonedata   = "";
 // dispatch into the installed no-op callback. This is the minimum
 // possible cost for a wire-21 send: any consumer that uses the SM
 // directly (skipping the engine-level trampoline) pays at least this.
-static void BM_SendParallelRegionDoneDirect(benchmark::State& state) {
+static void BM_SendParallelRegionDoneDirect(benchmark::State &state) {
     Wire21SenderSm sm;
-    sm.setParallelRegionDoneCallback(
-        [](const ::SCE::Mesh::MeshEnvelope& env) -> bool {
-            // DoNotOptimize on a non-const pointer — the const-ref overload
-            // is deprecated in google-benchmark (under -Werror it fails).
-            const auto* env_ptr = &env;
-            benchmark::DoNotOptimize(env_ptr);
-            return true;
-        });
+    sm.setParallelRegionDoneCallback([](const ::SCE::Mesh::MeshEnvelope &env) -> bool {
+        // DoNotOptimize on a non-const pointer — the const-ref overload
+        // is deprecated in google-benchmark (under -Werror it fails).
+        const auto *env_ptr = &env;
+        benchmark::DoNotOptimize(env_ptr);
+        return true;
+    });
     for (auto _ : state) {
         sm.sendParallelRegionDone(kParallelId, kRegionId, kDonedata);
     }
 }
+
 BENCHMARK(BM_SendParallelRegionDoneDirect);
 
 // ─── B. L2→L5 — `triggerParallelRegionRemoteSend` full chain ─────────
@@ -190,20 +206,20 @@ BENCHMARK(BM_SendParallelRegionDoneDirect);
 // → SM ctor closure body → sendParallelRegionDone() (which itself does
 // envelope construction + the parallel_region_done_callback_ std::function
 // dispatch). Two std::function hops in this path vs. one in (A).
-static void BM_TriggerParallelRegionRemoteSend(benchmark::State& state) {
+static void BM_TriggerParallelRegionRemoteSend(benchmark::State &state) {
     Wire21SenderSm sm;
-    sm.setParallelRegionDoneCallback(
-        [](const ::SCE::Mesh::MeshEnvelope& env) -> bool {
-            // DoNotOptimize on a non-const pointer — the const-ref overload
-            // is deprecated in google-benchmark (under -Werror it fails).
-            const auto* env_ptr = &env;
-            benchmark::DoNotOptimize(env_ptr);
-            return true;
-        });
+    sm.setParallelRegionDoneCallback([](const ::SCE::Mesh::MeshEnvelope &env) -> bool {
+        // DoNotOptimize on a non-const pointer — the const-ref overload
+        // is deprecated in google-benchmark (under -Werror it fails).
+        const auto *env_ptr = &env;
+        benchmark::DoNotOptimize(env_ptr);
+        return true;
+    });
     for (auto _ : state) {
         sm.triggerParallelRegionRemoteSend(kParallelId, kRegionId, kDonedata);
     }
 }
+
 BENCHMARK(BM_TriggerParallelRegionRemoteSend);
 
 BENCHMARK_MAIN();

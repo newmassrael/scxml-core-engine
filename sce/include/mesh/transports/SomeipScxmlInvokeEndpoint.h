@@ -130,32 +130,29 @@ namespace SCE::Mesh::Someip {
 /// (`SCE_SOMEIP_SERVICE_SELF`, `SCE_SOMEIP_SERVICE_PEER_<peer_name>`,
 /// `SCE_LIVENESS_SERVICE_*`, `SCE_MACHINE_LIVENESS_SERVICE_*`) in the
 /// generated `<machine>_transport.h`.
-inline constexpr vsomeip::service_t SCXML_INVOKE_SERVICE_BASE =
-    static_cast<vsomeip::service_t>(0x8100);
+inline constexpr vsomeip::service_t SCXML_INVOKE_SERVICE_BASE = static_cast<vsomeip::service_t>(0x8100);
 
 /// Inclusive ceiling of the §mesh-9.6 invoke sub-range under RFC F.X-1.
 /// `[SCXML_INVOKE_SERVICE_BASE, SCXML_INVOKE_SERVICE_CEILING]` is the
 /// allocator's output domain — 128 slots; the upper half of the
 /// SCE-reserved range is reserved for §mesh-16.4 region-liveness.
-inline constexpr vsomeip::service_t SCXML_INVOKE_SERVICE_CEILING =
-    static_cast<vsomeip::service_t>(0x817F);
+inline constexpr vsomeip::service_t SCXML_INVOKE_SERVICE_CEILING = static_cast<vsomeip::service_t>(0x817F);
 
 /// Single-instance MVP for §mesh-9.6 endpoints. Extending §mesh-9.6 to multi-
 /// instance pool requires lifting §mesh-14.4 Gap 7 plumbing into the helper
 /// here; not in this session (consumer-driven, no fixture demands it).
-inline constexpr vsomeip::instance_t SCXML_INVOKE_INSTANCE_ID =
-    static_cast<vsomeip::instance_t>(0x0001);
+inline constexpr vsomeip::instance_t SCXML_INVOKE_INSTANCE_ID = static_cast<vsomeip::instance_t>(0x0001);
 
 /// Per-wire method IDs. The low byte equals the SCE_MESH.md §mesh-9.6.2 wire
 /// number (14..20), matching `PatternKind` enum values for InvokeStart..
 /// InvokeError. Identity mapping keeps wire dumps human-readable.
-inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE14_INVOKE_START   = 0x0014;
+inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE14_INVOKE_START = 0x0014;
 inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE15_INVOKE_STARTED = 0x0015;
-inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE16_CHILD_EVENT    = 0x0016;
-inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE17_PARENT_EVENT   = 0x0017;
-inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE    = 0x0018;
-inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL  = 0x0019;
-inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR   = 0x0020;
+inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE16_CHILD_EVENT = 0x0016;
+inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE17_PARENT_EVENT = 0x0017;
+inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE = 0x0018;
+inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL = 0x0019;
+inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR = 0x0020;
 
 /// Maps a §mesh-9.6 wire pattern to its SOME/IP method ID. Returns 0 for any
 /// `PatternKind` outside the wire-14..20 range — codegen filters before
@@ -163,14 +160,22 @@ inline constexpr vsomeip::method_t SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR   = 0
 /// not an expected runtime branch.
 constexpr vsomeip::method_t methodForPattern(PatternKind pattern) noexcept {
     switch (pattern) {
-        case PatternKind::InvokeStart:   return SCXML_INVOKE_METHOD_WIRE14_INVOKE_START;
-        case PatternKind::InvokeStarted: return SCXML_INVOKE_METHOD_WIRE15_INVOKE_STARTED;
-        case PatternKind::ChildEvent:    return SCXML_INVOKE_METHOD_WIRE16_CHILD_EVENT;
-        case PatternKind::ParentEvent:   return SCXML_INVOKE_METHOD_WIRE17_PARENT_EVENT;
-        case PatternKind::InvokeDone:    return SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE;
-        case PatternKind::InvokeCancel:  return SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL;
-        case PatternKind::InvokeError:   return SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR;
-        default: return static_cast<vsomeip::method_t>(0);
+    case PatternKind::InvokeStart:
+        return SCXML_INVOKE_METHOD_WIRE14_INVOKE_START;
+    case PatternKind::InvokeStarted:
+        return SCXML_INVOKE_METHOD_WIRE15_INVOKE_STARTED;
+    case PatternKind::ChildEvent:
+        return SCXML_INVOKE_METHOD_WIRE16_CHILD_EVENT;
+    case PatternKind::ParentEvent:
+        return SCXML_INVOKE_METHOD_WIRE17_PARENT_EVENT;
+    case PatternKind::InvokeDone:
+        return SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE;
+    case PatternKind::InvokeCancel:
+        return SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL;
+    case PatternKind::InvokeError:
+        return SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR;
+    default:
+        return static_cast<vsomeip::method_t>(0);
     }
 }
 
@@ -181,16 +186,16 @@ constexpr vsomeip::method_t methodForPattern(PatternKind pattern) noexcept {
 // arithmetic identity. These static_asserts pin every pair in the
 // switch above so a future drift in either constant fails at compile time
 // instead of producing a silently mis-routed envelope.
-static_assert(methodForPattern(PatternKind::InvokeStart)   == SCXML_INVOKE_METHOD_WIRE14_INVOKE_START);
+static_assert(methodForPattern(PatternKind::InvokeStart) == SCXML_INVOKE_METHOD_WIRE14_INVOKE_START);
 static_assert(methodForPattern(PatternKind::InvokeStarted) == SCXML_INVOKE_METHOD_WIRE15_INVOKE_STARTED);
-static_assert(methodForPattern(PatternKind::ChildEvent)    == SCXML_INVOKE_METHOD_WIRE16_CHILD_EVENT);
-static_assert(methodForPattern(PatternKind::ParentEvent)   == SCXML_INVOKE_METHOD_WIRE17_PARENT_EVENT);
-static_assert(methodForPattern(PatternKind::InvokeDone)    == SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE);
-static_assert(methodForPattern(PatternKind::InvokeCancel)  == SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL);
-static_assert(methodForPattern(PatternKind::InvokeError)   == SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR);
+static_assert(methodForPattern(PatternKind::ChildEvent) == SCXML_INVOKE_METHOD_WIRE16_CHILD_EVENT);
+static_assert(methodForPattern(PatternKind::ParentEvent) == SCXML_INVOKE_METHOD_WIRE17_PARENT_EVENT);
+static_assert(methodForPattern(PatternKind::InvokeDone) == SCXML_INVOKE_METHOD_WIRE18_INVOKE_DONE);
+static_assert(methodForPattern(PatternKind::InvokeCancel) == SCXML_INVOKE_METHOD_WIRE19_INVOKE_CANCEL);
+static_assert(methodForPattern(PatternKind::InvokeError) == SCXML_INVOKE_METHOD_WIRE20_INVOKE_ERROR);
 // Out-of-range pattern returns 0 — defence-in-depth contract; codegen
 // filters before this call.
-static_assert(methodForPattern(PatternKind::FireForget)         == 0);
+static_assert(methodForPattern(PatternKind::FireForget) == 0);
 static_assert(methodForPattern(PatternKind::ParallelRegionDone) == 0);
 
 // ── ScxmlInvokeEndpoint ─────────────────────────────────────────────────────
@@ -200,7 +205,7 @@ static_assert(methodForPattern(PatternKind::ParallelRegionDone) == 0);
 /// engine; this layer does no policy interpretation. Mirrors
 /// `SCE::Mesh::CustomTcp::ReceiveCallback` (SCE_MESH.md §mesh-14.4
 /// callback-thread dispatch convention).
-using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope&)>;
+using ReceiveCallback = std::function<void(const SCE::Mesh::MeshEnvelope &)>;
 
 /// Decode-error callback signature: invoked on the vsomeip callback
 /// thread once per inbound message whose CBOR decode failed. Codegen
@@ -226,12 +231,13 @@ using DecodeErrorCallback = std::function<void()>;
 /// Free function (not a member) so the catch boundary is testable in
 /// isolation without requiring a fully-constructed `ScxmlInvokeEndpoint`
 /// or a vsomeip runtime — see the `invoke_receive_safely_*` unit tests.
-inline void invokeReceiveSafely(const ReceiveCallback& on_receive,
-                                const SCE::Mesh::MeshEnvelope& env) noexcept {
-    if (!on_receive) return;
+inline void invokeReceiveSafely(const ReceiveCallback &on_receive, const SCE::Mesh::MeshEnvelope &env) noexcept {
+    if (!on_receive) {
+        return;
+    }
     try {
         on_receive(env);
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         SCE_LOG_ERROR("§9.6 SOMEIP scxml-invoke handler exception: {}", ex.what());
     } catch (...) {
         SCE_LOG_ERROR("§9.6 SOMEIP scxml-invoke handler exception (unknown type)");
@@ -256,11 +262,13 @@ inline void invokeReceiveSafely(const ReceiveCallback& on_receive,
 /// so a §mesh-16.4 / §mesh-16.7 raise that throws under memory pressure (e.g.
 /// allocating the `CommunicationError` payload) does not propagate into
 /// vsomeip.
-inline void availabilityChangeSafely(const std::function<void()>& on_change) noexcept {
-    if (!on_change) return;
+inline void availabilityChangeSafely(const std::function<void()> &on_change) noexcept {
+    if (!on_change) {
+        return;
+    }
     try {
         on_change();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         SCE_LOG_ERROR("§16.4 SOMEIP region-liveness handler exception: {}", ex.what());
     } catch (...) {
         SCE_LOG_ERROR("§16.4 SOMEIP region-liveness handler exception (unknown type)");
@@ -308,17 +316,16 @@ public:
     /// before-request lifecycle: `start()` calls `offer_service(own_svc)`
     /// before `request_service(peer_svc)`, so own_svc is the primary
     /// identity established by this endpoint.
-    ScxmlInvokeEndpoint(std::shared_ptr<vsomeip::application> app,
-                        vsomeip::service_t own_svc,
+    ScxmlInvokeEndpoint(std::shared_ptr<vsomeip::application> app, vsomeip::service_t own_svc,
                         vsomeip::service_t peer_svc) noexcept
         : app_(std::move(app)), own_svc_(own_svc), peer_svc_(peer_svc) {}
 
     ~ScxmlInvokeEndpoint() = default;
 
-    ScxmlInvokeEndpoint(const ScxmlInvokeEndpoint&) = delete;
-    ScxmlInvokeEndpoint& operator=(const ScxmlInvokeEndpoint&) = delete;
-    ScxmlInvokeEndpoint(ScxmlInvokeEndpoint&&) = delete;
-    ScxmlInvokeEndpoint& operator=(ScxmlInvokeEndpoint&&) = delete;
+    ScxmlInvokeEndpoint(const ScxmlInvokeEndpoint &) = delete;
+    ScxmlInvokeEndpoint &operator=(const ScxmlInvokeEndpoint &) = delete;
+    ScxmlInvokeEndpoint(ScxmlInvokeEndpoint &&) = delete;
+    ScxmlInvokeEndpoint &operator=(ScxmlInvokeEndpoint &&) = delete;
 
     /// Install the receive handler. Invoked on a vsomeip callback thread
     /// per inbound (own_svc, INSTANCE_ID, METHOD_WIRE_*) message. Caller
@@ -343,9 +350,15 @@ public:
     /// no-op (started_ guards). Returns false if the application is null
     /// or no receive handler was installed (caller programming error).
     [[nodiscard]] bool start() {
-        if (!app_) return false;
-        if (!on_receive_) return false;
-        if (started_) return true;
+        if (!app_) {
+            return false;
+        }
+        if (!on_receive_) {
+            return false;
+        }
+        if (started_) {
+            return true;
+        }
 
         app_->offer_service(own_svc_, SCXML_INVOKE_INSTANCE_ID);
 
@@ -374,10 +387,14 @@ public:
     /// wire-14..20 range are rejected (return false) — codegen never
     /// hands such envelopes to this endpoint, so the rejection is a
     /// defence-in-depth fallback.
-    [[nodiscard]] bool send(const SCE::Mesh::MeshEnvelope& env) {
-        if (!app_ || !started_) return false;
+    [[nodiscard]] bool send(const SCE::Mesh::MeshEnvelope &env) {
+        if (!app_ || !started_) {
+            return false;
+        }
         const auto method = methodForPattern(env.pattern);
-        if (method == 0) return false;
+        if (method == 0) {
+            return false;
+        }
 
         auto request = vsomeip::runtime::get()->create_request();
         request->set_service(peer_svc_);
@@ -404,11 +421,12 @@ public:
         request->set_reliable(true);
 
         auto buf = SCE::Mesh::encodeEnvelope(env);
-        if (buf.empty()) return false;
+        if (buf.empty()) {
+            return false;
+        }
 
-        auto payload = vsomeip::runtime::get()->create_payload(
-            reinterpret_cast<const vsomeip::byte_t*>(buf.data()),
-            static_cast<uint32_t>(buf.size()));
+        auto payload = vsomeip::runtime::get()->create_payload(reinterpret_cast<const vsomeip::byte_t *>(buf.data()),
+                                                               static_cast<uint32_t>(buf.size()));
         request->set_payload(payload);
 
         app_->send(request);
@@ -418,21 +436,22 @@ public:
 private:
     void registerWire(vsomeip::method_t method) {
         app_->register_message_handler(
-            own_svc_, SCXML_INVOKE_INSTANCE_ID, method,
-            [this](const std::shared_ptr<vsomeip::message>& msg) {
+            own_svc_, SCXML_INVOKE_INSTANCE_ID, method, [this](const std::shared_ptr<vsomeip::message> &msg) {
                 auto payload = msg->get_payload();
-                if (!payload) return;
+                if (!payload) {
+                    return;
+                }
                 SCE::Mesh::MeshEnvelope env;
-                if (!SCE::Mesh::decodeEnvelope(
-                        payload->get_data(),
-                        static_cast<std::size_t>(payload->get_length()),
-                        env)) {
+                if (!SCE::Mesh::decodeEnvelope(payload->get_data(), static_cast<std::size_t>(payload->get_length()),
+                                               env)) {
                     // §mesh-16.7 row 4: malformed CBOR. Surface via
                     // on_decode_error_ before dropping so SCXML
                     // authors observe the catalog row instead of a
                     // silent drop. Callback may be unset in fixtures
                     // that explicitly opt out.
-                    if (on_decode_error_) on_decode_error_();
+                    if (on_decode_error_) {
+                        on_decode_error_();
+                    }
                     return;
                 }
                 // RFC F.X-2 D8: catch any exception at the vsomeip → SCE

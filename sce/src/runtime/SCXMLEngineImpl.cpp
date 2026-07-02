@@ -3,17 +3,17 @@
 
 #define SCXML_ENGINE_EXPORTS
 #include "SCXMLEngineImpl.h"
-#include "scripting/ScriptEngineProvider.h"  // For default constructor engine resolution
-#include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
-#include "scripting/ScriptResultUtils.h"
+#include "core/LogMacros.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/StateMachineFactory.h"
+#include "scripting/ScriptEngineProvider.h"  // For default constructor engine resolution
+#include "scripting/ScriptResultUtils.h"
 // W3C SCXML event infrastructure for <send>, <invoke>, delayed events
-#include "runtime/EventRaiserImpl.h"
-#include "events/EventSchedulerImpl.h"
 #include "events/EventDispatcherImpl.h"
+#include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
+#include "runtime/EventRaiserImpl.h"
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -51,7 +51,8 @@ Event::Event(const ::std::string &name, const ::std::string &type) : name_(name)
 // === SCXMLEngineImpl Implementation ===
 
 SCXMLEngineImpl::SCXMLEngineImpl()
-    : scriptEngine_(ScriptEngineProvider::getScriptEngine()), sessionManager_(ScriptEngineProvider::getSessionManager()) {}
+    : scriptEngine_(ScriptEngineProvider::getScriptEngine()),
+      sessionManager_(ScriptEngineProvider::getSessionManager()) {}
 
 SCXMLEngineImpl::SCXMLEngineImpl(IScriptEngine &scriptEngine, ISessionManager &sessionManager)
     : scriptEngine_(scriptEngine), sessionManager_(sessionManager) {}
@@ -256,17 +257,14 @@ bool SCXMLEngineImpl::loadSCXMLFromString(const std::string &scxmlContent, const
         eventRaiser_ = std::make_shared<EventRaiserImpl>();
 
         eventScheduler_ = std::make_shared<EventSchedulerImpl>(
-            [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target,
-               const std::string &sendId) -> bool {
-                SCE_LOG_DEBUG("SCXMLEngine: Executing scheduled event '{}' (sendId: '{}')",
-                              event.eventName, sendId);
+            [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target, const std::string &sendId) -> bool {
+                SCE_LOG_DEBUG("SCXMLEngine: Executing scheduled event '{}' (sendId: '{}')", event.eventName, sendId);
                 auto future = target->send(event);
                 try {
                     auto sendResult = future.get();
                     return sendResult.isSuccess;
                 } catch (const std::exception &e) {
-                    SCE_LOG_ERROR("SCXMLEngine: Failed to send scheduled event '{}': {}",
-                                  event.eventName, e.what());
+                    SCE_LOG_ERROR("SCXMLEngine: Failed to send scheduled event '{}': {}", event.eventName, e.what());
                     return false;
                 }
             });

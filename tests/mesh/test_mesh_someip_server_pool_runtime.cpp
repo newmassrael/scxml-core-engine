@@ -87,10 +87,9 @@ int run_test() {
     // below to mean what they claim.
     TestSenderEngine slot_a, slot_b;
     RouterT router({&slot_a, &slot_b});
-    MESH_TEST_REQUIRE(router.init(),
-                      "motor_pool router init failed (offer_service for "
-                      "instance 1 and 2 + register_message_handler must "
-                      "complete before client requests)");
+    MESH_TEST_REQUIRE(router.init(), "motor_pool router init failed (offer_service for "
+                                     "instance 1 and 2 + register_message_handler must "
+                                     "complete before client requests)");
 
     // Raw vsomeip client — bypassing the generated client path keeps the
     // fixture focused on the server-side dispatch chain. The client's
@@ -103,35 +102,34 @@ int run_test() {
     std::condition_variable availability_cv;
     bool inst1_avail = false;
     bool inst2_avail = false;
-    client->register_availability_handler(
-        gen::SOMEIP_SERVER_SERVICE, gen::SOMEIP_SERVER_INSTANCES[0],
-        [&](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
-            if (!is_available) return;
-            std::lock_guard<std::mutex> lock(availability_m);
-            inst1_avail = true;
-            availability_cv.notify_all();
-        });
-    client->register_availability_handler(
-        gen::SOMEIP_SERVER_SERVICE, gen::SOMEIP_SERVER_INSTANCES[1],
-        [&](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
-            if (!is_available) return;
-            std::lock_guard<std::mutex> lock(availability_m);
-            inst2_avail = true;
-            availability_cv.notify_all();
-        });
+    client->register_availability_handler(gen::SOMEIP_SERVER_SERVICE, gen::SOMEIP_SERVER_INSTANCES[0],
+                                          [&](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
+                                              if (!is_available) {
+                                                  return;
+                                              }
+                                              std::lock_guard<std::mutex> lock(availability_m);
+                                              inst1_avail = true;
+                                              availability_cv.notify_all();
+                                          });
+    client->register_availability_handler(gen::SOMEIP_SERVER_SERVICE, gen::SOMEIP_SERVER_INSTANCES[1],
+                                          [&](vsomeip::service_t, vsomeip::instance_t, bool is_available) {
+                                              if (!is_available) {
+                                                  return;
+                                              }
+                                              std::lock_guard<std::mutex> lock(availability_m);
+                                              inst2_avail = true;
+                                              availability_cv.notify_all();
+                                          });
 
-    client->request_service(gen::SOMEIP_SERVER_SERVICE,
-                            gen::SOMEIP_SERVER_INSTANCES[0]);
-    client->request_service(gen::SOMEIP_SERVER_SERVICE,
-                            gen::SOMEIP_SERVER_INSTANCES[1]);
+    client->request_service(gen::SOMEIP_SERVER_SERVICE, gen::SOMEIP_SERVER_INSTANCES[0]);
+    client->request_service(gen::SOMEIP_SERVER_SERVICE, gen::SOMEIP_SERVER_INSTANCES[1]);
 
     std::thread client_thread([&] { client->start(); });
 
     {
         std::unique_lock<std::mutex> lock(availability_m);
         MESH_TEST_REQUIRE(
-            availability_cv.wait_for(lock, std::chrono::seconds(10),
-                                     [&] { return inst1_avail && inst2_avail; }),
+            availability_cv.wait_for(lock, std::chrono::seconds(10), [&] { return inst1_avail && inst2_avail; }),
             "both motor_service instances did not become available within "
             "10s — server-side pool offer_service did not reach the routing "
             "manager for both instances (§14.4 init() loop regression)");
@@ -161,33 +159,27 @@ int run_test() {
 
     // ── §14.4 invariant 1: instance 1 dispatches to sessions_[0] only ──
     client->send(build_request(gen::SOMEIP_SERVER_INSTANCES[0]));
-    MESH_TEST_REQUIRE(
-        slot_a.received_.wait_for([](const auto& v) {
-            return !v.empty() && v.back().type == "service.request.compute";
-        }),
-        "sessions_[0] did not receive the instance-1 request — "
-        "session_index_for_instance(1) → 0 dispatch chain regression");
+    MESH_TEST_REQUIRE(slot_a.received_.wait_for(
+                          [](const auto &v) { return !v.empty() && v.back().type == "service.request.compute"; }),
+                      "sessions_[0] did not receive the instance-1 request — "
+                      "session_index_for_instance(1) → 0 dispatch chain regression");
     {
         std::lock_guard<std::mutex> lk(slot_b.received_.m);
-        MESH_TEST_REQUIRE(slot_b.received_.events.empty(),
-                          "sessions_[1] received instance-1 traffic — "
-                          "cross-session leak; handler lambda may have "
-                          "captured the wrong server_instance");
+        MESH_TEST_REQUIRE(slot_b.received_.events.empty(), "sessions_[1] received instance-1 traffic — "
+                                                           "cross-session leak; handler lambda may have "
+                                                           "captured the wrong server_instance");
     }
 
     // ── §14.4 invariant 2: instance 2 dispatches to sessions_[1] only ──
     client->send(build_request(gen::SOMEIP_SERVER_INSTANCES[1]));
-    MESH_TEST_REQUIRE(
-        slot_b.received_.wait_for([](const auto& v) {
-            return !v.empty() && v.back().type == "service.request.compute";
-        }),
-        "sessions_[1] did not receive the instance-2 request — "
-        "session_index_for_instance(2) → 1 dispatch chain regression");
+    MESH_TEST_REQUIRE(slot_b.received_.wait_for(
+                          [](const auto &v) { return !v.empty() && v.back().type == "service.request.compute"; }),
+                      "sessions_[1] did not receive the instance-2 request — "
+                      "session_index_for_instance(2) → 1 dispatch chain regression");
     {
         std::lock_guard<std::mutex> lk(slot_a.received_.m);
-        MESH_TEST_REQUIRE(slot_a.received_.events.size() == 1,
-                          "sessions_[0] received instance-2 traffic — "
-                          "cross-session leak");
+        MESH_TEST_REQUIRE(slot_a.received_.events.size() == 1, "sessions_[0] received instance-2 traffic — "
+                                                               "cross-session leak");
     }
 
     // ── §14.4 invariant 3: per-instance request stash is independent ──
@@ -216,7 +208,7 @@ int run_test() {
 int main() {
     try {
         return run_test();
-    } catch (const std::exception& ex) {
+    } catch (const std::exception &ex) {
         std::fprintf(stderr, "FAIL: uncaught exception: %s\n", ex.what());
         return 1;
     }

@@ -15,8 +15,8 @@
 // Parent owns (shm_unlink on exit); child attaches read/write.
 
 #include "brake_sm.h"
-#include "motor_sm.h"
 #include "brake_transport.h"
+#include "motor_sm.h"
 
 #include "mesh/ShmChannel.h"
 
@@ -43,8 +43,7 @@ int runReceiver() {
         // layout is template-parameterized; mismatch = incompatible
         // segment size). SCE_MESH.md Section 7.5.
         using Channel = SCE::Generated::brake::MotorShmChannel;
-        Channel channel(SCE::Generated::brake::SHM_CHANNEL_MOTOR,
-                        Channel::Mode::Open);
+        Channel channel(SCE::Generated::brake::SHM_CHANNEL_MOTOR, Channel::Mode::Open);
         if (!channel.valid()) {
             std::this_thread::sleep_for(POLL_INTERVAL);
             continue;
@@ -63,8 +62,8 @@ int runReceiver() {
                 if (motor.getCurrentState() == SCE::Generated::motor::State::Stopped) {
                     return 0;  // success
                 }
-                std::fprintf(stderr, "receiver: drained %zu but motor state=%d\n",
-                             drained, static_cast<int>(motor.getCurrentState()));
+                std::fprintf(stderr, "receiver: drained %zu but motor state=%d\n", drained,
+                             static_cast<int>(motor.getCurrentState()));
                 return 11;
             }
             std::this_thread::sleep_for(POLL_INTERVAL);

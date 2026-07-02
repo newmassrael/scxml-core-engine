@@ -16,12 +16,10 @@ namespace SCE::Test {
 // via NEEDS_SCRIPT_ENGINE). Lifetime: aliasing shared_ptr with a no-op
 // deleter — the engine is owned by ScriptEngineProvider, this view is
 // just the handle the generated emit sites require.
-template <typename SM>
-inline void inject_build_engine(SM &sm) {
+template <typename SM> inline void inject_build_engine(SM &sm) {
     if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
-        sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(
-            &SCE::ScriptEngineProvider::getScriptEngine(),
-            [](SCE::IScriptEngine *) {}));
+        sm.setScriptEngine(std::shared_ptr<SCE::IScriptEngine>(&SCE::ScriptEngineProvider::getScriptEngine(),
+                                                               [](SCE::IScriptEngine *) {}));
     }
 }
 

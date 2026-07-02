@@ -19,17 +19,17 @@
 #include "common/CompilerHints.h"
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
+#include "common/SCXMLConstants.h"
+#include "common/SendHelper.h"
+#include "common/SendSchedulingHelper.h"
+#include "core/AOTEventQueue.h"
+#include "core/EventMetadata.h"
+#include "core/EventProcessingAlgorithms.h"
+#include "core/EventQueueManager.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
 #include "core/LogMacros.h"
 #include "core/StatePolicyConcepts.h"
-#include "common/SCXMLConstants.h"
-#include "common/SendHelper.h"
-#include "common/SendSchedulingHelper.h"
-#include "core/EventMetadata.h"
-#include "core/EventProcessingAlgorithms.h"
-#include "core/AOTEventQueue.h"
-#include "core/EventQueueManager.h"
 #include "events/EventDescriptor.h"
 #include <any>
 #include <chrono>
@@ -66,11 +66,9 @@ struct HttpSendRequest {
 /// (`RpcReply`); for every other pattern the invokeId is ignored. This
 /// mirrors §scxml-6.4.1's auto-propagation of `_event.invokeid` from
 /// child-to-parent sends and extends the same semantics to mesh-rpc replies.
-using MeshSendCallback = std::function<bool(const std::string& target,
-                                            const std::string& eventName,
-                                            const std::string& data,
-                                            const std::string& sendId,
-                                            const std::string& invokeId)>;
+using MeshSendCallback =
+    std::function<bool(const std::string &target, const std::string &eventName, const std::string &data,
+                       const std::string &sendId, const std::string &invokeId)>;
 
 /// Mesh-rpc invoke callback signature: (target, fieldSuffix, invokeId, data) → accepted.
 ///
@@ -88,10 +86,8 @@ using MeshSendCallback = std::function<bool(const std::string& target,
 ///                    `done.invoke.<invokeId>` / `error.invoke.<invokeId>`
 /// * `data`         — JSON-encoded param payload (reserved `_mesh_*`
 ///                    names already stripped by the parser)
-using MeshInvokeCallback = std::function<bool(const std::string& target,
-                                              const std::string& fieldSuffix,
-                                              const std::string& invokeId,
-                                              const std::string& data)>;
+using MeshInvokeCallback = std::function<bool(const std::string &target, const std::string &fieldSuffix,
+                                              const std::string &invokeId, const std::string &data)>;
 
 /// Mesh-rpc cancel callback signature: (target, fieldSuffix) → accepted.
 ///
@@ -101,8 +97,7 @@ using MeshInvokeCallback = std::function<bool(const std::string& target,
 /// Takes `(target, fieldSuffix)` — the router's `active_invokes_` map
 /// translates the pair to the UUID of the latest registration so the
 /// correlation table and deadline scheduler can be cleared together.
-using MeshCancelCallback = std::function<bool(const std::string& target,
-                                              const std::string& fieldSuffix)>;
+using MeshCancelCallback = std::function<bool(const std::string &target, const std::string &fieldSuffix)>;
 
 /// SCXML remote-invoke start callback signature: (target, invokeId, data) → accepted.
 ///
@@ -121,9 +116,8 @@ using MeshCancelCallback = std::function<bool(const std::string& target,
 ///                      receive at session creation (reserved for the §mesh-9.6.2
 ///                      inner `{src, params, content, namelist, autoforward}`
 ///                      CBOR map once wires 15-19 activate consumers).
-using ScxmlInvokeStartCallback = std::function<bool(const std::string& target,
-                                                    const std::string& invokeIdString,
-                                                    const std::string& data)>;
+using ScxmlInvokeStartCallback =
+    std::function<bool(const std::string &target, const std::string &invokeIdString, const std::string &data)>;
 
 /// SCXML remote-invoke parent-event callback signature: wire-17 `ParentEvent`
 /// per SCE_MESH.md §mesh-9.6.2. Fires from the parent engine's autoforward path
@@ -140,20 +134,15 @@ using ScxmlInvokeStartCallback = std::function<bool(const std::string& target,
 /// * `sendId`         — original sendId (preserved per §mesh-9.6.3); empty when
 ///                      the forwarded event had no explicit sendid.
 using ScxmlInvokeParentEventCallback =
-    std::function<bool(const std::string& target,
-                       const std::string& invokeIdString,
-                       const std::string& eventName,
-                       const std::string& data,
-                       const std::string& sendId)>;
+    std::function<bool(const std::string &target, const std::string &invokeIdString, const std::string &eventName,
+                       const std::string &data, const std::string &sendId)>;
 
 /// SCXML remote-invoke cancel callback signature: wire-19 `InvokeCancel`
 /// per SCE_MESH.md §mesh-9.6.2. Fires when the parent exits the invoking state
 /// of a still-active remote invoke. Returns true when the TransportRouter
 /// accepted the wire-19 envelope for outbound dispatch; false when no
 /// callback is installed.
-using ScxmlInvokeCancelCallback =
-    std::function<bool(const std::string& target,
-                       const std::string& invokeIdString)>;
+using ScxmlInvokeCancelCallback = std::function<bool(const std::string &target, const std::string &invokeIdString)>;
 
 /**
  * @brief Template-based SCXML execution engine for static code generation
@@ -179,14 +168,18 @@ template <typename StatePolicy> class StaticExecutionEngine {
     // ── Compile-time verification of required member variables ──
     // StatePolicy is generated as a struct (public members), verified via requires expression.
 #if __cpp_concepts >= 202002L
-    static_assert(requires(StatePolicy p) { { p.lastTransitionIsInternal_ } -> std::convertible_to<bool>; },
-                  "StatePolicy must have member: mutable bool lastTransitionIsInternal_");
-    static_assert(requires(StatePolicy p) { { p.lastTransitionIsTargetless_ } -> std::convertible_to<bool>; },
-                  "StatePolicy must have member: mutable bool lastTransitionIsTargetless_");
-    static_assert(requires(StatePolicy p) {
-                      { p.lastTransitionSourceState_ } -> std::convertible_to<typename StatePolicy::State>;
-                  },
-                  "StatePolicy must have member: mutable State lastTransitionSourceState_");
+    static_assert(
+        requires(StatePolicy p) {
+            { p.lastTransitionIsInternal_ } -> std::convertible_to<bool>;
+        }, "StatePolicy must have member: mutable bool lastTransitionIsInternal_");
+    static_assert(
+        requires(StatePolicy p) {
+            { p.lastTransitionIsTargetless_ } -> std::convertible_to<bool>;
+        }, "StatePolicy must have member: mutable bool lastTransitionIsTargetless_");
+    static_assert(
+        requires(StatePolicy p) {
+            { p.lastTransitionSourceState_ } -> std::convertible_to<typename StatePolicy::State>;
+        }, "StatePolicy must have member: mutable State lastTransitionSourceState_");
 #endif
 
 public:
@@ -217,12 +210,12 @@ public:
     struct EventWithMetadata {
         Event event;
         std::string data;
-        std::string origin;      // §scxml-5.10.1: _event.origin
-        std::string sendId;      // §scxml-5.10.1: _event.sendid
-        std::string type;        // §scxml-5.10.1: _event.type
-        std::string originType;  // §scxml-5.10.1: _event.origintype
-        std::string invokeId;    // §scxml-5.10.1: _event.invokeid
-        std::string target;      // §scxml-C-2: HTTP POST target URL
+        std::string origin;                    // §scxml-5.10.1: _event.origin
+        std::string sendId;                    // §scxml-5.10.1: _event.sendid
+        std::string type;                      // §scxml-5.10.1: _event.type
+        std::string originType;                // §scxml-5.10.1: _event.origintype
+        std::string invokeId;                  // §scxml-5.10.1: _event.invokeid
+        std::string target;                    // §scxml-C-2: HTTP POST target URL
         std::optional<ScriptValue> typedData;  // §scxml-5.5: Engine-agnostic typed event data
         // NL→IR Item C1 Path A (EventSchema native lowering): typed
         // `_event.data` payload riding with the event through the queue — a
@@ -260,13 +253,15 @@ private:
      * @param preTransitionStates Active states before transition (for history recording)
      */
     // C++17-compatible named empty callable (replaces decltype([] {}))
-    struct NoOpAction { void operator()() const {} };
+    struct NoOpAction {
+        void operator()() const {}
+    };
 
     template <typename TransitionActionFn = NoOpAction>
     void handleHierarchicalTransition(State oldState, State newState, const std::vector<State> &preTransitionStates,
                                       TransitionActionFn &&transitionAction = {}) {
         SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Transition {} -> {}", static_cast<int>(oldState),
-                  static_cast<int>(newState));
+                      static_cast<int>(newState));
 
         // §scxml-3.13: Determine LCA based on transition type
         std::optional<State> lca;
@@ -285,17 +280,18 @@ private:
                 // §scxml-3.13: Internal transition to proper descendant in compound state - source is LCA (don't
                 // exit source)
                 lca = oldState;  // Source is the LCA - don't exit it
-                SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (proper descendant, compound source) "
-                          "- source {} is LCA",
-                          static_cast<int>(oldState));
+                SCE_LOG_DEBUG(
+                    "AOT handleHierarchicalTransition: Internal transition (proper descendant, compound source) "
+                    "- source {} is LCA",
+                    static_cast<int>(oldState));
             } else {
                 // §scxml-3.13: Non-compound source or non-descendant - behaves as external
                 // Use normal LCA calculation, then target==LCA check handles exit/re-entry
                 lca = SCE::Core::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (non-compound source or "
-                          "non-descendant) - behaves as "
-                          "external, LCA={}",
-                          lca.has_value() ? static_cast<int>(lca.value()) : -1);
+                              "non-descendant) - behaves as "
+                              "external, LCA={}",
+                              lca.has_value() ? static_cast<int>(lca.value()) : -1);
             }
         } else {
             // §scxml-3.13: External transition - find LCA normally
@@ -317,7 +313,7 @@ private:
 
             for (const auto &descendant : descendantsToExit) {
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Exit descendant {} of oldState {}",
-                          static_cast<int>(descendant), static_cast<int>(oldState));
+                              static_cast<int>(descendant), static_cast<int>(oldState));
                 executeOnExit(descendant, preTransitionStates);
             }
 
@@ -335,7 +331,7 @@ private:
                                   preTransitionStates.end();
             if (newState == lca.value() && isTargetActive) {
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Ancestor/self transition - exit target {} (W3C 3.10)",
-                          static_cast<int>(newState));
+                              static_cast<int>(newState));
                 executeOnExit(newState, preTransitionStates);
             }
 
@@ -349,8 +345,8 @@ private:
             // §scxml-3.10: If target == LCA (ancestor/self transition), enter full subtree from target
             if (newState == lca.value()) {
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Ancestor/self transition - enter target {} and its "
-                          "initial children (W3C 3.10)",
-                          static_cast<int>(newState));
+                              "initial children (W3C 3.10)",
+                              static_cast<int>(newState));
                 // Build full entry chain from root, then keep only states at/below LCA
                 auto fullChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
                 for (const auto &s : fullChain) {
@@ -375,7 +371,7 @@ private:
             if (!entryChain.empty()) {
                 currentState_ = entryChain.back();
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Updated currentState_ to {}",
-                          static_cast<int>(currentState_));
+                              static_cast<int>(currentState_));
             }
         } else {
             // No LCA (top-level transition) - exit all ancestors of oldState
@@ -408,7 +404,7 @@ private:
             if (!entryChain.empty()) {
                 currentState_ = entryChain.back();
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Updated currentState_ to {}",
-                          static_cast<int>(currentState_));
+                              static_cast<int>(currentState_));
             }
         }
     }
@@ -446,8 +442,7 @@ private:
      * @return true if a hierarchical state change occurred
      */
     template <typename ParallelHandlerFn, typename PostTransitionFn>
-    bool executeTransition(Event event, ParallelHandlerFn &&onParallelTransition,
-                           PostTransitionFn &&postTransition) {
+    bool executeTransition(Event event, ParallelHandlerFn &&onParallelTransition, PostTransitionFn &&postTransition) {
         State oldState = currentState_;
         std::vector<State> preTransitionStates = getActiveStates();
         if (!policy_.processTransition(currentState_, event, *this)) {
@@ -507,16 +502,17 @@ private:
     State currentState_;
     SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // §scxml-3.13: Internal event queue (high priority)
-    SCE::Core::EventQueueManager<EventWithMetadata>
-        externalQueue_;  // §scxml-3.13: External event queue (low priority)
+    SCE::Core::EventQueueManager<EventWithMetadata> externalQueue_;  // §scxml-3.13: External event queue (low priority)
     bool isRunning_ = false;
-    std::function<void()> completionCallback_;  // §scxml-6.4: Callback for done.invoke
+    std::function<void()> completionCallback_;                 // §scxml-6.4: Callback for done.invoke
     std::function<void(const HttpSendRequest &)> onHttpSend_;  // §scxml-C-2: BasicHTTP callback
-    MeshSendCallback onMeshSend_;      // SCE Mesh: cross-machine <send> callback
+    MeshSendCallback onMeshSend_;                              // SCE Mesh: cross-machine <send> callback
     MeshInvokeCallback onMeshInvoke_;  // SCE Mesh §mesh-9.5: <invoke type="sce:mesh-rpc"> entry hook
     MeshCancelCallback onMeshCancel_;  // SCE Mesh §mesh-9.5: mesh-rpc exit / cancel hook
-    ScxmlInvokeStartCallback onScxmlInvokeStart_;  // SCE Mesh §mesh-9.6.2 wire-14: <invoke type="scxml" src="#peer"> entry hook
-    ScxmlInvokeParentEventCallback onScxmlInvokeParentEvent_;  // SCE Mesh §mesh-9.6.2 wire-17: autoforward outbound hook
+    ScxmlInvokeStartCallback
+        onScxmlInvokeStart_;  // SCE Mesh §mesh-9.6.2 wire-14: <invoke type="scxml" src="#peer"> entry hook
+    ScxmlInvokeParentEventCallback
+        onScxmlInvokeParentEvent_;                   // SCE Mesh §mesh-9.6.2 wire-17: autoforward outbound hook
     ScxmlInvokeCancelCallback onScxmlInvokeCancel_;  // SCE Mesh §mesh-9.6.2 wire-19: remote invoke cancel hook
     // SCE Mesh §mesh-16.5 (rule 12) — `<parallel>` partition role hooks. Set
     // by the derived SM ctor when codegen materializes a Root or NonRoot
@@ -528,13 +524,11 @@ private:
     // builds leave both unset). Both take `string&` (not `string_view`)
     // so the closure's `[this]` capture can stash the values into
     // member containers without lifetime caveats.
-    std::function<void(const std::string& parallel_id, const std::string& region_id)>
-        onParallelRegionLocalComplete_;
-    std::function<void(const std::string& parallel_id, const std::string& region_id,
-                       const std::string& donedata)>
+    std::function<void(const std::string &parallel_id, const std::string &region_id)> onParallelRegionLocalComplete_;
+    std::function<void(const std::string &parallel_id, const std::string &region_id, const std::string &donedata)>
         onParallelRegionRemoteSend_;
-    std::string currentEventInvokeId_;  // SCE Mesh §mesh-9.5: invokeId of event being processed
-    SCE::PullScheduler<Event> scheduler_;       // §scxml-6.2: Delayed event scheduler
+    std::string currentEventInvokeId_;     // SCE Mesh §mesh-9.5: invokeId of event being processed
+    SCE::PullScheduler<Event> scheduler_;  // §scxml-6.2: Delayed event scheduler
 
     // §scxml-5.5 + 6.4.3: donedata payload stashed at top-level <final> entry.
     // Consumed by:
@@ -588,8 +582,7 @@ public:
         // to this delegation the simple (datamodel="null") codepath dropped
         // the target attribute, which meant mesh-declared targets silently
         // hit the external queue instead of the mesh callback.
-        EventWithMetadata meta(event, eventData, origin, "", "external",
-                               SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
+        EventWithMetadata meta(event, eventData, origin, "", "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE);
         meta.target = target;
         raiseExternal(meta);
     }
@@ -638,21 +631,17 @@ public:
             // field into the metadata struct was rejected: it would leak
             // invokeId through self-sends that should carry empty
             // _event.invokeid per §scxml-5.10.1.
-            const auto& invokeId = eventWithMetadata.invokeId.empty()
-                ? currentEventInvokeId_
-                : eventWithMetadata.invokeId;
-            if (performMeshSend(eventWithMetadata.target,
-                                policy_.getEventName(eventWithMetadata.event),
-                                eventWithMetadata.data,
-                                eventWithMetadata.sendId,
-                                invokeId)) {
+            const auto &invokeId =
+                eventWithMetadata.invokeId.empty() ? currentEventInvokeId_ : eventWithMetadata.invokeId;
+            if (performMeshSend(eventWithMetadata.target, policy_.getEventName(eventWithMetadata.event),
+                                eventWithMetadata.data, eventWithMetadata.sendId, invokeId)) {
                 return;  // handled by mesh transport — do not enqueue locally
             }
         }
 
         // Normal internal/external queue processing
         SCE_LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
-                  static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
+                      static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
 
         // §scxml-6.4: Autoforward - forward external events to children with autoforward=true
         // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
@@ -762,8 +751,8 @@ public:
             tick();
         }
 
-        SCE_LOG_DEBUG("AOT runUntilCompletion: Exiting loop, isInFinalState()={}, getCurrentState()={}", isInFinalState(),
-                  static_cast<int>(getCurrentState()));
+        SCE_LOG_DEBUG("AOT runUntilCompletion: Exiting loop, isInFinalState()={}, getCurrentState()={}",
+                      isInFinalState(), static_cast<int>(getCurrentState()));
         return true;  // Reached final state
     }
 
@@ -827,7 +816,7 @@ protected:
                                                                                                  eventWithMeta);
 
                 SCE_LOG_DEBUG("AOT processEventQueues: Processing internal event, currentState={}",
-                          static_cast<int>(currentState_));
+                              static_cast<int>(currentState_));
 
                 // §scxml-3.7: Stop processing events if TOP-LEVEL final state reached
                 // (Zero Duplication: same top-level-final predicate as tick() — encapsulated
@@ -835,13 +824,13 @@ protected:
                 // from mis-terminating the queue drain.)
                 if (isGlobalFinalState()) {
                     SCE_LOG_DEBUG("AOT processEventQueues: Top-level final state {} reached, stopping event processing",
-                              static_cast<int>(currentState_));
+                                  static_cast<int>(currentState_));
                     return false;
                 }
                 if (StatePolicy::isFinalState(currentState_)) {
                     SCE_LOG_DEBUG("AOT processEventQueues: Non-top-level final state {} (inside parallel/compound), "
-                              "continue processing done.state events",
-                              static_cast<int>(currentState_));
+                                  "continue processing done.state events",
+                                  static_cast<int>(currentState_));
                 }
 
                 executeTransition(event);
@@ -850,22 +839,20 @@ protected:
 
         // §scxml-3.13: Process external queue second (low priority)
         SCE::Core::AOTEventQueue<EventWithMetadata> externalAdapter(externalQueue_);
-        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
-            externalAdapter, [this](const EventWithMetadata &eventWithMeta) {
-                Event event = eventWithMeta.event;
-                currentEventInvokeId_ = eventWithMeta.invokeId;
-                SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
-                                                                                                 eventWithMeta);
+        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(externalAdapter, [this](const EventWithMetadata
+                                                                                                    &eventWithMeta) {
+            Event event = eventWithMeta.event;
+            currentEventInvokeId_ = eventWithMeta.invokeId;
+            SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_, eventWithMeta);
 
-                // §scxml-6.5: Execute finalize BEFORE processing child events
-                if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata,
-                                                     StaticExecutionEngine<StatePolicy>>) {
-                    policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
-                }
+            // §scxml-6.5: Execute finalize BEFORE processing child events
+            if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata, StaticExecutionEngine<StatePolicy>>) {
+                policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
+            }
 
-                executeTransition(event);
-                return true;  // Continue processing
-            });
+            executeTransition(event);
+            return true;  // Continue processing
+        });
     }
 
     /**
@@ -894,15 +881,15 @@ protected:
             State oldState = currentState_;
             std::vector<State> preTransitionStates = getActiveStates();  // §scxml-3.11: Capture before transition
             SCE_LOG_DEBUG("AOT checkEventlessTransitions: Iteration {}, currentState={}", iterations,
-                      static_cast<int>(currentState_));
+                          static_cast<int>(currentState_));
 
             // Call processTransition with default event for eventless transitions
             if (policy_.processTransition(currentState_, Event(), *this)) {
                 // §scxml-3.4: For parallel states, use actual transition source state
                 State actualSourceState = policy_.lastTransitionSourceState_;
                 SCE_LOG_DEBUG("AOT checkEventlessTransitions: Transition taken from {} to {} (actual source: {})",
-                          static_cast<int>(oldState), static_cast<int>(currentState_),
-                          static_cast<int>(actualSourceState));
+                              static_cast<int>(oldState), static_cast<int>(currentState_),
+                              static_cast<int>(actualSourceState));
                 if (oldState != currentState_) {
                     // W3C SCXML Appendix D: For parallel states, executeMicrostep already handled exit/transition/entry
                     // Only call handleHierarchicalTransition for non-parallel state machines
@@ -913,8 +900,9 @@ protected:
                         handleHierarchicalTransition(actualSourceState, currentState_, preTransitionStates,
                                                      [this] { policy_.executeTransitionActions(*this); });
                     } else {
-                        SCE_LOG_DEBUG("AOT checkEventlessTransitions: Parallel state machine - executeMicrostep handled "
-                                  "all transitions");
+                        SCE_LOG_DEBUG(
+                            "AOT checkEventlessTransitions: Parallel state machine - executeMicrostep handled "
+                            "all transitions");
                     }
 
                     // §scxml-3.13: Internal events are processed AFTER stable configuration is reached
@@ -932,9 +920,10 @@ protected:
 
         if (iterations >= MAX_ITERATIONS) {
             // Eventless transition loop detected
-            SCE_LOG_ERROR("StaticExecutionEngine: Eventless transition loop detected after {} iterations - stopping state "
-                      "machine",
-                      MAX_ITERATIONS);
+            SCE_LOG_ERROR(
+                "StaticExecutionEngine: Eventless transition loop detected after {} iterations - stopping state "
+                "machine",
+                MAX_ITERATIONS);
             stop();
         }
 
@@ -944,12 +933,13 @@ protected:
             auto activeStates = getActiveStates();
             for (const auto &state : activeStates) {
                 if (StatePolicy::isFinalState(state) && StatePolicy::getParent(state) == std::nullopt) {
-                    SCE_LOG_INFO("AOT checkEventlessTransitions: Reached top-level final state {}, halting processing (W3C "
-                             "SCXML 3.13)",
-                             static_cast<int>(state));
+                    SCE_LOG_INFO(
+                        "AOT checkEventlessTransitions: Reached top-level final state {}, halting processing (W3C "
+                        "SCXML 3.13)",
+                        static_cast<int>(state));
                     currentState_ = state;  // W3C SCXML: Update currentState_ for getCurrentState()
                     SCE_LOG_DEBUG("AOT checkEventlessTransitions: After update, getCurrentState() = {}",
-                              static_cast<int>(getCurrentState()));
+                                  static_cast<int>(getCurrentState()));
                     stop();
                     break;
                 }
@@ -958,8 +948,8 @@ protected:
             // For non-parallel states, check currentState_
             if (StatePolicy::isFinalState(currentState_) && StatePolicy::getParent(currentState_) == std::nullopt) {
                 SCE_LOG_INFO("AOT checkEventlessTransitions: Reached top-level final state {}, halting processing (W3C "
-                         "SCXML 3.13)",
-                         static_cast<int>(currentState_));
+                             "SCXML 3.13)",
+                             static_cast<int>(currentState_));
                 stop();
             }
         }
@@ -1031,7 +1021,8 @@ public:
         // `<parallel>` is excluded by `isGlobalFinalState()` because the machine as a
         // whole is still running while sibling regions are active.
         if (isGlobalFinalState() && completionCallback_) {
-            SCE_LOG_DEBUG("AOT initialize: Reached top-level final state during initialization, invoking completion callback");
+            SCE_LOG_DEBUG(
+                "AOT initialize: Reached top-level final state during initialization, invoking completion callback");
             // §scxml-3.9: Execute onexit actions for final state before notifying parent
             std::vector<State> activeStates = getActiveStates();
             executeOnExit(currentState_, activeStates);
@@ -1074,7 +1065,7 @@ public:
      * `pendingEventInvokeId_` field (`datamodel="null"` machines that never
      * touch `_event.invokeid`), keeping non-metadata policies lean.
      */
-    [[nodiscard]] const std::string& currentEventInvokeId() const {
+    [[nodiscard]] const std::string &currentEventInvokeId() const {
         return currentEventInvokeId_;
     }
 
@@ -1090,7 +1081,9 @@ public:
      * @param event External event to process
      */
     void processEvent(Event event) {
-        if (!isRunning_) return;
+        if (!isRunning_) {
+            return;
+        }
         processEventImpl(event);
     }
 
@@ -1104,7 +1097,9 @@ public:
      * @param metadata Event metadata (originSessionId, etc.)
      */
     void processEvent(Event event, const SCE::Core::EventMetadata &metadata) {
-        if (!isRunning_) return;
+        if (!isRunning_) {
+            return;
+        }
         policy_.currentEventMetadata_ = metadata;
         processEventImpl(event);
     }
@@ -1138,7 +1133,7 @@ public:
         // §scxml-3.11: For non-parallel, use shared HistoryHelper for full active hierarchy (Zero Duplication
         // Principle) Returns [currentState, parent, grandparent, ...] for proper history recording
         return ::SCE::Core::HistoryHelper::getActiveHierarchy(currentState_,
-                                                        [](State s) { return StatePolicy::getParent(s); });
+                                                              [](State s) { return StatePolicy::getParent(s); });
     }
 
     /**
@@ -1178,8 +1173,7 @@ public:
      * @return true if `currentState_` is a top-level `<final>`
      */
     bool isGlobalFinalState() const {
-        return StatePolicy::isFinalState(currentState_) &&
-               !StatePolicy::getParent(currentState_).has_value();
+        return StatePolicy::isFinalState(currentState_) && !StatePolicy::getParent(currentState_).has_value();
     }
 
     /**
@@ -1204,14 +1198,16 @@ public:
     /// top-level `<final>`'s `<donedata>`. Empty when no donedata was authored
     /// or the machine has not reached a top-level final yet. Consumed by both
     /// local invoke completion and SCE Mesh §mesh-9.6.2 wire-18.
-    const std::string& donedataAtFinal() const { return pendingDonedataAtFinal_; }
+    const std::string &donedataAtFinal() const {
+        return pendingDonedataAtFinal_;
+    }
 
     /// §scxml-5.5 + B.2: Structured donedata (engine-agnostic ScriptValue)
     /// paired with `donedataAtFinal()`. `setPolicyMetadata` consumes this to
     /// populate `_event.data` without a JSON round-trip when the child is
     /// local; on the wire-18 path the parent's `setPolicyMetadata` re-parses
     /// `data` via `EventDataHelper::jsonStringToScriptValue`.
-    const std::optional<ScriptValue>& typedDonedataAtFinal() const {
+    const std::optional<ScriptValue> &typedDonedataAtFinal() const {
         return pendingTypedDonedataAtFinal_;
     }
 
@@ -1344,10 +1340,8 @@ public:
      * Delegates to onHttpSend_ callback set by test harness or application.
      * Matches Kotlin StateMachineEngine.performHttpSend() pattern.
      */
-    void performHttpSend(const std::string &target, const std::string &eventName,
-                         const std::string &content,
-                         const std::map<std::string, std::vector<std::string>> &params,
-                         const std::string &sendId) {
+    void performHttpSend(const std::string &target, const std::string &eventName, const std::string &content,
+                         const std::map<std::string, std::vector<std::string>> &params, const std::string &sendId) {
         if (onHttpSend_) {
             onHttpSend_(HttpSendRequest{target, eventName, content, params, sendId});
         }
@@ -1377,9 +1371,8 @@ public:
      *         false if no callback is wired or it declined the target
      *         (caller should fall back to the external queue).
      */
-    bool performMeshSend(const std::string& target, const std::string& eventName,
-                         const std::string& data, const std::string& sendId,
-                         const std::string& invokeId) {
+    bool performMeshSend(const std::string &target, const std::string &eventName, const std::string &data,
+                         const std::string &sendId, const std::string &invokeId) {
         if (onMeshSend_) {
             return onMeshSend_(target, eventName, data, sendId, invokeId);
         }
@@ -1408,8 +1401,8 @@ public:
      * raises `error.execution` per §scxml-6.4.1 graceful-degrade
      * semantics.
      */
-    bool performMeshInvoke(const std::string& target, const std::string& fieldSuffix,
-                           const std::string& invokeId, const std::string& data) {
+    bool performMeshInvoke(const std::string &target, const std::string &fieldSuffix, const std::string &invokeId,
+                           const std::string &data) {
         if (onMeshInvoke_) {
             return onMeshInvoke_(target, fieldSuffix, invokeId, data);
         }
@@ -1434,7 +1427,7 @@ public:
      * installed or there is no active invoke to cancel — both cases are
      * benign (nothing to clean up).
      */
-    bool performMeshCancel(const std::string& target, const std::string& fieldSuffix) {
+    bool performMeshCancel(const std::string &target, const std::string &fieldSuffix) {
         if (onMeshCancel_) {
             return onMeshCancel_(target, fieldSuffix);
         }
@@ -1464,9 +1457,8 @@ public:
      * `error.execution` raise carrying SESSION_F_NOT_IMPLEMENTED per
      * SCE_MESH.md §mesh-9.6 line 1396.
      */
-    bool performScxmlInvokeStart(const std::string& target,
-                                 const std::string& invokeIdString,
-                                 const std::string& data) {
+    bool performScxmlInvokeStart(const std::string &target, const std::string &invokeIdString,
+                                 const std::string &data) {
         if (onScxmlInvokeStart_) {
             return onScxmlInvokeStart_(target, invokeIdString, data);
         }
@@ -1493,11 +1485,9 @@ public:
      * session. Returns false when no callback is installed (authoring error
      * — caller should log but not crash).
      */
-    bool performScxmlInvokeParentEvent(const std::string& target,
-                                       const std::string& invokeIdString,
-                                       const std::string& eventName,
-                                       const std::string& data,
-                                       const std::string& sendId) {
+    bool performScxmlInvokeParentEvent(const std::string &target, const std::string &invokeIdString,
+                                       const std::string &eventName, const std::string &data,
+                                       const std::string &sendId) {
         if (onScxmlInvokeParentEvent_) {
             return onScxmlInvokeParentEvent_(target, invokeIdString, eventName, data, sendId);
         }
@@ -1525,8 +1515,7 @@ public:
      * Both cases are benign — the parent's `activeInvokes_` entry is cleared
      * regardless.
      */
-    bool performScxmlInvokeCancel(const std::string& target,
-                                  const std::string& invokeIdString) {
+    bool performScxmlInvokeCancel(const std::string &target, const std::string &invokeIdString) {
         if (onScxmlInvokeCancel_) {
             return onScxmlInvokeCancel_(target, invokeIdString);
         }
@@ -1542,8 +1531,8 @@ public:
      * member of the SM, which fires `done.state.<parallel>` on threshold.
      * Applications do not call this directly — the SM ctor wires it.
      */
-    void setParallelRegionLocalCompleteCallback(
-        std::function<void(const std::string&, const std::string&)> callback) {
+    void
+    setParallelRegionLocalCompleteCallback(std::function<void(const std::string &, const std::string &)> callback) {
         onParallelRegionLocalComplete_ = std::move(callback);
     }
 
@@ -1554,8 +1543,7 @@ public:
      * when a region hosted in this partition enters its `<final>`. No-op when
      * no callback is installed (single-partition or non-Root builds).
      */
-    void triggerParallelRegionLocalComplete(const std::string& parallel_id,
-                                            const std::string& region_id) {
+    void triggerParallelRegionLocalComplete(const std::string &parallel_id, const std::string &region_id) {
         if (onParallelRegionLocalComplete_) {
             onParallelRegionLocalComplete_(parallel_id, region_id);
         }
@@ -1572,8 +1560,7 @@ public:
      * call this directly — the SM ctor wires it.
      */
     void setParallelRegionRemoteSendCallback(
-        std::function<void(const std::string&, const std::string&, const std::string&)>
-            callback) {
+        std::function<void(const std::string &, const std::string &, const std::string &)> callback) {
         onParallelRegionRemoteSend_ = std::move(callback);
     }
 
@@ -1586,9 +1573,8 @@ public:
      * installed by the TransportRouter — a missing wire-up must surface as a
      * fatal exception rather than a silent drop (SCE_MESH.md §mesh-14 L2844).
      */
-    void triggerParallelRegionRemoteSend(const std::string& parallel_id,
-                                         const std::string& region_id,
-                                         const std::string& donedata) {
+    void triggerParallelRegionRemoteSend(const std::string &parallel_id, const std::string &region_id,
+                                         const std::string &donedata) {
         if (onParallelRegionRemoteSend_) {
             onParallelRegionRemoteSend_(parallel_id, region_id, donedata);
         }

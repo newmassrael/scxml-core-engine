@@ -4,8 +4,8 @@
 #pragma once
 
 #include "AotTestBase.h"
-#include "core/LogMacros.h"
 #include "AotTestRegistry.h"
+#include "core/LogMacros.h"
 #include "scripting/ScriptEngineProvider.h"
 #include <memory>
 #include <thread>
@@ -41,9 +41,8 @@ public:
         // Aliasing constructor + no-op deleter — engine lifetime is owned by
         // ScriptEngineProvider singleton, shared_ptr is a non-owning view.
         if constexpr (SM::PolicyType::NEEDS_SCRIPT_ENGINE) {
-            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(
-                &::SCE::ScriptEngineProvider::getScriptEngine(),
-                [](::SCE::IScriptEngine*){}));
+            sm.setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine>(&::SCE::ScriptEngineProvider::getScriptEngine(),
+                                                                       [](::SCE::IScriptEngine *) {}));
         }
         sm.initialize();
         auto finalState = sm.getCurrentState();
@@ -61,7 +60,7 @@ public:
         }
 
         SCE_LOG_DEBUG("AOT Test {}: isInFinalState={}, currentState={}, isPass={}", TEST_ID, isFinished,
-                  static_cast<int>(finalState), isPass);
+                      static_cast<int>(finalState), isPass);
         return isFinished && isPass;
     }
 

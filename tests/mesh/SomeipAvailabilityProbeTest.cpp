@@ -39,13 +39,11 @@ class MockApp {
 public:
     bool fire_initial_callback = false;
     bool current_available = false;
-    std::vector<std::tuple<vsomeip::service_t, vsomeip::instance_t, bool>>
-        handler_invocations;
+    std::vector<std::tuple<vsomeip::service_t, vsomeip::instance_t, bool>> handler_invocations;
 
     // Duck-typed surface: only the two methods the probe calls.
-    void register_availability_handler(
-        vsomeip::service_t service, vsomeip::instance_t instance,
-        const vsomeip::availability_handler_t& handler) {
+    void register_availability_handler(vsomeip::service_t service, vsomeip::instance_t instance,
+                                       const vsomeip::availability_handler_t &handler) {
         if (fire_initial_callback) {
             handler(service, instance, current_available);
         }
@@ -56,8 +54,7 @@ public:
     }
 
     vsomeip::availability_handler_t make_capturing_handler() {
-        return [this](vsomeip::service_t s, vsomeip::instance_t i,
-                      bool avail) {
+        return [this](vsomeip::service_t s, vsomeip::instance_t i, bool avail) {
             handler_invocations.emplace_back(s, i, avail);
         };
     }
@@ -68,61 +65,52 @@ constexpr vsomeip::instance_t kTestInstance = 0x5678;
 
 }  // namespace
 
-TEST(SomeipAvailabilityProbeTest,
-     HandlerInvokedExactlyOnceWhenVsomeipSkipsInitialCallback) {
+TEST(SomeipAvailabilityProbeTest, HandlerInvokedExactlyOnceWhenVsomeipSkipsInitialCallback) {
     auto app = std::make_shared<MockApp>();
     app->fire_initial_callback = false;
     app->current_available = true;
 
-    SCE::Mesh::ThirdParty::probeAndDispatch(
-        app, kTestService, kTestInstance, app->make_capturing_handler());
+    SCE::Mesh::ThirdParty::probeAndDispatch(app, kTestService, kTestInstance, app->make_capturing_handler());
 
-    ASSERT_EQ(app->handler_invocations.size(), 1u)
-        << "probe path must invoke handler exactly once when vsomeip "
-           "skips the initial-edge callback";
-    const auto& [svc, inst, avail] = app->handler_invocations[0];
+    ASSERT_EQ(app->handler_invocations.size(), 1u) << "probe path must invoke handler exactly once when vsomeip "
+                                                      "skips the initial-edge callback";
+    const auto &[svc, inst, avail] = app->handler_invocations[0];
     EXPECT_EQ(svc, kTestService);
     EXPECT_EQ(inst, kTestInstance);
     EXPECT_TRUE(avail) << "synthesized invocation must carry the current "
-                         "is_available() state";
+                          "is_available() state";
 }
 
-TEST(SomeipAvailabilityProbeTest,
-     HandlerInvokedTwiceWhenVsomeipFiresInitialCallback) {
+TEST(SomeipAvailabilityProbeTest, HandlerInvokedTwiceWhenVsomeipFiresInitialCallback) {
     auto app = std::make_shared<MockApp>();
     app->fire_initial_callback = true;
     app->current_available = false;
 
-    SCE::Mesh::ThirdParty::probeAndDispatch(
-        app, kTestService, kTestInstance, app->make_capturing_handler());
+    SCE::Mesh::ThirdParty::probeAndDispatch(app, kTestService, kTestInstance, app->make_capturing_handler());
 
-    ASSERT_EQ(app->handler_invocations.size(), 2u)
-        << "callback path + probe path produce two invocations; "
-           "caller's handler must be idempotent";
-    for (const auto& [svc, inst, avail] : app->handler_invocations) {
+    ASSERT_EQ(app->handler_invocations.size(), 2u) << "callback path + probe path produce two invocations; "
+                                                      "caller's handler must be idempotent";
+    for (const auto &[svc, inst, avail] : app->handler_invocations) {
         EXPECT_EQ(svc, kTestService);
         EXPECT_EQ(inst, kTestInstance);
         EXPECT_FALSE(avail);
     }
 }
 
-TEST(SomeipAvailabilityProbeTest,
-     SynthesizedInvocationCarriesCurrentIsAvailableValue) {
+TEST(SomeipAvailabilityProbeTest, SynthesizedInvocationCarriesCurrentIsAvailableValue) {
     auto app = std::make_shared<MockApp>();
     app->fire_initial_callback = false;
     app->current_available = false;
     bool observed = true;
     SCE::Mesh::ThirdParty::probeAndDispatch(
         app, kTestService, kTestInstance,
-        [&observed](vsomeip::service_t /*svc*/, vsomeip::instance_t /*inst*/,
-                    bool a) { observed = a; });
+        [&observed](vsomeip::service_t /*svc*/, vsomeip::instance_t /*inst*/, bool a) { observed = a; });
     EXPECT_FALSE(observed);
 
     app->current_available = true;
     observed = false;
     SCE::Mesh::ThirdParty::probeAndDispatch(
         app, kTestService, kTestInstance,
-        [&observed](vsomeip::service_t /*svc*/, vsomeip::instance_t /*inst*/,
-                    bool a) { observed = a; });
+        [&observed](vsomeip::service_t /*svc*/, vsomeip::instance_t /*inst*/, bool a) { observed = a; });
     EXPECT_TRUE(observed);
 }

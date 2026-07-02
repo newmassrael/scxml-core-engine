@@ -288,17 +288,15 @@ private:
             }
 
             // Wait for next timer, new timer registration, or stop signal
-            cvTimer_.wait_for(lock, waitTime, [this]() {
-                return stopRequested_.load() || timerChanged_.load();
-            });
+            cvTimer_.wait_for(lock, waitTime, [this]() { return stopRequested_.load() || timerChanged_.load(); });
             timerChanged_.store(false);
         }
     }
 
-    std::thread timerThread_;              ///< Timer polling thread
-    std::condition_variable cvTimer_;      ///< Notifies timer thread
+    std::thread timerThread_;                ///< Timer polling thread
+    std::condition_variable cvTimer_;        ///< Notifies timer thread
     std::atomic<bool> timerChanged_{false};  ///< Signals new timer registration to wake wait_for predicate
-    std::thread::id eventLoopThreadId_;    ///< Event loop thread ID
+    std::thread::id eventLoopThreadId_;      ///< Event loop thread ID
 };
 
 }  // namespace SCE::Dispatchers

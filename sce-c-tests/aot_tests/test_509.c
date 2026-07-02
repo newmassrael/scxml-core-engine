@@ -17,8 +17,7 @@ int main(void) {
 
     int rc = test509_in_state(&sm, TEST509_STATE_PASS) ? 0 : 1;
     if (rc != 0) {
-        fprintf(stderr, "test509: FAIL — active = 0x%08x\n",
-                (unsigned)test509_active_states(&sm));
+        fprintf(stderr, "test509: FAIL — active = 0x%08x\n", (unsigned)test509_active_states(&sm));
     }
     test509_destroy(&sm);
     return rc;

@@ -25,7 +25,7 @@ struct CapturedEvents {
     std::condition_variable cv;
     std::vector<SCE::Mesh::MeshEnvelope> envelopes;
 
-    void push(const SCE::Mesh::MeshEnvelope& env) {
+    void push(const SCE::Mesh::MeshEnvelope &env) {
         {
             std::lock_guard<std::mutex> lock(m);
             envelopes.push_back(env);
@@ -33,28 +33,22 @@ struct CapturedEvents {
         cv.notify_all();
     }
 
-    template <typename Pred>
-    bool wait_for(Pred&& predicate,
-                  std::chrono::seconds timeout = kDefaultTimeout) {
+    template <typename Pred> bool wait_for(Pred &&predicate, std::chrono::seconds timeout = kDefaultTimeout) {
         std::unique_lock<std::mutex> lock(m);
-        return cv.wait_for(lock, timeout,
-                           [&] { return predicate(envelopes); });
+        return cv.wait_for(lock, timeout, [&] { return predicate(envelopes); });
     }
 };
 
 // ── Zenoh peer-mode session factory ──────────────────────────────────
 
-inline zenoh::Session open_peer(const std::string& connect,
-                                const std::string& listen) {
+inline zenoh::Session open_peer(const std::string &connect, const std::string &listen) {
     auto config = zenoh::Config::create_default();
     config.insert_json5("mode", "\"peer\"");
     if (!connect.empty()) {
-        config.insert_json5("connect/endpoints",
-                            std::string("[\"") + connect + "\"]");
+        config.insert_json5("connect/endpoints", std::string("[\"") + connect + "\"]");
     }
     if (!listen.empty()) {
-        config.insert_json5("listen/endpoints",
-                            std::string("[\"") + listen + "\"]");
+        config.insert_json5("listen/endpoints", std::string("[\"") + listen + "\"]");
     }
     config.insert_json5("scouting/multicast/enabled", "false");
     return zenoh::Session::open(std::move(config));
@@ -99,12 +93,9 @@ constexpr auto kHandshakeTimeout = std::chrono::seconds(2);
 // helper remains correct but is retained only for pub/sub routes whose
 // subscriber is declared on-demand inside `send_zenoh` (no init-time
 // matchable resource exists to probe).
-inline void wait_for_peer_ready(
-        zenoh::Session& local_session,
-        zenoh::Session& peer_session,
-        std::chrono::milliseconds timeout = kHandshakeTimeout) {
-    const std::string key = "sce/test/handshake/" +
-        SCE::uuid::to_string(SCE::uuid::v7());
+inline void wait_for_peer_ready(zenoh::Session &local_session, zenoh::Session &peer_session,
+                                std::chrono::milliseconds timeout = kHandshakeTimeout) {
+    const std::string key = "sce/test/handshake/" + SCE::uuid::to_string(SCE::uuid::v7());
 
     std::mutex m;
     std::condition_variable cv;
@@ -115,23 +106,21 @@ inline void wait_for_peer_ready(
 
     auto sub = local_session.liveliness_declare_subscriber(
         zenoh::KeyExpr(key),
-        [&](const zenoh::Sample& sample) {
+        [&](const zenoh::Sample &sample) {
             if (sample.get_kind() == ::Z_SAMPLE_KIND_PUT) {
                 std::lock_guard<std::mutex> lk(m);
                 seen = true;
                 cv.notify_all();
             }
         },
-        []() noexcept {},
-        std::move(sub_opts));
+        []() noexcept {}, std::move(sub_opts));
 
     auto token = peer_session.liveliness_declare_token(zenoh::KeyExpr(key));
 
     std::unique_lock<std::mutex> lk(m);
     if (!cv.wait_for(lk, timeout, [&] { return seen; })) {
-        throw std::runtime_error(
-            "wait_for_peer_ready: zenoh liveliness token not observed "
-            "within timeout — peer-mesh routing did not converge");
+        throw std::runtime_error("wait_for_peer_ready: zenoh liveliness token not observed "
+                                 "within timeout — peer-mesh routing did not converge");
     }
 }
 
@@ -161,10 +150,8 @@ inline void wait_for_peer_ready(
 // raw probe peer that shares the same listen endpoint — zenoh peer
 // mesh routing makes one peer's matching status representative of any
 // co-located peer's.
-inline void wait_for_queryable(
-        zenoh::Session& session,
-        std::string_view key,
-        std::chrono::milliseconds timeout = kHandshakeTimeout) {
+inline void wait_for_queryable(zenoh::Session &session, std::string_view key,
+                               std::chrono::milliseconds timeout = kHandshakeTimeout) {
     auto querier = session.declare_querier(zenoh::KeyExpr(std::string(key)));
 
     std::mutex m;
@@ -172,8 +159,10 @@ inline void wait_for_queryable(
     bool seen = false;
 
     auto listener = querier.declare_matching_listener(
-        [&](const zenoh::MatchingStatus& status) {
-            if (!status.matching) return;
+        [&](const zenoh::MatchingStatus &status) {
+            if (!status.matching) {
+                return;
+            }
             std::lock_guard<std::mutex> lk(m);
             seen = true;
             cv.notify_all();
@@ -183,13 +172,14 @@ inline void wait_for_queryable(
     // Fast path: matching may already be live. The listener above only
     // fires on subsequent transitions, so read status directly to cover
     // queryables that were declared before this helper was called.
-    if (querier.get_matching_status().matching) return;
+    if (querier.get_matching_status().matching) {
+        return;
+    }
 
     std::unique_lock<std::mutex> lk(m);
     if (!cv.wait_for(lk, timeout, [&] { return seen; })) {
-        throw std::runtime_error(
-            std::string("wait_for_queryable: no matching queryable for '") +
-            std::string(key) + "' within timeout");
+        throw std::runtime_error(std::string("wait_for_queryable: no matching queryable for '") + std::string(key) +
+                                 "' within timeout");
     }
 }
 

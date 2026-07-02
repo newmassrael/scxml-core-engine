@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "runtime/ActionExecutorImpl.h"
-#include "core/LogMacros.h"
 #include "actions/AssignAction.h"
 #include "actions/ForeachAction.h"
 #include "actions/IfAction.h"
@@ -10,6 +9,7 @@
 #include "actions/RaiseAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
+#include "core/LogMacros.h"
 #include "mocks/MockEventRaiser.h"
 #include "scripting/JSEngine.h"
 #include <atomic>

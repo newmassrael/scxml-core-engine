@@ -9,9 +9,9 @@
 // Mirrors the Rust unit tests in
 // `sce-build/src/xinclude.rs::tests` for parity coverage.
 
-#include "parsing/XIncludeExpander.h"
 #include "parsing/PositionMap.h"
 #include "parsing/PugiXMLParser.h"
+#include "parsing/XIncludeExpander.h"
 
 #include <pugixml.hpp>
 
@@ -43,8 +43,7 @@ public:
     TempTree() {
         const auto base = std::filesystem::temp_directory_path();
         for (int i = 0; i < 64; ++i) {
-            auto candidate = base / ("sce_xinclude_test_" + std::to_string(::rand()) +
-                                    "_" + std::to_string(i));
+            auto candidate = base / ("sce_xinclude_test_" + std::to_string(::rand()) + "_" + std::to_string(i));
             std::error_code ec;
             if (std::filesystem::create_directory(candidate, ec)) {
                 root_ = candidate;
@@ -53,21 +52,25 @@ public:
         }
         throw std::runtime_error("TempTree: cannot create unique temp directory");
     }
+
     ~TempTree() {
         std::error_code ec;
         std::filesystem::remove_all(root_, ec);
     }
+
     TempTree(const TempTree &) = delete;
     TempTree &operator=(const TempTree &) = delete;
 
-    std::filesystem::path write(const std::string &name,
-                                const std::string &content) const {
+    std::filesystem::path write(const std::string &name, const std::string &content) const {
         const auto path = root_ / name;
         std::ofstream ofs(path, std::ios::binary);
         ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
         return path;
     }
-    const std::filesystem::path &root() const noexcept { return root_; }
+
+    const std::filesystem::path &root() const noexcept {
+        return root_;
+    }
 
 private:
     std::filesystem::path root_;
@@ -99,21 +102,17 @@ TEST(XIncludeExpander, PassthroughWhenIncludeSubstringButNoElement) {
 // ── Single include: fragment children replace the include node ──────
 TEST(XIncludeExpander, ExpandsSingleInclude) {
     TempTree tmp;
-    tmp.write("frag.xml",
-              R"(<fragment><state id="s1"/><state id="s2"/></fragment>)");
+    tmp.write("frag.xml", R"(<fragment><state id="s1"/><state id="s2"/></fragment>)");
     const std::string mainSrc =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.xml"/></root>)";
     const auto mainPath = tmp.write("main.xml", mainSrc);
 
-    const auto result = expandStringX(mainSrc, mainPath.string(),
-                                       tmp.root().string(), {});
+    const auto result = expandStringX(mainSrc, mainPath.string(), tmp.root().string(), {});
 
     // Children of <fragment> spliced in; <fragment> wrapper dropped;
     // xi:include element gone.
-    EXPECT_NE(result.expanded_text.find(R"(<state id="s1"/>)"),
-              std::string::npos);
-    EXPECT_NE(result.expanded_text.find(R"(<state id="s2"/>)"),
-              std::string::npos);
+    EXPECT_NE(result.expanded_text.find(R"(<state id="s1"/>)"), std::string::npos);
+    EXPECT_NE(result.expanded_text.find(R"(<state id="s2"/>)"), std::string::npos);
     EXPECT_EQ(result.expanded_text.find("<xi:include"), std::string::npos);
     EXPECT_EQ(result.expanded_text.find("<fragment"), std::string::npos);
     EXPECT_FALSE(result.positions.is_identity());
@@ -137,8 +136,7 @@ TEST(XIncludeExpander, OuterPrefixAndSuffixResolveToHost) {
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.xml"/></root>)";
     const auto mainPath = tmp.write("main.xml", mainSrc);
 
-    const auto result = expandStringX(mainSrc, mainPath.string(),
-                                       tmp.root().string(), {});
+    const auto result = expandStringX(mainSrc, mainPath.string(), tmp.root().string(), {});
 
     // Prefix: the leading '<' of '<root>' must resolve to main.xml.
     const SourcePos prefix = result.positions.lookup(0);
@@ -157,25 +155,21 @@ TEST(XIncludeExpander, OuterPrefixAndSuffixResolveToHost) {
 // resolve to the leaf file, not the middle nor the host.
 TEST(XIncludeExpander, NestedExpansionComposesMaps) {
     TempTree tmp;
-    tmp.write("leaf.xml",
-              R"(<leafwrap><state id="leafonly"/></leafwrap>)");
+    tmp.write("leaf.xml", R"(<leafwrap><state id="leafonly"/></leafwrap>)");
     tmp.write("mid.xml",
               R"(<midwrap><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="leaf.xml"/></midwrap>)");
     const std::string mainSrc =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="mid.xml"/></root>)";
     const auto mainPath = tmp.write("main.xml", mainSrc);
 
-    const auto result = expandStringX(mainSrc, mainPath.string(),
-                                       tmp.root().string(), {});
+    const auto result = expandStringX(mainSrc, mainPath.string(), tmp.root().string(), {});
 
-    EXPECT_NE(result.expanded_text.find(R"(<state id="leafonly"/>)"),
-              std::string::npos);
+    EXPECT_NE(result.expanded_text.find(R"(<state id="leafonly"/>)"), std::string::npos);
     EXPECT_EQ(result.expanded_text.find("<xi:include"), std::string::npos);
     EXPECT_EQ(result.expanded_text.find("<leafwrap"), std::string::npos);
     EXPECT_EQ(result.expanded_text.find("<midwrap"), std::string::npos);
 
-    const std::size_t leafOffset =
-        result.expanded_text.find(R"(<state id="leafonly"/>)");
+    const std::size_t leafOffset = result.expanded_text.find(R"(<state id="leafonly"/>)");
     ASSERT_NE(leafOffset, std::string::npos);
     const SourcePos pos = result.positions.lookup(leafOffset);
     EXPECT_EQ(pos.file.filename().string(), "leaf.xml");
@@ -183,26 +177,22 @@ TEST(XIncludeExpander, NestedExpansionComposesMaps) {
 
 // ── Missing href throws ─────────────────────────────────────────────
 TEST(XIncludeExpander, MissingHrefThrows) {
-    const std::string src =
-        R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/></root>)";
+    const std::string src = R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude"/></root>)";
     EXPECT_THROW(expandStringX(src, "inline", "", {}), XIncludeExpansionError);
 }
 
 // ── Empty href throws ───────────────────────────────────────────────
 TEST(XIncludeExpander, EmptyHrefThrows) {
-    const std::string src =
-        R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href=""/></root>)";
+    const std::string src = R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href=""/></root>)";
     EXPECT_THROW(expandStringX(src, "inline", "", {}), XIncludeExpansionError);
 }
 
 // ── Not-found includes search trail in message ──────────────────────
 TEST(XIncludeExpander, NotFoundThrowsWithSearchTrail) {
     TempTree tmp;
-    const std::string src =
-        R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="ghost.xml"/></root>)";
+    const std::string src = R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="ghost.xml"/></root>)";
     try {
-        expandStringX(src, (tmp.root() / "main.xml").string(),
-                       tmp.root().string(), {});
+        expandStringX(src, (tmp.root() / "main.xml").string(), tmp.root().string(), {});
         FAIL() << "expandStringX must throw on unresolvable href";
     } catch (const XIncludeExpansionError &e) {
         const std::string what = e.what();
@@ -214,15 +204,11 @@ TEST(XIncludeExpander, NotFoundThrowsWithSearchTrail) {
 // ── Cycle detection: a → b → a ──────────────────────────────────────
 TEST(XIncludeExpander, CycleDetected) {
     TempTree tmp;
-    const auto aPath = tmp.write(
-        "a.xml",
-        R"(<wa><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="b.xml"/></wa>)");
-    tmp.write(
-        "b.xml",
-        R"(<wb><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="a.xml"/></wb>)");
+    const auto aPath =
+        tmp.write("a.xml", R"(<wa><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="b.xml"/></wa>)");
+    tmp.write("b.xml", R"(<wb><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="a.xml"/></wb>)");
 
-    std::string mainSrc =
-        R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="a.xml"/></root>)";
+    std::string mainSrc = R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="a.xml"/></root>)";
     const auto mainPath = tmp.write("main.xml", mainSrc);
 
     try {
@@ -241,8 +227,7 @@ TEST(XIncludeExpander, UnsupportedParseTextThrows) {
     const std::string src =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.txt" parse="text"/></root>)";
     try {
-        expandStringX(src, (tmp.root() / "main.xml").string(),
-                       tmp.root().string(), {});
+        expandStringX(src, (tmp.root() / "main.xml").string(), tmp.root().string(), {});
         FAIL() << "parse=\"text\" must be rejected";
     } catch (const XIncludeExpansionError &e) {
         const std::string what = e.what();
@@ -259,8 +244,7 @@ TEST(XIncludeExpander, UnsupportedParseTextThrows) {
 // D1 fixture; this catches B2 wiring regressions directly.
 TEST(XIncludeExpander, PugiXMLDocumentProcessXIncludePopulatesMap) {
     TempTree tmp;
-    tmp.write("frag.xml",
-              R"(<fragment><state id="fragstate"/></fragment>)");
+    tmp.write("frag.xml", R"(<fragment><state id="fragstate"/></fragment>)");
     const std::string mainSrc =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="frag.xml"/></root>)";
     const auto mainPath = tmp.write("main.xml", mainSrc);
@@ -291,8 +275,7 @@ TEST(XIncludeExpander, PugiXMLDocumentProcessXIncludePopulatesMap) {
     // returned map is keyed against the in-memory expanded bytes
     // we just reparsed.
     std::ostringstream serialised;
-    rawDoc->save(serialised, "",
-                 pugi::format_raw | pugi::format_no_declaration);
+    rawDoc->save(serialised, "", pugi::format_raw | pugi::format_no_declaration);
     const std::string expanded = serialised.str();
     const std::size_t fragOffset = expanded.find(R"(<state id="fragstate"/>)");
     ASSERT_NE(fragOffset, std::string::npos);
@@ -303,8 +286,7 @@ TEST(XIncludeExpander, PugiXMLDocumentProcessXIncludePopulatesMap) {
     // PositionMap, which is keyed against the bytes the expander
     // produced.
     const auto pos = positions.lookup(0);
-    EXPECT_EQ(pos.file.filename().string(), "main.xml")
-        << "byte 0 of expanded output must resolve to host main.xml";
+    EXPECT_EQ(pos.file.filename().string(), "main.xml") << "byte 0 of expanded output must resolve to host main.xml";
 }
 
 // ── Unsupported feature: <xi:fallback> ──────────────────────────────
@@ -313,8 +295,7 @@ TEST(XIncludeExpander, UnsupportedFallbackThrows) {
     const std::string src =
         R"(<root><xi:include xmlns:xi="http://www.w3.org/2001/XInclude" href="ghost.xml"><xi:fallback><state id="alt"/></xi:fallback></xi:include></root>)";
     try {
-        expandStringX(src, (tmp.root() / "main.xml").string(),
-                       tmp.root().string(), {});
+        expandStringX(src, (tmp.root() / "main.xml").string(), tmp.root().string(), {});
         FAIL() << "<xi:fallback> must be rejected";
     } catch (const XIncludeExpansionError &e) {
         const std::string what = e.what();

@@ -79,14 +79,33 @@ struct MinimalPolicy {
 
     MinimalPolicy() = default;
 
-    [[nodiscard]] static constexpr State initialState() noexcept { return State::S0; }
-    [[nodiscard]] static constexpr bool isFinalState(State s) noexcept { return s == State::Done; }
-    [[nodiscard]] static constexpr std::optional<State> getParent(State) noexcept { return std::nullopt; }
-    [[nodiscard]] static constexpr bool isCompoundState(State) noexcept { return false; }
-    [[nodiscard]] static constexpr State getInitialChild(State s) noexcept { return s; }
+    [[nodiscard]] static constexpr State initialState() noexcept {
+        return State::S0;
+    }
 
-    [[nodiscard]] std::string getEventName(Event) const { return ""; }
-    [[nodiscard]] std::optional<Event> getEventFromName(const std::string&) const { return std::nullopt; }
+    [[nodiscard]] static constexpr bool isFinalState(State s) noexcept {
+        return s == State::Done;
+    }
+
+    [[nodiscard]] static constexpr std::optional<State> getParent(State) noexcept {
+        return std::nullopt;
+    }
+
+    [[nodiscard]] static constexpr bool isCompoundState(State) noexcept {
+        return false;
+    }
+
+    [[nodiscard]] static constexpr State getInitialChild(State s) noexcept {
+        return s;
+    }
+
+    [[nodiscard]] std::string getEventName(Event) const {
+        return "";
+    }
+
+    [[nodiscard]] std::optional<Event> getEventFromName(const std::string &) const {
+        return std::nullopt;
+    }
 };
 
 using Engine = ::SCE::Static::StaticExecutionEngine<MinimalPolicy>;
@@ -97,13 +116,11 @@ using Engine = ::SCE::Static::StaticExecutionEngine<MinimalPolicy>;
 constexpr std::size_t kMeshSendHookBytes = sizeof(::SCE::Static::MeshSendCallback);
 constexpr std::size_t kMeshInvokeHookBytes = sizeof(::SCE::Static::MeshInvokeCallback);
 constexpr std::size_t kMeshCancelHookBytes = sizeof(::SCE::Static::MeshCancelCallback);
-constexpr std::size_t kParallelLocalHookBytes =
-    sizeof(std::function<void(const std::string&, const std::string&)>);
+constexpr std::size_t kParallelLocalHookBytes = sizeof(std::function<void(const std::string &, const std::string &)>);
 constexpr std::size_t kParallelRemoteHookBytes =
-    sizeof(std::function<void(const std::string&, const std::string&, const std::string&)>);
-constexpr std::size_t kMeshHookTotalBytes = kMeshSendHookBytes + kMeshInvokeHookBytes +
-                                            kMeshCancelHookBytes + kParallelLocalHookBytes +
-                                            kParallelRemoteHookBytes;
+    sizeof(std::function<void(const std::string &, const std::string &, const std::string &)>);
+constexpr std::size_t kMeshHookTotalBytes = kMeshSendHookBytes + kMeshInvokeHookBytes + kMeshCancelHookBytes +
+                                            kParallelLocalHookBytes + kParallelRemoteHookBytes;
 
 // Realistic MMORPG upper bound from `session_tracker_stdfunction_benchmark_done.md`.
 constexpr std::size_t kMmorpgScaleSessions = 10000;
@@ -111,7 +128,7 @@ constexpr std::size_t kMmorpgScaleSessions = 10000;
 }  // namespace
 
 // ─── sizeof report (not a timing benchmark) ──────────────────────────
-static void BM_SizeofEngine(benchmark::State& state) {
+static void BM_SizeofEngine(benchmark::State &state) {
     std::size_t engine_bytes = sizeof(Engine);
     for (auto _ : state) {
         benchmark::DoNotOptimize(engine_bytes);
@@ -119,13 +136,13 @@ static void BM_SizeofEngine(benchmark::State& state) {
     state.counters["sizeof_engine_bytes"] = static_cast<double>(sizeof(Engine));
     state.counters["sizeof_policy_bytes"] = static_cast<double>(sizeof(MinimalPolicy));
     state.counters["sizeof_mesh_hooks_total_bytes"] = static_cast<double>(kMeshHookTotalBytes);
-    state.counters["engine_without_mesh_hooks_est_bytes"] =
-        static_cast<double>(sizeof(Engine) - kMeshHookTotalBytes);
+    state.counters["engine_without_mesh_hooks_est_bytes"] = static_cast<double>(sizeof(Engine) - kMeshHookTotalBytes);
     state.counters["mmorpg_scale_10k_total_mb"] =
         static_cast<double>(sizeof(Engine) * kMmorpgScaleSessions) / (1024.0 * 1024.0);
     state.counters["mmorpg_scale_10k_mesh_hooks_mb"] =
         static_cast<double>(kMeshHookTotalBytes * kMmorpgScaleSessions) / (1024.0 * 1024.0);
 }
+
 BENCHMARK(BM_SizeofEngine);
 
 // ─── per-hook breakdown (SBO residency audit) ────────────────────────
@@ -133,7 +150,7 @@ BENCHMARK(BM_SizeofEngine);
 // Surfaces each mesh hook's std::function sizeof so a future edit that
 // pushes a capture past SBO (introducing per-install heap traffic) is
 // visible in the counter delta.
-static void BM_HookSizesByField(benchmark::State& state) {
+static void BM_HookSizesByField(benchmark::State &state) {
     std::size_t total = kMeshHookTotalBytes;
     for (auto _ : state) {
         benchmark::DoNotOptimize(total);
@@ -144,6 +161,7 @@ static void BM_HookSizesByField(benchmark::State& state) {
     state.counters["parallel_local_complete_bytes"] = static_cast<double>(kParallelLocalHookBytes);
     state.counters["parallel_remote_send_bytes"] = static_cast<double>(kParallelRemoteHookBytes);
 }
+
 BENCHMARK(BM_HookSizesByField);
 
 // ─── 10K-scale allocation footprint ──────────────────────────────────
@@ -151,7 +169,7 @@ BENCHMARK(BM_HookSizesByField);
 // Allocates an engine pool at MMORPG session scale (10K), confirming
 // runtime arithmetic matches `sizeof(Engine) * N`. Pool is reserved
 // upfront so realloc churn does not contaminate the measurement.
-static void BM_MmorpgScaleAllocate(benchmark::State& state) {
+static void BM_MmorpgScaleAllocate(benchmark::State &state) {
     for (auto _ : state) {
         std::vector<Engine> pool;
         pool.reserve(kMmorpgScaleSessions);
@@ -161,9 +179,9 @@ static void BM_MmorpgScaleAllocate(benchmark::State& state) {
         benchmark::DoNotOptimize(pool);
     }
     state.counters["sessions"] = static_cast<double>(kMmorpgScaleSessions);
-    state.counters["expected_bytes_total"] =
-        static_cast<double>(sizeof(Engine) * kMmorpgScaleSessions);
+    state.counters["expected_bytes_total"] = static_cast<double>(sizeof(Engine) * kMmorpgScaleSessions);
 }
+
 BENCHMARK(BM_MmorpgScaleAllocate);
 
 BENCHMARK_MAIN();
