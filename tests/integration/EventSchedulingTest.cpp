@@ -1797,13 +1797,13 @@ processing "event1" which is raised in the final state's on-entry handler. -->
  * This test verifies W3C SCXML D.2 requirement that the processor returns
  * a 2XX success response after receiving and queuing an HTTP event.
  *
- * Note: This test is skipped in Docker TSAN environment due to thread
+ * Note: This test is skipped under ThreadSanitizer due to thread
  * creation incompatibility with TSAN.
  */
 TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse) {
-    // Skip HTTP tests in Docker TSAN environment
-    if (SCE::Test::Utils::isInDockerTsan()) {
-        GTEST_SKIP() << "Skipping HTTP test in Docker TSAN environment";
+    // Skip HTTP tests under ThreadSanitizer
+    if (SCE::Test::Utils::isThreadSanitizerBuild()) {
+        GTEST_SKIP() << "Skipping HTTP test under ThreadSanitizer";
     }
 
     SCE_LOG_DEBUG("=== W3C SCXML Test 513: BasicHTTPEventProcessor Success Response ===");

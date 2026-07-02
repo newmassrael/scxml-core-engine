@@ -181,19 +181,19 @@ private:
     bool requiresHttpServer(const std::string &testDirectory) const;
 
     /**
-     * @brief Create skip report if HTTP test should be skipped in Docker TSAN
+     * @brief Create skip report if HTTP test should be skipped under ThreadSanitizer
      *
-     * Checks if the test requires HTTP server and running in Docker TSAN environment.
+     * Checks if the test requires HTTP server and running under ThreadSanitizer.
      * Returns a TestReport with PASS status and skip reason if test should be skipped.
      *
      * @param testDir Test directory path
      * @param testId Test ID number
      * @return TestReport if test should be skipped, std::nullopt otherwise
      */
-    std::optional<TestReport> shouldSkipHttpTestInDockerTsan(const std::string &testDir, int testId) const;
+    std::optional<TestReport> shouldSkipHttpTestUnderTsan(const std::string &testDir, int testId) const;
 
     /**
-     * @brief Create skip report if HTTP test should be skipped in Docker TSAN (string overload)
+     * @brief Create skip report if HTTP test should be skipped under ThreadSanitizer (string overload)
      *
      * Overload for tests with string IDs (e.g., "403a", "192").
      *
@@ -201,8 +201,7 @@ private:
      * @param testId Test ID string
      * @return TestReport if test should be skipped, std::nullopt otherwise
      */
-    std::optional<TestReport> shouldSkipHttpTestInDockerTsan(const std::string &testDir,
-                                                             const std::string &testId) const;
+    std::optional<TestReport> shouldSkipHttpTestUnderTsan(const std::string &testDir, const std::string &testId) const;
 
     /**
      * @brief W3C SCXML 6.2: Manual verification for Test 178 (duplicate param keys)

@@ -114,20 +114,18 @@ else()
     message(STATUS "⚠️  lld not found, using default linker (consider: sudo apt install lld)")
 endif()
 
-# Sanitizer options for Debug builds
-# Docker TSAN environment auto-detection
-if(DEFINED ENV{IN_DOCKER_TSAN})
-    set(ENABLE_TSAN ON CACHE BOOL "Auto-enabled in Docker TSAN environment" FORCE)
-    message(STATUS "Docker TSAN environment detected - TSAN auto-enabled")
-endif()
-
+# Sanitizer options for Debug builds.
+# ThreadSanitizer is a host-native build: `cmake -DENABLE_TSAN=ON` (see
+# scripts/build_tsan.sh). No container is required — TSAN is a compiler
+# instrumentation and the tests skip the HTTP paths that are incompatible
+# with it via SCE::Test::Utils::isThreadSanitizerBuild().
 option(ENABLE_TSAN "Enable ThreadSanitizer instead of AddressSanitizer (Debug only)" OFF)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         if(ENABLE_TSAN)
             message(STATUS "Enabling ThreadSanitizer for Debug build")
-            message(STATUS "  Note: Use docker_tsan/ environment for TSAN with system library workarounds")
+            message(STATUS "  Tip: export TSAN_OPTIONS=ignore_noninstrumented_modules=1 to quiet system-library reports")
 
             add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
             add_link_options(-fsanitize=thread)

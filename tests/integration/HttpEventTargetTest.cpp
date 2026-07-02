@@ -27,9 +27,9 @@ namespace SCE {
 class HttpEventTargetTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        // Skip HTTP tests in Docker TSAN environment (SimpleMockHttpServer thread creation incompatible with TSAN)
-        if (SCE::Test::Utils::isInDockerTsan()) {
-            GTEST_SKIP() << "Skipping HTTP test in Docker TSAN environment";
+        // Skip HTTP tests under ThreadSanitizer (SimpleMockHttpServer thread creation incompatible with TSAN)
+        if (SCE::Test::Utils::isThreadSanitizerBuild()) {
+            GTEST_SKIP() << "Skipping HTTP test under ThreadSanitizer";
         }
 
         // Start embedded mock HTTP server
