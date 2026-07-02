@@ -13,10 +13,10 @@ name: Rust fmt check
 # of what needs to change; developers run `cargo fmt --all` locally
 # to fix.
 #
-# The corresponding pre-commit hook (scripts/install-hooks.sh) gives
-# developers a local fast-fail, but the CI gate is the authoritative
-# enforcement point — hooks are opt-in install per developer, the
-# workflow is mandatory per merge.
+# The corresponding pre-commit hook (tools/git-hooks/, activated via
+# tools/git-hooks/install.sh) gives developers a local fast-fail, but
+# the CI gate is the authoritative enforcement point — hooks are
+# opt-in per clone, the workflow is mandatory per merge.
 
 on:
   push:
