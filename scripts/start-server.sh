@@ -7,7 +7,7 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${1:-8000}"
 
 # Kill existing process on port
@@ -25,21 +25,21 @@ create_symlinks() {
     echo "Creating symlinks for GitHub Pages URL structure..."
 
     # visualizer/resources -> ../resources
-    if [ ! -e "$SCRIPT_DIR/visualizer/resources" ]; then
-        ln -sf ../resources "$SCRIPT_DIR/visualizer/resources"
+    if [ ! -e "$REPO_ROOT/visualizer/resources" ]; then
+        ln -sf ../resources "$REPO_ROOT/visualizer/resources"
         echo "  Created: visualizer/resources -> ../resources"
     fi
 
     # visualizer/tools -> ../tools
-    if [ ! -e "$SCRIPT_DIR/visualizer/tools" ]; then
-        ln -sf ../tools "$SCRIPT_DIR/visualizer/tools"
+    if [ ! -e "$REPO_ROOT/visualizer/tools" ]; then
+        ln -sf ../tools "$REPO_ROOT/visualizer/tools"
         echo "  Created: visualizer/tools -> ../tools"
     fi
 
     # visualizer/doom -> ../examples/doom_wasm/build (only if build exists)
-    if [ -d "$SCRIPT_DIR/examples/doom_wasm/build" ]; then
-        if [ ! -e "$SCRIPT_DIR/visualizer/doom" ]; then
-            ln -sf ../examples/doom_wasm/build "$SCRIPT_DIR/visualizer/doom"
+    if [ -d "$REPO_ROOT/examples/doom_wasm/build" ]; then
+        if [ ! -e "$REPO_ROOT/visualizer/doom" ]; then
+            ln -sf ../examples/doom_wasm/build "$REPO_ROOT/visualizer/doom"
             echo "  Created: visualizer/doom -> ../examples/doom_wasm/build"
         fi
     else
@@ -51,9 +51,9 @@ create_symlinks() {
 cleanup() {
     echo ""
     echo "Cleaning up symlinks..."
-    rm -f "$SCRIPT_DIR/visualizer/doom"
-    rm -f "$SCRIPT_DIR/visualizer/resources"
-    rm -f "$SCRIPT_DIR/visualizer/tools"
+    rm -f "$REPO_ROOT/visualizer/doom"
+    rm -f "$REPO_ROOT/visualizer/resources"
+    rm -f "$REPO_ROOT/visualizer/tools"
     echo "Done."
 }
 
@@ -72,7 +72,7 @@ echo ""
 echo "URLs (same as GitHub Pages):"
 echo "  Visualizer: http://localhost:$PORT/visualizer/visualizer.html"
 echo "  Codegen:    http://localhost:$PORT/visualizer/codegen.html"
-if [ -d "$SCRIPT_DIR/examples/doom_wasm/build" ]; then
+if [ -d "$REPO_ROOT/examples/doom_wasm/build" ]; then
 echo "  DOOM:       http://localhost:$PORT/visualizer/doom/"
 fi
 echo ""
@@ -80,5 +80,5 @@ echo "Press Ctrl+C to stop the server"
 echo ""
 
 # Start server from project root
-cd "$SCRIPT_DIR"
+cd "$REPO_ROOT"
 python3 -m http.server "$PORT"

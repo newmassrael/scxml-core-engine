@@ -113,7 +113,7 @@ alias(
 # Directories to skip when symlinking the SCE source tree.
 _SKIP_DIRS = (
     "embed", "build", "build_debug", "build_debug_qjs", "build_python",
-    "build_wasm", "build_scripts", "target", "Testing",
+    "build_wasm", "target", "Testing",
     ".git", ".github", ".gradle", ".kotlin", ".pytest_cache", ".serena",
     ".claude",
 )
