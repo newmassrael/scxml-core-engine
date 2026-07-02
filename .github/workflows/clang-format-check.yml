@@ -1,0 +1,64 @@
+name: clang-format check
+
+# CI gate enforcing .clang-format conformance on every push and PR,
+# the C/C++ counterpart of fmt-check.yml. The tree was normalized with
+# clang-format 19 (2026-07-02), so the gate pins the same major version
+# — clang-19 is already the toolchain CI requires elsewhere
+# (embed-vendor-smoke.yml).
+#
+# File enumeration and the generated-source skip policy live in
+# scripts/check_clang_format.sh, shared with the pre-commit hook
+# (tools/git-hooks/pre-commit Stage 1) so local and CI gating agree.
+# Vendored subtrees (third_party/, examples/doom_wasm/doomgeneric/)
+# are excluded by their own .clang-format DisableFormat markers.
+#
+# The corresponding pre-commit hook gives developers a local fast-fail
+# scoped to staged files, but this workflow is the authoritative
+# enforcement point — hooks are opt-in per clone, the workflow is
+# mandatory per merge.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/*.c'
+      - '**/*.cc'
+      - '**/*.cpp'
+      - '**/*.h'
+      - '**/*.hpp'
+      - '**/.clang-format'
+      - 'scripts/check_clang_format.sh'
+      - '.github/workflows/clang-format-check.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**/*.c'
+      - '**/*.cc'
+      - '**/*.cpp'
+      - '**/*.h'
+      - '**/*.hpp'
+      - '**/.clang-format'
+      - 'scripts/check_clang_format.sh'
+      - '.github/workflows/clang-format-check.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-format-check:
+    name: clang-format --dry-run --Werror
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v6
+
+    - name: Install clang-format-19
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format-19
+
+    - name: clang-format conformance check
+      run: CLANG_FORMAT=clang-format-19 scripts/check_clang_format.sh
