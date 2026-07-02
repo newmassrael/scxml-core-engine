@@ -84,6 +84,7 @@ test_output/
 test_data/
 *.log
 w3c_test_results.xml
+w3c_failed_test_logs/
 w3c_test_results.html
 
 # Package files

@@ -208,16 +208,10 @@ jobs:
         echo "Exit code: $EXIT_CODE"
         echo "Output log size: $(wc -l < w3c_test_output.log) lines"
 
-        # Check for XML file in both locations (current dir and project root)
+        # The CLI writes artifacts to its invocation directory (build/tests)
         if [ -f w3c_test_results.xml ]; then
           echo "SUCCESS: w3c_test_results.xml created in current directory"
           ls -lh w3c_test_results.xml
-        elif [ -f ../../w3c_test_results.xml ]; then
-          echo "SUCCESS: w3c_test_results.xml created in project root"
-          ls -lh ../../w3c_test_results.xml
-          # Move to build/tests for easier access by other steps
-          cp ../../w3c_test_results.xml .
-          echo "Copied to build/tests/ for artifact upload"
         else
           echo "ERROR: w3c_test_results.xml was not created!"
           echo ""
@@ -256,11 +250,8 @@ jobs:
         if [ -f w3c_test_results.xml ]; then
           echo "XML file found in current directory"
           head -n 20 w3c_test_results.xml
-        elif [ -f ../../w3c_test_results.xml ]; then
-          echo "XML file found in project root (expected location)"
-          head -n 20 ../../w3c_test_results.xml
         else
-          echo "XML file NOT found in either location - test execution likely failed early"
+          echo "XML file NOT found - test execution likely failed early"
         fi
 
     - name: Upload Test Output Log
