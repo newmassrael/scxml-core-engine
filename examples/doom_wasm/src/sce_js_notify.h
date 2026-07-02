@@ -19,6 +19,12 @@
 #include <emscripten.h>
 #endif
 
+// clang-format off
+// The EM_ASM bodies below are JavaScript, not C++: clang-format tokenizes
+// JS strict-equality `===` as C++ `==` `=` and splits it into `== =`, which
+// is invalid JavaScript and breaks the emscripten build. Formatting is
+// disabled for this whole notification layer so the JS is left verbatim.
+
 // ============================================
 // State Machine Notifications
 // ============================================
@@ -28,7 +34,7 @@ inline void js_notify_state_change(const char *machine, const char *state) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceStateChange == = 'function') {
+            if (typeof window.onSceStateChange === 'function') {
                 window.onSceStateChange(UTF8ToString($0), UTF8ToString($1));
             }
         },
@@ -45,7 +51,7 @@ inline void js_notify_enemy_update(int slot, const char *type, const char *state
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceEnemyUpdate == = 'function') {
+            if (typeof window.onSceEnemyUpdate === 'function') {
                 window.onSceEnemyUpdate($0, UTF8ToString($1), UTF8ToString($2), $3, $4);
             }
         },
@@ -58,7 +64,7 @@ inline void js_notify_stats_update(int enemy_count, int enemy_killed, int enemy_
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceStatsUpdate == = 'function') {
+            if (typeof window.onSceStatsUpdate === 'function') {
                 window.onSceStatsUpdate($0, $1, $2);
             }
         },
@@ -71,7 +77,7 @@ inline void js_notify_enemy_callback(int slot, const char *callback_type, const 
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceEnemyCallback == = 'function') {
+            if (typeof window.onSceEnemyCallback === 'function') {
                 window.onSceEnemyCallback($0, UTF8ToString($1), UTF8ToString($2), $3);
             }
         },
@@ -88,7 +94,7 @@ inline void js_notify_secret_path(int num_arrows, int remaining_secrets, bool is
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceSecretPath == = 'function') {
+            if (typeof window.onSceSecretPath === 'function') {
                 window.onSceSecretPath($0, $1, $2);
             }
         },
@@ -101,7 +107,7 @@ inline void js_notify_secret_arrow(int index, int x, int y, int angle) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceSecretArrow == = 'function') {
+            if (typeof window.onSceSecretArrow === 'function') {
                 window.onSceSecretArrow($0, $1, $2, $3);
             }
         },
@@ -116,7 +122,7 @@ inline void js_notify_target_info(const char *type_name, const char *name, int i
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceTargetInfo == = 'function') {
+            if (typeof window.onSceTargetInfo === 'function') {
                 window.onSceTargetInfo(UTF8ToString($0), UTF8ToString($1), $2, $3, $4, $5, $6, $7, $8, UTF8ToString($9),
                                        $10, $11);
             }
@@ -131,7 +137,7 @@ inline void js_notify_secret_callback(const char *callback_type) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceSecretCallback == = 'function') {
+            if (typeof window.onSceSecretCallback === 'function') {
                 window.onSceSecretCallback(UTF8ToString($0));
             }
         },
@@ -148,7 +154,7 @@ inline void js_notify_aim_assist_state(bool enabled) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceAimAssistState == = 'function') {
+            if (typeof window.onSceAimAssistState === 'function') {
                 window.onSceAimAssistState($0);
             }
         },
@@ -161,7 +167,7 @@ inline void js_notify_aim_callback(const char *callback_type) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceAimCallback == = 'function') {
+            if (typeof window.onSceAimCallback === 'function') {
                 window.onSceAimCallback(UTF8ToString($0));
             }
         },
@@ -178,7 +184,7 @@ inline void js_notify_combo_update(int count, bool active) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceComboUpdate == = 'function') {
+            if (typeof window.onSceComboUpdate === 'function') {
                 window.onSceComboUpdate($0, $1);
             }
         },
@@ -191,7 +197,7 @@ inline void js_notify_combo_timer(double remaining_ms, double total_ms) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceComboTimer == = 'function') {
+            if (typeof window.onSceComboTimer === 'function') {
                 window.onSceComboTimer($0, $1);
             }
         },
@@ -204,7 +210,7 @@ inline void js_notify_combo_callback(const char *callback_type) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceComboCallback == = 'function') {
+            if (typeof window.onSceComboCallback === 'function') {
                 window.onSceComboCallback(UTF8ToString($0));
             }
         },
@@ -217,7 +223,7 @@ inline void js_notify_berserk_update(int intensity, bool active) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceBerserkUpdate == = 'function') {
+            if (typeof window.onSceBerserkUpdate === 'function') {
                 window.onSceBerserkUpdate($0, $1);
             }
         },
@@ -234,7 +240,7 @@ inline void js_notify_game_callback(const char *callback_type) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceGameCallback == = 'function') {
+            if (typeof window.onSceGameCallback === 'function') {
                 window.onSceGameCallback(UTF8ToString($0));
             }
         },
@@ -247,7 +253,7 @@ inline void js_notify_player_callback(const char *callback_type) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onScePlayerCallback == = 'function') {
+            if (typeof window.onScePlayerCallback === 'function') {
                 window.onScePlayerCallback(UTF8ToString($0));
             }
         },
@@ -260,12 +266,14 @@ inline void js_notify_weapon_callback(const char *callback_type) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceWeaponCallback == = 'function') {
+            if (typeof window.onSceWeaponCallback === 'function') {
                 window.onSceWeaponCallback(UTF8ToString($0));
             }
         },
         callback_type);
 #endif
 }
+
+// clang-format on
 
 #endif /* SCE_JS_NOTIFY_H */
