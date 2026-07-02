@@ -17,38 +17,43 @@ constexpr auto STANDARD_WAIT_MS = std::chrono::milliseconds(100);  // Standard w
 constexpr auto LONG_WAIT_MS = std::chrono::milliseconds(200);      // Long wait time for complex operations
 
 /**
- * @brief Check if running in Docker TSAN environment
+ * @brief Check if this is a ThreadSanitizer build
  *
- * Checks the IN_DOCKER_TSAN environment variable to determine if HTTP tests
- * should be skipped due to cpp-httplib/SimpleMockHttpServer thread creation
- * incompatibility with TSAN.
+ * Compile-time detection of `-fsanitize=thread` (GCC `__SANITIZE_THREAD__`,
+ * Clang `__has_feature(thread_sanitizer)`). Used to skip HTTP tests, whose
+ * cpp-httplib/SimpleMockHttpServer thread creation is incompatible with TSAN,
+ * and to widen timing delays for TSAN's instrumentation overhead. TSAN is a
+ * host-native build (`cmake -DENABLE_TSAN=ON`); no container is required.
  *
- * @return true if IN_DOCKER_TSAN is set to a truthy value (non-empty, not "0", not "false")
+ * @return true when compiled with ThreadSanitizer, false otherwise
  */
-inline bool isInDockerTsan() {
-    const char *env = std::getenv("IN_DOCKER_TSAN");
-    if (!env) {
-        return false;
-    }
-
-    std::string value(env);
-    // Treat empty string, "0", and "false" as false
-    return !value.empty() && value != "0" && value != "false";
+inline bool isThreadSanitizerBuild() {
+#if defined(__SANITIZE_THREAD__)
+    return true;
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+    return true;
+#else
+    return false;
+#endif
+#else
+    return false;
+#endif
 }
 
 /**
  * @brief Get base delay for timing-sensitive tests
  *
  * Returns a base delay value (in milliseconds) that accounts for TSAN overhead.
- * In TSAN environments, scheduling and synchronization operations are slower,
- * so tests need longer delays to avoid flaky behavior.
+ * In TSAN builds, scheduling and synchronization operations are slower, so
+ * tests need longer delays to avoid flaky behavior.
  *
- * @param normalDelay Delay to use in normal (non-TSAN) environments
- * @return Delay value adjusted for TSAN environment if applicable
+ * @param normalDelay Delay to use in normal (non-TSAN) builds
+ * @return Delay value adjusted for a ThreadSanitizer build if applicable
  */
 inline int getBaseDelay(int normalDelay = 50) {
-    // TSAN environments need 4x longer delays due to instrumentation overhead
-    return isInDockerTsan() ? (normalDelay * 4) : normalDelay;
+    // TSAN builds need 4x longer delays due to instrumentation overhead
+    return isThreadSanitizerBuild() ? (normalDelay * 4) : normalDelay;
 }
 
 }  // namespace Utils

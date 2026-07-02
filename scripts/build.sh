@@ -31,7 +31,7 @@ show_usage() {
     echo -e "${CYAN}Build types:${NC}"
     echo "  debug      - Debug build with symbols and assertions"
     echo "  release    - Release build with optimizations"
-    echo "  tsan       - ThreadSanitizer build in Docker"
+    echo "  tsan       - ThreadSanitizer build (native, -fsanitize=thread)"
     echo "  wasm       - WebAssembly build"
     echo "  all        - Run all builds sequentially"
     echo ""

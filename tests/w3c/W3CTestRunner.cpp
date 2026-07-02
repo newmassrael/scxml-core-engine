@@ -1122,8 +1122,8 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
                 testId = 0;
             }
 
-            // Check if HTTP test should be skipped in Docker TSAN environment
-            if (auto skipReport = shouldSkipHttpTestInDockerTsan(testDir, testId)) {
+            // Check if HTTP test should be skipped under ThreadSanitizer
+            if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
                 reports.push_back(*skipReport);
                 reporter_->reportTestResult(*skipReport);
                 continue;
@@ -1465,12 +1465,12 @@ bool W3CTestRunner::requiresHttpServer(const std::string &testDirectory) const {
     return requiresHttp;
 }
 
-std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestInDockerTsan(const std::string &testDir, int testId) const {
-    if (!requiresHttpServer(testDir) || !SCE::Test::Utils::isInDockerTsan()) {
+std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestUnderTsan(const std::string &testDir, int testId) const {
+    if (!requiresHttpServer(testDir) || !SCE::Test::Utils::isThreadSanitizerBuild()) {
         return std::nullopt;
     }
 
-    SCE_LOG_WARN("W3C Test {}: Skipping HTTP test in Docker TSAN environment (cpp-httplib thread creation incompatible "
+    SCE_LOG_WARN("W3C Test {}: Skipping HTTP test under ThreadSanitizer (cpp-httplib thread creation incompatible "
                  "with TSAN)",
                  testId);
 
@@ -1478,25 +1478,25 @@ std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestInDockerTsan(const st
     report.testId = std::to_string(testId);
     report.engineType = "interpreter";
     report.metadata.id = testId;
-    report.validationResult = ValidationResult(true, TestResult::PASS, "Skipped: HTTP test in Docker TSAN environment");
+    report.validationResult = ValidationResult(true, TestResult::PASS, "Skipped: HTTP test under ThreadSanitizer");
 
     return report;
 }
 
-std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestInDockerTsan(const std::string &testDir,
-                                                                        const std::string &testId) const {
-    if (!requiresHttpServer(testDir) || !SCE::Test::Utils::isInDockerTsan()) {
+std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestUnderTsan(const std::string &testDir,
+                                                                     const std::string &testId) const {
+    if (!requiresHttpServer(testDir) || !SCE::Test::Utils::isThreadSanitizerBuild()) {
         return std::nullopt;
     }
 
-    SCE_LOG_WARN("W3C Test {}: Skipping HTTP test in Docker TSAN environment (cpp-httplib thread creation incompatible "
+    SCE_LOG_WARN("W3C Test {}: Skipping HTTP test under ThreadSanitizer (cpp-httplib thread creation incompatible "
                  "with TSAN)",
                  testId);
 
     TestReport report;
     report.testId = testId;
     report.engineType = "interpreter";
-    report.validationResult = ValidationResult(true, TestResult::PASS, "Skipped: HTTP test in Docker TSAN environment");
+    report.validationResult = ValidationResult(true, TestResult::PASS, "Skipped: HTTP test under ThreadSanitizer");
 
     return report;
 }
@@ -1531,8 +1531,8 @@ TestReport W3CTestRunner::runSpecificTest(int testId) {
         }
 
         if (currentTestId == testId) {
-            // Check if HTTP test should be skipped in Docker TSAN environment
-            if (auto skipReport = shouldSkipHttpTestInDockerTsan(testDir, testId)) {
+            // Check if HTTP test should be skipped under ThreadSanitizer
+            if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
                 return *skipReport;
             }
 
@@ -1621,8 +1621,8 @@ TestReport W3CTestRunner::runTest(const std::string &testId) {
         if (fileTestId == testId) {
             SCE_LOG_INFO("W3CTestRunner: Found exact match for test ID '{}': {}", testId, testDir);
 
-            // Check if HTTP test should be skipped in Docker TSAN environment
-            if (auto skipReport = shouldSkipHttpTestInDockerTsan(testDir, testId)) {
+            // Check if HTTP test should be skipped under ThreadSanitizer
+            if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
                 return *skipReport;
             }
 
@@ -1695,9 +1695,9 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
         if (currentTestId == testId) {
             try {
 #ifndef __EMSCRIPTEN__
-                // Check if HTTP test should be skipped in Docker TSAN environment (Interpreter only)
+                // Check if HTTP test should be skipped under ThreadSanitizer (Interpreter only)
                 // AOT tests will handle TSAN skip logic in HttpAotTest::run()
-                if (auto skipReport = shouldSkipHttpTestInDockerTsan(testDir, testId)) {
+                if (auto skipReport = shouldSkipHttpTestUnderTsan(testDir, testId)) {
                     matchingReports.push_back(*skipReport);
                     reporter_->reportTestResult(*skipReport);
                     // Don't continue - still run AOT test below

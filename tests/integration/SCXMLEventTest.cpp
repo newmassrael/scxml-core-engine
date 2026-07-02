@@ -248,9 +248,9 @@ TEST_F(SCXMLEventTest, SendActionValidationMissingEvent) {
  * @brief Test SendAction with external target (HTTP support available)
  */
 TEST_F(SCXMLEventTest, SendActionExternalTargetNotSupported) {
-    // Skip HTTP tests in Docker TSAN environment (cpp-httplib thread creation incompatible with TSAN)
-    if (Utils::isInDockerTsan()) {
-        GTEST_SKIP() << "Skipping HTTP test in Docker TSAN environment";
+    // Skip HTTP tests under ThreadSanitizer (cpp-httplib thread creation incompatible with TSAN)
+    if (Utils::isThreadSanitizerBuild()) {
+        GTEST_SKIP() << "Skipping HTTP test under ThreadSanitizer";
     }
 
     // Create send action with external target
