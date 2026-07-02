@@ -119,7 +119,6 @@ docs/xml/
 .cache
 
 claudedocs
-docker_tsan/docker-tsan-build.log
 
 # Claude Code local settings — repo-wide hooks are tracked so every
 # clone inherits the same commit audit; personal state (allowlist,

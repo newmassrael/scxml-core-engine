@@ -46,12 +46,12 @@ public:
 
     bool run() override {
 #ifndef __EMSCRIPTEN__
-        // W3C SCXML C.2 BasicHTTPEventProcessor: Docker TSAN environment incompatibility
+        // W3C SCXML C.2 BasicHTTPEventProcessor: ThreadSanitizer build incompatibility
         // TSAN crashes in getaddrinfo("localhost") due to glibc nscd thread safety issues
         // See DOCKER_TSAN_README.md for nscd workaround details
         // Skip HTTP tests to avoid TSAN false positives in DNS resolution
-        if (SCE::Test::Utils::isInDockerTsan()) {
-            SCE_LOG_WARN("HttpAotTest {}: Skipping W3C SCXML C.2 test in Docker TSAN environment (getaddrinfo DNS "
+        if (SCE::Test::Utils::isThreadSanitizerBuild()) {
+            SCE_LOG_WARN("HttpAotTest {}: Skipping W3C SCXML C.2 test under ThreadSanitizer (getaddrinfo DNS "
                          "resolution incompatible with TSAN)",
                          TestNum);
             return true;  // Report as PASS (skip, not fail)

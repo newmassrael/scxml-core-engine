@@ -1,163 +1,42 @@
 #!/bin/bash
-# TSAN Build Script for SCXML Core Engine
-# Uses Docker with ThreadSanitizer for race condition detection
+# ThreadSanitizer build for SCXML Core Engine — host-native, no container.
+#
+# TSAN is a compiler instrumentation (`-fsanitize=thread`); it needs only a
+# TSAN-capable gcc/clang, which every supported toolchain provides. The tests
+# skip the HTTP paths that are incompatible with TSAN via
+# SCE::Test::Utils::isThreadSanitizerBuild() (keyed on the compiler's TSAN
+# macro), so no environment flag is required.
 
-set -e  # Exit on error
+set -euo pipefail
 
-# Colors for output
-RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-echo -e "${GREEN}==========================================${NC}"
-echo -e "${GREEN}  SCXML Core Engine - TSAN Build  ${NC}"
-echo -e "${GREEN}==========================================${NC}"
-echo ""
-
-# Get host UID/GID for permission matching
-HOST_UID=$(id -u)
-HOST_GID=$(id -g)
-echo -e "${YELLOW}Host User: UID=$HOST_UID, GID=$HOST_GID${NC}"
-echo ""
-
-# Project root directory (parent directory of scripts/)
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-# Check if Docker image exists
-if ! docker image inspect sce-tsan-env:latest &> /dev/null; then
-    echo -e "${YELLOW}TSAN Docker Image Not Found${NC}"
-    echo ""
-    echo "Building lightweight Docker image with TSAN..."
-    echo ""
-    echo "This will:"
-    echo "  1. Download Ubuntu 24.04 base image (GCC 13.3 with <format> support)"
-    echo "  2. Install build tools and dependencies"
-    echo "  3. Configure nscd workarounds for TSAN"
-    echo ""
-    echo "Estimated time: 5-10 minutes"
-    echo "Disk space required: ~1.5GB"
-    echo ""
-
-    read -p "Continue with build? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Aborted."
-        exit 1
-    fi
-
-    echo ""
-    echo -e "${GREEN}Starting Docker build...${NC}"
-    docker build -f "$PROJECT_ROOT/docker_tsan/Dockerfile.tsan" \
-                 -t sce-tsan-env:latest \
-                 "$PROJECT_ROOT/docker_tsan" 2>&1 | tee "$PROJECT_ROOT/docker_tsan/docker-tsan-build.log"
-
-    if [ $? -ne 0 ]; then
-        echo ""
-        echo -e "${RED}Docker image build failed!${NC}"
-        exit 1
-    fi
-
-    echo ""
-    echo -e "${GREEN}Docker image build complete!${NC}"
-    echo ""
-fi
-
-# Build directory (absolute path)
 BUILD_DIR="$PROJECT_ROOT/build_tsan"
-echo -e "${GREEN}Building project with TSAN in Docker...${NC}"
-echo -e "${YELLOW}Build directory: $BUILD_DIR${NC}"
-echo ""
 
-# Start timing
-START_TIME=$(date +%s)
+echo -e "${GREEN}=== SCXML Core Engine — ThreadSanitizer build (native) ===${NC}"
 
-# Run Docker container with:
-# - Host UID/GID for permission matching
-# - Project root mounted to /workspace
-# - Removed after exit (--rm)
-# - SYS_PTRACE capability for gdb/TSAN
-docker run --rm \
-    --cap-add=SYS_PTRACE \
-    --security-opt seccomp=unconfined \
-    -e HOST_UID=$HOST_UID \
-    -e HOST_GID=$HOST_GID \
-    -v "$PROJECT_ROOT:/workspace" \
-    -w /workspace \
-    sce-tsan-env:latest \
-    /bin/bash -c "
-        set -e
-
-        # Create group and user matching host permissions
-        groupadd -g \$HOST_GID -o hostgroup 2>/dev/null || true
-        useradd -u \$HOST_UID -g \$HOST_GID -o -m hostuser 2>/dev/null || true
-
-        # Switch to host user for build (files will have correct permissions)
-        su - hostuser -c '
-            set -e  # Exit on error
-            cd /workspace
-
-            echo \"Configuring CMake with TSAN (Debug build)...\"
-            echo \"\"
-
-            # Remove and recreate build directory
-            rm -rf $BUILD_DIR
-            mkdir -p $BUILD_DIR
-            cd $BUILD_DIR
-
-            # CMake configure (TSAN auto-enabled via IN_DOCKER_TSAN env var)
-            cmake -DCMAKE_BUILD_TYPE=Debug ..
-
-            echo \"\"
-            echo \"Building with make (using all cores)...\"
-            make -j\$(nproc)
-
-            echo \"\"
-            echo \"Build complete!\"
-            echo \"\"
-            echo \"Build artifacts in: $BUILD_DIR\"
-            echo \"Run tests with: cd $BUILD_DIR && ctest --output-on-failure\"
-            echo \"Or specific test: cd $BUILD_DIR/tests && ./w3c_test_cli 201\"
-        '
-    "
-
-if [ $? -eq 0 ]; then
-    # Calculate build time
-    END_TIME=$(date +%s)
-    BUILD_TIME=$((END_TIME - START_TIME))
-
-    echo ""
-    echo -e "${GREEN}==========================================${NC}"
-    echo -e "${GREEN}      TSAN Build Completed Successfully      ${NC}"
-    echo -e "${GREEN}==========================================${NC}"
-    echo ""
-    echo -e "${BLUE}Build Statistics:${NC}"
-    echo -e "  Build time: ${BUILD_TIME} seconds"
-    echo -e "  Build directory: $BUILD_DIR"
-    echo ""
-    echo -e "${YELLOW}Test executable:${NC} $BUILD_DIR/tests/w3c_test_cli"
-    echo ""
-    echo -e "${YELLOW}Entering interactive shell in Docker container...${NC}"
-    echo -e "${YELLOW}Working directory:${NC} /workspace/build_tsan/tests"
-    echo ""
-    echo -e "${YELLOW}Example commands:${NC}"
-    echo "  env SPDLOG_LEVEL=off ./w3c_test_cli 144"
-    echo "  env SPDLOG_LEVEL=off ./w3c_test_cli 411"
-    echo "  cd .. && ctest --output-on-failure"
-    echo ""
-
-    # Enter interactive shell in Docker container
-    docker run --rm -it \
-        --cap-add=SYS_PTRACE \
-        --security-opt seccomp=unconfined \
-        -v "$PROJECT_ROOT:/workspace" \
-        -w /workspace/build_tsan/tests \
-        sce-tsan-env:latest \
-        /bin/bash
-else
-    echo ""
-    echo -e "${RED}==========================================${NC}"
-    echo -e "${RED}         TSAN Build Failed         ${NC}"
-    echo -e "${RED}==========================================${NC}"
-    exit 1
+# glibc's nscd DNS cache has had TSAN-hostile TLS races (glibc #16743). It is
+# absent by default on modern distros; warn only if it is actually running.
+if pgrep -x nscd >/dev/null 2>&1; then
+    echo -e "${YELLOW}Warning: nscd is running. If TSAN reports TLS races in getaddrinfo,${NC}"
+    echo -e "${YELLOW}  disable it (sudo systemctl stop nscd) or force files-based resolution${NC}"
+    echo -e "${YELLOW}  in /etc/nsswitch.conf (hosts: files dns).${NC}"
 fi
+
+# ignore_noninstrumented_modules silences reports inside uninstrumented system
+# libraries; halt_on_error stops at the first race for an actionable trace.
+export TSAN_OPTIONS="${TSAN_OPTIONS:-ignore_noninstrumented_modules=1:halt_on_error=1}"
+echo -e "${YELLOW}TSAN_OPTIONS=${TSAN_OPTIONS}${NC}"
+
+rm -rf "$BUILD_DIR"
+cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Debug -DENABLE_TSAN=ON
+cmake --build "$BUILD_DIR" -j"$(nproc)"
+
+echo -e "${GREEN}=== TSAN build complete ===${NC}"
+echo "Build directory: $BUILD_DIR"
+echo "Run a single test:  (cd $BUILD_DIR/tests && env SPDLOG_LEVEL=off ./w3c_test_cli 144)"
+echo "Run the suite:      (cd $BUILD_DIR && ctest --output-on-failure)"
+echo "Note: HTTP (BasicHTTP) W3C tests are skipped under TSAN by design."
