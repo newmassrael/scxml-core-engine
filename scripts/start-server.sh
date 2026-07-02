@@ -24,26 +24,26 @@ kill_port() {
 create_symlinks() {
     echo "Creating symlinks for GitHub Pages URL structure..."
 
-    # visualizer/resources -> ../resources
-    if [ ! -e "$REPO_ROOT/visualizer/resources" ]; then
-        ln -sf ../resources "$REPO_ROOT/visualizer/resources"
-        echo "  Created: visualizer/resources -> ../resources"
+    # web/visualizer/resources -> ../resources
+    if [ ! -e "$REPO_ROOT/web/visualizer/resources" ]; then
+        ln -sf ../../resources "$REPO_ROOT/web/visualizer/resources"
+        echo "  Created: web/visualizer/resources -> ../resources"
     fi
 
-    # visualizer/tools -> ../tools
-    if [ ! -e "$REPO_ROOT/visualizer/tools" ]; then
-        ln -sf ../tools "$REPO_ROOT/visualizer/tools"
-        echo "  Created: visualizer/tools -> ../tools"
+    # web/visualizer/tools -> ../tools
+    if [ ! -e "$REPO_ROOT/web/visualizer/tools" ]; then
+        ln -sf ../../tools "$REPO_ROOT/web/visualizer/tools"
+        echo "  Created: web/visualizer/tools -> ../tools"
     fi
 
-    # visualizer/doom -> ../examples/doom_wasm/build (only if build exists)
+    # web/visualizer/doom -> ../examples/doom_wasm/build (only if build exists)
     if [ -d "$REPO_ROOT/examples/doom_wasm/build" ]; then
-        if [ ! -e "$REPO_ROOT/visualizer/doom" ]; then
-            ln -sf ../examples/doom_wasm/build "$REPO_ROOT/visualizer/doom"
-            echo "  Created: visualizer/doom -> ../examples/doom_wasm/build"
+        if [ ! -e "$REPO_ROOT/web/visualizer/doom" ]; then
+            ln -sf ../../examples/doom_wasm/build "$REPO_ROOT/web/visualizer/doom"
+            echo "  Created: web/visualizer/doom -> ../examples/doom_wasm/build"
         fi
     else
-        echo "  Skipped: visualizer/doom (build examples/doom_wasm first)"
+        echo "  Skipped: web/visualizer/doom (build examples/doom_wasm first)"
     fi
 }
 
@@ -51,9 +51,9 @@ create_symlinks() {
 cleanup() {
     echo ""
     echo "Cleaning up symlinks..."
-    rm -f "$REPO_ROOT/visualizer/doom"
-    rm -f "$REPO_ROOT/visualizer/resources"
-    rm -f "$REPO_ROOT/visualizer/tools"
+    rm -f "$REPO_ROOT/web/visualizer/doom"
+    rm -f "$REPO_ROOT/web/visualizer/resources"
+    rm -f "$REPO_ROOT/web/visualizer/tools"
     echo "Done."
 }
 
@@ -79,6 +79,6 @@ echo ""
 echo "Press Ctrl+C to stop the server"
 echo ""
 
-# Start server from project root
-cd "$REPO_ROOT"
+# Serve from web/ so /visualizer/ matches the GitHub Pages URL structure
+cd "$REPO_ROOT/web"
 python3 -m http.server "$PORT"

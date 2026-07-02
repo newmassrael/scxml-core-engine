@@ -18,14 +18,14 @@ out/
 cmake-build-*/
 
 # Visualizer WASM build outputs only (source files are tracked)
-visualizer/visualizer.wasm
-visualizer/visualizer.js
-visualizer/comprehensive_interactive_test.js
+web/visualizer/visualizer.wasm
+web/visualizer/visualizer.js
+web/visualizer/comprehensive_interactive_test.js
 
 # Visualizer symlinks created by scripts/start-server.sh (local dev only)
-visualizer/doom
-visualizer/resources
-visualizer/tools
+web/visualizer/doom
+web/visualizer/resources
+web/visualizer/tools
 
 # CMake generated files
 CMakeCache.txt
