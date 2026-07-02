@@ -4,12 +4,12 @@ on:
   push:
     branches: [main]
     paths:
-      - 'visualizer/**'
+      - 'web/visualizer/**'
       - 'rsm/**'
       - 'tools/codegen/**'
       - 'tests/w3c/InteractiveTestRunner.cpp'
       - 'examples/doom_wasm/**'
-      - 'site/**'
+      - 'web/site/**'
       - '.github/workflows/deploy-visualizer.yml'
   workflow_dispatch:
 
@@ -90,13 +90,13 @@ jobs:
 
         # Copy root site files (landing pages, sitemap, robots.txt)
         echo "Copying root site files..."
-        cp site/*.html gh-pages/
-        cp site/sitemap.xml gh-pages/
-        cp site/robots.txt gh-pages/
+        cp web/site/*.html gh-pages/
+        cp web/site/sitemap.xml gh-pages/
+        cp web/site/robots.txt gh-pages/
 
         # Copy visualizer source files
         echo "Copying visualizer source files..."
-        cp -r visualizer/* gh-pages/visualizer/
+        cp -r web/visualizer/* gh-pages/visualizer/
 
         # Copy WASM build outputs (overwrite placeholder files if present)
         echo "Copying WASM build outputs..."
@@ -114,8 +114,8 @@ jobs:
         cp examples/doom_wasm/build/doom_sce.js gh-pages/visualizer/doom/
         cp examples/doom_wasm/build/doom_sce.wasm gh-pages/visualizer/doom/
         cp examples/doom_wasm/build/doom_sce.data gh-pages/visualizer/doom/
-        # Copy visualizer for DOOM (visualizer.html at root, JS files in visualizer/)
-        cp -r visualizer gh-pages/visualizer/doom/
+        # Copy visualizer for DOOM (visualizer.html at root, JS files in web/visualizer/ (source))
+        cp -r web/visualizer gh-pages/visualizer/doom/
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3

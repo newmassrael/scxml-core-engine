@@ -954,7 +954,7 @@ sce_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C
 #   - W3C_AOT_TESTS auto-accumulated (no manual list to maintain)
 #   - W3CTestRunner_TestXXX.cpp auto-generated
 #   - W3CTestRegistry.cpp auto-generated
-#   - visualizer/test-list.js auto-generated
+#   - web/visualizer/test-list.js auto-generated
 #
 # CUSTOM TESTS: For tests needing PASS_STATE override, custom timeouts, etc.,
 #   create tests/w3c/aot_tests/TestXXX.h manually. Auto-generation skips existing files.
@@ -1009,7 +1009,7 @@ if(EMSCRIPTEN)
 endif()
 
 # ============================================================================
-# Auto-generate visualizer/test-list.js from W3C_AOT_TESTS
+# Auto-generate web/visualizer/test-list.js from W3C_AOT_TESTS
 # ============================================================================
 # Zero Duplication: W3C_AOT_TESTS is auto-accumulated from sce_generate_static_w3c_test() calls
 find_package(Python3 COMPONENTS Interpreter)
@@ -1017,24 +1017,24 @@ find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND AND NOT EMSCRIPTEN)
     # Use the auto-generated W3C_AOT_TESTS list file as input for test-list.js generation
     add_custom_command(
-        OUTPUT ${CMAKE_SOURCE_DIR}/visualizer/test-list.js
+        OUTPUT ${CMAKE_SOURCE_DIR}/web/web/visualizer/test-list.js
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
                 ${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake
-                ${CMAKE_SOURCE_DIR}/visualizer/test-list.js
+                ${CMAKE_SOURCE_DIR}/web/web/visualizer/test-list.js
         DEPENDS ${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
-        COMMENT "Generating visualizer/test-list.js from W3C_AOT_TESTS"
+        COMMENT "Generating web/visualizer/test-list.js from W3C_AOT_TESTS"
         VERBATIM
     )
 
     add_custom_target(generate_test_list ALL
-        DEPENDS ${CMAKE_SOURCE_DIR}/visualizer/test-list.js
+        DEPENDS ${CMAKE_SOURCE_DIR}/web/web/visualizer/test-list.js
     )
 
     message(STATUS "Visualizer test list will be auto-generated from W3C_AOT_TESTS")
 elseif(NOT Python3_FOUND)
-    message(WARNING "Python3 not found - visualizer/test-list.js will not be auto-generated")
+    message(WARNING "Python3 not found - web/visualizer/test-list.js will not be auto-generated")
     message(WARNING "Run manually: python3 tools/generate_test_list.py")
 endif()
 
@@ -6975,15 +6975,15 @@ if(EMSCRIPTEN)
         -sASYNCIFY
     )
 
-    # Auto-deploy WASM files to visualizer/ directory after build
+    # Auto-deploy WASM files to web/visualizer/ directory after build
     add_custom_command(TARGET visualizer POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${CMAKE_CURRENT_BINARY_DIR}/visualizer.wasm
-                ${CMAKE_SOURCE_DIR}/visualizer/visualizer.wasm
+                ${CMAKE_SOURCE_DIR}/web/visualizer/visualizer.wasm
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${CMAKE_CURRENT_BINARY_DIR}/visualizer.js
-                ${CMAKE_SOURCE_DIR}/visualizer/visualizer.js
-        COMMENT "Auto-deploying WASM files to visualizer/"
+                ${CMAKE_SOURCE_DIR}/web/visualizer/visualizer.js
+        COMMENT "Auto-deploying WASM files to web/visualizer/"
         VERBATIM
     )
     message(STATUS "   - WASM files will be automatically deployed after build")
