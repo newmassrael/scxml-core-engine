@@ -35,10 +35,13 @@ build/tools/txml_converter/txml-converter resources/XXX/testXXX.txml /tmp/test_v
 # Try static code generation
 sce-codegen generate /tmp/test_verify/testXXX.scxml -o /tmp/test_verify/ -l cpp
 
-# Check output:
-#   "Generated: ...testXXX_sm.h" → static generation OK
-#   "Reason: ..." → cannot be statically generated
-#   "Needs JSEngine: True/False"
+# Emits ONE JSON manifest line to stdout, e.g.:
+#   {"v":1,"kind":"generate","artifacts":[{"path":".../testXXX_sm.h"}, ...],"needs_script_engine":false}
+# Interpret:
+#   artifacts listed, no "rejected" key   → static generation OK
+#   "needs_script_engine": false          → pure static
+#   "needs_script_engine": true           → static + embedded script engine (Lua)
+#   "rejected":{"spec":...,"name":...}    → cannot be statically generated (stub files written); Interpreter-only
 ```
 
 **Do NOT** test against `build/tests/w3c_static_generated/testXXX.scxml` — it doesn't exist until registered.
