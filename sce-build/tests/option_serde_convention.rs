@@ -57,6 +57,13 @@ const WIRE_FORMAT_EXEMPT: &[&str] = &[
     // into a minijinja codegen template — the codegen never reads
     // them, so the template convention does not apply.
     "provenance.rs",
+    // `ScriptEngineCauseRecord` — the stdout manifest's
+    // `script_engine_causes` wire shape (SCE_ERROR_CONTRACT.md §10.4).
+    // Serialised straight to JSON for the CLI manifest and never fed into
+    // a minijinja template, so omitting absent anchors (the `fix`/`location`
+    // convention every other SCE wire record follows) is correct here. The
+    // analyzer's own cause types are build-time state, not template input.
+    "script_engine_analyzer.rs",
 ];
 
 fn is_wire_format_exempt(rs_file: &Path, repo_root: &Path) -> bool {

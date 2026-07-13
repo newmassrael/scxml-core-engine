@@ -304,6 +304,10 @@ pub struct Variable {
     pub expr: String,
     pub src: String,
     pub content: String,
+    /// The `<data>` element's position, so a build that must stay
+    /// pure-static can anchor a `datamodel-variable-init` script-engine
+    /// cause on the line that costs it (SCE_ERROR_CONTRACT.md §10.4).
+    pub source_location: Option<SourceLocation>,
     /// Classified type: int, string, bool, runtime
     #[serde(rename = "type")]
     pub var_type: String,
@@ -454,6 +458,9 @@ pub struct InvokeBase {
     /// `<invoke>`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unresolved: Vec<UnresolvedMarker>,
+    /// The `<invoke>` element's position, so an invoke-anchored
+    /// script-engine cause can name the line (SCE_ERROR_CONTRACT.md §10.4).
+    pub source_location: Option<SourceLocation>,
 }
 
 /// Fields shared by W3C SCXML-session invokes (Scxml + Hybrid): child
@@ -1190,6 +1197,23 @@ pub struct SCXMLModel {
     pub has_child_communication: bool,
     pub needs_http_send: bool,
     pub needs_script_engine: bool,
+    /// Every construct that forced [`Self::needs_script_engine`] to `true`
+    /// — the analyzer's full finding, not just its boolean projection.
+    ///
+    /// Written in the same statement as the flag, from one
+    /// [`crate::script_engine_analyzer::analyze`] traversal, so the
+    /// invariant `needs_script_engine == !script_engine_causes.is_empty()`
+    /// holds by construction. Recomputing the list downstream would
+    /// re-derive it from a model that later passes may have changed, and a
+    /// flag that disagreed with its own explanation is worse than no
+    /// explanation. Pinned by
+    /// `script_engine_analyzer::tests::model_flag_agrees_with_stored_causes`.
+    ///
+    /// Projected onto the `sce-codegen generate` stdout manifest as
+    /// `script_engine_causes` (SCE_ERROR_CONTRACT.md §10.4) so a build that
+    /// gates on a pure-static lowering can name what cost it.
+    #[serde(skip)]
+    pub script_engine_causes: Vec<crate::script_engine_analyzer::NeedsScriptEngineCause>,
     /// Whether the document contains any `<cancel>` action (§scxml-6.3).
     ///
     /// Drives the Rust `StatePolicy::ScheduledSendId` selection: a cancel-free

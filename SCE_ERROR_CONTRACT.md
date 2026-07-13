@@ -441,7 +441,13 @@ stdout — nothing more, nothing less. The shape is:
   "artifacts": [
     {"path": "/abs/path/foo_sm.rs"}
   ],
-  "needs_script_engine": false,
+  "needs_script_engine": true,
+  "script_engine_causes": [
+    {"kind": "transition-guard", "state": "idle",
+     "location": {"file": "m.scxml", "line": 7, "col": 5}},
+    {"kind": "datamodel-variable-init", "var": "retry",
+     "location": {"file": "m.scxml", "line": 5, "col": 15}}
+  ],
   "rejected": {"spec": "W3C SCXML 5.8", "name": "untestable_doc"}
 }
 ```
@@ -454,6 +460,7 @@ stdout — nothing more, nothing less. The shape is:
 | `kind` | string | Which subcommand produced this manifest. Agents branch on this before deserialising into a subcommand-specific shape. Currently only `"generate"`. |
 | `artifacts` | array of `{path}` objects | Absolute path of every file written during the run, in emission order. Entries are objects (not bare strings) so the schema can grow additively — future fields (`size`, `hash`, `artifact_kind`) must extend the object without a `v` bump. |
 | `needs_script_engine` | bool | Whether the compiled machine embeds ECMAScript requiring a runtime engine. |
+| `script_engine_causes` | optional array of objects | **Why** `needs_script_engine` is `true` — one record per construct that forced the engine in. Present exactly when the flag is `true`; omitted (not `[]`) otherwise, so a pure-static manifest carries no new bytes. See [§10.4](#104-script-engine-causes). |
 | `rejected` | optional object | Present only when the input triggered a W3C-spec rejection (currently `W3C SCXML 5.8`, "untestable manifest") and stub files were written in place of generated code. Absence means clean generation. Fields: `spec` (e.g. `"W3C SCXML 5.8"`) and `name` (the document's `name` attribute). |
 
 ### 10.2 Stream discipline
@@ -472,8 +479,89 @@ stdout — nothing more, nothing less. The shape is:
 ### 10.3 On-disk enforcement
 
 - Structs: `GenerateManifest`, `ArtifactEntry`, `RejectedInfo` in
-  `sce-build/src/bin/sce_codegen.rs`.
+  `sce-build/src/bin/sce_codegen.rs`; `ScriptEngineCauseRecord` in
+  `sce-build/src/script_engine_analyzer.rs`.
 - Emitter: `emit_generate_manifest` in the same file, called at every
   `cmd_generate` exit point.
 - Tests: `tests/error_format_json.rs::stdout_emits_single_json_manifest_on_success`
   (positive pin) and `::stdout_does_not_emit_human_prose` (negative pin).
+
+### 10.4 Script-engine causes
+
+`needs_script_engine` alone tells a consumer that a machine lost its
+pure-static lowering, but not what cost it. A build that gates on the
+flag — an MCU target with no engine to embed, a deployment that must
+stay deterministic and replayable — then fails with nothing to act on.
+`script_engine_causes` names the construct, so the gate can point at a
+line of SCXML.
+
+This is a **non-fatal degradation report**, the same role `rejected`
+plays: generation succeeded, but the output is weaker than the author
+may have intended. It is carried here rather than as a diagnostic
+because diagnostics have no severity — every record on stderr is a
+rejection by construction ([§1](#1-streams)) — and because a clean run
+is pinned to an empty stderr. Falling back to the script engine is a
+supported outcome (`static_hybrid`); falling back *silently* is what
+this field ends.
+
+Each record is `{"kind": "<token>", …anchors, "location": {…}}`. `kind`
+is a stable kebab-case token; consumers dispatch on it and **must**
+tolerate unknown values, since new constructs may be added.
+
+`location` is the offending element's own `{file, line, col}` — the same
+[location object](#22-location-object) a diagnostic carries, so tooling
+anchors a degradation exactly as it anchors a rejection. It is absent
+only for a cause with no single element to blame (a `<script src=…>` the
+parser could not read).
+
+The identifier anchors are optional and flat — at most one per record,
+so a consumer reads `cause.state` / `cause.invoke` without matching on a
+nested union:
+
+| Anchor | Present on |
+|---|---|
+| `state` | Causes owned by a state or one of its transitions. |
+| `var` | `datamodel-variable-init` — the `<data id>`. |
+| `param` | `send-param-expr` — the `<param name>` (alongside `state`). |
+| `invoke` | Invoke-anchored causes — the `<invoke id>`. |
+
+| `kind` | Construct |
+|---|---|
+| `datamodel-variable-init` | `<data>` with an `expr` / `src` / content initializer. |
+| `global-script` | Top-level `<script>`. |
+| `unresolved-external-script` | `<script src=…>` the parser could not load (WASM `parse_string`). |
+| `transition-guard` | `<transition cond=…>` evaluated by the engine. **A typed `_event.data` guard that did not lower natively lands here** — see below. |
+| `send-namelist` | `<send namelist=…>`. |
+| `send-param-expr` | `<send><param expr=…>` that is not a static literal. |
+| `send-dynamic-attr` | `<send>` with `eventexpr` / `targetexpr` / `delayexpr` / `typeexpr` / `contentexpr` / `idlocation`. |
+| `if-condition`, `elseif-condition` | `<if cond=…>` / `<elseif cond=…>`. |
+| `assign-action` | `<assign>`. |
+| `log-expr` | `<log expr=…>`. |
+| `inline-script-action` | Inline `<script>` executable content. |
+| `cancel-expr` | `<cancel sendidexpr=…>`. |
+| `foreach-action` | `<foreach>`. |
+| `hybrid-invoke` | `<invoke srcexpr=…>` / `contentexpr`. |
+| `static-invoke-namelist` | `<invoke namelist=…>`. |
+| `mesh-rpc-srcexpr` | `<invoke type="sce:mesh-rpc">` with an `srcexpr` target. |
+| `donedata-param`, `donedata-content` | `<donedata>` `<param>` / `<content expr=…>`. |
+| `child-invoke-needs-script-engine` | A statically-invoked child whose own analysis required an engine. |
+
+**Typed guards.** A `cond` reading `_event.data.<field>` from an
+imported EventSchema lowers to a native payload comparison and needs no
+engine ([`docs/SCE_ACCEPTED_SUBSET.md`](docs/SCE_ACCEPTED_SUBSET.md)
+§3.4). When it *cannot* — the guard also references a datamodel
+identifier or a function call, which has no binding inside the generated
+`matches!`, or the schema declares an enum-typed field — the document
+stays legal and keeps the engine, and the fallback appears here as
+`transition-guard`. A guard that does not parse as a Forge expression at
+all (e.g. `==` instead of `===`) is a *rejection*, not a cause: it never
+reaches the manifest.
+
+The producer is `script_engine_analyzer::analyze`. The parser stores its
+result on the model in the same statement that sets
+`needs_script_engine`, which is that result's boolean projection — so the
+flag and the cause list cannot disagree, and neither is recomputed
+downstream from a model a later pass has touched
+(`script_engine_analyzer::tests::model_flag_agrees_with_stored_causes`).
+`ScriptEngineCauseKind::to_wire` is an exhaustive match: a new cause
+variant does not compile until its wire `kind` is chosen.

@@ -21,6 +21,7 @@
 //! extraction, tests) sees a correctly-set flag without any parse-time
 //! side effects.
 
+use crate::forge::error::SourceLocation;
 use crate::forge::model::EventSchemaModel;
 use crate::model::{
     Action, DoneData, DoneDataContent, Invoke, InvokeSessionCommon, MeshRpcTarget, SCXMLModel,
@@ -35,7 +36,7 @@ use std::collections::BTreeMap;
 /// them here makes the set reviewable and lets tests pin exactly which
 /// clause fires for a given fixture.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NeedsScriptEngineCause {
+pub enum ScriptEngineCauseKind {
     /// §scxml-5.3 — `<data>` variable with a non-empty `expr`/`src`/`content`
     /// init requires evaluating the initializer at runtime.
     DatamodelVariableInit { var_id: String },
@@ -108,6 +109,182 @@ pub enum NeedsScriptEngineCause {
     ChildInvokeNeedsScriptEngine { invoke_id: String },
 }
 
+/// One cause, anchored on the source it came from.
+///
+/// The kind says *what* forced the script engine in; the location says
+/// *where*. Both are needed: a build that must stay pure-static fails on
+/// the flag, and the author then has to find the construct that cost it.
+///
+/// `location` is the owning element's own [`SourceLocation`] — the same
+/// anchor a diagnostic on that element would carry — so the degradation
+/// report and the rejection report point at source the same way. It is
+/// `None` only for a cause with no single element to blame (a document
+/// whose `<script src=…>` the parser could not read).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NeedsScriptEngineCause {
+    pub kind: ScriptEngineCauseKind,
+    pub location: Option<SourceLocation>,
+}
+
+impl NeedsScriptEngineCause {
+    fn new(kind: ScriptEngineCauseKind, location: Option<&SourceLocation>) -> Self {
+        Self {
+            kind,
+            location: location.cloned(),
+        }
+    }
+}
+
+/// Wire projection of one [`NeedsScriptEngineCause`] — the shape the
+/// `sce-codegen generate` stdout manifest carries in
+/// `script_engine_causes` (SCE_ERROR_CONTRACT.md §10.1).
+///
+/// `needs_script_engine` on its own tells a consumer that a machine lost
+/// its pure-static lowering but not *which* construct cost it. A build
+/// that gates on the flag then fails with nothing to act on. These
+/// records name the construct, so the gate can point at a line of SCXML.
+///
+/// The projection is deliberate rather than a `derive(Serialize)` on the
+/// enum: `kind` is a stable kebab-case wire token that does not move when
+/// the Rust variant is renamed, and the anchors are flattened to one
+/// optional field per identifier kind so a consumer reads
+/// `cause.state` / `cause.invoke` without matching on a nested union.
+/// [`ScriptEngineCauseKind::to_wire`] is an exhaustive match, so a new
+/// variant cannot be added without choosing its wire shape.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ScriptEngineCauseRecord {
+    /// Stable kebab-case discriminator. Consumers dispatch on this and
+    /// must tolerate unknown values (new constructs may be added).
+    pub kind: &'static str,
+    /// Owning state, for causes anchored to a state or a transition.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    /// Datamodel variable id, for the `<data>` initializer cause.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub var: Option<String>,
+    /// `<param name="…">`, for the send-param cause.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub param: Option<String>,
+    /// `<invoke id="…">`, for the invoke-anchored causes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invoke: Option<String>,
+    /// Where in the source. Same `{file, line, col}` shape a diagnostic
+    /// carries, so tooling anchors a degradation exactly as it anchors a
+    /// rejection.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<SourceLocation>,
+}
+
+impl ScriptEngineCauseRecord {
+    fn new(kind: &'static str) -> Self {
+        Self {
+            kind,
+            state: None,
+            var: None,
+            param: None,
+            invoke: None,
+            location: None,
+        }
+    }
+
+    fn at_state(kind: &'static str, state_id: &str) -> Self {
+        Self {
+            state: Some(state_id.to_string()),
+            ..Self::new(kind)
+        }
+    }
+
+    fn at_invoke(kind: &'static str, invoke_id: &str) -> Self {
+        Self {
+            invoke: Some(invoke_id.to_string()),
+            ..Self::new(kind)
+        }
+    }
+}
+
+impl NeedsScriptEngineCause {
+    /// Project onto the manifest wire shape. Exhaustive by construction —
+    /// adding a variant without a wire `kind` does not compile.
+    pub fn to_wire(&self) -> ScriptEngineCauseRecord {
+        ScriptEngineCauseRecord {
+            location: self.location.clone(),
+            ..self.kind.to_wire()
+        }
+    }
+}
+
+impl ScriptEngineCauseKind {
+    fn to_wire(&self) -> ScriptEngineCauseRecord {
+        use ScriptEngineCauseKind as C;
+        match self {
+            C::DatamodelVariableInit { var_id } => ScriptEngineCauseRecord {
+                var: Some(var_id.clone()),
+                ..ScriptEngineCauseRecord::new("datamodel-variable-init")
+            },
+            C::GlobalScript => ScriptEngineCauseRecord::new("global-script"),
+            C::UnresolvedExternalScript => {
+                ScriptEngineCauseRecord::new("unresolved-external-script")
+            }
+            // The cause a typed-guard author must be able to see: an
+            // EventSchema guard that did not lower natively lands here,
+            // indistinguishable in the flag alone from any other guard.
+            C::TransitionGuard { source_state } => {
+                ScriptEngineCauseRecord::at_state("transition-guard", source_state)
+            }
+            C::SendNamelist { state_id } => {
+                ScriptEngineCauseRecord::at_state("send-namelist", state_id)
+            }
+            C::SendParamExpr {
+                state_id,
+                param_name,
+            } => ScriptEngineCauseRecord {
+                param: Some(param_name.clone()),
+                ..ScriptEngineCauseRecord::at_state("send-param-expr", state_id)
+            },
+            C::SendDynamicAttr { state_id } => {
+                ScriptEngineCauseRecord::at_state("send-dynamic-attr", state_id)
+            }
+            C::IfCondition { state_id } => {
+                ScriptEngineCauseRecord::at_state("if-condition", state_id)
+            }
+            C::ElseIfCondition { state_id } => {
+                ScriptEngineCauseRecord::at_state("elseif-condition", state_id)
+            }
+            C::AssignAction { state_id } => {
+                ScriptEngineCauseRecord::at_state("assign-action", state_id)
+            }
+            C::LogExpr { state_id } => ScriptEngineCauseRecord::at_state("log-expr", state_id),
+            C::InlineScriptAction { state_id } => {
+                ScriptEngineCauseRecord::at_state("inline-script-action", state_id)
+            }
+            C::CancelExpr { state_id } => {
+                ScriptEngineCauseRecord::at_state("cancel-expr", state_id)
+            }
+            C::ForeachAction { state_id } => {
+                ScriptEngineCauseRecord::at_state("foreach-action", state_id)
+            }
+            C::HybridInvoke { invoke_id } => {
+                ScriptEngineCauseRecord::at_invoke("hybrid-invoke", invoke_id)
+            }
+            C::StaticInvokeNamelist { invoke_id } => {
+                ScriptEngineCauseRecord::at_invoke("static-invoke-namelist", invoke_id)
+            }
+            C::MeshRpcSrcExpr { invoke_id } => {
+                ScriptEngineCauseRecord::at_invoke("mesh-rpc-srcexpr", invoke_id)
+            }
+            C::DonedataParam { state_id } => {
+                ScriptEngineCauseRecord::at_state("donedata-param", state_id)
+            }
+            C::DonedataContent { state_id } => {
+                ScriptEngineCauseRecord::at_state("donedata-content", state_id)
+            }
+            C::ChildInvokeNeedsScriptEngine { invoke_id } => {
+                ScriptEngineCauseRecord::at_invoke("child-invoke-needs-script-engine", invoke_id)
+            }
+        }
+    }
+}
+
 /// Walk `model` and return every distinct cause that would make the
 /// document require a runtime script engine. The returned vector is
 /// empty iff no such cause exists, i.e. [`requires_script_engine`]
@@ -138,19 +315,30 @@ fn collect_datamodel_causes(variables: &[Variable], out: &mut Vec<NeedsScriptEng
         // happens later in [`crate::analyzer::classify_variables`] and
         // doesn't affect this flag.
         if !var.expr.is_empty() || !var.src.is_empty() || !var.content.is_empty() {
-            out.push(NeedsScriptEngineCause::DatamodelVariableInit {
-                var_id: var.id.clone(),
-            });
+            out.push(NeedsScriptEngineCause::new(
+                ScriptEngineCauseKind::DatamodelVariableInit {
+                    var_id: var.id.clone(),
+                },
+                var.source_location.as_ref(),
+            ));
         }
     }
 }
 
 fn collect_global_script_causes(model: &SCXMLModel, out: &mut Vec<NeedsScriptEngineCause>) {
+    // Anchored on the document root: a top-level `<script>` is not a model
+    // element of its own, so the root is the finest anchor that exists.
     if !model.global_scripts.is_empty() {
-        out.push(NeedsScriptEngineCause::GlobalScript);
+        out.push(NeedsScriptEngineCause::new(
+            ScriptEngineCauseKind::GlobalScript,
+            model.source_location.as_ref(),
+        ));
     }
     if model.has_unresolved_external_script {
-        out.push(NeedsScriptEngineCause::UnresolvedExternalScript);
+        out.push(NeedsScriptEngineCause::new(
+            ScriptEngineCauseKind::UnresolvedExternalScript,
+            model.source_location.as_ref(),
+        ));
     }
 }
 
@@ -162,9 +350,12 @@ fn collect_state_causes(
 ) {
     for trans in &state.transitions {
         if transition_guard_needs_engine(trans, schemas) {
-            out.push(NeedsScriptEngineCause::TransitionGuard {
-                source_state: state_id.to_string(),
-            });
+            out.push(NeedsScriptEngineCause::new(
+                ScriptEngineCauseKind::TransitionGuard {
+                    source_state: state_id.to_string(),
+                },
+                trans.source_location.as_ref(),
+            ));
         }
         for action in &trans.actions {
             collect_action_causes(state_id, action, out);
@@ -189,7 +380,7 @@ fn collect_state_causes(
         collect_invoke_causes(invoke, out);
     }
     if let Some(dd) = &state.donedata {
-        collect_donedata_causes(state_id, dd, out);
+        collect_donedata_causes(state_id, state, dd, out);
     }
 }
 
@@ -229,35 +420,50 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
     match action.action_type.as_str() {
         "send" => {
             if !action.namelist.is_empty() {
-                out.push(NeedsScriptEngineCause::SendNamelist {
-                    state_id: state_id.to_string(),
-                });
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::SendNamelist {
+                        state_id: state_id.to_string(),
+                    },
+                    action.source_location.as_ref(),
+                ));
             }
             for param in &action.params {
                 if !param.expr.is_empty() && !param.is_static_literal {
-                    out.push(NeedsScriptEngineCause::SendParamExpr {
-                        state_id: state_id.to_string(),
-                        param_name: param.name.clone(),
-                    });
+                    out.push(NeedsScriptEngineCause::new(
+                        ScriptEngineCauseKind::SendParamExpr {
+                            state_id: state_id.to_string(),
+                            param_name: param.name.clone(),
+                        },
+                        action.source_location.as_ref(),
+                    ));
                 }
             }
             if send_has_dynamic_attr(action) {
-                out.push(NeedsScriptEngineCause::SendDynamicAttr {
-                    state_id: state_id.to_string(),
-                });
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::SendDynamicAttr {
+                        state_id: state_id.to_string(),
+                    },
+                    action.source_location.as_ref(),
+                ));
             }
         }
         "if" => {
             if cond_needs_engine(&action.cond) {
-                out.push(NeedsScriptEngineCause::IfCondition {
-                    state_id: state_id.to_string(),
-                });
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::IfCondition {
+                        state_id: state_id.to_string(),
+                    },
+                    action.source_location.as_ref(),
+                ));
             }
             for branch in &action.elseif_branches {
                 if cond_needs_engine(&branch.cond) {
-                    out.push(NeedsScriptEngineCause::ElseIfCondition {
-                        state_id: state_id.to_string(),
-                    });
+                    out.push(NeedsScriptEngineCause::new(
+                        ScriptEngineCauseKind::ElseIfCondition {
+                            state_id: state_id.to_string(),
+                        },
+                        action.source_location.as_ref(),
+                    ));
                 }
                 for nested in &branch.actions {
                     collect_action_causes(state_id, nested, out);
@@ -274,15 +480,21 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
             // §scxml-5.4: `<assign>` is always engine-bound; even pure
             // location='var' expr='literal' routes through the assignment
             // helper which talks to the datamodel store.
-            out.push(NeedsScriptEngineCause::AssignAction {
-                state_id: state_id.to_string(),
-            });
+            out.push(NeedsScriptEngineCause::new(
+                ScriptEngineCauseKind::AssignAction {
+                    state_id: state_id.to_string(),
+                },
+                action.source_location.as_ref(),
+            ));
         }
         "log" => {
             if !action.expr.is_empty() {
-                out.push(NeedsScriptEngineCause::LogExpr {
-                    state_id: state_id.to_string(),
-                });
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::LogExpr {
+                        state_id: state_id.to_string(),
+                    },
+                    action.source_location.as_ref(),
+                ));
             }
         }
         "script" => {
@@ -290,22 +502,31 @@ fn collect_action_causes(state_id: &str, action: &Action, out: &mut Vec<NeedsScr
             // blocks are emitted as source code and set the respective
             // `is_*_function` flag — they do not require the engine.
             if !action.is_cpp_function && !action.is_kt_function {
-                out.push(NeedsScriptEngineCause::InlineScriptAction {
-                    state_id: state_id.to_string(),
-                });
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::InlineScriptAction {
+                        state_id: state_id.to_string(),
+                    },
+                    action.source_location.as_ref(),
+                ));
             }
         }
         "cancel" => {
             if !action.sendidexpr.is_empty() {
-                out.push(NeedsScriptEngineCause::CancelExpr {
-                    state_id: state_id.to_string(),
-                });
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::CancelExpr {
+                        state_id: state_id.to_string(),
+                    },
+                    action.source_location.as_ref(),
+                ));
             }
         }
         "foreach" => {
-            out.push(NeedsScriptEngineCause::ForeachAction {
-                state_id: state_id.to_string(),
-            });
+            out.push(NeedsScriptEngineCause::new(
+                ScriptEngineCauseKind::ForeachAction {
+                    state_id: state_id.to_string(),
+                },
+                action.source_location.as_ref(),
+            ));
             for nested in &action.actions {
                 collect_action_causes(state_id, nested, out);
             }
@@ -345,24 +566,33 @@ fn cond_needs_engine(cond: &str) -> bool {
 fn collect_invoke_causes(invoke: &Invoke, out: &mut Vec<NeedsScriptEngineCause>) {
     match invoke {
         Invoke::Hybrid(info) => {
-            out.push(NeedsScriptEngineCause::HybridInvoke {
-                invoke_id: info.common.base.invoke_id.clone(),
-            });
+            out.push(NeedsScriptEngineCause::new(
+                ScriptEngineCauseKind::HybridInvoke {
+                    invoke_id: info.common.base.invoke_id.clone(),
+                },
+                info.common.base.source_location.as_ref(),
+            ));
             push_child_invoke_cause(&info.common, out);
         }
         Invoke::Scxml(info) => {
             if !info.namelist.is_empty() {
-                out.push(NeedsScriptEngineCause::StaticInvokeNamelist {
-                    invoke_id: info.common.base.invoke_id.clone(),
-                });
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::StaticInvokeNamelist {
+                        invoke_id: info.common.base.invoke_id.clone(),
+                    },
+                    info.common.base.source_location.as_ref(),
+                ));
             }
             push_child_invoke_cause(&info.common, out);
         }
         Invoke::MeshRpc(info) => {
             if matches!(&info.target, MeshRpcTarget::SrcExpr { .. }) {
-                out.push(NeedsScriptEngineCause::MeshRpcSrcExpr {
-                    invoke_id: info.base.invoke_id.clone(),
-                });
+                out.push(NeedsScriptEngineCause::new(
+                    ScriptEngineCauseKind::MeshRpcSrcExpr {
+                        invoke_id: info.base.invoke_id.clone(),
+                    },
+                    info.base.source_location.as_ref(),
+                ));
             }
         }
     }
@@ -370,26 +600,42 @@ fn collect_invoke_causes(invoke: &Invoke, out: &mut Vec<NeedsScriptEngineCause>)
 
 fn push_child_invoke_cause(common: &InvokeSessionCommon, out: &mut Vec<NeedsScriptEngineCause>) {
     if common.child_needs_script_engine {
-        out.push(NeedsScriptEngineCause::ChildInvokeNeedsScriptEngine {
-            invoke_id: common.base.invoke_id.clone(),
-        });
+        out.push(NeedsScriptEngineCause::new(
+            ScriptEngineCauseKind::ChildInvokeNeedsScriptEngine {
+                invoke_id: common.base.invoke_id.clone(),
+            },
+            common.base.source_location.as_ref(),
+        ));
     }
 }
 
-fn collect_donedata_causes(state_id: &str, dd: &DoneData, out: &mut Vec<NeedsScriptEngineCause>) {
+// `<donedata>` is not a located model element of its own, so its causes
+// anchor on the `<final>` state that owns it — the finest anchor available.
+fn collect_donedata_causes(
+    state_id: &str,
+    state: &State,
+    dd: &DoneData,
+    out: &mut Vec<NeedsScriptEngineCause>,
+) {
     if !dd.params.is_empty() {
-        out.push(NeedsScriptEngineCause::DonedataParam {
-            state_id: state_id.to_string(),
-        });
+        out.push(NeedsScriptEngineCause::new(
+            ScriptEngineCauseKind::DonedataParam {
+                state_id: state_id.to_string(),
+            },
+            state.source_location.as_ref(),
+        ));
     }
     // Only `<content expr="...">` forces a script engine. Literal bodies
     // are emitted as string constants by the codegen literal path and by
     // the interpreter's `DoneDataHelper::emitContentLiteral`, so no
     // evaluation is required.
     if matches!(dd.content, DoneDataContent::Expression(_)) {
-        out.push(NeedsScriptEngineCause::DonedataContent {
-            state_id: state_id.to_string(),
-        });
+        out.push(NeedsScriptEngineCause::new(
+            ScriptEngineCauseKind::DonedataContent {
+                state_id: state_id.to_string(),
+            },
+            state.source_location.as_ref(),
+        ));
     }
 }
 
@@ -402,7 +648,10 @@ mod tests {
         SCXMLParser::new().parse_string(scxml, "test").unwrap()
     }
 
-    fn single_cause(scxml: &str) -> NeedsScriptEngineCause {
+    /// The kind of the sole cause. Tests that assert *which* construct
+    /// fired read the kind; the location is asserted separately by
+    /// `causes_are_anchored_on_their_source`.
+    fn single_cause(scxml: &str) -> ScriptEngineCauseKind {
         let model = parse(scxml);
         let causes = analyze(&model);
         assert_eq!(
@@ -411,17 +660,17 @@ mod tests {
             "expected exactly one cause, got {:?}",
             causes,
         );
-        causes.into_iter().next().unwrap()
+        causes.into_iter().next().unwrap().kind
     }
 
     fn contains_cause<F>(scxml: &str, predicate: F)
     where
-        F: Fn(&NeedsScriptEngineCause) -> bool,
+        F: Fn(&ScriptEngineCauseKind) -> bool,
     {
         let model = parse(scxml);
         let causes = analyze(&model);
         assert!(
-            causes.iter().any(&predicate),
+            causes.iter().any(|c| predicate(&c.kind)),
             "expected a matching cause, got {:?}",
             causes,
         );
@@ -445,7 +694,7 @@ mod tests {
         </scxml>"#;
         assert!(matches!(
             single_cause(scxml),
-            NeedsScriptEngineCause::DatamodelVariableInit { var_id } if var_id == "x"
+            ScriptEngineCauseKind::DatamodelVariableInit { var_id } if var_id == "x"
         ));
     }
 
@@ -457,7 +706,7 @@ mod tests {
         </scxml>"#;
         assert!(matches!(
             single_cause(scxml),
-            NeedsScriptEngineCause::GlobalScript
+            ScriptEngineCauseKind::GlobalScript
         ));
     }
 
@@ -475,7 +724,7 @@ mod tests {
         let causes = analyze(&model);
         assert!(causes
             .iter()
-            .any(|c| matches!(c, NeedsScriptEngineCause::UnresolvedExternalScript)));
+            .any(|c| matches!(c.kind, ScriptEngineCauseKind::UnresolvedExternalScript)));
     }
 
     #[test]
@@ -485,7 +734,7 @@ mod tests {
         </scxml>"#;
         assert!(matches!(
             single_cause(scxml),
-            NeedsScriptEngineCause::TransitionGuard { source_state } if source_state == "s"
+            ScriptEngineCauseKind::TransitionGuard { source_state } if source_state == "s"
         ));
     }
 
@@ -496,7 +745,7 @@ mod tests {
         </scxml>"#;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::SendNamelist { state_id } if state_id == "s"),
+            |c| matches!(c, ScriptEngineCauseKind::SendNamelist { state_id } if state_id == "s"),
         );
     }
 
@@ -510,7 +759,7 @@ mod tests {
         contains_cause(scxml, |c| {
             matches!(
                 c,
-                NeedsScriptEngineCause::SendParamExpr { param_name, .. } if param_name == "p"
+                ScriptEngineCauseKind::SendParamExpr { param_name, .. } if param_name == "p"
             )
         });
     }
@@ -522,7 +771,7 @@ mod tests {
         </scxml>"#;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::SendDynamicAttr { state_id } if state_id == "s"),
+            |c| matches!(c, ScriptEngineCauseKind::SendDynamicAttr { state_id } if state_id == "s"),
         );
     }
 
@@ -533,7 +782,7 @@ mod tests {
         </scxml>"#;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::IfCondition { state_id } if state_id == "s"),
+            |c| matches!(c, ScriptEngineCauseKind::IfCondition { state_id } if state_id == "s"),
         );
     }
 
@@ -546,7 +795,7 @@ mod tests {
         </scxml>"#;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::ElseIfCondition { state_id } if state_id == "s"),
+            |c| matches!(c, ScriptEngineCauseKind::ElseIfCondition { state_id } if state_id == "s"),
         );
     }
 
@@ -557,7 +806,7 @@ mod tests {
         </scxml>"#;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::AssignAction { state_id } if state_id == "s"),
+            |c| matches!(c, ScriptEngineCauseKind::AssignAction { state_id } if state_id == "s"),
         );
     }
 
@@ -568,7 +817,7 @@ mod tests {
         </scxml>"#;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::LogExpr { state_id } if state_id == "s"),
+            |c| matches!(c, ScriptEngineCauseKind::LogExpr { state_id } if state_id == "s"),
         );
     }
 
@@ -579,7 +828,7 @@ mod tests {
         </scxml>"#;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::InlineScriptAction { state_id } if state_id == "s"),
+            |c| matches!(c, ScriptEngineCauseKind::InlineScriptAction { state_id } if state_id == "s"),
         );
     }
 
@@ -619,7 +868,7 @@ mod tests {
         </scxml>"#;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::CancelExpr { state_id } if state_id == "s"),
+            |c| matches!(c, ScriptEngineCauseKind::CancelExpr { state_id } if state_id == "s"),
         );
     }
 
@@ -630,7 +879,7 @@ mod tests {
         </scxml>"#;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::ForeachAction { state_id } if state_id == "s"),
+            |c| matches!(c, ScriptEngineCauseKind::ForeachAction { state_id } if state_id == "s"),
         );
     }
 
@@ -643,7 +892,7 @@ mod tests {
         </scxml>"##;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::HybridInvoke { invoke_id } if invoke_id == "h1"),
+            |c| matches!(c, ScriptEngineCauseKind::HybridInvoke { invoke_id } if invoke_id == "h1"),
         );
     }
 
@@ -662,7 +911,7 @@ mod tests {
         contains_cause(scxml, |c| {
             matches!(
                 c,
-                NeedsScriptEngineCause::StaticInvokeNamelist { invoke_id } if invoke_id == "i1"
+                ScriptEngineCauseKind::StaticInvokeNamelist { invoke_id } if invoke_id == "i1"
             )
         });
     }
@@ -679,7 +928,7 @@ mod tests {
         contains_cause(scxml, |c| {
             matches!(
                 c,
-                NeedsScriptEngineCause::MeshRpcSrcExpr { invoke_id } if invoke_id == "m1"
+                ScriptEngineCauseKind::MeshRpcSrcExpr { invoke_id } if invoke_id == "m1"
             )
         });
     }
@@ -691,7 +940,7 @@ mod tests {
         </scxml>"##;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::DonedataParam { state_id } if state_id == "f"),
+            |c| matches!(c, ScriptEngineCauseKind::DonedataParam { state_id } if state_id == "f"),
         );
     }
 
@@ -704,7 +953,7 @@ mod tests {
         </scxml>"##;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::DonedataContent { state_id } if state_id == "f"),
+            |c| matches!(c, ScriptEngineCauseKind::DonedataContent { state_id } if state_id == "f"),
         );
     }
 
@@ -744,7 +993,7 @@ mod tests {
         </scxml>"##;
         contains_cause(
             scxml,
-            |c| matches!(c, NeedsScriptEngineCause::DonedataContent { state_id } if state_id == "f"),
+            |c| matches!(c, ScriptEngineCauseKind::DonedataContent { state_id } if state_id == "f"),
         );
     }
 
@@ -777,5 +1026,113 @@ mod tests {
                 "unexpected flag for {scxml}"
             );
         }
+    }
+
+    /// The parser stores the cause list on the model in the same statement
+    /// that sets the flag, so a machine that needs the engine always names
+    /// at least one cause and a pure-static machine names none. A consumer
+    /// gating on the flag can therefore always act on the list — and no
+    /// later pass can leave the two disagreeing, because neither is
+    /// recomputed.
+    #[test]
+    fn model_flag_agrees_with_stored_causes() {
+        let docs: &[&str] = &[
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"><state id="s"/></scxml>"#,
+            r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"><state id="s"><onentry><log expr="1"/></onentry></state></scxml>"#,
+        ];
+        for scxml in docs {
+            let model = parse(scxml);
+            assert_eq!(
+                model.needs_script_engine,
+                !model.script_engine_causes.is_empty(),
+                "stored flag and stored causes disagree for {scxml}",
+            );
+            assert_eq!(
+                model.script_engine_causes,
+                analyze(&model),
+                "stored causes diverged from the analyzer for {scxml}",
+            );
+        }
+    }
+
+    /// Every cause projects to a non-empty, stable kebab-case wire token.
+    /// `to_wire` is an exhaustive match, so a new variant cannot reach the
+    /// manifest without one being chosen — this pins the token *shape*,
+    /// which is what a consumer dispatches on.
+    #[test]
+    fn wire_kinds_are_kebab_case_tokens() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"
+                              datamodel="ecmascript">
+              <datamodel><data id="v" expr="0"/></datamodel>
+              <state id="s">
+                <onentry><log expr="1"/><assign location="v" expr="1"/></onentry>
+                <transition event="e" cond="v === 1" target="t"/>
+              </state>
+              <state id="t"/>
+            </scxml>"#;
+        let model = parse(scxml);
+        let causes: Vec<ScriptEngineCauseRecord> = model
+            .script_engine_causes
+            .iter()
+            .map(|c| c.to_wire())
+            .collect();
+        assert!(!causes.is_empty(), "fixture must need the script engine");
+        for c in &causes {
+            assert!(
+                !c.kind.is_empty() && c.kind.bytes().all(|b| b.is_ascii_lowercase() || b == b'-'),
+                "wire kind must be a kebab-case token: {:?}",
+                c.kind
+            );
+        }
+        // The transition guard is anchored on its owning state, which is
+        // what lets a build gate point at a line of SCXML.
+        let guard = causes
+            .iter()
+            .find(|c| c.kind == "transition-guard")
+            .expect("guard cause");
+        assert_eq!(guard.state.as_deref(), Some("s"));
+    }
+
+    /// A cause must point at source. `needs_script_engine` fails a
+    /// pure-static build; the record is what tells the author where to
+    /// look, so an unanchored cause is only half a report. Every cause
+    /// with an element to blame carries that element's own line — the same
+    /// anchor a diagnostic on it would carry.
+    #[test]
+    fn causes_are_anchored_on_their_source() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s"
+                              datamodel="ecmascript">
+              <datamodel><data id="v" expr="0"/></datamodel>
+              <state id="s">
+                <transition event="e" cond="v === 1" target="t"/>
+              </state>
+              <state id="t"/>
+            </scxml>"#;
+        let model = parse(scxml);
+        for cause in &model.script_engine_causes {
+            let loc = cause
+                .location
+                .as_ref()
+                .unwrap_or_else(|| panic!("cause has no source anchor: {:?}", cause.kind));
+            assert!(
+                loc.line.is_some(),
+                "cause anchor carries no line: {:?}",
+                cause
+            );
+        }
+        // The `<data>` and the `<transition>` sit on different lines, so a
+        // cause list that anchored everything on the document root would
+        // collapse them — pinning distinctness keeps the anchors real.
+        let lines: std::collections::BTreeSet<Option<u32>> = model
+            .script_engine_causes
+            .iter()
+            .map(|c| c.location.as_ref().and_then(|l| l.line))
+            .collect();
+        assert_eq!(
+            lines.len(),
+            2,
+            "each cause must carry its own element's line, got {:?}",
+            model.script_engine_causes
+        );
     }
 }
