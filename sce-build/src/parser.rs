@@ -604,38 +604,47 @@ impl SCXMLParser {
         self.parse_impl(content, label, None)
     }
 
-    /// EventSchema MCU native lowering —
-    /// resolve a statechart's `<sce:import kind="event-schema">`
-    /// declarations to their [`EventSchemaModel`]s by following each
-    /// `src=` to the sibling document under `base_dir`, returning the
-    /// `event_name → EventSchemaModel` map
-    /// [`SCXMLModel::imported_event_schemas`] carries.
+    /// Parse every sibling Forge document this statechart imports, keyed
+    /// by file stem — the registry shape both canonical per-statechart
+    /// resolvers
+    /// ([`crate::forge::event_schema_check::resolve_imported_event_schemas`]
+    /// and [`crate::forge::event_schema_check::resolve_imported_enums`])
+    /// consume. Returns `(event_schemas_by_stem, enums_by_stem)`.
     ///
     /// Mirrors the build orchestrator's forge-doc parse — file stem as
-    /// [`DocumentLabel::identifier`], so the parsed
-    /// `EventSchemaModel::name` equals the stem — then reuses the
-    /// canonical
-    /// [`crate::forge::event_schema_check::resolve_imported_event_schemas`]
-    /// matcher so the stem→event-name resolution has a single source of
-    /// truth.
+    /// [`DocumentLabel::identifier`], so a parsed model's `name` equals
+    /// its stem — then hands the registries to the canonical resolvers so
+    /// the stem→event-name and stem→alias resolution keeps a single
+    /// source of truth.
     ///
-    /// Best-effort: an unreadable, non-forge, or non-EventSchema sibling
-    /// is silently skipped (mirroring the resolver's conservative-
-    /// defensive skip). The authoritative diagnostics for a malformed or
-    /// missing schema document are raised by the multi-doc build's
-    /// receive-/send-side validators (`event_schema_check::check`), which
-    /// run later with the build-wide registry.
-    fn resolve_event_schema_imports(
+    /// EventSchema and Enum are resolved in the same walk because the
+    /// receive-/send-side typecheck needs both: an enum-typed field's
+    /// literal-width narrowing resolves the field's `enum:<alias>` against
+    /// the statechart's own Enum imports. Walking only the EventSchema
+    /// half would leave this parse path's validators strictly weaker than
+    /// the multi-doc build's — the exact divergence class this seam
+    /// exists to prevent.
+    ///
+    /// Best-effort: an unreadable or non-Forge sibling is silently skipped,
+    /// mirroring the resolvers' conservative-defensive skip. A skipped
+    /// sibling leaves its events schemaless, which keeps them on the
+    /// dynamic `_event.data` baseline — the typed path is never entered on
+    /// a schema the parser could not read, so codegen and the validators
+    /// stay in agreement about what is in scope.
+    fn parse_imported_forge_siblings(
         model: &SCXMLModel,
         base_dir: &Path,
-    ) -> std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel> {
+    ) -> (
+        std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel>,
+        std::collections::BTreeMap<String, crate::forge::model::EnumModel>,
+    ) {
         use crate::forge::model::{ForgeDocument, ForgeKind};
-        let mut registry: std::collections::BTreeMap<
-            String,
-            crate::forge::model::EventSchemaModel,
-        > = std::collections::BTreeMap::new();
+        let mut schemas: std::collections::BTreeMap<String, crate::forge::model::EventSchemaModel> =
+            std::collections::BTreeMap::new();
+        let mut enums: std::collections::BTreeMap<String, crate::forge::model::EnumModel> =
+            std::collections::BTreeMap::new();
         for import in &model.forge_imports {
-            if !matches!(import.kind, ForgeKind::EventSchema) {
+            if !matches!(import.kind, ForgeKind::EventSchema | ForgeKind::Enum) {
                 continue;
             }
             let Ok(content) = std::fs::read_to_string(base_dir.join(&import.src)) else {
@@ -652,13 +661,17 @@ impl SCXMLParser {
                 identifier: stem,
                 diagnostic_label: basename,
             };
-            if let Ok(Some(ForgeDocument::EventSchema(schema))) =
-                crate::forge::parser::parse_forge(&content, label)
-            {
-                registry.entry(schema.name.clone()).or_insert(schema);
+            match crate::forge::parser::parse_forge(&content, label) {
+                Ok(Some(ForgeDocument::EventSchema(schema))) => {
+                    schemas.entry(schema.name.clone()).or_insert(schema);
+                }
+                Ok(Some(ForgeDocument::Enum(em))) => {
+                    enums.entry(em.name.clone()).or_insert(em);
+                }
+                _ => {}
             }
         }
-        crate::forge::event_schema_check::resolve_imported_event_schemas(model, &registry)
+        (schemas, enums)
     }
 
     /// Two-role label contract — see [`DocumentLabel`]. `label.identifier`
@@ -967,8 +980,56 @@ impl SCXMLParser {
         // `parse_string` path (WASM) passes `base_dir = None` and has no
         // sibling files to follow, so it keeps the dynamic `_event.data`
         // String baseline.
+        //
+        // [`SCXMLModel::imported_event_schemas`] is written here and
+        // nowhere else, and it is the map every downstream typed-path
+        // consumer reads: the script-engine analyzer's lowerability
+        // verdict, the `native_typed_inject_events` switchboard, and all
+        // six backend payload builders. Resolution is therefore the seam
+        // that *admits* a document to the typed path, so it is also where
+        // the typed path's validators must run — against this very map,
+        // not a separately-resolved one.
+        //
+        // Validating here rather than in the build orchestrator is
+        // load-bearing, not incidental. Codegen entry points that parse a
+        // single document (`sce-codegen generate`) never reach
+        // `compile_scxml_with_imports`, so validators hung off the
+        // orchestrator do not run for them: an unresolvable
+        // `_event.data.<field>` was lowered into a payload-struct field
+        // access that does not exist, and the defect surfaced as a
+        // compile error in the *generated* code with nothing pointing back
+        // at the offending `cond`. Any future entry point that parses a
+        // document is now validated by construction.
         if let Some(dir) = base_dir {
-            model.imported_event_schemas = Self::resolve_event_schema_imports(&model, dir);
+            let (schemas_by_stem, enums_by_stem) = Self::parse_imported_forge_siblings(&model, dir);
+            model.imported_event_schemas =
+                crate::forge::event_schema_check::resolve_imported_event_schemas(
+                    &model,
+                    &schemas_by_stem,
+                );
+            let imported_enums =
+                crate::forge::event_schema_check::resolve_imported_enums(&model, &enums_by_stem);
+            crate::forge::event_schema_check::check(
+                &model,
+                &model.imported_event_schemas,
+                &imported_enums,
+                diag_label,
+            )?;
+            crate::forge::event_schema_check::check_send_side(
+                &model,
+                &model.imported_event_schemas,
+                &imported_enums,
+                diag_label,
+            )?;
+            // §scxml-G-7 — `<sce:action>` native host dispatch is
+            // engine-free by definition, so a non-conforming construct is
+            // a rejection rather than a degradation to the script engine.
+            // It reads the same map, so it belongs to the same seam.
+            crate::forge::native_action::validate(
+                &model,
+                &model.imported_event_schemas,
+                diag_label,
+            )?;
         }
 
         // SCE script-engine requirement — single source of truth. See
@@ -978,7 +1039,13 @@ impl SCXMLParser {
         // elements the analyzer walks (variables, states, invokes,
         // donedata). Parser sub-routines no longer set this flag; each
         // former write site is now a [`NeedsScriptEngineCause`] variant.
-        model.needs_script_engine = crate::script_engine_analyzer::requires_script_engine(&model);
+        // One traversal, both results. The flag is the boolean projection
+        // of the cause list, so deriving them from a single `analyze` call
+        // makes `needs_script_engine == !script_engine_causes.is_empty()`
+        // true by construction — a later pass cannot mutate the model into
+        // a state where the flag and its own explanation disagree.
+        model.script_engine_causes = crate::script_engine_analyzer::analyze(&model);
+        model.needs_script_engine = !model.script_engine_causes.is_empty();
 
         // Compute needs_nonstatic_method
         model.needs_nonstatic_method = model.needs_script_engine
@@ -1070,6 +1137,7 @@ impl SCXMLParser {
                     src,
                     content,
                     var_type: String::new(),
+                    source_location: source_location_of(&data, source_name),
                 });
                 // `needs_script_engine` is derived post-parse by
                 // [`crate::script_engine_analyzer`] —
@@ -1443,6 +1511,7 @@ impl SCXMLParser {
                         src: data.attribute("src").unwrap_or("").to_string(),
                         content,
                         var_type: String::new(),
+                        source_location: source_location_of(&data, source_name),
                     });
                 }
             }
@@ -2373,6 +2442,7 @@ impl SCXMLParser {
             return Ok(Some(Invoke::Hybrid(HybridInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
+                        source_location: source_location_of(elem, source_name),
                         invoke_id,
                         field_suffix,
                         state_name: state_id.to_string(),
@@ -2496,6 +2566,7 @@ impl SCXMLParser {
             let mut scxml_info = ScxmlInvokeInfo {
                 common: InvokeSessionCommon {
                     base: InvokeBase {
+                        source_location: source_location_of(elem, source_name),
                         invoke_id,
                         field_suffix,
                         state_name: state_id.to_string(),
@@ -2699,6 +2770,7 @@ impl SCXMLParser {
         let invoke_unresolved = collect_sce_unresolved(elem, source_name);
         Ok(MeshRpcInvokeInfo {
             base: InvokeBase {
+                source_location: source_location_of(elem, source_name),
                 invoke_id,
                 field_suffix,
                 state_name: state_id.to_string(),

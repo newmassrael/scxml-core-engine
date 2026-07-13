@@ -490,8 +490,20 @@ The forge expression language (SCE_FORGE.md §3.4) is a typed subset of
 ECMAScript with a Lua-compatible runtime. Constructs that either have
 no typed interpretation or are explicitly excluded:
 
-- Triple-equals / strict-inequality (`===`, `!==`) —
-  `expression/strict-equality`. Use `==` / `!=`.
+- Loose equality / inequality (`==`, `!=`) —
+  `expression/strict-equality`. Use `===` / `!==`. Extended SCXML is a
+  typed language and admits no implicit coercion, so the operator whose
+  ECMAScript meaning *is* coercion has no interpretation here
+  (SCE_FORGE.md §3.4). The rejection carries a
+  `replace_with` fix, and both lowerings agree on the result: codegen
+  emits the target language's `==`, and the script-engine path rewrites
+  `===` → Lua `==` / `!==` → `~=`.
+
+  This applies to Extended SCXML expressions — a transition `cond` that
+  reads typed `_event.data.<field>` from an imported EventSchema. A
+  `cond` on an un-schema'd event is plain ECMAScript evaluated by the
+  script engine, where `==` is legal and stays legal (the W3C corpus
+  depends on it).
 - Go ternary target (source-language-specific restriction for Go
   codegen) — `expression/go-ternary-unsupported`. Restructure with
   `if`/`else`.

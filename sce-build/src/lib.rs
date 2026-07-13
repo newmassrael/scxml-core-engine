@@ -1973,44 +1973,6 @@ pub fn compile_scxml_with_imports(
     // (no deploy ⇒ no cross-doc deploy-vs-forge to check).
     let mut link_models_for_xref: Vec<(String, forge::model::LinkModel)> = Vec::new();
     let mut pool_models_for_xref: Vec<(String, forge::model::BufferPoolModel)> = Vec::new();
-    // EventSchema typed-event support — EventSchemas keyed by file
-    // stem (doc name). Populated in pass-1 alongside the other forge-
-    // doc captures; consumed in pass-2 by
-    // `event_schema_check::resolve_imported_event_schemas` which
-    // projects per-statechart event-name views out of the build-wide
-    // registry based on each statechart's own
-    // `<sce:import kind="event-schema">` declarations.
-    //
-    // Per-statechart import visibility replaces
-    // any legacy "one schema per event globally" rule: two machines
-    // on a mesh may legitimately declare different schemas for the
-    // same event name (e.g., during a rolling deploy with version
-    // skew) — the cross-machine validator
-    // (`mesh::deploy::validate_event_schemas_cross_machine`) is the
-    // load-bearing rejection signal for any *actual* divergence.
-    //
-    // Doc-name uniqueness across the build is already enforced by
-    // `cross_doc.record_document` above; the map's `insert` is safe
-    // (collisions unreachable). Doc-name keying lets the per-
-    // statechart resolver follow each import's `src` file stem to
-    // the exact schema document the author named.
-    let mut event_schemas_by_doc_name: std::collections::BTreeMap<
-        String,
-        forge::model::EventSchemaModel,
-    > = std::collections::BTreeMap::new();
-    // Enum kind support — Enum kind documents keyed by
-    // file stem (doc name), consumed by
-    // `event_schema_check::resolve_imported_enums` to thread each
-    // statechart's `<sce:import kind="enum">` set into the
-    // receive/send-side literal-width narrowing layer
-    // (`enum_underlying_overflow`). Doc-name uniqueness across the
-    // build is already enforced by `cross_doc.record_document` above,
-    // so the per-stem `insert` here is safe (collisions structurally
-    // unreachable). Mirrors the `event_schemas_by_doc_name` capture
-    // shape directly so the orchestrator's pass-2 wiring stays
-    // symmetric across the two cross-kind import categories.
-    let mut enums_by_doc_name: std::collections::BTreeMap<String, forge::model::EnumModel> =
-        std::collections::BTreeMap::new();
 
     for forge_path in forge_files {
         let path_str = forge_path.to_str().unwrap_or("");
@@ -2123,33 +2085,21 @@ pub fn compile_scxml_with_imports(
                 let key = doc.name().to_string();
                 element_type_candidates.insert(key, doc);
             }
-            forge::model::ForgeDocument::EventSchema(schema) => {
-                // Capture
-                // EventSchemas by their doc name (file stem) so the
-                // per-statechart resolver can follow each
-                // `<sce:import src="X.scxml">` to the exact schema
-                // document the author named. Doc-name uniqueness was
-                // already enforced by `cross_doc.record_document`
-                // above, so insertion is safe (collisions
-                // structurally unreachable). Per-statechart import
-                // visibility means two statecharts may legitimately
-                // import different schemas for the same event name;
-                // the cross-machine validator surfaces any *actual*
-                // divergence as `mesh/event-schema-mismatch` only
-                // when an affected cross-machine `<send>` walks.
-                event_schemas_by_doc_name.insert(schema.name.clone(), schema);
-            }
-            forge::model::ForgeDocument::Enum(em) => {
-                // Capture
-                // Enum docs by their doc name (file stem) so the
-                // per-statechart resolver can follow each
-                // `<sce:import kind="enum">` to the EnumModel and
-                // narrow integer-literal comparisons / send-params
-                // against the declared `underlying_type`. Same
-                // doc-name uniqueness invariant as the EventSchema
-                // capture immediately above.
-                enums_by_doc_name.insert(em.name.clone(), em);
-            }
+            // EventSchema and Enum documents are deliberately NOT indexed
+            // here. Both are reached through a statechart's
+            // `<sce:import src="…">`, and that import is resolved once, at
+            // the parse seam, by following the `src` to the document it
+            // names — the map every consumer then reads off the model
+            // (`SCXMLModel::imported_event_schemas`): the receive-/send-side
+            // typecheck, the `<sce:action>` validator, the engine-need
+            // analyzer, the mesh cross-machine schema comparison, and all
+            // six backend payload builders.
+            //
+            // A build-wide index keyed by file stem would be a second
+            // answer to that question, and a weaker one: two documents with
+            // the same stem index identically, so a validator reading the
+            // index could typecheck against one schema while codegen
+            // lowered against another. One import, one resolution.
             _ => {}
         }
     }
@@ -2203,60 +2153,20 @@ pub fn compile_scxml_with_imports(
 
     // ── EventSchema receive- + send-side typecheck ──
     //
-    // Receive-side: walks every parsed statechart's
-    // transition `cond` expressions for `_event.data.<field>`
-    // member-access patterns and verifies the field against the
-    // schema declared for that transition's event.
+    // Runs inside the parser, not here. The typecheck must validate the
+    // schema map that *codegen* consumes, and that map
+    // ([`SCXMLModel::imported_event_schemas`]) is resolved at the parse
+    // seam by following each `<sce:import src="…">` to the document it
+    // names. Re-resolving it here against a build-wide index keyed by file
+    // stem would be a second, weaker answer to the same question — two
+    // files with the same stem index identically, so the validator could
+    // typecheck a `cond` against one schema while codegen lowered it
+    // against another. One resolution, one map, one validation.
     //
-    // Send-side: walks every `<send event="X">` /
-    // `<raise event="X">` (inside transition `actions`, `<onentry>`,
-    // `<onexit>`, initial-transition + history-default sequences,
-    // and nested `<if>` / `<foreach>` bodies) and verifies each
-    // `<param name="F" expr="...">` against the schema's declared
-    // field surface.
-    //
-    // Both passes run after pass-1 capture
-    // (`event_schemas_by_doc_name` populated) and after pass-2 SCXML
-    // parsing (`scxml_models` populated). The per-statechart
-    // resolver walks each SCXML's `<sce:import>` declarations to
-    // determine which schemas are in-scope for THIS document — so a
-    // statechart that does not declare any event-schema imports keeps
-    // the dynamic `_event.data` baseline even when other statecharts
-    // in the same build declare schemas. Failure short-circuits
-    // codegen pass-3, matching the worker outbox + BC cross-doc
-    // pattern.
-    for (path, model) in &scxml_models {
-        let basename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-        let per_doc_schemas = forge::event_schema_check::resolve_imported_event_schemas(
-            model,
-            &event_schemas_by_doc_name,
-        );
-        // Per-statechart enum
-        // imports drive the literal-width narrowing layer inside the
-        // receive- + send-side validators. A statechart whose schema
-        // declares an enum-typed field MUST also declare its own
-        // `<sce:import kind="enum" as="<alias>">` for the narrowing to
-        // resolve the alias against an `EnumModel`; otherwise the
-        // alias is opaque from the statechart's view and the
-        // narrowing silent-skips (the conservative-accept
-        // default preserves the category-only behavior).
-        let per_doc_enums =
-            forge::event_schema_check::resolve_imported_enums(model, &enums_by_doc_name);
-        forge::event_schema_check::check(model, &per_doc_schemas, &per_doc_enums, basename)?;
-        forge::event_schema_check::check_send_side(
-            model,
-            &per_doc_schemas,
-            &per_doc_enums,
-            basename,
-        )?;
-        // §scxml-G-7 — `<sce:action>` Custom Action Element: validate
-        // that every native host-dispatch action is a direct <transition>
-        // child whose `<sce:arg>`s are typed `_event.data.<field>` references
-        // resolving against the triggering event's EventSchema. Engine-free
-        // by definition, so a non-conforming construct is rejected here
-        // rather than degraded to a runtime script engine.
-        forge::native_action::validate(model, &per_doc_schemas, basename)?;
-    }
+    // Validating at the parse seam also reaches the entry points this
+    // orchestrator does not own: `sce-codegen generate` parses a single
+    // document and never calls into here, and used to emit typed payload
+    // accesses that were never typechecked at all.
 
     // ── Worker outbox cross-resolution ──
     //
@@ -2426,13 +2336,9 @@ pub fn compile_scxml_with_imports(
         // the deploy-aware path because the rejection depends on the
         // mesh topology — single-statechart compilations (no deploy)
         // cannot exhibit a cross-machine mismatch by construction.
-        mesh::deploy::validate_event_schemas_cross_machine(
-            deploy_cfg,
-            &scxml_models,
-            &event_schemas_by_doc_name,
-        )
-        .map_err(mesh::error::MeshError::from)
-        .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
+        mesh::deploy::validate_event_schemas_cross_machine(deploy_cfg, &scxml_models)
+            .map_err(mesh::error::MeshError::from)
+            .map_err(|e| Located::new(e.into(), DEPLOY_LABEL, None, None))?;
 
         // ── link/inbound-event-queue-unsized (§synth-5-N) ──
         //

@@ -5710,10 +5710,6 @@ fn canonical_event_schema_hash(schema: &crate::forge::model::EventSchemaModel) -
 pub fn validate_event_schemas_cross_machine(
     cfg: &DeployConfig,
     scxml_models: &[(std::path::PathBuf, crate::model::SCXMLModel)],
-    event_schemas_by_doc_name: &std::collections::BTreeMap<
-        String,
-        crate::forge::model::EventSchemaModel,
-    >,
 ) -> Result<(), DeployError> {
     use std::collections::BTreeMap;
     use std::path::Path;
@@ -5740,20 +5736,24 @@ pub fn validate_event_schemas_cross_machine(
         }
     }
 
-    // Step 2: machine name → BTreeMap<event_name, EventSchemaModel>.
-    // Pre-compute per-machine schema visibility once so the
-    // cross-machine walk reads from a stable index rather than
-    // re-resolving on every send site.
+    // Step 2: machine name → its resolved schema visibility, read from
+    // the model rather than re-resolved here.
+    //
+    // `imported_event_schemas` is the map the parse seam resolved by
+    // following each `<sce:import src="…">` to the document it names, and
+    // it is what every backend lowers against. Re-deriving per-machine
+    // visibility from a build-wide index keyed by file stem would answer
+    // the same question a second, weaker way — two documents with the same
+    // stem index identically — so a cross-machine mismatch could be
+    // declared (or missed) against a schema neither machine actually
+    // generates. Comparing what the machines really carry is the only
+    // comparison worth making.
     let mut machine_to_schemas: BTreeMap<
         &str,
-        BTreeMap<String, crate::forge::model::EventSchemaModel>,
+        &BTreeMap<String, crate::forge::model::EventSchemaModel>,
     > = BTreeMap::new();
     for (machine_name, scxml) in &machine_to_scxml {
-        let schemas = crate::forge::event_schema_check::resolve_imported_event_schemas(
-            scxml,
-            event_schemas_by_doc_name,
-        );
-        machine_to_schemas.insert(*machine_name, schemas);
+        machine_to_schemas.insert(*machine_name, &scxml.imported_event_schemas);
     }
 
     // Step 3: walk each machine's SCXML for cross-machine

@@ -362,6 +362,7 @@ fn cli_exit(err: CliError) -> ! {
 struct GenerateReport {
     artifacts: Vec<PathBuf>,
     needs_script_engine: Option<bool>,
+    script_engine_causes: Vec<sce_build::script_engine_analyzer::ScriptEngineCauseRecord>,
     rejected: Option<RejectedDocument>,
 }
 
@@ -383,15 +384,34 @@ struct RejectedDocument {
 ///   (size, hash, kind-of-artifact) without a v-bump.
 /// * `needs_script_engine` — whether the compiled machine needs a
 ///   runtime script engine.
+/// * `script_engine_causes` — why. Present exactly when
+///   `needs_script_engine` is `true`, naming every construct that
+///   forced the engine in. A consumer that gates its build on
+///   `needs_script_engine == false` (an MCU target with no engine to
+///   embed, a deployment that must stay deterministic) can now report
+///   which `cond` / `<assign>` / `<invoke>` cost it the pure-static
+///   lowering instead of failing with a bare boolean.
 /// * `rejected` — present only when the document was rejected by a
 ///   W3C-spec rule (e.g. §scxml-5.8) and stub files were written
 ///   in its place. Absence means clean generation.
+///
+/// `script_engine_causes` and `rejected` are both non-fatal degradation
+/// reports: generation succeeded, but the output is weaker than the
+/// author may have intended. The manifest is where SCE says so —
+/// diagnostics on stderr carry no severity and are rejections by
+/// construction (SCE_ERROR_CONTRACT.md §1), and a clean run is pinned to
+/// an empty stderr.
 #[derive(Serialize)]
 struct GenerateManifest<'a> {
     v: u32,
     kind: &'static str,
     artifacts: Vec<ArtifactEntry>,
     needs_script_engine: bool,
+    /// Omitted (not `[]`) on a pure-static machine, so a pure-static
+    /// manifest stays byte-identical to the shape that predates this
+    /// field.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    script_engine_causes: &'a [sce_build::script_engine_analyzer::ScriptEngineCauseRecord],
     #[serde(skip_serializing_if = "Option::is_none")]
     rejected: Option<RejectedInfo<'a>>,
 }
@@ -420,6 +440,7 @@ fn emit_generate_manifest(report: &GenerateReport) {
             })
             .collect(),
         needs_script_engine: report.needs_script_engine.unwrap_or(false),
+        script_engine_causes: &report.script_engine_causes,
         rejected: report.rejected.as_ref().map(|rd| RejectedInfo {
             spec: rd.spec,
             name: rd.name.as_str(),
@@ -2110,6 +2131,15 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         }
 
         report.needs_script_engine = Some(model.needs_script_engine);
+        // Projected from the list the analyzer stored on the model in the
+        // same statement that set the flag — not recomputed here, which
+        // would re-derive it from a model later passes have since touched.
+        // The flag and its explanation cannot disagree.
+        report.script_engine_causes = model
+            .script_engine_causes
+            .iter()
+            .map(|c| c.to_wire())
+            .collect();
 
         // §scxml-6.4: Generate children metadata + hybrid SCXML stubs for all languages.
         // C++ uses _children.txt for CMake post-processing; all languages need hybrid stubs.
