@@ -133,8 +133,7 @@ pub fn transpile_typed(
         return Err(ExprError::Empty { what: "expression" });
     }
 
-    let tokens = tokenize(expr)?;
-    let mut ast = Parser::new(&tokens).parse_expression()?;
+    let mut ast = parse_to_ast(expr)?;
     // Inference must run BEFORE rename so Call callees, Idents, and Members
     // are still in their pre-rename form. The TypeCtx is keyed by the
     // user-visible names (`tempConvert`, datamodel ids, …) — once rename
@@ -183,8 +182,7 @@ pub fn infer_expr_type(expr: &str, ctx: &TypeCtx<'_>) -> Result<InferredType, Ex
     if expr.is_empty() {
         return Err(ExprError::Empty { what: "expression" });
     }
-    let tokens = tokenize(expr)?;
-    let mut ast = Parser::new(&tokens).parse_expression()?;
+    let mut ast = parse_to_ast(expr)?;
     infer_types(&mut ast, ctx);
     Ok(ast.ty)
 }
@@ -254,8 +252,7 @@ pub(crate) fn transpile_typed_with_import_lowering(
         return Err(ExprError::Empty { what: "expression" });
     }
 
-    let tokens = tokenize(expr)?;
-    let mut ast = Parser::new(&tokens).parse_expression()?;
+    let mut ast = parse_to_ast(expr)?;
     // C11-only lowering must run *before* infer/rename: the rewritten Call
     // node's callee is a `Raw` fragment (free-function name) and its first
     // arg is a `Raw` fragment (`&_st->member`), both of which `infer_types`
@@ -408,8 +405,7 @@ pub fn transpile_lvalue(
         });
     }
 
-    let tokens = tokenize(trimmed)?;
-    let mut ast = Parser::new(&tokens).parse_expression()?;
+    let mut ast = parse_to_ast(trimmed)?;
     validate_lvalue_shape(&ast.kind, trimmed)?;
 
     // Same ordering as `transpile_typed`: infer first so Ident/Member leaves
@@ -449,7 +445,85 @@ pub(crate) fn parse_to_ast(expr: &str) -> Result<TypedExpr, ExprError> {
         return Err(ExprError::Empty { what: "expression" });
     }
     let tokens = tokenize(trimmed)?;
+    reject_policy_violating_tokens(&tokens)?;
     Parser::new(&tokens).parse_expression()
+}
+
+/// The Forge expression language's admission rules, as a single pass over
+/// a token stream — the one place that decides what Extended SCXML
+/// forbids, independent of where the tokens came from.
+///
+/// SCE Forge §3.4: Extended SCXML is typed and admits no implicit
+/// coercion, so loose equality — the operator whose ECMAScript meaning
+/// *is* coercion — has no interpretation, and the constructs outside the
+/// typed subset have none either.
+///
+/// This runs *after* tokenizing and *before* parsing, so it fires on a
+/// violating token in any position (`== 1` rejects as loose equality, not
+/// as an unexpected token) and the parser below it never has to know the
+/// rule. Every caller of [`parse_to_ast`] therefore keeps the exact
+/// diagnostics it had when the tokenizer raised them itself — same
+/// `ExprError`, same code, same fix.
+fn reject_policy_violating_tokens(tokens: &[Token]) -> Result<(), ExprError> {
+    for token in tokens {
+        match token {
+            Token::LooseEq => {
+                return Err(ExprError::StrictEquality {
+                    operator: "==",
+                    strict: "===",
+                })
+            }
+            Token::LooseNeq => {
+                return Err(ExprError::StrictEquality {
+                    operator: "!=",
+                    strict: "!==",
+                })
+            }
+            Token::Unsupported(construct) => {
+                return Err(ExprError::UnsupportedConstruct {
+                    construct: (*construct).to_string(),
+                })
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// `true` iff `expr` reads the W3C reserved `_event.data` path — decided
+/// on the token stream, so it holds for expressions the Forge *parser*
+/// rejects.
+///
+/// This exists for exactly one question: when a `cond` on a
+/// schema-carrying transition fails to parse as a Forge expression, was
+/// the author reaching for typed event data (making the failure a
+/// rejection) or writing plain ECMAScript for the script engine (making
+/// it none of Forge's business)? An AST cannot answer it — the parse is
+/// what failed.
+///
+/// It is the lexical shadow of the AST-level
+/// [`crate::forge::event_schema_check::cond_references_event_data`], and
+/// the two cannot disagree on any expression that parses: a
+/// `_event.data` member access in the AST implies these tokens, and these
+/// tokens in a parseable expression imply that access. Matching on tokens
+/// rather than text is what makes it whitespace-insensitive
+/// (`_event . data . flag`) and string-literal-safe (a literal is a single
+/// token, so `x === '_event.data'` is not a hit) — the two ways a raw
+/// substring search gets the answer wrong.
+///
+/// An expression that does not even tokenize (an unknown character, an
+/// unterminated string, a reserved keyword like `function`) is not
+/// lexically ECMAScript and is not a guard; it reads as `false`, keeping
+/// Forge out of expressions it has no claim on.
+pub(crate) fn references_event_data_lexically(expr: &str) -> bool {
+    let Ok(tokens) = tokenize(expr.trim()) else {
+        return false;
+    };
+    tokens.windows(3).any(|w| {
+        matches!(&w[0], Token::Ident(s) if s == "_event")
+            && w[1] == Token::Dot
+            && matches!(&w[2], Token::Ident(s) if s == "data")
+    })
 }
 
 /// Validate that a parsed expression's shape is a legal assignment target.
@@ -680,6 +754,10 @@ pub(crate) enum UnaryOp {
 /// that require explicit `self.` / `p.` prefixes (Rust, Go).
 pub fn extract_free_idents(raw_expr: &str) -> Result<Vec<String>, ExprError> {
     let tokens = tokenize(raw_expr.trim())?;
+    // Extended SCXML expression, so the same admission rules apply. The
+    // tokenizer no longer enforces them, so every entry point that treats
+    // its input as Forge source states so explicitly.
+    reject_policy_violating_tokens(&tokens)?;
     let mut idents = Vec::new();
     let mut seen = std::collections::HashSet::new();
     for token in &tokens {
@@ -709,7 +787,10 @@ pub fn strip_string_literals(expr: &str) -> String {
 #[derive(Debug, Clone, PartialEq)]
 enum Token {
     Number(String),
-    String { value: String, quote: char },
+    String {
+        value: String,
+        quote: char,
+    },
     Ident(String),
     Plus,
     Minus,
@@ -718,6 +799,28 @@ enum Token {
     Percent,
     StrictEq,
     StrictNeq,
+    /// Loose equality `==` / `!=`. Lexically valid ECMAScript, so the
+    /// tokenizer emits them; Extended SCXML forbids them, and that is a
+    /// *policy* decision made by [`reject_policy_violating_tokens`], not a
+    /// lexical one.
+    ///
+    /// The distinction is load-bearing. Whether `==` is permitted depends
+    /// on context the tokenizer does not have: it is illegal in an
+    /// Extended SCXML typed expression and perfectly legal in a plain
+    /// ECMAScript `cond` bound for the script engine. A tokenizer that
+    /// rejected it outright could not produce a token stream for the
+    /// second case at all — which is exactly what forced callers to answer
+    /// "does this expression read typed event data?" with a substring
+    /// search over the raw text.
+    LooseEq,
+    LooseNeq,
+    /// A construct that is lexically well-formed ECMAScript but outside
+    /// the Forge subset (`=>`, `??`, `?.`, `...`, a template literal).
+    /// Carries its author-facing description; rejected by
+    /// [`reject_policy_violating_tokens`] as
+    /// [`ExprError::UnsupportedConstruct`], the same diagnostic the
+    /// tokenizer used to raise, one layer up.
+    Unsupported(&'static str),
     Lt,
     Gt,
     LtEq,
@@ -756,6 +859,9 @@ impl fmt::Display for Token {
             Token::Percent => write!(f, "%"),
             Token::StrictEq => write!(f, "==="),
             Token::StrictNeq => write!(f, "!=="),
+            Token::LooseEq => write!(f, "=="),
+            Token::LooseNeq => write!(f, "!="),
+            Token::Unsupported(c) => write!(f, "{c}"),
             Token::Lt => write!(f, "<"),
             Token::Gt => write!(f, ">"),
             Token::LtEq => write!(f, "<="),
@@ -892,31 +998,50 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
             continue;
         }
 
-        // Reject unsupported multi-char constructs with clear diagnostics.
+        // Constructs outside the Forge subset. They are lexically
+        // well-formed ECMAScript, so they tokenize; the rejection is a
+        // policy decision and belongs to `reject_policy_violating_tokens`,
+        // which raises the identical `UnsupportedConstruct` diagnostic.
+        // Tokenizing them keeps the token stream total over anything an
+        // author could plausibly write in a guard, which is what lets a
+        // caller ask "does this expression read typed event data?" of an
+        // expression the Forge *parser* will go on to reject.
+        if i + 2 < len && &input[i..i + 3] == "..." {
+            tokens.push(Token::Unsupported("spread/rest (...)"));
+            i += 3;
+            continue;
+        }
         if i + 1 < len && &input[i..i + 2] == "=>" {
-            return Err(ExprError::UnsupportedConstruct {
-                construct: "arrow function (=>)".to_string(),
-            });
+            tokens.push(Token::Unsupported("arrow function (=>)"));
+            i += 2;
+            continue;
         }
         if i + 1 < len && &input[i..i + 2] == "??" {
-            return Err(ExprError::UnsupportedConstruct {
-                construct: "nullish coalescing (??)".to_string(),
-            });
+            tokens.push(Token::Unsupported("nullish coalescing (??)"));
+            i += 2;
+            continue;
         }
         if i + 1 < len && &input[i..i + 2] == "?." {
-            return Err(ExprError::UnsupportedConstruct {
-                construct: "optional chaining (?.)".to_string(),
-            });
-        }
-        if i + 2 < len && &input[i..i + 3] == "..." {
-            return Err(ExprError::UnsupportedConstruct {
-                construct: "spread/rest (...)".to_string(),
-            });
+            tokens.push(Token::Unsupported("optional chaining (?.)"));
+            i += 2;
+            continue;
         }
         if bytes[i] == b'`' {
-            return Err(ExprError::UnsupportedConstruct {
-                construct: "template literal (`)".to_string(),
-            });
+            // Lex the whole literal as one opaque token, up to its closing
+            // backtick (or end of input if unterminated). Its interior —
+            // `${…}` interpolation, embedded quotes — is not Forge syntax
+            // and must not be fed to the operator scanner below; emitting a
+            // bare marker and lexing on would turn a template literal into
+            // a misleading `expression/lex` on whatever character came
+            // next. Consuming it whole keeps the diagnostic the author gets
+            // the one that names what they actually wrote.
+            let close = input[i + 1..].find('`');
+            i = match close {
+                Some(offset) => i + 1 + offset + 1,
+                None => len,
+            };
+            tokens.push(Token::Unsupported("template literal (`)"));
+            continue;
         }
 
         // Multi-char operators (longest match first)
@@ -938,18 +1063,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, ExprError> {
         if i + 1 < len {
             let two = &input[i..i + 2];
             let tok = match two {
-                "==" => {
-                    return Err(ExprError::StrictEquality {
-                        operator: "==",
-                        strict: "===",
-                    });
-                }
-                "!=" => {
-                    return Err(ExprError::StrictEquality {
-                        operator: "!=",
-                        strict: "!==",
-                    });
-                }
+                "==" => Some(Token::LooseEq),
+                "!=" => Some(Token::LooseNeq),
                 "&&" => Some(Token::AmpAmp),
                 "||" => Some(Token::PipePipe),
                 "<<" => Some(Token::Shl),

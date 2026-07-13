@@ -54,11 +54,24 @@ use std::path::Path;
 
 use crate::forge::error::{ExprError, ForgeError, Located, SourceLocation, ValidationError};
 use crate::forge::expr::{
-    decode_bytes_literal, parse_to_ast, transpile_typed, BinOp, ExprKind, ExprTarget, TypedExpr,
+    decode_bytes_literal, parse_to_ast, references_event_data_lexically, transpile_typed, BinOp,
+    ExprKind, ExprTarget, TypedExpr,
 };
 use crate::forge::model::{EnumModel, EventSchemaModel, ForgeField, ForgeKind, SceType};
 use crate::forge::types::{InferredType, TypeCtx};
 use crate::model::{Action, Param, SCXMLModel, Transition};
+
+/// The W3C SCXML reserved system-variable path a typed guard reads its
+/// payload through (§scxml-5.10) — the object [`lower_typed_guard`]
+/// renames onto the generated payload binding, and the alias the
+/// receive-side diagnostics name back to the author.
+///
+/// Whether a given `cond` *reaches for* that path is decided
+/// structurally, never by matching this string against raw source: on the
+/// AST by [`cond_references_event_data`], and on the token stream — for
+/// expressions that do not parse — by
+/// [`crate::forge::expr::references_event_data_lexically`].
+const EVENT_DATA_PATH: &str = "_event.data";
 
 /// Per-statechart schema-visibility resolution — resolve
 /// a statechart's `<sce:import>` declarations into the per-statechart
@@ -194,9 +207,23 @@ pub fn resolve_imported_enums(
 /// guard cannot be lowered for `target`: there is deliberately NO
 /// allow-list of permitted AST nodes — "native-conforming" is defined
 /// purely as "the typed-expression pipeline emits it". The engine-need
-/// analyzer ([`crate::script_engine_analyzer`]) treats `Err` as "keep
-/// the script engine"; the codegen path treats `Ok(s)` as the expression
-/// to emit and `Err` as the `validation/typed-cond-non-native` trigger.
+/// analyzer ([`crate::script_engine_analyzer`]) treats `Err` as "keep the
+/// script engine", and codegen emits `Ok(s)` as the native guard.
+///
+/// `Err` on its own is therefore NOT a rejection — falling back to the
+/// script engine is a supported outcome (`static_hybrid`), not a failure.
+/// What is not supported is falling back *silently*, so the two ways a
+/// typed guard can fail to lower are separated at their source:
+///
+///   * it does not parse as a Forge expression — rejected up front by
+///     [`check`], which is the only place that failure can be seen (this
+///     function has already discarded it by the time it returns `Err`);
+///   * it parses but has no native form (a datamodel identifier or call
+///     with no binding inside the payload `matches!`) — a legal document
+///     that keeps the script engine, and reports the fact through the
+///     engine-need analyzer's [`crate::script_engine_analyzer::NeedsScriptEngineCause`]
+///     list, which the stdout manifest carries so the degradation is
+///     visible without being fatal.
 pub fn lower_typed_guard(
     cond: &str,
     schema: &EventSchemaModel,
@@ -215,7 +242,7 @@ pub fn lower_typed_guard(
         ctx.insert_var(key.as_str(), InferredType::from_sce_type(&field.sce_type));
     }
     let mut renames: HashMap<&str, &str> = HashMap::new();
-    renames.insert("_event.data", accessor);
+    renames.insert(EVENT_DATA_PATH, accessor);
     transpile_typed(cond, target, &ctx, &renames, InferredType::Unknown)
 }
 
@@ -267,8 +294,11 @@ pub fn schema_is_native_payload_eligible(schema: &EventSchemaModel) -> bool {
 ///     call, or `In()` predicate has no binding inside the payload
 ///     `matches!` guard; emitting it would produce a bare undefined
 ///     identifier (e.g. `retry_count` instead of `self.retry_count`).
-///     Such mixed conds keep the script-engine path and are surfaced as
-///     `validation/typed-cond-non-native` by [`check`];
+///     Such mixed conds are legal — they keep the script-engine path, and
+///     the engine-need analyzer records the fallback as a
+///     [`crate::script_engine_analyzer::NeedsScriptEngineCause::TransitionGuard`]
+///     that the stdout manifest carries, so the machine never loses its
+///     native lowering without saying so;
 /// (d) the expression lowers on *every* backend SCE generates —
 ///     [`ExprTarget::ALL`]. The verdict feeds the language-neutral
 ///     `native_typed_inject_events` switchboard SSOT, which is
@@ -534,6 +564,16 @@ fn cond_is_pure_typed_payload(expr: &TypedExpr) -> bool {
 /// compatible with the comparison context. Returns the first failing
 /// diagnostic at the offending transition.
 ///
+/// A `cond` that reads `_event.data` on a schema-carrying event but does
+/// not parse as a Forge expression is rejected here with the `ExprError`
+/// the expression pipeline raised — `==` on a typed guard is
+/// `expression/strict-equality`, the build-time error SCE Forge §3.4
+/// mandates. This is the only stage that can report it: every other
+/// consumer of the parse (`guard_is_native_lowerable`, and through it the
+/// engine-need analyzer) reduces the same failure to "not natively
+/// lowerable", which is indistinguishable from a guard that legitimately
+/// keeps the script engine.
+///
 /// `diag_label` is the statechart's diagnostic-label string (typically
 /// the basename of the `.scxml` file) — threaded through every emitted
 /// `Located<ForgeError>` so consumers can route the rejection back to
@@ -585,15 +625,30 @@ fn check_transition(
         return Ok(());
     }
 
-    // Expression parse failures themselves surface through the existing
-    // typed-expression pipeline at codegen time; the receive-side
-    // typecheck is opportunistic on top of that pipeline, so a parse
-    // failure here means the cond is also un-typecheckable on the
-    // generator side and the user will see the diagnostic there.
-    // Swallow the error rather than duplicate it.
-    let Ok(ast) = parse_to_ast(cond) else {
+    // Does this `cond` reach for typed event data? The answer decides
+    // whether a Forge parse failure is a rejection or none of Forge's
+    // business, so it must be answered *before* parsing — and therefore on
+    // the token stream, which survives a parse the expression fails
+    // ([`references_event_data_lexically`]).
+    //
+    //   * No `_event.data` → plain ECMAScript bound for the script engine,
+    //     even though this transition's event carries a schema. The Forge
+    //     expression language is a strict subset of ECMAScript, so
+    //     rejecting every cond it cannot parse would reject W3C-legal
+    //     documents that never asked for the typed path (`retry == 1` is
+    //     legal there and stays legal). Left unvalidated, as it always was.
+    //
+    //   * `_event.data` present → the typed path, so the cond IS an
+    //     Extended SCXML expression and must parse as one. Nothing
+    //     downstream will ever say so: `guard_is_native_lowerable` reduces
+    //     the identical `Err` to a bare `false`, meaning "keep the script
+    //     engine", which is indistinguishable from a guard that legitimately
+    //     has no native form. This is the sole stage that can report it.
+    if !references_event_data_lexically(cond) {
         return Ok(());
-    };
+    }
+    let ast =
+        parse_to_ast(cond).map_err(|e| located_expr_on_transition(transition, diag_label, e))?;
 
     walk_for_event_data_refs(
         &ast,
@@ -851,7 +906,7 @@ fn resolve_field(
             // the user sees the exact site they wrote.
             importing_kind: ForgeKind::Statechart,
             importing_name: statechart_name.to_string(),
-            alias: "_event.data".to_string(),
+            alias: EVENT_DATA_PATH.to_string(),
             field: field_name.to_string(),
             imported_kind: ForgeKind::EventSchema,
             imported_name: schema.name.clone(),
@@ -892,7 +947,7 @@ fn check_comparison_type(
             ValidationError::CrossKindTypeMismatch {
                 importing_kind: ForgeKind::Statechart,
                 importing_name: statechart_name.to_string(),
-                alias: "_event.data".to_string(),
+                alias: EVENT_DATA_PATH.to_string(),
                 field: field.id.clone(),
                 actual: literal_kind_canonical(other_kind),
                 expected: sce_type_canonical(&field.sce_type),
@@ -914,7 +969,7 @@ fn check_comparison_type(
             ValidationError::CrossKindTypeMismatch {
                 importing_kind: ForgeKind::Statechart,
                 importing_name: statechart_name.to_string(),
-                alias: "_event.data".to_string(),
+                alias: EVENT_DATA_PATH.to_string(),
                 field: field.id.clone(),
                 actual: overflow.actual,
                 expected: overflow.expected,
@@ -936,7 +991,7 @@ fn check_comparison_type(
             ValidationError::CrossKindTypeMismatch {
                 importing_kind: ForgeKind::Statechart,
                 importing_name: statechart_name.to_string(),
-                alias: "_event.data".to_string(),
+                alias: EVENT_DATA_PATH.to_string(),
                 field: field.id.clone(),
                 actual: not_declared.actual,
                 expected: not_declared.expected,
@@ -1031,7 +1086,7 @@ fn reject_non_representable_bytes(
                 ValidationError::CrossKindTypeMismatch {
                     importing_kind: ForgeKind::Statechart,
                     importing_name: statechart_name.to_string(),
-                    alias: "_event.data".to_string(),
+                    alias: EVENT_DATA_PATH.to_string(),
                     field: field.id.clone(),
                     actual: format!("non-printable-ASCII bytes literal '{value}'"),
                     expected: sce_type_canonical(&field.sce_type),
@@ -1382,6 +1437,25 @@ fn located_on_transition(
         None => (None, None),
     };
     Located::new(ForgeError::Validation(Box::new(err)), diag_label, line, col)
+}
+
+/// Anchor an expression-stage rejection on the transition whose `cond`
+/// produced it. Sibling of [`located_on_transition`] for the
+/// `expression/*` half of the code catalog: a typed guard that does not
+/// parse as a Forge expression is rejected as the `ExprError` the lexer
+/// or parser actually raised, so the author gets the real cause
+/// (`expression/strict-equality` for `==`, carrying its
+/// `replace_with: "==="` fix) rather than a generic "unlowerable guard".
+fn located_expr_on_transition(
+    transition: &Transition,
+    diag_label: &str,
+    err: ExprError,
+) -> Located<ForgeError> {
+    let (line, col) = match transition.source_location.as_ref() {
+        Some(loc) => (loc.line, loc.col),
+        None => (None, None),
+    };
+    Located::new(ForgeError::Expression(err), diag_label, line, col)
 }
 
 /// Per-statechart send-side typecheck.
@@ -1784,6 +1858,72 @@ mod tests {
         )
     }
 
+    /// Drive [`check_transition`] itself, rather than the AST walk beneath
+    /// it. [`run`] hands in an already-parsed AST, so it cannot see how
+    /// the validator treats a `cond` that does not parse — which is
+    /// exactly where the typed path used to lose its diagnostic.
+    fn run_check_transition(
+        schema: EventSchemaModel,
+        cond: &str,
+    ) -> Result<(), Located<ForgeError>> {
+        let transition = Transition {
+            event: schema.event_name.clone(),
+            cond: cond.to_string(),
+            ..Default::default()
+        };
+        let mut schemas = BTreeMap::new();
+        schemas.insert(schema.event_name.clone(), schema);
+        check_transition(
+            &transition,
+            &schemas,
+            &BTreeMap::new(),
+            "test_statechart",
+            "test_diag_label",
+        )
+    }
+
+    /// Loose `==` on a typed guard is the build-time error SCE Forge §3.4
+    /// mandates. The validator is the only stage that can raise it: the
+    /// engine-need analyzer reduces the same parse failure to "not
+    /// natively lowerable", which is indistinguishable from a guard that
+    /// legitimately keeps the script engine.
+    #[test]
+    fn loose_equality_on_typed_guard_is_rejected() {
+        let s = schema("job.completed", vec![field("status", SceType::Uint8)]);
+        let err = run_check_transition(s, "_event.data.status == 0")
+            .expect_err("loose == on a typed guard must be rejected");
+        assert!(
+            matches!(
+                err.error,
+                ForgeError::Expression(ExprError::StrictEquality { .. })
+            ),
+            "must surface the real cause (with its replace_with fix), not a \
+             generic unlowerable-guard error: {:?}",
+            err.error
+        );
+    }
+
+    /// The rejection is scoped to the typed path. A `cond` that touches no
+    /// `_event.data` is plain ECMAScript bound for the script engine, even
+    /// when its transition's event carries a schema. The Forge expression
+    /// language is a strict subset of ECMAScript, so rejecting every cond
+    /// it cannot parse would reject W3C-legal documents that never asked
+    /// for the typed path.
+    #[test]
+    fn unparseable_cond_off_the_typed_path_is_not_rejected() {
+        let s = schema("job.completed", vec![field("status", SceType::Uint8)]);
+        assert!(run_check_transition(s, "retryCount == 3").is_ok());
+    }
+
+    /// A guard that is unlowerable-but-legal (a datamodel identifier has
+    /// no binding inside the payload `matches!`) is NOT a rejection — it
+    /// keeps the script engine, and the engine-need cause list reports it.
+    #[test]
+    fn mixed_typed_guard_is_legal_and_not_rejected() {
+        let s = schema("job.completed", vec![field("status", SceType::Uint8)]);
+        assert!(run_check_transition(s, "_event.data.status === 0 && retryCount > 3").is_ok());
+    }
+
     #[test]
     fn known_field_passes() {
         let s = schema("job.completed", vec![field("status", SceType::Uint8)]);
@@ -1829,9 +1969,11 @@ mod tests {
     // A guard that mixes a typed `_event.data` field with a datamodel
     // identifier (or any non-payload reference) is NOT natively lowerable:
     // the bare identifier has no binding inside the payload `matches!`
-    // guard. Must report false so codegen keeps it off the native path
-    // (and `check` surfaces `validation/typed-cond-non-native`) — emitting
-    // it would produce a reference to an undefined local.
+    // guard. Must report false so codegen keeps it off the native path —
+    // emitting it would produce a reference to an undefined local. The
+    // document stays legal (the script engine evaluates it) and the
+    // fallback is reported through the engine-need cause list, not as a
+    // rejection.
     #[test]
     fn mixed_typed_and_datamodel_guard_is_not_lowerable() {
         let s = schema("job.completed", vec![field("elapsed_ms", SceType::Uint32)]);

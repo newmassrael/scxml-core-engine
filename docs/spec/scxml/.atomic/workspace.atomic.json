@@ -3056,6 +3056,10 @@
           "file": "tests/w3c/aot_tests/Test329.h",
           "symbol": "Test329",
           "kind": "verifies"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7570,10 +7574,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/lib.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/model.rs",
           "kind": "references"
         },
@@ -7668,5 +7668,11 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
-  "schema_version": 11
+  "frames": {},
+  "branches": {},
+  "entities": {},
+  "predicates": {},
+  "narrative_facts": {},
+  "disclosure_plans": {},
+  "schema_version": 23
 }

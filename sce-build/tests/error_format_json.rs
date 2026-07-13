@@ -1523,3 +1523,186 @@ fn template_cycle_emits_xml_template_cycle() {
     assert_eq!(diag["code"], "xml/template-cycle");
     assert_eq!(diag["stage"], "xml");
 }
+
+// ── Typed EventSchema guards: rejection vs. reported degradation ──────
+//
+// A transition guard reading `_event.data.<field>` from an imported
+// EventSchema lowers to a native payload comparison and needs no script
+// engine. These tests pin the two ways that can go wrong, and the
+// boundary between them:
+//
+//   * the guard is not a Forge expression at all (`==` for `===`, an
+//     undeclared field) → a rejection, on stderr, non-zero exit;
+//   * the guard is legal but has no native form → generation succeeds
+//     and the manifest names the fallback in `script_engine_causes`.
+//
+// The whole chain runs through `sce-codegen generate`, which parses a
+// single document and never reaches the build orchestrator. Asserting at
+// the CLI boundary is therefore load-bearing: a validator wired only into
+// the orchestrator passes its own unit tests while this path emits
+// unvalidated code.
+
+/// Datamodel block for the fixtures whose `cond` reads a datamodel
+/// identifier alongside the typed payload field.
+const RETRY_DATAMODEL: &str = r#"<datamodel><data id="retry" expr="0"/></datamodel>"#;
+
+/// A `flag: uint8` EventSchema for event `ping`, plus a machine that
+/// guards on it with `cond`. Returns the machine's path.
+///
+/// `datamodel` is the machine's `<datamodel>` block, supplied per-test
+/// rather than fixed: a `<data expr="…">` initializer is itself a
+/// script-engine cause, so a fixture that always declared one could never
+/// show a pure-static machine and would mask the very verdict under test.
+fn write_typed_guard_fixture(label: &str, cond: &str, datamodel: &str) -> (ScratchDir, PathBuf) {
+    let dir = ScratchDir::new(label);
+    let schema = dir.path().join("schema.scxml");
+    std::fs::write(
+        &schema,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       name="schema" sce:kind="event-schema" sce:event-name="ping">
+  <datamodel><data id="flag" sce:type="uint8" sce:direction="in"/></datamodel>
+</scxml>
+"#,
+    )
+    .expect("write schema fixture");
+
+    let path = dir.path().join("m.scxml");
+    let body = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       name="m" version="1.0" initial="idle" datamodel="ecmascript">
+  <sce:import src="schema.scxml" kind="event-schema" as="FlagSchema"/>
+  {datamodel}
+  <state id="idle">
+    <transition event="ping" cond="{cond}" target="hit"/>
+    <transition event="ping" target="idle"/>
+  </state>
+  <state id="hit"/>
+</scxml>
+"#
+    );
+    std::fs::write(&path, body).expect("write machine fixture");
+    (dir, path)
+}
+
+fn manifest_of(out: &std::process::Output) -> serde_json::Value {
+    assert!(
+        out.status.success(),
+        "generate must succeed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout.clone()).expect("stdout utf8");
+    serde_json::from_str(stdout.trim_end())
+        .unwrap_or_else(|e| panic!("stdout is not a JSON manifest ({e}): {stdout}"))
+}
+
+/// Loose `==` on a typed guard is the build-time error SCE Forge §3.4
+/// mandates — not a silent demotion to the script engine.
+///
+/// This is the regression: the receive-side typecheck used to swallow the
+/// expression-parse failure on the premise that codegen would report it,
+/// while codegen reduced the identical failure to "not natively
+/// lowerable" and kept the script engine. Neither stage spoke, so a
+/// one-character operator slip silently cost the machine its native
+/// lowering, its `no_std` build, and its determinism.
+#[test]
+fn typed_guard_loose_equality_is_rejected() {
+    let (_dir, scxml) = write_typed_guard_fixture("typed-loose-eq", "_event.data.flag == 1", "");
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+
+    assert!(!out.status.success(), "loose == on a typed guard must fail");
+    assert!(
+        out.stdout.is_empty(),
+        "no manifest on failure: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+
+    let diag = single_diagnostic(&String::from_utf8(out.stderr).expect("stderr utf8"));
+    assert_eq!(diag["code"], "expression/strict-equality");
+    assert_eq!(diag["stage"], "expression");
+    assert_eq!(diag["spec"], "SCE Forge §3.4");
+    // The author gets a one-step machine-applicable repair, which is what
+    // makes the strictness affordable.
+    assert_eq!(diag["fix"]["kind"], "replace_with");
+    assert_eq!(diag["fix"]["to"], "===");
+    // Anchored on the offending transition, not the document.
+    assert_eq!(diag["location"]["file"], "m.scxml");
+}
+
+/// An `_event.data.<field>` that the schema does not declare is a
+/// rejection, with the declared field surface as the repair candidates.
+///
+/// Regression: `generate` parses one document and never reaches the build
+/// orchestrator, where the receive-side typecheck used to be wired. The
+/// field went unchecked and codegen lowered it anyway — emitting
+/// `ev.nosuchfield` against a payload struct that has no such field, so
+/// the defect surfaced as a compile error in the *generated* code with
+/// nothing pointing back at the `cond`.
+#[test]
+fn typed_guard_unknown_field_is_rejected() {
+    let (_dir, scxml) =
+        write_typed_guard_fixture("typed-unknown-field", "_event.data.nosuchfield === 1", "");
+    let out = run_generate(&sce_codegen_bin(), &scxml, "json");
+
+    assert!(!out.status.success(), "unknown typed field must fail");
+    let diag = single_diagnostic(&String::from_utf8(out.stderr).expect("stderr utf8"));
+    assert_eq!(diag["code"], "validation/cross-kind-field-not-found");
+    assert_eq!(diag["fix"]["kind"], "replace_one_of");
+    assert_eq!(diag["fix"]["candidates"][0], "_event.data.flag");
+}
+
+/// The positive control: a well-formed typed guard lowers natively, and
+/// the manifest says the machine is pure-static. `script_engine_causes`
+/// is absent, not empty — a pure-static manifest carries no new bytes.
+#[test]
+fn typed_guard_strict_equality_lowers_native() {
+    let (_dir, scxml) = write_typed_guard_fixture("typed-strict-eq", "_event.data.flag === 1", "");
+    let manifest = manifest_of(&run_generate(&sce_codegen_bin(), &scxml, "json"));
+
+    assert_eq!(manifest["needs_script_engine"], false);
+    assert!(
+        manifest.get("script_engine_causes").is_none(),
+        "pure-static manifest must omit the key entirely: {manifest}"
+    );
+}
+
+/// A guard that mixes a typed field with a datamodel identifier has no
+/// native form — the bare identifier has no binding inside the generated
+/// `matches!`. That is legal, so it generates; the point is that the
+/// manifest now says *why* the engine came back.
+#[test]
+fn non_native_typed_guard_reports_its_cause() {
+    let (_dir, scxml) = write_typed_guard_fixture(
+        "typed-mixed-guard",
+        "_event.data.flag === 1 &amp;&amp; retry &lt; 3",
+        RETRY_DATAMODEL,
+    );
+    let manifest = manifest_of(&run_generate(&sce_codegen_bin(), &scxml, "json"));
+
+    assert_eq!(manifest["needs_script_engine"], true);
+    let causes = manifest["script_engine_causes"]
+        .as_array()
+        .unwrap_or_else(|| panic!("needs_script_engine=true must carry causes: {manifest}"));
+    assert!(
+        causes
+            .iter()
+            .any(|c| c["kind"] == "transition-guard" && c["state"] == "idle"),
+        "the guard that lost its native lowering must be named: {manifest}"
+    );
+}
+
+/// The rejection is scoped to the typed path. A `cond` that touches no
+/// `_event.data` is plain ECMAScript bound for the script engine, even on
+/// a schema-carrying event — `==` is legal there and stays legal. The
+/// Forge expression language is a strict subset of ECMAScript, so
+/// rejecting every cond it cannot parse would reject W3C-legal documents
+/// that never asked for the typed path.
+#[test]
+fn loose_equality_outside_the_typed_path_still_generates() {
+    let (_dir, scxml) =
+        write_typed_guard_fixture("typed-untyped-cond", "retry == 1", RETRY_DATAMODEL);
+    let manifest = manifest_of(&run_generate(&sce_codegen_bin(), &scxml, "json"));
+
+    assert_eq!(manifest["needs_script_engine"], true);
+}

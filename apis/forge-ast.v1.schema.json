@@ -3775,6 +3775,17 @@
               },
               "type": "array"
             },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `<invoke>` element's position, so an invoke-anchored script-engine cause can name the line (SCE_ERROR_CONTRACT.md §10.4)."
+            },
             "src": {
               "type": "string"
             },
@@ -3880,6 +3891,17 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `<invoke>` element's position, so an invoke-anchored script-engine cause can name the line (SCE_ERROR_CONTRACT.md §10.4)."
             },
             "srcexpr": {
               "description": "Runtime expression that resolves to a child SCXML path. Empty if `contentexpr` is used instead.",
@@ -3993,6 +4015,17 @@
                 "type": "string"
               },
               "type": "array"
+            },
+            "source_location": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SourceLocation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The `<invoke>` element's position, so an invoke-anchored script-engine cause can name the line (SCE_ERROR_CONTRACT.md §10.4)."
             },
             "state_name": {
               "type": "string"
@@ -5342,6 +5375,17 @@
         },
         "id": {
           "type": "string"
+        },
+        "source_location": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SourceLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The `<data>` element's position, so a build that must stay pure-static can anchor a `datamodel-variable-init` script-engine cause on the line that costs it (SCE_ERROR_CONTRACT.md §10.4)."
         },
         "src": {
           "type": "string"
