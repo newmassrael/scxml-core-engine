@@ -128,6 +128,10 @@ type IndexList = ::sce_rust_runtime::SceIndexBuf;
 {{ state_derives_attr }}
 pub enum {{ machine_name }}State {
 {% for state_id in model.states | sort %}
+{% if state_id == default_state_id %}
+    // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
+    #[default]
+{% endif %}
     {{ state_id | to_state_variant }},
 {% endfor %}
 }
@@ -145,6 +149,29 @@ pub enum {{ machine_name }}Event {
 {% endfor %}
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
+}
+
+// ======================================================================
+// Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
+// ======================================================================
+
+impl {{ machine_name }}Event {
+    /// Events that can arrive from OUTSIDE the machine — external
+    /// `<send>` / platform ingress — as opposed to internal `<raise>`
+    /// signals and the W3C SCXML 3.13 `Null` sentinel (neither is a
+    /// member). This is the machine's structural external trigger
+    /// surface: every non-reserved `<transition event>` target minus
+    /// every internally-raised event. A consumer that maps event names
+    /// back to variants admits only these as externally injectable,
+    /// without re-deriving the partition. Structural and consumer-
+    /// agnostic; inert when unused. Associated (not a free `const`) so
+    /// several machines glob-re-exported into one module never collide
+    /// on the name.
+    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [{{ machine_name }}Event] = &[
+{% for event_name in externally_drivable_events %}
+        {{ machine_name }}Event::{{ event_name | to_event_variant }},
+{% endfor %}
+    ];
 }
 
 {% if inline_kind_types %}
