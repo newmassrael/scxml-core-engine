@@ -1263,6 +1263,17 @@ fn render_lookup(
         ctx.insert("match_suffix".into(), match_suffix.into());
     }
 
+    // Rust string-output lookup enum derives flow through the shared
+    // SSOT (repr-tagged C-like forge enum = ForgeEnum policy).
+    if matches!(lang, Language::Rust) {
+        ctx.insert(
+            "lookup_enum_derives_attr".into(),
+            crate::rust_derive_policy::RustDeriveCategory::ForgeEnum
+                .derives_attr()
+                .into(),
+        );
+    }
+
     // C11: fully-qualified flat-scope identifiers derived
     // from `func_name` (already `<m.name>_<output_id>`). Variant prefix is
     // its UPPER_SNAKE form; sibling helpers / arrays append a stable suffix.
@@ -1405,7 +1416,7 @@ fn render_enum(
     if matches!(l.lang, crate::generator::Language::Rust) {
         ctx.insert(
             "forge_enum_derives_attr".into(),
-            crate::forge::rust_derive_policy::RustDeriveCategory::ForgeEnum
+            crate::rust_derive_policy::RustDeriveCategory::ForgeEnum
                 .derives_attr()
                 .into(),
         );
@@ -1549,7 +1560,7 @@ fn render_event_schema(
     if matches!(l.lang, crate::generator::Language::Rust) {
         ctx.insert(
             "event_schema_payload_derives_attr".into(),
-            crate::forge::rust_derive_policy::RustDeriveCategory::EventSchemaPayload
+            crate::rust_derive_policy::RustDeriveCategory::EventSchemaPayload
                 .derives_attr()
                 .into(),
         );
@@ -5216,14 +5227,32 @@ fn render_codec(
             vec!["Default"]
         };
         codec_struct_traits
-            .extend(crate::forge::rust_derive_policy::RustDeriveCategory::CodecStruct.derives());
+            .extend(crate::rust_derive_policy::RustDeriveCategory::CodecStruct.derives());
         ctx.insert(
             "codec_struct_derives_attr".into(),
             format!("#[derive({})]", codec_struct_traits.join(", ")).into(),
         );
         ctx.insert(
             "codec_variant_enum_derives_attr".into(),
-            crate::forge::rust_derive_policy::RustDeriveCategory::CodecVariantEnum
+            crate::rust_derive_policy::RustDeriveCategory::CodecVariantEnum
+                .derives_attr()
+                .into(),
+        );
+        // Owned mirrors (`{Struct}Owned` / `{Struct}OwnedVariant`) are
+        // the same wire-typed payload as the borrowed views, so they
+        // reuse the borrowed categories — the two representations of one
+        // wire type cannot drift apart. The owned struct never carries
+        // `Default` (no all-zero-carrier gating), so it uses the plain
+        // category trio rather than the Default-gated struct attr.
+        ctx.insert(
+            "codec_owned_derives_attr".into(),
+            crate::rust_derive_policy::RustDeriveCategory::CodecStruct
+                .derives_attr()
+                .into(),
+        );
+        ctx.insert(
+            "codec_owned_variant_derives_attr".into(),
+            crate::rust_derive_policy::RustDeriveCategory::CodecVariantEnum
                 .derives_attr()
                 .into(),
         );
@@ -13048,6 +13077,17 @@ fn render_validator(
         ctx.insert("c_has_state".into(), c_has_state.into());
     }
 
+    // Rust `ValidationResult` pub-API struct derives flow through the
+    // shared SSOT.
+    if matches!(lang, Language::Rust) {
+        ctx.insert(
+            "validation_result_derives_attr".into(),
+            crate::rust_derive_policy::RustDeriveCategory::ValidatorResult
+                .derives_attr()
+                .into(),
+        );
+    }
+
     l.insert_imports(&mut ctx, imports);
 
     l.render(env, "validator", ctx)
@@ -13493,7 +13533,7 @@ pub fn render_machine_link_bus_rust(
         machine_pascal => filters::to_pascal_case(machine_name.to_string()),
         machine_snake => filters::to_snake_case(machine_name.to_string()),
         links => links,
-        link_bus_event_derives_attr => crate::forge::rust_derive_policy::RustDeriveCategory::LinkBusEvent.derives_attr(),
+        link_bus_event_derives_attr => crate::rust_derive_policy::RustDeriveCategory::LinkBusEvent.derives_attr(),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -13707,6 +13747,9 @@ fn render_buffer_pool_rust(
         name => &m.name,
         pascal_name => filters::to_pascal_case(m.name.clone()),
         snake_name => filters::to_snake_case(m.name.clone()),
+        // `SlotState` repr(u8) enum derives flow through the shared SSOT
+        // (repr-tagged C-like forge enum = ForgeEnum policy).
+        slot_state_derives_attr => crate::rust_derive_policy::RustDeriveCategory::ForgeEnum.derives_attr(),
         slot_count => m.slot_count,
         slot_size => m.slot_size,
         section => &m.section,
@@ -13989,8 +14032,8 @@ fn render_bounded_collection_rust(
         index_by_field => m.index_by.clone().unwrap_or_default(),
         index_by_rust_type => index_by_rust_type,
         runtime_dep => "self-contained on (rust, std) and (rust, no_std)",
-        handle_derives_attr => crate::forge::rust_derive_policy::RustDeriveCategory::BoundedCollectionHandle.derives_attr(),
-        overflow_error_derives_attr => crate::forge::rust_derive_policy::RustDeriveCategory::BoundedCollectionOverflowError.derives_attr(),
+        handle_derives_attr => crate::rust_derive_policy::RustDeriveCategory::BoundedCollectionHandle.derives_attr(),
+        overflow_error_derives_attr => crate::rust_derive_policy::RustDeriveCategory::BoundedCollectionOverflowError.derives_attr(),
     };
     tmpl.render(ctx).map_err(|e| {
         ForgeError::from(GenerateError::TemplateRender(format!(
@@ -17438,6 +17481,11 @@ fn render_procedure_rust(
     let ctx = minijinja::context! {
         struct_name => &pascal,
         snake_name => snake,
+        // Procedure State/Event enum derives flow through the shared
+        // Rust derive-policy SSOT (defaults only — no consumer injects
+        // extras on forge procedure enums today).
+        procedure_state_derives_attr => crate::rust_derive_policy::RustDeriveCategory::ProcedureState.derives_attr(),
+        procedure_event_derives_attr => crate::rust_derive_policy::RustDeriveCategory::ProcedureEvent.derives_attr(),
         state_enum => minijinja::Value::from_serialize(&common.state_enum),
         event_enum => minijinja::Value::from_serialize(&common.event_enum),
         input_fields => minijinja::Value::from_serialize(&input_fields),
@@ -19467,6 +19515,17 @@ fn render_observer(
         let snake = filters::to_snake_case(m.name.clone());
         ctx.insert("upper".into(), to_upper_snake(&m.name).into());
         ctx.insert("snake".into(), snake.into());
+    }
+
+    // Rust `ForgeDomainTag` derives flow through the shared SSOT
+    // (repr-tagged C-like forge enum = ForgeEnum policy).
+    if matches!(lang, crate::generator::Language::Rust) {
+        ctx.insert(
+            "observer_domain_tag_derives_attr".into(),
+            crate::rust_derive_policy::RustDeriveCategory::ForgeEnum
+                .derives_attr()
+                .into(),
+        );
     }
 
     render_phase3(env, &format!("observer.{}.jinja2", l.template_ext()), ctx)

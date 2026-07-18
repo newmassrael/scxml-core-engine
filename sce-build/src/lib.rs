@@ -50,6 +50,12 @@ pub mod requirements_report;
 /// [`xinclude`] and [`template`] and mirrored by the C++ runtime's
 /// `FragmentResolver.h`.
 pub mod resolve;
+/// Single source of truth for `#[derive(...)]` attributes on every
+/// Rust type the codegen emits — shared across both Rust-emitting
+/// engines (statechart codegen in [`generator`] and forge codegen in
+/// [`forge::generator`]). Promoted out of `forge/` so neither engine
+/// reaches into the other's namespace for shared derive policy.
+pub mod rust_derive_policy;
 pub mod script_engine_analyzer;
 /// Event-set exhaustiveness
 /// validator. Flags compound `<state>` parents whose sibling children
@@ -395,28 +401,64 @@ pub fn resolve_driver_refs_with_root(
 /// [`generator::GeneratedOutput`] whose `deps` field is the canonical
 /// build-system rerun surface.
 pub fn compile_scxml(scxml_files: &[&str]) {
+    compile_scxml_with_derives(scxml_files, &[], &[]);
+}
+
+/// [`compile_scxml`] with caller-injected extra derives on every
+/// generated `{machine}State` / `{machine}Event` enum. Intended for
+/// downstream `build.rs` consumers that need those enums to carry
+/// traits SCE does not derive by default — e.g. `serde::Serialize` /
+/// `serde::Deserialize` so the state can back a reactive cell, or a
+/// consumer's own a11y / RPC-introspect proc-macro derive. The extras
+/// are appended verbatim to the shared derive-policy SSOT defaults
+/// (deduped) and applied uniformly to every input file, matching the
+/// "set once, centrally" build.rs usage; the consuming crate must have
+/// the named traits / derive-macros in scope. `compile_scxml` is this
+/// with empty extras.
+pub fn compile_scxml_with_derives(
+    scxml_files: &[&str],
+    state_extra_derives: &[String],
+    event_extra_derives: &[String],
+) {
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set (must be called from build.rs)");
     let template_dir = find_template_dir();
 
+    let options = generator::StatechartCodegenOptions {
+        no_std: false,
+        state_extra_derives: state_extra_derives.to_vec(),
+        event_extra_derives: event_extra_derives.to_vec(),
+    };
+
     for scxml_path in scxml_files {
-        let output = compile_scxml_lang_typed(scxml_path, &template_dir, generator::Language::Rust)
-            .unwrap_or_else(|e| panic!("Failed to compile {scxml_path}: {e}"));
+        // Route through the section-variant directly (rather than
+        // `compile_scxml_lang_typed`) so the caller's `options` reach
+        // the Rust codegen arm; driver_root / section_class stay `None`
+        // for this single-file Rust build.rs facade.
+        let output = compile_scxml_lang_typed_with_section(
+            scxml_path,
+            &template_dir,
+            generator::Language::Rust,
+            None,
+            None,
+            &options,
+        )
+        .unwrap_or_else(|e| panic!("Failed to compile {scxml_path}: {e}"));
 
         let stem = Path::new(scxml_path)
             .file_stem()
             .and_then(|s| s.to_str())
             .expect("Invalid SCXML filename");
 
-        // `compile_scxml_lang_typed` with `Rust` always emits exactly
-        // one file (`{stem}_sm.rs`); destructuring the single entry
-        // makes the contract explicit. Multi-file backends (C++/C11)
-        // route through `compile_scxml_lang_typed_with_section`
-        // directly, not this Rust-only build.rs facade.
+        // The Rust arm always emits exactly one file (`{stem}_sm.rs`);
+        // destructuring the single entry makes the contract explicit.
+        // Multi-file backends (C++/C11) route through
+        // `compile_scxml_lang_typed_with_section` directly, not this
+        // Rust-only build.rs facade.
         let (_filename, code) = output
             .files
             .into_iter()
             .next()
-            .expect("compile_scxml_lang_typed(Rust) must emit exactly one file");
+            .expect("compile_scxml(Rust) must emit exactly one file");
 
         let out_path = Path::new(&out_dir).join(format!("{stem}_sm.rs"));
         std::fs::write(&out_path, &code)
@@ -598,7 +640,14 @@ pub fn compile_scxml_lang_typed_with_driver_root(
     language: generator::Language,
     driver_root: Option<&Path>,
 ) -> Result<generator::GeneratedOutput, CompileError> {
-    compile_scxml_lang_typed_with_section(scxml_path, template_dir, language, driver_root, None)
+    compile_scxml_lang_typed_with_section(
+        scxml_path,
+        template_dir,
+        language,
+        driver_root,
+        None,
+        &generator::StatechartCodegenOptions::default(),
+    )
 }
 
 /// Watching-zenoh RFC §5.2 — deploy-aware variant that
@@ -614,12 +663,20 @@ pub fn compile_scxml_lang_typed_with_driver_root(
 /// `section_class` is ignored on non-C11 backends; the orchestrator
 /// already fires `mcu/section-attribute-on-non-mcu-target` for that
 /// case before this entry runs.
+///
+/// `options` carries the statechart Rust codegen knobs
+/// ([`generator::StatechartCodegenOptions`] — `no_std`, injectable
+/// State/Event derives). It is consumed only by the Rust arm; the
+/// other backends have no derive concept and ignore it. Deploy-unaware
+/// and deploy-aware callers that need no injection pass
+/// `&StatechartCodegenOptions::default()`.
 pub fn compile_scxml_lang_typed_with_section(
     scxml_path: &str,
     template_dir: &Path,
     language: generator::Language,
     driver_root: Option<&Path>,
     section_class: Option<&str>,
+    options: &generator::StatechartCodegenOptions,
 ) -> Result<generator::GeneratedOutput, CompileError> {
     let ParsedSCXML {
         mut model,
@@ -649,7 +706,7 @@ pub fn compile_scxml_lang_typed_with_section(
     // build-system metadata it doesn't otherwise touch.
     let mut output = match language {
         generator::Language::Rust => {
-            let code = generator::generate(&model, template_dir, false)
+            let code = generator::generate_with_options(&model, template_dir, options)
                 .map_err(|e| locate_codegen_error(e, scxml_path))?;
             generator::GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.rs"), code)],
@@ -2592,6 +2649,10 @@ pub fn compile_scxml_with_imports(
             language,
             deploy_driver_root.as_deref(),
             deploy_section_class.as_deref(),
+            // Deploy orchestration injects no extra enum derives; the
+            // statechart State/Event derive extras are a downstream
+            // library-consumer concern (see `compile_scxml_with_derives`).
+            &generator::StatechartCodegenOptions::default(),
         )?;
         outputs.push((basename.to_string(), out));
     }

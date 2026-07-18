@@ -250,29 +250,75 @@ fn reject_liveliness_without_handler(model: &SCXMLModel) -> Result<(), GenerateE
 
 // ── Rust generator ───────────────────────────────────────────────
 
+/// Caller-facing knobs for the statechart Rust codegen. Defaults
+/// reproduce the pre-options behaviour byte-for-byte (std build, no
+/// extra derives), so every caller routing through [`generate`] is
+/// unaffected.
+#[derive(Default, Clone, Debug)]
+pub struct StatechartCodegenOptions {
+    /// `no_std` codegen mode (watching-zenoh RFC §synth-5-J-2): emits
+    /// `#![no_std]` at the crate root and switches
+    /// `parent_external_queue` + microstep `HashSet` to heapless
+    /// variants. Default `false` keeps std-coupled output for the
+    /// existing 200+ AOT W3C fixtures byte-identical.
+    pub no_std: bool,
+    /// Extra derive arguments appended verbatim to the generated
+    /// `{machine}State` enum (e.g. `"serde::Serialize"`,
+    /// `"my_crate::MyStateDerive"`). Deduped against the SSOT
+    /// defaults ([`crate::rust_derive_policy::RustDeriveCategory::StatechartState`]).
+    /// Empty ⇒ no change. The consuming crate must have the named
+    /// traits / derive-macros in scope; SCE forwards the paths
+    /// unresolved and takes on no dependency for them.
+    pub state_extra_derives: Vec<String>,
+    /// As above, for the generated `{machine}Event` enum
+    /// ([`crate::rust_derive_policy::RustDeriveCategory::StatechartEvent`]).
+    pub event_extra_derives: Vec<String>,
+}
+
 /// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
 ///
-/// `no_std` toggles the watching-zenoh RFC §synth-5-J-2 codegen mode:
-/// emits `#![no_std]` at the crate root and switches
-/// `parent_external_queue` + microstep `HashSet` to heapless variants.
-/// Default `false` keeps std-coupled output for the existing 200+ AOT
-/// W3C fixtures byte-identical. The `--no-std` CLI flag threads
-/// through `cmd_generate` to this parameter.
+/// See [`StatechartCodegenOptions::no_std`] for the `no_std` toggle.
+/// Thin delegate over [`generate_with_options`] for callers that only
+/// need the `no_std` knob (the `--no-std` CLI flag, the AOT harness).
 pub fn generate(
     model: &SCXMLModel,
     template_dir: &Path,
     no_std: bool,
 ) -> Result<String, GenerateError> {
+    generate_with_options(
+        model,
+        template_dir,
+        &StatechartCodegenOptions {
+            no_std,
+            ..Default::default()
+        },
+    )
+}
+
+/// Generate Rust code from an analyzed SCXMLModel (filesystem-based),
+/// with full [`StatechartCodegenOptions`]. This is the base entry;
+/// [`generate`] delegates here. Downstream consumers that need to
+/// inject extra derives on the generated `State` / `Event` enums
+/// (serde, an a11y / RPC-introspect proc-macro derive) route through
+/// [`crate::compile_scxml_with_derives`], which reaches this via
+/// [`crate::compile_scxml_lang_typed_with_section`].
+pub fn generate_with_options(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    options: &StatechartCodegenOptions,
+) -> Result<String, GenerateError> {
     reject_mesh_rpc_in_unsupported_lang(model, "Rust")?;
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_filters(&mut env);
-    render_rust(&mut env, model, no_std)
+    render_rust(&mut env, model, options)
 }
 
 /// Generate Rust code using pre-loaded template strings (WASM-compatible).
 ///
-/// See [`generate`] for `no_std` semantics.
+/// See [`StatechartCodegenOptions::no_std`] for `no_std` semantics. The
+/// WASM surface exposes only the `no_std` knob today (no consumer
+/// injects extra derives through the in-memory template path).
 pub fn generate_with_templates(
     model: &SCXMLModel,
     templates: &[(&str, &str)],
@@ -282,13 +328,20 @@ pub fn generate_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_filters(&mut env);
-    render_rust(&mut env, model, no_std)
+    render_rust(
+        &mut env,
+        model,
+        &StatechartCodegenOptions {
+            no_std,
+            ..Default::default()
+        },
+    )
 }
 
 fn render_rust(
     env: &mut Environment,
     model: &SCXMLModel,
-    no_std: bool,
+    options: &StatechartCodegenOptions,
 ) -> Result<String, GenerateError> {
     let machine_name = filters::to_pascal_case(model.name.clone());
 
@@ -346,13 +399,29 @@ fn render_rust(
     let tmpl = env
         .get_template("state_machine.rs.jinja2")
         .map_err(|e| GenerateError::TemplateLoad(format!("Template load error: {e}")))?;
+    // State/Event enum derives flow through the shared Rust
+    // derive-policy SSOT: the category defaults plus any caller-injected
+    // extras (serde, an a11y / RPC-introspect proc-macro derive),
+    // deduped. Empty extras render byte-identical to the pre-SSOT
+    // hardcoded `#[derive(...)]` lines.
+    let state_derives_attr = crate::rust_derive_policy::render_derives_attr(
+        crate::rust_derive_policy::RustDeriveCategory::StatechartState.derives(),
+        &options.state_extra_derives,
+    );
+    let event_derives_attr = crate::rust_derive_policy::render_derives_attr(
+        crate::rust_derive_policy::RustDeriveCategory::StatechartEvent.derives(),
+        &options.event_extra_derives,
+    );
+
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(&model_lowered),
         machine_name => machine_name,
         license_config => minijinja::Value::from_serialize(license_config()),
         inline_kind_types => &inline_kind_types,
         inline_kind_fns => &inline_kind_fns,
-        no_std => no_std,
+        no_std => options.no_std,
+        state_derives_attr => &state_derives_attr,
+        event_derives_attr => &event_derives_attr,
         event_payload_defs => &payload.defs,
         event_payload_type => &payload.type_name,
         event_payload_entries => &payload.entries,

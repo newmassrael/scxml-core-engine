@@ -33,7 +33,7 @@ use sce_forge_runtime::procedure::{
 
 // ── State and Event enums ───────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+{{ procedure_state_derives_attr }}
 // pub API: procedures expose State/Event enums and the policy struct as
 // downstream library types (SCE_FORGE.md §8 procedure). Generated code
 // keeps them pub so embedders can inspect transitions; the conformance
@@ -46,7 +46,7 @@ pub enum State {
 {% endfor %}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+{{ procedure_event_derives_attr }}
 // pub API: procedures expose State/Event enums and the policy struct as
 // downstream library types (SCE_FORGE.md §8 procedure). Generated code
 // keeps them pub so embedders can inspect transitions; the conformance
