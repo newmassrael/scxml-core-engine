@@ -54,6 +54,13 @@ pub fn analyze(model: &mut SCXMLModel, scxml_path: &str) {
 
     // Rust-specific analysis
     resolve_internal_transitions(model);
+
+    // Trust-boundary surface — must run LAST: the concrete-variant
+    // intersection reads the FINAL `model.events` (post
+    // `build_prefix_matching`), so a prefix/wildcard descriptor never
+    // survives into the forgeable set.
+    compute_externally_drivable_events(model);
+
     model.scxml_base_path = compute_scxml_base_path(scxml_path);
 }
 
@@ -472,6 +479,32 @@ fn compute_external_ingress_events(model: &mut SCXMLModel) {
 /// empty, yielding an empty set — the schemaless baseline).
 fn compute_typed_inject_events(model: &mut SCXMLModel) {
     model.typed_inject_events = crate::forge::event_schema_check::native_typed_inject_events(model);
+}
+
+/// Populate [`SCXMLModel::externally_drivable_events`] — the external
+/// forgeability surface (see that field's doc for the full contract):
+/// non-reserved `<transition event>` triggers
+/// ([`SCXMLModel::external_ingress_events`]), minus internally
+/// `<raise>`d events ([`SCXMLModel::raised_events`], captured
+/// authoritatively at parse time), intersected with the concrete
+/// event-variant domain ([`SCXMLModel::events`]).
+///
+/// Must run AFTER [`build_prefix_matching`] so `model.events` is final:
+/// the `events` intersection is what drops a prefix/wildcard descriptor
+/// (`foo.*`, `Wildcard`) — none of which is a concrete variant, so none
+/// is a forgeable event. `raised_events` comes from the parser rather
+/// than a re-walk here precisely because a `<raise>` inside `<finalize>`
+/// is stringified to JS before analysis and would be invisible to any
+/// action-tree walk at this stage.
+fn compute_externally_drivable_events(model: &mut SCXMLModel) {
+    let drivable: std::collections::BTreeSet<String> = model
+        .external_ingress_events
+        .iter()
+        .filter(|e| e.as_str() != "Wildcard" && model.events.contains(*e))
+        .filter(|e| !model.raised_events.contains(*e))
+        .cloned()
+        .collect();
+    model.externally_drivable_events = drivable;
 }
 
 /// True for event tokens a transport switchboard must not target:
@@ -902,6 +935,46 @@ mod tests {
             .map(String::as_str)
             .collect();
         assert_eq!(got, vec!["humidity_update", "temp_update"]);
+    }
+
+    /// The externally-drivable surface is the machine's trust boundary:
+    /// non-reserved triggers, minus internally raised events (incl. any
+    /// captured from `<finalize>`), intersected with the concrete
+    /// event-variant domain so a prefix/wildcard descriptor is never a
+    /// member. Locks the [`compute_externally_drivable_events`] set logic.
+    #[test]
+    fn externally_drivable_excludes_raised_wildcard_and_nonconcrete() {
+        let mut model = empty_model();
+        // Concrete event-variant domain (what the Event enum emits).
+        model.events = ["go", "finev", "raised_only", "Wildcard"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        // Non-reserved transition triggers — external_ingress carries raw
+        // authored tokens, including a prefix descriptor with no variant.
+        model.external_ingress_events = ["go", "finev", "foo.bar"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        // Internally raised: `finev` stands in for a `<finalize><raise>`
+        // the parser captured; `raised_only` is raised but not a trigger.
+        model.raised_events = ["finev", "raised_only"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+
+        compute_externally_drivable_events(&mut model);
+
+        let got: Vec<&str> = model
+            .externally_drivable_events
+            .iter()
+            .map(String::as_str)
+            .collect();
+        // go: trigger, not raised, concrete → drivable.
+        // finev: raised (e.g. in <finalize>) → excluded (trust boundary).
+        // foo.bar: not a concrete variant (prefix descriptor) → excluded.
+        // Wildcard / raised_only: not a non-raised concrete trigger → absent.
+        assert_eq!(got, vec!["go"]);
     }
 
     /// §wire-W5 D3 split, branch #2: "no initial attribute" stays
