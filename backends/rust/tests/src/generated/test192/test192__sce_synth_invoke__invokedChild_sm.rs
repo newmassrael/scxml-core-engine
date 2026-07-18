@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: c496f893fb4def171deba817f047a2a335356d181c631fa74825a157a7412c3e
-// generated-at: 1784370262
+// template-hash: 2337021aa5cf9b8209b5932f23ab0e04a6899271e435f3620bc1da41d7c4d7b7
+// generated-at: 1784381543
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -80,8 +80,10 @@ use sce_rust_runtime::{Engine, StatePolicy};
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum Test192SceSynthInvokeInvokedChildState {
+    // W3C SCXML 3.2: `<scxml initial>` state — the machine's `Default`.
+    #[default]
     Sub0,
     SubFinal,
 }
@@ -99,6 +101,28 @@ pub enum Test192SceSynthInvokeInvokedChildEvent {
     Timeout,
     /// W3C SCXML 3.13: Sentinel for eventless transition dispatch
     Null,
+}
+
+// ======================================================================
+// Externally-drivable event surface (W3C SCXML 3.12 / 5.10)
+// ======================================================================
+
+impl Test192SceSynthInvokeInvokedChildEvent {
+    /// Events that can arrive from OUTSIDE the machine — external
+    /// `<send>` / platform ingress — as opposed to internal `<raise>`
+    /// signals and the W3C SCXML 3.13 `Null` sentinel (neither is a
+    /// member). This is the machine's structural external trigger
+    /// surface: every non-reserved `<transition event>` target minus
+    /// every internally-raised event. A consumer that maps event names
+    /// back to variants admits only these as externally injectable,
+    /// without re-deriving the partition. Structural and consumer-
+    /// agnostic; inert when unused. Associated (not a free `const`) so
+    /// several machines glob-re-exported into one module never collide
+    /// on the name.
+    pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [Test192SceSynthInvokeInvokedChildEvent] = &[
+        Test192SceSynthInvokeInvokedChildEvent::ParentToChild,
+        Test192SceSynthInvokeInvokedChildEvent::Timeout,
+    ];
 }
 
 // ======================================================================
