@@ -547,7 +547,7 @@ impl{{ struct_lifetime }} {{ struct_name }}{{ struct_lifetime }} {
 {% if owned_needs_alloc %}
 #[cfg(feature = "alloc")]
 {% endif %}
-#[derive(Debug, Clone, PartialEq)]
+{{ codec_owned_derives_attr }}
 pub struct {{ struct_name }}Owned {
 {% for field in fields %}
     pub {{ field.id }}: {{ field.rs_owned_type }},
@@ -581,7 +581,7 @@ impl {{ struct_name }}Owned {
 // indirection (and allocation) the generated decode path does not need.
 // The size spread is the deliberate tagged-union trade-off.
 #[allow(clippy::large_enum_variant)]
-#[derive(Debug, Clone, PartialEq)]
+{{ codec_owned_variant_derives_attr }}
 pub enum {{ struct_name }}OwnedVariant {
 {% for arm in variant.arms %}
     {{ arm.variant_name }}({{ arm.owned_body_type }}),

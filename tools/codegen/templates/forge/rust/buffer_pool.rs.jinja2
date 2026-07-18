@@ -198,7 +198,7 @@ const _: () = assert!(
 /// One of the seven slot ownership states. Discriminants match the
 /// C11 backend's `sce_slot_state_t` enum so cross-language tracing
 /// over a single binary representation stays consistent.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+{{ slot_state_derives_attr }}
 #[repr(u8)]
 pub enum SlotState {
     Free = 0,

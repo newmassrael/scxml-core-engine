@@ -15,7 +15,7 @@
 {% endif %}
 {% if output_is_string %}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+{{ lookup_enum_derives_attr }}
 pub enum {{ enum_name }} {
 {% for val in unique_values %}
     {{ val }},
