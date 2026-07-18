@@ -2152,6 +2152,13 @@ impl SCXMLParser {
                 action.event = child.attribute("event").unwrap_or("").to_string();
                 if !action.event.is_empty() {
                     model.events.insert(action.event.clone());
+                    // Authoritative internal-signal capture: every `<raise>`
+                    // in the document — including inside `<finalize>` (which
+                    // is stringified to JS below and invisible to any later
+                    // action-tree walk) — flows through this one arm. Record
+                    // the event so the externally-drivable surface can exclude
+                    // it. See `SCXMLModel::raised_events`.
+                    model.raised_events.insert(action.event.clone());
                 }
             }
             "send" => self.parse_send_action(child, &mut action, model)?,
@@ -5688,6 +5695,38 @@ mod tests {
         let entry = &model.states["s1"].on_entry_blocks[0];
         assert_eq!(entry[0].action_type, "raise");
         assert_eq!(entry[0].event, "internal.event");
+    }
+
+    /// `raised_events` is the authoritative internal-signal capture: every
+    /// `<raise>` — including one nested in a `<finalize>` block, which is
+    /// stringified to JS at parse time and thereafter invisible to an
+    /// action-tree walk — is recorded so the trust-boundary surface can
+    /// exclude it. Regression for the finalize-completeness gap: without
+    /// the parse-time capture, `fin_ev` would leak into the externally-
+    /// drivable set (an internal signal wrongly forgeable).
+    #[test]
+    fn raised_events_captures_finalize_and_onentry_raises() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="s1">
+            <state id="s1">
+                <onentry><raise event="entry_ev"/></onentry>
+                <invoke type="http://www.w3.org/TR/scxml/" id="c" src="child.scxml">
+                    <finalize><raise event="fin_ev"/></finalize>
+                </invoke>
+            </state>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        assert!(
+            model.raised_events.contains("entry_ev"),
+            "onentry raise must be captured; got {:?}",
+            model.raised_events
+        );
+        assert!(
+            model.raised_events.contains("fin_ev"),
+            "finalize-nested raise must be captured (stringified to JS, so \
+             only the parse-time capture sees it); got {:?}",
+            model.raised_events
+        );
     }
 
     #[test]

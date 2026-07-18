@@ -1858,6 +1858,14 @@
               "type": "array",
               "uniqueItems": true
             },
+            "externally_drivable_events": {
+              "description": "Derived external-forgeability surface: the event descriptors an untrusted external party can legitimately drive this machine with — [`Self::external_ingress_events`] (non-reserved `<transition event>` triggers) minus [`Self::raised_events`] (internal `<raise>` signals), intersected with the concrete event-variant domain [`Self::events`] (so a prefix/wildcard descriptor like `foo.*`, which has no single variant, is not a member). This is the machine's trust boundary: an internally raised event is an owned internal signal, so forging it from outside is spoofing; a wildcard is a runtime-matching trigger, not a concrete forgeable event. A strict subset of [`Self::external_ingress_events`]. Populated last in [`crate::analyzer::compute_externally_drivable_events`] (after prefix-matching, so `events` is final). Consumer-agnostic structural fact; the Rust backend surfaces it as the `{Machine}Event::EXTERNALLY_DRIVABLE_EVENTS` associated const.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
             "forge_imports": {
               "description": "`<sce:import>` declarations on the statechart's `<scxml>` root. Each entry names a cross-doc dependency by `kind`, `src`, and `alias` so per-doc validators can compute per-statechart import visibility (rather than the legacy single global registry that merged every kind document in the build into one shared map). Today's primary consumer: per-machine EventSchema visibility for mesh cross-machine validation and receive/send-side schema selection on the per-statechart check passes. Empty for statecharts that declare no `<sce:import>` children — the schemaless-fallback path stays a no-op walk.\n\nSerialized into the manifest so downstream tooling (mesh codegen, AST export) can read the import graph without re-parsing the SCXML.",
               "items": {
