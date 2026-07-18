@@ -41,7 +41,7 @@ pub struct ForgeDomain;
 // `EMIT_WARNING`, `coolant.high`, etc. cannot be normalised to UpperCamel
 // without breaking SCE_FORGE.md §4.11 cross-file event composition.
 #[allow(non_camel_case_types)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+{{ observer_domain_tag_derives_attr }}
 pub enum ForgeDomainTag {
 {% for ev in events %}
     {{ ev }},

@@ -125,7 +125,7 @@ type IndexList = ::sce_rust_runtime::SceIndexBuf;
 // State enum (W3C SCXML 3.3)
 // ======================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+{{ state_derives_attr }}
 pub enum {{ machine_name }}State {
 {% for state_id in model.states | sort %}
     {{ state_id | to_state_variant }},
@@ -136,7 +136,7 @@ pub enum {{ machine_name }}State {
 // Event enum (W3C SCXML 3.12)
 // ======================================================================
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+{{ event_derives_attr }}
 pub enum {{ machine_name }}Event {
 {% for event_name in model.events | sort %}
 {% if event_name != 'Wildcard' %}
