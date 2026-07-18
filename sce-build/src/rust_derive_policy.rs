@@ -92,15 +92,14 @@ pub enum RustDeriveCategory {
     /// envelope enum carrying `Vec<u8>` per declared `<sce:link>`.
     LinkBusEvent,
     /// `rust/state_machine.rs.jinja2` — `pub enum {{ machine_name }}State`.
-    /// Statechart lifecycle enum (W3C SCXML 3.3). Repr-untagged C-like
-    /// enum used as a `HashMap` key across the generated transition
-    /// tables, so `Hash` is carried in addition to the Copy-trivial
-    /// set. Distinct from [`Self::ProcedureState`] precisely because of
-    /// that `Hash` — the two must not be collapsed.
+    /// Statechart lifecycle enum. Repr-untagged C-like enum used as a
+    /// `HashMap` key across the generated transition tables, so `Hash`
+    /// is carried in addition to the Copy-trivial set. Distinct from
+    /// [`Self::ProcedureState`] precisely because of that `Hash` — the
+    /// two must not be collapsed.
     StatechartState,
     /// `rust/state_machine.rs.jinja2` — `pub enum {{ machine_name }}Event`.
-    /// Statechart trigger enum (W3C SCXML 3.12). Same shape as
-    /// [`Self::StatechartState`].
+    /// Statechart trigger enum. Same shape as [`Self::StatechartState`].
     StatechartEvent,
     /// `forge/rust/procedure.rs.jinja2` — `pub enum State`. Forge
     /// procedure lifecycle enum. Repr-tagged C-like enum (explicit
