@@ -63,4 +63,12 @@ scripts/regen_event_schema_native_kotlin.sh
 echo "==> EventSchema native-lowering Python tree"
 scripts/regen_event_schema_native_python.sh
 
+# W3C SCXML G.7 `<sce:action>` native host-trait dispatch gate. Rust-only
+# committed tree (the other backends do not yet lower `<sce:action>`), driven
+# by its own regen script like the EventSchema gates above. Part of the crate
+# so it is really type-checked, so its §6.2.6 header must refresh with every
+# template edit alongside the rest.
+echo "==> Native-action host-trait Rust tree"
+scripts/regen_native_action.sh
+
 echo "All committed §6.2.6 trees regenerated."

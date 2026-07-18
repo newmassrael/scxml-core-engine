@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: e241fa666c961fb422709417b6a7ad55bf4f514221912d403c52d7358707c2e3
-// template-hash: 66bc1c3694f90e60100c842d2a53cd8c05682260c1809ba387d157940d7d6e1d
-// generated-at: 1780836488
+// source-hash: 0c53513bedc7a89c1f25c346bee5d167d30d4c794497283b17bfc7211b2b267d
+// template-hash: c496f893fb4def171deba817f047a2a335356d181c631fa74825a157a7412c3e
+// generated-at: 1784370886
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -118,7 +118,7 @@ pub enum StatechartNativeActionPayload {
 /// Bring into scope with `use …::StatechartNativeActionInject;` to call the
 /// `raise_<event>` methods on the engine.
 pub trait StatechartNativeActionInject {
-    /// NL→IR Item C1 Path A: typed `_event.data` inject for `fragment.received`.
+    /// Typed `_event.data` inject for `fragment.received`.
     /// Binds the event name and payload variant in one call (name↔type
     /// pairing cannot be constructed inconsistently).
     fn raise_fragment_received(&mut self, payload: StatechartNativeActionFragmentReceivedPayload);
@@ -169,19 +169,19 @@ pub struct StatechartNativeActionPolicy<A: StatechartNativeActionActions + 'stat
     pending_payload: StatechartNativeActionPayload,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
-    // Watching-zenoh RFC §5.J.2: gated to !no_std. Under `--no-std` both the
+    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
     // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
     // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
     // session identity is ever tracked and the alloc-coupled `String` is omitted.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
-    // `--no-std` (Watching-zenoh RFC §5.J.2) the SCXML `<invoke>` element
+    // `--no-std` (Watching-zenoh RFC §synth-5-J-2) the SCXML `<invoke>` element
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
     // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
-    // Watching-zenoh RFC §5.J.2: gated to !no_std — `<invoke>` is codegen-rejected
+    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std — `<invoke>` is codegen-rejected
     // under no_std, so a machine is never instantiated as a child and this
     // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
@@ -214,7 +214,7 @@ impl<A: StatechartNativeActionActions + 'static> StatechartNativeActionPolicy<A>
 impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativeActionPolicy<A> {
     type State = StatechartNativeActionState;
     type Event = StatechartNativeActionEvent;
-    // EventSchema MCU native-lowering RFC §10.2: `()` = schemaless (dynamic
+    // EventSchema native lowering: `()` = schemaless (dynamic
     // `_event.data` baseline); a `<Machine>Payload` sum is emitted when a
     // transition guard reads a typed `_event.data.<field>` (NL→IR C1 Path A).
     type Payload = StatechartNativeActionPayload;
@@ -323,7 +323,7 @@ impl<A: StatechartNativeActionActions + 'static> StatePolicy for StatechartNativ
 
     // W3C SCXML 3.6: Get initial children of a compound state
     //
-    // Watching-zenoh RFC §5.J.2: return type is the runtime crate's
+    // Watching-zenoh RFC §synth-5-J-2: return type is the runtime crate's
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
