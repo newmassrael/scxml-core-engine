@@ -2930,10 +2930,6 @@
           "kind": "references"
         },
         {
-          "file": "sce-build/src/forge/rust_derive_policy.rs",
-          "kind": "references"
-        },
-        {
           "file": "sce-build/src/lib.rs",
           "kind": "references"
         },
@@ -3059,6 +3055,10 @@
         },
         {
           "file": "sce-build/src/forge/event_schema_check.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/rust_derive_policy.rs",
           "kind": "references"
         }
       ],
