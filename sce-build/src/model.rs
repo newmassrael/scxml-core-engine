@@ -1101,6 +1101,37 @@ pub struct SCXMLModel {
     /// selection the codegen payload builders consume.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub typed_inject_events: BTreeSet<String>,
+    /// Every event name produced by an internal `<raise event="X">`
+    /// anywhere in the document, captured at parse time
+    /// ([`crate::parser`] — the single site every executable-content
+    /// `<raise>` flows through, including `<finalize>`, nested
+    /// `<if>`/`<foreach>`, initial/history transition content). This is
+    /// the authoritative internal-signal set: the parser is the only
+    /// stage that sees every `<raise>` before `<finalize>` bodies are
+    /// stringified, so a downstream re-walk of the action tree would
+    /// miss finalize-raised events. Build-time only (drives
+    /// [`Self::externally_drivable_events`]); not part of any wire
+    /// surface, hence `#[serde(skip)]`.
+    #[serde(skip)]
+    pub raised_events: BTreeSet<String>,
+    /// Derived external-forgeability surface: the event descriptors an
+    /// untrusted external party can legitimately drive this machine with
+    /// — [`Self::external_ingress_events`] (non-reserved
+    /// `<transition event>` triggers) minus [`Self::raised_events`]
+    /// (internal `<raise>` signals), intersected with the concrete
+    /// event-variant domain [`Self::events`] (so a prefix/wildcard
+    /// descriptor like `foo.*`, which has no single variant, is not a
+    /// member). This is the machine's trust boundary: an internally
+    /// raised event is an owned internal signal, so forging it from
+    /// outside is spoofing; a wildcard is a runtime-matching trigger,
+    /// not a concrete forgeable event. A strict subset of
+    /// [`Self::external_ingress_events`]. Populated last in
+    /// [`crate::analyzer::compute_externally_drivable_events`] (after
+    /// prefix-matching, so `events` is final). Consumer-agnostic
+    /// structural fact; the Rust backend surfaces it as the
+    /// `{Machine}Event::EXTERNALLY_DRIVABLE_EVENTS` associated const.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub externally_drivable_events: BTreeSet<String>,
     pub history_default_targets: BTreeMap<String, String>,
     pub history_states: BTreeMap<String, HistoryInfo>,
 

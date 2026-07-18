@@ -530,15 +530,11 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
     // ======================================================================
 
     fn initial_state() -> Self::State {
-{% if model.initial %}
-        {{ machine_name }}State::{{ model.initial | to_state_variant }}
-{% else %}
-{% for state_id in model.states | sort %}
-{% if loop.first %}
-        {{ machine_name }}State::{{ state_id | to_state_variant }}
-{% endif %}
-{% endfor %}
-{% endif %}
+        // The runtime entry state and the type's `Default` derive are one
+        // concept, sourced from one computation (`default_state_id`) so
+        // they can never diverge: `<scxml initial>`, or the first sorted
+        // state when the initial attribute is unset.
+        {{ machine_name }}State::{{ default_state_id | to_state_variant }}
     }
 
     fn is_final_state(state: Self::State) -> bool {
