@@ -1,7 +1,7 @@
 {
   "version": 1,
   "source_hash": "f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9",
-  "template_hash": "2337021aa5cf9b8209b5932f23ab0e04a6899271e435f3620bc1da41d7c4d7b7",
+  "template_hash": "c5e718a965673d48d2d901bab6814a883b52bbad31500159c63233aec229e0ef",
   "symbols": {
     "test387_____machine": {
       "scxml_file": "test387.scxml",
