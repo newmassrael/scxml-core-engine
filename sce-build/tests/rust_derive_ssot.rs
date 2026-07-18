@@ -340,8 +340,9 @@ fn procedure_state_event_enums_emit_ssot_defaults() {
 }
 
 /// Statechart `{machine}State` / `{machine}Event` enums flow through
-/// the SSOT with defaults only (including `Hash`) — byte-identical to
-/// the pre-SSOT hardcoded line.
+/// the SSOT with defaults (including `Hash`). The two enums differ by
+/// exactly `Default`: the state enum carries it (its initial-state
+/// `#[default]` marker), the event enum does not (no default event).
 #[test]
 fn statechart_state_event_enums_emit_ssot_defaults() {
     let out = scratch("statechart_defaults");
@@ -350,12 +351,90 @@ fn statechart_state_event_enums_emit_ssot_defaults() {
         &repo_root().join("examples/traffic_light/traffic_light.scxml"),
     );
     let src = read_emitted_rs(&out);
-    let count = src
-        .matches("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]")
-        .count();
+    // State enum: SSOT set + `Default` (exactly once).
     assert_eq!(
-        count, 2,
-        "statechart must emit the SSOT default derive (with Hash) on both State and Event; got {count}:\n{src}"
+        src.matches("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]")
+            .count(),
+        1,
+        "statechart State enum must carry the SSOT set plus Default; got:\n{src}"
+    );
+    // Event enum: SSOT set WITHOUT Default (exactly once). The
+    // `Hash, Default)]` state line does not match this `Hash)]` needle.
+    assert_eq!(
+        src.matches("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]")
+            .count(),
+        1,
+        "statechart Event enum must carry the SSOT set without Default; got:\n{src}"
+    );
+    // The state enum marks its `<scxml initial="red">` variant `#[default]`
+    // so `Default` resolves to the initial state — exactly one marker.
+    assert_eq!(
+        src.matches("#[default]").count(),
+        1,
+        "exactly one #[default] marker (the initial state); got:\n{src}"
+    );
+    assert!(
+        src.contains("#[default]\n    Red,"),
+        "the #[default] marker must sit on the initial-state variant Red; got:\n{src}"
+    );
+}
+
+/// Statechart publishes its structural external-trigger surface as a
+/// `pub const EXTERNALLY_DRIVABLE_EVENTS` slice: non-reserved
+/// `<transition event>` targets minus internally `<raise>`d events and
+/// the `Null` sentinel. The `widget_patterns/button` fixture exercises
+/// the subtraction — it `<raise event="click">`s an event that never
+/// triggers a transition, so `Click` is an enum variant but NOT a member
+/// of the drivable set. This locks the derive-consumable partition a
+/// downstream name-parser reconstructs `from_name` from.
+#[test]
+fn statechart_emits_externally_drivable_event_const() {
+    let out = scratch("externally_drivable");
+    run_generate(
+        &out,
+        &repo_root().join("examples/widget_patterns/button.scxml"),
+    );
+    let src = read_emitted_rs(&out);
+    // The drivable surface is an associated const on the Event enum
+    // (`ButtonEvent::EXTERNALLY_DRIVABLE_EVENTS`) — associated, not free,
+    // so glob-re-exported machines never collide on the name.
+    assert!(
+        src.contains("impl ButtonEvent {")
+            && src.contains("pub const EXTERNALLY_DRIVABLE_EVENTS: &'static [ButtonEvent] = &["),
+        "must emit the associated drivable-events const on the Event enum; got:\n{src}"
+    );
+    // Every non-reserved transition trigger is a member.
+    for ev in [
+        "PointerEnter",
+        "PointerLeave",
+        "PointerDown",
+        "PointerUp",
+        "Enable",
+        "Disable",
+    ] {
+        assert!(
+            src.contains(&format!("ButtonEvent::{ev},")),
+            "external trigger {ev} must be a drivable member; got:\n{src}"
+        );
+    }
+    // `Click` is `<raise>`d only (never a transition trigger): it is an
+    // enum variant but must be excluded from the drivable const.
+    assert!(
+        src.contains("Click,"),
+        "Click must still be an Event enum variant; got:\n{src}"
+    );
+    // Isolate the const body and assert Click / Null are absent from it.
+    let body_start = src
+        .find("EXTERNALLY_DRIVABLE_EVENTS")
+        .expect("const present");
+    let const_body = &src[body_start..src[body_start..].find("];").unwrap() + body_start];
+    assert!(
+        !const_body.contains("ButtonEvent::Click"),
+        "internally-raised Click must NOT be externally drivable; got:\n{const_body}"
+    );
+    assert!(
+        !const_body.contains("ButtonEvent::Null"),
+        "the Null sentinel must NOT be externally drivable; got:\n{const_body}"
     );
 }
 
@@ -399,9 +478,9 @@ fn statechart_caller_injected_extra_derives_appear() {
     // SSOT set and deduped (Debug etc. appear once).
     assert!(
         src.contains(
-            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, my_ui::StateName)]"
+            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize, my_ui::StateName)]"
         ),
-        "State enum must carry defaults + state extras verbatim; got:\n{src}"
+        "State enum must carry defaults (incl. Default) + state extras verbatim; got:\n{src}"
     );
     // Event enum carries its own extras (StateName vs EventName differ,
     // proving state/event extras are wired to distinct fields).
@@ -432,11 +511,20 @@ fn statechart_empty_extras_leaves_line_unchanged() {
     )
     .expect("compile statechart with default options");
     let src = &output.files[0].1;
+    // State enum: SSOT default + Default; Event enum: SSOT default without
+    // Default. Empty extras leave both at the category default (nothing
+    // appended after the SSOT set).
+    assert_eq!(
+        src.matches("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]")
+            .count(),
+        1,
+        "empty extras must leave the State enum at its SSOT default (incl. Default); got:\n{src}"
+    );
     assert_eq!(
         src.matches("#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]")
             .count(),
-        2,
-        "empty extras must leave both enum derive lines at the SSOT default; got:\n{src}"
+        1,
+        "empty extras must leave the Event enum at its SSOT default; got:\n{src}"
     );
     assert!(
         !src.contains("serde::Serialize"),
