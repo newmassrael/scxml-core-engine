@@ -338,6 +338,45 @@ pub fn generate_with_templates(
     )
 }
 
+/// Event names produced by an internal `<raise event="X">` anywhere in
+/// the machine — the internal-signal set the externally-drivable surface
+/// excludes. Recurses `<if>` / `<foreach>` bodies and covers every
+/// action-bearing position (transition actions, on-entry/on-exit blocks,
+/// initial-transition and history-default actions), so an internally
+/// raised event is never misclassified as externally drivable.
+fn raised_event_names(model: &SCXMLModel) -> std::collections::BTreeSet<String> {
+    fn walk(actions: &[crate::model::Action], out: &mut std::collections::BTreeSet<String>) {
+        for a in actions {
+            if a.action_type == "raise" && !a.event.is_empty() {
+                out.insert(a.event.clone());
+            }
+            // `<if>` / `<elseif>` / `<else>` / `<foreach>` bodies may nest
+            // a `<raise>`; the transition-actions vec reuses `a.actions`.
+            walk(&a.then_actions, out);
+            for branch in &a.elseif_branches {
+                walk(&branch.actions, out);
+            }
+            walk(&a.else_actions, out);
+            walk(&a.actions, out);
+        }
+    }
+    let mut out = std::collections::BTreeSet::new();
+    for state in model.states.values() {
+        for transition in &state.transitions {
+            walk(&transition.actions, &mut out);
+        }
+        for block in &state.on_entry_blocks {
+            walk(block, &mut out);
+        }
+        for block in &state.on_exit_blocks {
+            walk(block, &mut out);
+        }
+        walk(&state.initial_transition_actions, &mut out);
+        walk(&state.initial_history_default_actions, &mut out);
+    }
+    out
+}
+
 fn render_rust(
     env: &mut Environment,
     model: &SCXMLModel,
@@ -413,6 +452,49 @@ fn render_rust(
         &options.event_extra_derives,
     );
 
+    // Structural markers a downstream derive reconstructs its
+    // introspection traits from (no consumer name leaks into codegen; both
+    // items are inert to non-consumers):
+    //
+    //   * `default_state_id` — the state whose variant carries `#[default]`,
+    //     so the `Default` derive on `{Machine}State` resolves to the
+    //     `<scxml initial>` state. Same resolution as `initial_state()`
+    //     (first whitespace token of `model.initial` that is a real state,
+    //     else the first sorted state key), guaranteeing exactly one
+    //     `#[default]` marker — the invariant `#[derive(Default)]` requires.
+    //   * `externally_drivable_events` — the machine's external trigger
+    //     surface: non-reserved `<transition event>` targets minus every
+    //     internally `<raise>`d event (and minus the `Null` sentinel, which
+    //     is never a member). Emitted as the `EXTERNALLY_DRIVABLE_EVENTS`
+    //     const so a name-parsing consumer admits only external events
+    //     without re-deriving the partition.
+    let default_state_id = model
+        .initial
+        .split_whitespace()
+        .find(|t| model.states.contains_key(*t))
+        .map(str::to_string)
+        .or_else(|| model.states.keys().next().cloned())
+        .unwrap_or_default();
+    let raised = raised_event_names(model);
+    let externally_drivable_events: Vec<String> = model
+        .external_ingress_events
+        .iter()
+        // The const references `{Machine}Event` variants, so a member must
+        // materialize as a concrete variant. `external_ingress_events` is
+        // computed from raw `<transition event>` tokens and so also carries
+        // prefix / wildcard descriptors (`foo.*`, matched at runtime, W3C
+        // 3.12.1) that have no single variant — the enum skips them, and
+        // `to_event_variant("foo.*")` would emit an invalid `Foo*` path.
+        // Intersecting with `model.events` (the enum-variant domain, minus
+        // the `Wildcard` sentinel the enum omits) keeps only concrete,
+        // forgeable events; a wildcard trigger is a runtime-matching
+        // construct, not a forgeable concrete event.
+        .filter(|e| e.as_str() != "Wildcard" && model.events.contains(*e))
+        // Internal `<raise>` signals are not part of the external surface.
+        .filter(|e| !raised.contains(*e))
+        .cloned()
+        .collect();
+
     let ctx = minijinja::context! {
         model => minijinja::Value::from_serialize(&model_lowered),
         machine_name => machine_name,
@@ -422,6 +504,8 @@ fn render_rust(
         no_std => options.no_std,
         state_derives_attr => &state_derives_attr,
         event_derives_attr => &event_derives_attr,
+        default_state_id => &default_state_id,
+        externally_drivable_events => &externally_drivable_events,
         event_payload_defs => &payload.defs,
         event_payload_type => &payload.type_name,
         event_payload_entries => &payload.entries,

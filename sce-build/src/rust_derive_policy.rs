@@ -97,9 +97,21 @@ pub enum RustDeriveCategory {
     /// is carried in addition to the Copy-trivial set. Distinct from
     /// [`Self::ProcedureState`] precisely because of that `Hash` — the
     /// two must not be collapsed.
+    ///
+    /// Also carries `Default`: a generated statechart's `Default` IS its
+    /// initial state (`<scxml initial="...">`), which the template marks
+    /// with `#[default]` on the initial variant. This is a structural,
+    /// consumer-agnostic fact — the idiomatic Rust default for any
+    /// statechart — and the one derive that distinguishes this category
+    /// from [`Self::StatechartEvent`] (an event enum has no "default
+    /// event"; its `Null` sentinel is not a meaningful `Default`).
     StatechartState,
     /// `rust/state_machine.rs.jinja2` — `pub enum {{ machine_name }}Event`.
-    /// Statechart trigger enum. Same shape as [`Self::StatechartState`].
+    /// Statechart trigger enum. Same repr-untagged, `Hash`-keyed shape as
+    /// [`Self::StatechartState`] but WITHOUT `Default` — there is no
+    /// default event (the `Null` eventless sentinel is a dispatch marker,
+    /// not a sensible `Default::default()`), and a name-parsing consumer
+    /// rejects unknown / non-external names rather than defaulting.
     StatechartEvent,
     /// `forge/rust/procedure.rs.jinja2` — `pub enum State`. Forge
     /// procedure lifecycle enum. Repr-tagged C-like enum (explicit
@@ -140,9 +152,19 @@ impl RustDeriveCategory {
             Self::BoundedCollectionHandle => &["Clone", "Copy", "PartialEq", "Eq", "Debug", "Hash"],
             Self::BoundedCollectionOverflowError => &["Clone", "Copy", "PartialEq", "Eq", "Debug"],
             Self::LinkBusEvent => &["Debug", "Clone"],
-            Self::StatechartState | Self::StatechartEvent => {
-                &["Debug", "Clone", "Copy", "PartialEq", "Eq", "Hash"]
-            }
+            // `Default` marks the initial-state variant (`#[default]`) so a
+            // generated statechart's `Default` is its `<scxml initial>` state.
+            // The event enum deliberately omits it (no default event).
+            Self::StatechartState => &[
+                "Debug",
+                "Clone",
+                "Copy",
+                "PartialEq",
+                "Eq",
+                "Hash",
+                "Default",
+            ],
+            Self::StatechartEvent => &["Debug", "Clone", "Copy", "PartialEq", "Eq", "Hash"],
             Self::ProcedureState | Self::ProcedureEvent => {
                 &["Debug", "Clone", "Copy", "PartialEq", "Eq"]
             }
@@ -293,13 +315,29 @@ mod tests {
     }
 
     #[test]
-    fn statechart_derives_attr_matches_pre_ssot_hardcoded_line() {
-        // Byte-for-byte the string the statechart template hardcoded
-        // before joining the SSOT — locks the refactor as no-op.
+    fn statechart_event_derives_attr_matches_pre_ssot_hardcoded_line() {
+        // The event enum keeps byte-for-byte the string the statechart
+        // template hardcoded before joining the SSOT — no default event.
         assert_eq!(
-            RustDeriveCategory::StatechartState.derives_attr(),
+            RustDeriveCategory::StatechartEvent.derives_attr(),
             "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]"
         );
+    }
+
+    #[test]
+    fn statechart_state_derives_attr_adds_default_over_event() {
+        // The state enum is the event enum's derive set plus `Default`:
+        // the initial-state default marker. The two categories differ by
+        // exactly that one derive.
+        assert_eq!(
+            RustDeriveCategory::StatechartState.derives_attr(),
+            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]"
+        );
+        let state = RustDeriveCategory::StatechartState.derives();
+        let event = RustDeriveCategory::StatechartEvent.derives();
+        assert_eq!(&state[..event.len()], event);
+        assert_eq!(state.last(), Some(&"Default"));
+        assert!(!event.contains(&"Default"));
     }
 
     #[test]
@@ -336,7 +374,7 @@ mod tests {
         ];
         assert_eq!(
             render_derives_attr(RustDeriveCategory::StatechartState.derives(), &extras),
-            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]"
+            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, serde::Serialize, serde::Deserialize)]"
         );
     }
 
@@ -347,7 +385,7 @@ mod tests {
         let extras = vec!["Debug".to_string(), "Hash".to_string()];
         assert_eq!(
             render_derives_attr(RustDeriveCategory::StatechartState.derives(), &extras),
-            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]"
+            "#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]"
         );
     }
 
