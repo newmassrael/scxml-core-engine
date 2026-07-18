@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 2337021aa5cf9b8209b5932f23ab0e04a6899271e435f3620bc1da41d7c4d7b7
-// generated-at: 1784381543
+// template-hash: c5e718a965673d48d2d901bab6814a883b52bbad31500159c63233aec229e0ef
+// generated-at: 1784388944
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -378,6 +378,10 @@ impl StatePolicy for Test513Policy {
     // ======================================================================
 
     fn initial_state() -> Self::State {
+        // The runtime entry state and the type's `Default` derive are one
+        // concept, sourced from one computation (`default_state_id`) so
+        // they can never diverge: `<scxml initial>`, or the first sorted
+        // state when the initial attribute is unset.
         Test513State::S0
     }
 

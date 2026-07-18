@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 2337021aa5cf9b8209b5932f23ab0e04a6899271e435f3620bc1da41d7c4d7b7
-// generated-at: 1784381546
+// template-hash: c5e718a965673d48d2d901bab6814a883b52bbad31500159c63233aec229e0ef
+// generated-at: 1784388946
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -377,6 +377,10 @@ impl StatePolicy for DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
     // ======================================================================
 
     fn initial_state() -> Self::State {
+        // The runtime entry state and the type's `Default` derive are one
+        // concept, sourced from one computation (`default_state_id`) so
+        // they can never diverge: `<scxml initial>`, or the first sorted
+        // state when the initial attribute is unset.
         DonedataLocalInvokeSceSynthInvokeInvParamState::Done
     }
 
