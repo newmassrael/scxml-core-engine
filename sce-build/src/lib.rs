@@ -2424,7 +2424,7 @@ pub fn compile_scxml_with_imports(
         // downstream to size).
         for device in deploy_cfg.topology.values() {
             for (machine_name, machine) in device.machines.iter() {
-                for (link_name, _link_cfg) in machine.links.iter() {
+                for link_name in machine.links.keys() {
                     let Some(forge_link) = forge_link_models_view.get(link_name) else {
                         continue;
                     };
@@ -3745,7 +3745,7 @@ pub fn resolve_listener_links(
     use mesh::deploy::LinkRole;
     let mut listener_links: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for device in deploy_cfg.topology.values() {
-        for (_machine_name, machine) in device.machines.iter() {
+        for machine in device.machines.values() {
             // Resolve `machine.source` against the parsed scxml_models
             // by basename match — deploy.yaml's `source` is a path
             // string that the orchestrator passes verbatim to

@@ -55,7 +55,7 @@
                 // W3C SCXML 6.5: Generate child session ID for finalize origin matching
                 let child_session_id = format!("{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id);
+                    pending.invoke_id);
 
                 // W3C SCXML 6.4: Create child state machine
                 // Engine DI Parity RFC: forward parent's script engine to child when the
@@ -225,7 +225,7 @@
                 // W3C SCXML 6.5: Generate child session ID
                 let child_session_id = format!("{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id);
+                    pending.invoke_id);
 
                 // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
                 // Engine DI Parity RFC: pass parent's script engine when child needs it.
