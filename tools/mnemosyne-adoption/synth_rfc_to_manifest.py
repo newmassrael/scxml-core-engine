@@ -8,9 +8,10 @@ bulk-section-create manifest for the `synth` namespace workspace
 (docs/spec/synth).
 
 The RFC ("SCE Forge Extensions for Wire Protocol Synthesis") is authored in
-the watching-zenoh repository; SCE vendors a revision-pinned snapshot at
-docs/spec/synth/rfc-sce-protocol-synthesis.md ([workspace.spec_source] carries
-the upstream URL + commit + sha256). SCE code comments cite its sections as
+this repo at docs/spec/synth/rfc-sce-protocol-synthesis.md, co-located with the
+forge implementation it defines (no [workspace.spec_source]; the tracked RFC is
+the SSOT, and downstream consumers vendor it from here). SCE code comments cite
+its sections as
 "RFC §5.B" / "§6.2.6" / "§5.J.2"; this ledger makes the §synth-<id> form
 resolve so the set_equality_validator can gate the enrolled modules.
 

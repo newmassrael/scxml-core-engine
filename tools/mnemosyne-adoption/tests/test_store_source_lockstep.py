@@ -15,12 +15,11 @@ These tests close that gap deterministically, per workspace:
     section ids the committed store carries (mesh / wire / synth /
     bytesguard). A heading added, removed, or renumbered in the source fails
     here until the store is regenerated (or the edit is reverted).
-  * provenance pin — the synth workspace vendors an *external* document, so
-    its mnemosyne.toml [workspace.spec_source].fetched_sha256 must hash the
-    committed snapshot byte-for-byte. A snapshot edit without a deliberate
-    re-pin fails here (the scxml workspace has the same guard via
-    check_spec_drift.py + validate-content-drift; this extends it to the
-    markdown-carrier mirror).
+
+The synth workspace is SCE-authored (the RFC is co-located with the forge
+implementation it defines), so it has no [workspace.spec_source] and no
+vendored-snapshot provenance pin — the section-set lockstep above is the
+only guard it needs.
 
 The scxml workspace is deliberately absent from the section-set check: its
 sections come from the vendored W3C TOC via scxml_toc_to_manifest + EPUB
@@ -30,9 +29,7 @@ validate-content-drift.
 Run:  python3 -m unittest discover -s tools/mnemosyne-adoption/tests
 """
 
-import hashlib
 import json
-import re
 import sys
 import unittest
 from pathlib import Path
@@ -105,26 +102,6 @@ class SectionSetLockstep(unittest.TestCase):
             "docs/sce-ledger/bytesguard/rfc-eventschema-bytes-guard.md",
             bytesguard_rfc_to_manifest.convert,
             "bytesguard",
-        )
-
-
-class SynthProvenancePin(unittest.TestCase):
-    """The vendored synth snapshot must hash to the toml's fetched_sha256."""
-
-    def test_snapshot_matches_pin(self):
-        toml_path = REPO_ROOT / "docs" / "spec" / "synth" / "mnemosyne.toml"
-        snapshot = REPO_ROOT / "docs" / "spec" / "synth" / "rfc-sce-protocol-synthesis.md"
-        text = toml_path.read_text(encoding="utf-8")
-        m = re.search(r'^fetched_sha256\s*=\s*"([0-9a-f]{64})"', text, re.MULTILINE)
-        self.assertIsNotNone(m, "synth mnemosyne.toml has no fetched_sha256 pin")
-        actual = hashlib.sha256(snapshot.read_bytes()).hexdigest()
-        self.assertEqual(
-            m.group(1),
-            actual,
-            "synth snapshot bytes do not match the [workspace.spec_source] pin.\n"
-            "If the snapshot was deliberately re-vendored at a new upstream\n"
-            "revision, update revision/fetched_sha256/fetched_at together and\n"
-            "regenerate the sections; otherwise revert the snapshot edit.",
         )
 
 
