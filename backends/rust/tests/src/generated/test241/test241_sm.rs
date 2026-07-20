@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: c5e718a965673d48d2d901bab6814a883b52bbad31500159c63233aec229e0ef
-// generated-at: 1784388944
+// template-hash: 35c0d03dd34b8d03e7b3891d6751af3cdd0b2bf0e96c5f94ca9790ac72375270
+// generated-at: 1784525842
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -429,7 +429,7 @@ impl Test241Policy {
                 let child_session_id = format!(
                     "{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id
+                    pending.invoke_id
                 );
 
                 // W3C SCXML 6.4: Create child state machine
@@ -527,7 +527,7 @@ impl Test241Policy {
                 let child_session_id = format!(
                     "{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id
+                    pending.invoke_id
                 );
 
                 // W3C SCXML 6.4: Create child state machine
@@ -622,7 +622,7 @@ impl Test241Policy {
                 let child_session_id = format!(
                     "{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id
+                    pending.invoke_id
                 );
 
                 // W3C SCXML 6.4: Create child state machine

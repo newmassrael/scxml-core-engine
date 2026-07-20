@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: c5e718a965673d48d2d901bab6814a883b52bbad31500159c63233aec229e0ef
-// generated-at: 1784388946
+// template-hash: 35c0d03dd34b8d03e7b3891d6751af3cdd0b2bf0e96c5f94ca9790ac72375270
+// generated-at: 1784525857
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -384,7 +384,7 @@ impl DonedataLocalInvokePolicy {
                 let child_session_id = format!(
                     "{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id
+                    pending.invoke_id
                 );
 
                 // W3C SCXML 6.4: Create child state machine
@@ -468,7 +468,7 @@ impl DonedataLocalInvokePolicy {
                 let child_session_id = format!(
                     "{}.{}",
                     self.session_id.as_deref().unwrap_or(""),
-                    &pending.invoke_id
+                    pending.invoke_id
                 );
 
                 // W3C SCXML 6.4: Create child state machine
