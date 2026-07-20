@@ -66,18 +66,23 @@ else()
     set(DOOM_WAD_NAME "doom1.wad")
     if(NOT EXISTS ${DOOM_WAD})
         message(STATUS "Downloading doom1.wad (shareware)...")
+        # Canonical shareware IWAD (Episode 1), MD5 f0cefca49926d00903cf57551d901abe,
+        # 4196020 bytes. EXPECTED_HASH pins integrity so a corrupted or substituted
+        # mirror fails loudly instead of building a broken example.
         file(DOWNLOAD
-            "https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad"
+            "https://github.com/Akbar30Bill/DOOM_wads/raw/master/doom1.wad"
             ${DOOM_WAD}
             STATUS DOWNLOAD_STATUS
-            TIMEOUT 60
+            EXPECTED_HASH MD5=f0cefca49926d00903cf57551d901abe
+            TIMEOUT 120
         )
         list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
         if(NOT STATUS_CODE EQUAL 0)
+            file(REMOVE ${DOOM_WAD})
             message(FATAL_ERROR
                 "Failed to download doom1.wad (status: ${DOWNLOAD_STATUS}).\n"
                 "Download manually and place at: ${DOOM_WAD}\n"
-                "Source: https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad")
+                "Source: https://github.com/Akbar30Bill/DOOM_wads/raw/master/doom1.wad")
         endif()
     endif()
     message(STATUS "Using shareware: doom1.wad (Episode 1 only)")
