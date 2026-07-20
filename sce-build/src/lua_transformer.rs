@@ -57,18 +57,14 @@ fn find_word(s: &[u8], word: &[u8], start: usize) -> Option<usize> {
         if pos + wlen > slen {
             return None;
         }
-        match s[pos..].windows(wlen).position(|w| w == word) {
-            None => return None,
-            Some(offset) => {
-                let p = pos + offset;
-                let left_ok = p == 0 || !is_word_char(s[p - 1]);
-                let right_ok = p + wlen >= slen || !is_word_char(s[p + wlen]);
-                if left_ok && right_ok {
-                    return Some(p);
-                }
-                pos = p + 1;
-            }
+        let offset = s[pos..].windows(wlen).position(|w| w == word)?;
+        let p = pos + offset;
+        let left_ok = p == 0 || !is_word_char(s[p - 1]);
+        let right_ok = p + wlen >= slen || !is_word_char(s[p + wlen]);
+        if left_ok && right_ok {
+            return Some(p);
         }
+        pos = p + 1;
     }
 }
 

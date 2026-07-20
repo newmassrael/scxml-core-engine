@@ -13665,7 +13665,7 @@ pub fn render_machine_scheduler_c(
     })?;
     let snake_name = filters::to_snake_case(machine_name.to_string());
     let upper_name = to_upper_snake(machine_name);
-    let guard = format!("SCE_FORGE_{}_SCHEDULER_H", &upper_name);
+    let guard = format!("SCE_FORGE_{}_SCHEDULER_H", upper_name);
     let links: Vec<_> = link_names
         .iter()
         .map(|n| {
@@ -14440,7 +14440,7 @@ fn render_link_c(
     })?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
-    let guard = format!("SCE_FORGE_{}_H", &upper_name);
+    let guard = format!("SCE_FORGE_{}_H", upper_name);
     // Item C10 listener-pair: orchestrator-resolved flag. Same shape as
     // the Rust backend; `None` collapses to `false`.
     let is_listener_with_sibling = options
@@ -14528,7 +14528,7 @@ fn render_worker_c_header(
     })?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
-    let guard = format!("SCE_FORGE_{}_H", &upper_name);
+    let guard = format!("SCE_FORGE_{}_H", upper_name);
     let ctx = minijinja::context! {
         name => &m.name,
         snake_name => snake_name,
@@ -14608,7 +14608,7 @@ fn render_buffer_pool_c(
     })?;
     let snake_name = filters::to_snake_case(m.name.clone());
     let upper_name = to_upper_snake(&m.name);
-    let guard = format!("SCE_FORGE_{}_H", &upper_name);
+    let guard = format!("SCE_FORGE_{}_H", upper_name);
     // C5: deploy-aware cache-maintenance gating; mirror the Rust
     // template's `has_speculative_prefetch` derivation.
     let has_speculative_prefetch = options
@@ -15267,7 +15267,7 @@ fn render_procedure_cpp(
 ) -> Result<String, ForgeError> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_L2_H", to_upper_snake(&m.name));
-    let policy_name = format!("{}Policy", &pascal);
+    let policy_name = format!("{}Policy", pascal);
 
     // Build state enum
     let state_enum: Vec<serde_json::Value> = m
@@ -15675,7 +15675,7 @@ fn render_procedure_c(
 ) -> Result<String, ForgeError> {
     let snake = filters::to_snake_case(m.name.clone());
     let upper = to_upper_snake(&m.name);
-    let guard = format!("SCE_FORGE_{}_H", &upper);
+    let guard = format!("SCE_FORGE_{}_H", upper);
 
     let state_enum: Vec<serde_json::Value> = m
         .states
@@ -15786,9 +15786,9 @@ fn render_procedure_c(
         .collect();
 
     let initial_state_enum = format!("{}_STATE_{}", upper, to_upper_snake(&m.initial),);
-    let result_typedef = format!("{}_result_t", &snake);
-    let state_typedef = format!("{}_state_t", &snake);
-    let execute_func = format!("{}_execute", &snake);
+    let result_typedef = format!("{}_result_t", snake);
+    let state_typedef = format!("{}_state_t", snake);
+    let execute_func = format!("{}_execute", snake);
 
     let tmpl = env
         .get_template("procedure.h.jinja2")
@@ -15830,7 +15830,7 @@ fn render_procedure_c_l2(
 ) -> Result<String, ForgeError> {
     let snake = filters::to_snake_case(m.name.clone());
     let upper = to_upper_snake(&m.name);
-    let guard = format!("SCE_FORGE_{}_L2_H", &upper);
+    let guard = format!("SCE_FORGE_{}_L2_H", upper);
 
     // State enum in document order.
     let state_enum: Vec<serde_json::Value> = m
@@ -15882,7 +15882,7 @@ fn render_procedure_c_l2(
             })
         })
         .collect();
-    let event_typedef = format!("{}_event_t", &snake);
+    let event_typedef = format!("{}_event_t", snake);
     let event_none = format!("{}_EVENT_NONE", upper);
     let event_ok = format!("{}_EVENT_OK", upper);
     let event_fail = format!("{}_EVENT_FAIL", upper);
@@ -16028,7 +16028,7 @@ fn render_procedure_c_l2(
         .iter()
         .filter(|imp| imp.is_stateful && imp.kind.as_str() == "codec")
         .map(|imp| {
-            let wrapper_prefix = format!("{}__{}", &snake, imp.alias);
+            let wrapper_prefix = format!("{}__{}", snake, imp.alias);
             serde_json::json!({
                 "wrapper_encode": format!("{}_encode", wrapper_prefix),
                 "codec_struct_t": format!("{}_t", imp.namespace),
@@ -16043,7 +16043,7 @@ fn render_procedure_c_l2(
             let methods: Vec<(String, String)> = match imp.kind.as_str() {
                 "codec" => vec![(
                     "encode".to_string(),
-                    format!("{}__{}_encode", &snake, imp.alias),
+                    format!("{}__{}_encode", snake, imp.alias),
                 )],
                 "filter" => vec![("update".to_string(), format!("{}_update", imp.namespace))],
                 // Future stateful kinds (validator/procedure/observer/timer)
@@ -16252,10 +16252,10 @@ fn render_procedure_c_l2(
     }
 
     let initial_state_enum = format!("{}_STATE_{}", upper, to_upper_snake(&m.initial));
-    let state_typedef = format!("{}_state_t", &snake);
-    let state_struct = format!("{}_t", &snake);
-    let result_typedef = format!("{}_result_t", &snake);
-    let execute_func = format!("{}_execute", &snake);
+    let state_typedef = format!("{}_state_t", snake);
+    let state_struct = format!("{}_t", snake);
+    let result_typedef = format!("{}_result_t", snake);
+    let execute_func = format!("{}_execute", snake);
 
     let tmpl = env
         .get_template("procedure.h.jinja2")

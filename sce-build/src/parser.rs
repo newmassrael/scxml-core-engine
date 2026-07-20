@@ -2502,9 +2502,9 @@ impl SCXMLParser {
                     // underscore block `__sce_synth_invoke___invoke_N`.
                     let synth_name = format!(
                         "{}{}{}",
-                        &model.name,
+                        model.name,
                         crate::mesh::deploy::SYNTH_INVOKE_INFIX,
-                        &field_suffix,
+                        field_suffix,
                     );
                     let inline_with_ns = if !inline_scxml_text.contains("xmlns=") {
                         inline_scxml_text.replacen(
@@ -3016,7 +3016,7 @@ impl SCXMLParser {
         }
 
         let history_defaults = model.history_default_targets.clone();
-        for (_, state) in model.states.iter_mut() {
+        for state in model.states.values_mut() {
             // Resolve initial that points to history state
             if !state.initial.is_empty() {
                 if let Some(default_target) = history_defaults.get(&state.initial) {
