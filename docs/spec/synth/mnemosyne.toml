@@ -1,16 +1,18 @@
-# Protocol-synthesis RFC spec-mirror workspace (Mnemosyne adoption, `synth`
+# Protocol-synthesis RFC design-ledger workspace (Mnemosyne adoption, `synth`
 # namespace).
 #
-# This workspace mirrors an *external* SCE-facing design document: the RFC
-# "SCE Forge Extensions for Wire Protocol Synthesis", authored and revised in
-# the watching-zenoh repository (the consumer that commissioned the Forge
-# extension program). SCE vendors a revision-pinned snapshot at
-# docs/spec/synth/rfc-sce-protocol-synthesis.md — the committed, tracked,
-# human-readable carrier this ledger's sections are regenerated from by
+# Like docs/sce-ledger/mesh and docs/sce-ledger/wire, this workspace mirrors an
+# SCE-internal design document tracked in this repo: the RFC "SCE Forge
+# Extensions for Wire Protocol Synthesis" at
+# docs/spec/synth/rfc-sce-protocol-synthesis.md — the forge wire-protocol
+# synthesis spec, co-located with the forge implementation it defines. The
+# codec algorithm is written in-line as `<sce:*>` forge DSL, so the spec and
+# its generated code evolve together in one commit; the SSOT therefore lives
+# with SCE, and downstream consumers vendor it from here. There is no external
+# upstream (no [workspace.spec_source]) and no vendored snapshot: the SSOT is
+# the tracked RFC itself, and the ledger's sections are regenerated from it by
 # tools/mnemosyne-adoption/synth_rfc_to_manifest.py via `import-sections`.
-# Unlike the scxml workspace there is no EPUB/excerpt projection: the snapshot
-# is plain markdown in-tree, so git itself is the tamper-evidence layer and
-# [workspace.spec_source] below carries the upstream provenance pin.
+# Plain markdown in-tree, so git itself is the tamper-evidence layer.
 #
 # The ledger exists so SCE code comments citing the RFC ("RFC §5.B",
 # "§6.2.6", "§5.J.2") resolve to a real section in the §synth-<id> form,
@@ -26,20 +28,8 @@
 [workspace]
 root = "../../.."
 
-# Upstream provenance (the snapshot's source of authority). `revision` is the
-# watching-zenoh commit the snapshot was taken at; `fetched_sha256` hashes the
-# vendored markdown byte-for-byte. Re-pin on every deliberate snapshot bump:
-# copy the file at the new upstream commit, update revision/sha256/fetched_at,
-# regenerate the sections, and let validate-code-refs surface any cite the
-# upstream renumbering broke.
-[workspace.spec_source]
-url = "https://github.com/newmassrael/watching-zenoh/blob/main/docs/rfc-sce-protocol-synthesis.md"
-revision = "24cf572c745e62449f047ade0b2e5b10218bd346"
-fetched_sha256 = "17724ad0a5d4f8b441edb99426c9f9fa580cd5bf656d5daf4a3867fd235d6dbb"
-fetched_at = "2026-06-10"
-
 # Store is the sole SSOT (Mnemosyne R400 retired the markdown-doc render path);
-# the snapshot markdown above is the regen input and human-readable mirror,
+# the tracked RFC markdown above is the regen input and human-readable mirror,
 # not a parsed workspace doc.
 [atomic]
 sidecar_path = "docs/spec/synth/.atomic/workspace.atomic.json"
@@ -48,7 +38,7 @@ sidecar_path = "docs/spec/synth/.atomic/workspace.atomic.json"
 changelog_titles = ["Revision History"]
 entry_id_prefix = "Rev "
 anchor_convention = "section_number"
-medium_name = "spec_mirror"
+medium_name = "design_ledger"
 
 # SCE's `(R<n>)` commit-subject labels are adoption-round counters, not
 # Mnemosyne changelog rounds, so the commit↔ledger drift gate (Mnemosyne
