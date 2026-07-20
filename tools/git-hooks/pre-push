@@ -91,6 +91,35 @@ trap cleanup EXIT
 # history. The previous "Stage 0/6" numbering stays gone; downstream
 # stages renumbered accordingly.
 
+# ── Toolchain parity: mirror CI's dtolnay/rust-toolchain@stable ────
+# Every Rust CI job installs the LATEST stable via
+# `dtolnay/rust-toolchain@stable`. rustup does NOT auto-update a
+# developer's local `stable`, so it can silently lag the runner — and
+# the clippy lint set is version-sensitive: a lint newly stabilised in
+# a fresher stable (e.g. useless_borrows_in_formatting / for_kv_map in
+# rust 1.97) passes locally yet fails the cloud clippy gate. The old
+# policy — a code comment asking developers to run `rustup update
+# stable` by hand — was a silently-broken safeguard: skip it once and
+# every clippy stage below goes blind to CI's newer lints (this is the
+# exact drift that let a `useless_borrows_in_formatting` regression
+# reach `main` red).
+#
+# Instead, sync `stable` to the newest release here and pin the whole
+# hook to it via RUSTUP_TOOLCHAIN, so every stage lints/builds under the
+# same toolchain CI will use. `git push` always has network, so this
+# sync is reliable whenever a push actually happens; if it somehow fails
+# we fall back to the existing toolchain with a loud warning rather than
+# blocking the push.
+log_step "toolchain — sync 'stable' to match CI (dtolnay/rust-toolchain@stable)"
+rustup toolchain install stable --profile minimal \
+    --component clippy --no-self-update >/dev/null 2>&1 || true
+if rustup run stable rustc --version >/dev/null 2>&1; then
+    export RUSTUP_TOOLCHAIN=stable
+    printf '  pinned to %s for this hook\n' "$(rustup run stable rustc --version)" >&2
+else
+    printf '  WARNING: no resolvable "stable" toolchain; clippy lint parity\n  with CI is NOT guaranteed for this push.\n' >&2
+fi
+
 # ── Stage 1: sce-codegen build (baseline) ─────────────────────────
 log_step "Stage 1/8 — cargo build sce-codegen --release"
 cargo build --bin sce-codegen --features cli --release -p sce-build \
@@ -180,9 +209,11 @@ bash scripts/test_emit_manifest_fail_fast.sh \
 # version-sensitive: a stale local `stable` (behind the CI runner's
 # fresh stable) passes locally and only breaks CI on a newly-stabilised
 # lint — exactly the unnecessary_sort_by / collapsible_match drift that
-# motivated this gate. Keep the default toolchain current
-# (`rustup update stable`) so this sees the same lints CI will. Runs
-# before the heavy test/build stages so a lint failure aborts fast.
+# motivated this gate. Toolchain parity is now enforced up front (the
+# `RUSTUP_TOOLCHAIN=stable` sync above) rather than by a manual
+# `rustup update stable`, so this `cargo clippy` sees the same lints CI
+# will. Runs before the heavy test/build stages so a lint failure
+# aborts fast.
 log_step "Stage 2/8 — cargo clippy --workspace --all-targets -- -D warnings"
 cargo clippy --workspace --all-targets -- -D warnings \
     || fail_step "Stage 2 (cargo clippy)"
