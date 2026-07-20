@@ -75,9 +75,12 @@ env:
   # sole SSOT, no GENERATED.md round-trip), R402-R405 added the offline
   # content-drift gate (NormativeExcerpt.text_sha256 + committed-EPUB file pin),
   # R407 projects each section body from the pinned EPUB, R413 added the verify
-  # axis. The scxml store is schema v11; mesh/wire stay v8 (the v11 CLI reads
-  # them, validate is read-only).
-  MNEMOSYNE_REV: aa66c61631b977d45037d82a8977484e07683c3e
+  # axis. Stores have since migrated to schema v23; the previous pin
+  # (aa66c61) shipped a v11 CLI that rejects them with "store=23 expected
+  # <= 11". This rev's CLI reads v23 (validate is read-only). Bumped after
+  # re-running validate-workspace / -code-refs / -verifies-linkage /
+  # -content-drift on every enrolled workspace.
+  MNEMOSYNE_REV: 5807bd5cd53d4b9dea85a6560a2dfe22b02252bc
 
 jobs:
   citations:
