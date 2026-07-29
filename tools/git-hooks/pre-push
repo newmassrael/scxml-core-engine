@@ -398,15 +398,45 @@ done
 # validates every workspace, the hook did not. Same commands, same
 # order; the migrate-citations form gates force every free-text cite
 # through the §-token channel the validator inspects.
-log_step "Stage 8/8 — spec-citation ledger validation (4 workspaces)"
-command -v mnemosyne-cli >/dev/null 2>&1 \
-    || fail_step "Stage 8 (mnemosyne-cli not on PATH — install per spec-citations.yml MNEMOSYNE_REV)"
+#
+# The binary is REVISION-PINNED, not PATH-resolved. `~/.cargo/bin` is a
+# shared slot that any `cargo install` silently overwrites, so a
+# PATH-resolved `mnemosyne-cli` makes this stage mirror "whatever is
+# installed" rather than the revision CI runs — and the two disagree in
+# both directions. Resolving PATH was a silently-broken safeguard of the
+# same class as the pre-sync clippy toolchain above: the slot was
+# overwritten to a newer revision whose `validate-workspace` rejects all
+# five of these workspaces (its scan-coverage precheck resolves
+# [plugins.set_equality_validator].paths against each workspace's own
+# directory instead of [workspace] root, so correctly-configured paths
+# "resolve to nothing"), while CI's pinned revision validates them clean.
+# A gate that fails on a tree CI passes is as broken as one that passes on
+# a tree CI fails. MNEMOSYNE_REV is read from spec-citations.yml so the pin
+# keeps a single SSOT and a CI bump carries here automatically; the hook
+# refuses to run under any other revision instead of reporting a verdict
+# CI will not reproduce. Override the location (not the revision) with
+# MNEMOSYNE_BIN.
+log_step "Stage 8/8 — spec-citation ledger validation (5 workspaces)"
+mnemosyne_rev="$(sed -n 's/^[[:space:]]*MNEMOSYNE_REV:[[:space:]]*\([0-9a-f]\{40\}\).*/\1/p' \
+    "$REPO_ROOT/.github/workflows/spec-citations.yml")"
+[[ -n "$mnemosyne_rev" ]] \
+    || fail_step "Stage 8 (no MNEMOSYNE_REV pin found in .github/workflows/spec-citations.yml)"
+mnemosyne_short="${mnemosyne_rev:0:8}"
+mnemosyne_root="${HOME}/.local/share/mnemosyne-rev/${mnemosyne_short}"
+MNEMOSYNE_BIN="${MNEMOSYNE_BIN:-${mnemosyne_root}/bin/mnemosyne-cli}"
+mnemosyne_hint="cargo install --git https://github.com/newmassrael/mnemosyne --rev ${mnemosyne_rev} --locked --root ${mnemosyne_root} mnemosyne-cli"
+[[ -x "$MNEMOSYNE_BIN" ]] \
+    || fail_step "Stage 8 (no rev-pinned mnemosyne-cli at ${MNEMOSYNE_BIN} — install it with: ${mnemosyne_hint})"
+mnemosyne_have="$("$MNEMOSYNE_BIN" --version 2>&1 || true)"
+[[ "$mnemosyne_have" == *"$mnemosyne_short"* ]] \
+    || fail_step "Stage 8 (${MNEMOSYNE_BIN} reports '${mnemosyne_have}', expected revision ${mnemosyne_short} — reinstall with: ${mnemosyne_hint})"
+printf '  pinned to %s for this hook\n' "$mnemosyne_have" >&2
 for ws in docs/spec/scxml docs/sce-ledger/mesh docs/sce-ledger/wire docs/spec/synth docs/sce-ledger/bytesguard; do
     ( cd "$ws" \
-        && mnemosyne-cli validate-workspace >/dev/null \
-        && mnemosyne-cli validate-code-refs >/dev/null \
-        && mnemosyne-cli validate-verifies-linkage >/dev/null \
-        && mnemosyne-cli validate-content-drift >/dev/null ) \
+        && "$MNEMOSYNE_BIN" validate-workspace >/dev/null \
+        && "$MNEMOSYNE_BIN" validate-code-refs >/dev/null \
+        && "$MNEMOSYNE_BIN" validate-verifies-linkage >/dev/null \
+        && "$MNEMOSYNE_BIN" validate-content-drift >/dev/null ) \
         || fail_step "Stage 8 (${ws} ledger validation)"
 done
 python3 tools/mnemosyne-adoption/migrate_citations.py --check \
