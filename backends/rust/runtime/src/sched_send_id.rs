@@ -4,7 +4,7 @@
 //! Per-machine scheduled-send-id storage policy (watching-zenoh RFC §synth-5-J-2).
 //!
 //! The delayed-event scheduler ([`PullScheduler`](crate::engine::PullScheduler))
-//! keeps a `send_id` on every `ScheduledEntry` so W3C SCXML 6.3
+//! keeps a `send_id` on every `ScheduledEntry` so §scxml-6.3
 //! `<cancel sendid>` can find and remove the matching pending entry. That id is
 //! read **only** by [`PullScheduler::cancel_event`](crate::engine::PullScheduler::cancel_event):
 //! the timer-fire drain ([`Engine::tick`](crate::Engine::tick)) hands the popped

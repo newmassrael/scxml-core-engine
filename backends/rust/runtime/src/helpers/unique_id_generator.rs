@@ -12,7 +12,7 @@
 //! Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): under the no_std variant the
 //! Unix-epoch timestamp source (`SystemTime::now().duration_since(UNIX_EPOCH)`)
 //! is unavailable. Send/invoke/event IDs only need uniqueness within a single
-//! statechart instance (W3C SCXML §5.10.1) — the `AtomicU64` counter alone
+//! statechart instance (§scxml-5.10.1) — the `AtomicU64` counter alone
 //! satisfies that contract, so under `--features=no_std` the timestamp branch
 //! returns zero and uniqueness rides entirely on the global counter. ID
 //! strings are returned as [`SceString`] (= `String` under std, capped
@@ -64,7 +64,7 @@ fn format_unique_id(prefix: &str, timestamp: u64, counter: u64) -> SceString {
 
 /// Build `{state_id}.platform_{counter}` into a fresh [`SceString`].
 ///
-/// W3C SCXML 6.4 (test 224) invoke ID layout when a state_id is supplied.
+/// §scxml-6.4 (test 224) invoke ID layout when a state_id is supplied.
 fn format_invoke_id(state_id: &str, counter: u64) -> SceString {
     #[cfg(not(feature = "no_std"))]
     {
@@ -107,7 +107,7 @@ pub fn generate_send_id() -> SceString {
 
 /// Generate a unique invoke ID for SCXML invoke operations.
 ///
-/// W3C SCXML 6.4 (test 224): When `state_id` is provided, the format is
+/// §scxml-6.4 (test 224): When `state_id` is provided, the format is
 /// `{state_id}.platform_{counter}` for compliance.
 ///
 /// Ports C++ `UniqueIdGenerator::generateInvokeId`.

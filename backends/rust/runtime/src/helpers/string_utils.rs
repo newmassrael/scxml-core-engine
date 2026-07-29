@@ -6,7 +6,7 @@
 //! 1:1 port of `sce/include/common/StringUtils.h`. Provides fast prefix
 //! detection for platform event names (`done.*`, `error.*`).
 
-/// W3C SCXML 5.10.1: Check if an event name is a platform event.
+/// §scxml-5.10.1: Check if an event name is a platform event.
 ///
 /// Platform events are those with `done.` or `error.` prefixes.
 ///

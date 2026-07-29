@@ -7,7 +7,7 @@
 //! (`sce/include/static/StaticExecutionEngine.h:114`) and the companion
 //! `EventMetadata` struct from `sce/include/core/EventMetadata.h`.
 //!
-//! The SCXML execution algorithm (W3C SCXML 5.10) requires that every event
+//! The SCXML execution algorithm (§scxml-5.10) requires that every event
 //! carry metadata describing its origin, send ID, type, data, and more. The
 //! `_event` system variable exposes these fields to ECMAScript expressions
 //! (e.g., `_event.name`, `_event.data`, `_event.sendid`, `_event.origin`).
@@ -24,7 +24,7 @@ use crate::SceString;
 #[cfg(not(feature = "no_std"))]
 use crate::sce_string_from_str;
 
-/// Event type classification (W3C SCXML 5.10.1).
+/// Event type classification (§scxml-5.10.1).
 ///
 /// Ports the C++ `std::string type` field of `EventWithMetadata`, which only
 /// ever holds one of these three string literals. Using an enum eliminates
@@ -51,7 +51,7 @@ impl EventType {
     }
 }
 
-/// Metadata fields attached to events (W3C SCXML 5.10).
+/// Metadata fields attached to events (§scxml-5.10).
 ///
 /// Ports C++ `SCE::Core::EventMetadata`. Every event flowing through the
 /// engine carries an `EventMetadata`, which is copied into `_event.*` fields
@@ -153,7 +153,7 @@ impl EventMetadata {
     }
 }
 
-/// An event wrapped with its full W3C SCXML 5.10 metadata.
+/// An event wrapped with its full §scxml-5.10 metadata.
 ///
 /// Ports the C++ nested struct `StaticExecutionEngine<Policy>::EventWithMetadata`
 /// at `StaticExecutionEngine.h:114`. The generic parameter `E` is the generated
@@ -173,7 +173,7 @@ pub struct EventWithMetadata<E, P = ()> {
     pub payload: P,
     /// Event metadata (data, type, sendid, origin, origintype, invokeid).
     pub metadata: EventMetadata,
-    /// W3C SCXML C.2: HTTP POST target URL (empty if not an HTTP send).
+    /// §scxml-C-2: HTTP POST target URL (empty if not an HTTP send).
     ///
     /// `#[cfg(not(feature = "no_std"))]`: HTTP send is no_std-rejected
     /// (`codegen/no-std-http-not-supported`), so this field has no producer or

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML C.2: URL encoding/decoding utilities.
+//! §scxml-C-2: URL encoding/decoding utilities.
 //!
 //! 1:1 port of `sce/include/common/UrlEncodingHelper.h`. Provides RFC 3986
 //! percent-encoding for `application/x-www-form-urlencoded` format used by
@@ -17,7 +17,7 @@
 
 #![cfg(not(feature = "no_std"))]
 
-/// W3C SCXML C.2: Percent-encode a string for URL transmission.
+/// §scxml-C-2: Percent-encode a string for URL transmission.
 ///
 /// RFC 3986: Unreserved characters (`A-Za-z0-9-._~`) are not encoded.
 /// All other characters are percent-encoded as `%XX`.
@@ -49,7 +49,7 @@ pub fn url_encode(input: &str) -> String {
     encoded
 }
 
-/// W3C SCXML C.2: Decode a percent-encoded URL string.
+/// §scxml-C-2: Decode a percent-encoded URL string.
 ///
 /// Reverses the encoding applied by [`url_encode`]. Invalid percent sequences
 /// are passed through unchanged.

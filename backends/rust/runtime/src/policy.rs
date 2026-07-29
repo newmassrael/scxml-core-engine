@@ -58,13 +58,13 @@ pub trait StatePolicy: Sized + 'static {
     // Associated types (C++ `using State = ...; using Event = ...;`)
     // ──────────────────────────────────────────────
 
-    /// State enum type generated per SCXML document (W3C SCXML 3.3).
+    /// State enum type generated per SCXML document (§scxml-3.3).
     ///
     /// Must be `Copy` (enums are tiny), `Eq`/`Hash` for active-state sets,
     /// `Debug` for logging, `'static` because it has no references.
     type State: Copy + Eq + Hash + Debug + 'static;
 
-    /// Event enum type generated per SCXML document (W3C SCXML 3.12).
+    /// Event enum type generated per SCXML document (§scxml-3.12).
     type Event: Copy + Eq + Hash + Debug + 'static;
 
     /// Typed event payload for EventSchema native lowering.
@@ -120,7 +120,7 @@ pub trait StatePolicy: Sized + 'static {
     type EventQueue: EventQueueLike<EventWithMetadata<Self::Event, Self::Payload>> + Default;
 
     /// Storage for the delayed-send scheduler's per-entry cancel key
-    /// (`send_id`), backing W3C SCXML 6.3 `<cancel sendid>`.
+    /// (`send_id`), backing §scxml-6.3 `<cancel sendid>`.
     ///
     /// The scheduler keeps a `send_id` per pending entry purely so `<cancel>`
     /// can find and drop the matching one; the id is read only by
@@ -148,7 +148,7 @@ pub trait StatePolicy: Sized + 'static {
     // matching C++ `if constexpr`.
     // ──────────────────────────────────────────────
 
-    /// Whether the SCXML document contains any `<parallel>` states (W3C SCXML 3.4).
+    /// Whether the SCXML document contains any `<parallel>` states (§scxml-3.4).
     const HAS_PARALLEL_STATES: bool = false;
 
     /// Whether ECMAScript expression evaluation is required (guards, assigns, etc.).
@@ -162,22 +162,22 @@ pub trait StatePolicy: Sized + 'static {
     /// Whether the document has any `<datamodel>` variables requiring script-engine initialization.
     ///
     /// When `true`, [`initialize_data_model`](StatePolicy::initialize_data_model) is called
-    /// before entering the initial configuration (W3C SCXML 5.3).
+    /// before entering the initial configuration (§scxml-5.3).
     const NEEDS_DATA_MODEL_INIT: bool = false;
 
-    /// Whether the document has any static `<invoke>` children (W3C SCXML 6.4).
+    /// Whether the document has any static `<invoke>` children (§scxml-6.4).
     ///
     /// When `true`, [`execute_pending_invokes`](StatePolicy::execute_pending_invokes)
     /// is called after macrostep completion to start deferred child state machines.
     const HAS_INVOKE_SUPPORT: bool = false;
 
-    /// Whether the document's children receive parent events via `<finalize>` (W3C SCXML 6.5).
+    /// Whether the document's children receive parent events via `<finalize>` (§scxml-6.5).
     ///
     /// When `true`, [`execute_finalize_for_child_event`](StatePolicy::execute_finalize_for_child_event)
     /// runs before each parent event is routed to the parent's transitions.
     const HAS_FINALIZE: bool = false;
 
-    /// Whether the document autoforward child events to any invokes (W3C SCXML 6.4.6).
+    /// Whether the document autoforward child events to any invokes (§scxml-6.4.1).
     const HAS_AUTOFORWARD: bool = false;
 
     /// Whether the policy exposes `activeStates_` tracking (required for parallel states).
@@ -197,26 +197,26 @@ pub trait StatePolicy: Sized + 'static {
     // because the data is baked into the generated source.
     // ──────────────────────────────────────────────
 
-    /// The initial state of the root `<scxml>` element (W3C SCXML 3.3).
+    /// The initial state of the root `<scxml>` element (§scxml-3.3).
     fn initial_state() -> Self::State;
 
-    /// Whether `state` is a `<final>` state (W3C SCXML 3.7).
+    /// Whether `state` is a `<final>` state (§scxml-3.7).
     fn is_final_state(state: Self::State) -> bool;
 
     /// The parent of `state` in the document hierarchy, or `None` if it's a root child.
     fn get_parent(state: Self::State) -> Option<Self::State>;
 
-    /// Whether `state` is a compound state (has children, W3C SCXML 3.3).
+    /// Whether `state` is a compound state (has children, §scxml-3.3).
     fn is_compound_state(state: Self::State) -> bool;
 
-    /// Whether `state` is a `<parallel>` state (W3C SCXML 3.4).
+    /// Whether `state` is a `<parallel>` state (§scxml-3.4).
     ///
     /// Only meaningful when `HAS_PARALLEL_STATES` is `true`; the default returns `false`.
     fn is_parallel_state(_state: Self::State) -> bool {
         false
     }
 
-    /// The child regions of a parallel `state` (W3C SCXML 3.4).
+    /// The child regions of a parallel `state` (§scxml-3.4).
     ///
     /// Only meaningful when `HAS_PARALLEL_STATES` is `true`; the default returns an empty slice.
     fn get_parallel_regions(_state: Self::State) -> &'static [Self::State] {
@@ -225,7 +225,7 @@ pub trait StatePolicy: Sized + 'static {
 
     /// Whether `desc` is a (proper or improper) descendant of `anc` in the hierarchy.
     ///
-    /// Used by W3C SCXML 3.12 LCA calculation and W3C 3.13 internal transition detection.
+    /// Used by §scxml-3.12 LCA calculation and W3C 3.13 internal transition detection.
     fn is_descendant_of(desc: Self::State, anc: Self::State) -> bool;
 
     /// Document order index of `state` (W3C SCXML Appendix D).
@@ -252,13 +252,13 @@ pub trait StatePolicy: Sized + 'static {
     /// C++ `StateNamingPolicy` concept in `sce/include/core/StatePolicyConcepts.h`.
     fn get_state_name(state: Self::State) -> &'static str;
 
-    /// Sentinel event value for eventless transition dispatch (W3C SCXML 3.13).
+    /// Sentinel event value for eventless transition dispatch (§scxml-3.13).
     ///
     /// Generated code produces an `Event::Null` variant. The engine passes this
     /// to `process_transition()` when checking eventless transitions.
     fn null_event() -> Self::Event;
 
-    /// Get initial children of a compound state (W3C SCXML 3.6).
+    /// Get initial children of a compound state (§scxml-3.6).
     /// Returns the resolved initial child state(s) for deep initial targets.
     ///
     /// Watching-zenoh RFC §synth-5-J-2: returns the bounded
@@ -274,7 +274,7 @@ pub trait StatePolicy: Sized + 'static {
         hierarchy::new_chain()
     }
 
-    /// Get initial child considering history (W3C SCXML 3.11).
+    /// Get initial child considering history (§scxml-3.11).
     /// Non-static: checks history before returning initial child.
     fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
         state
@@ -288,7 +288,7 @@ pub trait StatePolicy: Sized + 'static {
     // read/write methods; generated code emits trivial inline getters.
     // ──────────────────────────────────────────────
 
-    /// W3C SCXML 3.13: Was the most recently taken transition of type `internal`?
+    /// §scxml-3.13: Was the most recently taken transition of type `internal`?
     ///
     /// Set by `process_transition` as a side effect and consumed by the engine's
     /// `handle_hierarchical_transition` to decide LCA behavior.
@@ -297,13 +297,13 @@ pub trait StatePolicy: Sized + 'static {
     /// Set the "last transition is internal" flag.
     fn set_last_transition_is_internal(&mut self, value: bool);
 
-    /// W3C SCXML 3.13: Was the most recently taken transition targetless (no `target` attribute)?
+    /// §scxml-3.13: Was the most recently taken transition targetless (no `target` attribute)?
     fn last_transition_is_targetless(&self) -> bool;
 
     /// Set the "last transition is targetless" flag.
     fn set_last_transition_is_targetless(&mut self, value: bool);
 
-    /// W3C SCXML 3.4: The actual source state of the last transition.
+    /// §scxml-3.4: The actual source state of the last transition.
     ///
     /// For parallel states, differs from the engine's `current_state` when the
     /// transition originated from an inactive ancestor.
@@ -320,20 +320,20 @@ pub trait StatePolicy: Sized + 'static {
     // methods through the `engine` parameter.
     // ──────────────────────────────────────────────
 
-    /// Execute `<onentry>` actions for `state` (W3C SCXML 3.7).
+    /// Execute `<onentry>` actions for `state` (§scxml-3.7).
     ///
     /// Ports C++ `executeEntryActions(State, Engine&)`. May:
     /// - raise internal events via `engine.raise(...)`
     /// - schedule delayed sends via `engine.schedule_event(...)`
     /// - mutate datamodel variables on `self`
-    /// - defer `<invoke>` starts until the configuration is stable (W3C SCXML 6.4)
+    /// - defer `<invoke>` starts until the configuration is stable (§scxml-6.4)
     fn execute_entry_actions(&mut self, state: Self::State, engine: &mut Engine<Self>);
 
-    /// Execute `<onexit>` actions for `state` (W3C SCXML 3.8).
+    /// Execute `<onexit>` actions for `state` (§scxml-3.8).
     ///
     /// Ports C++ `executeExitActions(State, Engine&, const vector<State>&)`.
     /// The `pre_transition_active` slice captures the active configuration
-    /// before the transition began, for history state recording (W3C SCXML 3.11).
+    /// before the transition began, for history state recording (§scxml-3.11).
     fn execute_exit_actions(
         &mut self,
         state: Self::State,
@@ -341,7 +341,7 @@ pub trait StatePolicy: Sized + 'static {
         pre_transition_active: &[Self::State],
     );
 
-    /// Evaluate guards and take a matching transition (W3C SCXML 3.13).
+    /// Evaluate guards and take a matching transition (§scxml-3.13).
     ///
     /// Ports C++ `processTransition(State&, Event, Engine&) -> bool`.
     ///
@@ -360,7 +360,7 @@ pub trait StatePolicy: Sized + 'static {
     ) -> bool;
 
     /// Execute transition action blocks for the currently-matched transition
-    /// (W3C SCXML 3.13 — executed between exit and entry).
+    /// (§scxml-3.13 — executed between exit and entry).
     ///
     /// Ports C++ `executeTransitionActions(Engine&)`.
     fn execute_transition_actions(&mut self, engine: &mut Engine<Self>);
@@ -370,18 +370,18 @@ pub trait StatePolicy: Sized + 'static {
     // corresponding feature flag is `true`)
     // ──────────────────────────────────────────────
 
-    /// Initialize the datamodel via the script engine (W3C SCXML 5.3).
+    /// Initialize the datamodel via the script engine (§scxml-5.3).
     ///
     /// Generated only when `NEEDS_DATA_MODEL_INIT` is `true`. Called from
     /// [`Engine::initialize`](crate::Engine::initialize) before any state entry.
     fn initialize_data_model(&mut self, _engine: &mut Engine<Self>) {}
 
-    /// Execute any pending `<invoke>` elements deferred during entry (W3C SCXML 6.4).
+    /// Execute any pending `<invoke>` elements deferred during entry (§scxml-6.4).
     ///
     /// Generated only when `HAS_INVOKE_SUPPORT` is `true`.
     fn execute_pending_invokes(&mut self, _engine: &mut Engine<Self>) {}
 
-    /// Execute `<finalize>` handlers for child events (W3C SCXML 6.5).
+    /// Execute `<finalize>` handlers for child events (§scxml-6.5).
     ///
     /// Generated only when `HAS_FINALIZE` is `true`. Called from the engine's
     /// external queue processing, before the event is routed to transitions.
@@ -404,7 +404,7 @@ pub trait StatePolicy: Sized + 'static {
     /// `pending_payload` field that `_event.data.<field>` guards read natively.
     fn populate_event_payload(&mut self, _payload: &Self::Payload) {}
 
-    /// Get active states for parallel state machines (W3C SCXML 3.4).
+    /// Get active states for parallel state machines (§scxml-3.4).
     ///
     /// Generated only when `HAS_ACTIVE_STATES` is `true`.
     ///
@@ -416,24 +416,24 @@ pub trait StatePolicy: Sized + 'static {
         hierarchy::new_chain()
     }
 
-    /// Forward external events to autoforward children (W3C SCXML 6.4.6).
+    /// Forward external events to autoforward children (§scxml-6.4.1).
     ///
     /// Generated only when `HAS_AUTOFORWARD` is `true`.
     fn forward_to_autoforward_children(&mut self, _event_name: &str, _engine: &mut Engine<Self>) {}
 
-    /// Tick child state machines (W3C SCXML 6.4).
+    /// Tick child state machines (§scxml-6.4).
     ///
     /// Generated only when `HAS_CHILD_TICK` is `true`. Called from
     /// [`Engine::tick`](crate::Engine::tick) to propagate scheduler ticks to children.
     fn tick_children(&mut self, _engine: &mut Engine<Self>) {}
 
-    /// Set the `nextEventIsExternal_` flag (W3C SCXML 5.10.1).
+    /// Set the `nextEventIsExternal_` flag (§scxml-5.10.1).
     ///
     /// Generated only when `HAS_EXTERNAL_EVENT_FLAG` is `true`. Used by the engine's
     /// `raise_external` to mark the next processed event as external for `_event.type`.
     fn set_next_event_is_external(&mut self, _value: bool) {}
 
-    /// W3C SCXML 5.10: Populate pending event metadata fields from an event's metadata.
+    /// §scxml-5.10: Populate pending event metadata fields from an event's metadata.
     ///
     /// Ports C++ `EventMetadataHelper::populatePolicyFromMetadata`. Called by the engine
     /// before dispatching each event from the internal/external queues. Generated code
@@ -441,7 +441,7 @@ pub trait StatePolicy: Sized + 'static {
     /// can pass them to `set_current_event_in_script_engine`.
     fn populate_event_metadata(&mut self, _metadata: &crate::event::EventMetadata) {}
 
-    /// W3C SCXML 5.10: Clear pending event metadata after transition processing.
+    /// §scxml-5.10: Clear pending event metadata after transition processing.
     ///
     /// Ports C++ `EventMetadataHelper::clearPolicyMetadata`. Called by the engine
     /// after each event dispatch cycle to reset metadata for the next event.

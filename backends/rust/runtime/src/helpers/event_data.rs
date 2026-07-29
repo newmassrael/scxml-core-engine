@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML 5.10 / 6.2: Event data construction helpers.
+//! §scxml-5.10 / 6.2: Event data construction helpers.
 //!
 //! 1:1 port of `sce/include/common/EventDataHelper.h`. Provides JSON building
 //! utilities for `_event.data` construction from `<send>` params.
@@ -23,7 +23,7 @@
 
 use std::collections::BTreeMap;
 
-/// W3C SCXML 5.10: Build JSON string from evaluated params.
+/// §scxml-5.10: Build JSON string from evaluated params.
 ///
 /// Supports duplicate param names (W3C test 178) by storing multiple values
 /// per key as a JSON array.

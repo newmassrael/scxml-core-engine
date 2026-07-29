@@ -164,7 +164,7 @@ pub const MAX_EVENT_QUEUE_DEPTH: usize = 64;
 ///   the data string anyway (see the `ScheduledEntry` doc-comment in
 ///   `engine.rs`), so removal has no behavioral effect.
 /// - The `send_id` cancel key is **per-machine**: it is read only by
-///   `PullScheduler::cancel_event` (W3C SCXML 6.3 `<cancel sendid>` matches
+///   `PullScheduler::cancel_event` (§scxml-6.3 `<cancel sendid>` matches
 ///   by send id), so codegen selects the zero-size [`ElidedSendId`] via the
 ///   `StatePolicy::ScheduledSendId` associated type (mirroring the
 ///   `EventQueue` associated type) for documents with no `<cancel>`, and the
@@ -211,7 +211,7 @@ pub const MAX_MICROSTEP_DEDUP_SLOTS: usize = 64;
 /// and `EventMetadata.invoke_id`. The std build's `SceString = String` is
 /// unbounded; this constant only affects the no_std variant.
 ///
-/// v1 value 256 covers W3C SCXML 5.10.1 platform-event payloads + send-target
+/// v1 value 256 covers §scxml-5.10.1 platform-event payloads + send-target
 /// URIs without truncation. Author-tunable cap deferred to a future atomic
 /// once an MCU consumer surfaces a concrete overflow signal (per
 /// `feedback_planned_not_yagni` discipline — capacities ride consumer
@@ -306,7 +306,7 @@ pub type SceIndexBuf = ::std::vec::Vec<usize>;
 #[cfg(feature = "no_std")]
 pub type SceIndexBuf = ::heapless::Vec<usize, MAX_ENABLED_TRANSITIONS>;
 
-/// Dedup set for transitions bubbling up to a shared ancestor (W3C SCXML 3.13;
+/// Dedup set for transitions bubbling up to a shared ancestor (§scxml-3.13;
 /// test 504), resolving to the natural set type of each runtime profile.
 ///
 /// - std build: [`std::collections::HashSet<K>`] (unbounded).
@@ -359,7 +359,7 @@ impl<T, const N: usize> BoundedPush<T> for ::heapless::Vec<T, N> {
 }
 
 /// Insert `key` into a [`SceDedupSet`] uniformly under std and no_std, returning
-/// `true` if the key was newly inserted (the W3C SCXML 3.13 first-match-wins
+/// `true` if the key was newly inserted (the §scxml-3.13 first-match-wins
 /// dedup predicate for `retain`).
 ///
 /// Absorbs the API divergence between the two set types: `HashSet::insert`
@@ -461,7 +461,7 @@ pub mod engine;
 pub mod event;
 pub mod hal;
 pub mod helpers;
-/// W3C SCXML C.2 BasicHTTPEventProcessor send payload shapes.
+/// §scxml-C-2 BasicHTTPEventProcessor send payload shapes.
 ///
 /// Gated out of `no_std` builds because the module body uses
 /// `std::collections::HashMap`. B-γ swaps in a `heapless::FnvIndexMap`
@@ -470,7 +470,7 @@ pub mod helpers;
 /// any consumer that enables `http-send` together with `no_std`.
 #[cfg(not(feature = "no_std"))]
 pub mod http;
-/// W3C SCXML 6.4 invoke lifecycle helpers.
+/// §scxml-6.4 invoke lifecycle helpers.
 ///
 /// Watching-zenoh RFC §synth-5-J-2: whole-module gated to `!no_std`. `<invoke>` is
 /// rejected upstream at codegen time via `codegen/no-std-invoke-not-supported`

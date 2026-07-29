@@ -115,22 +115,28 @@ paths = [
     # bound under Section.implementations, so the same hallucination /
     # binding gates that cover the C++ engine now cover the Rust codegen.
     "sce-build/src",
+    # no_std Rust runtime. Its 236 prose "W3C SCXML <n>" cites were migrated to
+    # §scxml- form and bound below, so the same hallucination / binding gates
+    # that cover the C++ engine and the Rust codegen now cover the runtime.
+    "backends/rust/runtime/src",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
 # cannot gate vacuously.
 #
-# Honest statement of the one gap, measured — not a claim that the trees are
-# citation-free. `backends/rust/runtime/src/engine.rs` carries one §scxml-6.2.2
-# doc-comment cite that stays ungated here. Gating it is not a path edit: `paths`
-# also drives the citation-FORM gate (migrate_citations.py --check), and the
-# no_std Rust runtime was never migrated to §-form — adding the tree puts 237
-# free-text "W3C SCXML <n>" cites across 24 files and 39 sections under that
-# gate, each then needing a binding under severity_binding=reject. Migrating
-# that runtime is its own round; until it runs, the tree stays declared out.
-# This declaration changes no coverage — those trees were already unscanned.
+# Measured, not assumed: no hand-authored §scxml- citation lives in an excluded
+# tree. The trees below are other backends' runtimes, generated output, and test
+# trees. `paths` also drives the citation-FORM gate, so a tree enters this ledger
+# only once its prose cites are migrated — which is why the no_std runtime moved
+# from this list into `paths` above rather than staying declared out.
 scan_exclusions = [
-    "backends/",
+    "backends/rust/forge-runtime/",
+    "backends/rust/link-runtime/",
+    "backends/rust/lua/",
+    "backends/rust/portable-bytes/",
+    "backends/rust/probes/",
+    "backends/rust/runtime/tests/",
+    "backends/rust/tests/",
     "sce-build/examples/",
     "sce-build/tests/",
     "tests/",
