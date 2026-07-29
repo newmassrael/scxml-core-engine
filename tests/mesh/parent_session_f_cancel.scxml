@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Mesh §9.6 wire-19 InvokeCancel verification.
 
-     W3C §6.4.5: when a parent exits the state containing an `<invoke>`
+     W3C §6.4.3: when a parent exits the state containing an `<invoke>`
      before the child reaches `<final>`, the runtime cancels the child.
      In the mesh case this surfaces as a wire-19 `InvokeCancel` envelope
      on the `/sce_p2c_<parent>_<child>` channel, emitted from the

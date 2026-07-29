@@ -733,10 +733,10 @@ sce_generate_static_w3c_test(175 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C
 sce_generate_static_w3c_test(176 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.1: param uses current value at evaluation time (Static Hybrid)
 sce_generate_static_w3c_test(178 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.1: param - multiple key/value pairs with same keys (Static Hybrid)
 sce_generate_static_w3c_test(179 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.6: content element populates message body (Pure Static)
-sce_generate_static_w3c_test(183 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.7: send idlocation stores sendid value (Static Hybrid)
+sce_generate_static_w3c_test(183 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.2: send idlocation stores sendid value (Static Hybrid)
 sce_generate_static_w3c_test(185 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.2.5: send respects delay specification (Pure Static)
 sce_generate_static_w3c_test(186 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.2: send evaluates args at evaluation time, not send time (Static Hybrid)
-sce_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4.5: Delayed send cancellation on session termination (Pure Static)
+sce_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.2: Delayed send cancellation on session termination (Pure Static)
 sce_generate_static_w3c_test(189 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: Internal queue priority via target="#_internal" (Pure Static)
 sce_generate_static_w3c_test(190 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: External queue priority via targetexpr (Static Hybrid)
 sce_generate_static_w3c_test(191 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4.1: Inline <content> invoke with #_parent target (Pure Static)
@@ -759,11 +759,11 @@ sce_generate_static_w3c_test(224 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C
 sce_generate_static_w3c_test(225 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 sce_generate_static_w3c_test(226 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2/6.4: auto-discovers test226sub1.txml
 sce_generate_static_w3c_test(228 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.3.1: invoke ID in done.invoke event (Static Hybrid)
-sce_generate_static_w3c_test(229 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4.6: autoforward with inline content (Pure Static)
+sce_generate_static_w3c_test(229 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4.1: autoforward with inline content (Pure Static)
 sce_generate_static_w3c_test(230 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # inline <content> + autoforward (manual)
 sce_generate_static_w3c_test(232 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 sce_generate_static_w3c_test(233 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.5: finalize before done.invoke event processing (Static Hybrid)
-sce_generate_static_w3c_test(234 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.6: finalize only in invoking state (Static Hybrid)
+sce_generate_static_w3c_test(234 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.5: finalize only in invoking state (Static Hybrid)
 sce_generate_static_w3c_test(235 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: done.invoke.id event with inline content child (Pure Static)
 sce_generate_static_w3c_test(236 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # inline <content>
 sce_generate_static_w3c_test(237 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4: invoke cancellation on state exit with inline content child
@@ -844,7 +844,7 @@ sce_generate_static_w3c_test(403a ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: o
 sce_generate_static_w3c_test(403b ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: optimal enabled transition set as SET - parallel regions (needs wrapper)
 sce_generate_static_w3c_test(403c ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: optimal enabled transition set with preemption - parallel regions (needs wrapper)
 sce_generate_static_w3c_test(404 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: parallel state exit order with document order tie-breaking
-sce_generate_static_w3c_test(405 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.9/D.2: executable content execution order in transitions
+sce_generate_static_w3c_test(405 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.9 / §scxml-D-executeTransitionContent: executable content execution order in transitions
 sce_generate_static_w3c_test(406 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.3: state entry order with parallel regions
 sce_generate_static_w3c_test(407 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.8: onexit handlers with datamodel variable updates
 sce_generate_static_w3c_test(409 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 3.12.1: state removal from active states during exit
@@ -868,7 +868,7 @@ sce_generate_static_w3c_test(451 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: I
 sce_generate_static_w3c_test(452 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.3/5.4: datamodel substructure assignment (object properties)
 sce_generate_static_w3c_test(453 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2/3.12.1: ECMAScript function expression evaluation
 sce_generate_static_w3c_test(456 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2/5.9: ECMAScript script element execution
-sce_generate_static_w3c_test(457 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.4/D.3.1: foreach error handling with ECMAScript validation
+sce_generate_static_w3c_test(457 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.4 / 3.12.2: foreach error handling with ECMAScript validation
 sce_generate_static_w3c_test(459 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.4: foreach iteration order and index validation
 sce_generate_static_w3c_test(460 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.6: foreach shallow copy semantics with array modification
 sce_generate_static_w3c_test(525 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.6: foreach shallow copy semantics (minimal)

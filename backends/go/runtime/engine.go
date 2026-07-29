@@ -452,7 +452,7 @@ func (e *Engine[S, E]) RunUntilCompletion(timeout, pollInterval time.Duration) b
 // Internal: microstep + macrostep implementation
 // ================================================================
 
-// processEventQueues processes both internal and external queues (W3C SCXML D.1).
+// processEventQueues processes both internal and external queues (§scxml-D-mainEventLoop).
 //
 // Matches Rust Engine::process_event_queues.
 func (e *Engine[S, E]) processEventQueues() {

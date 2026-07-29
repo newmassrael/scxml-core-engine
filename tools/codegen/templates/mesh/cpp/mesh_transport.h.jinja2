@@ -279,7 +279,7 @@ dispatchToSession({{ env_name }}, {{ session_idx_expr }})
 
 {# SCE_MESH.md §14.4 — canonical session count for this router.
    Each SCXML document instance running under the router is a "session"
-   (W3C SCXML §2.4). A pool server hosts N independent sessions, each
+   (W3C SCXML §5.10). A pool server hosts N independent sessions, each
    backing one offered SOME/IP instance; every other router shape hosts
    exactly one session. `n_sessions` is the single source of truth
    consumed by the `sessions_` array, ctor, per-session callback loop,
@@ -1410,7 +1410,7 @@ struct TransportRouter {
 {% endif %}
 
 {# ── (D2b) Session pool — every SCXML document instance running
-   under this router is a session (W3C SCXML §2.4). Non-pool routers
+   under this router is a session (W3C SCXML §5.10). Non-pool routers
    host exactly one session; `server.instances:` pool routers host
    N independent sessions each backing one offered SOME/IP instance
    (SCE_MESH.md §14.4). `sessions_` is the single source of truth for
