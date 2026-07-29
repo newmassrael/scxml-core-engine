@@ -448,5 +448,17 @@ python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace synth 
 python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace bytesguard \
     --from-toml docs/sce-ledger/bytesguard/mnemosyne.toml >/dev/null \
     || fail_step "Stage 8 (bytesguard citation-form gate)"
+# Ledger-existence gate over the trees deliberately kept in PROSE. The form
+# gates above cover only the dirs enrolled in a ledger's `paths`, which leaves
+# the codegen templates and every backend/test tree free to cite a section
+# number that does not exist — and templates are the propagation source: one
+# fabricated number reached 168 sites through generated copies before this gate
+# existed. §-form is NOT demanded here (template comments ship verbatim inside
+# generated code and stay readable to consumers); only the claim that the cited
+# section exists is enforced.
+for tree in tools/codegen/templates tests backends examples; do
+    python3 tools/mnemosyne-adoption/migrate_citations.py "$tree" --check-ledger >/dev/null \
+        || fail_step "Stage 8 (ledger-existence gate: ${tree})"
+done
 
 printf '\npre-push: all 8 gates passed — push allowed.\n' >&2

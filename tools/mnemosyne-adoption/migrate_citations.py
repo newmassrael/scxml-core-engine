@@ -60,6 +60,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 
 # A1 owns the label -> id normalization policy; import it so we never drift.
@@ -415,7 +416,14 @@ def _plan_marked(text, mask, ledger_ids, prefix, lineno):
     # the extractor see two separate §ids; "§a/§b" without them would read as a
     # single id with a stray slash). "I/O" never matches: "I" alone is not a
     # LABEL_RE label (it needs a .digit), so the chain cannot start.
-    chain = LABEL_RE + r"(?:/" + LABEL_RE + r")*"
+    # `(?!/)` after the chain refuses a trailing slash that no label follows.
+    # "3.13/Appendix D" would otherwise migrate its head to "§scxml-3.13" and
+    # leave "/Appendix D" glued to it, and the validator reads that whole run as
+    # ONE id ("scxml-3.13/Appendix") -> a section_missing on a section nobody
+    # cited. Emitting a token that parses as a different citation than the author
+    # wrote is worse than not migrating: refusing leaves the prose in place, so
+    # the citation-form gate reports it and a human separates the chain.
+    chain = LABEL_RE + r"(?:/" + LABEL_RE + r")*" + r"(?!/)"
     #   prose:      W3C SCXML 5.10            (digits directly after the prefix)
     #   bare-sigil: W3C §5.5 / W3C SCXML §3.3 (a § sigil already present)
     # The sigil branch is tried first so "W3C SCXML §3.3" is read as sigil, not
@@ -582,6 +590,28 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
     return "".join(out), migrations, skipped
 
 
+def _tracked_files():
+    """Repo-relative paths git tracks, or None when that cannot be determined.
+
+    None means "do not filter": outside a git checkout (a vendored copy, a
+    release tarball) every file present is the content under review, so falling
+    back to no filter is the honest default rather than silently checking
+    nothing.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "-C", REPO_ROOT, "ls-files"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return {line for line in out.stdout.splitlines() if line}
+
+
 def load_ledger_ids(ledger_path):
     with open(ledger_path, "r", encoding="utf-8") as fh:
         store = json.load(fh)
@@ -669,6 +699,15 @@ def main(argv=None):
         "allowlisted; string literals are out of scope (comment_only).",
     )
     ap.add_argument(
+        "--check-ledger",
+        action="store_true",
+        help="read-only gate for trees kept in PROSE: exit 1 only if a "
+        "section-SHAPED label names a section absent from the ledger (a "
+        "fabricated cite). Unlike --check it does not demand §-form, so it "
+        "suits tools/codegen/templates/, whose comments are emitted verbatim "
+        "into generated code and must stay readable to consumers.",
+    )
+    ap.add_argument(
         "--from-toml",
         default=None,
         help="check exactly the set_equality_validator paths enrolled in "
@@ -714,6 +753,79 @@ def main(argv=None):
             if args.apply:
                 with open(path, "w", encoding="utf-8") as fh:
                     fh.write(new_text)
+
+    if args.check_ledger:
+        # Hallucination gate for trees that deliberately stay in PROSE.
+        #
+        # `--check` bundles two demands: cites must be in §<ns>- form, AND every
+        # section-shaped label must exist in the ledger. The form half cannot
+        # apply to `tools/codegen/templates/`: a template comment has two
+        # audiences, its own documentation and the text it EMITS into generated
+        # code, and the same string serves both. Forcing §-form there rewrites
+        # the citations that ship inside every generated file, and it puts
+        # §ids into committed generated trees that the Rust scan set excludes —
+        # measured, that made Mnemosyne R840 report 7 sections as reachable only
+        # from an excluded tree even though the authoring templates were scanned
+        # and bound.
+        #
+        # This mode keeps only the half that matters for those trees: a label
+        # shaped like a section but absent from the ledger is a fabricated
+        # citation and fails. Prose stays prose; a wrong section number cannot
+        # survive. `label_to_id` already normalises lettered forms, and the same
+        # allowlist logic as `--check` exempts the spec version and bare W3C
+        # test numbers.
+        version_allowlist = {"1.0"}
+        # Tracked content only. A citation is a claim the REPOSITORY makes, and
+        # untracked files make none: the hits there are gitignored generated
+        # artifacts left over from a build that predates a template fix. Scanning
+        # them turns a citation gate into a build-freshness gate, failing on
+        # whatever a developer happens to have on disk for a reason unrelated to
+        # the commit. A fabricated number in a generated file always also exists
+        # in its authoring template, which IS tracked and IS scanned — so
+        # restricting scope loses no detection.
+        tracked = _tracked_files()
+
+        def in_scope(rel):
+            # Only a path INSIDE this repo is subject to its tracking. `relpath`
+            # yields a "../"-prefixed value for anything outside (a vendored
+            # checkout, a caller-supplied directory, the tests' temp dirs), and
+            # those are the content under review wherever they came from.
+            if tracked is None or rel.startswith(".."):
+                return True
+            return rel in tracked
+
+        bad = [
+            d
+            for d in report["skipped"]
+            if not d["reason"].startswith("quoted spec-string")
+            and d["label"] not in version_allowlist
+            and "." in d["label"]
+            and in_scope(d["file"])
+        ]
+        if bad:
+            print(
+                "ERROR: citation(s) naming a section absent from the ledger. A "
+                "section number that does not exist is a false claim about the "
+                "spec, whether or not the cite is in §-form:",
+                file=sys.stderr,
+            )
+            for d in sorted(bad, key=lambda d: (d["file"], d["line"])):
+                print(
+                    f"  {d['file']}:{d['line']}  {args.prefix} {d['label']} "
+                    f"(would be §{d['id']}, not in ledger)",
+                    file=sys.stderr,
+                )
+            print(
+                "\nResolve each against the ledger (title/body), then correct "
+                "the number. Do NOT migrate it to §-form to silence this.",
+                file=sys.stderr,
+            )
+            return 1
+        print(
+            "ledger-existence check: OK — every section-shaped citation "
+            "resolves to a ledger section."
+        )
+        return 0
 
     if args.check and args.namespace != "scxml":
         # Non-scxml form gate: a *claimable* free-text cite (one --apply

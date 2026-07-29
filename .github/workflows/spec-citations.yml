@@ -146,3 +146,19 @@ jobs:
         run: |
           python3 tools/mnemosyne-adoption/migrate_citations.py --check --namespace bytesguard \
             --from-toml docs/sce-ledger/bytesguard/mnemosyne.toml
+
+      # Ledger-existence gate for the trees deliberately kept in prose. The form
+      # gates above only cover dirs enrolled in a ledger's `paths`, so the
+      # codegen templates and the backend/test trees could cite a section number
+      # that does not exist. Templates are the propagation source — one
+      # fabricated number reached 168 sites through generated copies — so this
+      # checks that every section-shaped citation resolves, without demanding
+      # §-form in text that ships verbatim inside generated code.
+      - name: Forbid citations naming sections absent from the ledger
+        run: |
+          set -euo pipefail
+          for tree in tools/codegen/templates tests backends examples; do
+            echo "::group::${tree}"
+            python3 tools/mnemosyne-adoption/migrate_citations.py "${tree}" --check-ledger
+            echo "::endgroup::"
+          done
