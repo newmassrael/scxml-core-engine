@@ -87,7 +87,7 @@ class Invoke(ABC, Generic[E]):
 
     @abstractmethod
     def forward_event(self, event_name: str, data: Any) -> None:
-        """W3C SCXML 6.4.6 — deliver an autoforwarded event into the
+        """W3C SCXML 6.4.1 — deliver an autoforwarded event into the
         target. The descriptor matches the wire name (`done.foo`)
         rather than the parent's `Event` enum, so the implementation
         is responsible for any local name→Event resolution."""
@@ -183,7 +183,7 @@ class ScxmlInvoke(Invoke):
 
 
 def is_platform_event(event_name: str) -> bool:
-    """W3C SCXML 6.4.6 — platform events (prefix `#_`) must not be
+    """W3C SCXML 6.4.1 — platform events (prefix `#_`) must not be
     autoforwarded. Mirrors `sce.IsPlatformEvent` in Go."""
     return event_name.startswith("#_")
 

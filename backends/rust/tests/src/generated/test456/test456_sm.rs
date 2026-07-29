@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 35c0d03dd34b8d03e7b3891d6751af3cdd0b2bf0e96c5f94ca9790ac72375270
-// generated-at: 1784525842
+// template-hash: c22d767976ad0f3af27597215acac4daa969b18394744727f9f1e4af8f5db2d7
+// generated-at: 1785338317
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -559,7 +559,7 @@ impl StatePolicy for Test456Policy {
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
                     {
-                        // W3C SCXML 3.8.6: <script>
+                        // W3C SCXML 5.8: <script>
                         self.ensure_script_engine();
                         let sid = self.session_id.as_ref().unwrap().clone();
                         let se = self.script_engine.clone();

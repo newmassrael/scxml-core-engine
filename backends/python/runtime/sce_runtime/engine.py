@@ -533,7 +533,7 @@ class Engine(Generic[S, E]):
         # parent datamodel that subsequent guards then read.
         if evt.metadata.invoke_id:
             self._policy.execute_finalize_for_child_event(evt, self)
-        # W3C SCXML 6.4.6 — autoforward external events into every
+        # W3C SCXML 6.4.1 — autoforward external events into every
         # active child marked `autoforward="true"`. Done before
         # transition selection so the child observes the event in the
         # same iteration the parent does.
@@ -1152,7 +1152,7 @@ class Engine(Generic[S, E]):
         advance(ms)
 
     def _route_to_child(self, evt: EventWithMetadata[E]) -> None:
-        """W3C SCXML 6.4.6 — autoforward an external event into every
+        """W3C SCXML 6.4.1 — autoforward an external event into every
         active child whose `<invoke autoforward="true"/>` requested it.
         Skips internally-raised events (W3C 6.4.6 explicitly forwards
         only externally-triggered ones) and platform `#_…` events."""

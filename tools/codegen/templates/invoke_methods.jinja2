@@ -12,7 +12,7 @@
     Contains:
     - executePendingInvokes()           — execute deferred invokes at macrostep end
     - tickChildren()                    — tick active child state machines
-    - forwardToAutoforwardChildren()    — W3C SCXML 6.4.6 event forwarding
+    - forwardToAutoforwardChildren()    — W3C SCXML 6.4.1 event forwarding
     - executeFinalizeForChildEvent()    — W3C SCXML 6.5 finalize execution
 #}
 {% if (model.invokes | scxml_family) or (model.invokes | scxml_remote) %}
@@ -152,7 +152,7 @@
                         {% endfor %}
                         {% endif %}
 
-                        // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+                        // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                         // Child may send events during initialize() that need autoforward
                         // SCE_MESH.md §16.7 row 5 sub-atomic C — activeInvokes_
                         // is shared with peer-down callback threads; engine-
@@ -163,7 +163,7 @@
                                 childSessionId,  // W3C SCXML 6.5: Child session ID for finalize origin matching
                                 "{{ invoke_info.invoke_id }}",
                                 sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
-                                {{ 'true' if invoke_info.autoforward else 'false' }},  // W3C SCXML 6.4.6: autoforward
+                                {{ 'true' if invoke_info.autoforward else 'false' }},  // W3C SCXML 6.4.1: autoforward
                                 "{{ invoke_info.finalize_content | replace('"', '\"') }}"  // W3C SCXML 6.5: finalize
                             };
                         }
@@ -266,7 +266,7 @@
                             [](::SCE::IScriptEngine*){}));
                         {% endif %}
 
-                        // W3C SCXML 6.4.6: Track active invoke session
+                        // W3C SCXML 6.4.1: Track active invoke session
                         // SCE_MESH.md §16.7 row 5 sub-atomic C — same shared-
                         // access discipline as the scxml-local insert above.
                         {
@@ -338,7 +338,7 @@
         {% endfor %}
     }
 
-    // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
+    // W3C SCXML 6.4.1: Forward external events to children with autoforward=true
     // Called by StaticExecutionEngine::raiseExternal before enqueuing to parent.
     // Local invokes forward via `child_<suffix>_->raiseExternal`; remote
     // scxml invokes (SCE_MESH.md §9.6) forward via wire-17 `ParentEvent`
@@ -371,7 +371,7 @@
             }
             if (__sce_autoforward_active && child_{{ invoke_info.field_suffix }}_) {
                 AOT_DEBUG("AOT autoforward: Forwarding event '{}' to child {{ invoke_info.invoke_id }}", eventName);
-                // W3C SCXML 6.4.6: Forward by event name string to child
+                // W3C SCXML 6.4.1: Forward by event name string to child
                 // Child's raiseExternal(string) will convert to its Event enum and handle gracefully if not found
                 child_{{ invoke_info.field_suffix }}_->raiseExternal(eventName);
             }

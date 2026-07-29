@@ -303,7 +303,7 @@ class StatePolicy(ABC, Generic[S, E]):
     def forward_to_autoforward_children(
         self, event_name: str, data, engine: "Engine[S, E]"
     ) -> None:
-        """W3C SCXML 6.4.6 — for every active child whose `<invoke>`
+        """W3C SCXML 6.4.1 — for every active child whose `<invoke>`
         declared `autoforward="true"`, deliver `event_name` into the
         child via `Invoke.forward_event`. Default no-op."""
 

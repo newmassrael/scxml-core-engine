@@ -1,9 +1,9 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 3.8.6: Script execution #}
+{# W3C SCXML 5.8: Script execution #}
 {% if model.needs_script_engine and action.content %}
-	// W3C SCXML 3.8.6: <script>
+	// W3C SCXML 5.8: <script>
 	if err := p.executeScript(`{{ action.content | to_lua_script }}`); err != nil {
 {% if 'error.execution' in model.events %}
 		engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))

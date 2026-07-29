@@ -273,7 +273,7 @@ func (e *Engine[S, E]) RaiseExternal(event E, eventData, origin string) {
 	}
 }
 
-// RaiseExternalByName raises an external event by name (W3C SCXML 6.4.6, for
+// RaiseExternalByName raises an external event by name (W3C SCXML 6.4.1, for
 // child autoforward).
 //
 // If the name does not match any known event, the call is silently ignored.
@@ -295,7 +295,7 @@ func (e *Engine[S, E]) RaiseExternalByName(eventName, eventData string) {
 func (e *Engine[S, E]) RaiseExternalWithMeta(event EventWithMetadata[E]) {
 	log.Printf("[sce] Engine::RaiseExternalWithMeta: enqueuing external event with metadata")
 
-	// W3C SCXML 6.4.6: Autoforward
+	// W3C SCXML 6.4.1: Autoforward
 	if e.policy.HasAutoforward() {
 		name := e.policy.GetEventName(event.Event)
 		e.policy.ForwardToAutoforwardChildren(name, e)

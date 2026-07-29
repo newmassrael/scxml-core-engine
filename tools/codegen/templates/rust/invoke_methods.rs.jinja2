@@ -122,7 +122,7 @@
 {% endif %}
 {% endif %}
 
-                // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+                // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                 self.active_invokes.insert("{{ invoke_info.invoke_id }}".to_string(),
                     sce_rust_runtime::invoke::ChildSession {
                         session_id: child_session_id,
@@ -244,7 +244,7 @@
                     child_policy.session_id = Some(format!("hybrid_session_{}", cid));
                 }
 
-                // W3C SCXML 6.4.6: Track active invoke session
+                // W3C SCXML 6.4.1: Track active invoke session
                 self.active_invokes.insert("{{ invoke_info.invoke_id }}".to_string(),
                     sce_rust_runtime::invoke::ChildSession {
                         session_id: child_session_id,
@@ -369,7 +369,7 @@
 
 {% set autoforward_invokes = model.invokes | scxml | selectattr('autoforward') | list %}
 {% if autoforward_invokes %}
-    // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
+    // W3C SCXML 6.4.1: Forward external events to children with autoforward=true
     // 1:1 port of C++ forwardToAutoforwardChildren() in entry_exit_actions.jinja2
     fn do_forward_to_autoforward_children(&mut self, event_name: &str, _engine: &mut sce_rust_runtime::Engine<Self>) {
 {% for invoke_info in autoforward_invokes %}
@@ -380,7 +380,7 @@
                 .map_or(false, |cs| cs.autoforward);
             if is_autoforward {
                 if let Some(ref mut child) = self.child_{{ invoke_info.field_suffix }} {
-                    // W3C SCXML 6.4.6: Forward by event name string to child
+                    // W3C SCXML 6.4.1: Forward by event name string to child
                     child.raise_external_by_name(event_name, "");
                 }
             }

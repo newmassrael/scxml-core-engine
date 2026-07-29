@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 35c0d03dd34b8d03e7b3891d6751af3cdd0b2bf0e96c5f94ca9790ac72375270
-// generated-at: 1784525867
+// template-hash: c22d767976ad0f3af27597215acac4daa969b18394744727f9f1e4af8f5db2d7
+// generated-at: 1785338319
 
 
 // SPDX-License-Identifier: MIT
@@ -326,7 +326,7 @@ func (p *DonedataLocalInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[Don
 
 
 
-			// W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+			// W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
 			p.activeInvokes["inv_content"] = &sce.ChildSession{
 				SessionID:       childSessionID,
 				InvokeID:        "inv_content",
@@ -372,7 +372,7 @@ func (p *DonedataLocalInvokePolicy) ExecutePendingInvokes(engine *sce.Engine[Don
 
 
 
-			// W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+			// W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
 			p.activeInvokes["inv_param"] = &sce.ChildSession{
 				SessionID:       childSessionID,
 				InvokeID:        "inv_param",

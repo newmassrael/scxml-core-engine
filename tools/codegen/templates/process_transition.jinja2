@@ -335,7 +335,7 @@
 {% endif %}
 
 {% if model.needs_parent_template %}
-        // W3C SCXML 6.4.5: Process ready delayed sends to parent
+        // W3C SCXML 6.4.2: Process ready delayed sends to parent
         // ARCHITECTURE.md Zero Duplication: Uses SendSchedulingHelper (Single Source of Truth)
         // SCE_MESH.md §9.6: Gated on needs_parent_template — remote invoke workers
         // emit `<send target="#_parent">` through performMeshSend (no parentSendScheduler_).

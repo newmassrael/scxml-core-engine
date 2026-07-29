@@ -34,7 +34,7 @@ type ChildSession struct {
 	// ParentSessionID is the parent's session ID.
 	ParentSessionID string
 
-	// Autoforward indicates whether to autoforward events to child (W3C SCXML 6.4.6).
+	// Autoforward indicates whether to autoforward events to child (W3C SCXML 6.4.1).
 	Autoforward bool
 
 	// FinalizeScript is the <finalize> handler script content (W3C SCXML 6.5).
@@ -195,7 +195,7 @@ func RaiseDoneInvoke[S comparable, E comparable](
 }
 
 // IsPlatformEvent checks if an event name is a platform event that should NOT
-// be autoforwarded (W3C SCXML 6.4.6).
+// be autoforwarded (W3C SCXML 6.4.1).
 func IsPlatformEvent(name string) bool {
 	return strings.HasPrefix(name, "#_")
 }

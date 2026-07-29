@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 35c0d03dd34b8d03e7b3891d6751af3cdd0b2bf0e96c5f94ca9790ac72375270
-// generated-at: 1784525850
+// template-hash: c22d767976ad0f3af27597215acac4daa969b18394744727f9f1e4af8f5db2d7
+// generated-at: 1785338317
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/513/test513.scxml
@@ -146,7 +146,7 @@ class Test513StateMachine(
         }
     }
 
-    // W3C SCXML 3.8.6: Script block execution
+    // W3C SCXML 5.8: Script block execution
     private fun executeScriptBlock(script: String) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -225,7 +225,7 @@ class Test513StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
 
-            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\"")?.toString() ?: ""))
             } catch (_: Exception) {}
@@ -236,7 +236,7 @@ class Test513StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
 
-            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\"")?.toString() ?: ""))
             } catch (_: Exception) {}
@@ -284,14 +284,14 @@ class Test513StateMachine(
         is Test513State.S0 -> when {
             event is Test513Event.Test -> {
 
-            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513: Received HTTP event - server responded with 200 OK\"")?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             event is Test513Event.Timeout -> {
 
-            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513: Timeout - no HTTP event received\"")?.toString() ?: ""))
             } catch (_: Exception) {}

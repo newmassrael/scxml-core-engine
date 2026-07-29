@@ -84,7 +84,7 @@ env:
   # intermediate 25d30d16 carries that defect — do not pin between 5807bd5c and
   # 5c266cd. Bumped after re-running validate-workspace / -code-refs /
   # -verifies-linkage / -content-drift on every enrolled workspace.
-  MNEMOSYNE_REV: 5c266cd4eb27ccb08d6af795a65d6ade9f4b9f41
+  MNEMOSYNE_REV: 2b2dae4c1fd6d5766a2582656e4265483a40f615
 
 jobs:
   citations:

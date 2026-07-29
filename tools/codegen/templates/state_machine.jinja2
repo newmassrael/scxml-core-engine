@@ -336,7 +336,7 @@ struct {{ model.name }}Policy {
     // W3C SCXML 6.5: Child session ID for finalize origin matching (test233)
     ::std::string childSessionId_;
 
-    // W3C SCXML 6.4.5: Delayed sends to parent scheduler (using SendSchedulingHelper)
+    // W3C SCXML 6.4.2: Delayed sends to parent scheduler (using SendSchedulingHelper)
     // ARCHITECTURE.md Zero Duplication: Reuses SendSchedulingHelper (Single Source of Truth)
     mutable ::SCE::PullScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
     {% endif %}
@@ -535,7 +535,7 @@ struct {{ model.name }}Policy {
     // Destructor: Clean up resources (RAII pattern)
     ~{{ model.name }}Policy() {
         {% if model.needs_parent_template %}
-        // W3C SCXML 6.4.5: Cancel all pending delayed sends to parent on child termination
+        // W3C SCXML 6.4.2: Cancel all pending delayed sends to parent on child termination
         // SimpleScheduler destructor automatically cleans up pending events
         {% endif %}
         {% if model.needs_script_engine or model.invokes | scxml or model.invokes | hybrid or model.invokes | scxml_remote %}

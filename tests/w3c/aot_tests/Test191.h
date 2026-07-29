@@ -38,7 +38,7 @@ namespace SCE::W3C::AotTests {
  *
  * W3C SCXML Features:
  * - W3C SCXML 6.4.1: <invoke type="scxml"> with inline <content> element
- * - W3C SCXML 6.4.5: #_parent target for parent-child communication
+ * - W3C SCXML 6.4.2: #_parent target for parent-child communication
  * - W3C SCXML 3.14: SCXML sessions (parent-child relationship)
  * - W3C SCXML 6.2: <send> with target attribute
  * - W3C SCXML 6.2.5: Delayed send for timeout handling

@@ -205,7 +205,7 @@
 {{ indent }}elif _target_str == "#_parent":
 {{ indent }}    self._parent_queue.append((_dyn_evt_name, _data))
 {{ indent }}elif _target_str.startswith("#_"):
-{# W3C SCXML 5.10.2 — `#_scxml_<sessionid>` (session URI) routes to the
+{# W3C SCXML C.1 — `#_scxml_<sessionid>` (session URI) routes to the
    addressed session's external queue; `#_<invoke_id>` routes through
    an active child. The runtime tries invoke first; absent that, it
    falls back to the local external queue (treating the URI as a

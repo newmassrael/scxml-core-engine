@@ -10,7 +10,7 @@
 {% include 'actions/assign.kt.jinja2' with context %}
 {% elif action.type == 'log' and action.expr %}
 {% if model.needs_script_engine %}
-            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println({% if action.label %}"{{ action.label | escape_kotlin }}: " + {% endif %}(scriptEngine?.evaluateExpr(scriptSessionId ?: "", "{{ action.expr | escape_kotlin }}")?.toString() ?: ""))
             } catch (_: Exception) {}
