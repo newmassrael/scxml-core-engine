@@ -39,7 +39,7 @@ namespace SCE::W3C::AotTests {
  *
  * W3C SCXML Features:
  * - BasicHTTP Event I/O Processor (W3C SCXML C.2)
- * - <param> expression evaluation with JSEngine (W3C SCXML 5.11.2)
+ * - <param> expression evaluation with JSEngine (W3C SCXML 5.7)
  * - _event.data structure for event parameters (W3C SCXML 5.10)
  * - URL-encoded HTTP POST body with param values (W3C SCXML C.2)
  * - Guard conditions accessing _event.data properties (W3C SCXML 5.9)

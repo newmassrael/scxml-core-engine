@@ -45,7 +45,7 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 6.4: Invoke with inline content (<content><scxml>...</scxml></content>)
  * - W3C SCXML 6.3.1: done.invoke event generation
  * - W3C SCXML 6.2: Delayed send with timeout
- * - W3C SCXML 3.7.3: Final state in child state machine
+ * - W3C SCXML 3.7: Final state in child state machine
  *
  * Note: This test requires test242_child0.scxml (child state machine file).
  * The child is a simple state machine with only a final state.

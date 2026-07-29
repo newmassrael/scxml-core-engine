@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 35c0d03dd34b8d03e7b3891d6751af3cdd0b2bf0e96c5f94ca9790ac72375270
-// generated-at: 1784525842
+// template-hash: c22d767976ad0f3af27597215acac4daa969b18394744727f9f1e4af8f5db2d7
+// generated-at: 1785338317
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -223,7 +223,7 @@ impl Test229Policy {
                     child_policy.session_id = Some(format!("child_session_{}", cid));
                 }
 
-                // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+                // W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
                 self.active_invokes.insert(
                     "_invoke_0".to_string(),
                     sce_rust_runtime::invoke::ChildSession {
@@ -326,7 +326,7 @@ impl Test229Policy {
         }
     }
 
-    // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
+    // W3C SCXML 6.4.1: Forward external events to children with autoforward=true
     // 1:1 port of C++ forwardToAutoforwardChildren() in entry_exit_actions.jinja2
     fn do_forward_to_autoforward_children(
         &mut self,
@@ -341,7 +341,7 @@ impl Test229Policy {
                 .map_or(false, |cs| cs.autoforward);
             if is_autoforward {
                 if let Some(ref mut child) = self.child_invoke_0 {
-                    // W3C SCXML 6.4.6: Forward by event name string to child
+                    // W3C SCXML 6.4.1: Forward by event name string to child
                     child.raise_external_by_name(event_name, "");
                 }
             }
@@ -664,7 +664,7 @@ impl StatePolicy for Test229Policy {
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
     }
-    // W3C SCXML 6.4.6: Forward external events to autoforward children
+    // W3C SCXML 6.4.1: Forward external events to autoforward children
     fn forward_to_autoforward_children(&mut self, event_name: &str, engine: &mut Engine<Self>) {
         self.do_forward_to_autoforward_children(event_name, engine);
     }

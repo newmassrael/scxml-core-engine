@@ -183,7 +183,7 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
     auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString("{{ action.delay }}");
 {% endif %}
 
-    // W3C SCXML 6.4.5: Schedule delayed send using SendSchedulingHelper
+    // W3C SCXML 6.4.2: Schedule delayed send using SendSchedulingHelper
     // ARCHITECTURE.md Zero Duplication: Reuses SendSchedulingHelper (Single Source of Truth)
     // When child terminates, SimpleScheduler destructor automatically cleans up pending events
     if (parent_) {

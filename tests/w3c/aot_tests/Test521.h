@@ -22,7 +22,7 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML Features:
  * - W3C SCXML 6.2.4: Dynamic target resolution via targetexpr attribute
  * - W3C SCXML 6.2.5: Error event generation (error.communication) for dispatch failures
- * - W3C SCXML 5.10.3: Event queue priority (internal error events before external timeout)
+ * - W3C SCXML 5.10.1: Event queue priority (internal error events before external timeout)
  * - W3C SCXML B.2: ECMAScript datamodel with undefined value evaluation
  *
  * Test Behavior:

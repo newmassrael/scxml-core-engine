@@ -8,7 +8,7 @@ package sce
 // Ports Rust scxml_constants from backends/rust/runtime/src/helpers/scxml_constants.rs.
 
 const (
-	// SCXMLEventProcessorType is the SCXML Event I/O Processor URI (W3C SCXML 5.10.2).
+	// SCXMLEventProcessorType is the SCXML Event I/O Processor URI (W3C SCXML C.1).
 	// Default origintype for events sent through the internal engine or between
 	// AOT parent/child state machines.
 	SCXMLEventProcessorType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"

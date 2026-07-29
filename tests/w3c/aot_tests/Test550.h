@@ -52,7 +52,7 @@ namespace SCE::W3C::AotTests {
  * W3C SCXML Features:
  * - W3C SCXML 5.2.2: Early binding data initialization with expr attribute
  * - W3C SCXML B.2: ECMAScript datamodel for variable storage
- * - W3C SCXML E.1: Conditional expressions in transition guards
+ * - W3C SCXML 3.13: Conditional expressions in transition guards
  * - W3C SCXML 3.3: Eventless transitions (null event processing)
  *
  * Key Implementation Detail:

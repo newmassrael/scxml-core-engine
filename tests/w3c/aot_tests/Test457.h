@@ -18,7 +18,7 @@ namespace SCE::W3C::AotTests {
  * an iterable collection, or if the item attribute contains an illegal identifier,
  * the SCXML Processor MUST raise error.execution and skip the foreach body.
  *
- * W3C SCXML D.3.1: error.execution events are raised when executable content fails
+ * W3C SCXML 3.12.2: error.execution events are raised when executable content fails
  * to execute properly, including foreach validation failures (invalid array, illegal
  * item names such as reserved keywords).
  *

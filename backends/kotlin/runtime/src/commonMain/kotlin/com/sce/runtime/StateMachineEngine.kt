@@ -1314,7 +1314,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * Algorithm:
      * 1. Execute finalize for events from invoked children (W3C SCXML 6.5)
-     * 2. Auto-forward event to child sessions (W3C SCXML 6.4.6)
+     * 2. Auto-forward event to child sessions (W3C SCXML 6.4.1)
      * 3. Process the external event
      * 4. Drain eventless transitions and internal events until stable
      * 5. Execute pending invokes at macrostep end (W3C SCXML 6.4)
@@ -1559,7 +1559,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
         if (enabledTransitions.isEmpty() && internalTransitions.isEmpty()) return
 
-        // W3C SCXML D.2: Internal (targetless) transitions execute actions only.
+        // W3C SCXML 3.13: Internal (targetless) transitions execute actions only.
         // For parallel states, execute each unique Internal transition's actions.
         // Dedup: if the generated executeTransitionActions for two different source states
         // both dispatch to the same ancestor's branch, the actions fire twice. To prevent
@@ -1645,7 +1645,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             for (existing in result) {
                 if (existing.isTargetless) continue
 
-                // W3C SCXML D.2: Check if exit sets overlap
+                // W3C SCXML 3.13: Check if exit sets overlap
                 // Exit sets overlap if one domain is ancestor-or-equal of the other's source,
                 // or the domains overlap. Domain=null means root (exits everything).
                 val candidateSource = candidate.pair.first
@@ -1660,7 +1660,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 }
 
                 if (conflict) {
-                    // W3C SCXML D.2: Use transition source (where transition is defined)
+                    // W3C SCXML 3.13: Use transition source (where transition is defined)
                     // for preemption, not the leaf state that was checked.
                     val candidateTxSource = when (val r = candidate.pair.second) {
                         is TransitionResult.External -> r.transitionSource ?: candidateSource
@@ -1859,7 +1859,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * W3C SCXML 6.4.6: Forward external event to all autoforward child sessions.
+     * W3C SCXML 6.4.1: Forward external event to all autoforward child sessions.
      *
      * Matches C++ AOT StaticExecutionEngine::raiseExternal() which forwards
      * all events without platform event filtering. Child's resolveEventByName

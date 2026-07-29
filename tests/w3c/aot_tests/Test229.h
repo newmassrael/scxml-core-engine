@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4.6: Autoforward - automatic event forwarding to invoked child
+ * @brief W3C SCXML 6.4.1: Autoforward - automatic event forwarding to invoked child
  *
  * Tests that autoforward="true" on <invoke> causes events received by parent
  * to be automatically forwarded to invoked child state machine.
@@ -20,7 +20,7 @@ namespace SCE::W3C::AotTests {
  * 4. Child receives forwarded event, sends "eventReceived" to parent
  * 5. Parent transitions to pass state
  *
- * W3C SCXML 6.4.6: "If the autoforward attribute is set to true, the SCXML Processor
+ * W3C SCXML 6.4.1: "If the autoforward attribute is set to true, the SCXML Processor
  * must send an exact copy of every external event it receives to the invoked process."
  *
  * ARCHITECTURE.md Compliance - Pure Static Approach:
@@ -34,7 +34,7 @@ namespace SCE::W3C::AotTests {
  *
  * W3C SCXML Features:
  * - W3C SCXML 6.4: invoke with inline <content> (child SCXML embedded)
- * - W3C SCXML 6.4.6: autoforward attribute (automatic event forwarding)
+ * - W3C SCXML 6.4.1: autoforward attribute (automatic event forwarding)
  * - W3C SCXML 6.2: delayed send with timeout
  * - W3C SCXML 5.8: target="#_parent" (send to parent state machine)
  */

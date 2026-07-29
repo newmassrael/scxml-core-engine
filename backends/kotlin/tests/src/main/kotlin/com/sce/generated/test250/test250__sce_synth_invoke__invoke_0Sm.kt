@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 35c0d03dd34b8d03e7b3891d6751af3cdd0b2bf0e96c5f94ca9790ac72375270
-// generated-at: 1784525850
+// template-hash: c22d767976ad0f3af27597215acac4daa969b18394744727f9f1e4af8f5db2d7
+// generated-at: 1785338317
 
 // GENERATED CODE — DO NOT EDIT
 // Source: 
@@ -154,7 +154,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
         }
     }
 
-    // W3C SCXML 3.8.6: Script block execution
+    // W3C SCXML 5.8: Script block execution
     private fun executeScriptBlock(script: String) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
@@ -248,7 +248,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("subFinal")) return
 
-            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'entering final state, invocation was not cancelled'")?.toString() ?: ""))
             } catch (_: Exception) {}
@@ -265,7 +265,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
             is Test250SceSynthInvokeInvoke0State.Sub0 -> {
                 activeStateIds.remove("sub0")
 
-            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub0'")?.toString() ?: ""))
             } catch (_: Exception) {}
@@ -273,7 +273,7 @@ class Test250SceSynthInvokeInvoke0StateMachine(
             is Test250SceSynthInvokeInvoke0State.Sub01 -> {
                 activeStateIds.remove("sub01")
 
-            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            // W3C SCXML 4.7: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub01'")?.toString() ?: ""))
             } catch (_: Exception) {}

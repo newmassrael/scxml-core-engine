@@ -931,7 +931,7 @@ std::string InteractiveTestRunner::typeToString(SCE::Type type) {
 std::map<std::string, std::string> InteractiveTestRunner::extractDataModel() const {
     std::map<std::string, std::string> dataModel;
 
-    // W3C SCXML 5.0: Extract data model variables from SCXMLModel
+    // W3C SCXML 5.3: Extract data model variables from SCXMLModel
     // Single Source of Truth: Use model's dataModelItems_ (no memory duplication)
     if (!stateMachine_) {
         SCE_LOG_DEBUG("InteractiveTestRunner: No state machine available");
@@ -1787,7 +1787,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                     invokeObj.set("invokeContentExpr", contentExpr);
                 }
 
-                // W3C SCXML 6.4.5: Params (name-value pairs)
+                // W3C SCXML 6.4.2: Params (name-value pairs)
                 const auto &params = invoke->getParams();
                 if (!params.empty()) {
                     auto paramsArray = emscripten::val::array();
@@ -1804,13 +1804,13 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                     invokeObj.set("invokeParams", paramsArray);
                 }
 
-                // W3C SCXML 6.4.6: Namelist (variable names to pass)
+                // W3C SCXML 6.4.1: Namelist (variable names to pass)
                 const std::string &namelist = invoke->getNamelist();
                 if (!namelist.empty()) {
                     invokeObj.set("invokeNamelist", namelist);
                 }
 
-                // W3C SCXML 6.4.7: AutoForward (automatic event forwarding)
+                // W3C SCXML 6.4.1: AutoForward (automatic event forwarding)
                 bool autoForward = invoke->isAutoForward();
                 if (autoForward) {
                     invokeObj.set("invokeAutoForward", true);

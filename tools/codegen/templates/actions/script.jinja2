@@ -2,10 +2,10 @@
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
 {% if action.is_cpp_function %}
-// W3C SCXML 3.8.6: Direct C++ function call (Zero Overhead)
+// W3C SCXML 5.8: Direct C++ function call (Zero Overhead)
 {{ action.content_transformed | trim }};
 {% else %}
-// W3C SCXML 3.8.6: <script> via JSEngine
+// W3C SCXML 5.8: <script> via JSEngine
 {
     this->ensureScriptEngine();
     auto& scriptEngine = getScriptEngine();

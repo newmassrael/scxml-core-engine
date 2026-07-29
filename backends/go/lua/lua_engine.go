@@ -185,7 +185,7 @@ func (e *LuaEngine) SetupSystemVariables(sessionID string) error {
 	// W3C SCXML 5.10: Initialize system variables
 	_ = e.SetVariable(sessionID, "_sessionid", sessionID)
 	_ = e.SetVariable(sessionID, "_name", "")
-	// W3C SCXML 5.10.3: _ioprocessors with SCXML and BasicHTTP processor locations
+	// W3C SCXML 5.10.1: _ioprocessors with SCXML and BasicHTTP processor locations
 	_ = e.SetVariable(sessionID, "_ioprocessors", map[string]interface{}{
 		"scxml": map[string]interface{}{
 			"location": "#_scxml_" + sessionID,

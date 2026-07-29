@@ -350,7 +350,7 @@
 {% if state.on_entry_blocks %}
 {% set single_cpp_action = (state.on_entry_blocks|length == 1 and state.on_entry_blocks[0]|length == 1 and state.on_entry_blocks[0][0].type == 'script' and state.on_entry_blocks[0][0].is_cpp_function) %}
 {% if single_cpp_action %}
-                // W3C SCXML 3.8.6: Single <cpp> action - direct call (true Zero Overhead)
+                // W3C SCXML 5.8: Single <cpp> action - direct call (true Zero Overhead)
                 // Optimization: No std::vector, std::function, or EntryExitHelper overhead
                 {{ state.on_entry_blocks[0][0].content_transformed | trim }};
 {% else %}
@@ -774,7 +774,7 @@
 {% if state.on_exit_blocks %}
 {% set single_cpp_exit_action = (state.on_exit_blocks|length == 1 and state.on_exit_blocks[0]|length == 1 and state.on_exit_blocks[0][0].type == 'script' and state.on_exit_blocks[0][0].is_cpp_function) %}
 {% if single_cpp_exit_action %}
-                // W3C SCXML 3.9.6: Single <cpp> action - direct call (true Zero Overhead)
+                // W3C SCXML 3.9: Single <cpp> action - direct call (true Zero Overhead)
                 // Optimization: No std::vector, std::function, or EntryExitHelper overhead
                 {{ state.on_exit_blocks[0][0].content_transformed | trim }};
 {% else %}

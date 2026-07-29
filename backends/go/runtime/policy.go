@@ -164,7 +164,7 @@ type StatePolicy[S comparable, E comparable] interface {
 	HasFinalize() bool
 
 	// HasAutoforward returns whether the document autoforwards child events to
-	// any invokes (W3C SCXML 6.4.6).
+	// any invokes (W3C SCXML 6.4.1).
 	HasAutoforward() bool
 
 	// HasActiveStates returns whether the policy exposes activeStates_ tracking.
@@ -199,7 +199,7 @@ type StatePolicy[S comparable, E comparable] interface {
 	GetActiveStates() []S
 
 	// ForwardToAutoforwardChildren forwards external events to autoforward children
-	// (W3C SCXML 6.4.6).
+	// (W3C SCXML 6.4.1).
 	ForwardToAutoforwardChildren(eventName string, engine *Engine[S, E])
 
 	// TickChildren ticks child state machines (W3C SCXML 6.4).
