@@ -38,6 +38,12 @@ fi
 echo "==> W3C committed trees"
 "$CODEGEN" generate-w3c -l rust
 "$CODEGEN" generate-w3c -l kotlin
+# Go's W3C tree is .gitignored, so it carries no committed template-hash to
+# re-green — but it is still a real tree on a developer's disk, and leaving it
+# out of the master refresh let it keep serving citations from templates that
+# had already been corrected. A stale gitignored artifact is invisible to the
+# drift gate and visible to every other check that walks the filesystem.
+"$CODEGEN" generate-w3c -l go
 
 echo "==> Integration trees (Rust / Kotlin / Go committed; Python gitignored)"
 "$CODEGEN" generate-integration -l rust

@@ -21,7 +21,6 @@ Run:  python3 -m unittest discover -s tools/mnemosyne-adoption/tests
 """
 
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,6 +28,8 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+
+from _mnemosyne_bin import MNEMOSYNE_CLI, skip_reason  # noqa: E402
 TOOL_DIR = HERE.parent
 sys.path.insert(0, str(TOOL_DIR))
 
@@ -126,7 +127,7 @@ class UnitTests(unittest.TestCase):
                 self.assertIn(e["parent_section"], idset, e["section_id"])
 
 
-@unittest.skipUnless(shutil.which("mnemosyne-cli"), "mnemosyne-cli not on PATH")
+@unittest.skipUnless(MNEMOSYNE_CLI, skip_reason())
 @unittest.skipUnless(SNAPSHOT.exists(), "vendored snapshot missing")
 class ClosedLoopTest(unittest.TestCase):
     """A1 manifest -> real import-sections -> §-cited in code -> validate-code-refs.
@@ -148,16 +149,16 @@ class ClosedLoopTest(unittest.TestCase):
             (root / "src").mkdir()
             (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             (root / "mnemosyne.toml").write_text(
-                '[workspace]\ndocs = ["GENERATED.md"]\ndefault_doc = "GENERATED.md"\n\n'
+                '[workspace]\n\n'
                 "[atomic]\n"
-                'sidecar_path = ".atomic/workspace.atomic.json"\noutput_path = "GENERATED.md"\n\n'
+                'sidecar_path = ".atomic/workspace.atomic.json"\n\n'
                 "[plugins.set_equality_validator]\n"
                 'paths = ["src/"]\nseverity_missing = "warn"\nseverity_binding = "warn"\n'
                 "comment_only = true\n",
                 encoding="utf-8",
             )
             subprocess.run(
-                ["mnemosyne-cli", "import-sections", "--manifest", "manifest.json"],
+                [MNEMOSYNE_CLI, "import-sections", "--manifest", "manifest.json"],
                 cwd=root, check=True, capture_output=True,
             )
             # Citation form carries the § sigil; the stored id is bare.
@@ -165,7 +166,7 @@ class ClosedLoopTest(unittest.TestCase):
             (root / "src" / "cite.rs").write_text(cites + "\n", encoding="utf-8")
 
             out = subprocess.run(
-                ["mnemosyne-cli", "validate-code-refs", "--json"],
+                [MNEMOSYNE_CLI, "validate-code-refs", "--json"],
                 cwd=root, check=True, capture_output=True, text=True,
             )
             report = json.loads(out.stdout)
