@@ -264,6 +264,37 @@ hallucinated §<ns>-<id> citation fails the build), plus `validate-content-drift
 on the scxml workspace (so a tampered `normative_excerpt` or a swapped EPUB fails
 offline against the pinned `epub_sha256`). The store is the sole SSOT
 (Mnemosyne R400 retired the GENERATED.md render path, so there is no round-trip
-view to drift). Bump `MNEMOSYNE_REV` deliberately, re-validating the three
+view to drift). Bump `MNEMOSYNE_REV` deliberately, re-validating all five
 workspaces locally against the new rev first; the closed-loop tooling tests
 (which self-skip without the CLI) cover the migrators' grammar contract.
+
+### Installing the pinned CLI locally — not into `~/.cargo/bin`
+
+Install to a **revision-keyed root**, never the shared `~/.cargo/bin` slot:
+
+```bash
+REV=$(sed -n 's/^[[:space:]]*MNEMOSYNE_REV:[[:space:]]*\([0-9a-f]\{40\}\).*/\1/p' \
+    .github/workflows/spec-citations.yml)
+cargo install --git https://github.com/newmassrael/mnemosyne --rev "$REV" --locked \
+    --root "$HOME/.local/share/mnemosyne-rev/${REV:0:8}" mnemosyne-cli
+```
+
+`~/.cargo/bin` is a shared slot: any later `cargo install` silently overwrites
+it, and a revision whose store schema differs from the pinned one turns local
+validation into a result CI does not reproduce — in either direction. A newer
+revision can *write* a store the pinned CI binary can no longer open (the failure
+surfaces in CI as an unrelated-looking `missing field` parse error, naming no
+revision), and it can also *reject* workspaces CI validates clean. Both were
+observed on 2026-07-29, when the slot was overwritten out of band.
+
+`pre-push` Stage 8 enforces this: it reads `MNEMOSYNE_REV` from the workflow
+(single SSOT — a CI bump carries to the hook with no second edit), resolves the
+revision-keyed path above, asserts `mnemosyne-cli --version` reports that
+revision, and aborts with the install command otherwise. Point it elsewhere with
+`MNEMOSYNE_BIN=/path/to/mnemosyne-cli` — that overrides the *location*, never the
+revision assertion.
+
+Any MCP server configured against these workspaces must be pinned the same way,
+for the same reason: MCP write tools (`add_section_binding` /
+`remove_section_binding`) migrate the store to the writing binary's schema, so an
+unpinned MCP is one write away from a store the pinned CI binary cannot read.
