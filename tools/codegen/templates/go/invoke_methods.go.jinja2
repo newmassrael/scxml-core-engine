@@ -93,7 +93,7 @@ func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ m
 {% endif %}
 {% endif %}
 
-			// W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+			// W3C SCXML 6.4.1: Track active invoke session BEFORE initialize
 			p.activeInvokes["{{ invoke_info.invoke_id }}"] = &sce.ChildSession{
 				SessionID:       childSessionID,
 {% if invoke_info.idlocation %}
@@ -239,7 +239,7 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 
 {% set autoforward_invokes = model.invokes | scxml | selectattr('autoforward') | list %}
 {% if autoforward_invokes %}
-// ForwardToAutoforwardChildren forwards external events to children with autoforward=true (W3C SCXML 6.4.6).
+// ForwardToAutoforwardChildren forwards external events to children with autoforward=true (W3C SCXML 6.4.1).
 func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 	if sce.IsPlatformEvent(eventName) {
 		return

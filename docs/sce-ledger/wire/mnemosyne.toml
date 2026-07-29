@@ -66,17 +66,15 @@ paths = [
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
-# cannot gate vacuously. This ledger's `paths` list C++ only.
+# cannot gate vacuously.
 #
-# Honest statement of what that costs, measured — this is NOT a claim that the
-# trees are citation-free. sce-build/src + sce-build/tests carry 54 hand-authored
-# §wire-W1/W3/W4/W5 doc-comment citations across 11 Rust files, and they stay
-# ungated under this declaration. They are ungated TODAY for the same reason (the
-# Rust codegen was never in `paths`), so this changes no coverage — it makes an
-# existing gap explicit. Closing it means adding sce-build/src + sce-build/tests
-# to `paths`, which trips severity_binding=reject with 54 citation_unbound: all
-# seven wire sections currently carry zero Section.implementations, so the fix is
-# a binding round, not a path edit.
+# Measured, not assumed: no §wire- section is cited ONLY inside an excluded tree,
+# which is the axis Mnemosyne R840 rejects on. The excluded C++ test tree does
+# cite §wire-W1/W2/W3/W4.5 — but every one of those sections is also cited in a
+# scanned file (5/4/5/4 files respectively), so excluding the test copies removes
+# no section from the gate. The 54 hand-authored cites in the Rust codegen are a
+# different case: they were the only copies, which is why sce-build/src and
+# sce-build/tests are in `paths` above rather than here.
 scan_exclusions = [
     "backends/",
     "sce-build/examples/",
@@ -136,4 +134,4 @@ backend = "tree-sitter-rust"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "5c266cd4"
+pin = "2b2dae4c"

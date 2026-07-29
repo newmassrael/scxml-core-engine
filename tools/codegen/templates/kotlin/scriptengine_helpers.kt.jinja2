@@ -151,7 +151,7 @@
         }
     }
 
-    // W3C SCXML 3.8.6: Script block execution
+    // W3C SCXML 5.8: Script block execution
     private fun executeScriptBlock(script: String) {
         ensureScriptEngine()
         val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")

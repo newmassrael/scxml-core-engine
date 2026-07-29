@@ -262,7 +262,7 @@ void setParamInScriptEngine(const std::string& paramName, const std::string& par
     }
 }
 
-// Helper: Convert event name string to Event enum (W3C SCXML 6.4.6 autoforward)
+// Helper: Convert event name string to Event enum (W3C SCXML 6.4.1 autoforward)
 // Used for forwarding events by name to child state machines
 [[nodiscard]] static std::optional<Event> getEventFromName(const std::string& eventName) noexcept {
     if (eventName.empty()) return std::nullopt;

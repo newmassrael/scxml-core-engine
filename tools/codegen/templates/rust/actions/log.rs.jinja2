@@ -1,12 +1,12 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 
-{# W3C SCXML 3.8.8: <log> - Logging action #}
+{# W3C SCXML 4.7: <log> - Logging action #}
 {% if action.expr and not model.needs_script_engine %}
-// W3C SCXML 3.8.8: <log>
+// W3C SCXML 4.7: <log>
 log::info!("{% if action.label %}{{ action.label | escape_rust }}: {% endif %}{}", {{ action.expr | to_rust_string_expr }});
 {% elif action.expr and model.needs_script_engine %}
-// W3C SCXML 3.8.8: <log> with script engine expression
+// W3C SCXML 4.7: <log> with script engine expression
 {
     self.ensure_script_engine();
     let sid = self.session_id.as_ref().unwrap().clone();
@@ -18,8 +18,8 @@ log::info!("{% if action.label %}{{ action.label | escape_rust }}: {% endif %}{}
     }
 }
 {% elif action.label %}
-// W3C SCXML 3.8.8: <log label="{{ action.label | escape_rust }}">
+// W3C SCXML 4.7: <log label="{{ action.label | escape_rust }}">
 log::info!("{{ action.label | escape_rust }}");
 {% else %}
-// W3C SCXML 3.8.8: <log> (no label or expr)
+// W3C SCXML 4.7: <log> (no label or expr)
 {% endif %}

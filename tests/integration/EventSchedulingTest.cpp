@@ -1794,7 +1794,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
  * 3. Verify server returns 200 OK response (2XX success code)
  * 4. Verify event was added to event queue (via callback)
  *
- * This test verifies W3C SCXML D.2 requirement that the processor returns
+ * This test verifies W3C SCXML 3.13 requirement that the processor returns
  * a 2XX success response after receiving and queuing an HTTP event.
  *
  * Note: This test is skipped under ThreadSanitizer due to thread
@@ -1838,7 +1838,7 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     client.set_connection_timeout(5, 0);  // 5 second timeout
     client.set_read_timeout(5, 0);
 
-    // W3C SCXML D.2: Send event with _scxmleventname parameter
+    // W3C SCXML 3.13: Send event with _scxmleventname parameter
     httplib::Params params;
     params.emplace("_scxmleventname", "test.event");
     params.emplace("testParam1", "value1");
@@ -1850,9 +1850,9 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     // Verify HTTP response received
     ASSERT_TRUE(response) << "Failed to receive HTTP response from server";
 
-    // W3C SCXML D.2: MUST return success response code 2XX
+    // W3C SCXML 3.13: MUST return success response code 2XX
     EXPECT_EQ(response->status, 200)
-        << "W3C Test 513: BasicHTTPEventProcessor must return 2XX success response (W3C SCXML D.2), got: "
+        << "W3C Test 513: BasicHTTPEventProcessor must return 2XX success response (W3C SCXML 3.13), got: "
         << response->status;
 
     // Verify response is 2XX range

@@ -34,6 +34,6 @@ type HttpSendResponse struct {
 	// EventName extracted from the HTTP response (e.g., "event1", "HTTP.POST").
 	EventName string
 
-	// EventData from the response (W3C SCXML 5.10.3: _event.data).
+	// EventData from the response (W3C SCXML 5.10.1: _event.data).
 	EventData string
 }

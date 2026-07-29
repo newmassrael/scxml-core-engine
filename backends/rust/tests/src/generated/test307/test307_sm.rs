@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 35c0d03dd34b8d03e7b3891d6751af3cdd0b2bf0e96c5f94ca9790ac72375270
-// generated-at: 1784525842
+// template-hash: c22d767976ad0f3af27597215acac4daa969b18394744727f9f1e4af8f5db2d7
+// generated-at: 1785338317
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -553,7 +553,7 @@ impl StatePolicy for Test307Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.8: <log> with script engine expression
+                    // W3C SCXML 4.7: <log> with script engine expression
                     {
                         self.ensure_script_engine();
                         let sid = self.session_id.as_ref().unwrap().clone();
@@ -591,7 +591,7 @@ impl StatePolicy for Test307Policy {
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
                 'action_block: {
-                    // W3C SCXML 3.8.8: <log> with script engine expression
+                    // W3C SCXML 4.7: <log> with script engine expression
                     {
                         self.ensure_script_engine();
                         let sid = self.session_id.as_ref().unwrap().clone();
@@ -693,7 +693,7 @@ impl StatePolicy for Test307Policy {
                     0 => {
                         // W3C SCXML 3.13: Transition 0 actions
 
-                        // W3C SCXML 3.8.8: <log> with script engine expression
+                        // W3C SCXML 4.7: <log> with script engine expression
                         {
                             self.ensure_script_engine();
                             let sid = self.session_id.as_ref().unwrap().clone();
@@ -708,7 +708,7 @@ impl StatePolicy for Test307Policy {
                     1 => {
                         // W3C SCXML 3.13: Transition 1 actions
 
-                        // W3C SCXML 3.8.8: <log label="no error in s0">
+                        // W3C SCXML 4.7: <log label="no error in s0">
                         log::info!("no error in s0");
                     }
                     _ => {}
@@ -719,7 +719,7 @@ impl StatePolicy for Test307Policy {
                     0 => {
                         // W3C SCXML 3.13: Transition 0 actions
 
-                        // W3C SCXML 3.8.8: <log> with script engine expression
+                        // W3C SCXML 4.7: <log> with script engine expression
                         {
                             self.ensure_script_engine();
                             let sid = self.session_id.as_ref().unwrap().clone();
@@ -734,7 +734,7 @@ impl StatePolicy for Test307Policy {
                     1 => {
                         // W3C SCXML 3.13: Transition 1 actions
 
-                        // W3C SCXML 3.8.8: <log label="No error in s1">
+                        // W3C SCXML 4.7: <log label="No error in s1">
                         log::info!("No error in s1");
                     }
                     _ => {}

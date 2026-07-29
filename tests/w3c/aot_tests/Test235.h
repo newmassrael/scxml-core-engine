@@ -19,7 +19,7 @@ namespace SCE::W3C::AotTests {
  * - Parent expects done.invoke.foo event with correct ID
  * - Any other event (including generic done.invoke) is failure
  *
- * W3C SCXML 6.4.5: done.invoke.id event naming (event.name matches invoke id)
+ * W3C SCXML 6.4.2: done.invoke.id event naming (event.name matches invoke id)
  */
 struct Test235 : public SimpleAotTest<Test235, 235> {
     static constexpr const char *DESCRIPTION = "done.invoke.id event (W3C 6.4 AOT Pure Static)";

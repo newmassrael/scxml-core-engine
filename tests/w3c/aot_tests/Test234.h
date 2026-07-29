@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4.6: Finalize block only executes in invoking state
+ * @brief W3C SCXML 6.4.1: Finalize block only executes in invoking state
  *
  * Tests that when multiple parallel states have invocations with finalize blocks,
  * only the finalize block in the state receiving the done.invoke event executes.

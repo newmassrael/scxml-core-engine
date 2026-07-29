@@ -31,7 +31,7 @@ namespace SCE::W3C::AotTests {
  *
  * W3C SCXML Features:
  * - _event.data structure for event parameters (W3C SCXML 5.10)
- * - <param> expression evaluation with JSEngine (W3C SCXML 5.11.2)
+ * - <param> expression evaluation with JSEngine (W3C SCXML 5.7)
  * - JSON construction from params via EventDataHelper::buildJsonFromParams
  * - Guard condition accessing _event.data properties (W3C SCXML 5.9)
  */

@@ -43,7 +43,7 @@ class HttpSendResponse:
     When the callback returns an `HttpSendResponse` whose `event_name`
     resolves on the running policy's event enum, the engine raises
     that event onto the external queue with `event_data` bound as
-    `_event.data` (W3C SCXML 5.10.3). Returning `None` from the
+    `_event.data` (W3C SCXML 5.10.1). Returning `None` from the
     callback indicates fire-and-forget dispatch (no inbound event)."""
 
     event_name: str = ""

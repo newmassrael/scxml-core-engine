@@ -75,7 +75,7 @@ interface ScxmlScriptEngine {
     fun evaluateExpr(sessionId: String, expr: String): Any?
 
     /**
-     * W3C SCXML 3.8.6: Execute a script block.
+     * W3C SCXML 5.8: Execute a script block.
      *
      * Used for <script> elements and global scripts at document load time.
      *
