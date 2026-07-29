@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.4/D.3.1: foreach error handling with ECMAScript validation
+ * @brief W3C SCXML 5.4 / 3.12.2: foreach error handling with ECMAScript validation
  *
  * Validates comprehensive error handling for foreach loops, including invalid array
  * types, illegal item identifiers (reserved keywords), and correct iteration behavior.

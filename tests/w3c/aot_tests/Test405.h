@@ -8,7 +8,7 @@
 namespace SCE::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 3.9/D.2: Executable content execution order in transitions
+ * @brief W3C SCXML 3.9 / §scxml-D-executeTransitionContent: Executable content execution order in transitions
  *
  * Tests that executable content in transitions is executed in document order
  * after states are exited. Specifically validates that when transitioning from

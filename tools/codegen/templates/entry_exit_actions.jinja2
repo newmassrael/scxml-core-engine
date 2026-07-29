@@ -715,7 +715,7 @@
 {% endif %}
 {% if state.invokes | scxml_remote %}
                 // SCE_MESH.md §9.6.2 wire 19 — notify remote child session(s)
-                // that the parent is leaving the invoking state (W3C §6.4.5).
+                // that the parent is leaving the invoking state (W3C §6.4.3).
                 // `pendingDoneInvoke_..._` suppresses the cancel when the
                 // child has already signalled `done.invoke` (wire-18 arrived
                 // earlier this macrostep) — the session is gone on the

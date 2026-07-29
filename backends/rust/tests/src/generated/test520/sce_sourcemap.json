@@ -1,7 +1,7 @@
 {
   "version": 1,
   "source_hash": "f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9",
-  "template_hash": "c22d767976ad0f3af27597215acac4daa969b18394744727f9f1e4af8f5db2d7",
+  "template_hash": "aa58405544015ba4d1b8207b13e783fe4f4b991c1d05b4cc1602d85ec7348310",
   "symbols": {
     "test520_____machine": {
       "scxml_file": "test520.scxml",

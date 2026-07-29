@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: c22d767976ad0f3af27597215acac4daa969b18394744727f9f1e4af8f5db2d7
-// generated-at: 1785338317
+// template-hash: aa58405544015ba4d1b8207b13e783fe4f4b991c1d05b4cc1602d85ec7348310
+// generated-at: 1785339168
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -360,7 +360,7 @@ impl StatePolicy for Test422SceSynthInvokeInvoke0Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML 6.2/6.4.5: Send to parent state machine via #_parent
+                        // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
                         if let Some(ref parent_queue) = self.parent_external_queue {
                             if let Ok(mut q) = parent_queue.lock() {
                                 q.push(("invokeS1".to_string(), event_data.to_string()));

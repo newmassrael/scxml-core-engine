@@ -60,7 +60,7 @@ int main() {
 
     // Inject the autoforward trigger. The parent's macrostep selects the
     // targetless `<transition event="trigger"/>` AND the autoforward
-    // closure fires (W3C §6.4.6 — both run, autoforward does not consume
+    // closure fires (W3C §6.4.1 — both run, autoforward does not consume
     // the event).
     parent.raiseExternal(ParentEngine::EventWithMetadata(ParentEvent::Trigger));
 
