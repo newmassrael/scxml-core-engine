@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML 3.8/3.9: Entry/exit action block execution with error isolation.
+//! §scxml-3.8 / §scxml-3.9: Entry/exit action block execution with error isolation.
 //!
 //! 1:1 port of `sce/include/core/EntryExitHelper.h`. Provides block-based
 //! execution of `<onentry>` and `<onexit>` handlers with W3C-mandated error
@@ -21,11 +21,11 @@
 
 use crate::sce_log_debug;
 
-/// W3C SCXML 3.8: Execute onentry action blocks with error isolation.
+/// §scxml-3.8: Execute onentry action blocks with error isolation.
 ///
 /// Each block corresponds to one `<onentry>` element. If an error occurs in
 /// one block (it raises error.execution and returns), subsequent blocks still
-/// execute per W3C SCXML 3.8.
+/// execute per §scxml-3.8.
 ///
 /// Ports C++ `EntryExitHelper<StatePolicy, Engine>::executeEntryBlocks`.
 ///
@@ -48,7 +48,7 @@ pub fn execute_entry_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
 
     for (i, block) in blocks.iter_mut().enumerate() {
         sce_log_debug!("W3C SCXML 3.8: Executing onentry block {}/{}", i + 1, count);
-        // W3C SCXML 3.8: Each block runs independently; error in one
+        // §scxml-3.8: Each block runs independently; error in one
         // does not prevent execution of subsequent blocks.
         block();
     }
@@ -61,7 +61,7 @@ pub fn execute_entry_blocks(blocks: &mut [Box<dyn FnMut()>], state_id: &str) {
     }
 }
 
-/// W3C SCXML 3.9: Execute onexit action blocks with error isolation.
+/// §scxml-3.9: Execute onexit action blocks with error isolation.
 ///
 /// Same semantics as [`execute_entry_blocks`] but for `<onexit>` handlers.
 ///

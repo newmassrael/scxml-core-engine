@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML 3.12.1 / C.1: internal and external event queues (FIFO).
+//! §scxml-3.12.1 / C.1: internal and external event queues (FIFO).
 //!
 //! Ports C++ `sce/include/core/EventQueueManager.h` and `AOTEventQueue.h`.
 //! The engine holds one [`EventQueueManager`] for internal events (high
@@ -9,7 +9,7 @@
 //! events (lower priority, from `<send>` without a target or with external
 //! targets).
 //!
-//! W3C SCXML C.1 (test189): internal events are processed exhaustively before
+//! §scxml-C-1 (test189): internal events are processed exhaustively before
 //! any external event. The engine's macrostep loop drains the internal queue
 //! first, then processes one external event, then re-drains the internal queue.
 //!
@@ -61,7 +61,7 @@ impl<T, const N: usize> EventQueueManager<T, N> {
         }
     }
 
-    /// W3C SCXML 3.12.1: Enqueue an event at the back of the FIFO queue.
+    /// §scxml-3.12.1: Enqueue an event at the back of the FIFO queue.
     ///
     /// Matches C++ `raise(T&&)`. Under `--features=no_std` an attempted push
     /// past the machine's resolved depth `N` panics rather than silently

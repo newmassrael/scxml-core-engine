@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML 4.6: Foreach loop helpers (static variant).
+//! §scxml-4.6: Foreach loop helpers (static variant).
 //!
 //! 1:1 port of `sce/include/core/ForeachHelper.h` (static subset). Provides
 //! variable name validation and the static foreach iteration pattern.
@@ -12,7 +12,7 @@
 //! provides the W3C-compliant validation and iteration structure that
 //! generated code uses with pre-evaluated arrays.
 
-/// W3C SCXML B.2: Validate that a variable name is a legal ECMAScript identifier.
+/// §scxml-B-2: Validate that a variable name is a legal ECMAScript identifier.
 ///
 /// Ports C++ `ForeachHelper::isLegalVariableName`.
 pub fn is_legal_variable_name(name: &str) -> bool {
@@ -36,7 +36,7 @@ pub fn is_legal_variable_name(name: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'$')
 }
 
-/// W3C SCXML 4.6: Execute a static foreach loop with a body closure.
+/// §scxml-4.6: Execute a static foreach loop with a body closure.
 ///
 /// Iterates over a pre-evaluated array of items, calling `set_variables` to
 /// bind the item and index variables, then `execute_body` for each iteration.
@@ -45,7 +45,7 @@ pub fn is_legal_variable_name(name: &str) -> bool {
 /// (no script engine evaluation needed). For script-engine-based foreach, use
 /// `ForeachHelper::executeForeachWithActions` with the script engine directly.
 ///
-/// # W3C SCXML 4.6 Compliance
+/// # §scxml-4.6 Compliance
 ///
 /// "If the evaluation of any child element of foreach causes an error, the
 /// processor MUST cease execution of the foreach element and the block that
@@ -64,7 +64,7 @@ pub fn execute_static_foreach<T>(
         }
 
         // Execute body actions
-        // W3C SCXML 4.6: If body returns false (error), stop loop
+        // §scxml-4.6: If body returns false (error), stop loop
         if !execute_body(i) {
             return false;
         }

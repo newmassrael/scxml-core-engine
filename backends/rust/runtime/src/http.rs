@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! HTTP send request data structure (W3C SCXML C.2 BasicHTTPEventProcessor).
+//! HTTP send request data structure (§scxml-C-2 BasicHTTPEventProcessor).
 //!
 //! Ports the C++ `HttpSendRequest` struct from
 //! `sce/include/static/StaticExecutionEngine.h:47`. Transport-agnostic — the
@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-/// W3C SCXML C.2: HTTP send request payload passed to the `on_http_send` callback.
+/// §scxml-C-2: HTTP send request payload passed to the `on_http_send` callback.
 ///
 /// Matches C++ `SCE::Static::HttpSendRequest` 1:1.
 #[derive(Debug, Clone, Default)]
@@ -24,15 +24,15 @@ pub struct HttpSendRequest {
     pub target: String,
     /// Event name to encode in the HTTP POST payload.
     pub event_name: String,
-    /// Raw content body (W3C SCXML C.2: sent as multipart form data).
+    /// Raw content body (§scxml-C-2: sent as multipart form data).
     pub content: String,
-    /// Form parameters (W3C SCXML 6.2 `<param>` elements). Multiple values per key allowed.
+    /// Form parameters (§scxml-6.2 `<param>` elements). Multiple values per key allowed.
     pub params: HashMap<String, Vec<String>>,
-    /// Send ID for correlation and cancellation (W3C SCXML 6.2.5).
+    /// Send ID for correlation and cancellation (§scxml-6.2.5).
     pub send_id: String,
 }
 
-/// W3C SCXML C.2: HTTP send response returned by the `on_http_send` callback.
+/// §scxml-C-2: HTTP send response returned by the `on_http_send` callback.
 ///
 /// When the callback returns `Some(HttpSendResponse)`, the engine injects the
 /// response event into the external queue. This enables real HTTP round-trips
@@ -41,6 +41,6 @@ pub struct HttpSendRequest {
 pub struct HttpSendResponse {
     /// Event name extracted from the HTTP response (e.g., `event1`, `HTTP.POST`).
     pub event_name: String,
-    /// Event data from the response (W3C SCXML 5.10.3: `_event.data`).
+    /// Event data from the response (§scxml-5.10.1: `_event.data`).
     pub event_data: String,
 }

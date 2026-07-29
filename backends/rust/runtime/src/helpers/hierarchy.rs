@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML 3.3/3.12: hierarchical state algorithms — LCA, entry/exit chains, descendant checks.
+//! §scxml-3.3 / §scxml-3.12: hierarchical state algorithms — LCA, entry/exit chains, descendant checks.
 //!
 //! 1:1 port of `sce/include/core/HierarchicalStateHelper.h`. Uses `P: StatePolicy`
 //! as the generic parameter instead of C++'s `template <typename StatePolicy>`.
@@ -9,7 +9,7 @@
 //!
 //! ## Algorithms
 //!
-//! - [`find_lca`]: Least Common Ancestor of two states (W3C SCXML 3.12)
+//! - [`find_lca`]: Least Common Ancestor of two states (§scxml-3.12)
 //! - [`is_descendant_of`]: proper/improper descendant check (W3C Appendix D.2)
 //! - [`build_exit_chain`]: ordered exit list from state up to (excluding) LCA
 //! - [`build_entry_chain_from_ancestor`]: ordered entry list from LCA down to target
@@ -127,7 +127,7 @@ pub fn state_chain_from_slice<S: core::fmt::Debug, const N: usize>(items: [S; N]
     chain
 }
 
-/// W3C SCXML 3.12: Find the Least Common Ancestor of two states.
+/// §scxml-3.12: Find the Least Common Ancestor of two states.
 ///
 /// Returns `Some(lca)` if the states share a common ancestor (or are equal),
 /// `None` if they belong to disjoint hierarchies (only possible if the SCXML
@@ -227,7 +227,7 @@ pub fn is_descendant_of<P: StatePolicy>(descendant: P::State, ancestor: P::State
     }
 }
 
-/// W3C SCXML 3.12: Build an exit chain from `from_state` up to (but excluding) `stop_before_state`.
+/// §scxml-3.12: Build an exit chain from `from_state` up to (but excluding) `stop_before_state`.
 ///
 /// Returns states in leaf → ancestor order, suitable for calling `execute_exit_actions`
 /// in sequence. The stop state is the LCA — it is not exited because the transition
@@ -264,7 +264,7 @@ pub fn build_exit_chain<P: StatePolicy>(
     chain
 }
 
-/// W3C SCXML 3.12: Build an entry chain from `ancestor` down to `target` (exclusive of ancestor).
+/// §scxml-3.12: Build an entry chain from `ancestor` down to `target` (exclusive of ancestor).
 ///
 /// Returns states in ancestor → descendant order, suitable for calling `execute_entry_actions`
 /// in sequence. The ancestor itself is not included because it is already active at the
@@ -302,7 +302,7 @@ pub fn build_entry_chain_from_ancestor<P: StatePolicy>(
     chain
 }
 
-/// W3C SCXML 3.3: Build the complete entry chain from root down to `leaf_state`.
+/// §scxml-3.3: Build the complete entry chain from root down to `leaf_state`.
 ///
 /// Returns states in root → leaf order. Parallel region children are NOT added here —
 /// that responsibility belongs to `execute_entry_actions` (matches C++ comment at
@@ -340,7 +340,7 @@ pub fn build_entry_chain<P: StatePolicy>(leaf_state: P::State) -> StateChain<P::
     // Reverse to root → leaf order
     chain.reverse();
 
-    // W3C SCXML 3.3: the chain deliberately stops at `leaf_state` without
+    // §scxml-3.3: the chain deliberately stops at `leaf_state` without
     // descending into a compound target's initial children. Document-initial
     // descent is resolved at codegen time (sce-build's `resolve_deep_initial`
     // rewrites `model.initial` to the deepest leaf before `initial_state()` is

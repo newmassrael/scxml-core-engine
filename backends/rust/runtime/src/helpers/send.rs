@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML 6.2: Send action helpers (partial -- static-target subset).
+//! §scxml-6.2: Send action helpers (partial -- static-target subset).
 //!
 //! Partial port of `sce/include/common/SendHelper.h`. Only the parts needed for
 //! static-target send actions are ported here (target validation, routing
@@ -17,7 +17,7 @@ use crate::helpers::scxml_constants;
 use crate::helpers::unique_id_generator;
 use crate::SceString;
 
-/// W3C SCXML 6.2 / C.2: A send-target validation failure.
+/// §scxml-6.2 / C.2: A send-target validation failure.
 ///
 /// Returned by [`validate_target`] and [`validate_basic_http_send`]. Each variant
 /// is a fieldless discriminant, so the whole error is one byte -- small enough to
@@ -31,11 +31,11 @@ use crate::SceString;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendValidationError {
     /// Target value is syntactically invalid (begins with `!`). The caller
-    /// raises `error.execution` (W3C SCXML 6.2).
+    /// raises `error.execution` (§scxml-6.2).
     InvalidTarget,
 
     /// A BasicHTTP send (`type="BasicHTTPEventProcessor"`) supplied neither
-    /// `target` nor `targetexpr`, both of which it requires (W3C SCXML C.2).
+    /// `target` nor `targetexpr`, both of which it requires (§scxml-C-2).
     MissingHttpTarget,
 }
 
@@ -48,14 +48,14 @@ impl core::fmt::Display for SendValidationError {
     }
 }
 
-/// W3C SCXML 6.2: Check if target is invalid (starts with '!').
+/// §scxml-6.2: Check if target is invalid (starts with '!').
 ///
 /// Ports C++ `SendHelper::isInvalidTarget`.
 pub fn is_invalid_target(target: &str) -> bool {
     !target.is_empty() && target.starts_with('!')
 }
 
-/// W3C SCXML C.1: Check if target uses the internal event queue.
+/// §scxml-C-1: Check if target uses the internal event queue.
 ///
 /// Target `#_internal` routes events to the internal queue (high priority).
 ///
@@ -64,7 +64,7 @@ pub fn is_internal_target(target: &str) -> bool {
     target == scxml_constants::INTERNAL_TARGET
 }
 
-/// W3C SCXML 6.4: Check if target is a child invoke session.
+/// §scxml-6.4: Check if target is a child invoke session.
 ///
 /// Targets matching `#_{invokeid}` (but not `#_parent`, `#_internal`, or
 /// `#_scxml_*`) are child invoke targets.
@@ -85,7 +85,7 @@ pub fn is_child_invoke_target(target: &str) -> bool {
     true
 }
 
-/// W3C SCXML 6.4: Extract invoke ID from a child target.
+/// §scxml-6.4: Extract invoke ID from a child target.
 ///
 /// Given `#_{invokeid}`, returns `{invokeid}`.
 ///
@@ -96,14 +96,14 @@ pub fn extract_invoke_id(target: &str) -> &str {
         .unwrap_or(target)
 }
 
-/// W3C SCXML C.2: Check if target is an HTTP URL.
+/// §scxml-C-2: Check if target is an HTTP URL.
 ///
 /// Ports C++ `SendHelper::isHttpTarget`.
 pub fn is_http_target(target: &str) -> bool {
     target.starts_with("http://") || target.starts_with("https://")
 }
 
-/// W3C SCXML 6.2: Validate send target.
+/// §scxml-6.2: Validate send target.
 ///
 /// Returns `Ok(())` if valid, `Err(SendValidationError::InvalidTarget)` if invalid
 /// (the caller raises `error.execution`).
@@ -117,7 +117,7 @@ pub fn validate_target(target: &str) -> Result<(), SendValidationError> {
     }
 }
 
-/// W3C SCXML C.1: Check if target is unreachable.
+/// §scxml-C-1: Check if target is unreachable.
 ///
 /// Empty or `"undefined"` targets indicate unreachable sessions, requiring
 /// `error.communication`.
@@ -127,7 +127,7 @@ pub fn is_unreachable_target(target: &str) -> bool {
     target.is_empty() || target == "undefined"
 }
 
-/// W3C SCXML C.2: Check if send type requires a target attribute.
+/// §scxml-C-2: Check if send type requires a target attribute.
 ///
 /// BasicHTTP Event I/O Processor requires a target URL.
 ///
@@ -136,7 +136,7 @@ pub fn requires_target_attribute(send_type: &str) -> bool {
     send_type == scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE
 }
 
-/// W3C SCXML 6.2: Check if send type is supported.
+/// §scxml-6.2: Check if send type is supported.
 ///
 /// Supported types: SCXML Event Processor (default), BasicHTTP Event Processor.
 ///
@@ -147,7 +147,7 @@ pub fn is_supported_send_type(send_type: &str) -> bool {
         || send_type == scxml_constants::BASIC_HTTP_EVENT_PROCESSOR_TYPE
 }
 
-/// W3C SCXML C.2: Validate BasicHTTP send parameters.
+/// §scxml-C-2: Validate BasicHTTP send parameters.
 ///
 /// Returns `Ok(())` if valid, `Err(SendValidationError::MissingHttpTarget)` if a
 /// target is required but neither `target` nor `targetexpr` was supplied.
@@ -165,7 +165,7 @@ pub fn validate_basic_http_send(
     }
 }
 
-/// W3C SCXML 6.2: Generate a unique send ID.
+/// §scxml-6.2: Generate a unique send ID.
 ///
 /// Delegates to [`unique_id_generator::generate_send_id`]. Returns
 /// [`SceString`] (= `String` under std, capped `heapless::String` under no_std).
@@ -175,7 +175,7 @@ pub fn generate_send_id() -> SceString {
     unique_id_generator::generate_send_id()
 }
 
-/// W3C SCXML 6.2: Parse a CSS2-style time duration into milliseconds.
+/// §scxml-6.2: Parse a CSS2-style time duration into milliseconds.
 ///
 /// Accepts the same surface syntax as C++ `parseDelayToMs`:
 /// - `"1s"`, `"1.5s"` → seconds (converted to ms)
