@@ -75,12 +75,16 @@ env:
   # sole SSOT, no GENERATED.md round-trip), R402-R405 added the offline
   # content-drift gate (NormativeExcerpt.text_sha256 + committed-EPUB file pin),
   # R407 projects each section body from the pinned EPUB, R413 added the verify
-  # axis. Stores have since migrated to schema v23; the previous pin
-  # (aa66c61) shipped a v11 CLI that rejects them with "store=23 expected
-  # <= 11". This rev's CLI reads v23 (validate is read-only). Bumped after
-  # re-running validate-workspace / -code-refs / -verifies-linkage /
-  # -content-drift on every enrolled workspace.
-  MNEMOSYNE_REV: 5807bd5cd53d4b9dea85a6560a2dfe22b02252bc
+  # axis. Stores have since migrated to schema v23; the aa66c61 pin shipped a
+  # v11 CLI that rejects them with "store=23 expected <= 11", so 5807bd5c
+  # replaced it. R835 is this pin: it fixes the R783 scan-coverage precheck,
+  # which resolved [plugins.set_equality_validator].paths against each
+  # workspace's own directory instead of [workspace] root and so rejected all
+  # five workspaces here with "configured scan paths resolve to nothing". The
+  # intermediate 25d30d16 carries that defect — do not pin between 5807bd5c and
+  # 5c266cd. Bumped after re-running validate-workspace / -code-refs /
+  # -verifies-linkage / -content-drift on every enrolled workspace.
+  MNEMOSYNE_REV: 5c266cd4eb27ccb08d6af795a65d6ade9f4b9f41
 
 jobs:
   citations:

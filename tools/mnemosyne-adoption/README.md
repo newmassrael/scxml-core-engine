@@ -298,3 +298,35 @@ Any MCP server configured against these workspaces must be pinned the same way,
 for the same reason: MCP write tools (`add_section_binding` /
 `remove_section_binding`) migrate the store to the writing binary's schema, so an
 unpinned MCP is one write away from a store the pinned CI binary cannot read.
+
+### `[tool] pin` — the enforcement half
+
+Each `mnemosyne.toml` declares `[tool] pin`, and a binary carrying a different
+revision stamp refuses to act on the workspace. The workflow's `MNEMOSYNE_REV`
+remains the SSOT for *procurement*; the pin is what makes a mismatch fail loudly
+instead of validating under another revision's judgement. **Bump both together,
+and install before declaring** — a pin naming a revision no build carries stops
+every gate.
+
+Mnemosyne resolves a pinned build at `${MN_ROOT:-$HOME/.local/mn}/<pin>/bin/` and
+switches to it automatically, so export `MN_ROOT` to match the layout above:
+
+```bash
+export MN_ROOT="$HOME/.local/share/mnemosyne-rev"
+```
+
+The pin string is that directory's name, so it must match what `pre-push` derives
+(`${REV:0:8}`, an 8-character short revision). Procurement is never automatic: an
+absent pinned build is refused with the install line, not fetched.
+
+Two measured limits, so neither reads as a surprise later:
+
+- **The pin cannot catch an older binary.** `mnemosyne.toml` is parsed with
+  `deny_unknown_fields`, and `scan_exclusions` / `[tool]` post-date older
+  revisions, so such a binary dies in config parsing *before* the pin is read —
+  with a TOML error naming no revision. The pin protects against revisions newer
+  than the key it lives beside; `pre-push` Stage 8's `--version` assertion is what
+  covers the rest.
+- **`MNEMOSYNE_PIN_SKIP=1` bypasses the refusal.** Do not set it in CI or the
+  hook — a result produced under an unpinned revision is not attributable to the
+  pin, which is the whole point of declaring one.

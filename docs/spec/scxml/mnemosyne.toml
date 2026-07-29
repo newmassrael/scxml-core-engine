@@ -116,6 +116,23 @@ paths = [
     # binding gates that cover the C++ engine now cover the Rust codegen.
     "sce-build/src",
 ]
+# Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
+# either scanned by `paths` or declared here, so a configured-but-empty scan set
+# cannot gate vacuously. These trees are Rust that this ledger does not gate.
+#
+# Honest statement of what that costs, measured — not a claim that the trees are
+# citation-free: `backends/rust/runtime/src/engine.rs` carries one hand-authored
+# §scxml-6.2.2 doc-comment cite, and it stays ungated under this declaration.
+# Gating it means adding `backends/rust/runtime/src` to `paths`, which trips
+# severity_binding=reject with 1 citation_unbound until §scxml-6.2.2 is bound to
+# (engine.rs, SchedTimePoint). This declaration changes no coverage — those trees
+# were already unscanned; it only makes the existing boundary explicit.
+scan_exclusions = [
+    "backends/",
+    "sce-build/examples/",
+    "sce-build/tests/",
+    "tests/",
+]
 severity_missing = "reject"
 # Path B curated: every §scxml-<id> cite is bound to a ratified
 # Section.implementations (file, symbol), so binding-class drift now fails.
@@ -197,3 +214,28 @@ severity = "reject"
 # mismatch. Re-pin on every legitimate regen — gen_verifies_catalog.py prints the
 # new hash (catalog<->metadata guarded by its --check, catalog<->pin guarded here).
 sha256 = "fd88796df0afd01c9febb650e8dd1a9ee62479ae797c7adc24ffc4f1d68c66c1"
+
+# Tool pin (Mnemosyne R826/R832). Cargo pins library dependencies through
+# Cargo.lock and pins nothing about a binary invoked by name, so a gate runs
+# with whatever tool happens to resolve. This declares which Mnemosyne revision
+# is allowed to act on this workspace; a binary carrying a different stamp
+# refuses instead of silently validating — or writing — under other judgement.
+#
+# The value must track .github/workflows/spec-citations.yml MNEMOSYNE_REV, which
+# stays the SSOT for procurement (CI installs it; pre-push Stage 8 reads it and
+# asserts --version). This is the enforcement half: the workflow says which
+# revision to fetch, this says which one may touch the store.
+#
+# R832 resolves a pinned build at ${MN_ROOT:-$HOME/.local/mn}/<pin>/bin/, and a
+# mismatched binary execs into it rather than merely refusing. Set
+# MN_ROOT=$HOME/.local/share/mnemosyne-rev to match the revision-keyed install
+# layout this repo documents in tools/mnemosyne-adoption/README.md; the pin
+# string is that directory's name. Procurement is not automatic — an absent
+# pinned build is refused with the install line, never fetched.
+#
+# Order matters when bumping: install the new revision and confirm --version
+# FIRST, then move MNEMOSYNE_REV and this pin together. A pin naming a revision
+# no local build carries stops every gate, and `[tool]` itself post-dates
+# R826, so a pre-R826 binary dies in config parsing without naming a revision.
+[tool]
+pin = "5c266cd4"
