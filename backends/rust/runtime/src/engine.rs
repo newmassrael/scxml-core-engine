@@ -27,12 +27,12 @@
 //! - Lifecycle: `new`, `initialize`, `step`, `tick`, `stop`, `is_running`
 //! - State queries: `get_current_state`, `get_active_states`, `is_in_final_state`
 //! - Event submission: `raise`, `raise_external`, `process_event`
-//! - Delayed events (W3C SCXML 6.2): `schedule_event`, `cancel_event`,
+//! - Delayed events (§scxml-6.2): `schedule_event`, `cancel_event`,
 //!   `has_ready_events`, backed by [`PullScheduler`]
 //! - Hierarchical transition: `handle_hierarchical_transition`
 //!
-//! HTTP send (W3C SCXML C.2, `http-send` feature) and `<invoke>` plumbing
-//! (W3C SCXML 6.4) are `!no_std`-gated.
+//! HTTP send (§scxml-C-2, `http-send` feature) and `<invoke>` plumbing
+//! (§scxml-6.4) are `!no_std`-gated.
 
 // Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): `Arc`/`Mutex` back the
 // parent→child external event queue plumbing in `get_external_queue_handle`,
@@ -101,7 +101,7 @@ use crate::{sce_log_debug, SceString};
 /// is out of contract.
 pub type SchedTimePoint = u64;
 
-/// W3C SCXML 6.2: pull-style scheduler for `<send delay>` events.
+/// §scxml-6.2: pull-style scheduler for `<send delay>` events.
 ///
 /// 1:1 API parity with C++ `SCE::PullScheduler<EventType>`. Stores delayed
 /// events with a `SchedTimePoint` ready-time and exposes pull-style queries
@@ -149,7 +149,7 @@ struct ScheduledEntry<E, S> {
     /// Mirrors the `EventMetadata.data` profile-level elision (B-γ2d-1).
     #[cfg(not(feature = "no_std"))]
     event_data: SceString,
-    /// Cancel key for W3C SCXML 6.3 `<cancel sendid>`. Read only by
+    /// Cancel key for §scxml-6.3 `<cancel sendid>`. Read only by
     /// [`PullScheduler::cancel_event`]; the storage type `S` is
     /// [`ElidedSendId`](crate::ElidedSendId) (zero-size) for documents with no
     /// `<cancel>`, dropping this field's `heapless::String<256>` under no_std.
@@ -169,7 +169,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         }
     }
 
-    /// W3C SCXML 6.2: Schedule an event for delayed delivery, given an
+    /// §scxml-6.2: Schedule an event for delayed delivery, given an
     /// already-resolved `ready_at` time-point.
     ///
     /// If `send_id` is empty, an automatic ID is generated. Returns the ID
@@ -232,7 +232,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
         }
     }
 
-    /// W3C SCXML 6.2.5: Cancel a scheduled event by send ID. Returns `true` if found.
+    /// §scxml-6.2.5: Cancel a scheduled event by send ID. Returns `true` if found.
     pub fn cancel_event(&mut self, send_id: &str) -> bool {
         let before = self.entries.len();
         self.entries.retain(|e| !e.send_id.matches(send_id));
@@ -349,7 +349,7 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) external_queue: P::EventQueue,
     /// Whether the engine is currently running (set false by `stop()` and final state).
     pub(crate) is_running: bool,
-    /// W3C SCXML 6.4: Completion callback invoked when reaching a final state.
+    /// §scxml-6.4: Completion callback invoked when reaching a final state.
     ///
     /// Watching-zenoh RFC §synth-5-J-2: `Box<dyn FnMut>` is alloc-coupled and gated to
     /// `!no_std`. Embedded consumers poll [`is_in_final_state`](Self::is_in_final_state)
@@ -363,7 +363,7 @@ pub struct Engine<P: StatePolicy> {
     /// regression guard is `engine_is_send` in `tests/hello_world.rs`.
     #[cfg(not(feature = "no_std"))]
     pub(crate) completion_callback: Option<Box<dyn FnMut() + Send>>,
-    /// W3C SCXML C.2: HTTP send dispatch callback.
+    /// §scxml-C-2: HTTP send dispatch callback.
     ///
     /// Watching-zenoh RFC §synth-5-J-2: HTTP is rejected upstream under `--no-std`
     /// via `codegen/no-std-http-not-supported`, so the callback field + setter +
@@ -375,14 +375,14 @@ pub struct Engine<P: StatePolicy> {
     #[cfg(not(feature = "no_std"))]
     pub(crate) on_http_send:
         Option<Box<dyn FnMut(HttpSendRequest) -> Option<HttpSendResponse> + Send>>,
-    /// W3C SCXML 6.2: Delayed event scheduler.
+    /// §scxml-6.2: Delayed event scheduler.
     ///
     /// The per-entry cancel-key storage is supplied by the policy via
     /// [`StatePolicy::ScheduledSendId`] — [`ElidedSendId`](crate::ElidedSendId)
     /// for cancel-free machines (no_std ring shrinks by the per-entry
     /// `send_id` string), [`SceString`] when the document uses `<cancel>`.
     pub(crate) scheduler: PullScheduler<P::Event, P::ScheduledSendId>,
-    /// W3C SCXML 5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
+    /// §scxml-5.5 + 6.3.1: Donedata payload evaluated on top-level `<final>`,
     /// lifted onto `done.invoke.<id>._event.data` by the invoking parent.
     ///
     /// Mirrors the C++ AOT `stashDonedataAtFinal` / `donedataAtFinal()` contract
@@ -577,25 +577,25 @@ impl<P: StatePolicy> Engine<P> {
 
     /// Enter the initial configuration and run the macrostep loop until stable.
     ///
-    /// Matches C++ `StaticExecutionEngine::initialize()`. W3C SCXML 5.3
+    /// Matches C++ `StaticExecutionEngine::initialize()`. §scxml-5.3
     /// guarantees datamodel initialization happens before any state entry.
     pub fn initialize(&mut self) {
         self.is_running = true;
 
-        // W3C SCXML 5.3: Initialize datamodel before any state entry
+        // §scxml-5.3: Initialize datamodel before any state entry
         if concepts::has_data_model_init::<P>() {
             self.initialize_data_model_dispatch();
         }
 
-        // W3C SCXML 3.3: Entry chain from root to initial leaf
+        // §scxml-3.3: Entry chain from root to initial leaf
         let entry_chain = hierarchy::build_entry_chain::<P>(self.current_state);
         for state in entry_chain {
             self.execute_on_entry(state);
         }
-        // W3C SCXML 3.3: Resolve current_state to the deepest initial leaf
+        // §scxml-3.3: Resolve current_state to the deepest initial leaf
         self.resolve_current_state_to_leaf();
 
-        // W3C SCXML C.1: Macrostep completion loop — drain internal + eventless
+        // §scxml-C-1: Macrostep completion loop — drain internal + eventless
         // until a stable configuration is reached.
         sce_log_debug!("Engine::initialize: entering macrostep completion loop");
         loop {
@@ -607,7 +607,7 @@ impl<P: StatePolicy> Engine<P> {
         }
         sce_log_debug!("Engine::initialize: macrostep completion loop finished");
 
-        // W3C SCXML 6.4: Execute pending invokes once stable
+        // §scxml-6.4: Execute pending invokes once stable
         if concepts::has_invoke_support::<P>() {
             let policy_ptr: *mut P = &mut self.policy as *mut P;
             // SAFETY: see execute_on_entry.
@@ -620,7 +620,7 @@ impl<P: StatePolicy> Engine<P> {
             self.check_eventless_transitions();
         }
 
-        // W3C SCXML 6.4: Fire completion callback if we reached a final state during init.
+        // §scxml-6.4: Fire completion callback if we reached a final state during init.
         // Watching-zenoh RFC §synth-5-J-2: Box<dyn FnMut> callback is alloc-coupled and gated
         // to `!no_std` (see field declaration above).
         #[cfg(not(feature = "no_std"))]
@@ -640,7 +640,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Process one macrostep: drain queues and run eventless transitions.
     ///
     /// Matches C++ `StaticExecutionEngine::step()`. Used by parent SMs to
-    /// explicitly drive children after sending them events (W3C SCXML 6.4).
+    /// explicitly drive children after sending them events (§scxml-6.4).
     pub fn step(&mut self) {
         self.process_event_queues();
         self.check_eventless_transitions();
@@ -673,7 +673,7 @@ impl<P: StatePolicy> Engine<P> {
             return;
         }
 
-        // W3C SCXML 6.2: Pop all ready scheduled events into the external queue.
+        // §scxml-6.2: Pop all ready scheduled events into the external queue.
         // Read the clock once per iteration via the cfg-branched helper — keeps
         // `PullScheduler` clock-source-agnostic (textbook DI split).
         loop {
@@ -692,7 +692,7 @@ impl<P: StatePolicy> Engine<P> {
             self.raise_external(popped, "", "");
         }
 
-        // W3C SCXML 6.4: Tick child state machines
+        // §scxml-6.4: Tick child state machines
         if concepts::has_child_tick::<P>() {
             let policy_ptr: *mut P = &mut self.policy as *mut P;
             // SAFETY: see execute_on_entry.
@@ -704,7 +704,7 @@ impl<P: StatePolicy> Engine<P> {
         // Delegate to step() for queue drain + completion callback
         self.step();
 
-        // W3C SCXML 6.4: Execute pending invokes after macrostep
+        // §scxml-6.4: Execute pending invokes after macrostep
         if concepts::has_invoke_support::<P>() {
             let policy_ptr: *mut P = &mut self.policy as *mut P;
             // SAFETY: see execute_on_entry.
@@ -729,7 +729,7 @@ impl<P: StatePolicy> Engine<P> {
         self.current_state
     }
 
-    /// W3C SCXML 3.11: Full list of active states (for history recording + In() predicate).
+    /// §scxml-3.11: Full list of active states (for history recording + In() predicate).
     ///
     /// Non-parallel machines: returns the hierarchy `[leaf, parent, grandparent, ..., root]`.
     /// Parallel machines: returns the union of all active regions via
@@ -762,12 +762,12 @@ impl<P: StatePolicy> Engine<P> {
         active
     }
 
-    /// W3C SCXML 3.3: Whether the current state is a top-level final state.
+    /// §scxml-3.3: Whether the current state is a top-level final state.
     pub fn is_in_final_state(&self) -> bool {
         P::is_final_state(self.current_state)
     }
 
-    /// W3C SCXML 5.5 + 6.3.1: Stash the donedata payload evaluated on a
+    /// §scxml-5.5 + 6.3.1: Stash the donedata payload evaluated on a
     /// top-level `<final>` so the invoking parent can lift it onto
     /// `done.invoke.<id>._event.data`.
     ///
@@ -778,7 +778,7 @@ impl<P: StatePolicy> Engine<P> {
         self.donedata_at_final = data;
     }
 
-    /// W3C SCXML 5.5 + 6.3.1: Read the donedata payload stashed by a
+    /// §scxml-5.5 + 6.3.1: Read the donedata payload stashed by a
     /// top-level `<final>` on this engine. Returns an empty string when the
     /// final had no `<donedata>`, matching C++ AOT / Kotlin semantics.
     pub fn donedata_at_final(&self) -> &str {
@@ -792,7 +792,7 @@ impl<P: StatePolicy> Engine<P> {
         &self.policy
     }
 
-    /// W3C SCXML 6.4: Get shared handle to external queue for child→parent event passing.
+    /// §scxml-6.4: Get shared handle to external queue for child→parent event passing.
     ///
     /// Returns an `Arc<Mutex<Vec<(event_name, event_data)>>>` that child state machines
     /// can push events into via `#_parent` send targets. Parent drains this in `tick_children()`.
@@ -810,14 +810,14 @@ impl<P: StatePolicy> Engine<P> {
     // Event submission (matches C++ raise / raiseExternal overloads)
     // ════════════════════════════════════════
 
-    /// W3C SCXML C.1: Raise an internal event (high priority).
+    /// §scxml-C-1: Raise an internal event (high priority).
     ///
     /// Matches C++ `raise(EventWithMetadata)`.
     pub fn raise(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
         self.internal_queue.raise(event);
     }
 
-    /// W3C SCXML C.1 / 6.2: Raise an external event with optional data and origin.
+    /// §scxml-C-1 / 6.2: Raise an external event with optional data and origin.
     ///
     /// Matches C++ `raiseExternal(Event, const string&, const string&)`.
     pub fn raise_external(&mut self, event: P::Event, event_data: &str, origin: &str) {
@@ -852,7 +852,7 @@ impl<P: StatePolicy> Engine<P> {
         };
         self.external_queue.raise(meta);
 
-        // W3C SCXML 5.10.1: Mark next event as external for _event.type
+        // §scxml-5.10.1: Mark next event as external for _event.type
         if concepts::has_external_event_flag::<P>() {
             self.policy.set_next_event_is_external(true);
         }
@@ -898,13 +898,13 @@ impl<P: StatePolicy> Engine<P> {
         };
         self.external_queue.raise(meta);
 
-        // W3C SCXML 5.10.1: Mark next event as external for _event.type
+        // §scxml-5.10.1: Mark next event as external for _event.type
         if concepts::has_external_event_flag::<P>() {
             self.policy.set_next_event_is_external(true);
         }
     }
 
-    /// W3C SCXML 6.4.6: Raise an external event by name (for child autoforward).
+    /// §scxml-6.4.1: Raise an external event by name (for child autoforward).
     ///
     /// Matches C++ `raiseExternal(const string&, const string&)`. If the name does
     /// not match any known event, the call is silently ignored (the child may
@@ -920,14 +920,14 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// W3C SCXML 6.4.1: Raise an external event with full metadata (for child-to-parent).
+    /// §scxml-6.4.1: Raise an external event with full metadata (for child-to-parent).
     ///
     /// Matches C++ `raiseExternal(const EventWithMetadata&)`. Preserves `invokeid`
     /// for parent finalize handlers.
     pub fn raise_external_with_meta(&mut self, event: EventWithMetadata<P::Event, P::Payload>) {
         sce_log_debug!("Engine::raise_external_with_meta: enqueuing external event with metadata");
 
-        // W3C SCXML 6.4.6: Autoforward.
+        // §scxml-6.4.1: Autoforward.
         // `P::get_event_name` already returns `&'static str`; pass directly
         // to `forward_to_autoforward_children(&str, ...)` without an
         // alloc-coupled `to_string()` round-trip — same observable behaviour
@@ -948,7 +948,7 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// W3C SCXML 3.12: Process an external event (convenience API, runs one macrostep).
+    /// §scxml-3.12: Process an external event (convenience API, runs one macrostep).
     ///
     /// Matches C++ `processEvent(Event)`.
     pub fn process_event(&mut self, event: P::Event) {
@@ -959,7 +959,7 @@ impl<P: StatePolicy> Engine<P> {
         self.step();
     }
 
-    /// W3C SCXML 5.10: Process an external event with metadata.
+    /// §scxml-5.10: Process an external event with metadata.
     ///
     /// Matches C++ `processEvent(Event, const EventMetadata&)`.
     pub fn process_event_with_meta(&mut self, event: P::Event, metadata: EventMetadata) {
@@ -1013,7 +1013,7 @@ impl<P: StatePolicy> Engine<P> {
     // Callbacks
     // ════════════════════════════════════════
 
-    /// W3C SCXML 6.4: Register a callback invoked when the engine reaches a final state.
+    /// §scxml-6.4: Register a callback invoked when the engine reaches a final state.
     ///
     /// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because `Box<dyn FnMut>` is
     /// alloc-coupled (mirrors `helpers::entry_exit::execute_*_blocks` gate from
@@ -1024,7 +1024,7 @@ impl<P: StatePolicy> Engine<P> {
         self.completion_callback = Some(Box::new(callback));
     }
 
-    /// W3C SCXML C.2: Register an HTTP send dispatcher callback.
+    /// §scxml-C-2: Register an HTTP send dispatcher callback.
     ///
     /// The callback receives an [`HttpSendRequest`] and returns an optional
     /// [`HttpSendResponse`]. When `Some`, the engine injects the response event
@@ -1042,7 +1042,7 @@ impl<P: StatePolicy> Engine<P> {
         self.on_http_send = Some(Box::new(callback));
     }
 
-    /// W3C SCXML C.2: Dispatch a BasicHTTP send through the registered callback.
+    /// §scxml-C-2: Dispatch a BasicHTTP send through the registered callback.
     ///
     /// The callback is the sole dispatch mechanism. If it returns
     /// `Some(HttpSendResponse)`, the engine injects the response event into the
@@ -1083,7 +1083,7 @@ impl<P: StatePolicy> Engine<P> {
     // Convenience: runUntilCompletion
     // ════════════════════════════════════════
 
-    /// Run the state machine to completion or timeout (W3C SCXML 6.2).
+    /// Run the state machine to completion or timeout (§scxml-6.2).
     ///
     /// Matches C++ `runUntilCompletion(timeout, pollInterval)`. Polls the scheduler
     /// and calls `tick()` in a loop until either the final state is reached or
@@ -1117,13 +1117,13 @@ impl<P: StatePolicy> Engine<P> {
     // Internal: microstep + macrostep implementation
     // ════════════════════════════════════════
 
-    /// W3C SCXML D.1: Process both internal and external queues.
+    /// §scxml-D-mainEventLoop: Process both internal and external queues.
     pub(crate) fn process_event_queues(&mut self) {
         sce_log_debug!("Engine::process_event_queues: starting internal queue drain");
 
-        // W3C SCXML C.1: Internal queue first
+        // §scxml-C-1: Internal queue first
         while let Some(event_with_meta) = self.internal_queue.pop() {
-            // W3C SCXML 5.4.1: Stop if top-level final state reached
+            // §scxml-5.4.1: Stop if top-level final state reached
             if P::is_final_state(self.current_state) && P::get_parent(self.current_state).is_none()
             {
                 sce_log_debug!(
@@ -1131,7 +1131,7 @@ impl<P: StatePolicy> Engine<P> {
                 );
                 return;
             }
-            // W3C SCXML 5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
+            // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
             self.policy
                 .populate_event_metadata(&event_with_meta.metadata);
             // EventSchema native lowering: bind the typed payload
@@ -1142,9 +1142,9 @@ impl<P: StatePolicy> Engine<P> {
             self.policy.clear_event_metadata();
         }
 
-        // W3C SCXML C.1: External queue second
+        // §scxml-C-1: External queue second
         while let Some(event_with_meta) = self.external_queue.pop() {
-            // W3C SCXML 6.5: Execute finalize before parent's own transition matching
+            // §scxml-6.5: Execute finalize before parent's own transition matching
             if concepts::has_finalize::<P>() {
                 let policy_ptr: *mut P = &mut self.policy as *mut P;
                 // SAFETY: see execute_on_entry.
@@ -1152,7 +1152,7 @@ impl<P: StatePolicy> Engine<P> {
                     (*policy_ptr).execute_finalize_for_child_event(&event_with_meta, self);
                 }
             }
-            // W3C SCXML 5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
+            // §scxml-5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
             self.policy
                 .populate_event_metadata(&event_with_meta.metadata);
             // EventSchema native lowering: bind the typed payload
@@ -1164,7 +1164,7 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// W3C SCXML 3.13: Check and execute eventless transitions until stable.
+    /// §scxml-3.13: Check and execute eventless transitions until stable.
     ///
     /// Uses bounded iteration to prevent infinite loops from cyclic eventless chains.
     /// Ported from C++ `EventProcessingAlgorithms.h:98-136`.
@@ -1217,7 +1217,7 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// W3C SCXML 3.12/3.13: Dispatch a single transition.
+    /// §scxml-3.12 / §scxml-3.13: Dispatch a single transition.
     ///
     /// Calls `process_transition` on the policy; if it returns `true`, performs
     /// the hierarchical exit/entry dance via `handle_hierarchical_transition`.
@@ -1237,12 +1237,12 @@ impl<P: StatePolicy> Engine<P> {
             || (is_self_transition && !self.policy.last_transition_is_targetless());
 
         if !needs_hierarchical {
-            // W3C SCXML 3.4: targetless transition — execute actions only
+            // §scxml-3.4: targetless transition — execute actions only
             self.execute_transition_actions_dispatch();
             return false;
         }
 
-        // W3C SCXML 3.12: Hierarchical exit/entry
+        // §scxml-3.12: Hierarchical exit/entry
         //
         // For parallel state machines the generated `process_transition` already called
         // `execute_microstep` internally (it handles exit actions, transition actions,
@@ -1253,7 +1253,7 @@ impl<P: StatePolicy> Engine<P> {
         if !P::HAS_PARALLEL_STATES {
             self.handle_hierarchical_transition(old_state, new_state, &pre_transition_states);
         } else {
-            // W3C SCXML 3.3: Still resolve the current_state leaf (execute_microstep
+            // §scxml-3.3: Still resolve the current_state leaf (execute_microstep
             // sets current_state = target or parallel parent; the macrostep loop needs
             // the deepest active atomic state).
             self.resolve_current_state_to_leaf();
@@ -1262,7 +1262,7 @@ impl<P: StatePolicy> Engine<P> {
         true
     }
 
-    /// W3C SCXML 3.12/3.13: Execute hierarchical exit/entry between two states.
+    /// §scxml-3.12 / §scxml-3.13: Execute hierarchical exit/entry between two states.
     ///
     /// 1:1 port of C++ `StaticExecutionEngine::handleHierarchicalTransition`
     /// (`StaticExecutionEngine.h:151-299`). Handles:
@@ -1285,7 +1285,7 @@ impl<P: StatePolicy> Engine<P> {
             new_state
         );
 
-        // W3C SCXML 5.9.2: Determine LCA based on transition type
+        // §scxml-5.9.2: Determine LCA based on transition type
         let lca: Option<P::State> = if self.policy.last_transition_is_internal() {
             let is_self_transition = old_state == new_state;
             let is_proper_descendant =
@@ -1293,7 +1293,7 @@ impl<P: StatePolicy> Engine<P> {
             let is_source_compound = P::is_compound_state(old_state);
 
             if is_proper_descendant && is_source_compound {
-                // W3C SCXML 3.13: Internal to proper descendant in compound — source is LCA
+                // §scxml-3.13: Internal to proper descendant in compound — source is LCA
                 Some(old_state)
             } else {
                 // W3C 3.13/5.9.2: Non-compound source or non-descendant — behaves as external
@@ -1304,7 +1304,7 @@ impl<P: StatePolicy> Engine<P> {
         };
 
         if let Some(lca_state) = lca {
-            // W3C SCXML 3.13: Exit active descendants of old_state deepest first.
+            // §scxml-3.13: Exit active descendants of old_state deepest first.
             // Build via the cfg-branched StateChain so the no_std heapless variant
             // is bounded by MAX_HIERARCHY_DEPTH (the active states slice is itself
             // a depth-bounded chain — descendants_to_exit ⊆ pre_transition_states).
@@ -1330,14 +1330,14 @@ impl<P: StatePolicy> Engine<P> {
                 self.execute_on_exit(descendant, pre_transition_states);
             }
 
-            // W3C SCXML 3.13: Exit from old_state up to (not including) LCA
+            // §scxml-3.13: Exit from old_state up to (not including) LCA
             let exit_chain = hierarchy::build_exit_chain::<P>(old_state, lca_state);
             for state in exit_chain {
                 sce_log_debug!("handle_hierarchical_transition: exit {:?}", state);
                 self.execute_on_exit(state, pre_transition_states);
             }
 
-            // W3C SCXML 3.10 (test 579): Ancestor/self transition — exit and re-enter target
+            // §scxml-3.10 (test 579): Ancestor/self transition — exit and re-enter target
             let is_target_active = pre_transition_states.contains(&new_state);
             if new_state == lca_state && is_target_active {
                 sce_log_debug!(
@@ -1347,10 +1347,10 @@ impl<P: StatePolicy> Engine<P> {
                 self.execute_on_exit(new_state, pre_transition_states);
             }
 
-            // W3C SCXML 3.13: Execute transition actions between exit and entry
+            // §scxml-3.13: Execute transition actions between exit and entry
             self.execute_transition_actions_dispatch();
 
-            // W3C SCXML 3.13: Enter from LCA down to new_state. Uses StateChain
+            // §scxml-3.13: Enter from LCA down to new_state. Uses StateChain
             // so the no_std heapless variant is bounded by MAX_HIERARCHY_DEPTH —
             // same depth invariant as `build_entry_chain_from_ancestor` itself.
             let entry_chain: hierarchy::StateChain<P::State> = if new_state == lca_state {
@@ -1376,7 +1376,7 @@ impl<P: StatePolicy> Engine<P> {
                 self.current_state = last;
             }
 
-            // W3C SCXML 3.3: Resolve current_state to the deepest initial leaf.
+            // §scxml-3.3: Resolve current_state to the deepest initial leaf.
             // execute_entry_actions for compound states recursively enters initial
             // children, but current_state must track the deepest leaf for
             // eventless transition checks to work correctly.
@@ -1411,7 +1411,7 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// W3C SCXML 3.3: Walk current_state down through initial children to the leaf.
+    /// §scxml-3.3: Walk current_state down through initial children to the leaf.
     ///
     /// For **non-parallel** SMs the generated `execute_entry_actions` does NOT recurse
     /// into compound→initial child (the engine's entry chain already covers ancestors).

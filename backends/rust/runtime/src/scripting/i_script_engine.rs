@@ -39,14 +39,14 @@ pub enum ScriptValue {
     Array(Vec<ScriptValue>),
     /// Key-value object (iteration order is implementation-defined).
     Object(HashMap<String, ScriptValue>),
-    /// Opaque DOM reference (W3C SCXML B.2 — XML datamodel support).
+    /// Opaque DOM reference (§scxml-B-2 — XML datamodel support).
     /// Stored as the original XML string; the script engine parses on demand.
     Dom(String),
 }
 
 impl ScriptValue {
     /// Attempt to coerce to `bool` per SCXML truthiness rules
-    /// (W3C SCXML B.2.3: ECMAScript truthy/falsy semantics).
+    /// (§scxml-B-2-3: ECMAScript truthy/falsy semantics).
     pub fn to_bool(&self) -> bool {
         match self {
             ScriptValue::Null | ScriptValue::Undefined => false,
@@ -58,7 +58,7 @@ impl ScriptValue {
         }
     }
 
-    /// W3C SCXML 5.5: Convert to a Lua literal string representation.
+    /// §scxml-5.5: Convert to a Lua literal string representation.
     ///
     /// Used by donedata evaluation to produce event data strings that the Lua
     /// script engine can parse back via `return <literal>`. Ports the C++
@@ -107,11 +107,11 @@ impl ScriptValue {
 /// Script engine error. 1:1 port of C++ `ScriptResult::error` field.
 #[derive(Debug, Clone, Error)]
 pub enum ScriptError {
-    /// Syntax error during compilation (W3C SCXML 5.9: raises `error.execution`).
+    /// Syntax error during compilation (§scxml-5.9: raises `error.execution`).
     #[error("script syntax error: {0}")]
     SyntaxError(String),
 
-    /// Runtime error during evaluation (W3C SCXML 5.9: raises `error.execution`).
+    /// Runtime error during evaluation (§scxml-5.9: raises `error.execution`).
     #[error("script runtime error: {0}")]
     RuntimeError(String),
 
@@ -144,7 +144,7 @@ pub type ScriptResult<T> = Result<T, ScriptError>;
 /// Matches C++ `NativeMethod = std::function<ScriptValue(const std::vector<ScriptValue>&)>`.
 pub type NativeMethod = Box<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync>;
 
-/// Callback for resolving the SCXML `In(stateId)` predicate (W3C SCXML 5.9.2).
+/// Callback for resolving the SCXML `In(stateId)` predicate (§scxml-5.9.2).
 ///
 /// Receives a state ID string and returns `true` if that state is in the engine's
 /// current active configuration. Matches the C++ `std::function<bool(const std::string &)>`
@@ -152,7 +152,7 @@ pub type NativeMethod = Box<dyn Fn(&[ScriptValue]) -> ScriptValue + Send + Sync>
 pub type StateQueryCallback = Box<dyn Fn(&str) -> bool + Send + Sync>;
 
 /// The script engine trait — 1:1 port of C++ `SCE::IScriptEngine`.
-/// Parameter object for the W3C SCXML 5.10 `set_current_event` boundary.
+/// Parameter object for the §scxml-5.10 `set_current_event` boundary.
 ///
 /// Bundles the seven `_event.*` metadata fields (name + 6 metadata) that every
 /// script engine impl must surface before guard evaluation / action execution.
@@ -161,7 +161,7 @@ pub type StateQueryCallback = Box<dyn Fn(&str) -> bool + Send + Sync>;
 /// the call duration to avoid per-event `String` allocations.
 #[derive(Debug, Clone, Copy)]
 pub struct SetCurrentEventArgs<'a> {
-    /// `_event.name` — fully-qualified event name (W3C SCXML 5.10).
+    /// `_event.name` — fully-qualified event name (§scxml-5.10).
     pub event_name: &'a str,
     /// `_event.data` — event payload (JSON string or platform-specific serialization).
     pub event_data: &'a str,
@@ -179,7 +179,7 @@ pub struct SetCurrentEventArgs<'a> {
 
 ///
 /// Implementations (`sce-rust-lua`, future `sce-rust-quickjs`) provide ECMAScript
-/// evaluation for W3C SCXML B.1 datamodel support. Engine DI Parity RFC
+/// evaluation for §scxml-B-1 datamodel support. Engine DI Parity RFC
 /// (Path B+): consumers pass an `Arc<dyn IScriptEngine>` to the generated
 /// `Policy::new(engine)` constructor; there is no process-global singleton.
 pub trait IScriptEngine: Send + Sync {
@@ -187,13 +187,13 @@ pub trait IScriptEngine: Send + Sync {
     // Core Script Execution
     // ════════════════════════════════════════
 
-    /// Execute a script block in the specified session (W3C SCXML 3.8.6).
+    /// Execute a script block in the specified session (§scxml-5.8).
     ///
     /// Matches C++ `executeScript(const string&, const string&) -> future<ScriptResult>`.
     /// The future is resolved synchronously — returns the final expression value.
     fn execute_script(&self, session_id: &str, script: &str) -> ScriptResult<ScriptValue>;
 
-    /// Evaluate an expression and return its value (W3C SCXML 5.3).
+    /// Evaluate an expression and return its value (§scxml-5.3).
     ///
     /// Matches C++ `evaluateExpression(...) -> future<ScriptResult>`. Used for
     /// variable init, `<param expr="...">`, guard conditions, etc.
@@ -209,13 +209,13 @@ pub trait IScriptEngine: Send + Sync {
     // Variable Management
     // ════════════════════════════════════════
 
-    /// Set a variable in the specified session (W3C SCXML 5.3).
+    /// Set a variable in the specified session (§scxml-5.3).
     fn set_variable(&self, session_id: &str, name: &str, value: ScriptValue) -> ScriptResult<()>;
 
-    /// Get a variable from the specified session (W3C SCXML 5.3).
+    /// Get a variable from the specified session (§scxml-5.3).
     fn get_variable(&self, session_id: &str, name: &str) -> ScriptResult<ScriptValue>;
 
-    /// Set a variable to an XML DOM object parsed from the given XML content (W3C SCXML B.2).
+    /// Set a variable to an XML DOM object parsed from the given XML content (§scxml-B-2).
     ///
     /// Matches C++ `setVariableAsDOM`. Used for `<data src="...xml">` loading and
     /// inline `<content>` with XML payloads.
@@ -226,7 +226,7 @@ pub trait IScriptEngine: Send + Sync {
         xml_content: &str,
     ) -> ScriptResult<()>;
 
-    /// Check if a variable is declared in the session scope (W3C SCXML 4.6 / 6.4).
+    /// Check if a variable is declared in the session scope (§scxml-4.6 / 6.4).
     ///
     /// Returns `true` if declared even if the value is `null`/`undefined`. Used by
     /// foreach to distinguish declared-but-empty from undeclared variables.
@@ -242,7 +242,7 @@ pub trait IScriptEngine: Send + Sync {
     // SCXML-specific Features
     // ════════════════════════════════════════
 
-    /// Set up SCXML system variables: `_sessionid`, `_name`, `_ioprocessors` (W3C SCXML 5.10).
+    /// Set up SCXML system variables: `_sessionid`, `_name`, `_ioprocessors` (§scxml-5.10).
     fn setup_system_variables(
         &self,
         session_id: &str,
@@ -250,7 +250,7 @@ pub trait IScriptEngine: Send + Sync {
         io_processors: &[String],
     ) -> ScriptResult<()>;
 
-    /// Set the `_event` system variable for the currently-processing event (W3C SCXML 5.10).
+    /// Set the `_event` system variable for the currently-processing event (§scxml-5.10).
     ///
     /// Called before guard evaluation and action execution for each event. Mirrors
     /// the C++ `IScriptEngine::setCurrentEvent(sessionId, const SetCurrentEventArgs&)`
@@ -302,7 +302,7 @@ pub trait IScriptEngine: Send + Sync {
     fn collect_garbage(&self);
 
     // ════════════════════════════════════════
-    // State Query Callback (W3C SCXML 5.9.2 In() predicate)
+    // State Query Callback (§scxml-5.9.2 In() predicate)
     // ════════════════════════════════════════
 
     /// Register a callback that resolves the SCXML `In()` predicate.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML 5.5 / 5.7: Donedata processing helpers.
+//! §scxml-5.5 / 5.7: Donedata processing helpers.
 //!
 //! 1:1 port of `sce/include/common/DoneDataHelper.h`. Provides JSON building
 //! utilities for `_event.data` construction from `<donedata>` content and params.
@@ -23,7 +23,7 @@
 use crate::helpers::event_data;
 use crate::{sce_string_from_str, SceString};
 
-/// W3C SCXML 5.5: Emit an inline `<content>` literal as `_event.data`.
+/// §scxml-5.5: Emit an inline `<content>` literal as `_event.data`.
 ///
 /// 1:1 port of C++ `SCE::DoneDataHelper::emitContentLiteral`
 /// (`sce/include/common/DoneDataHelper.h`). When `<content>` has no `expr`
@@ -50,7 +50,7 @@ pub fn emit_content_literal(literal: &str) -> SceString {
     sce_string_from_str(literal)
 }
 
-/// W3C SCXML 5.5: Build JSON string from param name/value pairs.
+/// §scxml-5.5: Build JSON string from param name/value pairs.
 ///
 /// Used when `<donedata>` contains `<param>` elements. Each param produces a
 /// key-value pair in the JSON object.
@@ -112,7 +112,7 @@ fn is_json_literal(value: &str) -> bool {
     value.parse::<f64>().is_ok()
 }
 
-/// W3C SCXML 5.5: Escape JSON string (delegates to event_data module).
+/// §scxml-5.5: Escape JSON string (delegates to event_data module).
 ///
 /// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` — delegates to
 /// [`event_data::escape_json_string`] which is itself whole-module gated.

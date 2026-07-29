@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
-//! W3C SCXML 6.4: Invoke lifecycle management — Single Source of Truth
+//! §scxml-6.4: Invoke lifecycle management — Single Source of Truth
 //!
 //! 1:1 port of C++ `sce/include/core/InvokeHelper.h`.
 //!
 //! # Defer / Cancel / Execute Pattern
 //!
-//! W3C SCXML 6.4 requires that invoke elements in states entered-but-not-exited
+//! §scxml-6.4 requires that invoke elements in states entered-but-not-exited
 //! during a macrostep are executed at the **end** of that macrostep:
 //!
 //! 1. **Entry** → `defer_invoke`: add to pending list
@@ -18,19 +18,19 @@
 
 use std::fmt::Debug;
 
-/// W3C SCXML 6.4: Pending invoke structure for defer/cancel/execute pattern.
+/// §scxml-6.4: Pending invoke structure for defer/cancel/execute pattern.
 ///
 /// Matches C++ `PendingInvoke` struct in generated code.
 #[derive(Debug, Clone)]
 pub struct PendingInvoke<S: Copy + PartialEq + Debug> {
-    /// W3C SCXML 6.4.1: Runtime-generated invoke identifier
+    /// §scxml-6.4.1: Runtime-generated invoke identifier
     /// Format: "stateid.platformid.index" (e.g., "s01.140234567890._invoke_0")
     pub invoke_id: String,
     /// State containing the invoke element
     pub state: S,
 }
 
-/// W3C SCXML 6.4: Active child session tracking.
+/// §scxml-6.4: Active child session tracking.
 ///
 /// Matches C++ `ChildSession` struct in generated code.
 #[derive(Debug, Clone)]
@@ -41,13 +41,13 @@ pub struct ChildSession {
     pub invoke_id: String,
     /// Parent's session ID
     pub parent_session_id: String,
-    /// W3C SCXML 6.4.6: Autoforward events to child
+    /// §scxml-6.4.1: Autoforward events to child
     pub autoforward: bool,
-    /// W3C SCXML 6.5: Finalize handler script content
+    /// §scxml-6.5: Finalize handler script content
     pub finalize_script: String,
 }
 
-/// W3C SCXML 6.4: Defer invoke execution until macrostep end.
+/// §scxml-6.4: Defer invoke execution until macrostep end.
 ///
 /// 1:1 port of C++ `InvokeHelper::deferInvoke`.
 pub fn defer_invoke<S: Copy + PartialEq + Debug>(
@@ -58,7 +58,7 @@ pub fn defer_invoke<S: Copy + PartialEq + Debug>(
     pending.push(invoke);
 }
 
-/// W3C SCXML 6.4: Cancel pending invokes for exited state.
+/// §scxml-6.4: Cancel pending invokes for exited state.
 ///
 /// 1:1 port of C++ `InvokeHelper::cancelInvokesForState`.
 /// Uses retain (inverse of C++ remove_if + erase).
@@ -83,7 +83,7 @@ pub fn cancel_invokes_for_state<S: Copy + PartialEq + Debug>(
     }
 }
 
-/// W3C SCXML 6.4: Execute all pending invokes at macrostep end.
+/// §scxml-6.4: Execute all pending invokes at macrostep end.
 ///
 /// 1:1 port of C++ `InvokeHelper::executePendingInvokes`.
 /// Copy-and-clear pattern prevents iterator invalidation during execution
@@ -100,7 +100,7 @@ pub fn execute_pending_invokes<S: Copy + PartialEq + Debug, F>(
 
     log::debug!("InvokeHelper: Executing {} pending invokes", pending.len());
 
-    // W3C SCXML 6.4: Take pending list to prevent iterator invalidation
+    // §scxml-6.4: Take pending list to prevent iterator invalidation
     let invokes_to_execute = std::mem::take(pending);
 
     for invoke_info in &invokes_to_execute {
@@ -109,26 +109,26 @@ pub fn execute_pending_invokes<S: Copy + PartialEq + Debug, F>(
     }
 }
 
-/// W3C SCXML 6.3.1: Create done.invoke event name.
+/// §scxml-6.3.1: Create done.invoke event name.
 ///
 /// 1:1 port of C++ `InvokeHelper::createDoneInvokeEventName`.
 pub fn create_done_invoke_event_name(invoke_id: &str) -> String {
     format!("done.invoke.{}", invoke_id)
 }
 
-/// W3C SCXML 3.12.1: Validate invoke ID format.
+/// §scxml-3.12.1: Validate invoke ID format.
 ///
 /// 1:1 port of C++ `InvokeHelper::isValidInvokeId`.
 pub fn is_valid_invoke_id(invoke_id: &str) -> bool {
     !invoke_id.is_empty()
 }
 
-/// W3C SCXML 6.4: Get count of pending invokes.
+/// §scxml-6.4: Get count of pending invokes.
 pub fn get_pending_count<S: Copy + PartialEq + Debug>(pending: &[PendingInvoke<S>]) -> usize {
     pending.len()
 }
 
-/// W3C SCXML 6.4: Check if specific invoke is pending.
+/// §scxml-6.4: Check if specific invoke is pending.
 pub fn is_invoke_pending<S: Copy + PartialEq + Debug>(
     pending: &[PendingInvoke<S>],
     invoke_id: &str,

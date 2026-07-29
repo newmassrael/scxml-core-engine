@@ -77,7 +77,7 @@ use core::marker::PhantomData;
 ///    this just calls `f()` directly; on no_std targets it pairs with the
 ///    `cortex-m` crate's `interrupt::free` or `critical-section`.
 pub trait Hal {
-    /// Monotonic millisecond tick count (W3C SCXML 6.2 delay scheduling clock).
+    /// Monotonic millisecond tick count (§scxml-6.2 delay scheduling clock).
     ///
     /// The epoch is implementation-defined; only differences between calls
     /// have meaning. Per the spec's "ticks" mandate the resolution is
