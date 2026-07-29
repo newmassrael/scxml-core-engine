@@ -59,6 +59,10 @@ paths = [
     "sce/include/parsing",
     "sce/src/parsing",
     "sce/src/runtime",
+    # Rust code generator: its §wire-W<n> cites were outside every ledger's
+    # scan set until R783 coverage surfaced them. Gated here, bound below.
+    "sce-build/src",
+    "sce-build/tests",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
@@ -75,7 +79,7 @@ paths = [
 # a binding round, not a path edit.
 scan_exclusions = [
     "backends/",
-    "sce-build/",
+    "sce-build/examples/",
     "tests/",
 ]
 severity_missing = "reject"
@@ -100,6 +104,14 @@ section_namespace = "wire"
 [plugins.symbol_resolver.cpp]
 transport = "in-process"
 backend = "tree-sitter-cpp"
+
+# Rust resolver for the sce-build crate (.rs), added with the sce-build paths
+# above. Without it a .rs cite can only bind file-wide, which is a weaker claim
+# than this ledger makes for C++: severity_binding = reject is meant to catch a
+# cite that drifts to another symbol, and a file-level binding cannot see that.
+[plugins.symbol_resolver.rust]
+transport = "in-process"
+backend = "tree-sitter-rust"
 
 # Tool pin (Mnemosyne R826/R832). Cargo pins library dependencies through
 # Cargo.lock and pins nothing about a binary invoked by name, so a gate runs

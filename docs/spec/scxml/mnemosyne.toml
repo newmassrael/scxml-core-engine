@@ -118,15 +118,17 @@ paths = [
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
-# cannot gate vacuously. These trees are Rust that this ledger does not gate.
+# cannot gate vacuously.
 #
-# Honest statement of what that costs, measured — not a claim that the trees are
-# citation-free: `backends/rust/runtime/src/engine.rs` carries one hand-authored
-# §scxml-6.2.2 doc-comment cite, and it stays ungated under this declaration.
-# Gating it means adding `backends/rust/runtime/src` to `paths`, which trips
-# severity_binding=reject with 1 citation_unbound until §scxml-6.2.2 is bound to
-# (engine.rs, SchedTimePoint). This declaration changes no coverage — those trees
-# were already unscanned; it only makes the existing boundary explicit.
+# Honest statement of the one gap, measured — not a claim that the trees are
+# citation-free. `backends/rust/runtime/src/engine.rs` carries one §scxml-6.2.2
+# doc-comment cite that stays ungated here. Gating it is not a path edit: `paths`
+# also drives the citation-FORM gate (migrate_citations.py --check), and the
+# no_std Rust runtime was never migrated to §-form — adding the tree puts 237
+# free-text "W3C SCXML <n>" cites across 24 files and 39 sections under that
+# gate, each then needing a binding under severity_binding=reject. Migrating
+# that runtime is its own round; until it runs, the tree stays declared out.
+# This declaration changes no coverage — those trees were already unscanned.
 scan_exclusions = [
     "backends/",
     "sce-build/examples/",
