@@ -23,6 +23,16 @@
         {
           "file": "sce/include/parsing/TemplateError.h",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/template.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/xinclude.rs",
+          "symbol": "tests",
+          "kind": "references"
         }
       ]
     },
@@ -81,6 +91,11 @@
         {
           "file": "sce/src/parsing/SCXMLParser.cpp",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/xinclude.rs",
+          "symbol": "tests",
+          "kind": "references"
         }
       ]
     },
@@ -132,6 +147,46 @@
         {
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "xml_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ForgeError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "XmlError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_file",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_impl",
           "kind": "implements"
         }
       ]
@@ -217,6 +272,95 @@
           "file": "sce/src/parsing/SemanticError.cpp",
           "symbol": "SCE::parsing",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "symbol": "document_rejected_routes_to_top_level_script_unloaded",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "typed_entry_exposes_structured_validation_error",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "cpp_scxml_semantic_subtypes_match_rust_diagnostic_codes",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "initial_state_unknown_compound_scope_emits_same_code",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "top_level_script_unloaded_emits_scxml_top_level_script_unloaded",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "top_level_script_unloaded_with_detail_keeps_same_code",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/error_format_json.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_generate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "scxml_semantic_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ForgeError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "exit_code",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/scxml_semantic.rs",
+          "symbol": "ScxmlSemanticError",
+          "kind": "implements"
         }
       ]
     }
@@ -224,5 +368,19 @@
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
-  "schema_version": 11
+  "frames": {},
+  "branches": {},
+  "entities": {},
+  "entity_kinds": {},
+  "units": {},
+  "predicates": {},
+  "narrative_facts": {},
+  "disclosure_plans": {},
+  "edge_costs": {},
+  "edge_guards": {},
+  "parameters": {},
+  "parameter_deltas": {},
+  "parameter_gates": {},
+  "fact_counts": {},
+  "schema_version": 44
 }

@@ -9,8 +9,8 @@
 // generated-tree refresh, vendored snippet, fixture authoring).
 //
 // Allowed citation forms are unaffected and never match here:
-// W3C SCXML sections ("W3C SCXML 3.13"), ledger citations
-// (§scxml-*/§mesh-*/§wire-*), and external watching-zenoh RFC
+// W3C SCXML sections ("W3C SCXML 3.13"), ledger citations in the
+// namespaced sigil form, and external watching-zenoh RFC
 // sections ("RFC §synth-5-B", "item A3"). English uses of the bare word
 // "phase" ("two-phase commit") also do not match — the pattern
 // requires a token suffix (a digit-led token, a single letter, or
