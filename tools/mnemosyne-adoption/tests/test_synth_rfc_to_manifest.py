@@ -19,7 +19,6 @@ Run:  python3 -m unittest discover -s tools/mnemosyne-adoption/tests
 """
 
 import json
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,6 +26,8 @@ import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+
+from _mnemosyne_bin import MNEMOSYNE_CLI, skip_reason  # noqa: E402
 TOOL_DIR = HERE.parent
 REPO_ROOT = TOOL_DIR.parent.parent
 sys.path.insert(0, str(TOOL_DIR))
@@ -173,7 +174,7 @@ class RealDocTests(unittest.TestCase):
             self.assertIn(sid, by_id)
 
 
-MNEMOSYNE_CLI = shutil.which("mnemosyne-cli")
+
 
 
 class ClosedLoopTest(unittest.TestCase):
@@ -181,7 +182,7 @@ class ClosedLoopTest(unittest.TestCase):
     cites resolve whole; a foreign §scxml-<id> cite is skipped by scope."""
 
     @unittest.skipUnless(
-        MNEMOSYNE_CLI and SYNTH_RFC.exists(), "mnemosyne-cli or snapshot unavailable"
+        MNEMOSYNE_CLI and SYNTH_RFC.exists(), skip_reason()
     )
     def test_synth_cites_resolve_and_foreign_skipped(self):
         manifest = conv.convert(SYNTH_RFC.read_text(encoding="utf-8"), "synth")

@@ -1449,7 +1449,7 @@ fn collapse_blank_lines(lines: &[String]) -> String {
 /// 3. Collapses consecutive blank lines to one.
 fn postprocess_cpp_inl(code: &str) -> String {
     // The .inl template uses 4-space indent for all top-level code.
-    const BASE_INDENT: usize = 4;
+    const BASE_INDENT_STR: &str = "    ";
 
     let mut lines: Vec<String> = Vec::new();
     let mut brace_depth: i32 = 0;
@@ -1461,15 +1461,21 @@ fn postprocess_cpp_inl(code: &str) -> String {
             continue;
         }
 
-        // Strip the base indent (4 spaces) from lines that have it.
-        let line =
-            if raw_line.len() >= BASE_INDENT && raw_line[..BASE_INDENT].chars().all(|c| c == ' ') {
-                raw_line[BASE_INDENT..].to_string()
-            } else {
-                // Line has less than BASE_INDENT leading spaces (e.g., orphaned action code at col 0).
-                // Will be re-indented below based on brace depth.
-                raw_line.to_string()
-            };
+        // Strip the base indent from lines that have it.
+        //
+        // `strip_prefix` on the literal indent, not `raw_line[..BASE_INDENT]`:
+        // `len()` and range indexing are BYTE-based, so a line whose first
+        // non-space character is multi-byte (`// §scxml-6.4.1 …` puts `§` at
+        // bytes 3..5) made the slice land inside a char and panic. Comment text
+        // is author-controlled and now carries `§` citations, so any
+        // fixed-width byte slice here is a latent crash; prefix-stripping is
+        // both panic-free and exactly the intended operation.
+        let line = match raw_line.strip_prefix(BASE_INDENT_STR) {
+            Some(rest) => rest.to_string(),
+            // Fewer leading spaces than the base indent (e.g. orphaned action
+            // code at col 0). Re-indented below from brace depth.
+            None => raw_line.to_string(),
+        };
 
         let trimmed = line.trim().to_string();
         if trimmed.is_empty() {
@@ -1571,6 +1577,30 @@ mod tests {
     fn parse(content: &str) -> SCXMLModel {
         let mut p = SCXMLParser::new();
         p.parse_string(content, "brake").expect("parse")
+    }
+
+    /// `postprocess_cpp_inl` must not index a line by byte offset.
+    ///
+    /// The base-indent strip used `raw_line[..4]` while `4` counted BYTES, so a
+    /// line whose 4th byte fell inside a multi-byte character panicked with
+    /// "not a char boundary". `§scxml-<id>` citations put `§` at bytes 3..5 of
+    /// `// §…`, and templates carry those citations, so this crashed real
+    /// codegen rather than a synthetic input. Each case below has a multi-byte
+    /// character straddling the byte-4 boundary at a different indent depth.
+    #[test]
+    fn postprocess_cpp_inl_handles_multibyte_at_indent_boundary() {
+        for line in [
+            "// §scxml-6.4.1 autoforward",    // § at bytes 3..5, no base indent
+            "    // §scxml-3.13 transitions", // base indent present, § later
+            "/* §scxml-5.10 */",              // § at bytes 3..5, block comment
+            "   §scxml-4.6",                  // 3 spaces then multi-byte
+        ] {
+            let out = postprocess_cpp_inl(line);
+            assert!(
+                out.contains("scxml-"),
+                "citation text must survive postprocessing: {line:?} -> {out:?}"
+            );
+        }
     }
 
     // ── Language enum / FromStr drift guards ────────────────────

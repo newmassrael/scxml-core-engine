@@ -14,7 +14,6 @@ Run:  python3 -m unittest discover -s tools/mnemosyne-adoption/tests
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,8 +26,10 @@ sys.path.insert(0, str(TOOL_DIR))
 
 import migrate_citations as mc  # noqa: E402
 
+from _mnemosyne_bin import MNEMOSYNE_CLI, skip_reason  # noqa: E402
+
 MIGRATE = TOOL_DIR / "migrate_citations.py"
-HAVE_CLI = shutil.which("mnemosyne-cli") is not None
+HAVE_CLI = MNEMOSYNE_CLI is not None
 
 # A representative ledger id set (the real ledger is larger; these suffice).
 LEDGER = {
@@ -152,6 +153,18 @@ class SlashChain(unittest.TestCase):
         self.assertEqual(migs, [])
         self.assertEqual([s["label"] for s in skipped], ["9.99"])
 
+    def test_trailing_slash_prose_refused(self):
+        # "3.13/Appendix D" is a label followed by PROSE, not a chain member.
+        # Migrating the head would emit "§scxml-3.13/Appendix D", which the
+        # validator reads as one id ("scxml-3.13/Appendix") and reports as a
+        # section nobody cited. Refuse instead: the prose stays, so the
+        # citation-form gate surfaces it for a human to separate.
+        src = "// W3C SCXML 3.13/Appendix D: transition processing\n"
+        new, migs, _ = plan(src)
+        self.assertEqual(new, src)
+        self.assertEqual(migs, [])
+        self.assertNotIn("§scxml-3.13/", new)
+
 
 class Idempotency(unittest.TestCase):
     def test_second_pass_is_noop(self):
@@ -161,7 +174,7 @@ class Idempotency(unittest.TestCase):
         self.assertEqual(migs, [])
 
 
-@unittest.skipUnless(HAVE_CLI, "mnemosyne-cli not on PATH")
+@unittest.skipUnless(MNEMOSYNE_CLI, skip_reason())
 class ValidateClosedLoop(unittest.TestCase):
     """migrate -> wire set_equality_validator -> validate-code-refs is green;
     a hallucinated citation makes the reject-severity gate fail."""
@@ -173,16 +186,16 @@ class ValidateClosedLoop(unittest.TestCase):
         ]
         (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         (root / "mnemosyne.toml").write_text(
-            '[workspace]\ndocs = ["GENERATED.md"]\ndefault_doc = "GENERATED.md"\n\n'
+            '[workspace]\n\n'
             "[atomic]\n"
-            'sidecar_path = ".atomic/workspace.atomic.json"\noutput_path = "GENERATED.md"\n\n'
+            'sidecar_path = ".atomic/workspace.atomic.json"\n\n'
             "[plugins.set_equality_validator]\n"
             f'paths = ["{src_rel}"]\n'
             'severity_missing = "reject"\nseverity_binding = "warn"\ncomment_only = true\n',
             encoding="utf-8",
         )
         subprocess.run(
-            ["mnemosyne-cli", "import-sections", "--manifest", "manifest.json"],
+            [MNEMOSYNE_CLI, "import-sections", "--manifest", "manifest.json"],
             cwd=root, check=True, capture_output=True,
         )
 
@@ -215,7 +228,7 @@ class ValidateClosedLoop(unittest.TestCase):
 
             # gate is green: no section_missing, exit 0
             out = subprocess.run(
-                ["mnemosyne-cli", "validate-code-refs", "--json"],
+                [MNEMOSYNE_CLI, "validate-code-refs", "--json"],
                 cwd=root, capture_output=True, text=True,
             )
             self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
@@ -226,7 +239,7 @@ class ValidateClosedLoop(unittest.TestCase):
             with f.open("a", encoding="utf-8") as fh:
                 fh.write("// invented §scxml-9.99 reference\n")
             bad = subprocess.run(
-                ["mnemosyne-cli", "validate-code-refs", "--json"],
+                [MNEMOSYNE_CLI, "validate-code-refs", "--json"],
                 cwd=root, capture_output=True, text=True,
             )
             self.assertNotEqual(bad.returncode, 0)
@@ -498,6 +511,58 @@ class FormGateCheck(unittest.TestCase):
             )
             r = self._check(d, src)
             self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class LedgerExistenceGate(unittest.TestCase):
+    """--check-ledger keeps only the hallucination half of --check.
+
+    Trees whose comments are emitted verbatim into generated code (the codegen
+    templates) must stay in prose, so the form half cannot apply to them — but a
+    section number that does not exist is a false claim about the spec either
+    way. This gate is what covers those trees.
+    """
+
+    def _ledger(self, d):
+        store = Path(d) / "store.json"
+        store.write_text(
+            json.dumps({"sections": {"scxml-5.10": {}, "scxml-6.2": {}}}),
+            encoding="utf-8",
+        )
+        return store
+
+    def _check_ledger(self, d, srcdir):
+        return subprocess.run(
+            [sys.executable, str(MIGRATE), "--check-ledger",
+             "--ledger", str(self._ledger(d)), str(srcdir)],
+            capture_output=True, text=True,
+        )
+
+    def _run(self, body, name="a.rs"):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "src"
+            src.mkdir()
+            (src / name).write_text(body, encoding="utf-8")
+            return self._check_ledger(d, src)
+
+    def test_prose_cite_to_real_section_passes(self):
+        # The whole point: prose is allowed here, unlike --check.
+        r = self._run("// W3C SCXML 5.10 system variables\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_fabricated_section_rejected(self):
+        r = self._run("// W3C SCXML 6.4.6 autoforward\n")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("6.4.6", r.stderr)
+        self.assertIn("not in ledger", r.stderr)
+
+    def test_spec_version_and_test_number_pass(self):
+        # "1.0" is the spec version; "403" is a W3C IRP test number.
+        r = self._run("// W3C SCXML 1.0 conformance, test W3C SCXML 403\n")
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_string_literal_not_flagged(self):
+        r = self._run('let s = "W3C SCXML 6.4.6";\n')
+        self.assertEqual(r.returncode, 0, r.stderr)
 
 
 class PathsFromToml(unittest.TestCase):
