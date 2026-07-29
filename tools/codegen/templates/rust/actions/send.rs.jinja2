@@ -422,7 +422,7 @@
 {% endif %}
     }
 {% elif not action.targetexpr and action.target == '#_parent' %}
-    // W3C SCXML 6.2/6.4.5: Send to parent state machine via #_parent
+    // W3C SCXML 6.2/6.4.3: Send to parent state machine via #_parent
 {% if action.event %}
 {% if no_std %}
     // Watching-zenoh RFC §synth-5-J-2: no_std codegen-rejects `<invoke>`, so a machine

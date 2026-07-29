@@ -108,7 +108,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
    which intercepts the target and emits a wire-16 `ChildEvent` envelope.
    The adapter owns the compile-time `invoke_id` / `child_session_id` and
    stamps them onto the envelope; the child code only supplies event name,
-   data, and sendId. W3C §6.4.5 delayed-send-to-parent has no wire-level
+   data, and sendId. W3C §6.4.3 delayed-send-to-parent has no wire-level
    mesh equivalent yet — reject at emit time rather than schedule into a
    scheduler that never fires (avoids `feedback_silently_broken_hooks`). #}
 {% if action.delay or action.delayexpr %}
@@ -164,7 +164,7 @@ engine.performMeshSend("#_parent", "{{ action.event }}", "", sendId, "");
    until then the two shapes remain divergent and the
    `is_remote_invoke_target` classifier is the single seam. #}
 {% if action.delay or action.delayexpr %}
-// W3C SCXML 6.2/6.4.5: Delayed send to parent (stored in child, cancelled on termination)
+// W3C SCXML 6.2/6.4.3: Delayed send to parent (stored in child, cancelled on termination)
 {
 {% if action.delayexpr %}
     std::string delayStr;

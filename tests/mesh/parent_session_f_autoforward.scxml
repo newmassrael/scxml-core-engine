@@ -3,7 +3,7 @@
 
      The parent's `<invoke autoforward="true">` declares that every
      external event the parent receives must be replayed onto the child.
-     Per W3C §6.4.6 this runs during the parent's own macrostep before
+     Per W3C §6.4.1 this runs during the parent's own macrostep before
      normal transition selection; in the mesh case the generated
      `forwardToAutoforwardChildren` closure routes through
      `engine.performScxmlInvokeParentEvent(...)` which publishes wire-17
