@@ -37,7 +37,7 @@
 #define SCE_MAX_PARALLEL_REGIONS 4
 #endif
 
-// W3C SCXML Appendix D.2 — optimal enabled transition set.
+// §scxml-D-microstepProcedure — optimal enabled transition set.
 // Per-microstep cap on the number of transitions that may fire
 // simultaneously. Sized for the typical <parallel> region count plus
 // headroom; fixtures that drive many concurrent regions override at

@@ -28,7 +28,7 @@ namespace SCE::Core {
 /**
  * @brief Helper functions for parallel state transition conflict detection
  *
- * W3C SCXML Appendix C.1: Algorithm for SCXML Interpretation
+ * §scxml-D-removeConflictingTransitions: optimal enabled transition set
  * - Optimal enabled transition set: Select non-conflicting transitions
  * - Conflict detection: Two transitions conflict if they exit the same state
  *
@@ -280,7 +280,7 @@ public:
      * @brief Compute and sort states to exit for microstep execution
      *
      * ARCHITECTURE.MD: Zero Duplication Principle - Shared exit computation logic
-     * W3C SCXML Appendix D.2 Step 1: Collect unique source states from transitions
+     * §scxml-D-computeExitSet Step 1: Collect unique source states from transitions
      * §scxml-3.13: Sort by reverse document order (deepest/rightmost first)
      *
      * @tparam StateType State enum or identifier type
@@ -298,7 +298,7 @@ public:
                                                       const std::vector<StateType> &activeStates) {
         std::vector<StateType> statesToExit;
 
-        // W3C SCXML Appendix D.2: For each transition, compute LCA-based exit set
+        // §scxml-D-computeExitSet: For each transition, compute LCA-based exit set
         // Exit set = all active states that are descendants of LCA (excluding LCA itself)
         for (const auto &trans : transitions) {
             // §scxml-3.13: Targetless transitions do not exit any states
@@ -397,7 +397,7 @@ public:
      * @brief Sort transitions by source state document order
      *
      * ARCHITECTURE.MD: Zero Duplication Principle - Shared sorting logic
-     * W3C SCXML Appendix D.2 Step 3: Execute transition content in document order
+     * §scxml-D-executeTransitionContent Step 3: Execute transition content in document order
      *
      * @tparam StateType State enum or identifier type
      * @tparam PolicyType Policy class with getDocumentOrder()
@@ -422,7 +422,7 @@ public:
      * @brief Sort transitions by target state document order
      *
      * ARCHITECTURE.MD: Zero Duplication Principle - Shared sorting logic
-     * W3C SCXML Appendix D.2 Step 4-5: Enter target states in document order
+     * §scxml-D-enterStates Step 4-5: Enter target states in document order
      *
      * @tparam StateType State enum or identifier type
      * @tparam PolicyType Policy class with getDocumentOrder()

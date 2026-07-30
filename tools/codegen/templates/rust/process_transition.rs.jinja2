@@ -114,7 +114,7 @@
                 self.try_transition_in_state(*active_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
             }
 
-            // W3C SCXML Appendix D.2: Remove conflicting transitions
+            // Appendix D removeConflictingTransitions: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
                 enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
             }
@@ -163,13 +163,13 @@
             // std, a capacity-bounded `heapless::FnvIndexSet` under no_std
             // (`MAX_MICROSTEP_DEDUP_SLOTS`). `dedup_insert` fails loud on no_std
             // overflow rather than silently dropping transitions — that would
-            // violate W3C SCXML Appendix D.2 semantics.
+            // violate Appendix D microstepProcedure semantics.
             let mut seen: ::sce_rust_runtime::SceDedupSet<({{ machine_name }}State, usize)> =
                 ::sce_rust_runtime::SceDedupSet::new();
             enabled_transitions
                 .retain(|t| ::sce_rust_runtime::dedup_insert(&mut seen, (t.source, t.transition_index)));
 
-            // W3C SCXML Appendix D.2: Remove conflicting transitions
+            // Appendix D removeConflictingTransitions: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
                 enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
             }

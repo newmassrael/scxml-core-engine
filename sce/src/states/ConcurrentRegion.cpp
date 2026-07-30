@@ -163,7 +163,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
 
     SCE_LOG_DEBUG("Processing event '{}' in region: {}", event.eventName, id_);
 
-    // W3C SCXML Appendix D.2: Collect enabled transitions instead of executing immediately
+    // §scxml-D-removeConflictingTransitions: Collect enabled transitions instead of executing immediately
     // This allows StateMachine to apply conflict resolution across all regions
     ConcurrentOperationResult result = ConcurrentOperationResult::success(id_);
 

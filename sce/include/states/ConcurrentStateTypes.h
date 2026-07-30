@@ -15,11 +15,11 @@ namespace SCE {
  *
  * @details
  * Represents an enabled transition discovered during event processing in a concurrent region.
- * Used to collect all enabled transitions before applying W3C SCXML Appendix D.2 conflict resolution.
+ * Used to collect all enabled transitions before applying §scxml-D-removeConflictingTransitions conflict resolution.
  *
  * ARCHITECTURE.md Compliance:
  * - Zero Duplication: Compatible with ConflictResolutionAlgorithms::TransitionDescriptor<std::string>
- * - W3C SCXML Appendix D.2: Optimal transition set selection
+ * - §scxml-D-removeConflictingTransitions: Optimal transition set selection
  */
 struct TransitionDescriptorString {
     std::string source;                // Source state ID
@@ -59,7 +59,7 @@ struct ConcurrentOperationResult {
     std::string externalTransitionEvent;   // Event that triggered the external transition
     std::string externalTransitionSource;  // Source state ID (safer than raw pointer)
 
-    // W3C SCXML Appendix D.2: Enabled transitions for conflict resolution
+    // §scxml-D-removeConflictingTransitions: Enabled transitions for conflict resolution
     // Region collects all enabled transitions and returns them to StateMachine
     // StateMachine applies ConflictResolutionAlgorithms to select optimal transition set
     std::vector<TransitionDescriptorString> enabledTransitions;

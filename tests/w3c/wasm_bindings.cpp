@@ -90,7 +90,7 @@ EMSCRIPTEN_BINDINGS(interactive_test_runner) {
 
         .function("getLastTransition", &InteractiveTestRunner::getLastTransition)
 
-        // W3C SCXML Appendix D.2: Conflict resolution visualization
+        // §scxml-D-removeConflictingTransitions: Conflict resolution visualization
         .function("getEnabledTransitions", &InteractiveTestRunner::getEnabledTransitions)
 
         .function("getOptimalTransitions", &InteractiveTestRunner::getOptimalTransitions)
