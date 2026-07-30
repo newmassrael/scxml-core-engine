@@ -29,7 +29,7 @@
 #define SCE_MAX_ID_LEN 64
 #endif
 
-/* W3C SCXML C.2.3: capacity of the BasicHTTP access URI a deployment
+/* §scxml-C-2-3: capacity of the BasicHTTP access URI a deployment
    declares on a machine, published as that processor's `_ioprocessors`
    location. Sized for a host:port URL with a path; a deployment whose
    endpoint URI is longer overrides at build time. */

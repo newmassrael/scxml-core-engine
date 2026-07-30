@@ -3590,7 +3590,7 @@ impl W3cBackend for GoBackend {
             // process-global `RegisterLuaEngine` / `GetScriptEngine` singleton
             // pair was deleted in the step #6 cleanup.
             //
-            // W3C SCXML C.2.3: for HTTP fixtures the harness owns the inbound
+            // §scxml-C-2-3: for HTTP fixtures the harness owns the inbound
             // listener, so it declares the access URI the machine publishes in
             // _ioprocessors. The converted documents address their BasicHTTP
             // sends through that entry.
