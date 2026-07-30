@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/HttpEventBridge.h"
+#include "common/SendHelper.h"
 #include "common/UniqueIdGenerator.h"
 #include "core/LogMacros.h"
 #include "events/HttpResponseUtils.h"
@@ -284,9 +285,41 @@ bool HttpEventBridge::updateConfig(const HttpBridgeConfig &config) {
 std::string HttpEventBridge::extractEventName(const HttpRequest &request) const {
     const auto &settings = config_.getSettings();
 
-    // For W3C test 201 compliance, always return "event1"
+    // W3C SCXML C.2.1: "If a single instance of the parameter '_scxmleventname'
+    // is present, the SCXML Processor MUST use its value as the name of the
+    // SCXML event that it raises. […] If the parameter '_scxmleventname' is not
+    // present, the SCXML Processor MUST use the name of the HTTP method that was
+    // used to deliver the message as the name of the event that it raises."
+    //
+    // Multiple instances are explicitly platform-specific; we take the first.
+    // The sending half (SendHelper::buildHttpPostBody, C.2.2) keeps the
+    // parameter single-instance, so the multi-instance case only arises from a
+    // foreign sender.
     if (settings.enableW3CCompliance) {
-        return "event1";
+        auto queryIt = request.queryParams.find(SCXML_EVENT_NAME_PARAM);
+        if (queryIt != request.queryParams.end() && !queryIt->second.empty()) {
+            return queryIt->second;
+        }
+
+        // The parameter normally arrives in an application/x-www-form-urlencoded
+        // body, which is what C.2.2 emits.
+        const auto formValues = extractFormParam(request.body, SCXML_EVENT_NAME_PARAM);
+        if (!formValues.empty() && !formValues.front().empty()) {
+            return formValues.front();
+        }
+
+        // Fall back to the query string carried in the raw URL, for a sender
+        // that put the parameter there instead of in the body.
+        std::string path;
+        std::unordered_map<std::string, std::string> queryParams;
+        if (parseUrl(request.url, path, queryParams)) {
+            auto urlIt = queryParams.find(SCXML_EVENT_NAME_PARAM);
+            if (urlIt != queryParams.end() && !urlIt->second.empty()) {
+                return urlIt->second;
+            }
+        }
+
+        return request.method;
     }
 
     // Try extracting from URL query parameters
@@ -389,6 +422,27 @@ std::string HttpEventBridge::formDataToJson(const std::string &formData) const {
     }
 
     return JsonUtils::toCompactString(jsonObject);
+}
+
+std::vector<std::string> HttpEventBridge::extractFormParam(const std::string &body, const std::string &name) const {
+    std::vector<std::string> values;
+    if (body.empty()) {
+        return values;
+    }
+
+    std::istringstream stream(body);
+    std::string pair;
+    while (std::getline(stream, pair, '&')) {
+        const size_t equalPos = pair.find('=');
+        if (equalPos == std::string::npos) {
+            continue;
+        }
+        if (urlDecode(pair.substr(0, equalPos)) != name) {
+            continue;
+        }
+        values.push_back(urlDecode(pair.substr(equalPos + 1)));
+    }
+    return values;
 }
 
 std::string HttpEventBridge::urlDecode(const std::string &encoded) const {
