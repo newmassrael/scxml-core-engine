@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371283
+// template-hash: 9bde8ba918ad0398de80074721c1f02a0cca90d0c9c62ed55fd521ceedab1e31
+// generated-at: 1785424665
 
 
 // SPDX-License-Identifier: MIT
@@ -104,6 +104,12 @@ type DonedataLocalInvokeSceSynthInvokeInvContentPolicy struct {
 	// W3C SCXML B.1: Script engine handle (per-instance, Path B+ Q1=(d) Go=interface ref)
 	ScriptEngine sce.IScriptEngine
 	scriptEngineInitialized bool
+	// W3C SCXML C.2.3: inbound BasicHTTP endpoint serving this machine,
+	// declared by the deployment before Initialize(). The address belongs to
+	// whoever runs the listener, so the machine takes it from here rather than
+	// guessing one. Empty means no such endpoint is deployed, and no BasicHTTP
+	// entry is published in _ioprocessors.
+	BasicHTTPAccessURI string
 	// W3C SCXML 6.4: Parent communication
 	ParentExternalQueue chan sce.ParentEvent
 	InvokeID           string
@@ -145,7 +151,11 @@ func (p *DonedataLocalInvokeSceSynthInvokeInvContentPolicy) ensureScriptEngine()
 	if !engine.HasSession(sessionID) {
 		_ = engine.CreateSession(sessionID)
 	}
-	_ = engine.SetupSystemVariables(sessionID)
+	// W3C SCXML C.1.1 / C.2.3: the _ioprocessors entries come from the same
+	// helper every other backend uses, so a machine reads the same entry names
+	// and the same addresses whichever one runs it.
+	_ = engine.SetupSystemVariables(sessionID, "donedata_local_invoke__sce_synth_invoke__inv_content",
+		sce.BuildIoProcessors(sessionID, p.BasicHTTPAccessURI))
 	p.scriptEngineInitialized = true
 }
 

@@ -104,6 +104,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected var scriptEngineInitialized: Boolean = false
 
     /**
+     * §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine.
+     *
+     * The address belongs to the deployment — whoever runs the HTTP listener
+     * chooses where it listens — so the engine takes it from here rather than
+     * guessing one, and publishes it as the processor's 'location' in
+     * `_ioprocessors`. Leaving it empty means no BasicHTTP endpoint serves the
+     * session, and no entry is published.
+     *
+     * Must be set before the first event is processed, since `_ioprocessors`
+     * is populated once during lazy session setup.
+     */
+    var basicHttpAccessUri: String = ""
+
+    /**
      * Allocate a script engine session ID.
      * Called by generated ensureScriptEngine() during lazy initialization.
      */

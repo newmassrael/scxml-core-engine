@@ -90,11 +90,11 @@ public:
      * @brief Update session system variables and notify observers
      * @param sessionId Target session
      * @param sessionName Human-readable session name
-     * @param ioProcessors List of available I/O processors
+     * @param ioProcessors Entries to publish in `_ioprocessors`
      * @return true if update successful
      */
     bool updateSessionSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                      const std::vector<std::string> &ioProcessors);
+                                      const std::vector<IOProcessorDescriptor> &ioProcessors);
 
     /**
      * @brief Get session name for display purposes
@@ -106,9 +106,9 @@ public:
     /**
      * @brief Get I/O processors for a session
      * @param sessionId Session identifier
-     * @return Vector of I/O processor names
+     * @return Entries published in the session's `_ioprocessors`
      */
-    std::vector<std::string> getSessionIOProcessors(const std::string &sessionId) const;
+    std::vector<IOProcessorDescriptor> getSessionIOProcessors(const std::string &sessionId) const;
 
 private:
     // === Internal Data Structures ===
@@ -117,7 +117,7 @@ private:
         std::string sessionId;
         std::string parentSessionId;
         std::string sessionName;
-        std::vector<std::string> ioProcessors;
+        std::vector<IOProcessorDescriptor> ioProcessors;
 
         SessionInfo() = default;
 
@@ -154,7 +154,7 @@ private:
      * @param ioProcessors I/O processors list
      */
     void notifySessionSystemVariablesUpdated(const std::string &sessionId, const std::string &sessionName,
-                                             const std::vector<std::string> &ioProcessors);
+                                             const std::vector<IOProcessorDescriptor> &ioProcessors);
 
     /**
      * @brief Validate session ID format and constraints

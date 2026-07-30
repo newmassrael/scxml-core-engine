@@ -172,6 +172,7 @@ add_executable(js_engine_tests
     engine/SessionManagementTest.cpp
     engine/DataModelTest.cpp
     engine/EventSystemTest.cpp
+    engine/IOProcessorsTest.cpp
     engine/JSEngineBasicTest.cpp
     engine/JSResultTypeConversionTest.cpp
     engine/ECMAScriptComplianceTest.cpp
@@ -245,6 +246,7 @@ target_link_libraries(state_machine_tests
 # ============================================================================
 add_executable(states_tests
     states/ConcurrentRegionTest.cpp
+    states/ParallelPseudoStateChildTest.cpp
     mocks/MockActionExecutor.cpp
 )
 
@@ -916,19 +918,19 @@ if(NOT EMSCRIPTEN)
     sce_generate_static_w3c_test(510 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP messages go to external queue (Static Hybrid)
     sce_generate_static_w3c_test(513 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: manual test - BasicHTTP success response (Integration test only)
     sce_generate_static_w3c_test(518 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP namelist encoding as POST parameters (Static Hybrid)
-    sce_generate_static_w3c_test(519 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP param encoding as POST parameters (Static)
-    sce_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP content element as message body (Static)
+    sce_generate_static_w3c_test(519 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP param encoding as POST parameters (Static Hybrid)
+    sce_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP content element as message body (Static Hybrid)
 endif()
 
 sce_generate_static_w3c_test(521 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.4/6.2.5: error.communication on invalid targetexpr (Static Hybrid)
 
 if(NOT EMSCRIPTEN)
-    sce_generate_static_w3c_test(522 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP location field usage (Pure Static)
+    sce_generate_static_w3c_test(522 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP location field usage (Static Hybrid)
 endif()
 
 if(NOT EMSCRIPTEN)
-    sce_generate_static_w3c_test(531 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: _scxmleventname param overrides event name (Pure Static)
-    sce_generate_static_w3c_test(532 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: HTTP method name fallback for event naming (Pure Static)
+    sce_generate_static_w3c_test(531 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: _scxmleventname param overrides event name (Static Hybrid)
+    sce_generate_static_w3c_test(532 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: HTTP method name fallback for event naming (Static Hybrid)
 endif()
 
 sce_generate_static_w3c_test(533 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: internal transition exit set for non-compound states (Static Hybrid)

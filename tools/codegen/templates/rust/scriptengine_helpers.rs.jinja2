@@ -53,8 +53,13 @@
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        let io_processors = vec!["scxml".to_string()];
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors = sce_rust_runtime::helpers::io_processors::build(
+            &sid,
+            &self.basic_http_access_uri,
+        );
         if let Err(e) = se.setup_system_variables(&sid, "{{ model.name }}", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }
@@ -98,8 +103,13 @@
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        let io_processors = vec!["scxml".to_string()];
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors = sce_rust_runtime::helpers::io_processors::build(
+            &sid,
+            &self.basic_http_access_uri,
+        );
         if let Err(e) = se.setup_system_variables(&sid, "{{ model.name }}", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }

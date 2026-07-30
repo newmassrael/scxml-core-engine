@@ -9,7 +9,7 @@ to send a message to the processor -->
   <onentry>
     <send event="timeout" delay="30s"/>
     <send event="test" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" 
-target="http://localhost:8080/test"/>
+targetexpr="_ioprocessors['basichttp'].location"/>
 
      </onentry>
      <!-- the event we receive should be called 'test', but that's not actually

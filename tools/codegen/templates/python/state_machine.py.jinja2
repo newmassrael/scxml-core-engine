@@ -419,9 +419,6 @@ class {{ machine_name }}Policy(StatePolicy[{{ machine_name }}State, {{ machine_n
     def needs_script_engine(self) -> bool:
         return {{ 'True' if model.needs_script_engine else 'False' }}
 
-    def needs_http_send(self) -> bool:
-        return {{ 'True' if model.needs_http_send else 'False' }}
-
     def machine_name(self) -> str:
         return {{ model.name | py_string_literal }}
 

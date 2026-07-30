@@ -204,7 +204,12 @@ pub fn setup_http_test<P: StatePolicy>(engine: &mut Engine<P>) {
 /// `conf:basicHTTPAccessURITarget=""` (see `tools/codegen/templates/rust/...` +
 /// every `tests/generated/test*/test*_sm.rs` BasicHTTP fixture). Kept here
 /// so the reachability assertion below uses the same string the SM emits.
-const HTTP_TEST_SERVER_URL: &str = "http://localhost:8080/test";
+/// §scxml-C-2-3: where the harness's inbound BasicHTTP listener answers, and
+/// therefore the address the generated tests declare as the machine's
+/// published 'location'. Bind address and published address are one fact — a
+/// document that posts somewhere the listener never claimed would fail for a
+/// reason unrelated to what it tests.
+pub const HTTP_TEST_SERVER_URL: &str = "http://localhost:8080/test";
 
 /// Verify the W3C BasicHTTP test server is reachable. Panics with a
 /// developer-actionable message on first call if the socket connect fails.

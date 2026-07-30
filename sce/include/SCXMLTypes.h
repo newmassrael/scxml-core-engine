@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "common/IOProcessorHelper.h"
 #include <memory>
 #include <optional>
 #include <string>
@@ -218,7 +219,7 @@ struct SCXML_API SessionInfo {
     std::string sessionId;
     std::string parentSessionId;
     std::string sessionName;
-    std::vector<std::string> ioProcessors;
+    std::vector<IOProcessorDescriptor> ioProcessors;
     bool isActive = false;
 };
 

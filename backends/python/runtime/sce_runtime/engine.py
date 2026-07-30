@@ -34,6 +34,7 @@ from typing import Any, Callable, Dict, Generic, List, Optional, Set, TypeVar
 
 from .event import EventMetadata, EventWithMetadata
 from .http import HttpSendRequest, HttpSendResponse
+from . import io_processors
 from .invoke import Invoke, PendingInvoke, create_done_invoke_event_name
 from .policy import StatePolicy, TransitionResult
 from .scheduler import Scheduler
@@ -43,8 +44,11 @@ E = TypeVar("E")
 
 # W3C SCXML C.1 / C.2 — canonical Event I/O Processor URIs surfaced on
 # `_event.origintype` for events delivered via the corresponding processor.
-SCXML_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
-BASIC_HTTP_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+# Re-exported from `io_processors`, which needs the same two spellings for the
+# `_ioprocessors` entry names; two copies of a URI is one rename away from two
+# different URIs.
+SCXML_EVENT_PROCESSOR_URI = io_processors.SCXML_EVENT_PROCESSOR_URI
+BASIC_HTTP_EVENT_PROCESSOR_URI = io_processors.BASIC_HTTP_EVENT_PROCESSOR_URI
 
 
 class Engine(Generic[S, E]):
@@ -70,6 +74,12 @@ class Engine(Generic[S, E]):
         # engine instance, mirroring Kotlin's constructor-injected pattern.
         self._script_engine = script_engine
         self._script_engine.create_session(self._session_id)
+        # §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine,
+        # declared by the deployment before `initialize()`. The address
+        # belongs to whoever runs the listener, so the engine takes it from
+        # here rather than guessing one. Empty means no such endpoint is
+        # deployed, and no BasicHTTP entry is published in `_ioprocessors`.
+        self.basic_http_access_uri: str = ""
         # Back-ref so the policy's helpers (which run as instance
         # methods on the generated module) can find the engine's
         # session without an extra parameter on every call site.
@@ -161,21 +171,18 @@ class Engine(Generic[S, E]):
         if self._is_running:
             return
         self._is_running = True
-        # W3C SCXML 5.10 — bind `_sessionid` / `_name` / `_ioprocessors`
-        # into the script-engine session before any datamodel `<data>`
-        # is registered. The SCXML Event I/O Processor is always
-        # present (C.1: "every SCXML Processor MUST support the SCXML
-        # Event I/O Processor"); BasicHTTP is added only when the
-        # generated policy reports a `<send type=BasicHTTP>` need.
-        # Mirrors `tools/codegen/templates/rust/scriptengine_helpers.rs.jinja2`
-        # which registers `vec!["scxml".to_string()]` unconditionally.
-        io_processors: List[str] = ["scxml"]
-        if self._policy.needs_http_send():
-            io_processors.append(BASIC_HTTP_EVENT_PROCESSOR_URI)
+        # §scxml-C-1-1 / §scxml-C-2-3 — bind `_sessionid` / `_name` /
+        # `_ioprocessors` into the script-engine session before any datamodel
+        # `<data>` is registered. The entries come from the same helper every
+        # other backend uses, so a machine reads the same entry names and the
+        # same addresses whichever one runs it. The BasicHTTP entry appears
+        # only once `basic_http_access_uri` names a deployed endpoint —
+        # advertising the processor because the document happens to `<send>`
+        # through it would publish an address nothing answers on.
         self._script_engine.setup_system_variables(
             self._session_id,
             self._policy.machine_name(),
-            io_processors,
+            io_processors.build(self._session_id, self.basic_http_access_uri),
         )
         # W3C SCXML 5.9.2 — register the `In(state)` predicate against
         # this engine's active configuration. The Lua engine surfaces

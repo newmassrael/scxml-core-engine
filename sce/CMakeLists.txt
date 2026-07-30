@@ -442,13 +442,20 @@ target_sources(sce_runtime PRIVATE
     src/parsing/XIncludeProcessor.cpp
 )
 
+# RFC 3986 percent-encoding. Built unconditionally: the BasicHTTP form encoder
+# is one caller, but _ioprocessors location URIs are assembled on every session
+# whether or not HTTP support is compiled in, and the encoder itself depends on
+# nothing but <string>.
+target_sources(sce_runtime PRIVATE
+    src/common/UrlEncodingHelper.cpp
+)
+
 # HTTP infrastructure (native builds only, not WASM, HTTP enabled)
 # W3C SCXML C.2: BasicHTTP Event I/O Processor requires native sockets
 if(SCE_ENABLE_HTTP)
     if(NOT EMSCRIPTEN)
         target_sources(sce_runtime PRIVATE
             src/events/HttpResponseUtils.cpp
-            src/common/UrlEncodingHelper.cpp
             src/events/HttpEventTarget.cpp
             src/events/HttpEventReceiver.cpp
             src/events/HttpEventBridge.cpp
@@ -457,7 +464,6 @@ if(SCE_ENABLE_HTTP)
         )
     else()
         target_sources(sce_runtime PRIVATE
-            src/common/UrlEncodingHelper.cpp
             src/events/HttpEventTarget.cpp
             src/events/HttpClientFactory.cpp
             src/events/EmscriptenFetchClient.cpp

@@ -3387,9 +3387,9 @@ impl W3cBackend for RustBackend {
         let policy_ctor = if needs_script {
             "    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> = \
              std::sync::Arc::new(sce_rust_lua::LuaEngine::new());\n\
-             \x20   let policy = sce_rust_tests::generated::test"
+             \x20   {POLICY_BINDING} = sce_rust_tests::generated::test"
         } else {
-            "    let policy = sce_rust_tests::generated::test"
+            "    {POLICY_BINDING} = sce_rust_tests::generated::test"
         };
         let policy_args = if needs_script {
             "(script_engine)"
@@ -3402,6 +3402,23 @@ impl W3cBackend for RustBackend {
         } else {
             ""
         };
+        // §scxml-C-2-3: the harness owns the inbound listener, so it declares
+        // the access URI the machine publishes in `_ioprocessors`. Documents
+        // converted from the W3C corpus address their BasicHTTP sends through
+        // that entry, so a machine that publishes nothing sends nowhere. The
+        // declaration lands on the policy before the engine takes ownership,
+        // because `_ioprocessors` is populated once at session setup.
+        let policy_binding = if is_http && needs_script {
+            "let mut policy"
+        } else {
+            "let policy"
+        };
+        let http_access_uri = if is_http && needs_script {
+            "\x20   policy.set_basic_http_access_uri(sce_rust_tests::harness::HTTP_TEST_SERVER_URL);\n"
+        } else {
+            ""
+        };
+        let policy_ctor = policy_ctor.replace("{POLICY_BINDING}", policy_binding);
         let pass_variant = to_pascal_case(pass_state);
 
         format!(
@@ -3412,6 +3429,7 @@ impl W3cBackend for RustBackend {
              #[test]\n\
              fn test_{test_id}() {{\n\
              {policy_ctor}{test_id}::{machine_name}Policy::new{policy_args};\n\
+             {http_access_uri}\
              \x20   let mut engine = sce_rust_runtime::Engine::new(policy);\n\
              {http_setup}\
              \x20   engine.initialize();\n\
@@ -3571,10 +3589,21 @@ impl W3cBackend for GoBackend {
             // Engine DI parity: each test owns its LuaEngine; the
             // process-global `RegisterLuaEngine` / `GetScriptEngine` singleton
             // pair was deleted in the step #6 cleanup.
+            //
+            // W3C SCXML C.2.3: for HTTP fixtures the harness owns the inbound
+            // listener, so it declares the access URI the machine publishes in
+            // _ioprocessors. The converted documents address their BasicHTTP
+            // sends through that entry.
+            let access_uri = if is_http {
+                "\tpolicy.BasicHTTPAccessURI = scegotest.BasicHTTPAccessURI\n"
+            } else {
+                ""
+            };
             format!(
                 "\tpolicy := New{machine_name}Policy()\n\
                  \tpolicy.SessionID = sce.GenerateSessionID()\n\
                  \tpolicy.ScriptEngine = scegotest.NewLuaEngine()\n\
+                 {access_uri}\
                  \tengine := sce.NewEngine[{machine_name}State, {machine_name}Event](&policy)"
             )
         } else {

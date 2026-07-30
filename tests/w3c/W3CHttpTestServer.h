@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "BasicHttpTestEndpoint.h"
 #include "core/LogMacros.h"
 #include <atomic>
 #include <functional>

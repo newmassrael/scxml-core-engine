@@ -3133,7 +3133,7 @@ bool StateMachine::setupJSEnvironment() {
 
     // §scxml-5.10: Set up read-only system variables (_sessionid, _name, _ioprocessors)
     std::string sessionName = model_ && !model_->getName().empty() ? model_->getName() : "StateMachine";
-    std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
+    auto ioProcessors = IOProcessorHelper::build(sessionId_, basicHttpAccessUri_);
     auto setupResult = scriptEngine_.setupSystemVariables(sessionId_, sessionName, ioProcessors).get();
     if (!setupResult.isSuccess()) {
         SCE_LOG_ERROR("StateMachine: Failed to setup system variables: {}", setupResult.getErrorMessage());
@@ -4028,6 +4028,11 @@ void StateMachine::setSessionFilePath(const std::string &filePath) {
     // JSEngine is a singleton, accessed via instance()
     SessionRegistry::instance().registerSessionFilePath(sessionId_, filePath);
     SCE_LOG_DEBUG("StateMachine: Registered session file path: {} for session: {}", filePath, sessionId_);
+}
+
+void StateMachine::setBasicHttpAccessUri(const std::string &accessUri) {
+    basicHttpAccessUri_ = accessUri;
+    SCE_LOG_DEBUG("StateMachine: BasicHTTP access URI for session {}: {}", sessionId_, accessUri);
 }
 
 void StateMachine::deferInvokeExecution(const std::string &stateId,

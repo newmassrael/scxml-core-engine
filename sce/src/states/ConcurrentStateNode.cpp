@@ -50,8 +50,23 @@ void ConcurrentStateNode::addChild(std::shared_ptr<IStateNode> child) {
         SCE_LOG_DEBUG("Adding child to {}: {}", id_, child->getId());
         children_.push_back(child);
 
-        // SCXML W3C specification section 3.4: child states in parallel states become regions
-        // Automatically create ConcurrentRegion wrapper for SCXML compliance
+        // §scxml-3.4: the children of <parallel> that run concurrently are its
+        // child states, which Appendix D's getChildStates defines as the
+        // <state>, <final>, and <parallel> children only. <history> and
+        // <initial> are pseudo-states: §scxml-3.10 makes <history> a legal
+        // child of <parallel>, but it is a record of a past configuration, not
+        // a region that enters, runs, and completes. Wrapping one would add a
+        // region that never reaches a final state, so the parallel's
+        // done.state would never fire.
+        //
+        // They stay in children_ — transitions target them by id and the
+        // history registrar walks the same list — but no region is built.
+        const Type childType = child->getType();
+        if (childType == Type::HISTORY || childType == Type::INITIAL) {
+            SCE_LOG_DEBUG("Child '{}' of {} is a pseudo-state; no region created", child->getId(), id_);
+            return;
+        }
+
         std::string regionId = child->getId();
         auto region = std::make_shared<ConcurrentRegion>(regionId, child);
 

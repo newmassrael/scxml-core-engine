@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371280
+// source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
+// template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
+// generated-at: 1785425169
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -95,6 +95,7 @@ pub enum Test534State {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test534Event {
+    ErrorCommunication,
     ErrorExecution,
     Test,
     Timeout,
@@ -163,6 +164,10 @@ pub struct Test534Policy {
     // is true, mirroring the Kotlin `StateMachineEngine(scriptEngine)` shape.
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     script_engine_initialized: bool,
+    // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
+    // by the deployment before initialize(). Empty means no such endpoint is
+    // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
+    basic_http_access_uri: String,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (Watching-zenoh RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -179,6 +184,14 @@ pub struct Test534Policy {
 }
 
 impl Test534Policy {
+    /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
+    /// machine, published as the processor's 'location' in `_ioprocessors`.
+    /// Must be called before `initialize()`, since the entries are populated
+    /// once at session setup. Leaving it unset publishes no BasicHTTP entry.
+    pub fn set_basic_http_access_uri(&mut self, access_uri: impl Into<String>) {
+        self.basic_http_access_uri = access_uri.into();
+    }
+
     pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
             script_engine,
@@ -195,6 +208,7 @@ impl Test534Policy {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: None,
             script_engine_initialized: false,
+            basic_http_access_uri: String::new(),
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -223,8 +237,11 @@ impl Test534Policy {
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        let io_processors = vec!["scxml".to_string()];
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors =
+            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "test534", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }
@@ -246,8 +263,11 @@ impl Test534Policy {
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        let io_processors = vec!["scxml".to_string()];
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors =
+            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "test534", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }
@@ -424,6 +444,7 @@ impl StatePolicy for Test534Policy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            Test534Event::ErrorCommunication => "error.communication",
             Test534Event::ErrorExecution => "error.execution",
             Test534Event::Test => "test",
             Test534Event::Timeout => "timeout",
@@ -433,6 +454,7 @@ impl StatePolicy for Test534Policy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => Some(Test534Event::ErrorCommunication),
             "error.execution" => Some(Test534Event::ErrorExecution),
             "test" => Some(Test534Event::Test),
             "timeout" => Some(Test534Event::Timeout),
@@ -568,18 +590,78 @@ impl StatePolicy for Test534Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML C.2: BasicHTTP send to HTTP target
-                        {
-                            let mut http_params =
-                                std::collections::HashMap::<String, Vec<String>>::new();
-                            engine.perform_http_send(
-                                "http://localhost:8080/test".to_string(),
-                                "test".to_string(),
-                                "".to_string(),
-                                http_params,
-                                send_id.clone(),
-                            );
-                        }
+                        // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
+                        let _resolved_target: Option<String> = {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            match se
+                                .evaluate_expression(&sid, "_ioprocessors['basichttp'].location")
+                            {
+                                Ok(ref val)
+                                    if matches!(
+                                        val,
+                                        sce_rust_runtime::ScriptValue::Null
+                                            | sce_rust_runtime::ScriptValue::Undefined
+                                    ) =>
+                                {
+                                    // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        Test534Event::ErrorCommunication,
+                                    ));
+                                    None
+                                }
+                                Ok(val) => {
+                                    let s = val.to_lua_literal();
+                                    let trimmed =
+                                        s.trim_matches(|c: char| c == '\'' || c == '"').to_string();
+                                    if trimmed.starts_with("!") {
+                                        // W3C SCXML 6.2: Invalid target raises error.execution
+                                        {
+                                            let mut err_meta =
+                                                sce_rust_runtime::EventWithMetadata::new(
+                                                    Test534Event::ErrorExecution,
+                                                );
+                                            err_meta.metadata.send_id = send_id.clone();
+                                            engine.raise(err_meta);
+                                        }
+                                        None
+                                    } else {
+                                        Some(trimmed)
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("targetexpr eval failed: {}", e);
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        Test534Event::ErrorExecution,
+                                    ));
+                                    None
+                                }
+                            }
+                        };
+
+                        if let Some(ref _rt) = _resolved_target {
+                            // W3C SCXML C.2: BasicHTTP send to HTTP target
+                            {
+                                // W3C SCXML C.2: Validate dynamic target is HTTP URL
+                                if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        Test534Event::ErrorCommunication,
+                                    ));
+                                } else {
+                                    let mut http_params =
+                                        std::collections::HashMap::<String, Vec<String>>::new();
+                                    engine.perform_http_send(
+                                        _rt.to_string(),
+                                        "test".to_string(),
+                                        "".to_string(),
+                                        http_params,
+                                        send_id.clone(),
+                                    );
+                                }
+                            }
+                        } // end of if let Some(ref _rt) = _resolved_target
 
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch

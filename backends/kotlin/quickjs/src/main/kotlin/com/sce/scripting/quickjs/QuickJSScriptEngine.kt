@@ -12,6 +12,7 @@
 
 package com.sce.scripting.quickjs
 
+import com.sce.runtime.IoProcessorDescriptor
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
@@ -62,7 +63,11 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         QuickJSNative.destroyContext(session.handle)
     }
 
-    override fun setupSystemVariables(sessionId: String, machineName: String) {
+    override fun setupSystemVariables(
+        sessionId: String,
+        machineName: String,
+        ioProcessors: List<IoProcessorDescriptor>,
+    ) {
         val session = sessions[sessionId] ?: return
         val handle = session.handle
 
@@ -72,9 +77,16 @@ class QuickJSScriptEngine : ScxmlScriptEngine {
         // W3C SCXML 5.10: _name
         QuickJSNative.setGlobalString(handle, "_name", machineName)
 
-        // W3C SCXML 5.10: _ioprocessors
-        QuickJSNative.eval(handle,
-            "_ioprocessors = { scxml: { location: ${jsStringLiteral(sessionId)} } }")
+        // §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
+        // supports, each with a 'location' field. Names and locations are
+        // decided by IoProcessors.build, so this engine's view of
+        // `_ioprocessors` matches every other backend's. Both the key and the
+        // location go through jsStringLiteral — the entry names carry ':' and
+        // '#', and the locations are deployment-supplied.
+        val entries = ioProcessors.joinToString(", ") { processor ->
+            "[${jsStringLiteral(processor.name)}]: { location: ${jsStringLiteral(processor.location)} }"
+        }
+        QuickJSNative.eval(handle, "_ioprocessors = { $entries }")
 
         session.declaredVars.addAll(listOf("_sessionid", "_name", "_ioprocessors", "_event"))
     }

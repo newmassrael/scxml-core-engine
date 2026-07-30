@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371281
+// source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
+// template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
+// generated-at: 1785425248
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/510/test510.scxml
@@ -26,6 +26,7 @@ sealed interface Test510State : State {
 
 sealed interface Test510Event : Event {
     sealed interface Error : Test510Event {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Internal : Test510Event
@@ -35,9 +36,16 @@ sealed interface Test510Event : Event {
 // --- State Machine (W3C SCXML) ---
 
 class Test510StateMachine(
-) : StateMachineEngine<Test510State, Test510Event>() {
+    scriptEngine: ScxmlScriptEngine,
+) : StateMachineEngine<Test510State, Test510Event>(scriptEngine) {
 
     override val initialState: Test510State = Test510State.S0
+
+    // W3C SCXML B.1: Initialize script engine before entering initial state
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        super.enterInitialConfiguration()
+    }
 
 
 
@@ -74,6 +82,7 @@ class Test510StateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test510Event? = when (name) {
+        "error.communication" -> Test510Event.Error.Communication
         "error.execution" -> Test510Event.Error.Execution
         "internal" -> Test510Event.Internal
         "test" -> Test510Event.Test
@@ -83,6 +92,7 @@ class Test510StateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test510Event): String? = when (event) {
+        is Test510Event.Error.Communication -> "error.communication"
         is Test510Event.Error.Execution -> "error.execution"
         is Test510Event.Internal -> "internal"
         is Test510Event.Test -> "test"
@@ -91,15 +101,122 @@ class Test510StateMachine(
 
 
 
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
 
-    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
+    // W3C SCXML B.1: Lazy script engine initialization
+    private fun ensureScriptEngine() {
+        if (scriptEngineInitialized) return
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = allocateScriptSession()
+        engine.createSession(sid)
+
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        engine.setupSystemVariables(
+            sid,
+            "test510",
+            com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
+        )
+
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raiseInternal(Test510Event.Error.Execution)
+            false
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    private fun executeAssign(location: String, expr: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        try {
+            engine.assign(sid, location, expr)
+        } catch (e: Exception) {
+            raiseInternal(Test510Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 5.8: Script block execution
+    private fun executeScriptBlock(script: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        try {
+            engine.executeScript(sid, script)
+        } catch (e: Exception) {
+            raiseInternal(Test510Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: Test510Event) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+        val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+        val eventName = eventNameOf(event) ?: return
+        val meta = currentEventMetadata
+        // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
+        val effectiveType = when {
+            eventName.startsWith("done.") || eventName.startsWith("error.") -> "platform"
+            else -> meta.type
+        }
+        // W3C SCXML 5.10.1: C++ pattern — origin/origintype only for external events
+        // Internal events (<raise>) have empty origin; external events (<send>) have session ID
+        val effectiveOrigin = if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
+        val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
+        engine.setCurrentEvent(
+            sid,
+            com.sce.runtime.SetCurrentEventArgs(
+                name = eventName,
+                data = meta.data,
+                type = effectiveType,
+                sendId = meta.sendId,
+                origin = effectiveOrigin,
+                originType = effectiveOriginType,
+                invokeId = meta.invokeId
+            )
+        )
+    }
+
+
+    // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
         state: Test510State,
         event: Test510Event
-    ): TransitionResult<Test510State> = when (state) {
+    ): TransitionResult<Test510State> {
+        // W3C SCXML 5.10: Set _event before guard evaluation
+        setCurrentEventInScriptEngine(event)
+        return when (state) {
         is Test510State.S0 -> processS0(event)
         is Test510State.S1 -> processS1(event)
         else -> TransitionResult.Ignored
+    }
     }
 
 
@@ -149,8 +266,39 @@ class Test510StateMachine(
             scheduleSend("__send_0", 30000L, Test510Event.Timeout)
 
 
+            // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
+            var _resolvedTarget: String? = null
+            run resolveTarget@{
+                ensureScriptEngine()
+                val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                try {
+                    val v = eng.evaluateExpr(sid, "_ioprocessors['basichttp'].location")
+                    val target = v?.toString() ?: ""
+                    // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
+                    if (target.startsWith("!")) {
+                        raiseInternal(Test510Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_1"))
+                        return@resolveTarget
+                    }
+                    // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
+                    if (target.isEmpty() || target == "undefined") {
+                        raiseInternal(Test510Event.Error.Communication, EventMetadata.platform())
+                        return@resolveTarget
+                    }
+                    _resolvedTarget = target
+                } catch (_: Exception) {
+                    raiseInternal(Test510Event.Error.Execution, EventMetadata.platform())
+                }
+            }
+            _resolvedTarget?.let { _rt ->
+            // W3C SCXML C.2: Validate dynamic target is HTTP URL
+            if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
+                raiseInternal(Test510Event.Error.Communication, EventMetadata.platform())
+            } else {
 
-            performHttpSend("http://localhost:8080/test", "test", "", emptyMap(), "__send_1")
+            performHttpSend(_rt, "test", "", emptyMap(), "__send_1")
+            }
+            } // end of _resolvedTarget?.let
 
             raiseInternal(Test510Event.Internal)
             }

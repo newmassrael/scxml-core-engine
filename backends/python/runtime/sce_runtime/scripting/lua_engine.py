@@ -25,6 +25,8 @@ import xml.etree.ElementTree as _ET
 from threading import RLock
 from typing import Any, Callable, Dict, List, Optional
 
+from ..io_processors import IoProcessorDescriptor
+
 try:
     import lupa  # type: ignore[import-not-found]
 except ImportError as _exc:  # pragma: no cover — surfaces during dependency install
@@ -479,23 +481,26 @@ class LuaScriptEngine(IScriptEngine):
         self,
         session_id: str,
         session_name: str,
-        io_processors: List[str],
+        io_processors: List[IoProcessorDescriptor],
     ) -> None:
         """W3C SCXML 5.10 — `_sessionid` / `_name` / `_ioprocessors`."""
         session = self._require_session(session_id)
         globals_ = session.runtime.globals()
         globals_["_sessionid"] = session_id
         globals_["_name"] = session_name
-        # `_ioprocessors` is a table keyed on the processor URI with a
-        # `location` field per W3C C.2. Location uses the `#<name>`
-        # form Rust's LuaScriptEngine emits at `backends/rust/lua/src/lib.rs`
-        # so generated expressions are byte-portable across backends.
-        # The lupa `table_from` builder produces a real Lua table the
-        # generated expressions can dot-access.
+        # §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
+        # supports, each with a `location` field holding the address that
+        # reaches this session through it. Names and locations are decided by
+        # `sce_runtime.io_processors.build`, so this engine's view of
+        # `_ioprocessors` matches every other backend's. The lupa `table_from`
+        # builder produces a real Lua table the generated expressions can
+        # dot-access.
         io_table = session.runtime.table_from(
             {
-                uri: session.runtime.table_from({"location": f"#{uri}"})
-                for uri in io_processors
+                processor.name: session.runtime.table_from(
+                    {"location": processor.location}
+                )
+                for processor in io_processors
             }
         )
         globals_["_ioprocessors"] = io_table

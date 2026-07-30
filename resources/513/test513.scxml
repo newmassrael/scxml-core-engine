@@ -23,8 +23,13 @@
     <onentry>
       <!-- Set timeout in case HTTP event never arrives -->
       <send event="timeout" delay="30s"/>
-      <!-- Send HTTP event to ourselves to validate 200 OK response -->
-      <send event="test" target="http://localhost:8080/test" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+      <!-- Send HTTP event to ourselves to validate 200 OK response.
+           W3C SCXML C.2.3: the processor's access URI is read from its
+           _ioprocessors entry, which is the address this test's own prose
+           names ("send HTTP POST to processor's location URL"). Naming a
+           literal URL here would have the document assert an address the
+           processor never published. -->
+      <send event="test" targetexpr="_ioprocessors['basichttp'].location" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
     </onentry>
 
     <!-- Transition to pass if we receive HTTP event (validates 200 OK response) -->

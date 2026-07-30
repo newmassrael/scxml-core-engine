@@ -3757,8 +3757,24 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_run({{ csym_prefix }}{{ model.n
 }
 
 {% if not model.has_parent_communication %}
-SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm) {
+static void {{ csym_prefix }}{{ model.name }}_init_impl({{ csym_prefix }}{{ model.name }}_t *sm{% if model.needs_script_engine %},
+                                                       const char *basic_http_access_uri{% endif %}) {
     memset(sm, 0, sizeof(*sm));
+{% if model.needs_script_engine %}
+    /* W3C SCXML C.2.3: stamp the deployment's inbound BasicHTTP endpoint
+       before the Lua state opens. `_ioprocessors` is seeded once at that
+       point and the first `<onentry>` body may already read it, so there is
+       no later moment the address could still reach the table. NULL or ""
+       means no endpoint is deployed and no BasicHTTP entry is published. */
+    if (basic_http_access_uri != NULL) {
+        size_t _uri_len = strlen(basic_http_access_uri);
+        if (_uri_len >= sizeof(sm->basic_http_access_uri)) {
+            _uri_len = sizeof(sm->basic_http_access_uri) - 1u;
+        }
+        memcpy(sm->basic_http_access_uri, basic_http_access_uri, _uri_len);
+        sm->basic_http_access_uri[_uri_len] = '\0';
+    }
+{% endif %}
     /* W3C SCXML 6.2: SM is running from the moment the configuration is
        seeded. cpp `StaticExecutionEngine::initialize` sets `isRunning_`
        around the same point so external pollers — `_tick`, `_run`, and
@@ -3808,6 +3824,22 @@ SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.
         process_event_queues(sm);
     }
 }
+
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm) {
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm{% if model.needs_script_engine %}, NULL{% endif %});
+}
+{% if model.needs_script_engine %}
+
+/* W3C SCXML C.2.3: `_init` variant taking the deployment's inbound BasicHTTP
+   endpoint, published as that processor's `_ioprocessors` location. Mirrors
+   the `_init_with_parent` shape, which exists for the same reason: some
+   deployment context has to be in place before the configuration entry walk
+   runs, and `_init` zeroes the struct so no setter called earlier survives. */
+SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                                      const char *basic_http_access_uri) {
+    {{ csym_prefix }}{{ model.name }}_init_impl(sm, basic_http_access_uri);
+}
+{% endif %}
 {% else %}
 SCE_SM_FN void {{ csym_prefix }}{{ model.name }}_init_with_parent({{ csym_prefix }}{{ model.name }}_t *sm,
                                        void *parent_sm,

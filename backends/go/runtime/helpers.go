@@ -310,7 +310,12 @@ type IScriptEngine interface {
 	HasVariable(sessionID, name string) bool
 
 	// SCXML-specific
-	SetupSystemVariables(sessionID string) error
+	// SetupSystemVariables binds _sessionid / _name / _ioprocessors
+	// (W3C SCXML 5.10). The descriptors arrive fully resolved from
+	// BuildIoProcessors; an implementation files each one under its name with
+	// its location and invents neither, so _ioprocessors reads identically
+	// whichever engine backs the session.
+	SetupSystemVariables(sessionID, sessionName string, ioProcessors []IoProcessorDescriptor) error
 	SetCurrentEvent(sessionID string, args SetCurrentEventArgs) error
 	SetStateQueryCallback(sessionID string, cb func(stateID string) bool)
 

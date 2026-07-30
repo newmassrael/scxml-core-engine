@@ -30,6 +30,7 @@ use mlua::prelude::*;
 
 use dom::{XmlDoc, XmlRef};
 
+use sce_rust_runtime::helpers::io_processors::IoProcessorDescriptor;
 use sce_rust_runtime::scripting::{
     IScriptEngine, NativeMethod, ScriptError, ScriptResult, ScriptValue,
 };
@@ -704,7 +705,7 @@ impl IScriptEngine for LuaEngine {
         &self,
         session_id: &str,
         session_name: &str,
-        io_processors: &[String],
+        io_processors: &[IoProcessorDescriptor],
     ) -> ScriptResult<()> {
         let mut sessions = self.sessions.lock().unwrap();
         let session = sessions
@@ -720,15 +721,19 @@ impl IScriptEngine for LuaEngine {
         globals.set("_name", session_name).map_err(map_lua_err)?;
         session.declared_vars.insert("_name".to_string());
 
-        // _ioprocessors: table of { location = "..." }
+        // §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
+        // supports, each with a 'location' field holding the address that
+        // reaches this session through it. Both names and locations are
+        // decided by `helpers::io_processors::build`, so this engine's view of
+        // `_ioprocessors` matches every other backend's.
         let io_table = session.lua.create_table().map_err(map_lua_err)?;
-        for proc_name in io_processors {
+        for processor in io_processors {
             let proc_entry = session.lua.create_table().map_err(map_lua_err)?;
             proc_entry
-                .set("location", format!("#{}", proc_name))
+                .set("location", processor.location.as_str())
                 .map_err(map_lua_err)?;
             io_table
-                .set(proc_name.as_str(), proc_entry)
+                .set(processor.name.as_str(), proc_entry)
                 .map_err(map_lua_err)?;
         }
         globals

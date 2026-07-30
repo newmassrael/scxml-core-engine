@@ -8,7 +8,7 @@ test since platforms are not required to support basic http event i/o -->
 <state id="s0">
   <onentry>
    <send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor" 
-   	target="http://localhost:8080/test"
+   	targetexpr="_ioprocessors['basichttp'].location"
    	event="event1"/>
    <send event="timeout"/>
     </onentry>

@@ -7,7 +7,7 @@ of the raised event. -->
 <state id="s0">
   <onentry>
     <send event="timeout" delay="3s"/>
-    <send   target="http://localhost:8080/test" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor">
+    <send   targetexpr="_ioprocessors['basichttp'].location" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor">
       <param name="_scxmleventname" expr="'test'"/>
       </send>  
      </onentry>

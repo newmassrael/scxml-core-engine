@@ -153,20 +153,45 @@
            is invoked. */
         (void)luaL_dostring(sm->L,
             "_name = '{{ model.scxml_name | default('') | escape_c }}'");
-        /* W3C SCXML 5.10 + C.1 (test500/501/569): `_ioprocessors` is a
-           table of supported I/O processor descriptors keyed by alias.
-           Mirrors cpp `LuaEngine::setupSystemVariables`
-           (`sce/src/scripting/LuaEngine.cpp:1041-1046`): for each entry
-           in `ioProcessors` (cpp's `StateMachine.cpp:3107` seeds it as
-           `{"scxml"}`), build `_ioprocessors[proc] = {location = proc}`.
-           The C11 AOT-only profile mirrors that exact emit shape — the
-           literal `"scxml"` is bound non-nil so test500's typeof check
-           passes, and indexed access (`_ioprocessors['scxml'].location`)
-           returns a truthy string so test569's cond evaluates true.
-           Per-processor entries beyond `scxml` land when the first
-           additional-IO-processor fixture forces them. */
+        /* W3C SCXML C.1.1 / C.2.3: `_ioprocessors` holds one entry per
+           processor the deployment supports, each with a `location` field
+           naming the address that reaches this session through it. Entry
+           names and locations follow cpp `IOProcessorHelper::build`
+           (`sce/include/common/IOProcessorHelper.h`), so a machine reads the
+           same table whichever backend runs it.
+
+           The SCXML processor is filed under both C.1.1's entry name and the
+           `scxml` alias documents index with. Its location embeds this
+           machine's `_sessionid`, which the C11 AOT profile derives from
+           `model.name` at codegen time — that name is already constrained to
+           the C identifier characters every emitted symbol uses, so it needs
+           no percent-encoding here (cpp encodes because its session ids are
+           runtime-supplied). */
         (void)luaL_dostring(sm->L,
-            "_ioprocessors = {scxml = {location = 'scxml'}}");
+            "local _scxml_loc = 'sce://scxml/{{ model.name | escape_c }}_session'\n"
+            "_ioprocessors = {\n"
+            "  ['http://www.w3.org/TR/scxml/#SCXMLEventProcessor'] = {location = _scxml_loc},\n"
+            "  scxml = {location = _scxml_loc},\n"
+            "}");
+        /* W3C SCXML C.2.3: the BasicHTTP entry lands only once the deployment
+           has declared an inbound endpoint. Support for that processor is
+           optional and per-deployment, so a machine with no listener publishes
+           no entry rather than an address nothing answers on. The URI is
+           pushed through the Lua C API rather than folded into the chunk
+           above: it arrives from outside the generated code, and a quote in it
+           would otherwise end the string literal and be read as Lua. */
+        if (sm->basic_http_access_uri[0] != '\0') {
+            lua_getglobal(sm->L, "_ioprocessors");
+            for (int _proc = 0; _proc < 2; _proc++) {
+                lua_newtable(sm->L);
+                lua_pushstring(sm->L, sm->basic_http_access_uri);
+                lua_setfield(sm->L, -2, "location");
+                lua_setfield(sm->L, -2,
+                             _proc == 0 ? "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"
+                                        : "basichttp");
+            }
+            lua_pop(sm->L, 1);
+        }
         /* W3C SCXML 5.5 + 3.7: donedata stash slot. The final-state entry
            emit in `state_machine.c.jinja2::execute_entry_actions` populates
            `_pending_donedata` (string / number / table) right before

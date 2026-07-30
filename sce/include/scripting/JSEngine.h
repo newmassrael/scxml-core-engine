@@ -224,11 +224,11 @@ public:
      * @brief Setup SCXML system variables for a session
      * @param sessionId Target session
      * @param sessionName Human-readable session name
-     * @param ioProcessors List of available I/O processors
+     * @param ioProcessors Entries to publish in `_ioprocessors`
      * @return Future indicating success/failure
      */
     std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                   const std::vector<std::string> &ioProcessors) override;
+                                                   const std::vector<IOProcessorDescriptor> &ioProcessors) override;
 
     /**
      * @brief Register a native function accessible from JavaScript
@@ -407,7 +407,7 @@ private:
         std::string parentSessionId;
         std::shared_ptr<Event> currentEvent;
         std::string sessionName;
-        std::vector<std::string> ioProcessors;
+        std::vector<IOProcessorDescriptor> ioProcessors;
         std::unordered_set<std::string>
             preInitializedVars;  // Variables set before datamodel initialization (e.g., invoke data)
         // SOLID: Single Responsibility - session management includes invoke relationships
@@ -438,14 +438,14 @@ private:
 
         Type type;
         std::string sessionId;
-        std::string code;                       // for EXECUTE_SCRIPT, EVALUATE_EXPRESSION
-        std::string variableName;               // for SET_VARIABLE, GET_VARIABLE
-        ScriptValue variableValue;              // for SET_VARIABLE
-        bool isDOMObject = false;               // for SET_VARIABLE: XML DOM object (§scxml-B-2)
-        std::shared_ptr<Event> event;           // for SET_CURRENT_EVENT
-        std::string sessionName;                // for SETUP_SYSTEM_VARIABLES
-        std::vector<std::string> ioProcessors;  // for SETUP_SYSTEM_VARIABLES
-        std::string parentSessionId;            // for CREATE_SESSION
+        std::string code;                                 // for EXECUTE_SCRIPT, EVALUATE_EXPRESSION
+        std::string variableName;                         // for SET_VARIABLE, GET_VARIABLE
+        ScriptValue variableValue;                        // for SET_VARIABLE
+        bool isDOMObject = false;                         // for SET_VARIABLE: XML DOM object (§scxml-B-2)
+        std::shared_ptr<Event> event;                     // for SET_CURRENT_EVENT
+        std::string sessionName;                          // for SETUP_SYSTEM_VARIABLES
+        std::vector<IOProcessorDescriptor> ioProcessors;  // for SETUP_SYSTEM_VARIABLES
+        std::string parentSessionId;                      // for CREATE_SESSION
         std::promise<ScriptResult> promise;
 
         ExecutionRequest(Type t, const std::string &sid) : type(t), sessionId(sid) {}
@@ -514,7 +514,7 @@ private:
     ScriptResult getVariableInternal(const std::string &sessionId, const std::string &name);
     ScriptResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
     ScriptResult setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
-                                              const std::vector<std::string> &ioProcessors);
+                                              const std::vector<IOProcessorDescriptor> &ioProcessors);
 
     // Context management
     bool createSessionInternal(const std::string &sessionId, const std::string &parentSessionId);

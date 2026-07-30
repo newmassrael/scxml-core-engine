@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
+from ..io_processors import IoProcessorDescriptor
+
 
 class ScriptValueKind(Enum):
     """Discriminator for `ScriptValue`. Matches the C++ `std::variant`
@@ -287,11 +289,17 @@ class IScriptEngine(ABC):
         self,
         session_id: str,
         session_name: str,
-        io_processors: List[str],
+        io_processors: List[IoProcessorDescriptor],
     ) -> None:
         """W3C SCXML 5.10 — bind `_sessionid`, `_name`, `_ioprocessors`
         into the session scope. Called once per session right after
-        `create_session`."""
+        `create_session`.
+
+        The descriptors arrive fully resolved from
+        `sce_runtime.io_processors.build`. An implementation files each one
+        under its name with its location and invents neither, so
+        `_ioprocessors` reads identically whichever engine backs the
+        session."""
 
     @abstractmethod
     def set_current_event(
