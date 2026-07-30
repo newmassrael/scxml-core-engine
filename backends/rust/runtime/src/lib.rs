@@ -185,7 +185,7 @@ pub const MAX_SCHEDULED_EVENTS: usize = 32;
 /// aliases (`heapless::Vec<_, MAX_ENABLED_TRANSITIONS>`), which the
 /// parallel-state transition algorithm uses for its conflict-resolution
 /// buffers (`tools/codegen/templates/rust/{process_transition,conflict_resolution}.rs.jinja2`).
-/// W3C SCXML Appendix D.2 selects at most one enabled transition per active
+/// §scxml-D-selectTransitions selects at most one enabled transition per active
 /// atomic state, and the active configuration is itself bounded by
 /// [`crate::helpers::hierarchy::MAX_HIERARCHY_DEPTH`] (16), so the enabled set
 /// cannot exceed that. v1 value 32 gives a 2× margin.

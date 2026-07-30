@@ -148,7 +148,7 @@ typedef struct {{ csym_prefix }}{{ model.name }}_event_with_meta {
 {% endif %}
 } {{ csym_prefix }}{{ model.name }}_event_with_meta_t;
 
-/* ── W3C SCXML Appendix D.2: Optimal enabled transition set ───────── */
+/* ── Appendix D removeConflictingTransitions: Optimal enabled transition set ───────── */
 {# Mirrors the C++ `TransitionInfo` struct defined inside the generated
    namespace (process_transition.jinja2 emits it per fixture). The C11
    layout adds a `exit_set` bitmap field — cpp re-computes the exit set

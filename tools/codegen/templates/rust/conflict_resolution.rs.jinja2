@@ -4,7 +4,7 @@
 {#
     Conflict Resolution Template (Rust Jinja2)
 
-    W3C SCXML Appendix D.2: removeConflictingTransitions Implementation
+    Appendix D removeConflictingTransitions: removeConflictingTransitions Implementation
 
     Generates:
     - remove_conflicting_transitions() for optimal transition set selection
@@ -14,7 +14,7 @@
 #}
 
 {% if model.has_parallel_states %}
-    // W3C SCXML Appendix D.2: Remove conflicting transitions
+    // Appendix D removeConflictingTransitions: Remove conflicting transitions
     fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> TransitionList {
         let mut filtered: TransitionList = TransitionList::new();
 
@@ -23,13 +23,13 @@
             let mut to_remove: IndexList = IndexList::new();
 
             for (idx, t2) in filtered.iter().enumerate() {
-                // W3C SCXML Appendix D.2: Check if exit sets intersect
+                // Appendix D removeConflictingTransitions: Check if exit sets intersect
                 let t1_exits = Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
                 let t2_exits = Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
 
                 let mut has_conflict = t1_exits.iter().any(|s1| t2_exits.contains(s1));
 
-                // W3C SCXML Appendix D.2: Target/source conflict — t1 enters a state that t2 leaves
+                // Appendix D removeConflictingTransitions: Target/source conflict — t1 enters a state that t2 leaves
                 // (or vice versa). Matches C++ `ConflictResolutionAlgorithms::removeConflictingTransitions`.
                 if !has_conflict && (t1.target == t2.source || t2.target == t1.source) {
                     has_conflict = true;
@@ -58,7 +58,7 @@
                 }
 
                 if has_conflict {
-                    // W3C SCXML Appendix D.2: Preemption rules
+                    // Appendix D removeConflictingTransitions: Preemption rules
                     if t1.target == t2.source {
                         to_remove.push_bounded(idx);
                     } else if t2.target == t1.source {
@@ -85,7 +85,7 @@
         filtered
     }
 
-    // W3C SCXML Appendix D.2: Compute exit set for a transition
+    // Appendix D computeExitSet: Compute exit set for a transition
     // Matches C++ `ParallelTransitionHelper::computeExitSet` — returns all states
     // from `source` up to (but not including) LCA(source, target). For internal
     // transitions where the target is a descendant of the source, returns empty.
@@ -127,7 +127,7 @@
             result
         };
 
-        // W3C SCXML Appendix D.2: Collect states from source up to (excluding) LCA
+        // Appendix D findLCCA: Collect states from source up to (excluding) LCA
         let mut exit_set = ::sce_rust_runtime::helpers::hierarchy::new_chain();
         let mut current = source;
         loop {
@@ -147,7 +147,7 @@
         exit_set
     }
 
-    // W3C SCXML Appendix D.2: Execute microstep with proper ordering
+    // Appendix D microstepProcedure: Execute microstep with proper ordering
     fn execute_microstep(
         &mut self,
         transitions: &[TransitionInfo],
@@ -159,7 +159,7 @@
             return;
         }
 
-        // W3C SCXML Appendix D.2 Step 1-2: Compute states to exit
+        // Appendix D computeExitSet Step 1-2: Compute states to exit
         // W3C SCXML 3.13: Transition domain = LCCA(source, target). When there is no
         // common ancestor (top-level sibling transition), we exit every active ancestor
         // of source up to the root — modelled here as `domain = None`.
@@ -220,12 +220,12 @@
         // Snapshot active states for history recording
         let active_snapshot = self.active_states.clone();
 
-        // W3C SCXML Appendix D.2 Step 2: Exit states
+        // Appendix D exitStates Step 2: Exit states
         for &state in &states_to_exit {
             self.execute_exit_actions(state, engine, &active_snapshot);
         }
 
-        // W3C SCXML Appendix D.2 Step 3: Execute transition content
+        // Appendix D executeTransitionContent Step 3: Execute transition content
         let mut sorted_transitions: TransitionList = ::sce_rust_runtime::bounded_clone_slice(transitions);
         ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| Self::get_document_order(t.source));
 
@@ -243,7 +243,7 @@
             }
         }
 
-        // W3C SCXML Appendix D.2 Step 4-5: Enter target states
+        // Appendix D enterStates Step 4-5: Enter target states
         ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| Self::get_document_order(t.target));
 
         for trans in &sorted_transitions {

@@ -1450,7 +1450,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * W3C SCXML Appendix D.2: Apply multiple non-conflicting transitions
+     * §scxml-D-microstepProcedure: Apply multiple non-conflicting transitions
      * as a single microstep.
      *
      * For parallel states, the W3C algorithm requires that all enabled
@@ -1489,17 +1489,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // Sort by source document order
             val sorted = externals.sortedBy { documentOrderOf(it.first) }
 
-            // W3C SCXML Appendix D.2, Step 1: Exit all in reverse document order
+            // §scxml-D-microstepProcedure, Step 1: Exit all in reverse document order
             for ((source, result) in sorted.reversed()) {
                 exitHierarchy(source, result.target, result.transitionSource)
             }
 
-            // W3C SCXML Appendix D.2, Step 2: Transition actions in document order
+            // §scxml-D-microstepProcedure, Step 2: Transition actions in document order
             for ((source, _) in sorted) {
                 executeTransitionActions(source, null)
             }
 
-            // W3C SCXML Appendix D.2, Step 3: Enter all targets in document order
+            // §scxml-D-microstepProcedure, Step 3: Enter all targets in document order
             // C++ pattern: onEntry (executeEntryActions) handles parallel region descent
             for ((_, result) in sorted) {
                 onEntry(result.target)
@@ -1519,7 +1519,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * Process a single event (internal or external).
      *
-     * W3C SCXML Appendix D.2: For parallel state machines, collect ALL enabled
+     * §scxml-D-removeConflictingTransitions: For parallel state machines, collect ALL enabled
      * transitions from all active leaf states, remove conflicting transitions,
      * then execute as an atomic microstep.
      *
@@ -1540,7 +1540,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             return
         }
 
-        // W3C SCXML Appendix D.2: Collect transitions from all active leaf states.
+        // §scxml-D-selectTransitions: Collect transitions from all active leaf states.
         //
         // External/InternalToTarget: collect ALL and apply conflict resolution.
         // Internal (targetless): collect per leaf state for action execution.
@@ -1587,7 +1587,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * W3C SCXML Appendix D.2: Remove conflicting transitions from the enabled set.
+     * §scxml-D-removeConflictingTransitions: Remove conflicting transitions from the enabled set.
      *
      * Two transitions conflict if their exit sets overlap. The exit set of a
      * transition is the set of all states that would be exited by it:
@@ -1735,7 +1735,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     /**
      * Apply multiple non-conflicting event-based transitions as a single microstep.
-     * W3C SCXML Appendix D.2: Compute exit set -> Exit all -> Actions all -> Enter all.
+     * §scxml-D-microstepProcedure: Compute exit set -> Exit all -> Actions all -> Enter all.
      *
      * C++ ParallelTransitionHelper::computeStatesToExit pattern:
      * The exit set is the union of all individual transitions' exit sets,
@@ -1764,7 +1764,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // W3C SCXML 3.11: Capture active states before exit for history recording
             preTransitionActiveStates = activeStateIds.toSet()
 
-            // W3C SCXML Appendix D.2: Compute union exit set (C++ ParallelTransitionHelper pattern)
+            // §scxml-D-computeExitSet: Compute union exit set (C++ ParallelTransitionHelper pattern)
             // For each external transition, compute its individual exit set,
             // then union them. A state is in the exit set if it is a descendant
             // of the transition's domain AND it's currently active.

@@ -29,7 +29,7 @@ namespace SCE::Core {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Unified Conflict Resolution Algorithms (Single Source of Truth)
-// W3C SCXML Appendix D.2: Shared by AOT engine (enum states) and Interpreter (string states)
+// §scxml-D-removeConflictingTransitions: Shared by AOT engine (enum states) and Interpreter (string states)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -46,7 +46,7 @@ namespace SCE::Core {
  */
 struct ConflictResolutionAlgorithms {
     /**
-     * @brief Transition descriptor for conflict resolution (W3C SCXML Appendix D.2)
+     * @brief Transition descriptor for conflict resolution (§scxml-D-removeConflictingTransitions)
      *
      * @tparam StateType State identifier type (enum for AOT, std::string for Interpreter)
      */
@@ -69,7 +69,7 @@ struct ConflictResolutionAlgorithms {
     };
 
     /**
-     * @brief Check if two exit sets have non-empty intersection (W3C SCXML Appendix D.2)
+     * @brief Check if two exit sets have non-empty intersection (§scxml-D-removeConflictingTransitions)
      */
     template <typename StateType>
     static bool hasIntersection(const std::vector<StateType> &set1, const std::vector<StateType> &set2) {
@@ -84,7 +84,7 @@ struct ConflictResolutionAlgorithms {
     }
 
     /**
-     * @brief Remove conflicting transitions (W3C SCXML Appendix D.2)
+     * @brief Remove conflicting transitions (§scxml-D-removeConflictingTransitions)
      *
      * @tparam StateType State identifier type
      * @tparam GetParentFn Callable: (const StateType&) -> std::optional<StateType>
@@ -112,12 +112,12 @@ struct ConflictResolutionAlgorithms {
 
                 bool hasConflict = false;
 
-                // W3C SCXML Appendix D.2: Check if exit sets intersect (conflict)
+                // §scxml-D-removeConflictingTransitions: Check if exit sets intersect (conflict)
                 if (hasIntersection(t1.exitSet, t2.exitSet)) {
                     hasConflict = true;
                 }
 
-                // W3C SCXML Appendix D.2: Target/source conflict detection
+                // §scxml-D-removeConflictingTransitions: Target/source conflict detection
                 if (!hasConflict) {
                     if (t1.target == t2.source || t2.target == t1.source) {
                         hasConflict = true;
@@ -149,7 +149,7 @@ struct ConflictResolutionAlgorithms {
                 }
 
                 if (hasConflict) {
-                    // W3C SCXML Appendix D.2: Preemption rules
+                    // §scxml-D-removeConflictingTransitions: Preemption rules
                     if (t1.target == t2.source) {
                         transitionsToRemove.push_back(i);
                     } else if (t2.target == t1.source) {
@@ -182,7 +182,7 @@ struct ConflictResolutionAlgorithms {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * @brief W3C SCXML Appendix D.2 Conflict Resolution Helper (AOT wrapper)
+ * @brief §scxml-D-removeConflictingTransitions Conflict Resolution Helper (AOT wrapper)
  *
  * @details
  * Thin wrapper around ConflictResolutionAlgorithms for AOT engine compatibility.
@@ -207,7 +207,7 @@ public:
      * @brief Compute exit set for a single transition
      *
      * @details
-     * W3C SCXML Appendix D.2: Exit set = states from source up to (but not including) LCA
+     * §scxml-D-computeExitSet: Exit set = states from source up to (but not including) LCA
      *
      * ARCHITECTURE.md Zero Duplication: Delegates to ParallelTransitionHelper for exit set computation.
      * Single Source of Truth - same algorithm used by AOT engine microstep execution.
@@ -241,7 +241,7 @@ public:
         trans.isInternal = isInternal;      // §scxml-3.13: Pass internal transition type
         trans.isTargetless = isTargetless;  // §scxml-3.13: Pass targetless transition flag
 
-        // W3C SCXML Appendix D.2: Use shared Helper for exit set computation
+        // §scxml-D-computeExitSet: Use shared Helper for exit set computation
         auto exitSetUnordered = ParallelTransitionHelper::computeExitSet<State, StatePolicy>(trans);
 
         // Convert unordered_set to vector for conflict resolution algorithm
@@ -257,7 +257,7 @@ public:
      * @brief Check if two exit sets have non-empty intersection
      *
      * @details
-     * W3C SCXML Appendix D.2: Two transitions conflict if their exit sets intersect.
+     * §scxml-D-removeConflictingTransitions: Two transitions conflict if their exit sets intersect.
      * Exit set intersection means both transitions would exit at least one common state.
      *
      * @param set1 First exit set
@@ -284,7 +284,7 @@ public:
     }
 
     /**
-     * @brief Remove conflicting transitions (W3C SCXML Appendix D.2)
+     * @brief Remove conflicting transitions (§scxml-D-removeConflictingTransitions)
      *
      * Delegates to ConflictResolutionAlgorithms with StatePolicy bindings.
      */

@@ -153,6 +153,23 @@ class SlashChain(unittest.TestCase):
         self.assertEqual(migs, [])
         self.assertEqual([s["label"] for s in skipped], ["9.99"])
 
+    def test_appendix_word_before_label_is_seen(self):
+        # "W3C SCXML Appendix C.2" put the word in the label position, so the
+        # citation matched NOTHING — neither migrated nor reported — and a
+        # fabricated appendix subsection passed every gate. Measured: 376 sites
+        # cited "Appendix D.2" while D.2 is not a ledger section.
+        new, migs, _ = plan("// per W3C SCXML Appendix C.2 processor\n")
+        self.assertIn("§scxml-C-2", new)
+        self.assertEqual([m["id"] for m in migs], ["scxml-C-2"])
+        # The word is consumed with the label — the §id already names the appendix.
+        self.assertNotIn("Appendix", new)
+
+    def test_appendix_label_absent_from_ledger_is_reported(self):
+        new, migs, skipped = plan("// W3C SCXML Appendix D.2 algorithm\n")
+        self.assertEqual(migs, [])
+        self.assertEqual([s["label"] for s in skipped], ["D.2"])
+        self.assertIn("Appendix D.2", new)  # left for a human to resolve
+
     def test_trailing_slash_prose_refused(self):
         # "3.13/Appendix D" is a label followed by PROSE, not a chain member.
         # Migrating the head would emit "§scxml-3.13/Appendix D", which the

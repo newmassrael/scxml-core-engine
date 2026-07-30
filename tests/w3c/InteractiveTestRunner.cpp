@@ -1081,7 +1081,7 @@ emscripten::val InteractiveTestRunner::getEnabledTransitions() const {
         return transitionsArray;  // Empty array if no state machine
     }
 
-    // W3C SCXML Appendix D.2: Get enabled transitions from StateMachine
+    // §scxml-D-selectTransitions: Get enabled transitions from StateMachine
     auto enabledTransitions = stateMachine_->getLastEnabledTransitions();
 
     SCE_LOG_DEBUG("[GET ENABLED TRANSITIONS] Found {} enabled transitions", enabledTransitions.size());
@@ -1108,7 +1108,7 @@ emscripten::val InteractiveTestRunner::getOptimalTransitions() const {
         return transitionsArray;  // Empty array if no state machine
     }
 
-    // W3C SCXML Appendix D.2: Get optimal transitions after conflict resolution
+    // §scxml-D-removeConflictingTransitions: Get optimal transitions after conflict resolution
     auto optimalTransitions = stateMachine_->getLastOptimalTransitions();
 
     SCE_LOG_DEBUG("[GET OPTIMAL TRANSITIONS] Found {} optimal transitions", optimalTransitions.size());

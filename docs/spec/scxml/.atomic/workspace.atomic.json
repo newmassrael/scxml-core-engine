@@ -8754,6 +8754,12 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-Algorithm",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational",
       "normative_excerpt": {
         "excerpt": {
@@ -8964,6 +8970,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/ConflictResolutionHelper.h",
+          "symbol": "computeExitSet",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "computeStatesToExit",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8985,6 +9003,17 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::executeTransitionMicrostep",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9006,6 +9035,22 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::executeTransitionMicrostep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9048,6 +9093,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::executeTransitionMicrostep",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9195,6 +9247,17 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/runtime/src/helpers/hierarchy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "HierarchicalAlgorithms",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9279,6 +9342,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::executeTransitionMicrostep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9300,6 +9375,73 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/ConflictResolutionHelper.h",
+          "symbol": "ConflictResolutionAlgorithms",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConflictResolutionHelper.h",
+          "symbol": "hasIntersection",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ConflictResolutionHelper.h",
+          "symbol": "removeConflictingTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "isDescendantOf",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "getLastEnabledTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "getLastOptimalTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "lastEnabledTransitions_",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/states/ConcurrentStateTypes.h",
+          "symbol": "TransitionDescriptorString",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/states/ConcurrentStateTypes.h",
+          "symbol": "enabledTransitions",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::checkEventlessTransitions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "ConcurrentRegion::processEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ParallelTransitionHelper.h",
+          "symbol": "ParallelTransitionAlgorithms",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9342,6 +9484,17 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/runtime/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {

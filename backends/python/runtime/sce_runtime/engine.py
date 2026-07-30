@@ -490,7 +490,7 @@ class Engine(Generic[S, E]):
     # ── Microstep / macrostep core ────────────────────────────────
 
     def _process_queues(self) -> None:
-        """W3C SCXML Appendix D.2 macrostep loop: drain eventless first,
+        """§scxml-D-selectEventlessTransitions macrostep loop: drain eventless first,
         then consume one queued event (internal-first, then external),
         repeat until stable or final reached."""
         while self._is_running and not self._reached_final:
@@ -571,7 +571,7 @@ class Engine(Generic[S, E]):
     def _select_from_chain(
         self, leaf: S, event: E
     ) -> Optional[TransitionResult[S]]:
-        """W3C SCXML Appendix D.2 — walk from `leaf` upward, return the first
+        """§scxml-D-getProperAncestors — walk from `leaf` upward, return the first
         enabled transition. Stamps the result's `source` if the policy did
         not."""
         state: Optional[S] = leaf
@@ -587,7 +587,7 @@ class Engine(Generic[S, E]):
     def _remove_conflicting_transitions(
         self, candidates: List[TransitionResult[S]]
     ) -> List[TransitionResult[S]]:
-        """W3C SCXML Appendix D.2 — `removeConflictingTransitions`.
+        """§scxml-D-removeConflictingTransitions — `removeConflictingTransitions`.
 
         Two transitions conflict if their exit sets intersect. The one
         with the deeper source (or earlier document order on a tie) wins;
@@ -758,7 +758,7 @@ class Engine(Generic[S, E]):
         then descend into `target` via `_enter_state`. Shared by the
         normal-target and history-restore paths so they cannot drift.
 
-        W3C SCXML Appendix D.2 `addDescendantStatesToEnter` — when any
+        §scxml-D-addDescendantStatesToEnter `addDescendantStatesToEnter` — when any
         ancestor on the entry path is a `<parallel>`, every sibling
         region (not the one on the target's path) must also be entered
         via its default initial chain. This covers both:
@@ -813,7 +813,7 @@ class Engine(Generic[S, E]):
     def _fanout_parallel_siblings(
         self, parallel_state: S, path_child: Dict[S, S], already_active: Set[S]
     ) -> None:
-        """W3C SCXML Appendix D.2 — for each region of `parallel_state`
+        """§scxml-D-addDescendantStatesToEnter — for each region of `parallel_state`
         not already active and not on the target's path, enter via the
         region's default initial chain."""
         on_path = path_child.get(parallel_state)
@@ -1026,7 +1026,7 @@ class Engine(Generic[S, E]):
         marks that region done — termination is governed by
         `_check_done_state_events`.
 
-        W3C SCXML Appendix D.2 `exitInterpreter` — the final state's
+        §scxml-D-exitInterpreter `exitInterpreter` — the final state's
         own `<onexit>` actions still execute as the engine winds down
         (test236: a child invoke's `<final><onexit><send target=
         "#_parent">` must reach the parent). The final state stays in
@@ -1168,7 +1168,7 @@ class Engine(Generic[S, E]):
     # ── Hierarchy helpers ─────────────────────────────────────────
 
     def _compute_exit_set(self, transition: TransitionResult[S]) -> Set[S]:
-        """W3C SCXML Appendix D.2 — set of currently-active states the
+        """§scxml-D-GlobalVariables — set of currently-active states the
         transition exits.
 
         For an external transition: the boundary is LCCA(source, target);

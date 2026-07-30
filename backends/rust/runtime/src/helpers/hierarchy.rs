@@ -190,7 +190,7 @@ pub fn find_lca<P: StatePolicy>(state1: P::State, state2: P::State) -> Option<P:
     }
 }
 
-/// W3C SCXML Appendix D.2: check whether `descendant` is a strict descendant of `ancestor`.
+/// §scxml-D-isDescendant: check whether `descendant` is a strict descendant of `ancestor`.
 ///
 /// Returns `true` if walking up from `descendant` via `get_parent` eventually reaches
 /// `ancestor`. Returns `false` if the walk terminates at the root without finding it,

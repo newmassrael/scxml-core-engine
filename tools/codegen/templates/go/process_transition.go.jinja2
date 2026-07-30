@@ -49,7 +49,7 @@ func (p *{{ machine_name }}Policy) ProcessTransition(currentState *{{ machine_na
 			}
 		}
 
-		// W3C SCXML Appendix D.2: Remove conflicting transitions
+		// Appendix D removeConflictingTransitions: Remove conflicting transitions
 		if len(enabledTransitions) > 0 {
 			enabledTransitions = p.selectOptimalTransitions(enabledTransitions)
 		}
@@ -102,7 +102,7 @@ func (p *{{ machine_name }}Policy) ProcessTransition(currentState *{{ machine_na
 		}
 		enabledTransitions = deduped
 
-		// W3C SCXML Appendix D.2: Remove conflicting transitions
+		// Appendix D removeConflictingTransitions: Remove conflicting transitions
 		if len(enabledTransitions) > 0 {
 			enabledTransitions = p.selectOptimalTransitions(enabledTransitions)
 		}
