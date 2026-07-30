@@ -702,17 +702,24 @@ impl SCXMLParser {
         // structural elements (xs:any lax) and strict for sce:* — pure
         // statechart documents pass through trivially while inline forge
         // kinds on <data> still get their sce: attributes validated.
-        // Silently skipped if the schemas/ directory is unreachable
-        // (downstream vendoring without the schemas) — see
-        // `forge::xsd_validator::validate_or_skip`.
-        crate::forge::xsd_validator::validate_or_skip(content, diag_label).map_err(|errs| {
-            Located::new(
-                ForgeError::Xml(XmlError::SchemaValidation(errs)),
-                diag_label,
-                None,
-                None,
-            )
-        })?;
+        // Not silently skipped when validation cannot run. `validate_or_skip`
+        // used to return `Ok(())` for both "validated clean" and "no schema
+        // reachable", so a build that stopped validating at the system boundary
+        // reported the same success as one that validated — the exact
+        // degradation this gate exists to prevent. It now returns which case it
+        // is, and a non-validating parse says so once per process on stderr.
+        // Once, not per document: N identical lines on a batch run train the
+        // reader to ignore them, which is silence with extra steps.
+        let outcome =
+            crate::forge::xsd_validator::validate_or_skip(content, diag_label).map_err(|errs| {
+                Located::new(
+                    ForgeError::Xml(XmlError::SchemaValidation(errs)),
+                    diag_label,
+                    None,
+                    None,
+                )
+            })?;
+        crate::forge::xsd_validator::warn_if_not_validated(outcome);
 
         let doc = roxmltree::Document::parse(content).map_err(|e| {
             // roxmltree reports row/col for every error via `pos()`;

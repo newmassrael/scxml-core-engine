@@ -47,9 +47,19 @@ fn fixture() -> PathBuf {
         .join("tests/fixtures/event_schema/statechart_bytes.scxml")
 }
 
-fn out_dir(lang: &str) -> PathBuf {
+/// Scratch dir keyed by CALLING TEST as well as language.
+///
+/// cargo runs these tests in parallel threads of one process. Keying only by
+/// language made all three share `…/<lang>/`, so the compile tests dropped an
+/// object file and a linked executable into the directory the byte-identity
+/// test walks — and that test reads every entry as UTF-8. The result was an
+/// order-dependent "stream did not contain valid UTF-8" that passes or fails on
+/// thread timing. Per-test dirs remove the shared state instead of teaching the
+/// reader to tolerate binaries, which would have hidden real emission bugs.
+fn out_dir(scope: &str, lang: &str) -> PathBuf {
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join("event_schema_bytes_guard")
+        .join(scope)
         .join(lang);
     std::fs::create_dir_all(&dir).expect("create scratch dir");
     dir
@@ -66,8 +76,8 @@ fn resolve_tool(name: &str) -> Option<PathBuf> {
 
 /// Generate the bytes fixture for `lang` into a fresh dir and return both
 /// the output dir and every emitted file concatenated.
-fn generate(lang: &str) -> (PathBuf, String) {
-    let dir = out_dir(lang);
+fn generate(scope: &str, lang: &str) -> (PathBuf, String) {
+    let dir = out_dir(scope, lang);
     for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
         let _ = std::fs::remove_file(entry.path());
     }
@@ -124,7 +134,7 @@ const EXPECTED: &[(&str, &str)] = &[
 #[test]
 fn every_backend_lowers_bytes_guard_to_byte_identical_equality() {
     for (lang, marker) in EXPECTED {
-        let (_dir, code) = generate(lang);
+        let (_dir, code) = generate("byte_identity", lang);
         // Marker presence proves the guard lowered to the backend's
         // byte-equality primitive (not a script-engine fallback, which
         // would emit none of these forms) AND that the compared constant
@@ -145,7 +155,7 @@ fn every_backend_lowers_bytes_guard_to_byte_identical_equality() {
 // gate needs only g++. Skipped (not failed) when g++ is absent.
 #[test]
 fn cpp_bytes_guard_compiles_and_runs() {
-    let (dir, _code) = generate("cpp");
+    let (dir, _code) = generate("cpp_run", "cpp");
     let Some(gpp) = resolve_tool("g++") else {
         eprintln!("SKIP cpp_bytes_guard_compiles_and_runs: g++ not on PATH");
         return;
@@ -206,7 +216,7 @@ int main() {
 // is present.
 #[test]
 fn c11_bytes_guard_compiles_freestanding() {
-    let (dir, code) = generate("c11");
+    let (dir, code) = generate("c11_freestanding", "c11");
     assert!(
         code.contains("uint8_t raw[8];") && code.contains("size_t raw_len;"),
         "expected the no-alloc bounded-buffer payload field (CAP from sce:max-size=8)",
