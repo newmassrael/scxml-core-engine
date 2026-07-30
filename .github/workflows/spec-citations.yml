@@ -38,6 +38,8 @@ on:
       - 'schemas/**'
       - 'docs/spec/**'
       - 'docs/sce-ledger/**'
+      - 'examples/**'
+      - 'web/**'
       - '.github/workflows/spec-citations.yml'
   pull_request:
     branches: [ main ]
@@ -53,6 +55,8 @@ on:
       - 'schemas/**'
       - 'docs/spec/**'
       - 'docs/sce-ledger/**'
+      - 'examples/**'
+      - 'web/**'
       - '.github/workflows/spec-citations.yml'
   workflow_dispatch:
 
@@ -157,7 +161,7 @@ jobs:
       - name: Forbid citations naming sections absent from the ledger
         run: |
           set -euo pipefail
-          for tree in tools/codegen/templates tests backends examples; do
+          for tree in tools/codegen/templates tests backends examples web; do
             echo "::group::${tree}"
             python3 tools/mnemosyne-adoption/migrate_citations.py "${tree}" --check-ledger
             echo "::endgroup::"
