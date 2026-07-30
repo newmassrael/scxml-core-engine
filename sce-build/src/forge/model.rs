@@ -66,7 +66,7 @@ impl std::fmt::Display for RuntimeDep {
 }
 
 /// SCE Forge kind — declares what pattern an Extended SCXML document represents.
-/// W3C SCXML Section 3.1 allows foreign namespace attributes on any element.
+/// §scxml-3.1 allows foreign namespace attributes on any element.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]

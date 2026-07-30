@@ -110,7 +110,7 @@ bool HistoryManager::recordHistory(const std::string &parentStateId, const std::
             filteredStates = ::SCE::Core::HistoryHelper::filterDeepHistory(activeStateIds, parentStateId, getParent);
         }
 
-        // W3C SCXML Section 3.6: Record history even if empty (valid scenario)
+        // §scxml-3.10: Record history even if empty (valid scenario)
         HistoryEntry entry;
         entry.parentStateId = parentStateId;
         entry.type = historyInfo.type;

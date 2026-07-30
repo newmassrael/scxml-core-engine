@@ -41,7 +41,7 @@ protected:
     std::string sessionId_;
 };
 
-// W3C SCXML specification 3.4: Parallel state basic behavior test
+// W3C SCXML 3.4: Parallel state basic behavior test
 TEST_F(SCXMLParallelComplianceTest, W3C_ParallelState_BasicBehavior_ShouldParseAndEnterCorrectly) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -87,7 +87,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_ParallelState_BasicBehavior_ShouldParseA
     EXPECT_TRUE(sm->isRunning()) << "StateMachine not running after successful start";
 }
 
-// W3C SCXML specification 3.4: done.state event generation test
+// W3C SCXML 3.4: done.state event generation test
 TEST_F(SCXMLParallelComplianceTest, W3C_DoneStateEvent_Generation_ShouldProcessDoneStateEvents) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -148,7 +148,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_DoneStateEvent_Generation_ShouldProcessD
         << "StateMachine must transition to completed state per W3C SCXML 3.4 specification";
 }
 
-// W3C SCXML specification 3.4: done.state event automatic generation test
+// W3C SCXML 3.4: done.state event automatic generation test
 TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_DoneStateEvent_Generation) {
     // W3C specification: When all regions of parallel state complete, done.state.parallel_id event is automatically
     // generated
@@ -234,7 +234,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_DoneStateEvent_Generation) {
     }
 }
 
-// W3C SCXML specification 3.4: Parallel state completion criteria test
+// W3C SCXML 3.4: Parallel state completion criteria test
 TEST_F(SCXMLParallelComplianceTest, W3C_ParallelState_CompletionCriteria_ShouldCompleteWhenAllRegionsFinal) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -269,7 +269,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_ParallelState_CompletionCriteria_ShouldC
     EXPECT_EQ(stateMachine->getInitialState(), "parallel1");
 }
 
-// W3C SCXML specification 3.4: External transition from parallel state test
+// W3C SCXML 3.4: External transition from parallel state test
 TEST_F(SCXMLParallelComplianceTest, W3C_ExternalTransition_FromParallelState_ShouldExitAllRegions) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -303,7 +303,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_ExternalTransition_FromParallelState_Sho
     EXPECT_EQ(stateMachine->getInitialState(), "parallel1");
 }
 
-// W3C SCXML specification 3.4: Region independence test
+// W3C SCXML 3.4: Region independence test
 TEST_F(SCXMLParallelComplianceTest, W3C_RegionIndependence_ShouldProcessEventsIndependently) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -337,7 +337,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_RegionIndependence_ShouldProcessEventsIn
     EXPECT_EQ(stateMachine->getInitialState(), "parallel1");
 }
 
-// W3C SCXML specification 3.4: Nested parallel states test
+// W3C SCXML 3.4: Nested parallel states test
 TEST_F(SCXMLParallelComplianceTest, W3C_NestedParallelStates) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -378,7 +378,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_NestedParallelStates) {
     EXPECT_EQ(stateMachine->getInitialState(), "outer_parallel");
 }
 
-// W3C SCXML specification 3.4: Data model sharing test
+// W3C SCXML 3.4: Data model sharing test
 TEST_F(SCXMLParallelComplianceTest, W3C_DataModelSharing) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -417,7 +417,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_DataModelSharing) {
     EXPECT_EQ(stateMachine->getInitialState(), "parallel1");
 }
 
-// W3C SCXML specification 3.4: Event priority test
+// W3C SCXML 3.4: Event priority test
 TEST_F(SCXMLParallelComplianceTest, W3C_EventPriority) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -453,7 +453,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_EventPriority) {
     EXPECT_EQ(stateMachine->getInitialState(), "parallel1");
 }
 
-// W3C SCXML specification 3.4: Simultaneous region activation test (implemented)
+// W3C SCXML 3.4: Simultaneous region activation test (implemented)
 TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_RegionActivation_Simultaneous) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -545,7 +545,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_RegionActivation_Simultaneous) 
     }
 }
 
-// W3C SCXML specification 3.4: Event broadcasting test (implemented)
+// W3C SCXML 3.4: Event broadcasting test (implemented)
 TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EventBroadcasting_AllRegions) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -636,7 +636,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EventBroadcasting_AllRegions) {
     }
 }
 
-// W3C SCXML specification 3.4: Parallel state completion criteria test
+// W3C SCXML 3.4: Parallel state completion criteria test
 TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_CompletionCriteria) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -715,7 +715,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_CompletionCriteria) {
     }
 }
 
-// W3C SCXML specification 3.4: Entry/exit sequence test
+// W3C SCXML 3.4: Entry/exit sequence test
 TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EntryExitSequence) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
@@ -828,7 +828,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EntryExitSequence) {
     }
 }
 
-// W3C SCXML specification 3.4: Independent transition processing test
+// W3C SCXML 3.4: Independent transition processing test
 TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_TransitionProcessing_Independent) {
     const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
     <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 

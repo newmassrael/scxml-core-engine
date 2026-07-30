@@ -60,7 +60,7 @@ bool HistoryValidator::validateRegistrationWithDefault(const std::string &histor
         return false;
     }
 
-    // W3C SCXML Section 3.6: Validate default state if provided
+    // §scxml-3.10: Validate default state if provided
     if (!defaultStateId.empty()) {
         auto defaultState = stateProvider_(defaultStateId);
         if (!defaultState) {

@@ -69,6 +69,12 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational",
       "normative_excerpt": {
         "excerpt": {

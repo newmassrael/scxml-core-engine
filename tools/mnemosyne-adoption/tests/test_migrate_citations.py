@@ -153,6 +153,37 @@ class SlashChain(unittest.TestCase):
         self.assertEqual(migs, [])
         self.assertEqual([s["label"] for s in skipped], ["9.99"])
 
+    def test_other_connectives_before_label_are_seen(self):
+        # `Appendix` was only the first of these. `Section` hid 22 sites and
+        # `specification` 14 — several inside directories a ledger enrolls, so the
+        # form gate was blind there too. The connective set is closed; anything
+        # else in that position is reported by the hidden-citation detector.
+        for word in ("Section", "section", "specification"):
+            new, migs, _ = plan(f"// per W3C SCXML {word} 5.10 note\n")
+            self.assertEqual([m["id"] for m in migs], ["scxml-5.10"], word)
+            self.assertIn("§scxml-5.10", new, word)
+
+    def test_unknown_word_before_label_is_reported_not_guessed(self):
+        # "W3C SCXML Algorithm C.1" — a real cite the main pattern cannot see.
+        # Reported rather than migrated: the word may mean the author aimed at a
+        # different section entirely (this exact shape was aimed at Appendix D).
+        new, migs, skipped = plan("// W3C SCXML Algorithm C.2 conflict\n")
+        self.assertEqual(migs, [])
+        self.assertEqual(new, "// W3C SCXML Algorithm C.2 conflict\n")
+        self.assertEqual(
+            [s["label"] for s in skipped if s["reason"].startswith("citation hidden")],
+            ["C.2"],
+        )
+
+    def test_test_number_after_word_is_not_a_hidden_citation(self):
+        # "W3C SCXML test 530" is a W3C IRP test id, not a section. A bare
+        # integer must never be reported as a hidden citation.
+        _, migs, skipped = plan("// W3C SCXML test 530: content expr\n")
+        self.assertEqual(migs, [])
+        self.assertEqual(
+            [s for s in skipped if s["reason"].startswith("citation hidden")], []
+        )
+
     def test_appendix_word_before_label_is_seen(self):
         # "W3C SCXML Appendix C.2" put the word in the label position, so the
         # citation matched NOTHING — neither migrated nor reported — and a
