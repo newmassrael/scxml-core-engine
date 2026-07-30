@@ -8745,6 +8745,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-C-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/events/HttpEventBridge.h",
+          "symbol": "extractFormParam",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/events/HttpEventBridge.cpp",
+          "symbol": "HttpEventBridge::extractEventName",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
