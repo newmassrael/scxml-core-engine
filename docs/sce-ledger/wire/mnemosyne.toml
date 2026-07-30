@@ -85,11 +85,16 @@ severity_missing = "reject"
 # (file, symbol) the maintainer ratified, so binding-class drift (a cite in an
 # unregistered file or a non-registered symbol) now fails the build.
 severity_binding = "reject"
-# Coverage (Active section with zero implementations) stays advisory: this is
-# a spec/RFC ledger where meta/contract sections (e.g. §wire-W0, the commit-
-# series contract) legitimately have no code citation. Enforcing coverage here
-# would demand a per-section non-code carve-out; the split keeps it honest.
-severity_coverage = "warn"
+# Coverage is now enforced. It was advisory while the ledger had no way to say
+# which sections legitimately carry no code, and the only such section here is
+# §wire-W0: its whole deliverable was a deletion (sce/src/main/main.cpp), so
+# there is no artifact to bind and no gate asserts the invariant it pinned.
+# `coverage_expectation = informational` on that one section IS the per-section
+# carve-out the earlier note said would be needed, recorded in the store with
+# its reason rather than as a blanket severity downgrade. Every other section
+# (W1-W5, W4.5) carries implements bindings, so impl_missing is 0 and reject
+# costs nothing today while catching the next section added without one.
+severity_coverage = "reject"
 comment_only = true
 section_namespace = "wire"
 

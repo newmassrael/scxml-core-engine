@@ -3,7 +3,8 @@
     "wire-W0": {
       "title": "contract (this RFC; commit-series contract; prerequisite for W1)",
       "parent_doc": "wire",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "wire-W1": {
       "title": "contract (this RFC; commit-series contract)",
