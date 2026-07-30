@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML C.2 — JSON-to-Lua C API push for the host-side HTTP
+// §scxml-C-2 — JSON-to-Lua C API push for the host-side HTTP
 // helper. See `http_lua_binding.h` for the contract; this file is
 // the recursive-descent walker that visits a JSON document and emits
 // the corresponding Lua value via the standard `lua_push*` API.

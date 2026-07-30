@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML 6.4: invoke lifecycle types + helpers.
+// §scxml-6.4: invoke lifecycle types + helpers.
 //
 // INTERFACE-only sce-c-runtime contract:
 // types and `static inline` helpers live here; per-SM lifecycle logic
@@ -26,13 +26,13 @@
 extern "C" {
 #endif
 
-/* ── W3C SCXML 6.4: Pending invoke record ─────────────────────────── */
+/* ── §scxml-6.4: Pending invoke record ─────────────────────────── */
 /* Mirrors cpp `PendingInvoke` (sce/include/core/InvokeHelper.h doc):
    `state` is the parent's State enum value (per-fixture int) and
    `invoke_idx` is the per-state index into the state's invokes vector.
    The pair (state, invoke_idx) keys the codegen-time switch in the
    generated `<sm>_execute_pending_invokes` that dispatches to the right
-   child SM creation arm. `invoke_id` carries the W3C SCXML 3.12.1
+   child SM creation arm. `invoke_id` carries the §scxml-6.4.2
    identifier (auto-generated `<state>.<platformid>._invoke_<n>` or
    user-provided). */
 typedef struct sce_invoke_pending_s {
@@ -50,7 +50,7 @@ typedef struct sce_invoke_pending_queue_s {
     int count;
 } sce_invoke_pending_queue_t;
 
-/* W3C SCXML 6.4: Defer invoke until macrostep end.
+/* §scxml-6.4: Defer invoke until macrostep end.
    Saturates silently at SCE_MAX_INVOKES — corpus is bounded; production
    overflow rolls a build-time -D bump. cpp's std::vector grows; C11's
    bounded array matches the runtime/scheduler discipline applied to
@@ -66,7 +66,7 @@ SCE_C_UNUSED static inline void sce_invoke_pending_push(sce_invoke_pending_queue
     q->count++;
 }
 
-/* W3C SCXML 6.4: Cancel pending invokes for an exited state.
+/* §scxml-6.4: Cancel pending invokes for an exited state.
    Compaction in place (cpp uses std::remove_if + erase; C11 walks the
    bounded array). Multiple invokes per state are valid (test422), so
    the walk does not stop at the first match. */
@@ -83,14 +83,14 @@ SCE_C_UNUSED static inline void sce_invoke_pending_cancel_for_state(sce_invoke_p
     q->count = w;
 }
 
-/* W3C SCXML 6.4: Clear queue after execution.
+/* §scxml-6.4: Clear queue after execution.
    Used by `<sm>_execute_pending_invokes` to reset between macrosteps —
    matches cpp `pending.clear()` after copying for safe iteration. */
 SCE_C_UNUSED static inline void sce_invoke_pending_clear(sce_invoke_pending_queue_t *q) {
     q->count = 0;
 }
 
-/* W3C SCXML 3.12.1: Format auto-generated invoke ID.
+/* §scxml-6.4.2: Format auto-generated invoke ID.
    cpp pattern: `<state_id>.<runtime_platformid>.<invoke_index>`. The
    platformid in cpp is the SM's `this` pointer hex; C11 mirrors with
    the parent SM struct address. test224's transition cond
@@ -107,7 +107,7 @@ SCE_C_UNUSED static inline void sce_invoke_format_id(char *buf, size_t bufsz, co
                    invoke_idx);
 }
 
-/* W3C SCXML 6.3.1: Format `done.invoke.<id>` event name.
+/* §scxml-6.4.3: Format `done.invoke.<id>` event name.
    cpp `InvokeHelper::createDoneInvokeEventName`. Used by the parent's
    completion detector when a child reaches its top-level final state.
    The bare `done.invoke` transition match (analyzer.rs collapses

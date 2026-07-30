@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML B.2 — XML DOM tree for the C11 backend's host-side helper.
+// §scxml-B-2 — XML DOM tree for the C11 backend's host-side helper.
 //
 // 1:1 algorithmic mirror of `sce/include/scripting/XMLDOMWrapper.h` and
 // `sce/src/scripting/XMLDOMWrapper.cpp` (cpp ref-backend, pugixml-based),
@@ -39,7 +39,7 @@ typedef struct sce_xml_attr_s {
 } sce_xml_attr_t;
 
 // Mirrors a subset of pugi::xml_node_type — only the kinds needed for
-// W3C SCXML B.2 corpus and getElementsByTagName semantics.
+// §scxml-B-2 corpus and getElementsByTagName semantics.
 typedef enum {
     SCE_XML_NODE_ELEMENT,
     SCE_XML_NODE_PCDATA,  // mixed text content (#PCDATA)

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML 6.2 delayed-send clock primitive (sce-c-core tier).
+// §scxml-6.2 delayed-send clock primitive (sce-c-core tier).
 //
 // Generated C11 state machines reference `_sce_clock_now_ms` to drive the
 // scheduled-event queue (`scheduled_pop_ready` / `_tick`); the symbol is

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML B.2 — host-side XML DOM tree for the C11 backend.
+// §scxml-B-2 — host-side XML DOM tree for the C11 backend.
 // cpp `XMLDOMWrapper.cpp` 1:1 algorithmic mirror, pugixml-free.
 
 #include <sce/dom.h>
@@ -314,7 +314,7 @@ static void sce_xml_skip_comment(sce_xml_parser_t *p) {
 
 // Skip <!DOCTYPE name ...> with optional `[ internal subset ]`.  pugixml
 // drops the doctype entirely on `parse_default`; we mirror that since
-// W3C SCXML B.2 corpus never reads DOCTYPE-declared entities and we
+// §scxml-B-2 corpus never reads DOCTYPE-declared entities and we
 // don't run DTD validation.  Internal subset is balanced on `[`/`]`.
 static void sce_xml_skip_doctype(sce_xml_parser_t *p) {
     if (!sce_xml_match(p, "<!DOCTYPE")) {

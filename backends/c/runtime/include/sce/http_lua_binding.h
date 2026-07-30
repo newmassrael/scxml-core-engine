@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML C.2 — Lua C API binding for the host-side HTTP helper:
+// §scxml-C-2 — Lua C API binding for the host-side HTTP helper:
 // pushes a JSON document onto the Lua stack as a Lua value (object →
 // table, array → array-table 1-based, string → string, number →
 // number, true/false → boolean, null → nil).

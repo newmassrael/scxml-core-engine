@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML B.2 — Lua bindings for the host-side DOM tree.
+// §scxml-B-2 — Lua bindings for the host-side DOM tree.
 //
 // 1:1 algorithmic mirror of `sce/include/scripting/LuaDOMBinding.h` and
 // `sce/src/scripting/LuaDOMBinding.cpp` (cpp ref-backend).  The cpp
