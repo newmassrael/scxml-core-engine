@@ -86,9 +86,16 @@ env:
   # workspace's own directory instead of [workspace] root and so rejected all
   # five workspaces here with "configured scan paths resolve to nothing". The
   # intermediate 25d30d16 carries that defect — do not pin between 5807bd5c and
-  # 5c266cd. Bumped after re-running validate-workspace / -code-refs /
-  # -verifies-linkage / -content-drift on every enrolled workspace.
-  MNEMOSYNE_REV: 2b2dae4c1fd6d5766a2582656e4265483a40f615
+  # 5c266cd. R840 then added the exclusion-integrity axis, and R854/R855 are this
+  # pin: R840's axis had been Rust-only, so a citation living only in an excluded
+  # NON-Rust tree was invisible to it (a silent miss, the dangerous direction) and
+  # a scanned C++ citation could not clear a false report. Measured A/B on this
+  # tree: excluding the C++ parsing tree reports `wire-W2` + `wire-W4.5` at this
+  # pin and reported nothing at 2b2dae4c. R855 also maps `.c` and prints a
+  # per-language symbol-reach line each run. Bumped after re-running
+  # validate-workspace / -code-refs / -verifies-linkage / -content-drift on every
+  # enrolled workspace with the pin enforced.
+  MNEMOSYNE_REV: 5bbf4d17b8e84b064295e1dd878d0ed6b23e7e7d
 
 jobs:
   citations:
