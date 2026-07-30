@@ -24,7 +24,14 @@
       "title": "The SSOT-honesty problem",
       "parent_doc": "bytesguard",
       "parent_section": "bytesguard-1",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "symbol": "guard_is_native_lowerable",
+          "kind": "implements"
+        }
+      ]
     },
     "bytesguard-1.4": {
       "title": "Existing reusable infrastructure",
@@ -42,7 +49,137 @@
     "bytesguard-3": {
       "title": "Lock-in decisions",
       "parent_doc": "bytesguard",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "infer_types",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "c_emit_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "cpp_emit_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "go_emit_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "kotlin_emit_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "python_emit_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "symbol": "check_comparison_type",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_codec",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/validate.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/event_schema_bytes_guard.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/event_schema_kind.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/fixtures/event_schema/negative_statechart_bytes_non_ascii.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/fixtures/event_schema/negative_statechart_bytes_ordering.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/fixtures/event_schema/schema_signal_bytes.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/fixtures/event_schema/statechart_bytes.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "symbol": "walk_for_event_data_refs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "symbol": "primitive_guard_lowers_native_and_is_engine_free",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "symbol": "schema_with_bytes_and_numeric_fields_is_eligible",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "go_member_access_stays_verbatim_without_algorithm_flag",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "bytes_neq_lowers_per_backend",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/event_schema_check.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "tests",
+          "kind": "references"
+        }
+      ]
     },
     "bytesguard-3.1": {
       "title": "Honest interim gate (before B1–B6 land)",
@@ -54,7 +191,8 @@
     "bytesguard-4": {
       "title": "Surface / accepted-subset changes",
       "parent_doc": "bytesguard",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "bytesguard-5": {
       "title": "Implementation plan (never-broken staging)",
@@ -65,7 +203,29 @@
     "bytesguard-6": {
       "title": "Acceptance gates",
       "parent_doc": "bytesguard",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/tests/event_schema_bytes_guard.rs",
+          "kind": "implements"
+        },
+        {
+          "file": "scripts/regen_event_schema_native.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_event_schema_native_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_event_schema_native_kotlin.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_event_schema_native_python.sh",
+          "kind": "references"
+        }
+      ]
     },
     "bytesguard-7": {
       "title": "Risks",
