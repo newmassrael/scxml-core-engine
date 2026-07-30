@@ -66,10 +66,15 @@ paths = [
     "sce-build/tests",
     "backends/rust/runtime/src",
     "backends/c/forge-runtime",
-    "backends/cpp/forge-runtime",
+    # Source subdirs only: the parent holds a gitignored `build/` whose artifacts
+    # the citation gate reads whole (Mnemosyne R856 line). No citation lives in
+    # CMakeLists.txt / build.gradle.kts / pyproject.toml — verified, 0 each.
+    "backends/cpp/forge-runtime/include",
+    "backends/cpp/forge-runtime/tests",
     "backends/go/forge-runtime",
-    "backends/kotlin/forge-runtime",
-    "backends/python/forge-runtime",
+    "backends/kotlin/forge-runtime/src",
+    "backends/python/forge-runtime/sce_forge_runtime",
+    "backends/python/forge-runtime/tests",
     "backends/rust/forge-runtime",
     "backends/c/runtime/include",
     "tests/forge/resources",
@@ -134,4 +139,4 @@ backend = "tree-sitter-rust"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "5bbf4d17"
+pin = "0c82ad73"
