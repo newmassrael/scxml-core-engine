@@ -3337,7 +3337,7 @@
       "type": "object"
     },
     "ForgeKind": {
-      "description": "SCE Forge kind — declares what pattern an Extended SCXML document represents. W3C SCXML Section 3.1 allows foreign namespace attributes on any element.",
+      "description": "SCE Forge kind — declares what pattern an Extended SCXML document represents. §scxml-3.1 allows foreign namespace attributes on any element.",
       "oneOf": [
         {
           "description": "Standard W3C SCXML state machine (default, existing pipeline).",

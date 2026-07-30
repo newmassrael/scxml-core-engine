@@ -62,7 +62,7 @@ protected:
 };
 
 /**
- * W3C SCXML Section 3.6: Basic history state registration
+ * W3C SCXML 3.10: Basic history state registration
  * Tests that history states can be properly registered with the state machine
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_BasicRegistration) {
@@ -95,7 +95,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_BasicRegistration) {
 }
 
 /**
- * W3C SCXML Section 3.6: History state clear functionality
+ * W3C SCXML 3.10: History state clear functionality
  * Tests that history can be cleared and reset
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ClearFunctionality) {
@@ -131,7 +131,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ClearFunctionality) {
 }
 
 /**
- * W3C SCXML Section 3.6: History state registration validation
+ * W3C SCXML 3.10: History state registration validation
  * Tests various registration scenarios and error conditions
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_RegistrationValidation) {
@@ -158,7 +158,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_RegistrationValidation) {
     ASSERT_TRUE(stateMachine->loadSCXMLFromString(scxml));
     ASSERT_TRUE(stateMachine->start());
 
-    // W3C SCXML Section 3.6: History states should be auto-registered from SCXML
+    // W3C SCXML 3.10: History states should be auto-registered from SCXML
     // No manual registration needed - verify automatic recognition
     EXPECT_TRUE(stateMachine->isHistoryState("hist1"));
     EXPECT_TRUE(stateMachine->isHistoryState("hist2"));
@@ -169,7 +169,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_RegistrationValidation) {
 }
 
 /**
- * W3C SCXML Section 3.6: State machine lifecycle with history
+ * W3C SCXML 3.10: State machine lifecycle with history
  * Tests that history persists across different state machine operations
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_StateMachineLifecycle) {
@@ -215,7 +215,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_StateMachineLifecycle) {
 }
 
 /**
- * W3C SCXML Section 3.6: Multiple history states coordination
+ * W3C SCXML 3.10: Multiple history states coordination
  * Tests systems with multiple history states working together
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_MultipleHistoryCoordination) {
@@ -250,7 +250,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_MultipleHistoryCoordination
     ASSERT_TRUE(stateMachine->loadSCXMLFromString(scxml));
     ASSERT_TRUE(stateMachine->start());
 
-    // W3C SCXML Section 3.6: Multiple history states should be auto-registered from SCXML
+    // W3C SCXML 3.10: Multiple history states should be auto-registered from SCXML
     // Verify both history states are automatically recognized
     EXPECT_TRUE(stateMachine->isHistoryState("workflow_hist"));
     EXPECT_TRUE(stateMachine->isHistoryState("settings_hist"));
@@ -266,7 +266,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_MultipleHistoryCoordination
 }
 
 /**
- * W3C SCXML Section 3.6: History state error handling
+ * W3C SCXML 3.10: History state error handling
  * Tests proper handling of invalid history configurations
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ErrorHandling) {
@@ -292,7 +292,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ErrorHandling) {
 }
 
 /**
- * W3C SCXML Section 3.6: History state thread safety
+ * W3C SCXML 3.10: History state thread safety
  * Tests that history operations are thread-safe in concurrent scenarios
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ThreadSafety) {
@@ -313,7 +313,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ThreadSafety) {
     ASSERT_TRUE(stateMachine->loadSCXMLFromString(scxml));
     ASSERT_TRUE(stateMachine->start());
 
-    // W3C SCXML Section 3.6: History state should be auto-registered from SCXML
+    // W3C SCXML 3.10: History state should be auto-registered from SCXML
     // Verify the history state is automatically recognized
     EXPECT_TRUE(stateMachine->isHistoryState("thread_hist"));
 
@@ -360,7 +360,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ThreadSafety) {
 }
 
 /**
- * W3C SCXML Section 3.6: History state with simple state transitions
+ * W3C SCXML 3.10: History state with simple state transitions
  * Tests basic integration of history states with regular state machine operation
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_SimpleTransitions) {
@@ -386,7 +386,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_SimpleTransitions) {
     ASSERT_TRUE(stateMachine->loadSCXMLFromString(scxml));
     ASSERT_TRUE(stateMachine->start());
 
-    // W3C SCXML Section 3.6: History state should be auto-registered from SCXML
+    // W3C SCXML 3.10: History state should be auto-registered from SCXML
     // No manual registration needed
 
     // Verify history state is recognized
@@ -406,7 +406,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_SimpleTransitions) {
 }
 
 /**
- * W3C SCXML Section 3.6: Default Transition Behavior
+ * W3C SCXML 3.10: Default Transition Behavior
  * Tests that history states use default transition when parent state is visited for the first time
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_DefaultTransition_FirstVisit) {
@@ -464,7 +464,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_DefaultTransition_FirstVisi
 }
 
 /**
- * W3C SCXML Section 3.6: State Configuration Restoration
+ * W3C SCXML 3.10: State Configuration Restoration
  * Tests that history states restore previously active state configuration
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_StateRestoration_SubsequentVisit) {
@@ -550,7 +550,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_StateRestoration_Subsequent
 }
 
 /**
- * W3C SCXML Section 3.6: Shallow vs Deep History Behavior
+ * W3C SCXML 3.10: Shallow vs Deep History Behavior
  * Tests the difference between shallow and deep history restoration
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ShallowVsDeep_RestorationDifference) {
@@ -649,7 +649,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ShallowVsDeep_RestorationDi
 }
 
 /**
- * W3C SCXML Section 3.6: Executable Content Execution Order
+ * W3C SCXML 3.10: Executable Content Execution Order
  * Tests that history transition executable content runs after parent onentry handlers
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ExecutionOrder_OnentryBeforeTransition) {
@@ -705,7 +705,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ExecutionOrder_OnentryBefor
 }
 
 /**
- * W3C SCXML Section 3.6: History in Parallel States
+ * W3C SCXML 3.10: History in Parallel States
  * Tests history state behavior within parallel state regions
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ParallelState_IndependentRegions) {
@@ -796,7 +796,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ParallelState_IndependentRe
 }
 
 /**
- * W3C SCXML Section 3.6: Complex Workflow with History
+ * W3C SCXML 3.10: Complex Workflow with History
  * Tests realistic pause-and-resume workflow scenario
  */
 TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndResume) {
