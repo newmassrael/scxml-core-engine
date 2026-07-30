@@ -124,6 +124,7 @@ set(SCE_TEST_TARGETS
     states_tests
     action_tests
     history_tests
+    http_bridge_tests
     core_parser_tests
     model_tests
     integration_tests
@@ -291,6 +292,28 @@ target_link_libraries(action_tests
 )
 
 # Note: ActionTests will be registered below with all other tests
+
+# ============================================================================
+# 4.4. BasicHTTP Event Bridge Tests (W3C SCXML C.2.1 inbound event naming)
+# ============================================================================
+
+add_executable(http_bridge_tests
+    events/HttpEventBridgeTest.cpp
+)
+
+target_include_directories(http_bridge_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(http_bridge_tests
+    PRIVATE
+        sce_runtime
+        GTest::gtest_main
+        pthread
+)
 
 # ============================================================================
 # 4.5. History Manager Tests (SOLID SCXML W3C Compliance)
@@ -6791,6 +6814,7 @@ endif()
 add_test(NAME CoreParserTests COMMAND core_parser_tests)
 add_test(NAME StatesTests COMMAND states_tests)
 add_test(NAME HistoryTests COMMAND history_tests)
+add_test(NAME HttpBridgeTests COMMAND http_bridge_tests)
 
 # Priority Level 2: Core component tests (basic functionality validation, ~1-5s)
 add_test(NAME StateMachineTests COMMAND state_machine_tests)

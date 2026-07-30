@@ -39,6 +39,15 @@ inline bool starts_with(const std::string &s, const char *prefix) {
 }
 }  // namespace detail
 
+/// Name of the BasicHTTP parameter that carries the SCXML event name.
+///
+/// Both halves of the processor key on this one spelling: the sender writes it
+/// (§scxml-C-2, `SendHelper::buildHttpPostBody`) and the receiver reads it to
+/// name the raised event (§scxml-C-2-1, `HttpEventBridge::extractEventName`).
+/// Keeping it here rather than repeating the literal is what stops the two
+/// sides from drifting apart on a rename.
+inline constexpr const char *SCXML_EVENT_NAME_PARAM = "_scxmleventname";
+
 /**
  * @brief Helper functions for W3C SCXML <send> element processing
  *
