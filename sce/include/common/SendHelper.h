@@ -41,11 +41,15 @@ inline bool starts_with(const std::string &s, const char *prefix) {
 
 /// Name of the BasicHTTP parameter that carries the SCXML event name.
 ///
-/// Both halves of the processor key on this one spelling: the sender writes it
-/// (§scxml-C-2, `SendHelper::buildHttpPostBody`) and the receiver reads it to
-/// name the raised event (§scxml-C-2-1, `HttpEventBridge::extractEventName`).
-/// Keeping it here rather than repeating the literal is what stops the two
-/// sides from drifting apart on a rename.
+/// Both halves of the processor key on this one spelling: the sending half
+/// writes it (`SendHelper::buildHttpPostBody`) and the receiving half reads it
+/// to name the raised event (`HttpEventBridge::extractEventName`). Keeping it
+/// here rather than repeating the literal is what stops the two sides from
+/// drifting apart on a rename.
+///
+/// No section citation sits on this constant deliberately: it is the shared
+/// spelling, not an implementation of either side's clause, and a binding here
+/// would claim otherwise. The citations live on the two functions above.
 inline constexpr const char *SCXML_EVENT_NAME_PARAM = "_scxmleventname";
 
 /**

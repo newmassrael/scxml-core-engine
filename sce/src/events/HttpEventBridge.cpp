@@ -285,7 +285,7 @@ bool HttpEventBridge::updateConfig(const HttpBridgeConfig &config) {
 std::string HttpEventBridge::extractEventName(const HttpRequest &request) const {
     const auto &settings = config_.getSettings();
 
-    // W3C SCXML C.2.1: "If a single instance of the parameter '_scxmleventname'
+    // §scxml-C-2-1: "If a single instance of the parameter '_scxmleventname'
     // is present, the SCXML Processor MUST use its value as the name of the
     // SCXML event that it raises. […] If the parameter '_scxmleventname' is not
     // present, the SCXML Processor MUST use the name of the HTTP method that was

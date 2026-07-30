@@ -169,7 +169,7 @@ private:
     /**
      * @brief Collect every value of one parameter from a form-urlencoded body
      *
-     * W3C SCXML C.2.1 distinguishes "a single instance" of '_scxmleventname'
+     * §scxml-C-2-1 distinguishes "a single instance" of '_scxmleventname'
      * from multiple instances (the latter being platform-specific), so the
      * caller needs the occurrence count, not just the first value.
      *
