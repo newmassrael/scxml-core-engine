@@ -55,7 +55,7 @@ public:
     // === SCXML Event System ===
     std::future<ExecutionResult> setCurrentEvent(const std::string &sessionId, std::shared_ptr<Event> event) override;
     std::future<ExecutionResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                      const std::vector<std::string> &ioProcessors) override;
+                                                      const std::vector<IOProcessorDescriptor> &ioProcessors) override;
 
     // === High-Level SCXML State Machine API (NEW) ===
     bool loadSCXMLFromString(const std::string &scxmlContent, const std::string &sessionId = "") override;

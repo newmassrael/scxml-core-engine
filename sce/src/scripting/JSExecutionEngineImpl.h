@@ -60,7 +60,7 @@ public:
     bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
 
     std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                   const std::vector<std::string> &ioProcessors) override;
+                                                   const std::vector<IOProcessorDescriptor> &ioProcessors) override;
 
     bool registerGlobalFunction(const std::string &functionName,
                                 std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) override;
@@ -81,7 +81,7 @@ public:
     void onSessionCreated(const std::string &sessionId, const std::string &parentSessionId = "") override;
     void onSessionDestroyed(const std::string &sessionId) override;
     void onSessionSystemVariablesUpdated(const std::string &sessionId, const std::string &sessionName,
-                                         const std::vector<std::string> &ioProcessors) override;
+                                         const std::vector<IOProcessorDescriptor> &ioProcessors) override;
 
     // === StateMachine Integration ===
 
@@ -107,7 +107,7 @@ private:
         std::string parentSessionId;
         std::shared_ptr<Event> currentEvent;
         std::string sessionName;
-        std::vector<std::string> ioProcessors;
+        std::vector<IOProcessorDescriptor> ioProcessors;
         std::unordered_set<std::string>
             preInitializedVars;  // Variables set before datamodel initialization (e.g., invoke data)
 
@@ -132,12 +132,12 @@ private:
 
         Type type;
         std::string sessionId;
-        std::string code;                       // for EXECUTE_SCRIPT, EVALUATE_EXPRESSION
-        std::string variableName;               // for SET_VARIABLE, GET_VARIABLE
-        ScriptValue variableValue;              // for SET_VARIABLE
-        std::shared_ptr<Event> event;           // for SET_CURRENT_EVENT
-        std::string sessionName;                // for SETUP_SYSTEM_VARIABLES
-        std::vector<std::string> ioProcessors;  // for SETUP_SYSTEM_VARIABLES
+        std::string code;                                 // for EXECUTE_SCRIPT, EVALUATE_EXPRESSION
+        std::string variableName;                         // for SET_VARIABLE, GET_VARIABLE
+        ScriptValue variableValue;                        // for SET_VARIABLE
+        std::shared_ptr<Event> event;                     // for SET_CURRENT_EVENT
+        std::string sessionName;                          // for SETUP_SYSTEM_VARIABLES
+        std::vector<IOProcessorDescriptor> ioProcessors;  // for SETUP_SYSTEM_VARIABLES
         std::promise<ScriptResult> promise;
 
         ExecutionRequest(Type t, const std::string &sid) : type(t), sessionId(sid) {}
@@ -177,7 +177,7 @@ private:
     ScriptResult getVariableInternal(const std::string &sessionId, const std::string &name);
     ScriptResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
     ScriptResult setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
-                                              const std::vector<std::string> &ioProcessors);
+                                              const std::vector<IOProcessorDescriptor> &ioProcessors);
 
     // Context management
     bool createSessionContextInternal(const std::string &sessionId, const std::string &parentSessionId);

@@ -169,9 +169,9 @@ std::future<ScriptResult> JSExecutionEngineImpl::getVariable(const std::string &
     return future;
 }
 
-std::future<ScriptResult> JSExecutionEngineImpl::setupSystemVariables(const std::string &sessionId,
-                                                                      const std::string &sessionName,
-                                                                      const std::vector<std::string> &ioProcessors) {
+std::future<ScriptResult>
+JSExecutionEngineImpl::setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
+                                            const std::vector<IOProcessorDescriptor> &ioProcessors) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SETUP_SYSTEM_VARIABLES, sessionId);
     request->sessionName = sessionName;
     request->ioProcessors = ioProcessors;
@@ -270,7 +270,7 @@ void JSExecutionEngineImpl::onSessionDestroyed(const std::string &sessionId) {
 
 void JSExecutionEngineImpl::onSessionSystemVariablesUpdated(const std::string &sessionId,
                                                             const std::string &sessionName,
-                                                            const std::vector<std::string> &ioProcessors) {
+                                                            const std::vector<IOProcessorDescriptor> &ioProcessors) {
     SCE_LOG_DEBUG("JSExecutionEngineImpl: Observer notification - system variables updated for session: {}", sessionId);
 
     // Update internal session info and setup system variables

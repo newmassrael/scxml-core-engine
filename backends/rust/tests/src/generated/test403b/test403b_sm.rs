@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371280
+// source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
+// template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
+// generated-at: 1785425169
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -201,6 +201,10 @@ pub struct Test403bPolicy {
     // is true, mirroring the Kotlin `StateMachineEngine(scriptEngine)` shape.
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     script_engine_initialized: bool,
+    // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
+    // by the deployment before initialize(). Empty means no such endpoint is
+    // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
+    basic_http_access_uri: String,
     // W3C SCXML 5.9.2: Shared active state list for In() predicate callback
     in_predicate_states: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
@@ -219,6 +223,14 @@ pub struct Test403bPolicy {
 }
 
 impl Test403bPolicy {
+    /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
+    /// machine, published as the processor's 'location' in `_ioprocessors`.
+    /// Must be called before `initialize()`, since the entries are populated
+    /// once at session setup. Leaving it unset publishes no BasicHTTP entry.
+    pub fn set_basic_http_access_uri(&mut self, access_uri: impl Into<String>) {
+        self.basic_http_access_uri = access_uri.into();
+    }
+
     pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
             script_engine,
@@ -239,6 +251,7 @@ impl Test403bPolicy {
             var1: 0,
             session_id: None,
             script_engine_initialized: false,
+            basic_http_access_uri: String::new(),
             in_predicate_states: None,
             parent_external_queue: None,
             invoke_id: String::new(),
@@ -275,8 +288,11 @@ impl Test403bPolicy {
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        let io_processors = vec!["scxml".to_string()];
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors =
+            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "test403b", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }
@@ -320,8 +336,11 @@ impl Test403bPolicy {
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        let io_processors = vec!["scxml".to_string()];
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors =
+            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(&sid, "test403b", &io_processors) {
             log::error!("Failed to setup system variables: {}", e);
         }

@@ -4,6 +4,7 @@
 #pragma once
 
 #include "SCXMLTypes.h"
+#include "common/IOProcessorHelper.h"
 #include "scripting/ISessionLifecycle.h"
 #include "scripting/ScriptResult.h"
 #include <functional>
@@ -127,13 +128,19 @@ public:
 
     /**
      * @brief Setup SCXML system variables for a session
+     *
+     * The descriptors arrive fully resolved from `IOProcessorHelper::build`.
+     * An implementation files each one under its name with its location and
+     * invents neither, so `_ioprocessors` reads identically whichever engine
+     * backs the session.
+     *
      * @param sessionId Target session context
      * @param sessionName Human-readable session name
-     * @param ioProcessors List of available I/O processors
+     * @param ioProcessors Entries to publish in `_ioprocessors`
      * @return Future indicating success/failure
      */
     virtual std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                           const std::vector<std::string> &ioProcessors) = 0;
+                                                           const std::vector<IOProcessorDescriptor> &ioProcessors) = 0;
 
     /**
      * @brief Set current event from Event object (§scxml-5.10)

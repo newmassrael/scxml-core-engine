@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371281
+// source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
+// template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
+// generated-at: 1785425248
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/452/test452.scxml
@@ -99,8 +99,14 @@ class Test452StateMachine(
         val sid = allocateScriptSession()
         engine.createSession(sid)
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        engine.setupSystemVariables(sid, "test452")
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        engine.setupSystemVariables(
+            sid,
+            "test452",
+            com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
+        )
 
         // W3C SCXML 5.3: Initialize variable 'foo' with expr
         try {

@@ -356,6 +356,15 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
     {% endif %}
     {% if model.needs_script_engine %}
     lua_State *L;                                    /* W3C 5.10: ECMAScript datamodel */
+    /* W3C SCXML C.2.3: inbound BasicHTTP endpoint serving this machine,
+       declared by the deployment before `_init` through
+       `_set_basic_http_access_uri`. The address belongs to whoever runs the
+       listener, so the machine takes it from there rather than baking one in.
+       Empty means no such endpoint is deployed, and no BasicHTTP entry is
+       published in `_ioprocessors` — a document that reads
+       `_ioprocessors['basichttp'].location` then finds nil rather than an
+       address nothing answers on. */
+    char basic_http_access_uri[SCE_MAX_URI_LEN];
     {% endif %}
     {% if model.has_parent_communication %}
     /* W3C SCXML 6.4: cross-machine event dispatch when this SM is
@@ -390,6 +399,17 @@ typedef struct {{ csym_prefix }}{{ model.name }} {
 /* Initialize SM to its initial state (W3C SCXML 3.3 + 3.6 compound descend).
    Must be called once before {{ csym_prefix }}{{ model.name }}_step / {{ csym_prefix }}{{ model.name }}_run. */
 void {{ csym_prefix }}{{ model.name }}_init({{ csym_prefix }}{{ model.name }}_t *sm);
+{% if model.needs_script_engine %}
+
+/* W3C SCXML C.2.3: initialize with the deployment's inbound BasicHTTP
+   endpoint, published as that processor's 'location' in `_ioprocessors`.
+   Documents that address their BasicHTTP `<send>` through
+   `_ioprocessors['basichttp'].location` need this instead of `_init`; a
+   machine initialised without it publishes no BasicHTTP entry, because no
+   listener serves it. */
+void {{ csym_prefix }}{{ model.name }}_init_with_basic_http({{ csym_prefix }}{{ model.name }}_t *sm,
+                                                            const char *basic_http_access_uri);
+{% endif %}
 {% else %}
 /* W3C SCXML 6.4: Initialize an invoked-child SM with parent-routing
    wired BEFORE the configuration entry walk runs. The parent's

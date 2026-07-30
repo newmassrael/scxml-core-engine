@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "common/IOProcessorHelper.h"
 #include <string>
 #include <vector>
 
@@ -35,10 +36,10 @@ public:
      * @brief Called when session system variables are updated
      * @param sessionId The identifier of the session
      * @param sessionName Human-readable session name
-     * @param ioProcessors List of available I/O processors
+     * @param ioProcessors Entries to publish in `_ioprocessors`
      */
     virtual void onSessionSystemVariablesUpdated(const std::string &sessionId, const std::string &sessionName,
-                                                 const std::vector<std::string> &ioProcessors) = 0;
+                                                 const std::vector<IOProcessorDescriptor> &ioProcessors) = 0;
 };
 
 }  // namespace SCE

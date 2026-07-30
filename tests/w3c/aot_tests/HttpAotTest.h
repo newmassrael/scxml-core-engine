@@ -4,6 +4,7 @@
 #pragma once
 #include "AotTestBase.h"
 #include "AotTestRegistry.h"
+#include "BasicHttpTestEndpoint.h"
 #include "common/SendHelper.h"
 #include "core/LogMacros.h"
 #include "events/IHttpClient.h"
@@ -66,14 +67,19 @@ public:
         }
 
         // W3C SCXML C.2: Create and start HTTP server
-        W3C::W3CHttpTestServer httpServer(8080, "/test");
+        W3C::W3CHttpTestServer httpServer(W3C::BASIC_HTTP_TEST_PORT, W3C::BASIC_HTTP_TEST_PATH);
 
         if (!httpServer.start()) {
-            SCE_LOG_ERROR("HttpAotTest {}: Failed to start HTTP server on port 8080", TestNum);
+            SCE_LOG_ERROR("HttpAotTest {}: Failed to start HTTP server on port {}", TestNum, W3C::BASIC_HTTP_TEST_PORT);
             return false;
         }
 
-        SCE_LOG_DEBUG("HttpAotTest {}: HTTP server started on localhost:8080/test", TestNum);
+        SCE_LOG_DEBUG("HttpAotTest {}: HTTP server started on {}", TestNum, W3C::basicHttpTestAccessUri());
+
+        // §scxml-C-2-3: the test owns the listener, so it declares the access
+        // URI the machine publishes. The converted documents address their
+        // sends through that published entry.
+        sm.setBasicHttpAccessUri(W3C::basicHttpTestAccessUri());
 
         // W3C SCXML C.2: Setup HTTP event callback to route responses to state machine
         // When HTTP server receives POST response, it raises event to state machine
@@ -188,6 +194,11 @@ public:
 
         using SM = typename Derived::SM;
         SM sm;
+
+        // §scxml-C-2-3: the external listener started by polyfill_pre.js takes
+        // the same port and path as the native harness server, so the machine
+        // publishes the same access URI here.
+        sm.setBasicHttpAccessUri(W3C::basicHttpTestAccessUri());
 
         // W3C SCXML C.2: Wire performHttpSend() callback for WASM (native parity)
         // Generated code calls engine.performHttpSend() which delegates to this callback.

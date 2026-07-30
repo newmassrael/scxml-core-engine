@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371283
+// template-hash: 9bde8ba918ad0398de80074721c1f02a0cca90d0c9c62ed55fd521ceedab1e31
+// generated-at: 1785424665
 
 // GENERATED CODE — DO NOT EDIT
 // Source: integration_resources/donedata_local_invoke/donedata_local_invoke__sce_synth_invoke__inv_param.scxml
@@ -86,8 +86,14 @@ class DonedataLocalInvokeSceSynthInvokeInvParamStateMachine(
         val sid = allocateScriptSession()
         engine.createSession(sid)
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        engine.setupSystemVariables(sid, "donedata_local_invoke__sce_synth_invoke__inv_param")
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        engine.setupSystemVariables(
+            sid,
+            "donedata_local_invoke__sce_synth_invoke__inv_param",
+            com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
+        )
 
 
 

@@ -228,14 +228,6 @@ class StatePolicy(ABC, Generic[S, E]):
         """Whether the policy uses scripts (informational)."""
         return False
 
-    def needs_http_send(self) -> bool:
-        """W3C SCXML C.2 — true when the document declares at least one
-        `<send type="BasicHTTPEventProcessor">` or HTTP-target `<send>`,
-        so the engine surfaces the BasicHTTP processor URI under
-        `_ioprocessors`. Generated `*_sm.py` overrides against the
-        codegen-time `model.needs_http_send` flag."""
-        return False
-
     def machine_name(self) -> str:
         """W3C SCXML 5.10 — `_name` system variable. Generated `*_sm.py`
         overrides to return the source document's `name` attribute (or

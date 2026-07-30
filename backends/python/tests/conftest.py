@@ -198,5 +198,9 @@ def setup_http(w3c_http_server) -> "callable":
 
     def _register(engine) -> None:
         engine.set_http_send_callback(_make_http_callback())
+        # §scxml-C-2-3: the fixture owns the listener, so it declares the
+        # access URI the machine publishes in `_ioprocessors`. The converted
+        # W3C documents address their BasicHTTP sends through that entry.
+        engine.basic_http_access_uri = f"http://localhost:{_HTTP_PORT}{_HTTP_PATH}"
 
     return _register

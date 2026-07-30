@@ -61,7 +61,7 @@ namespace SCE::W3C {
  *
  * ### Communication (Tests: 183, 210, 240, 354, 496)
  * - **conf:sendIDExpr**: Send ID expression → sendidexpr="{expr}"
- * - **conf:basicHTTPAccessURITarget**: HTTP target → target="{uri}"
+ * - **conf:basicHTTPAccessURITarget**: HTTP target → targetexpr="_ioprocessors['basichttp'].location"
  * - **conf:unreachableTarget**: Invalid target → targetexpr="undefined"
  * - **conf:eventDataNamelistValue**: Namelist data → expr="_event.data.Var{N}"
  * - **conf:eventDataParamValue**: Param data → expr="_event.data.{param}"
@@ -94,16 +94,6 @@ namespace SCE::W3C {
  */
 class TXMLConverter : public ITestConverter {
 private:
-    // ========================================================================
-    // Test Environment Configuration Constants
-    // ========================================================================
-
-    /**
-     * @brief Default HTTP test server URL for BasicHTTPEventProcessor tests
-     * @see W3C Test 201: BasicHTTPEventProcessor target URL
-     */
-    static constexpr const char *HTTP_TEST_SERVER_URL = "http://localhost:8080/test";
-
     // ========================================================================
     // Regex Pattern Definitions
     // ========================================================================

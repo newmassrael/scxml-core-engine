@@ -11,6 +11,7 @@
 
 package com.sce.scripting.lua
 
+import com.sce.runtime.IoProcessorDescriptor
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
@@ -68,7 +69,11 @@ class LuaScriptEngine : ScxmlScriptEngine {
         LuaNative.closeState(session.handle)
     }
 
-    override fun setupSystemVariables(sessionId: String, machineName: String) {
+    override fun setupSystemVariables(
+        sessionId: String,
+        machineName: String,
+        ioProcessors: List<IoProcessorDescriptor>,
+    ) {
         val session = sessions[sessionId] ?: return
         val L = session.handle
 
@@ -80,12 +85,18 @@ class LuaScriptEngine : ScxmlScriptEngine {
         LuaNative.pushString(L, machineName)
         LuaNative.setGlobal(L, "_name")
 
-        // W3C SCXML 5.10: _ioprocessors
-        LuaNative.createTable(L, 0, 1)
-        LuaNative.createTable(L, 0, 1)
-        LuaNative.pushString(L, sessionId)
-        LuaNative.setField(L, -2, "location")
-        LuaNative.setField(L, -2, "scxml")
+        // §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the deployment
+        // supports, each with a 'location' field holding the address that
+        // reaches this session through it. Names and locations are decided by
+        // IoProcessors.build, so this engine's view of `_ioprocessors` matches
+        // every other backend's.
+        LuaNative.createTable(L, 0, ioProcessors.size)
+        for (processor in ioProcessors) {
+            LuaNative.createTable(L, 0, 1)
+            LuaNative.pushString(L, processor.location)
+            LuaNative.setField(L, -2, "location")
+            LuaNative.setField(L, -2, processor.name)
+        }
         LuaNative.setGlobal(L, "_ioprocessors")
 
         session.declaredVars.addAll(listOf("_sessionid", "_name", "_ioprocessors", "_event"))

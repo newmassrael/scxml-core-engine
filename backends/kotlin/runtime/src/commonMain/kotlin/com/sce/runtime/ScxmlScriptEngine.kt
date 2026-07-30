@@ -44,10 +44,20 @@ interface ScxmlScriptEngine {
      *
      * Must be called after [createSession] and before any expression evaluation.
      *
+     * The descriptors arrive fully resolved from [IoProcessors.build]. An
+     * implementation files each one under its name with its location and
+     * invents neither, so `_ioprocessors` reads identically whichever engine
+     * backs the session.
+     *
      * @param sessionId Active session
      * @param machineName SCXML document name attribute
+     * @param ioProcessors Entries to publish in `_ioprocessors`
      */
-    fun setupSystemVariables(sessionId: String, machineName: String)
+    fun setupSystemVariables(
+        sessionId: String,
+        machineName: String,
+        ioProcessors: List<IoProcessorDescriptor> = IoProcessors.build(sessionId),
+    )
 
     /**
      * W3C SCXML 5.9: Evaluate a guard condition expression.

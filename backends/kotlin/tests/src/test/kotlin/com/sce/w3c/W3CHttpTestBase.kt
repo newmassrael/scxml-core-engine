@@ -47,20 +47,23 @@ abstract class W3CHttpTestBase<S : State, E : Event> : W3CTestBase<S, E>() {
             val sm = createStateMachine()
             val httpClient = HttpClient.newHttpClient()
 
+            // §scxml-C-2-3: the harness owns the listener, so it declares the
+            // access URI the machine publishes, and the converted documents
+            // address their sends through that entry. The port is allocated
+            // dynamically for parallel-test safety; declaring the real one
+            // replaces the previous rewrite of a hardcoded port on every
+            // outgoing request, which only worked because the documents named
+            // an address the harness had told them nothing about.
+            sm.basicHttpAccessUri = "http://localhost:$actualPort/test"
+
             // W3C SCXML C.2: Wire SM HTTP send -> HTTP POST to test server
-            // Rewrite SCXML-hardcoded port to actual dynamic port for parallel test safety
             sm.onHttpSend = { request ->
-                val originalUri = URI.create(request.target)
-                val actualTarget = URI(
-                    originalUri.scheme, null, originalUri.host, actualPort,
-                    originalUri.path, originalUri.query, originalUri.fragment
-                ).toString()
                 val (body, contentType) = buildHttpPostBody(
                     request.eventName, request.content, request.params
                 )
                 try {
                     val httpRequest = HttpRequest.newBuilder()
-                        .uri(URI.create(actualTarget))
+                        .uri(URI.create(request.target))
                         .header("Content-Type", contentType)
                         .POST(HttpRequest.BodyPublishers.ofString(body))
                         .build()

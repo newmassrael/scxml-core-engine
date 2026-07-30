@@ -13,34 +13,10 @@
 
 namespace SCE {
 
-// === URI Encoding Helper ===
-
-/**
- * @brief Encode string for use in URI following RFC 3986
- * @param str String to encode
- * @return RFC 3986 compliant percent-encoded string
- *
- * Encodes all characters except unreserved characters (A-Z, a-z, 0-9, -, _, ., ~)
- * Used to prevent URI injection attacks when constructing _ioprocessors locations
- */
-static std::string encodeURIComponent(const std::string &str) {
-    std::string result;
-    result.reserve(str.length() * 3);  // Worst case: all chars encoded
-
-    for (unsigned char c : str) {
-        // RFC 3986 unreserved characters: A-Z a-z 0-9 - _ . ~
-        if (std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-            result += c;
-        } else {
-            // Percent-encode all other characters
-            char buf[4];
-            std::snprintf(buf, sizeof(buf), "%%%02X", c);
-            result += buf;
-        }
-    }
-
-    return result;
-}
+// Global the C++ side parks system-variable values on so the setup script can
+// read them as values. The script removes it before returning; the name is
+// underscore-prefixed to stay clear of anything an SCXML document can declare.
+static constexpr const char *SYSTEM_VARS_STASH = "__sce_system_vars_stash";
 
 // === Internal JavaScript Execution Methods ===
 
@@ -534,7 +510,7 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
 }
 
 ScriptResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
-                                                    const std::vector<std::string> &ioProcessors) {
+                                                    const std::vector<IOProcessorDescriptor> &ioProcessors) {
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
         return ScriptResult::createError("Session not found: " + sessionId);
@@ -550,34 +526,37 @@ ScriptResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId
     // §scxml-5.10: System variables must be read-only and raise error.execution on modification attempts
     // Use JavaScript code to define read-only properties with error handlers (tests 322, 326, 346)
 
-    // §scxml-C-1: Prepare _ioprocessors as object with location fields (test 500)
-    // _ioprocessors['scxml']['location'] must exist for SCXML Event I/O Processor
-    std::string ioProcessorsJson = "{";
-    for (size_t i = 0; i < ioProcessors.size(); ++i) {
-        if (i > 0) {
-            ioProcessorsJson += ",";
-        }
-        // Generate unique location address for each I/O processor
-        // Use RFC 3986 compliant URI encoding to prevent injection attacks
-        std::string location = "sce://" + ioProcessors[i] + "/" + encodeURIComponent(sessionId);
-        ioProcessorsJson += "'" + ioProcessors[i] + "': { 'location': '" + location + "' }";
+    // The three values below all originate outside the engine: the session id
+    // is embedder- or <invoke>-supplied, the session name is the <scxml>
+    // element's 'name' attribute, and each processor location is declared by
+    // the deployment. Building them as QuickJS values and handing the setup
+    // script a single stash object keeps them out of the evaluated source, so
+    // no quote in any of them can terminate a literal and be read as code.
+    ::JSValue stash = JS_NewObject(ctx);
+    JS_SetPropertyStr(ctx, stash, "sessionid", JS_NewString(ctx, sessionId.c_str()));
+    JS_SetPropertyStr(ctx, stash, "name", JS_NewString(ctx, sessionName.c_str()));
+
+    // §scxml-C-1-1 / §scxml-C-2-3: each entry carries a 'location' field naming
+    // the address that reaches this session through that processor.
+    ::JSValue ioProcessorsObj = JS_NewObject(ctx);
+    for (const auto &processor : ioProcessors) {
+        ::JSValue entry = JS_NewObject(ctx);
+        JS_SetPropertyStr(ctx, entry, "location", JS_NewString(ctx, processor.location.c_str()));
+        JS_SetPropertyStr(ctx, ioProcessorsObj, processor.name.c_str(), entry);
     }
-    ioProcessorsJson += "}";
+    JS_SetPropertyStr(ctx, stash, "ioprocessors", ioProcessorsObj);
+    JS_SetPropertyStr(ctx, global, SYSTEM_VARS_STASH, stash);
 
     std::string setupCode = R"(
         (function() {
-            var sessionId = ')" +
-                            sessionId + R"(';
-
-            // Internal storage for system variable values
-            var __systemVars = {
-                sessionid: ')" +
-                            sessionId + R"(',
-                name: ')" + sessionName +
-                            R"(',
-                ioprocessors: )" +
-                            ioProcessorsJson + R"(
-            };
+            // Take the stashed values and drop the global, so the only route to
+            // them from here on is the read-only accessors defined below.
+            var __systemVars = this[')" +
+                            std::string(SYSTEM_VARS_STASH) + R"('];
+            delete this[')" +
+                            std::string(SYSTEM_VARS_STASH) +
+                            R"('];
+            var sessionId = __systemVars.sessionid;
 
             // W3C SCXML 5.10: Define read-only _sessionid with error.execution on write
             Object.defineProperty(this, '_sessionid', {

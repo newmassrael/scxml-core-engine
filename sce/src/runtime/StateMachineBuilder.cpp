@@ -16,6 +16,10 @@ std::shared_ptr<StateMachine> StateMachineBuilder::build() {
     auto stateMachine = std::make_shared<StateMachine>(*scriptEngine_, sessionId_);
 
     // Inject dependencies after construction
+    if (!basicHttpAccessUri_.empty()) {
+        stateMachine->setBasicHttpAccessUri(basicHttpAccessUri_);
+    }
+
     if (eventDispatcher_) {
         stateMachine->setEventDispatcher(eventDispatcher_);
     }
