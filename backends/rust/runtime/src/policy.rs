@@ -197,7 +197,7 @@ pub trait StatePolicy: Sized + 'static {
     // because the data is baked into the generated source.
     // ──────────────────────────────────────────────
 
-    /// The initial state of the root `<scxml>` element (§scxml-3.3).
+    /// The initial state of the root `<scxml>` element (§scxml-3.2).
     fn initial_state() -> Self::State;
 
     /// Whether `state` is a `<final>` state (§scxml-3.7).
@@ -320,7 +320,7 @@ pub trait StatePolicy: Sized + 'static {
     // methods through the `engine` parameter.
     // ──────────────────────────────────────────────
 
-    /// Execute `<onentry>` actions for `state` (§scxml-3.7).
+    /// Execute `<onentry>` actions for `state` (§scxml-3.8).
     ///
     /// Ports C++ `executeEntryActions(State, Engine&)`. May:
     /// - raise internal events via `engine.raise(...)`
@@ -329,7 +329,7 @@ pub trait StatePolicy: Sized + 'static {
     /// - defer `<invoke>` starts until the configuration is stable (§scxml-6.4)
     fn execute_entry_actions(&mut self, state: Self::State, engine: &mut Engine<Self>);
 
-    /// Execute `<onexit>` actions for `state` (§scxml-3.8).
+    /// Execute `<onexit>` actions for `state` (§scxml-3.9).
     ///
     /// Ports C++ `executeExitActions(State, Engine&, const vector<State>&)`.
     /// The `pre_transition_active` slice captures the active configuration

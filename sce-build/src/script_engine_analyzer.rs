@@ -77,13 +77,13 @@ pub enum ScriptEngineCauseKind {
     /// §scxml-4.2 — `<log expr="...">` with a non-empty expression needs
     /// the engine to evaluate the expression before logging.
     LogExpr { state_id: String },
-    /// §scxml-4.2 — inline `<script>` action (body text, no native
+    /// §scxml-5.8 — inline `<script>` action (body text, no native
     /// `<cpp>`/`<kt>` child). Native script blocks are emitted as code.
     InlineScriptAction { state_id: String },
     /// §scxml-6.2 — `<cancel sendidexpr="...">` needs the engine to
     /// evaluate the send id expression at runtime.
     CancelExpr { state_id: String },
-    /// §scxml-4.2 — `<foreach>` iterates over a runtime-evaluated array.
+    /// §scxml-4.6 — `<foreach>` iterates over a runtime-evaluated array.
     ForeachAction { state_id: String },
     /// §scxml-6.4 — hybrid `<invoke>` with `srcexpr` or `contentexpr`;
     /// the target is resolved at `<invoke>` entry by the script engine.
