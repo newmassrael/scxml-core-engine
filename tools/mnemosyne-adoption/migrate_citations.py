@@ -101,6 +101,27 @@ _NS_DEFAULT_LEDGER = {
 # Bare single letters and word tokens are intentionally NOT matched.
 LABEL_RE = r"(?:[0-9]+(?:\.[0-9]+)*|[A-Z](?:\.[0-9]+)+)"
 
+# Words that may sit between the marker and the label and still mean "this is a
+# section citation": "W3C SCXML Appendix D.2", "W3C SCXML Section 3.6". Without
+# them the word occupies the label position and the whole citation matches
+# NOTHING — neither migrated nor reported — so a wrong section number passes
+# every gate. Measured across three separate words before this became a set:
+# `Appendix` hid 376 sites (D.2, which is not a ledger id), `Section` 22 and
+# `specification` 14, the first two of them inside directories a ledger already
+# enrolls.
+#
+# The set is deliberately CLOSED, and `HIDDEN_CITE_RE` below reports any other
+# word in that position rather than silently accepting or silently ignoring it.
+# Growing this list on demand would make gate coverage depend on authoring
+# vocabulary, which is what let the class recur three times.
+CONNECTIVE_RE = r"(?:Appendix|Section|section|specification)"
+
+# The class detector lives in `_plan_marked` (it needs the runtime `prefix`):
+# marker, then a word that is NOT a known connective, then a section-shaped
+# label. That shape is either a citation hidden behind prose or prose that reads
+# like one; both need a human, so it is reported as its own violation rather than
+# guessed either way.
+
 # The mesh namespace (SCE_MESH.md) has purely numeric section labels; unlike the
 # scxml namespace there is no prose "W3C SCXML <n>" marker — the source always
 # writes a bare `§<n>` sigil. Matching a bare sigil is far less self-evident than
@@ -440,7 +461,12 @@ def _plan_marked(text, mask, ledger_ids, prefix, lineno):
     # non-capturing and inside the match span, so a migration replaces the word
     # along with the label — the §id already names the appendix.
     prose_re = (
-        re.escape(prefix) + r"[ \t]+(?:Appendix[ \t]+)?(?P<prosechain>" + chain + r")"
+        re.escape(prefix)
+        + r"[ \t]+(?:"
+        + CONNECTIVE_RE
+        + r"[ \t]+)?(?P<prosechain>"
+        + chain
+        + r")"
     )
     pattern = re.compile(sig_re + r"|" + prose_re)
     migrations, skipped = [], []
@@ -488,6 +514,44 @@ def _plan_marked(text, mask, ledger_ids, prefix, lineno):
                         }
                     )
     out.append(text[last:])
+
+    # Class detector: a citation hidden behind a word in the label position.
+    # `CONNECTIVE_RE` above lists the words that legitimately precede a label;
+    # anything else there means the marker is followed by prose that a
+    # section-shaped number then follows, and the main pattern skipped the whole
+    # thing silently. Report it so a human normalises the comment, rather than
+    # extending the connective list on demand — that is how this class recurred
+    # three times (Appendix / Section / specification).
+    hidden_re = re.compile(
+        re.escape(prefix)
+        + r"[ \t]+(?!"
+        + CONNECTIVE_RE
+        + r"[ \t])(?P<word>[A-Za-z][A-Za-z-]*)[ \t]+(?P<hidden>"
+        + LABEL_RE
+        + r")(?![0-9])"
+    )
+    for m in hidden_re.finditer(text):
+        if not mask[m.start()]:
+            continue
+        lbl = m.group("hidden")
+        # A BARE integer after a word is a W3C IRP *test* number, not a section
+        # ("W3C SCXML test 530"). Spec sections are 1-7 plus lettered appendices,
+        # every one of which carries a dot. Same rule the two check paths apply,
+        # applied here so the detector cannot invent citations out of test ids.
+        if "." not in lbl or lbl == "1.0":
+            continue
+        skipped.append(
+            {
+                "line": lineno(m.start()),
+                "label": m.group("hidden"),
+                "id": label_to_id(m.group("hidden")),
+                "reason": (
+                    f"citation hidden behind the word {m.group('word')!r}; the "
+                    f"label is not in the position any gate inspects — write "
+                    f"'{prefix} {m.group('hidden')}' or the §-form"
+                ),
+            }
+        )
     return "".join(out), migrations, skipped
 
 
@@ -804,14 +868,19 @@ def main(argv=None):
                 return True
             return rel in tracked
 
-        bad = [
-            d
-            for d in report["skipped"]
-            if not d["reason"].startswith("quoted spec-string")
-            and d["label"] not in version_allowlist
-            and "." in d["label"]
-            and in_scope(d["file"])
-        ]
+        def is_violation(d):
+            if not in_scope(d["file"]):
+                return False
+            # A hidden citation is a violation whatever its label resolves to:
+            # the number may be perfectly valid and still be invisible to every
+            # gate, which is the defect. Ledger membership is irrelevant here.
+            if d["reason"].startswith("citation hidden behind"):
+                return True
+            if d["reason"].startswith("quoted spec-string"):
+                return False
+            return d["label"] not in version_allowlist and "." in d["label"]
+
+        bad = [d for d in report["skipped"] if is_violation(d)]
         if bad:
             print(
                 "ERROR: citation(s) naming a section absent from the ledger. A "
@@ -822,7 +891,7 @@ def main(argv=None):
             for d in sorted(bad, key=lambda d: (d["file"], d["line"])):
                 print(
                     f"  {d['file']}:{d['line']}  {args.prefix} {d['label']} "
-                    f"(would be §{d['id']}, not in ledger)",
+                    f"-> §{d['id']}: {d['reason']}",
                     file=sys.stderr,
                 )
             print(
@@ -883,6 +952,12 @@ def main(argv=None):
         #               out of scope — the validator is comment_only.)
         violations = list(report["migrations"])
         for d in report["skipped"]:
+            # A hidden citation ("W3C SCXML Section 3.6") is a violation whatever
+            # its label resolves to — the number is not in the position the
+            # validator inspects, so the cite is ungated even though it is right.
+            if d["reason"].startswith("citation hidden behind"):
+                violations.append(d)
+                continue
             if d["reason"].startswith("quoted spec-string"):
                 continue
             if d["label"] in version_allowlist:

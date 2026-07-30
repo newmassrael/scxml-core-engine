@@ -408,7 +408,7 @@ TEST_F(ScriptResultTypeConversionTest, CompleteCoverage_AllScriptValueTypes) {
 // ========================================
 
 TEST_F(ScriptResultTypeConversionTest, W3C_JavaScript_NumberTypeFlexibility) {
-    // W3C SCXML Section 5.9: JavaScript numbers should be accessible as both int and double
+    // W3C SCXML 5.9: JavaScript numbers should be accessible as both int and double
 
     // Case 1: Whole number stored as double should be accessible as int64_t
     double wholeDouble = 42.0;

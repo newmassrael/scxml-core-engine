@@ -3093,7 +3093,7 @@ bool StateMachine::exitState(const std::string &stateId) {
         }
     }
 
-    // W3C SCXML section 3.13: Finally remove the state from active states list
+    // §scxml-3.13: Finally remove the state from active states list
     // Use hierarchy manager for SCXML-compliant state exit
     assert(hierarchyManager_ && "SCXML violation: hierarchy manager required for state management");
     SCE_LOG_DEBUG("StateMachine::exitState - executionContext_ is {}", executionContext_ ? "valid" : "NULL");

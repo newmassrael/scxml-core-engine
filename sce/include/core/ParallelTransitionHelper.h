@@ -139,7 +139,7 @@ public:
     /**
      * @brief Check if two transitions conflict
      *
-     * W3C SCXML Algorithm C.1: Two transitions conflict if their exit sets intersect
+     * §scxml-D-removeConflictingTransitions: two transitions conflict if their exit sets intersect
      * (they would exit the same state, which is invalid).
      *
      * §scxml-3.13: Special case for parallel states - if a transition exits a parallel state,
@@ -191,7 +191,7 @@ public:
     /**
      * @brief Select optimal enabled transition set (non-conflicting)
      *
-     * W3C SCXML Algorithm C.1: From all enabled transitions, select maximal
+     * §scxml-D-removeConflictingTransitions: from all enabled transitions, select maximal
      * non-conflicting subset. Preemption rule: Transitions in child states
      * have priority over parent states.
      *
