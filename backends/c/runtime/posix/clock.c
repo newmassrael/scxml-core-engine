@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML 6.2 — host-side default for `_sce_clock_now_ms`.
+// §scxml-6.2 — host-side default for `_sce_clock_now_ms`.
 //
 // The C11 backend's delayed-`<send>` codegen emits an `extern uint64_t
 // _sce_clock_now_ms(void)` declaration into every fixture whose model

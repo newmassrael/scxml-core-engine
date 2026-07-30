@@ -3755,6 +3755,10 @@
         {
           "file": "backends/rust/runtime/src/helpers/event_data.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -5800,6 +5804,22 @@
         {
           "file": "backends/rust/runtime/src/helpers/scxml_constants.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/CMakeLists.txt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/clock.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/posix/clock.c",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -6778,6 +6798,21 @@
         {
           "file": "backends/rust/runtime/src/lib.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/invoke.h",
+          "symbol": "sce_invoke_pending_cancel_for_state",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/invoke.h",
+          "symbol": "sce_invoke_pending_clear",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/invoke.h",
+          "symbol": "sce_invoke_pending_push",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -6902,6 +6937,11 @@
           "file": "sce/src/scripting/LuaEngine.cpp",
           "symbol": "LuaEngine::setVariableInternal",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/invoke.h",
+          "symbol": "sce_invoke_format_id",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7005,6 +7045,11 @@
           "file": "sce/include/common/EventMetadataHelper.h",
           "symbol": "EventMetadataHelper",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/invoke.h",
+          "symbol": "sce_invoke_format_done_event_name",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -7830,6 +7875,23 @@
         {
           "file": "backends/rust/runtime/src/helpers/foreach.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/base/dom.c",
+          "symbol": "sce_xml_skip_doctype",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/dom.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/lua_dom_binding.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/scripting/lua_dom_binding.c",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -8641,6 +8703,26 @@
         {
           "file": "backends/rust/runtime/src/lib.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/CMakeLists.txt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/http_client.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/http_lua_binding.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/posix/http_client.c",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/scripting/http_lua_binding.c",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -9372,6 +9454,10 @@
           "file": "sce/src/runtime/StateMachine.cpp",
           "symbol": "StateMachine::processEvent",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",

@@ -72,8 +72,8 @@ endif()
 
 # ── Tier 4: sce_c_runtime_posix (STATIC, optional — platform impl) ──
 # Default ON: the SCE-shipped POSIX reference implementation of
-# `clock.h` (W3C SCXML 6.2 delayed-send clock) and `http_client.h`
-# (W3C SCXML C.2 BasicHTTP fixtures). Bare-metal consumers (e.g.
+# `clock.h` (§scxml-6.2 delayed-send clock) and `http_client.h`
+# (§scxml-C-2 BasicHTTP fixtures). Bare-metal consumers (e.g.
 # watching-zenoh per `consumer_watching_zenoh.md`) opt out and supply
 # their own `sce_c_runtime_<target>` providing the same symbols.
 option(SCE_C_RUNTIME_POSIX "Build the POSIX reference impl for backends/c/runtime" ON)

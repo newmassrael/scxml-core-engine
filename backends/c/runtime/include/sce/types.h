@@ -47,7 +47,7 @@
 #define SCE_MAX_ENABLED_TRANSITIONS 8
 #endif
 
-// W3C SCXML 6.2 — delayed `<send>` queue capacity. Per-instance bounded
+// §scxml-6.2 — delayed `<send>` queue capacity. Per-instance bounded
 // array carrying scheduled events between dispatch (when `<send delay>`
 // runs) and fire time (when `_tick(sm)` promotes ready events into the
 // internal queue). Sized for the typical mainEventLoop pattern of one or
@@ -59,7 +59,7 @@
 #define SCE_MAX_SCHEDULED 4
 #endif
 
-// W3C SCXML 5.10 _event.data — generated event records reserve a fixed
+// §scxml-5.10 _event.data — generated event records reserve a fixed
 // payload slot so the entire EventWithMetadata is value-typed and queue
 // storage is statically reservable. The default sizes datamodel-less and
 // short JSON payloads; fixtures that carry longer SCXML <send> data
@@ -68,7 +68,7 @@
 #define SCE_MAX_DATA_LEN 256
 #endif
 
-// W3C SCXML 5.10 _event.type — bounded by the spec's enumerated values
+// §scxml-5.10 _event.type — bounded by the spec's enumerated values
 // ("internal", "external", "platform"). 16 bytes leaves headroom for any
 // future additions without requiring a per-fixture override.
 #ifndef SCE_MAX_EVENT_TYPE_LEN

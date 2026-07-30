@@ -119,6 +119,12 @@ paths = [
     # §scxml- form and bound below, so the same hallucination / binding gates
     # that cover the C++ engine and the Rust codegen now cover the runtime.
     "backends/rust/runtime/src",
+    # C11 runtime. Its §scxml- cites sat outside every scan set until Mnemosyne
+    # R855 mapped `.c` to the cpp resolver — before that the symbol axis was
+    # silently skipped for every `.c` file, so enrolling this tree would have
+    # claimed symbol-level enforcement it could not deliver. `backends/c/tests`
+    # stays out, matching how `backends/rust/runtime/tests` is declared out.
+    "backends/c/runtime",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
