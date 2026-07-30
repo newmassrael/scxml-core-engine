@@ -82,13 +82,32 @@ paths = [
     # CMakeLists.txt / build.gradle.kts / pyproject.toml — verified, 0 each.
     "backends/cpp/forge-runtime/include",
     "backends/cpp/forge-runtime/tests",
-    "backends/go/forge-runtime",
+    # Source packages only, same reason one level deeper: `conformance/` holds a
+    # gitignored `generated/` tree of 126 Go files carrying 182 §synth- cites, so
+    # the totals moved with whether the reader had run conformance/generate.sh.
+    # A `.go` file has a known comment syntax, so the Mnemosyne R856 read-whole
+    # line never named it — the R860 read-set sweep did. Only duplicated cites
+    # left the set: §synth-5-A 44 -> 42 citing files, 5-B 233 -> 143, 5-J-5
+    # 25 -> 23, and go.mod / conformance/doc.go / conformance/generate.sh carry
+    # 0 citations each.
+    "backends/go/forge-runtime/codec",
+    "backends/go/forge-runtime/filter",
+    "backends/go/forge-runtime/forge",
+    "backends/go/forge-runtime/interpolation",
+    "backends/go/forge-runtime/lookup",
+    "backends/go/forge-runtime/observer",
+    "backends/go/forge-runtime/round_trip",
+    "backends/go/forge-runtime/timer",
     "backends/kotlin/forge-runtime/src",
     "backends/python/forge-runtime/sce_forge_runtime",
     "backends/python/forge-runtime/tests",
     "backends/rust/forge-runtime",
     "backends/c/runtime/include",
     "tests/forge/resources",
+    # Hand-authored: fixtures.schema.json documents each manifest field against
+    # the RFC section it derives from, so its §synth- cites are authored prose,
+    # not codegen output, and belong under the hallucination gate.
+    "tests/forge/conformance",
     "scripts",
     "schemas",
 ]
@@ -96,14 +115,22 @@ paths = [
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
 # cannot gate vacuously.
 #
-# Measured: the excluded trees hold 366 files carrying §synth- cites, and every
-# one is codegen OUTPUT — backends/rust/tests/src/generated/** ("SCE-GENERATED —
-# DO NOT EDIT") and tests/forge/expected/** (golden references regenerated from
-# source SCXML). Their cite text is authored in tools/codegen/templates, which
-# `paths` scans, so the citations are gated at their source and re-gating the
-# output would check the same string twice. No hand-authored §synth- citation
-# lives in an excluded tree.
+# An entry declares coverage intent; it does NOT subtract from what the gate
+# reads (Mnemosyne R860). So a prefix must name a tree `paths` does not cover,
+# or it claims two contradictory things about the same file: `tests/` used to sit
+# here while `paths` scanned tests/forge/resources, and 165 files were both
+# scanned and declared out.
+#
+# Measured: the excluded trees hold 1015 files carrying §synth- cites, and every
+# one is codegen OUTPUT — backends/rust/tests/src/generated/**,
+# backends/rust/probes/** ("SCE-GENERATED — DO NOT EDIT"),
+# tests/forge/expected/** (golden references regenerated from source SCXML) and
+# backends/go/forge-runtime/conformance/generated/**. Their cite text is authored
+# in tools/codegen/templates, which `paths` scans, so the citations are gated at
+# their source and re-gating the output would check the same string twice. No
+# hand-authored §synth- citation lives in an excluded tree.
 scan_exclusions = [
+    "backends/go/forge-runtime/conformance/",
     "backends/rust/link-runtime/",
     "backends/rust/lua/",
     "backends/rust/portable-bytes/",
@@ -111,7 +138,7 @@ scan_exclusions = [
     "backends/rust/runtime/tests/",
     "backends/rust/tests/",
     "sce-build/examples/",
-    "tests/",
+    "tests/forge/expected/",
 ]
 severity_missing = "reject"
 severity_binding = "warn"
@@ -157,4 +184,4 @@ backend = "tree-sitter-rust"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "0c82ad73"
+pin = "646218fa"

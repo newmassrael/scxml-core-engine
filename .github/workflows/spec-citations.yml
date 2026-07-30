@@ -98,10 +98,18 @@ env:
   # build artifacts under enrolled `forge-runtime` parents, so every advisory
   # count depended on whether the reader had built. Narrowing those paths to
   # their source subdirs took it to 532 of 943 and made our counts match
-  # upstream's copy exactly. Bumped after re-running validate-workspace /
+  # upstream's copy exactly. R859/R860 is this pin, and it found the half of that
+  # narrowing we had missed: R856's line counts only files with no comment
+  # syntax, so the gitignored Go `conformance/generated` tree — 126 files, 182
+  # §synth- cites, a language the line never names — stayed in the read set and
+  # kept the totals dependent on whether the reader had run the generator. R860
+  # also splits unreadable files out of the read-whole count (a `.pyc` is walked
+  # and then dropped by `read_to_string`, so no axis sees it) and reports a file
+  # that `paths` scans while `scan_exclusions` declares it out — 165 of ours, all
+  # under tests/forge/resources. Bumped after re-running validate-workspace /
   # -code-refs / -verifies-linkage / -content-drift on every enrolled workspace
   # with the pin enforced.
-  MNEMOSYNE_REV: 0c82ad73299d40e8e4fc33b3205f4a01bb60d823
+  MNEMOSYNE_REV: 646218fa2c31fa2be7667908bbf2bc18d2ada132
 
 jobs:
   citations:
