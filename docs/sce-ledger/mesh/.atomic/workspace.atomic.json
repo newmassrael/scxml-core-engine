@@ -16,7 +16,8 @@
       "title": "Ordering Guarantees",
       "parent_doc": "mesh",
       "parent_section": "mesh-10",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "mesh-10.10": {
       "title": "`OutboundBuffer` — readiness-gated outbound admit",
@@ -108,7 +109,8 @@
       "title": "Conformance Verification",
       "parent_doc": "mesh",
       "parent_section": "mesh-10.4",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "mesh-10.5": {
       "title": "Duplicate Suppression",
@@ -282,7 +284,8 @@
       "title": "Delayed Send + Cancel (Cross-Process)",
       "parent_doc": "mesh",
       "parent_section": "mesh-10",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "mesh-10.9": {
       "title": "Origin Identity — `source` vs `routing_id`",
@@ -459,7 +462,8 @@
       "title": "QoS Configuration (deploy.yaml → Generated Code)",
       "parent_doc": "mesh",
       "parent_section": "mesh-15",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "mesh-15.4": {
       "title": "Deployment Topology",
@@ -478,7 +482,8 @@
       "title": "SCXML Concept → Zenoh Primitive Mapping",
       "parent_doc": "mesh",
       "parent_section": "mesh-15",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "mesh-15.7": {
       "title": "Build Dependencies",
@@ -518,7 +523,8 @@
       "title": "Distributed equivalence (weak)",
       "parent_doc": "mesh",
       "parent_section": "mesh-16",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "mesh-16.3": {
       "title": "Parallel region distributability rule",
@@ -915,7 +921,8 @@
       "title": "Conformance test harness",
       "parent_doc": "mesh",
       "parent_section": "mesh-16",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "mesh-16.8.1": {
       "title": "Harness architecture",
@@ -1082,7 +1089,8 @@
     "mesh-5": {
       "title": "QoS Model: Deploy-Time Realization",
       "parent_doc": "mesh",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "mesh-6": {
       "title": "Build Profiles",
@@ -1127,7 +1135,8 @@
       "title": "Inputs",
       "parent_doc": "mesh",
       "parent_section": "mesh-7",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "mesh-7.2": {
       "title": "Build Tool Analysis",
@@ -1139,7 +1148,8 @@
       "title": "Outputs",
       "parent_doc": "mesh",
       "parent_section": "mesh-7",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "mesh-7.4": {
       "title": "Generated Transport Code",
@@ -1176,7 +1186,8 @@
     "mesh-8": {
       "title": "Protocol Mapping",
       "parent_doc": "mesh",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "mesh-8.1": {
       "title": "Communication Pattern Semantics",
