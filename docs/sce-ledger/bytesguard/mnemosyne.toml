@@ -123,10 +123,18 @@ scan_exclusions = [
     "tests/forge/expected/",
 ]
 severity_missing = "reject"
-severity_binding = "warn"
-# Coverage stays advisory — a design-RFC mirror has background/risk prose
-# sections that legitimately carry no implements cite.
-severity_coverage = "warn"
+# Path B curated: every §bytesguard- cite is bound to a Section.implementations
+# (file, symbol), so a cite that drifts to another symbol now fails the build.
+# Kinds follow the store's precedent rather than the tool's proposal, which
+# offers `implements` for everything: production symbols implement, in-crate
+# `mod tests` and the fixtures reference. Section 6 is the case where the test
+# file IS the deliverable, so there it implements.
+severity_binding = "reject"
+# Coverage is enforced too. The four exempt sections carry their reason in the
+# store; section 4 was reclassified informational during this round because its
+# only distinctive artifact is a docs/ paragraph that lies outside `paths`, so
+# neither candidate binding could ever be backed by a citation the gate reads.
+severity_coverage = "reject"
 comment_only = true
 section_namespace = "bytesguard"
 
