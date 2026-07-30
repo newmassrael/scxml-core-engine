@@ -8881,6 +8881,10 @@
         {
           "file": "sce-build/src/bin/sce_codegen.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
