@@ -150,6 +150,11 @@ pub const SCHEMA_VERSION: u32 = 1;
 /// consumers can read the signal without linking this crate. The
 /// `schema_file_declares_status` test guards the two declarations
 /// against drift.
+///
+/// This constant plus that drift test are what realise the RFC
+/// §synth-6.1 diagnostic contract: a code lands in the contract doc,
+/// the accepted-subset appendix and the schema simultaneously, and the
+/// declaration cannot drift between the Rust source and the schema file.
 pub const SCHEMA_STATUS: &str = "pre-release";
 
 /// A single machine-readable diagnostic, one record per NDJSON line.

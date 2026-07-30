@@ -1476,6 +1476,11 @@ fn read_validator_has_state(scxml_path: &Path) -> Result<bool, String> {
 /// This is the shared entry point used by both the `sce-codegen
 /// generate-conformance` subcommand and any language's build system calling
 /// sce-build in-process (e.g. the Rust `build.rs`).
+///
+/// Rendering the same manifest per language from one source of fixtures is
+/// what realises RFC §synth-6.2.1 cross-backend parity: every backend runs
+/// the same test vectors, so a divergence is a test failure rather than an
+/// unnoticed difference between two hand-written suites.
 pub fn render_harness(
     manifest: &Manifest,
     language: Language,

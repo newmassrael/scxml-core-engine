@@ -141,11 +141,21 @@ scan_exclusions = [
     "tests/forge/expected/",
 ]
 severity_missing = "reject"
-severity_binding = "warn"
-# Coverage stays advisory — a design-RFC mirror has motivation/non-goals/
-# rollout prose sections that legitimately carry no implements cite; the R385
-# split keeps binding honest without a per-section non-code carve-out.
-severity_coverage = "warn"
+# Path B curated: all 2590 §synth- citations are bound to a
+# Section.implementations (file, symbol), so a cite that drifts to another
+# symbol now fails the build. Kinds do NOT follow the tool's proposal, which
+# offers `implements` for everything: an exempt section may only take
+# `references` (R423 rejects implements on one), and on a normative section a
+# test tree, `mod tests` or a fixture is `references` — only a production
+# symbol implements. Ambiguity resolves to `references`, the direction that
+# cannot manufacture coverage.
+severity_binding = "reject"
+# Coverage is enforced. The 29 exempt sections carry their reason in the store;
+# the per-section carve-out replaced the blanket downgrade this comment used to
+# describe. Appendices A and B were reclassified during the binding round: the
+# fixtures that realise them cite the body sections they exemplify, never the
+# appendix, so the appendix has no artifact of its own.
+severity_coverage = "reject"
 comment_only = true
 section_namespace = "synth"
 
