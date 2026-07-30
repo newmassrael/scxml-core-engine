@@ -354,6 +354,11 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "handle_hierarchical_transition",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentStateNode.cpp",
+          "symbol": "ConcurrentStateNode::addChild",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1834,6 +1839,11 @@
         {
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentStateNode.cpp",
+          "symbol": "ConcurrentStateNode::addChild",
           "kind": "implements"
         }
       ],
@@ -8272,11 +8282,6 @@
           "kind": "implements"
         },
         {
-          "file": "sce/src/scripting/JSEngineImpl.cpp",
-          "symbol": "JSEngine::setupSystemVariablesInternal",
-          "kind": "implements"
-        },
-        {
           "file": "sce/src/scripting/ScriptResultUtils.cpp",
           "symbol": "resultToString",
           "kind": "implements"
@@ -8386,6 +8391,16 @@
         {
           "file": "backends/rust/runtime/src/helpers/send.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/common/IOProcessorHelper.h",
+          "symbol": "scxmlLocation",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/io_processors.rs",
+          "symbol": "scxml_location",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -8408,6 +8423,31 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-C-1",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/common/IOProcessorHelper.h",
+          "symbol": "build",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "JSEngine::setupSystemVariablesInternal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::setupSystemVariables",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/io_processors.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/mod.rs",
+          "kind": "references"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8799,6 +8839,50 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-C-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/common/IOProcessorHelper.h",
+          "symbol": "build",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "JSEngine::setupSystemVariablesInternal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/LuaEngine.cpp",
+          "symbol": "LuaEngine::setupSystemVariables",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachine.h",
+          "symbol": "setBasicHttpAccessUri",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/runtime/StateMachineBuilder.h",
+          "symbol": "withBasicHttpAccessUri",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/io_processors.rs",
+          "symbol": "build",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/io_processors.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/mod.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "kind": "references"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
