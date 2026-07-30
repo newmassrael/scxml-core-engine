@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML C.2 — host-side HTTP client for the C11 backend's
+// §scxml-C-2 — host-side HTTP client for the C11 backend's
 // BasicHTTPEventProcessor conformance corpus (test201/509/510/513/518/
 // 520/522/531/532/534/567).
 //
@@ -43,7 +43,7 @@ extern "C" {
 /**
  * Parsed `http://<host>:<port><path>` URL components.
  *
- * Inline buffers (no malloc) because the W3C SCXML C.2 corpus uses
+ * Inline buffers (no malloc) because the §scxml-C-2 corpus uses
  * literal `http://localhost:8080/test` exclusively (TXMLConverter.h:
  * `HTTP_TEST_SERVER_URL`); 128/256-byte caps are far above the
  * fixture URLs while keeping the struct stack-allocatable inside a

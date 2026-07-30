@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// W3C SCXML C.2 — host-side HTTP/1.1 client + JSON response extractor
+// §scxml-C-2 — host-side HTTP/1.1 client + JSON response extractor
 // for the C11 backend BasicHTTPEventProcessor corpus. See
 // `http_client.h` for the contract; this file implements the surface
 // against POSIX socket(2)/connect(2)/send(2)/recv(2) — no third-party
