@@ -136,8 +136,12 @@ pub fn parse_forge_with_imports_and_plugin(
     // accidentally fold a `.scxml` suffix into generated symbols or
     // drop one from wire diagnostics.
     let diag = label.diagnostic_label;
-    crate::forge::xsd_validator::validate_or_skip(content, diag)
+    let xsd_outcome = crate::forge::xsd_validator::validate_or_skip(content, diag)
         .map_err(|e| Located::new(XmlError::SchemaValidation(e).into(), diag, None, None))?;
+    // A build that cannot validate must not report the same success as one that
+    // did; `warn_if_not_validated` is shared with the statechart parser entry
+    // point so both say it the same way, once.
+    crate::forge::xsd_validator::warn_if_not_validated(xsd_outcome);
 
     let doc = roxmltree::Document::parse(content)
         .map_err(|e| Located::new(XmlError::Parse(e.to_string()).into(), diag, None, None))?;

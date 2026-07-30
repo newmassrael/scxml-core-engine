@@ -24,7 +24,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+// libxml2 is linked only under the `xsd` feature; see `validate_or_skip`.
+#[cfg(feature = "xsd")]
 use libxml::parser::Parser;
+#[cfg(feature = "xsd")]
 use libxml::schemas::{SchemaParserContext, SchemaValidationContext};
 
 /// A single XSD validation violation.
@@ -171,6 +174,7 @@ pub fn find_schema_path() -> Option<PathBuf> {
 /// process instead of on every parse call. The validation context itself
 /// is rebuilt per-call because libxml's `SchemaValidationContext` holds
 /// raw FFI pointers and is not `Sync`.
+#[cfg(feature = "xsd")]
 fn cached_schema_path() -> Option<&'static Path> {
     static SCHEMA_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
     SCHEMA_PATH.get_or_init(find_schema_path).as_deref()
@@ -186,6 +190,7 @@ fn cached_schema_path() -> Option<&'static Path> {
 /// Returns `Ok(())` on a clean validation, `Err(XsdErrors)` on any
 /// schema or validity failure. The error vector preserves libxml2's
 /// natural ordering (top of file to bottom).
+#[cfg(feature = "xsd")]
 pub fn validate(xml_text: &str, source_label: &str, schema_path: &Path) -> Result<(), XsdErrors> {
     let xml_parser = Parser::default();
     let doc = xml_parser.parse_string(xml_text).map_err(|e| XsdErrors {
@@ -221,19 +226,97 @@ pub fn validate(xml_text: &str, source_label: &str, schema_path: &Path) -> Resul
         })
 }
 
-/// Convenience: validate using the cached schema path. Returns `Ok(())`
-/// when the schema cannot be located so downstream crates that vendor
-/// `sce-build` without the `schemas/` directory still build — the
-/// guarantee is "if a schema is available, validation runs", not "every
-/// invocation must validate". The CI matrix runs from a checkout that
-/// always has `schemas/`, so production fixtures always get validated.
-pub fn validate_or_skip(xml_text: &str, source_label: &str) -> Result<(), XsdErrors> {
-    match cached_schema_path() {
-        Some(p) => validate(xml_text, source_label, p),
-        None => Ok(()),
+/// Why a document was not validated. Never a failure — each variant is a
+/// legitimate configuration — but never invisible either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XsdSkipReason {
+    /// `schemas/sce-forge.xsd` could not be located: a downstream crate
+    /// vendoring `sce-build` without the `schemas/` directory.
+    SchemaNotFound,
+    /// Built without the `xsd` feature, so libxml2 is not linked. The
+    /// `wasm32` target takes this path — libxml2 is a native C library and
+    /// cannot cross-compile to WebAssembly.
+    FeatureDisabled,
+}
+
+impl XsdSkipReason {
+    /// Operator-facing explanation, used in the parser's warning.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SchemaNotFound => {
+                "schemas/sce-forge.xsd not found (set SCE_SCHEMAS_DIR or vendor schemas/)"
+            }
+            Self::FeatureDisabled => {
+                "built without the `xsd` feature, so libxml2 is not linked \
+                 (the wasm32 target cannot link it)"
+            }
+        }
     }
 }
 
+/// Whether a document actually went through the schema.
+///
+/// This type exists because the previous signature returned `Ok(())` for
+/// BOTH "validated clean" and "could not validate", making the two
+/// indistinguishable to every caller. A build that silently stops
+/// validating at the system boundary still reports success, which is the
+/// failure mode this whole module is meant to prevent. Callers now have to
+/// name which case they are in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub enum XsdOutcome {
+    /// The document was checked against the schema and is valid.
+    Validated,
+    /// No check ran. The document may or may not conform.
+    NotValidated(XsdSkipReason),
+}
+
+/// Report a non-validating parse once per process.
+///
+/// Shared by both parser entry points (`parser::parse_forge_with_imports` and
+/// `forge::parser`) so the wording and the once-only behaviour have a single
+/// implementation. Once, not per document: N identical lines on a batch run
+/// train the reader to ignore them, which is silence with extra steps.
+pub fn warn_if_not_validated(outcome: XsdOutcome) {
+    if let XsdOutcome::NotValidated(reason) = outcome {
+        static WARNED: OnceLock<()> = OnceLock::new();
+        WARNED.get_or_init(|| {
+            eprintln!(
+                "warning: XSD schema validation did not run — {}. Documents are \
+                 parsed structurally but their sce: attributes are unchecked.",
+                reason.as_str()
+            );
+        });
+    }
+}
+
+/// Validate using the cached schema path, reporting whether validation
+/// actually ran.
+///
+/// The guarantee is "if a schema is available, validation runs", not "every
+/// invocation validates" — downstream crates that vendor `sce-build` without
+/// `schemas/` must still build. The CI matrix runs from a checkout that always
+/// has `schemas/`, so production fixtures are always validated. What changed is
+/// that the not-validated case is now returned rather than swallowed.
+#[cfg(feature = "xsd")]
+pub fn validate_or_skip(xml_text: &str, source_label: &str) -> Result<XsdOutcome, XsdErrors> {
+    match cached_schema_path() {
+        Some(p) => validate(xml_text, source_label, p).map(|()| XsdOutcome::Validated),
+        None => Ok(XsdOutcome::NotValidated(XsdSkipReason::SchemaNotFound)),
+    }
+}
+
+/// `xsd`-less build: libxml2 is not linked, so no validation is possible.
+///
+/// Returning the reason instead of `Ok(())` is what keeps a `wasm32` build from
+/// reporting the same success as a fully validated one.
+#[cfg(not(feature = "xsd"))]
+pub fn validate_or_skip(_xml_text: &str, _source_label: &str) -> Result<XsdOutcome, XsdErrors> {
+    Ok(XsdOutcome::NotValidated(XsdSkipReason::FeatureDisabled))
+}
+
+#[cfg(feature = "xsd")]
 fn format_error(err: &libxml::error::StructuredError) -> XsdDiag {
     let msg = err
         .message
@@ -254,6 +337,63 @@ fn format_error(err: &libxml::error::StructuredError) -> XsdDiag {
 }
 
 #[cfg(test)]
+mod outcome_tests {
+    use super::*;
+
+    /// A clean validation and a non-validating build must be distinguishable.
+    ///
+    /// Both returned `Ok(())` before, so a build that stopped validating at the
+    /// system boundary reported exactly what a validating one did. These two
+    /// tests are the pair that pins the distinction: whichever feature
+    /// configuration is compiled, the outcome names itself.
+    #[cfg(feature = "xsd")]
+    #[test]
+    fn xsd_build_reports_validated() {
+        let doc = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="x" initial="a">
+  <state id="a"/>
+</scxml>"#;
+        // Only assert the discriminant: whether the schema is reachable in this
+        // checkout is a property of the environment, not of the contract. What
+        // must hold is that a validated document never reports NotValidated.
+        match validate_or_skip(doc, "t.scxml") {
+            Ok(XsdOutcome::Validated) => {}
+            Ok(XsdOutcome::NotValidated(r)) => {
+                assert_eq!(
+                    r,
+                    XsdSkipReason::SchemaNotFound,
+                    "an xsd-enabled build may only skip for a missing schema"
+                );
+            }
+            Err(e) => panic!("valid document rejected: {e}"),
+        }
+    }
+
+    #[cfg(not(feature = "xsd"))]
+    #[test]
+    fn non_xsd_build_reports_feature_disabled() {
+        assert_eq!(
+            validate_or_skip("<scxml/>", "t.scxml").unwrap(),
+            XsdOutcome::NotValidated(XsdSkipReason::FeatureDisabled),
+            "a build without libxml2 must say so rather than report success"
+        );
+    }
+
+    #[test]
+    fn skip_reasons_explain_themselves() {
+        // The parser prints these verbatim; an empty or placeholder string
+        // would reintroduce the silence in a different shape.
+        for r in [
+            XsdSkipReason::SchemaNotFound,
+            XsdSkipReason::FeatureDisabled,
+        ] {
+            assert!(r.as_str().len() > 20, "{r:?} needs an actionable message");
+        }
+    }
+}
+
+// Exercises `validate()` directly, which only exists when libxml2 is linked.
+#[cfg(all(test, feature = "xsd"))]
 mod tests {
     use super::*;
 
