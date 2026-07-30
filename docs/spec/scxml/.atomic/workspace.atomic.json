@@ -1347,6 +1347,11 @@
         {
           "file": "sce-build/src/scxml_semantic.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "StatePolicy",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2496,6 +2501,11 @@
         {
           "file": "backends/rust/runtime/src/helpers/entry_exit.rs",
           "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "StatePolicy",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2969,6 +2979,10 @@
           "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
           "symbol": "IScriptEngine",
           "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/script_engine_analyzer.rs",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
