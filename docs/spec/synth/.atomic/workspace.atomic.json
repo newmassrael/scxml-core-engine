@@ -75,43 +75,2061 @@
       "title": "Proposed extensions",
       "parent_doc": "synth",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational"
     },
     "synth-5-A": {
       "title": "New kind: `algorithm`",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/CMakeLists.txt",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "FixtureSpec",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "c11_supported_kind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "template_ships",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/const_fold.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "infer_types",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "symbol": "python_emit_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "ImportContext",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "forge_import_identity",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "lower_algorithm_stmt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_algorithm",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ForgeKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "is_inline_eligible",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "max_runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "needs_instance",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_algorithm",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/types.rs",
+          "symbol": "TypeCtx",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_primary_function",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateful_member_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateful_member_methods",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateless_signature",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_and_enrich_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineSchedulerConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c7_keyexpr_fixture.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c7_keyexpr_match.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/conformance/fixtures.schema.json",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_bc_iter_minimal.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_crc16.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_crc16_table.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_keyexpr_intersect_exact.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_keyexpr_match_first.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/local_sub_table.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/subscription_entry.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/algorithm.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/bounded_collection.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/conformance/kinds/algorithm.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/algorithm.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/bounded_collection.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/conformance/kinds/algorithm.cpp.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/algorithm.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/bounded_collection.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/conformance/kinds/algorithm.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/algorithm.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/bounded_collection.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/conformance/kinds/algorithm.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/algorithm.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/bounded_collection.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/conformance/kinds/algorithm.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/algorithm.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/bounded_collection.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/conformance/kinds/algorithm.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-B": {
       "title": "Codec DSL extensions",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/codec.h",
+          "symbol": "sce_forge_cursor_read_vle_inner",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/codec.h",
+          "symbol": "sce_forge_is_valid_utf8",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/codec.h",
+          "symbol": "sce_forge_writer_write_vle_inner",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/conformance/CMakeLists.txt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/forge-runtime/tests/round_trip/default_round_trip_test.c",
+          "symbol": "main",
+          "kind": "references"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/include/sce/forge/codec.h",
+          "symbol": "CodecError",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/include/sce/forge/codec.h",
+          "symbol": "SCE::Forge",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/include/sce/forge/codec.h",
+          "symbol": "read_vle_u16",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/include/sce/forge/codec.h",
+          "symbol": "write_vle_inner",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/CMakeLists.txt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/codec/codec.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_default_marker_arm_a/codec_default_marker_arm_a.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_default_marker_arm_b/codec_default_marker_arm_b.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/go/forge-runtime/round_trip/generated/codec_variant_default_marker/codec_variant_default_marker.go",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/commonMain/kotlin/com/sce/forge/runtime/Codec.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/kotlin/forge-runtime/src/jvmTest/kotlin/com/sce/forge/runtime/DefaultRoundTripTest.kt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/forge-runtime/tests/test_default_round_trip.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/python/forge-runtime/tests/test_numerical_conformance.py",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/codec.rs",
+          "symbol": "CodecError",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/codec.rs",
+          "symbol": "SceSink",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/forge-runtime/src/codec.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/forge-runtime/tests/forge_default_round_trip.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_list_fixtures",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "CanonicalType",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "FixtureSpec",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "render_harness",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "validate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "ImportContext",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "embed_streaming_encode_block",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_c11_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_cpp_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_decode_expr",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_go_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_kotlin_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_python_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_rust_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_decode_length_ref",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_decode_string_length_ref",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_encode_length_ref",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_encode_string_length_ref",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "present_if_test_literal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_algorithm",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_algorithm_test_vector_sidecar",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_codec",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_codec_test_vector_sidecar",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_inline_codec_member",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "repeat_streaming_decode_stmt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "repeat_streaming_encode_block",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "stateful_import_method_renames",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "tlv_chain_streaming_decode_stmt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/limits.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "AlgorithmModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "BitSize",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "CodecField",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "CodecModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "CodecVariant",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ForgeImport",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LinkModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "PresentIfPredicate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "SceType",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_codec",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_codec_embed_from_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_codec_field_from_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_codec_flags_from_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_codec_repeat_from_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_codec_tlv_chain_from_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_codec_variant",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_forge_from_node",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_present_if_predicate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "validate_codec_present_if_predicates",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_and_enrich_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineSchedulerConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "PlatformConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c11_serial_link_driver.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c11_websocket_link_driver.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c13_links_block.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/error_format_json.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "symbol": "assert_inline_codec_structural",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "symbol": "forge_parent_tag_consumer_parity_alias_neq_stem_rust",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "symbol": "forge_parent_tag_consumer_parity_chain_forwarding_resolves",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "symbol": "forge_parent_tag_dispatcher_self_gen_go",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/roadmap_marker_gate.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sourcemap_function_markers.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/check_noalloc_codec.sh",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/conformance/fixtures.schema.json",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_crc16.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_dma_aligned_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_embed_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_ext_attachment.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_ext_encoding_info.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_ext_timestamp.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_flags_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_init_cookie_body.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_init_syn_body.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_init_syn_envelope.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_length_ref_dotted_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_peek_arm_a.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_peek_arm_b.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_present_if_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_present_if_disjunction.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_present_if_length_ref.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_present_if_negation.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_present_if_string.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_present_if_tail.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_present_if_vle.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_qos_byte.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_repeat_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_repeat_present_if_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_repeat_unconditional_count.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_scout_zid_body.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_tlv_chain_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_tlv_chain_present_if_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_tlv_entry.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_transport_envelope.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_until_eof_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_variant_dispatch.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_variant_peek_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_vle_zint_u64.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_close.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_decl_ext_keyexpr.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_decl_ext_keyexpr_inner.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_decl_final.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_decl_kexpr.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_decl_queryable.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_decl_subscriber.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_decl_token.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_declaration.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_declare.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_del.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_encoding.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_err.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_ext_entry.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_ext_envelope.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_ext_unit.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_ext_zbuf.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_ext_zint.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_fragment.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_frame.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_hello.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_init_body.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_interest.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_interest_body.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_join.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_keep_alive.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_locator.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_msg_del.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_msg_put.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_network_envelope.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_oam.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_open_body.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_push.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_push_body.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_put.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_query.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_reply.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_request.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_response.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_response_final.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_scout.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_source_info.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_source_info_ext.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_timestamp.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_timestamp_ext.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_undecl_kexpr.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_undecl_queryable.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_undecl_subscriber.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_undecl_token.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_zenoh_wireexpr.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/algorithm_test.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/codec.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/codec_test.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/conformance/harness.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/conformance/kinds/codec.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/link.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/algorithm_test.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/codec.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/conformance/harness.cpp.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/algorithm_test.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/codec.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/conformance/kinds/codec.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/algorithm_test.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/codec.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/algorithm_test.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/codec.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/conformance/harness.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/algorithm_test.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/codec.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/codec_test.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/conformance/harness.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/conformance/kinds/codec.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/link.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-C": {
       "title": "Byte-stream link model — `sce:kind=\"link\"`",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/link.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "kind_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "template_ships",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/cross_doc_registry.rs",
+          "symbol": "ScxmlDocKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "ImportContext",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_c11_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_cpp_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_go_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_kotlin_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_python_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_rust_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ForgeKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LinkClass",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LinkInstanceRole",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LinkModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ResolvedLinkInstance",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "admits_os",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "max_runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "needs_instance",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_link",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/pool_registry.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "ForgeCompileOptions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_from_parsed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_primary_function",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateful_member_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateful_member_methods",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_and_enrich_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_reassembly_cross_doc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c10_listener_sibling_pair.rs",
+          "symbol": "resolved_link_instance_sibling_inherits_six_fields_via_role",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c11_driver_class_cross_validator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c11_websocket_link_driver.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c13_reassembly_cross_doc.rs",
+          "symbol": "binding_on_session_arming_listener_passes",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c9_reassembly_variant.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/link.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/link.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-D": {
       "title": "Timer and worker primitives",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/rust/runtime/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "kind_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "template_ships",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/cross_doc_registry.rs",
+          "symbol": "ScxmlDocKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_c11_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_cpp_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_go_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_kotlin_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_python_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_rust_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_timer",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ForgeKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "max_runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "needs_instance",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "ForgeCompileOptions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_from_parsed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_with_deploy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_scxml_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateful_member_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateful_member_methods",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineSchedulerConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c1_timer.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c2_worker_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c2_worker_outbox.rs",
+          "symbol": "happy_outbox_to_statechart_basic",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c2_worker_scheduler_codes.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c2_worker_schema.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/error_format_json.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/scxml_cross_doc_orchestrator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/timer.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/worker.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/worker.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/timer.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/timer.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/timer.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/timer.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/timer.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/worker.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-E": {
       "title": "Buffer pool and memory placement",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/c/runtime/include/sce/sample.h",
+          "symbol": "sce_keyexpr_t",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/analyzer.rs",
+          "symbol": "analyze_model_features",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "symbol": "register_c11_filters",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/buffer_pool_fsm.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "kind_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "template_ships",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/cross_doc_registry.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_c11_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_cpp_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_rust_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ForgeKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LinkModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "max_runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "needs_instance",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_forge_with_imports_and_plugin",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_link",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/pool_registry.rs",
+          "symbol": "ForgePoolKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "CachePlatformInfo",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "ForgeCompileOptions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "buffer_pool_c11_emitted_header_compiles_under_gcc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "buffer_pool_c11_happy_path_emits_storage_struct_and_linker_fragment",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "buffer_pool_rust_happy_path_emits_storage_struct",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_with_deploy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateful_member_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "BindingConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "PlatformConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "SramRegionConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_reassembly_cross_doc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "SCXMLModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "cross_ref_link_resolves_when_registered",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_impl",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_states",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "validate_on_sample_link_references",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c5_cache_maintenance.rs",
+          "symbol": "cache_maintain_with_speculative_prefetch_emits_both_edges_rust",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c9_reassembly_variant.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/extern_emit_sidecar.rs",
+          "symbol": "rust_emits_extern_c_block_for_baseline_symbols",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/extern_intrinsic_registry.rs",
+          "symbol": "happy_path_multiple_externs_preserve_order",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/extern_target_plugin.rs",
+          "symbol": "reject_baseline_shadow_irrespective_of_signature_match",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sample_callback_codegen_wireup.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/state_machine.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/state_machine.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/buffer_pool.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/buffer_pool.ld.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/link.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/buffer_pool.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/link.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/rust/state_machine.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-F": {
       "title": "Build-time evaluation",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "GenerateArgs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/const_fold.rs",
+          "symbol": "Budget",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/const_fold.rs",
+          "symbol": "bitwise_int",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/const_fold.rs",
+          "symbol": "coerce_to_const",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/cross_kind_check.rs",
+          "symbol": "check",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "GenerateError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/expr.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_algorithm",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "AlgorithmConst",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "AlgorithmConstType",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_algorithm_const",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "ForgeCompileOptions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_const_fold_smoke.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_const_not_foldable.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_const_yield_type_mismatch.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_crc16.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_crc16_table.scxml",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-G": {
       "title": "Parametric kinds (Phase 2)",
@@ -131,26 +2149,527 @@
       "title": "`sce:extern` — bounded escape hatch",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "template_ships",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/extern_emit.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/extern_validator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_c11_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_cpp_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_rust_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/intrinsic_registry.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ConcurrencyMode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ForgeKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "InboxConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ParsedForge",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "max_runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_worker",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/target_plugin.rs",
+          "symbol": "TargetPluginLoadError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "ForgeCompileOptions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "buffer_pool_c11_emitted_header_compiles_under_gcc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_from_parsed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_with_deploy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_scxml_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_bounded_collection_cross_refs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "DeployConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "ExternSymbolsConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "LinkConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "StatelessAccept",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c11_driver_class_cross_validator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c13_deferred2_peer_table_and_externs.rs",
+          "symbol": "extern_in_baseline_accepts_under_empty_plugin_set",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c13_deferred2_peer_table_and_externs.rs",
+          "symbol": "extern_in_neither_fires_with_sorted_union_candidates",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c2_worker_codegen.rs",
+          "symbol": "happy_worker_c11_emits_header_and_impl_sibling",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c5_cache_maintenance.rs",
+          "symbol": "pool_cache_maintenance_misplaced_for_each_trio_symbol",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c6_bounded_collection_cross_doc.rs",
+          "symbol": "happy_multi_writer_with_atomic_extern",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/extern_emit_sidecar.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/extern_intrinsic_registry.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/extern_target_plugin.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/buffer_pool.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/externs.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/worker.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/worker.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/externs.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/buffer_pool.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/externs.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/worker.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-J": {
       "title": "Codegen backend coverage",
       "parent_doc": "synth",
       "parent_section": "synth-5",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/tests/c11_serial_link_driver.rs",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational"
     },
     "synth-5-J-1": {
       "title": "New-kind emitter coverage on the existing C11 backend",
       "parent_doc": "synth",
       "parent_section": "synth-5-J",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/link.h",
+          "kind": "references"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "harness_layout",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/filters.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "forge_algorithm_symbol",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "forge_import_identity",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "template_ext",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "build_qualified_call",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "find_template_dir_for",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/cli_meta_and_workspace_root.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/scriptengine.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/state_machine.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/state_machine.h.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-J-2": {
       "title": "Statechart Rust `no_std` variant",
       "parent_doc": "synth",
       "parent_section": "synth-5-J",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/c/forge-runtime/CMakeLists.txt",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "Engine",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "ScheduledEntry",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/engine.rs",
+          "symbol": "initialize",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/event.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/hal.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/datamodel_init.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/done_data.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/entry_exit.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_data.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_matching.rs",
+          "symbol": "matches_event_descriptor",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/event_queue.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/hierarchy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/invoke_processing.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/mod.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/unique_id_generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/helpers/url_encoding.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "backends/rust/runtime/src/policy.rs",
+          "symbol": "StatePolicy",
+          "kind": "implements"
+        },
+        {
+          "file": "backends/rust/runtime/src/sched_send_id.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "GenerateArgs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_generate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "GenerateError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "symbol": "StatechartCodegenOptions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_no_std_compatibility",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineSchedulerConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "SCXMLModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_impl",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c3_no_std_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c3_no_std_template.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/conformance/kinds/algorithm.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/conformance/kinds/filter.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/conformance/kinds/observer.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/rust/actions/send.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/rust/entry_exit_actions.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/rust/state_machine.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-J-3": {
       "title": "Backend coverage as a 3-tuple",
@@ -163,43 +2682,1303 @@
       "title": "Kind × language matrix (parity invariant)",
       "parent_doc": "synth",
       "parent_section": "synth-5-J",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_list_fixtures",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "render_harness",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "kind_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "template_ships",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "GenerateError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_cpp_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_go_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_kotlin_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_python_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ForgeKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_dma_aligned_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/codec_tlv_chain_basic.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/conformance/kinds/algorithm.py.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-J-5": {
       "title": "Per-language emitter contracts (new generic-class kinds)",
       "parent_doc": "synth",
       "parent_section": "synth-5-J",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/CMakeLists.txt",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/const_fold.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "GenerateError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_algorithm",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "AlgorithmConstType",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ForgeKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_algorithm",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_primary_function",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/algorithm.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/algorithm_test.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/bounded_collection.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/conformance/kinds/algorithm.cpp.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/algorithm.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/conformance/kinds/algorithm.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/algorithm.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/conformance/kinds/algorithm.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/algorithm.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/conformance/kinds/algorithm.py.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-K": {
       "title": "Deploy model extensions",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_orchestrate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "mesh_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LinkInstanceRole",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LinkModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ReassemblyConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_link",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_with_deploy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_scxml_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "LinkConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "PeerTable",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "PlatformConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "StatelessAccept",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "tests",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_reassembly_cross_doc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "deploy_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c13_antiflood.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c13_deferred2_peer_table_and_externs.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c13_links_block.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c13_pool_defaults.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c13_reassembly_cross_doc.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c2_worker_scheduler_codes.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c9_reassembly_variant.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/cli_orchestrate_deploy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/link.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/link.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-L": {
       "title": "New kind: `bounded-collection`",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "kind_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "template_ships",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "ImportContext",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_cpp_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_kotlin_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "generate_rust_with_imports_and_externs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "lower_algorithm_stmt",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ForgeKind",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "max_runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "needs_instance",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "ForgeCompileOptions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_with_deploy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_scxml_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_primary_function",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateful_member_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "discover_stateful_member_methods",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "validate_and_enrich_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineSchedulerConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "SCXMLModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_impl",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c3_no_std_template.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c6_bounded_collection.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c6_bounded_collection_cpp_kotlin_emit.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c6_bounded_collection_cross_doc.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c6_bounded_collection_deploy_capacity.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c6_bounded_collection_go_python_c11_emit.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c6_bounded_collection_rust_emit.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c7_get_by_slot_foundation.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c7_keyexpr_fixture.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c7_keyexpr_match.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_bc_iter_minimal.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_keyexpr_intersect_exact.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/algorithm_keyexpr_match_first.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/local_sub_table.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tests/forge/resources/subscription_entry.scxml",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/bounded_collection.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/cpp/bounded_collection.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/go/bounded_collection.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/kotlin/bounded_collection.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/python/bounded_collection.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/bounded_collection.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/rust/state_machine.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-M": {
       "title": "Fragment and reassembly kinds",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_orchestrate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_buffer_pool_c",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "symbol": "render_buffer_pool_rust",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "BufferPoolModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "BufferPoolVariant",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LinkModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ReassemblyConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_buffer_pool",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "symbol": "parse_link",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "ForgeCompileOptions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_scxml_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "LinkConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "PeerTable",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "PlatformConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "StageCopyPolicy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "TrustClass",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_reassembly_cross_doc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c10_listener_sibling_pair.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c13_reassembly_cross_doc.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c9_reassembly_codegen.rs",
+          "symbol": "rust_reassembly_variant_emits_bitmap_word_const",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c9_reassembly_codegen.rs",
+          "symbol": "rust_reassembly_variant_emits_config_constants",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c9_reassembly_codegen.rs",
+          "symbol": "rust_reassembly_variant_emits_reassembly_slot_struct",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c9_reassembly_codegen.rs",
+          "symbol": "rust_reassembly_variant_emits_zid_peer_id_typedef",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c9_reassembly_variant.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/cli_orchestrate_deploy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/reassembly_per_peer_quota.rs",
+          "kind": "references"
+        },
+        {
+          "file": "schemas/sce-forge-ext.xsd",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/buffer_pool.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/buffer_pool.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-N": {
       "title": "Multi-link concurrency",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/c/forge-runtime/include/sce/forge/link.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "mesh_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_scxml_with_imports",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "MachineSchedulerConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "deploy_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/tests/c10_concurrent_codegen.rs",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/link.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/c/scheduler.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/link.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/link_bus.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/forge/rust/scheduler.rs.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-5-O": {
       "title": "Generated-source traceability",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_generate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "finalize",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "generate_w3c_unified",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "post_write_parent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "forge_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "must_be_listed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "AlgorithmModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "BoundedCollectionModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "BufferPoolModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "CodecModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ConditionModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "EnumModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "EventSchemaModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "FilterModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "InterpolationModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LinkModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "LookupModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ObserverModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ProcedureModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "TimerModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "TransformModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "ValidatorModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "WorkerModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/parser.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/provenance.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/sourcemap.rs",
+          "symbol": "Sourcemap",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/sourcemap.rs",
+          "symbol": "build_round_trip_produces_byte_stable_json",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/symbol_mangling.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/generator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_from_parsed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_from_string",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_forge_with_deploy",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_model",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "symbol": "compile_model_from_string",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "generate_cpp_mesh",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "PlatformConfig",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "Action",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "SCXMLModel",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "State",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/model.rs",
+          "symbol": "Transition",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "make_link_doc",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "parse_impl",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/provenance.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/no_std_doc_preservation.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sourcemap_addr2sce.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sourcemap_function_markers.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sourcemap_module_markers.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sourcemap_ownership_walker.rs",
+          "symbol": "walker_diagnostic_code_is_meta_generated_source_line_marker_missing",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sourcemap_ownership_walker.rs",
+          "symbol": "walker_does_not_descend_into_files_with_non_source_extensions",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/_macros/sce_map_marker.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/state_machine.c.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/state_machine.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/entry_exit_actions.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/go/entry_exit_actions.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/go/process_transition.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/go/state_machine.go.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/kotlin/state_machine.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/kotlin/transition_actions.kt.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/process_transition.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/python/state_machine.py.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/rust/entry_exit_actions.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/rust/process_transition.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/rust/state_machine.rs.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/state_machine.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/state_machine_inl.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-6": {
       "title": "Cross-cutting concerns",
@@ -211,7 +3990,14 @@
       "title": "Diagnostic contract",
       "parent_doc": "synth",
       "parent_section": "synth-6",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "SCHEMA_STATUS",
+          "kind": "implements"
+        }
+      ]
     },
     "synth-6.2": {
       "title": "Testing requirements (new)",
@@ -224,7 +4010,14 @@
       "title": "Cross-backend parity",
       "parent_doc": "synth",
       "parent_section": "synth-6.2",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "render_harness",
+          "kind": "implements"
+        }
+      ]
     },
     "synth-6.2.2": {
       "title": "Wire replay",
@@ -258,7 +4051,174 @@
       "title": "Generated source drift detection",
       "parent_doc": "synth",
       "parent_section": "synth-6.2",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "Cli",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "Commands",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "GenerateArgs",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_generate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_generate_conformance",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "cmd_orchestrate",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "finalize",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "generate_w3c_unified",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "post_write_parent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/bin/sce_codegen.rs",
+          "symbol": "process_child",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/cli_error.rs",
+          "symbol": "CliError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "ALL_DIAGNOSTIC_CODES",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "cli_golden_entries",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "must_be_listed",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "non_overlap_class",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "spec_anchor",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "validation_fields",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/drift.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/error.rs",
+          "symbol": "ValidationError",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "max_runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/model.rs",
+          "symbol": "runtime_dep",
+          "kind": "implements"
+        },
+        {
+          "file": "sce-build/src/forge/sourcemap.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/lib.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/b9_drift_detection.rs",
+          "symbol": "VerifyFixture",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c7_keyexpr_fixture.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sourcemap_addr2sce.rs",
+          "symbol": "sourcemap_source_hash_matches_drift_header",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sourcemap_ownership_walker.rs",
+          "symbol": "walker_does_not_descend_into_files_with_non_source_extensions",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/sourcemap_ownership_walker.rs",
+          "symbol": "walker_silently_skips_files_without_drift_header",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_all_committed_trees.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_donedata_local_invoke.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_donedata_local_invoke_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_donedata_local_invoke_kotlin.sh",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/c/scriptengine.jinja2",
+          "kind": "references"
+        },
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "references"
+        }
+      ]
     },
     "synth-6.3": {
       "title": "Tooling",
@@ -271,12 +4231,73 @@
       "title": "Phased rollout",
       "parent_doc": "synth",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "backends/cpp/forge-runtime/tests/conformance/CMakeLists.txt",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "c11_supported_kind",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/conformance.rs",
+          "symbol": "render_harness",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/forge/codegen_matrix.rs",
+          "symbol": "template_ships",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c11_serial_link_driver.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c11_websocket_link_driver.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/forge_conformance.rs",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational"
     },
     "synth-8": {
       "title": "Open questions",
       "parent_doc": "synth",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/forge/diagnostic.rs",
+          "symbol": "DiagnosticCode",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/error.rs",
+          "symbol": "DeployError",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c11_driver_class_cross_validator.rs",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/tests/c11_websocket_link_driver.rs",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational"
     },
     "synth-9": {
@@ -288,12 +4309,14 @@
     "synth-A": {
       "title": "Worked example: CRC16-CCITT",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-B": {
       "title": "Worked example: VLE ZInt u64",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-C": {
       "title": "Honest scope of the end-state",
