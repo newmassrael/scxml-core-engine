@@ -113,10 +113,14 @@ env:
   # The new `vcs axis` asks the tree's own VCS instead of a hand list, which is
   # why it survives where a `build/` skip entry would drift. R865 corrected the
   # argument (not the predicate) after we showed `git check-ignore` consults the
-  # index by default. Bumped after re-running validate-workspace / -code-refs /
-  # -verifies-linkage / -content-drift on every enrolled workspace with the pin
-  # enforced.
-  MNEMOSYNE_REV: be48e37f29c99cffbd28b7c48275342c802cef99
+  # index by default. R866 is this pin: it puts the same axis over the EXCLUDED
+  # set, which R840 reads to decide whether a citation was swallowed. That set is
+  # 149 of 1920 build output here on synth and 9591 of 13685 on mesh, so the
+  # swallowed verdict was developer-shaped even after the read set stopped being
+  # so. Still advisory and still 0 swallowed. Bumped after re-running
+  # validate-workspace / -code-refs / -verifies-linkage / -content-drift on every
+  # enrolled workspace with the pin enforced.
+  MNEMOSYNE_REV: 3e2cb1460883d8fd0b9bbb908b60c7491418e11d
 
 jobs:
   citations:
