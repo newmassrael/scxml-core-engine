@@ -252,4 +252,4 @@ sha256 = "fd88796df0afd01c9febb650e8dd1a9ee62479ae797c7adc24ffc4f1d68c66c1"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "0c82ad73"
+pin = "646218fa"

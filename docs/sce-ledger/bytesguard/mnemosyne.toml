@@ -71,13 +71,30 @@ paths = [
     # CMakeLists.txt / build.gradle.kts / pyproject.toml — verified, 0 each.
     "backends/cpp/forge-runtime/include",
     "backends/cpp/forge-runtime/tests",
-    "backends/go/forge-runtime",
+    # Source packages only, same reason one level deeper: `conformance/` holds a
+    # gitignored `generated/` tree of 126 Go files whose cites are codegen output,
+    # so the read set moved with whether the reader had run conformance/generate.sh.
+    # A `.go` file has a known comment syntax, so the Mnemosyne R856 read-whole
+    # line never named it — the R860 read-set sweep did. go.mod /
+    # conformance/doc.go / conformance/generate.sh carry 0 citations each.
+    "backends/go/forge-runtime/codec",
+    "backends/go/forge-runtime/filter",
+    "backends/go/forge-runtime/forge",
+    "backends/go/forge-runtime/interpolation",
+    "backends/go/forge-runtime/lookup",
+    "backends/go/forge-runtime/observer",
+    "backends/go/forge-runtime/round_trip",
+    "backends/go/forge-runtime/timer",
     "backends/kotlin/forge-runtime/src",
     "backends/python/forge-runtime/sce_forge_runtime",
     "backends/python/forge-runtime/tests",
     "backends/rust/forge-runtime",
     "backends/c/runtime/include",
     "tests/forge/resources",
+    # Hand-authored fixture manifest + its schema, enrolled to mirror synth: an
+    # authored §-cite here belongs under the hallucination gate rather than in a
+    # tree declared out.
+    "tests/forge/conformance",
     "scripts",
     "schemas",
 ]
@@ -85,10 +102,17 @@ paths = [
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
 # cannot gate vacuously.
 #
+# An entry declares coverage intent; it does NOT subtract from what the gate
+# reads (Mnemosyne R860). So a prefix must name a tree `paths` does not cover,
+# or it claims two contradictory things about the same file: `tests/` used to sit
+# here while `paths` scanned tests/forge/resources, and 165 files were both
+# scanned and declared out.
+#
 # Measured: zero §bytesguard- citations exist in any excluded tree — all seven
 # Rust files citing this namespace sit under sce-build/src + sce-build/tests,
 # both of which `paths` already scans. This declaration gates nothing away.
 scan_exclusions = [
+    "backends/go/forge-runtime/conformance/",
     "backends/rust/link-runtime/",
     "backends/rust/lua/",
     "backends/rust/portable-bytes/",
@@ -96,7 +120,7 @@ scan_exclusions = [
     "backends/rust/runtime/tests/",
     "backends/rust/tests/",
     "sce-build/examples/",
-    "tests/",
+    "tests/forge/expected/",
 ]
 severity_missing = "reject"
 severity_binding = "warn"
@@ -139,4 +163,4 @@ backend = "tree-sitter-rust"
 # no local build carries stops every gate, and `[tool]` itself post-dates
 # R826, so a pre-R826 binary dies in config parsing without naming a revision.
 [tool]
-pin = "0c82ad73"
+pin = "646218fa"
