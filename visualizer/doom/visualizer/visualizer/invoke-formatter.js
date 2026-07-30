@@ -71,14 +71,14 @@ const InvokeFormatter = (function() {
             details.push(`${DETAIL_PREFIX}type: ${typeDisplay}${suffix}`);
         }
 
-        // W3C SCXML 6.4.2: ID or idlocation attribute
+        // W3C SCXML 6.4.1: ID or idlocation attribute
         if (!isEmpty(invokeData.invokeId)) {
             details.push(`${DETAIL_PREFIX}id: ${invokeData.invokeId}`);
         } else if (!isEmpty(invokeData.invokeIdLocation)) {
             details.push(`${DETAIL_PREFIX}idlocation: ${invokeData.invokeIdLocation}`);
         }
 
-        // W3C SCXML 6.4.3: Source (static or dynamic)
+        // W3C SCXML 6.4.1: Source (static or dynamic)
         const src = invokeData.invokeSrc || invokeData.invokeSrcExpr;
         if (!isEmpty(src)) {
             const isDynamicSrc = isEmpty(invokeData.invokeSrc) && !isEmpty(invokeData.invokeSrcExpr);
@@ -86,7 +86,7 @@ const InvokeFormatter = (function() {
             details.push(`${DETAIL_PREFIX}src: ${src}${suffix}`);
         }
 
-        // W3C SCXML 6.4.4: Content (inline SCXML or dynamic expression)
+        // W3C SCXML 6.4.2: Content (inline SCXML or dynamic expression)
         if (!isEmpty(invokeData.invokeContent)) {
             // Show inline content (no truncation)
             details.push(`${DETAIL_PREFIX}content: <scxml...> (inline)`);
@@ -94,7 +94,7 @@ const InvokeFormatter = (function() {
             details.push(`${DETAIL_PREFIX}contentexpr: ${invokeData.invokeContentExpr}`);
         }
 
-        // W3C SCXML 6.4.5: Params (name-value pairs to pass to child)
+        // W3C SCXML 6.4.2: Params (name-value pairs to pass to child)
         if (hasItems(invokeData.invokeParams)) {
             const paramStrs = invokeData.invokeParams.map(p => {
                 const name = p.name || '?';
@@ -105,12 +105,12 @@ const InvokeFormatter = (function() {
             details.push(`${DETAIL_PREFIX}params: ${paramsStr}`);
         }
 
-        // W3C SCXML 6.4.6: Namelist (variable names to pass)
+        // W3C SCXML 6.4.1: Namelist (variable names to pass)
         if (!isEmpty(invokeData.invokeNamelist)) {
             details.push(`${DETAIL_PREFIX}namelist: ${invokeData.invokeNamelist}`);
         }
 
-        // W3C SCXML 6.4.7: AutoForward (automatic event forwarding)
+        // W3C SCXML 6.4.1: AutoForward (automatic event forwarding)
         if (invokeData.invokeAutoForward === true) {
             details.push(`${DETAIL_PREFIX}autoforward: true`);
         }
