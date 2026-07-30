@@ -3,67 +3,79 @@
     "synth-0": {
       "title": "Reading guide",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-1": {
       "title": "Motivation",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-1.1": {
       "title": "Downstream project",
       "parent_doc": "synth",
       "parent_section": "synth-1",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-1.2": {
       "title": "Why SCE, not a direct rewrite",
       "parent_doc": "synth",
       "parent_section": "synth-1",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-1.3": {
       "title": "Why SCE cannot currently do this",
       "parent_doc": "synth",
       "parent_section": "synth-1",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-10": {
       "title": "Acknowledgments",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-2": {
       "title": "Non-goals",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-2.1": {
       "title": "Permanent non-goals",
       "parent_doc": "synth",
       "parent_section": "synth-2",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-2.2": {
       "title": "MVP deferrals (with migration paths)",
       "parent_doc": "synth",
       "parent_section": "synth-2",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "synth-3": {
       "title": "Target end-state",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-4": {
       "title": "Current SCE capability survey",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-5": {
       "title": "Proposed extensions",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-5-A": {
       "title": "New kind: `algorithm`",
@@ -105,13 +117,15 @@
       "title": "Parametric kinds (Phase 2)",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "synth-5-H": {
       "title": "Recursive and tree data kinds (Phase 2)",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "synth-5-I": {
       "title": "`sce:extern` — bounded escape hatch",
@@ -123,7 +137,8 @@
       "title": "Codegen backend coverage",
       "parent_doc": "synth",
       "parent_section": "synth-5",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-5-J-1": {
       "title": "New-kind emitter coverage on the existing C11 backend",
@@ -141,7 +156,8 @@
       "title": "Backend coverage as a 3-tuple",
       "parent_doc": "synth",
       "parent_section": "synth-5-J",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "synth-5-J-4": {
       "title": "Kind × language matrix (parity invariant)",
@@ -188,7 +204,8 @@
     "synth-6": {
       "title": "Cross-cutting concerns",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-6.1": {
       "title": "Diagnostic contract",
@@ -200,7 +217,8 @@
       "title": "Testing requirements (new)",
       "parent_doc": "synth",
       "parent_section": "synth-6",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-6.2.1": {
       "title": "Cross-backend parity",
@@ -212,25 +230,29 @@
       "title": "Wire replay",
       "parent_doc": "synth",
       "parent_section": "synth-6.2",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "synth-6.2.3": {
       "title": "Upstream interop (project-level, not SCE)",
       "parent_doc": "synth",
       "parent_section": "synth-6.2",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "synth-6.2.4": {
       "title": "No-alloc guard (layered)",
       "parent_doc": "synth",
       "parent_section": "synth-6.2",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "synth-6.2.5": {
       "title": "Adversarial fuzz harness",
       "parent_doc": "synth",
       "parent_section": "synth-6.2",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "synth-6.2.6": {
       "title": "Generated source drift detection",
@@ -242,22 +264,26 @@
       "title": "Tooling",
       "parent_doc": "synth",
       "parent_section": "synth-6",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here"
     },
     "synth-7": {
       "title": "Phased rollout",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-8": {
       "title": "Open questions",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-9": {
       "title": "Impact summary",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     },
     "synth-A": {
       "title": "Worked example: CRC16-CCITT",
@@ -272,11 +298,26 @@
     "synth-C": {
       "title": "Honest scope of the end-state",
       "parent_doc": "synth",
-      "decision_status": "active"
+      "decision_status": "active",
+      "coverage_expectation": "informational"
     }
   },
   "changelog_entries": {},
   "inventory_entries": {},
   "confirmation_events": {},
-  "schema_version": 11
+  "frames": {},
+  "branches": {},
+  "entities": {},
+  "entity_kinds": {},
+  "units": {},
+  "predicates": {},
+  "narrative_facts": {},
+  "disclosure_plans": {},
+  "edge_costs": {},
+  "edge_guards": {},
+  "parameters": {},
+  "parameter_deltas": {},
+  "parameter_gates": {},
+  "fact_counts": {},
+  "schema_version": 44
 }
