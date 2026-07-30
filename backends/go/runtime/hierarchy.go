@@ -75,7 +75,7 @@ func FindLCA[S comparable, E comparable](policy StatePolicy[S, E], state1, state
 }
 
 // IsDescendantOfByWalk checks whether descendant is a strict descendant of
-// ancestor by walking the hierarchy (W3C SCXML Appendix D.2).
+// ancestor by walking the hierarchy (§scxml-D-getProperAncestors).
 //
 // Returns true if walking up from descendant via GetParent eventually reaches
 // ancestor. Returns false if the walk terminates at the root without finding it,

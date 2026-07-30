@@ -19,7 +19,7 @@
 #include "runtime/StateMachineEventRaiser.h"
 #include "runtime/TransitionDomainCalculator.h"
 #include "scripting/IScriptEngine.h"
-#include "states/ConcurrentStateTypes.h"  // W3C SCXML Appendix D.2: TransitionDescriptorString
+#include "states/ConcurrentStateTypes.h"  // §scxml-D-Datatypes: TransitionDescriptorString
 #include <atomic>
 #include <functional>
 #include <map>
@@ -285,7 +285,7 @@ public:
     /**
      * @brief Get enabled transitions from last event processing
      *
-     * W3C SCXML Appendix D.2: Returns all transitions that were enabled before conflict resolution.
+     * §scxml-D-removeConflictingTransitions: Returns all transitions that were enabled before conflict resolution.
      * For parallel states, this includes transitions from all regions that could fire for the event.
      * Interactive visualizer support for showing transition conflict resolution process.
      *
@@ -296,7 +296,7 @@ public:
     /**
      * @brief Get optimal transition set after conflict resolution
      *
-     * W3C SCXML Appendix D.2: Returns transitions selected after applying conflict resolution algorithm.
+     * §scxml-D-removeConflictingTransitions: Returns transitions selected after applying conflict resolution algorithm.
      * These are the transitions that were actually executed in the last microstep.
      * Interactive visualizer support for showing which transitions were chosen.
      *
@@ -647,7 +647,7 @@ private:
     std::string lastTransitionSource_{};
     std::string lastTransitionTarget_{};
 
-    // W3C SCXML Appendix D.2: Conflict resolution transition tracking (for interactive visualizer)
+    // §scxml-D-removeConflictingTransitions: Conflict resolution transition tracking (for interactive visualizer)
     std::vector<TransitionDescriptorString>
         lastEnabledTransitions_{};  // All enabled transitions before conflict resolution
     std::vector<TransitionDescriptorString> lastOptimalTransitions_{};  // Optimal set after conflict resolution

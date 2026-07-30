@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: aa58405544015ba4d1b8207b13e783fe4f4b991c1d05b4cc1602d85ec7348310
-// generated-at: 1785367094
+// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
+// generated-at: 1785371280
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -90,7 +90,7 @@ struct TransitionInfo {
     is_targetless: bool,
 }
 
-// W3C SCXML Appendix D.2: microstep conflict-resolution buffers. The runtime
+// Appendix D microstepProcedure: microstep conflict-resolution buffers. The runtime
 // owns the std-vs-heapless collection choice through the profile-resolving
 // `SceTransitionBuf` / `SceIndexBuf` aliases (single source of truth, like
 // `SceString` / `StateChain`), so this one emission compiles on both runtime
@@ -668,7 +668,7 @@ impl StatePolicy for Test405Policy {
                 );
             }
 
-            // W3C SCXML Appendix D.2: Remove conflicting transitions
+            // Appendix D removeConflictingTransitions: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
                 enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
             }
@@ -731,14 +731,14 @@ impl StatePolicy for Test405Policy {
             // std, a capacity-bounded `heapless::FnvIndexSet` under no_std
             // (`MAX_MICROSTEP_DEDUP_SLOTS`). `dedup_insert` fails loud on no_std
             // overflow rather than silently dropping transitions — that would
-            // violate W3C SCXML Appendix D.2 semantics.
+            // violate Appendix D microstepProcedure semantics.
             let mut seen: ::sce_rust_runtime::SceDedupSet<(Test405State, usize)> =
                 ::sce_rust_runtime::SceDedupSet::new();
             enabled_transitions.retain(|t| {
                 ::sce_rust_runtime::dedup_insert(&mut seen, (t.source, t.transition_index))
             });
 
-            // W3C SCXML Appendix D.2: Remove conflicting transitions
+            // Appendix D removeConflictingTransitions: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
                 enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
             }
@@ -1106,7 +1106,7 @@ impl Test405Policy {
         }
     }
 
-    // W3C SCXML Appendix D.2: Remove conflicting transitions
+    // Appendix D removeConflictingTransitions: Remove conflicting transitions
     fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> TransitionList {
         let mut filtered: TransitionList = TransitionList::new();
 
@@ -1115,7 +1115,7 @@ impl Test405Policy {
             let mut to_remove: IndexList = IndexList::new();
 
             for (idx, t2) in filtered.iter().enumerate() {
-                // W3C SCXML Appendix D.2: Check if exit sets intersect
+                // Appendix D removeConflictingTransitions: Check if exit sets intersect
                 let t1_exits =
                     Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
                 let t2_exits =
@@ -1123,7 +1123,7 @@ impl Test405Policy {
 
                 let mut has_conflict = t1_exits.iter().any(|s1| t2_exits.contains(s1));
 
-                // W3C SCXML Appendix D.2: Target/source conflict — t1 enters a state that t2 leaves
+                // Appendix D removeConflictingTransitions: Target/source conflict — t1 enters a state that t2 leaves
                 // (or vice versa). Matches C++ `ConflictResolutionAlgorithms::removeConflictingTransitions`.
                 if !has_conflict && (t1.target == t2.source || t2.target == t1.source) {
                     has_conflict = true;
@@ -1152,7 +1152,7 @@ impl Test405Policy {
                 }
 
                 if has_conflict {
-                    // W3C SCXML Appendix D.2: Preemption rules
+                    // Appendix D removeConflictingTransitions: Preemption rules
                     if t1.target == t2.source {
                         to_remove.push_bounded(idx);
                     } else if t2.target == t1.source {
@@ -1179,7 +1179,7 @@ impl Test405Policy {
         filtered
     }
 
-    // W3C SCXML Appendix D.2: Compute exit set for a transition
+    // Appendix D computeExitSet: Compute exit set for a transition
     // Matches C++ `ParallelTransitionHelper::computeExitSet` — returns all states
     // from `source` up to (but not including) LCA(source, target). For internal
     // transitions where the target is a descendant of the source, returns empty.
@@ -1228,7 +1228,7 @@ impl Test405Policy {
             result
         };
 
-        // W3C SCXML Appendix D.2: Collect states from source up to (excluding) LCA
+        // Appendix D findLCCA: Collect states from source up to (excluding) LCA
         let mut exit_set = ::sce_rust_runtime::helpers::hierarchy::new_chain();
         let mut current = source;
         loop {
@@ -1248,7 +1248,7 @@ impl Test405Policy {
         exit_set
     }
 
-    // W3C SCXML Appendix D.2: Execute microstep with proper ordering
+    // Appendix D microstepProcedure: Execute microstep with proper ordering
     fn execute_microstep(
         &mut self,
         transitions: &[TransitionInfo],
@@ -1260,7 +1260,7 @@ impl Test405Policy {
             return;
         }
 
-        // W3C SCXML Appendix D.2 Step 1-2: Compute states to exit
+        // Appendix D computeExitSet Step 1-2: Compute states to exit
         // W3C SCXML 3.13: Transition domain = LCCA(source, target). When there is no
         // common ancestor (top-level sibling transition), we exit every active ancestor
         // of source up to the root — modelled here as `domain = None`.
@@ -1329,12 +1329,12 @@ impl Test405Policy {
         // Snapshot active states for history recording
         let active_snapshot = self.active_states.clone();
 
-        // W3C SCXML Appendix D.2 Step 2: Exit states
+        // Appendix D exitStates Step 2: Exit states
         for &state in &states_to_exit {
             self.execute_exit_actions(state, engine, &active_snapshot);
         }
 
-        // W3C SCXML Appendix D.2 Step 3: Execute transition content
+        // Appendix D executeTransitionContent Step 3: Execute transition content
         let mut sorted_transitions: TransitionList =
             ::sce_rust_runtime::bounded_clone_slice(transitions);
         ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| {
@@ -1351,7 +1351,7 @@ impl Test405Policy {
             }
         }
 
-        // W3C SCXML Appendix D.2 Step 4-5: Enter target states
+        // Appendix D enterStates Step 4-5: Enter target states
         ::sce_rust_runtime::stable_sort_by_key(&mut sorted_transitions, |t| {
             Self::get_document_order(t.target)
         });

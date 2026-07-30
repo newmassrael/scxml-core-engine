@@ -158,7 +158,7 @@ struct HierarchicalAlgorithms {
     }
 
     /**
-     * @brief Check if descendant is a child/grandchild of ancestor (W3C SCXML Appendix D.2)
+     * @brief Check if descendant is a child/grandchild of ancestor (§scxml-D-isDescendant)
      */
     template <typename StateType, typename GetParentFn>
     [[nodiscard]] static bool isDescendantOf(const StateType &descendant, const StateType &ancestor,
@@ -585,7 +585,7 @@ public:
      * @brief Check if one state is a descendant of another
      *
      * @details
-     * W3C SCXML Appendix D.2: Used for transition conflict resolution.
+     * §scxml-D-removeConflictingTransitions: Used for transition conflict resolution.
      * A state is a descendant of ancestor if ancestor appears in the parent chain.
      *
      * @param descendant Potential descendant state
@@ -609,7 +609,7 @@ public:
      * // Returns: false (state is not its own descendant)
      * @endcode
      *
-     * @par W3C SCXML Appendix D.2 Compliance
+     * @par §scxml-D-removeConflictingTransitions Compliance
      * Used for optimal transition set selection:
      * - If t1.source is descendant of t2.source -> t1 preempts t2
      * - Otherwise -> t2 preempts t1 (document order)

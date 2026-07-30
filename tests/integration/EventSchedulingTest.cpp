@@ -1773,7 +1773,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
 /**
  * @brief W3C SCXML Test 513: Verify BasicHTTPEventProcessor returns 2XX success response
  *
- * Specification: W3C SCXML Appendix D.2 - BasicHTTPEventProcessor
+ * Specification: §scxml-C-2 - BasicHTTPEventProcessor
  *
  * TXML Comments (test/w3c/txml/test513.txt):
  * "This is a fully manual test. You send a well formed event to the 'location' URL

@@ -431,7 +431,17 @@ def _plan_marked(text, mask, ledger_ids, prefix, lineno):
     # "SCE_FORGE.md §3.1") is never matched here -> SCE-internal design-doc refs
     # are handled by the bare-sigil path under their own namespace.
     sig_re = r"(?:W3C[ \t]+SCXML|W3C)[ \t]*§[ \t]*(?P<sigchain>" + chain + r")"
-    prose_re = re.escape(prefix) + r"[ \t]+(?P<prosechain>" + chain + r")"
+    # `Appendix ` may sit between the marker and the label ("W3C SCXML Appendix
+    # D.2"). Without this the word occupies the label position, so the whole
+    # citation matched nothing at all — neither migrated nor reported — and a
+    # fabricated appendix subsection passed every gate silently. Measured: the
+    # Kotlin engine carried seven "Appendix D.2" cites while `D.2` is not a
+    # ledger section, and `--check-ledger` saw none of them. The group is
+    # non-capturing and inside the match span, so a migration replaces the word
+    # along with the label — the §id already names the appendix.
+    prose_re = (
+        re.escape(prefix) + r"[ \t]+(?:Appendix[ \t]+)?(?P<prosechain>" + chain + r")"
+    )
     pattern = re.compile(sig_re + r"|" + prose_re)
     migrations, skipped = [], []
     out, last = [], 0

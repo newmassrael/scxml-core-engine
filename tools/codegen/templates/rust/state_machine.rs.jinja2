@@ -111,7 +111,7 @@ struct TransitionInfo {
     is_targetless: bool,
 }
 
-// W3C SCXML Appendix D.2: microstep conflict-resolution buffers. The runtime
+// Appendix D microstepProcedure: microstep conflict-resolution buffers. The runtime
 // owns the std-vs-heapless collection choice through the profile-resolving
 // `SceTransitionBuf` / `SceIndexBuf` aliases (single source of truth, like
 // `SceString` / `StateChain`), so this one emission compiles on both runtime

@@ -227,7 +227,7 @@ public:
     /**
      * @brief Get enabled transitions from last event processing
      *
-     * W3C SCXML Appendix D.2: Returns all transitions that were enabled before conflict resolution.
+     * §scxml-D-removeConflictingTransitions: Returns all transitions that were enabled before conflict resolution.
      * For parallel states, includes transitions from all regions that could fire for the event.
      *
      * Returns JavaScript array of transition objects:
@@ -249,7 +249,7 @@ public:
     /**
      * @brief Get optimal transition set after conflict resolution
      *
-     * W3C SCXML Appendix D.2: Returns transitions selected after applying conflict resolution.
+     * §scxml-D-removeConflictingTransitions: Returns transitions selected after applying conflict resolution.
      * These are the transitions actually executed in the last microstep.
      *
      * Returns JavaScript array of transition objects:

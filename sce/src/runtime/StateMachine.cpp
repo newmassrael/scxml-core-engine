@@ -491,7 +491,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     SCE_LOG_DEBUG("StateMachine: Processing event: '{}' with data: '{}' in session: '{}', originSessionId: '{}'",
                   eventName, eventData, sessionId_, originSessionId);
 
-    // W3C SCXML Appendix D.2: Clear previous transition data for new event
+    // §scxml-D-microstepProcedure: Clear previous transition data for new event
     lastEnabledTransitions_.clear();
     lastOptimalTransitions_.clear();
 
@@ -809,7 +809,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
         bool anyTransitionExecuted = false;
 
-        // W3C SCXML Appendix D.2: Collect all enabled transitions from all regions
+        // §scxml-D-selectTransitions: Collect all enabled transitions from all regions
         std::vector<TransitionDescriptorString> allEnabledTransitions;
 
         // Collect enabled transitions from all regions (including external transitions)
@@ -823,9 +823,10 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
             }
         }
 
-        // W3C SCXML Appendix D.2: Apply conflict resolution to select optimal transition set
+        // §scxml-D-removeConflictingTransitions: Apply conflict resolution to select optimal transition set
         if (!allEnabledTransitions.empty()) {
-            SCE_LOG_DEBUG("StateMachine: Applying W3C SCXML Appendix D.2 conflict resolution to {} enabled transitions",
+            SCE_LOG_DEBUG("StateMachine: Applying §scxml-D-removeConflictingTransitions conflict resolution to {} "
+                          "enabled transitions",
                           allEnabledTransitions.size());
 
             // Convert to ConflictResolutionAlgorithms::TransitionDescriptor format
@@ -861,7 +862,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
             SCE_LOG_DEBUG("StateMachine: After conflict resolution: {} transitions in optimal set", descriptors.size());
 
-            // W3C SCXML Appendix D.2: Store transition data for interactive visualizer
+            // §scxml-D-removeConflictingTransitions: Store transition data for interactive visualizer
             lastEnabledTransitions_ = allEnabledTransitions;  // All transitions before conflict resolution
             // Convert descriptors back to TransitionDescriptorString for storage
             lastOptimalTransitions_.clear();
@@ -878,7 +879,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 lastOptimalTransitions_.push_back(optimalTrans);
             }
 
-            // W3C SCXML Appendix D.2: Execute optimal transition set as microstep
+            // §scxml-D-microstepProcedure: Execute optimal transition set as microstep
             if (!descriptors.empty()) {
                 // Check if optimal set contains external transition
                 bool hasExternalTransition = false;
@@ -890,17 +891,17 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                         hasExternalTransition = true;
                         externalTransitionTarget = desc.target;
                         externalTransitionSource = desc.source;
-                        SCE_LOG_INFO(
-                            "StateMachine: Optimal set contains external transition: {} -> {} (W3C SCXML Appendix D.2)",
-                            desc.source, desc.target);
+                        SCE_LOG_INFO("StateMachine: Optimal set contains external transition: {} -> {} "
+                                     "(§scxml-D-removeConflictingTransitions)",
+                                     desc.source, desc.target);
                         break;
                     }
                 }
 
-                // W3C SCXML Appendix D.2: Execute ALL transitions' actions first (including those with external
-                // transitions)
+                // §scxml-D-executeTransitionContent: Execute ALL transitions' actions first (including those with
+                // external transitions)
                 SCE_LOG_INFO(
-                    "StateMachine: Executing {} transitions in optimal set as microstep (W3C SCXML Appendix D.2)",
+                    "StateMachine: Executing {} transitions in optimal set as microstep (§scxml-D-microstepProcedure)",
                     descriptors.size());
 
                 // Step 1: Exit all states in exit sets (W3C SCXML Appendix D Step 2)
@@ -1019,7 +1020,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 } else {
                     // No external transition - enter target states for internal transitions
                     SCE_LOG_INFO(
-                        "StateMachine: Internal transitions only - entering target states (W3C SCXML Appendix D.2)");
+                        "StateMachine: Internal transitions only - entering target states (§scxml-D-enterStates)");
 
                     // Enter all target states
                     for (const auto &desc : descriptors) {
@@ -2710,7 +2711,7 @@ bool StateMachine::checkEventlessTransitions() {
             continue;
         }
 
-        // W3C SCXML Appendix D.2: Collect all enabled transitions first
+        // §scxml-D-removeConflictingTransitions: Collect all enabled transitions first
         // Conflict resolution will be applied after collection
         const auto &transitions = stateNode->getTransitions();
         for (const auto &transitionNode : transitions) {
@@ -2753,7 +2754,7 @@ bool StateMachine::checkEventlessTransitions() {
         return false;
     }
 
-    // W3C SCXML Appendix D.2: Apply conflict resolution using shared Helper
+    // §scxml-D-removeConflictingTransitions: Apply conflict resolution using shared Helper
     // ARCHITECTURE.MD: Zero Duplication - use ConflictResolutionHelper (Single Source of Truth)
     {
         using Helper = SCE::Core::ConflictResolutionAlgorithms;
@@ -2773,7 +2774,7 @@ bool StateMachine::checkEventlessTransitions() {
             descriptors.push_back(desc);
         }
 
-        // Apply W3C SCXML Appendix D.2 conflict resolution
+        // Apply §scxml-D-removeConflictingTransitions conflict resolution
         auto getParentFunc = [&stateCache](const std::string &stateId) -> std::optional<std::string> {
             auto stateNode = stateCache[stateId];
             if (!stateNode || !stateNode->getParent()) {
@@ -2804,11 +2805,12 @@ bool StateMachine::checkEventlessTransitions() {
         }
 
         enabledTransitions = std::move(filteredTransitions);
-        SCE_LOG_DEBUG("W3C SCXML Appendix D.2: After conflict resolution: {} transitions", enabledTransitions.size());
+        SCE_LOG_DEBUG("§scxml-D-removeConflictingTransitions: After conflict resolution: {} transitions",
+                      enabledTransitions.size());
     }
 
     if (enabledTransitions.empty()) {
-        SCE_LOG_DEBUG("W3C SCXML Appendix D.2: All transitions preempted by conflict resolution");
+        SCE_LOG_DEBUG("§scxml-D-removeConflictingTransitions: All transitions preempted by conflict resolution");
         --eventlessRecursionDepth_;
         if (eventlessRecursionDepth_ == 0) {
             lastTransitionDepth_ = 0;
@@ -2878,7 +2880,7 @@ bool StateMachine::checkEventlessTransitions() {
 }
 
 bool StateMachine::executeTransitionMicrostep(const std::vector<TransitionInfo> &transitions) {
-    // ARCHITECTURE.MD: W3C SCXML Appendix D.2 Microstep Execution
+    // ARCHITECTURE.MD: §scxml-D-microstepProcedure Microstep Execution
     // Note: Interpreter engine uses dynamic node-based approach (runtime state IDs)
     // AOT engine uses ParallelTransitionHelper with static enum-based approach
     // Zero Duplication applies to algorithm structure, not implementation (different representations)
@@ -2893,7 +2895,7 @@ bool StateMachine::executeTransitionMicrostep(const std::vector<TransitionInfo> 
     // RAII guard ensures flag is cleared on all exit paths (normal return, error, exception)
     TransitionGuard transitionGuard(inTransition_);
 
-    // W3C SCXML Appendix D.2 Step 1 & 2: Exit all source states (executing onexit actions)
+    // §scxml-D-exitStates Step 1 & 2: Exit all source states (executing onexit actions)
     // ARCHITECTURE.MD: Algorithm structure shared with AOT engine (via ParallelTransitionHelper)
     // Compute unique exit set from all transitions, exit in §scxml-3.13 order
     std::set<std::string> exitSetUnique;
@@ -2976,7 +2978,7 @@ bool StateMachine::executeTransitionMicrostep(const std::vector<TransitionInfo> 
         }
     }
 
-    // W3C SCXML Appendix D.2 Step 3: Execute all transition actions in document order
+    // §scxml-D-executeTransitionContent Step 3: Execute all transition actions in document order
     // ARCHITECTURE.MD: Algorithm structure same as AOT engine (different execution method)
     SCE_LOG_DEBUG("W3C SCXML 3.13: Executing transition actions for {} transition(s)", transitions.size());
     for (const auto &transInfo : transitions) {
@@ -3006,7 +3008,7 @@ bool StateMachine::executeTransitionMicrostep(const std::vector<TransitionInfo> 
         }
     }
 
-    // W3C SCXML Appendix D.2 Step 4-5: Enter all target states (executing onentry actions)
+    // §scxml-D-enterStates Step 4-5: Enter all target states (executing onentry actions)
     // ARCHITECTURE.MD: Algorithm structure same as AOT engine (different execution method)
     SCE_LOG_DEBUG("W3C SCXML 3.13: Entering {} target state(s)", transitions.size());
     for (const auto &transInfo : transitions) {

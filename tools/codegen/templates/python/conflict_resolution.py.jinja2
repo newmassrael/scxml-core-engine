@@ -4,7 +4,7 @@
 {#
     Conflict resolution metadata (Python Jinja2)
 
-    W3C SCXML Appendix D.2 — when a machine has `<parallel>` regions,
+    Appendix D microstepProcedure — when a machine has `<parallel>` regions,
     multiple transitions may be enabled in a single microstep. The
     runtime `Engine._select_transitions` calls
     `_remove_conflicting_transitions`, which uses `get_parent` +
@@ -24,7 +24,7 @@
 
 {% if model.has_parallel_states %}
 # ──────────────────────────────────────────────────────────────────
-# Conflict resolution (W3C SCXML Appendix D.2)
+# Conflict resolution (Appendix D removeConflictingTransitions)
 # ──────────────────────────────────────────────────────────────────
 # This machine declares `<parallel>` regions, so the runtime engine's
 # `_select_transitions` collects one candidate per active leaf and
@@ -34,7 +34,7 @@
 # regions by document order on entry so the W3C trace is deterministic.
 {% else %}
 # ──────────────────────────────────────────────────────────────────
-# Conflict resolution (W3C SCXML Appendix D.2)
+# Conflict resolution (Appendix D removeConflictingTransitions)
 # ──────────────────────────────────────────────────────────────────
 # This machine declares no `<parallel>` regions, so the engine's
 # leaf-up `_select_from_chain` walk is unambiguous — the first match
