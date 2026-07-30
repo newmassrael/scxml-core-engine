@@ -71,14 +71,14 @@ const InvokeFormatter = (function() {
             details.push(`${DETAIL_PREFIX}type: ${typeDisplay}${suffix}`);
         }
 
-        // W3C SCXML 6.4.2: ID or idlocation attribute
+        // W3C SCXML 6.4.1: ID or idlocation attribute
         if (!isEmpty(invokeData.invokeId)) {
             details.push(`${DETAIL_PREFIX}id: ${invokeData.invokeId}`);
         } else if (!isEmpty(invokeData.invokeIdLocation)) {
             details.push(`${DETAIL_PREFIX}idlocation: ${invokeData.invokeIdLocation}`);
         }
 
-        // W3C SCXML 6.4.3: Source (static or dynamic)
+        // W3C SCXML 6.4.1: Source (static or dynamic)
         const src = invokeData.invokeSrc || invokeData.invokeSrcExpr;
         if (!isEmpty(src)) {
             const isDynamicSrc = isEmpty(invokeData.invokeSrc) && !isEmpty(invokeData.invokeSrcExpr);
@@ -86,7 +86,7 @@ const InvokeFormatter = (function() {
             details.push(`${DETAIL_PREFIX}src: ${src}${suffix}`);
         }
 
-        // W3C SCXML 6.4.4: Content (inline SCXML or dynamic expression)
+        // W3C SCXML 6.4.2: Content (inline SCXML or dynamic expression)
         if (!isEmpty(invokeData.invokeContent)) {
             // Show inline content (no truncation)
             details.push(`${DETAIL_PREFIX}content: <scxml...> (inline)`);
