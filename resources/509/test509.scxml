@@ -8,7 +8,7 @@ at the accessURI -->
 <state id="s0">
   <onentry>
     <send event="timeout" delay="30s"/>
-    <send event="test" target="http://localhost:8080/test" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+    <send event="test" targetexpr="_ioprocessors['basichttp'].location" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
      </onentry>
      <!-- if the event was send by http and we get it, we succeed -->
     <transition event="test" target="pass"/>

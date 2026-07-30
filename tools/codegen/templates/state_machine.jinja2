@@ -717,6 +717,18 @@ public:
 {% endif %}
     }
 
+    // §scxml-C-2-3: forward the deployment's inbound BasicHTTP endpoint to the
+    // policy, which publishes it as the processor's 'location' in
+    // `_ioprocessors`. Emitted on every machine for the same reason
+    // setScriptEngine() is — callers inject without member-detection traits.
+    // A machine with no script engine has no `_ioprocessors` to publish into,
+    // so the body is a no-op there.
+    void setBasicHttpAccessUri([[maybe_unused]] ::std::string accessUri) const {
+{% if model.needs_script_engine %}
+        this->policy_.setBasicHttpAccessUri(::std::move(accessUri));
+{% endif %}
+    }
+
 {# ── SCE_MESH.md §14 rule 12 / §16.5 per-`<parallel>` role members ── #}
 {% set _role_stats = namespace(has_root=false, has_nonroot=false) %}
 {% if model.partition_parallel_roles %}

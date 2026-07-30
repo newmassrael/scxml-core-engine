@@ -1037,7 +1037,7 @@ bool LuaEngine::isVariablePreInitialized(const std::string &sessionId, const std
 // === SCXML System Variables ===
 
 std::future<ScriptResult> LuaEngine::setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                          const std::vector<std::string> &ioProcessors) {
+                                                          const std::vector<IOProcessorDescriptor> &ioProcessors) {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
@@ -1057,27 +1057,17 @@ std::future<ScriptResult> LuaEngine::setupSystemVariables(const std::string &ses
     lua_pushstring(L, sessionName.c_str());
     lua_setglobal(L, "_name");
 
-    // _ioprocessors (table of I/O processors)
+    // §scxml-C-1-1 / §scxml-C-2-3: _ioprocessors carries one entry per
+    // processor the deployment supports, each with a 'location' field holding
+    // the address that reaches this session through it. Both the entry names
+    // and the locations are decided by `IOProcessorHelper::build`, so this
+    // engine's view of `_ioprocessors` is identical to QuickJS's.
     lua_newtable(L);
-    for (const auto &proc : ioProcessors) {
+    for (const auto &processor : ioProcessors) {
         lua_newtable(L);
-        lua_pushstring(L, proc.c_str());
+        lua_pushstring(L, processor.location.c_str());
         lua_setfield(L, -2, "location");
-        lua_setfield(L, -2, proc.c_str());
-    }
-    // Also set 'scxml' processor with location
-    if (std::find(ioProcessors.begin(), ioProcessors.end(), "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") !=
-        ioProcessors.end()) {
-        lua_getfield(L, -1, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_newtable(L);
-            lua_pushstring(L, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
-            lua_setfield(L, -2, "location");
-            lua_setfield(L, -2, "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
-        } else {
-            lua_pop(L, 1);
-        }
+        lua_setfield(L, -2, processor.name.c_str());
     }
     lua_setglobal(L, "_ioprocessors");
 

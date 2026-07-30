@@ -446,9 +446,13 @@ std::string TXMLConverter::convertConfAttributes(const std::string &content) {
     // Convert remaining conf:namelist attributes to standard namelist
     result = std::regex_replace(result, CONF_NAMELIST_ATTR, R"(namelist="$1")");
 
-    // Convert HTTP target attributes (remove as they are test-specific)
-    result = std::regex_replace(result, CONF_BASIC_HTTP_TARGET_ATTR,
-                                std::string(R"(target=")") + HTTP_TEST_SERVER_URL + R"(")");
+    // §scxml-C-2-3: the conf: vocabulary asks for the BasicHTTP processor's
+    // access URI, and the only place a document can read that address is the
+    // processor's entry in _ioprocessors. Substituting the harness URL instead
+    // handed the document knowledge it has no way to obtain, which is how test
+    // 522 — whose whole subject is that entry — passed while no entry existed.
+    result =
+        std::regex_replace(result, CONF_BASIC_HTTP_TARGET_ATTR, R"(targetexpr="_ioprocessors['basichttp'].location")");
 
     // Convert event raw attributes (remove as they are test-specific)
     result = std::regex_replace(result, CONF_EVENT_RAW_ATTR, R"(expr="_event.raw")");

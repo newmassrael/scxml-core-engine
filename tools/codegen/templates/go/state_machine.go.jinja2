@@ -178,6 +178,12 @@ type {{ machine_name }}Policy struct {
 	// W3C SCXML B.1: Script engine handle (per-instance, Path B+ Q1=(d) Go=interface ref)
 	ScriptEngine sce.IScriptEngine
 	scriptEngineInitialized bool
+	// W3C SCXML C.2.3: inbound BasicHTTP endpoint serving this machine,
+	// declared by the deployment before Initialize(). The address belongs to
+	// whoever runs the listener, so the machine takes it from here rather than
+	// guessing one. Empty means no such endpoint is deployed, and no BasicHTTP
+	// entry is published in _ioprocessors.
+	BasicHTTPAccessURI string
 {% if model.has_parallel_states or model.uses_in_predicate %}
 	inPredicateStates []string
 {% endif %}

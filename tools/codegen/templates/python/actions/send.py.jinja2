@@ -88,9 +88,13 @@
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.execution' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))
 {% endif %}
 {{ indent }}return
-{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target %}
-{# W3C SCXML C.2 — `<send type="BasicHTTPEventProcessor">` requires an
-   absolute HTTP URL target; the absence raises `error.communication`. #}
+{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
+{# W3C SCXML C.2.2 — "If neither the 'target' nor the 'targetexpr' attribute
+   is specified, the SCXML Processor MUST add the event error.communication".
+   A `targetexpr` counts as specified even though its value is only known at
+   action time, so it falls through to the resolving arm below rather than
+   erroring here — this guard used to test `target` alone and swallowed every
+   `<send type="BasicHTTP" targetexpr="...">` before it could reach the wire. #}
 {{ indent }}_sid = self._resolve_send_id(engine, {{ action.idlocation | py_string_literal }}, {% if action.id %}{{ action.id | py_string_literal }}{% else %}""{% endif %})
 {% if 'error.communication' in model.events %}
 {{ indent }}engine.raise_internal({{ machine_name }}Event.{{ 'error.communication' | to_python_const }}, EventMetadata(send_id=_sid, event_type="platform"))

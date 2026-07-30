@@ -123,7 +123,7 @@ std::string SessionManagerImpl::getParentSessionId(const std::string &sessionId)
 }
 
 bool SessionManagerImpl::updateSessionSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                      const std::vector<std::string> &ioProcessors) {
+                                                      const std::vector<IOProcessorDescriptor> &ioProcessors) {
     if (sessionId.empty()) {
         SCE_LOG_ERROR("SessionManagerImpl: Cannot update system variables for empty session ID");
         return false;
@@ -161,7 +161,7 @@ std::string SessionManagerImpl::getSessionName(const std::string &sessionId) con
     return "";  // Session not found
 }
 
-std::vector<std::string> SessionManagerImpl::getSessionIOProcessors(const std::string &sessionId) const {
+std::vector<IOProcessorDescriptor> SessionManagerImpl::getSessionIOProcessors(const std::string &sessionId) const {
     std::lock_guard<std::mutex> lock(sessionsMutex_);
 
     auto it = sessions_.find(sessionId);
@@ -205,7 +205,7 @@ void SessionManagerImpl::notifySessionDestroyed(const std::string &sessionId) {
 
 void SessionManagerImpl::notifySessionSystemVariablesUpdated(const std::string &sessionId,
                                                              const std::string &sessionName,
-                                                             const std::vector<std::string> &ioProcessors) {
+                                                             const std::vector<IOProcessorDescriptor> &ioProcessors) {
     std::lock_guard<std::mutex> lock(observersMutex_);
 
     for (const auto &observer : observers_) {

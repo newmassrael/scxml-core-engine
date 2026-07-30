@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371281
+// source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
+// template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
+// generated-at: 1785425248
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/518/test518.scxml
@@ -25,6 +25,7 @@ sealed interface Test518State : State {
 
 sealed interface Test518Event : Event {
     sealed interface Error : Test518Event {
+        data object Communication : Error
         data object Execution : Error
     }
     data object Test : Test518Event
@@ -78,6 +79,7 @@ class Test518StateMachine(
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test518Event? = when (name) {
+        "error.communication" -> Test518Event.Error.Communication
         "error.execution" -> Test518Event.Error.Execution
         "test" -> Test518Event.Test
         "timeout" -> Test518Event.Timeout
@@ -86,6 +88,7 @@ class Test518StateMachine(
 
     // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: Test518Event): String? = when (event) {
+        is Test518Event.Error.Communication -> "error.communication"
         is Test518Event.Error.Execution -> "error.execution"
         is Test518Event.Test -> "test"
         is Test518Event.Timeout -> "timeout"
@@ -102,8 +105,14 @@ class Test518StateMachine(
         val sid = allocateScriptSession()
         engine.createSession(sid)
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        engine.setupSystemVariables(sid, "test518")
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        engine.setupSystemVariables(
+            sid,
+            "test518",
+            com.sce.runtime.IoProcessors.build(sid, basicHttpAccessUri),
+        )
 
         // W3C SCXML 5.3: Initialize variable 'Var1' with expr
         try {
@@ -249,6 +258,35 @@ class Test518StateMachine(
             scheduleSend("__send_0", 30000L, Test518Event.Timeout)
 
 
+            // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
+            var _resolvedTarget: String? = null
+            run resolveTarget@{
+                ensureScriptEngine()
+                val eng = scriptEngine ?: error("scriptEngine is required (codegen invariant: needs_script_engine == true)")
+                val sid = scriptSessionId ?: error("scriptSessionId must be initialized after ensureScriptEngine() (codegen invariant)")
+                try {
+                    val v = eng.evaluateExpr(sid, "_ioprocessors['basichttp'].location")
+                    val target = v?.toString() ?: ""
+                    // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
+                    if (target.startsWith("!")) {
+                        raiseInternal(Test518Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_1"))
+                        return@resolveTarget
+                    }
+                    // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
+                    if (target.isEmpty() || target == "undefined") {
+                        raiseInternal(Test518Event.Error.Communication, EventMetadata.platform())
+                        return@resolveTarget
+                    }
+                    _resolvedTarget = target
+                } catch (_: Exception) {
+                    raiseInternal(Test518Event.Error.Execution, EventMetadata.platform())
+                }
+            }
+            _resolvedTarget?.let { _rt ->
+            // W3C SCXML C.2: Validate dynamic target is HTTP URL
+            if (!_rt.startsWith("http://") && !_rt.startsWith("https://")) {
+                raiseInternal(Test518Event.Error.Communication, EventMetadata.platform())
+            } else {
 
             // W3C SCXML C.2: BasicHTTP send with script engine evaluation
             run {
@@ -269,8 +307,10 @@ class Test518StateMachine(
                     return@run
                 }
                 val httpContent = ""
-                performHttpSend("http://localhost:8080/test", "test", httpContent, httpParams, "__send_1")
+                performHttpSend(_rt, "test", httpContent, httpParams, "__send_1")
             }
+            }
+            } // end of _resolvedTarget?.let
             }
         }
     }

@@ -177,29 +177,26 @@ func (e *LuaEngine) HasVariable(sessionID, name string) bool {
 	return sess.declaredVars[name]
 }
 
-func (e *LuaEngine) SetupSystemVariables(sessionID string) error {
+func (e *LuaEngine) SetupSystemVariables(sessionID, sessionName string, ioProcessors []sce.IoProcessorDescriptor) error {
 	sess, err := e.getSession(sessionID)
 	if err != nil {
 		return err
 	}
 	// W3C SCXML 5.10: Initialize system variables
 	_ = e.SetVariable(sessionID, "_sessionid", sessionID)
-	_ = e.SetVariable(sessionID, "_name", "")
-	// W3C SCXML 5.10.1: _ioprocessors with SCXML and BasicHTTP processor locations
-	_ = e.SetVariable(sessionID, "_ioprocessors", map[string]interface{}{
-		"scxml": map[string]interface{}{
-			"location": "#_scxml_" + sessionID,
-		},
-		"basichttp": map[string]interface{}{
-			"location": "http://localhost/" + sessionID,
-		},
-		"http://www.w3.org/TR/scxml/#SCXMLEventProcessor": map[string]interface{}{
-			"location": "#_scxml_" + sessionID,
-		},
-		"http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor": map[string]interface{}{
-			"location": "http://localhost/" + sessionID,
-		},
-	})
+	_ = e.SetVariable(sessionID, "_name", sessionName)
+	// W3C SCXML C.1.1 / C.2.3: one entry per processor the deployment
+	// supports, each with a location field holding the address that reaches
+	// this session through it. Names and locations are decided by
+	// BuildIoProcessors, so this engine's view of _ioprocessors matches every
+	// other backend's.
+	ioTable := make(map[string]interface{}, len(ioProcessors))
+	for _, processor := range ioProcessors {
+		ioTable[processor.Name] = map[string]interface{}{
+			"location": processor.Location,
+		}
+	}
+	_ = e.SetVariable(sessionID, "_ioprocessors", ioTable)
 	sess.declaredVars["_event"] = true
 	sess.declaredVars["_sessionid"] = true
 	sess.declaredVars["_name"] = true

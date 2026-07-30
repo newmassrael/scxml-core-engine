@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "source_hash": "f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9",
-  "template_hash": "82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34",
+  "source_hash": "50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c",
+  "template_hash": "615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256",
   "symbols": {
     "test513_____machine": {
       "scxml_file": "test513.scxml",
@@ -18,8 +18,8 @@
       "scxml_state_path": "fail",
       "scxml_xpath": "//state[@id='fail']/onentry",
       "line_range": [
-        49,
-        49
+        54,
+        54
       ],
       "kind": "on_entry"
     },
@@ -28,8 +28,8 @@
       "scxml_state_path": "fail",
       "scxml_xpath": "//state[@id='fail']",
       "line_range": [
-        47,
-        47
+        52,
+        52
       ],
       "kind": "state"
     },
@@ -38,8 +38,8 @@
       "scxml_state_path": "pass",
       "scxml_xpath": "//state[@id='pass']/onentry",
       "line_range": [
-        43,
-        43
+        48,
+        48
       ],
       "kind": "on_entry"
     },
@@ -48,8 +48,8 @@
       "scxml_state_path": "pass",
       "scxml_xpath": "//state[@id='pass']",
       "line_range": [
-        41,
-        41
+        46,
+        46
       ],
       "kind": "state"
     },
@@ -68,8 +68,8 @@
       "scxml_state_path": "s0",
       "scxml_xpath": "//state[@id='s0']/onentry",
       "line_range": [
-        27,
-        27
+        32,
+        32
       ],
       "kind": "on_entry"
     },
@@ -88,8 +88,8 @@
       "scxml_state_path": "s0",
       "scxml_xpath": "//state[@id='s0']/transition[1]",
       "line_range": [
-        31,
-        31
+        36,
+        36
       ],
       "kind": "transition"
     },
@@ -98,8 +98,8 @@
       "scxml_state_path": "s0",
       "scxml_xpath": "//state[@id='s0']/transition[2]",
       "line_range": [
-        36,
-        36
+        41,
+        41
       ],
       "kind": "transition"
     }

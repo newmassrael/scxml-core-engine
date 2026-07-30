@@ -9,6 +9,7 @@
 
 package com.sce.scripting
 
+import com.sce.runtime.IoProcessorDescriptor
 import com.sce.runtime.ScriptEngineException
 import com.sce.runtime.ScxmlScriptEngine
 import com.sce.runtime.SetCurrentEventArgs
@@ -57,7 +58,11 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         sessions.remove(sessionId)
     }
 
-    override fun setupSystemVariables(sessionId: String, machineName: String) {
+    override fun setupSystemVariables(
+        sessionId: String,
+        machineName: String,
+        ioProcessors: List<IoProcessorDescriptor>,
+    ) {
         val session = sessions[sessionId] ?: return
         val cx = Context.enter()
         try {
@@ -69,11 +74,16 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             // W3C SCXML 5.10: _name
             ScriptableObject.putProperty(scope, "_name", machineName)
 
-            // W3C SCXML 5.10: _ioprocessors
+            // §scxml-C-1-1 / §scxml-C-2-3: one entry per processor the
+            // deployment supports, each with a 'location' field. Names and
+            // locations are decided by IoProcessors.build, so this engine's
+            // view of `_ioprocessors` matches every other backend's.
             val ioProc = cx.newObject(scope)
-            val scxmlProc = cx.newObject(scope)
-            ScriptableObject.putProperty(scxmlProc, "location", sessionId)
-            ScriptableObject.putProperty(ioProc, "scxml", scxmlProc)
+            for (processor in ioProcessors) {
+                val entry = cx.newObject(scope)
+                ScriptableObject.putProperty(entry, "location", processor.location)
+                ScriptableObject.putProperty(ioProc, processor.name, entry)
+            }
             ScriptableObject.putProperty(scope, "_ioprocessors", ioProc)
 
             // W3C SCXML 5.9.2: Register In() function

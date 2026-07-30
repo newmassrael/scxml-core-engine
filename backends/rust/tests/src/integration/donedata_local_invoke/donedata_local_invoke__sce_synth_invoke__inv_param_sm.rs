@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371282
+// template-hash: 9bde8ba918ad0398de80074721c1f02a0cca90d0c9c62ed55fd521ceedab1e31
+// generated-at: 1785424664
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -160,6 +160,10 @@ pub struct DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
     // is true, mirroring the Kotlin `StateMachineEngine(scriptEngine)` shape.
     pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
     script_engine_initialized: bool,
+    // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
+    // by the deployment before initialize(). Empty means no such endpoint is
+    // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
+    basic_http_access_uri: String,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (Watching-zenoh RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -176,6 +180,14 @@ pub struct DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
 }
 
 impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
+    /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
+    /// machine, published as the processor's 'location' in `_ioprocessors`.
+    /// Must be called before `initialize()`, since the entries are populated
+    /// once at session setup. Leaving it unset publishes no BasicHTTP entry.
+    pub fn set_basic_http_access_uri(&mut self, access_uri: impl Into<String>) {
+        self.basic_http_access_uri = access_uri.into();
+    }
+
     pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
             script_engine,
@@ -192,6 +204,7 @@ impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
             pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: None,
             script_engine_initialized: false,
+            basic_http_access_uri: String::new(),
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -220,8 +233,11 @@ impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        let io_processors = vec!["scxml".to_string()];
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors =
+            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(
             &sid,
             "donedata_local_invoke__sce_synth_invoke__inv_param",
@@ -247,8 +263,11 @@ impl DonedataLocalInvokeSceSynthInvokeInvParamPolicy {
         let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
         se.create_session(&sid);
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-        let io_processors = vec!["scxml".to_string()];
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors =
+            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
         if let Err(e) = se.setup_system_variables(
             &sid,
             "donedata_local_invoke__sce_synth_invoke__inv_param",

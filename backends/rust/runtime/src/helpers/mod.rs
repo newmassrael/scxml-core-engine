@@ -64,6 +64,11 @@ pub mod hierarchy;
 // rejects `<invoke>` via `codegen/no-std-invoke-not-supported`.
 #[cfg(not(feature = "no_std"))]
 pub mod invoke_processing;
+// §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entry set. Gated for the
+// same reason `url_encoding` is — the entries exist to be published into a
+// script engine, which no no_std machine has.
+#[cfg(not(feature = "no_std"))]
+pub mod io_processors;
 pub mod logger;
 pub mod scxml_constants;
 pub mod send;

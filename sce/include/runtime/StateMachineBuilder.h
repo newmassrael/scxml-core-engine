@@ -24,6 +24,7 @@ private:
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
     std::string sessionId_;
+    std::string basicHttpAccessUri_;
     SchedulerMode schedulerMode_ = SchedulerMode::AUTOMATIC;  // Default to normal (automatic) mode
 
 public:
@@ -66,6 +67,21 @@ public:
      */
     StateMachineBuilder &withSessionId(const std::string &sessionId) {
         sessionId_ = sessionId;
+        return *this;
+    }
+
+    /**
+     * @brief Declare the inbound BasicHTTP endpoint serving the session
+     *
+     * §scxml-C-2-3: publishes the Basic HTTP Event I/O Processor entry of
+     * `_ioprocessors` with this URI as its 'location'. Omit it when no
+     * BasicHTTP listener serves the session, and no entry is published.
+     *
+     * @param accessUri URI external components post events to
+     * @return Reference to builder for method chaining
+     */
+    StateMachineBuilder &withBasicHttpAccessUri(const std::string &accessUri) {
+        basicHttpAccessUri_ = accessUri;
         return *this;
     }
 

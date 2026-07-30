@@ -1,14 +1,17 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371280
+// source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
+// template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
+// generated-at: 1785425169
 // GENERATED -- DO NOT EDIT (sce-codegen)
 // SCE-MAP: test520.scxml:1
 use std::time::Duration;
 
 #[test]
 fn test_520() {
-    let policy = sce_rust_tests::generated::test520::Test520Policy::new();
+    let script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine> =
+        std::sync::Arc::new(sce_rust_lua::LuaEngine::new());
+    let mut policy = sce_rust_tests::generated::test520::Test520Policy::new(script_engine);
+    policy.set_basic_http_access_uri(sce_rust_tests::harness::HTTP_TEST_SERVER_URL);
     let mut engine = sce_rust_runtime::Engine::new(policy);
     sce_rust_tests::harness::setup_http_test(&mut engine);
     engine.initialize();

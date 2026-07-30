@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
-// source-hash: f30ff39ee453ff9c2724b237e7ecc70c10c604254c7a79c1bda4dff30c4daac9
-// template-hash: 82d5a5b31a2776e65c97ff666726e5d471238b15131eddc7520023d807e91b34
-// generated-at: 1785371280
+// source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
+// template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
+// generated-at: 1785425169
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -96,6 +96,7 @@ pub enum Test510State {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Test510Event {
+    ErrorCommunication,
     ErrorExecution,
     Internal,
     Test,
@@ -132,6 +133,27 @@ pub struct Test510Policy {
     last_transition_is_internal: bool,
     last_transition_is_targetless: bool,
     last_transition_source_state: Test510State,
+    // W3C SCXML 5.10.1: External event flag for _event.type classification
+    next_event_is_external: bool,
+    // W3C SCXML 5.10: Event name for _event.name binding
+    //
+    // Watching-zenoh RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
+    // alias — `String` under std (unchanged ABI), `heapless::String<MAX_EVENT_STRING_LEN>`
+    // under no_std — so the emitted field is allocator-free on MCU targets.
+    pending_event_name: ::sce_rust_runtime::SceString,
+    // W3C SCXML 5.10: Event data for the script `_event.data` baseline (the
+    // typed path reads the Payload sum, not this field — so needs_script_engine).
+    pending_event_data: ::sce_rust_runtime::SceString,
+    // W3C SCXML 5.10.1: Event type for _event.type binding
+    pending_event_type: ::sce_rust_runtime::SceString,
+    // W3C SCXML 5.10.1: Event sendid for _event.sendid binding
+    pending_event_sendid: ::sce_rust_runtime::SceString,
+    // W3C SCXML 5.10.1: Event origin for _event.origin binding
+    pending_event_origin: ::sce_rust_runtime::SceString,
+    // W3C SCXML 5.10.1: Event origintype for _event.origintype binding
+    pending_event_origintype: ::sce_rust_runtime::SceString,
+    // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
+    pending_event_invokeid: ::sce_rust_runtime::SceString,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
     // Watching-zenoh RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
@@ -139,6 +161,15 @@ pub struct Test510Policy {
     // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
     // session identity is ever tracked and the alloc-coupled `String` is omitted.
     pub session_id: Option<String>,
+    // Engine DI Parity RFC (Path B+): per-instance script engine. The
+    // constructor parameter is mandatory whenever `model.needs_script_engine`
+    // is true, mirroring the Kotlin `StateMachineEngine(scriptEngine)` shape.
+    pub script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>,
+    script_engine_initialized: bool,
+    // §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
+    // by the deployment before initialize(). Empty means no such endpoint is
+    // deployed, and no BasicHTTP entry is published in `_ioprocessors`.
+    basic_http_access_uri: String,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
     // `--no-std` (Watching-zenoh RFC §synth-5-J-2) the SCXML `<invoke>` element
@@ -155,22 +186,166 @@ pub struct Test510Policy {
 }
 
 impl Test510Policy {
-    pub fn new() -> Self {
+    /// §scxml-C-2-3: declare the inbound BasicHTTP endpoint serving this
+    /// machine, published as the processor's 'location' in `_ioprocessors`.
+    /// Must be called before `initialize()`, since the entries are populated
+    /// once at session setup. Leaving it unset publishes no BasicHTTP entry.
+    pub fn set_basic_http_access_uri(&mut self, access_uri: impl Into<String>) {
+        self.basic_http_access_uri = access_uri.into();
+    }
+
+    pub fn new(script_engine: std::sync::Arc<dyn sce_rust_runtime::IScriptEngine>) -> Self {
         Self {
+            script_engine,
             last_transition_is_internal: false,
             last_transition_is_targetless: false,
             last_transition_source_state: Test510State::S0,
+            next_event_is_external: false,
+            pending_event_name: ::sce_rust_runtime::SceString::new(),
+            pending_event_data: ::sce_rust_runtime::SceString::new(),
+            pending_event_type: ::sce_rust_runtime::SceString::new(),
+            pending_event_sendid: ::sce_rust_runtime::SceString::new(),
+            pending_event_origin: ::sce_rust_runtime::SceString::new(),
+            pending_event_origintype: ::sce_rust_runtime::SceString::new(),
+            pending_event_invokeid: ::sce_rust_runtime::SceString::new(),
             session_id: None,
+            script_engine_initialized: false,
+            basic_http_access_uri: String::new(),
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
         }
     }
-}
 
-impl Default for Test510Policy {
-    fn default() -> Self {
-        Self::new()
+    // W3C SCXML 5.10: Ensure session ID is initialized
+    // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
+    fn ensure_session_id(&mut self) {
+        if self.session_id.is_none() {
+            static SESSION_COUNTER: core::sync::atomic::AtomicU64 =
+                core::sync::atomic::AtomicU64::new(0);
+            let id = SESSION_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            self.session_id = Some(format!("session_{}", id));
+        }
+    }
+
+    // W3C SCXML 5.2: Lazy script engine initialization
+    fn ensure_script_engine(&mut self) {
+        if self.script_engine_initialized {
+            return;
+        }
+        self.ensure_session_id();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+        se.create_session(&sid);
+
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors =
+            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
+        if let Err(e) = se.setup_system_variables(&sid, "test510", &io_processors) {
+            log::error!("Failed to setup system variables: {}", e);
+        }
+
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+
+        self.script_engine_initialized = true;
+    }
+
+    // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution on failure
+    // Called from StatePolicy::initialize_data_model() trait override
+    fn do_initialize_data_model(&mut self, engine: &mut Engine<Self>) {
+        if self.script_engine_initialized {
+            return;
+        }
+        self.ensure_session_id();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+        se.create_session(&sid);
+
+        // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+        // same helper every other backend uses, so a machine reads the same
+        // entry names and the same addresses whichever one runs it.
+        let io_processors =
+            sce_rust_runtime::helpers::io_processors::build(&sid, &self.basic_http_access_uri);
+        if let Err(e) = se.setup_system_variables(&sid, "test510", &io_processors) {
+            log::error!("Failed to setup system variables: {}", e);
+        }
+
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+
+        self.script_engine_initialized = true;
+    }
+
+    // W3C SCXML 5.9: Safe guard evaluation with error handling
+    fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+        match se.evaluate_expression(&sid, cond) {
+            Ok(val) => val.to_bool(),
+            Err(e) => {
+                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+                engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                    Test510Event::ErrorExecution,
+                ));
+                false
+            }
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event system variable for current event
+    fn set_current_event_in_script_engine(
+        &self,
+        event_name: &str,
+        event_data: &str,
+        event_type: &str,
+        send_id: &str,
+        origin: &str,
+        origin_type: &str,
+        invoke_id: &str,
+    ) {
+        if let Some(ref sid) = self.session_id {
+            let se = self.script_engine.clone();
+            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+            let _ = se.set_current_event(
+                sid,
+                sce_rust_runtime::SetCurrentEventArgs {
+                    event_name,
+                    event_data,
+                    event_type,
+                    send_id,
+                    origin,
+                    origin_type,
+                    invoke_id,
+                },
+            );
+        }
+    }
+
+    // W3C SCXML 6.4.1: Set parameter in child's script engine before invoke initialization
+    // Matches C++ child->setParamInScriptEngine(name, expr)
+    pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = self.script_engine.clone();
+        let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+        match se.evaluate_expression(&sid, expr) {
+            Ok(val) => {
+                let _ = se.set_variable(&sid, name, val);
+            }
+            Err(_) => {
+                // Fallback: set as string literal
+                let _ = se.set_variable(
+                    &sid,
+                    name,
+                    sce_rust_runtime::ScriptValue::String(expr.to_string()),
+                );
+            }
+        }
     }
 }
 
@@ -210,8 +385,9 @@ impl StatePolicy for Test510Policy {
 
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
-    const NEEDS_SCRIPT_ENGINE: bool = false;
-    const NEEDS_DATA_MODEL_INIT: bool = false;
+    const NEEDS_SCRIPT_ENGINE: bool = true;
+    const NEEDS_DATA_MODEL_INIT: bool = true;
+    const HAS_EXTERNAL_EVENT_FLAG: bool = true;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
@@ -271,6 +447,7 @@ impl StatePolicy for Test510Policy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            Test510Event::ErrorCommunication => "error.communication",
             Test510Event::ErrorExecution => "error.execution",
             Test510Event::Internal => "internal",
             Test510Event::Test => "test",
@@ -281,6 +458,7 @@ impl StatePolicy for Test510Policy {
 
     fn get_event_from_name(name: &str) -> Option<Self::Event> {
         match name {
+            "error.communication" => Some(Test510Event::ErrorCommunication),
             "error.execution" => Some(Test510Event::ErrorExecution),
             "internal" => Some(Test510Event::Internal),
             "test" => Some(Test510Event::Test),
@@ -351,6 +529,34 @@ impl StatePolicy for Test510Policy {
         self.last_transition_source_state = state;
     }
 
+    fn set_next_event_is_external(&mut self, value: bool) {
+        self.next_event_is_external = value;
+    }
+
+    // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
+    // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
+    fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
+        self.pending_event_data = metadata.data.clone();
+        self.pending_event_type =
+            ::sce_rust_runtime::sce_string_from_str(metadata.event_type.as_str());
+        self.pending_event_sendid = metadata.send_id.clone();
+        self.pending_event_origin = metadata.origin.clone();
+        self.pending_event_origintype = metadata.origin_type.clone();
+        self.pending_event_invokeid = metadata.invoke_id.clone();
+    }
+
+    // W3C SCXML 5.10: Clear pending event metadata after transition processing
+    // Ports C++ EventMetadataHelper::clearPolicyMetadata
+    fn clear_event_metadata(&mut self) {
+        self.pending_event_name.clear();
+        self.pending_event_data.clear();
+        self.pending_event_type.clear();
+        self.pending_event_sendid.clear();
+        self.pending_event_origin.clear();
+        self.pending_event_origintype.clear();
+        self.pending_event_invokeid.clear();
+    }
+
     // ======================================================================
     // Instance methods - generated executable content
     // ======================================================================
@@ -390,18 +596,78 @@ impl StatePolicy for Test510Policy {
 
                         let event_data: &str = "";
 
-                        // W3C SCXML C.2: BasicHTTP send to HTTP target
-                        {
-                            let mut http_params =
-                                std::collections::HashMap::<String, Vec<String>>::new();
-                            engine.perform_http_send(
-                                "http://localhost:8080/test".to_string(),
-                                "test".to_string(),
-                                "".to_string(),
-                                http_params,
-                                send_id.clone(),
-                            );
-                        }
+                        // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_ioprocessors['basichttp'].location")
+                        let _resolved_target: Option<String> = {
+                            self.ensure_script_engine();
+                            let sid = self.session_id.as_ref().unwrap().clone();
+                            let se = self.script_engine.clone();
+                            let se: &dyn sce_rust_runtime::IScriptEngine = &*se;
+                            match se
+                                .evaluate_expression(&sid, "_ioprocessors['basichttp'].location")
+                            {
+                                Ok(ref val)
+                                    if matches!(
+                                        val,
+                                        sce_rust_runtime::ScriptValue::Null
+                                            | sce_rust_runtime::ScriptValue::Undefined
+                                    ) =>
+                                {
+                                    // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        Test510Event::ErrorCommunication,
+                                    ));
+                                    None
+                                }
+                                Ok(val) => {
+                                    let s = val.to_lua_literal();
+                                    let trimmed =
+                                        s.trim_matches(|c: char| c == '\'' || c == '"').to_string();
+                                    if trimmed.starts_with("!") {
+                                        // W3C SCXML 6.2: Invalid target raises error.execution
+                                        {
+                                            let mut err_meta =
+                                                sce_rust_runtime::EventWithMetadata::new(
+                                                    Test510Event::ErrorExecution,
+                                                );
+                                            err_meta.metadata.send_id = send_id.clone();
+                                            engine.raise(err_meta);
+                                        }
+                                        None
+                                    } else {
+                                        Some(trimmed)
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("targetexpr eval failed: {}", e);
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        Test510Event::ErrorExecution,
+                                    ));
+                                    None
+                                }
+                            }
+                        };
+
+                        if let Some(ref _rt) = _resolved_target {
+                            // W3C SCXML C.2: BasicHTTP send to HTTP target
+                            {
+                                // W3C SCXML C.2: Validate dynamic target is HTTP URL
+                                if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
+                                    engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                                        Test510Event::ErrorCommunication,
+                                    ));
+                                } else {
+                                    let mut http_params =
+                                        std::collections::HashMap::<String, Vec<String>>::new();
+                                    engine.perform_http_send(
+                                        _rt.to_string(),
+                                        "test".to_string(),
+                                        "".to_string(),
+                                        http_params,
+                                        send_id.clone(),
+                                    );
+                                }
+                            }
+                        } // end of if let Some(ref _rt) = _resolved_target
 
                         let _ = send_id; // suppress unused warning when no send operation
                         let _ = event_data; // suppress unused warning in branches that skip dispatch
@@ -439,6 +705,39 @@ impl StatePolicy for Test510Policy {
     ) -> bool {
         let mut transition_taken = false;
 
+        // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
+        self.ensure_script_engine();
+        if event != Self::null_event() {
+            let event_name = Self::get_event_name(event);
+            self.pending_event_name = event_name.to_string();
+            // W3C SCXML 5.10.1: Classify event type (ports C++ EventTypeHelper::classifyEventType)
+            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.")
+            {
+                "platform"
+            } else if self.next_event_is_external {
+                self.next_event_is_external = false;
+                "external"
+            } else {
+                "internal"
+            };
+            self.pending_event_type = event_type.to_string();
+            // W3C SCXML 5.10: Set _event with all available metadata fields
+            let ev_data: &str = &self.pending_event_data;
+            let ev_sendid: &str = &self.pending_event_sendid;
+            let ev_origin: &str = &self.pending_event_origin;
+            let ev_origintype: &str = &self.pending_event_origintype;
+            let ev_invokeid: &str = &self.pending_event_invokeid;
+            self.set_current_event_in_script_engine(
+                event_name,
+                ev_data,
+                event_type,
+                ev_sendid,
+                ev_origin,
+                ev_origintype,
+                ev_invokeid,
+            );
+        }
+
         // Flat state machine: no hierarchy, direct transition check
         self.try_transition_in_state(
             *current_state,
@@ -457,6 +756,11 @@ impl StatePolicy for Test510Policy {
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
+    }
+    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
+    // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
+    fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
+        self.do_initialize_data_model(engine);
     }
 }
 

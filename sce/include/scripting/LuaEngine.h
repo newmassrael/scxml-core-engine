@@ -60,7 +60,7 @@ public:
     bool hasVariable(const std::string &sessionId, const std::string &variableName) const override;
     bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
     std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                   const std::vector<std::string> &ioProcessors) override;
+                                                   const std::vector<IOProcessorDescriptor> &ioProcessors) override;
     std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
                                               const std::shared_ptr<Event> &event) override;
     std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const SetCurrentEventArgs &args) override;

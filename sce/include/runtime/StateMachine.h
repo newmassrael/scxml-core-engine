@@ -133,6 +133,23 @@ public:
      */
     void setSessionFilePath(const std::string &filePath);
 
+    /**
+     * @brief Declare the inbound BasicHTTP endpoint serving this session
+     *
+     * §scxml-C-2-3: the Basic HTTP Event I/O Processor entry of
+     * `_ioprocessors` holds the address external components post events to.
+     * That address belongs to the deployment — SCE is embedded, and whoever
+     * runs the HTTP listener chooses where it listens — so the engine takes it
+     * from here rather than guessing one. Leaving it unset means no BasicHTTP
+     * endpoint is serving the session, and no entry is published.
+     *
+     * Must be called before the session starts, since `_ioprocessors` is
+     * populated once during session setup.
+     *
+     * @param accessUri URI external components post events to
+     */
+    void setBasicHttpAccessUri(const std::string &accessUri);
+
     ~StateMachine();
 
     /**
@@ -661,7 +678,8 @@ private:
     // Script engine integration
     IScriptEngine &scriptEngine_;
     std::string sessionId_;
-    std::string lastLoadError_;  // Parser error detail from loadSCXMLFromString
+    std::string basicHttpAccessUri_;  // Inbound BasicHTTP endpoint, empty when none is deployed
+    std::string lastLoadError_;       // Parser error detail from loadSCXMLFromString
     std::string currentEventData_;
     std::string currentOriginSessionId_;  // W3C SCXML Test 252: Track origin for cancelled invoke filtering
     bool jsEnvironmentReady_ = false;

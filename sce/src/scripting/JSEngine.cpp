@@ -334,7 +334,7 @@ std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId
 }
 
 std::future<ScriptResult> JSEngine::setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                                         const std::vector<std::string> &ioProcessors) {
+                                                         const std::vector<IOProcessorDescriptor> &ioProcessors) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync([this, sessionId, sessionName, ioProcessors]() {
         return setupSystemVariablesInternal(sessionId, sessionName, ioProcessors);

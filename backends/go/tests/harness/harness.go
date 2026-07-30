@@ -37,6 +37,14 @@ func AssertFinalState[S comparable](t *testing.T, actual, expected S, testID str
 	}
 }
 
+// BasicHTTPAccessURI is where the harness's inbound BasicHTTP listener
+// (standalone_http_server.js) answers, and therefore the address the generated
+// tests declare as the machine's published _ioprocessors location (W3C SCXML
+// C.2.3). Bind address and published address are one fact — a document that
+// posts somewhere the listener never claimed would fail for a reason unrelated
+// to what it tests.
+const BasicHTTPAccessURI = "http://localhost:8080/test"
+
 // SetupHTTPTest configures an engine for real HTTP tests against the shared
 // W3C test server (standalone_http_server.js on localhost:8080/test).
 //

@@ -169,9 +169,9 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
     });
 }
 
-::std::future<ExecutionResult> SCXMLEngineImpl::setupSystemVariables(const ::std::string &sessionId,
-                                                                     const ::std::string &sessionName,
-                                                                     const ::std::vector<::std::string> &ioProcessors) {
+::std::future<ExecutionResult>
+SCXMLEngineImpl::setupSystemVariables(const ::std::string &sessionId, const ::std::string &sessionName,
+                                      const ::std::vector<IOProcessorDescriptor> &ioProcessors) {
     auto jsFuture = scriptEngine_.setupSystemVariables(sessionId, sessionName, ioProcessors);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();

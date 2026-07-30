@@ -12,7 +12,14 @@
 
 int main(void) {
     test509_t sm;
-    test509_init(&sm);
+    /* W3C SCXML C.2.3: the ctest fixture owns the inbound listener
+       (tests/w3c/http_server_fixture.sh binds localhost:8080/test), so this
+       runner declares that address as the machine's published BasicHTTP
+       'location'. The converted W3C document reads
+       `_ioprocessors['basichttp'].location` to address its send, so a machine
+       initialised through plain `_init` would publish no entry and send
+       nowhere. */
+    test509_init_with_basic_http(&sm, "http://localhost:8080/test");
     test509_run(&sm);
 
     int rc = test509_in_state(&sm, TEST509_STATE_PASS) ? 0 : 1;

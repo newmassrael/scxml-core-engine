@@ -123,12 +123,12 @@ public:
      * @brief Setup SCXML system variables for a session (async)
      * @param sessionId Target session
      * @param sessionName Human-readable session name
-     * @param ioProcessors List of available I/O processors
+     * @param ioProcessors Entries to publish in `_ioprocessors`
      * @return Future indicating success/failure
      */
-    virtual std::future<ExecutionResult> setupSystemVariables(const std::string &sessionId,
-                                                              const std::string &sessionName,
-                                                              const std::vector<std::string> &ioProcessors) = 0;
+    virtual std::future<ExecutionResult>
+    setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
+                         const std::vector<IOProcessorDescriptor> &ioProcessors) = 0;
 
     // === High-Level SCXML State Machine API (NEW) ===
 

@@ -12,6 +12,7 @@
 //! - C++ inheritance `ISessionLifecycle` is flattened into this trait.
 //! - C++ `std::function` callbacks become `Box<dyn Fn(...) + Send + Sync>`.
 
+use crate::helpers::io_processors::IoProcessorDescriptor;
 use std::collections::HashMap;
 
 use thiserror::Error;
@@ -243,11 +244,16 @@ pub trait IScriptEngine: Send + Sync {
     // ════════════════════════════════════════
 
     /// Set up SCXML system variables: `_sessionid`, `_name`, `_ioprocessors` (§scxml-5.10).
+    ///
+    /// The descriptors arrive fully resolved from
+    /// [`crate::helpers::io_processors::build`]. An implementation files each
+    /// one under its name with its location and invents neither, so
+    /// `_ioprocessors` reads identically whichever engine backs the session.
     fn setup_system_variables(
         &self,
         session_id: &str,
         session_name: &str,
-        io_processors: &[String],
+        io_processors: &[IoProcessorDescriptor],
     ) -> ScriptResult<()>;
 
     /// Set the `_event` system variable for the currently-processing event (§scxml-5.10).
