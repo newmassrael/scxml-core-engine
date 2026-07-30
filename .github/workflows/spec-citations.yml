@@ -92,10 +92,16 @@ env:
   # a scanned C++ citation could not clear a false report. Measured A/B on this
   # tree: excluding the C++ parsing tree reports `wire-W2` + `wire-W4.5` at this
   # pin and reported nothing at 2b2dae4c. R855 also maps `.c` and prints a
-  # per-language symbol-reach line each run. Bumped after re-running
-  # validate-workspace / -code-refs / -verifies-linkage / -content-drift on every
-  # enrolled workspace with the pin enforced.
-  MNEMOSYNE_REV: 5bbf4d17b8e84b064295e1dd878d0ed6b23e7e7d
+  # per-language symbol-reach line each run. R856/R858 is this pin: R856's
+  # `comment_only=true` line paid for itself immediately — it reported 1138 of
+  # 1684 scanned files read WHOLE, and the bulk were gitignored `.class`/`.pyc`
+  # build artifacts under enrolled `forge-runtime` parents, so every advisory
+  # count depended on whether the reader had built. Narrowing those paths to
+  # their source subdirs took it to 532 of 943 and made our counts match
+  # upstream's copy exactly. Bumped after re-running validate-workspace /
+  # -code-refs / -verifies-linkage / -content-drift on every enrolled workspace
+  # with the pin enforced.
+  MNEMOSYNE_REV: 0c82ad73299d40e8e4fc33b3205f4a01bb60d823
 
 jobs:
   citations:
