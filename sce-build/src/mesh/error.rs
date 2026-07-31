@@ -389,8 +389,9 @@ pub enum DeployError {
     /// A `discovery:` top-level block appeared in deploy.yaml. SCE Mesh
     /// §3.3 invariant: transport-native routing is the source of truth
     /// for peer availability, and SCE does not maintain a peer table
-    /// (§2572 rejected list, §2574 rejection of `discovery.mode:
-    /// static | dynamic`). Authors wanting per-binding runtime target
+    /// (the §13 rejected list rejects SCE-maintained peer tables and a
+    /// `discovery.mode: static | dynamic` deploy switch outright).
+    /// Authors wanting per-binding runtime target
     /// selection use value-field placeholders (§14.4); authors wanting
     /// transport-level peer discovery configure the external OEM config
     /// (zenoh.json5 scouting, vsomeip.json service-discovery). Rejected
@@ -399,8 +400,9 @@ pub enum DeployError {
     #[error(
         "deploy.yaml 'discovery:' top-level block is not supported ({content_kind}). \
              SCE Mesh §3.3 invariant: transport-native routing is the source of truth for \
-             peer availability; SCE does not maintain a peer table (§2572 rejected list, \
-             §2574 rejection of `discovery.mode: static | dynamic`). For per-binding runtime \
+             peer availability; SCE does not maintain a peer table (the §13 rejected list \
+             rejects SCE-maintained peer tables and a `discovery.mode: static | dynamic` \
+             deploy switch). For per-binding runtime \
              target selection use value-field placeholders (§14.4). For transport-level peer \
              discovery configure the external OEM config (zenoh.json5 scouting, \
              vsomeip.json service-discovery)."

@@ -10293,7 +10293,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:b515214da13d33fa","code":"mesh/deploy-discovery-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §3.3","message":"deploy.yaml 'discovery:' top-level block is not supported (object with keys [mode, resolution]). SCE Mesh §3.3 invariant: transport-native routing is the source of truth for peer availability; SCE does not maintain a peer table (§2572 rejected list, §2574 rejection of `discovery.mode: static | dynamic`). For per-binding runtime target selection use value-field placeholders (§14.4). For transport-level peer discovery configure the external OEM config (zenoh.json5 scouting, vsomeip.json service-discovery).","actual":"object with keys [mode, resolution]"}"#,
+                r#"{"v":1,"id":"fnv1a:b515214da13d33fa","code":"mesh/deploy-discovery-not-supported","stage":"mesh-deploy","spec":"SCE Mesh §3.3","message":"deploy.yaml 'discovery:' top-level block is not supported (object with keys [mode, resolution]). SCE Mesh §3.3 invariant: transport-native routing is the source of truth for peer availability; SCE does not maintain a peer table (the §13 rejected list rejects SCE-maintained peer tables and a `discovery.mode: static | dynamic` deploy switch). For per-binding runtime target selection use value-field placeholders (§14.4). For transport-level peer discovery configure the external OEM config (zenoh.json5 scouting, vsomeip.json service-discovery).","actual":"object with keys [mode, resolution]"}"#,
             ),
             (
                 "mesh/deploy-pool-not-supported-by-transport",
