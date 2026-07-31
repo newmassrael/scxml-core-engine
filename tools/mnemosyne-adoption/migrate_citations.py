@@ -171,6 +171,15 @@ BYTESGUARD_DOC_MARKER_RE = re.compile(r"bytes-guard\.md`?[ \t]*$")
 #   W3C / W3C SCXML -> a W3C SCXML cite (the marked path's namespace, scxml)
 #   RFC <digits>    -> an IETF RFC ("RFC 9562 §5.7" UUID, "RFC 8949 §4.2.1" CBOR)
 #   ISO/LGPL/MIT    -> a standard / licence section
+#   ARCHITECTURE    -> ARCHITECTURE.md, whose headings carry no numbers at all,
+#                      so "ARCHITECTURE §9.3" can never denote a mesh section.
+#                      Measured: without this the mesh path rewrote
+#                      "ARCHITECTURE §9.3" on a `StageCopyPolicy` variant into
+#                      §mesh-9.3 "Remote Invoke Lifecycle" — a real section, so
+#                      every gate stayed green on a citation about the wrong
+#                      subject. 9 sibling occurrences live under sce-build/src/
+#                      forge and would migrate the same way if that tree is ever
+#                      enrolled.
 # Anchored to `$` (immediately before the §) on purpose: a foreign cite earlier
 # on the same line ("W3C §5.10 ... see §16.7") must not disqualify a later mesh
 # cite. Other-doc references ("rfc-...-phase-c.md §3", "Phase C P2 §3") and the
@@ -179,7 +188,8 @@ BYTESGUARD_DOC_MARKER_RE = re.compile(r"bytes-guard\.md`?[ \t]*$")
 # the latter IS the mesh source — treating "SCE_MESH.md" as foreign would skip
 # the very citations this path exists to migrate.
 FOREIGN_MARKER_RE = re.compile(
-    r"(?:\bW3C(?:[ \t]+SCXML)?|\bRFC[ \t]+[0-9]+|\bISO|\bLGPL|\bMIT)[ \t]*$"
+    r"(?:\bW3C(?:[ \t]+SCXML)?|\bRFC[ \t]+[0-9]+|\bISO|\bLGPL|\bMIT"
+    r"|\bARCHITECTURE(?:\.md)?)[ \t]*$"
 )
 
 # File extensions we know how to tokenize for comments. Rust block comments

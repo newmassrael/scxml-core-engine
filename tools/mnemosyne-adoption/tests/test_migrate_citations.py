@@ -455,6 +455,16 @@ class MeshNamespace(unittest.TestCase):
         self.assertEqual(migs, [])
         self.assertIn("RFC 9562 §5.7", new)
 
+    def test_architecture_md_not_claimed(self):
+        # ARCHITECTURE.md headings carry no numbers, so "ARCHITECTURE §9.3"
+        # cannot denote a mesh section. Without the marker the mesh path
+        # rewrote exactly this line into §mesh-9.3 "Remote Invoke Lifecycle" —
+        # a real section, so every gate stayed green on a wrong subject.
+        new, migs, skips = mesh_plan("/// §synth-5-M / ARCHITECTURE §9.3 gate\n")
+        self.assertEqual(migs, [])
+        self.assertIn("ARCHITECTURE §9.3", new)
+        self.assertTrue(skips[0]["reason"].startswith("foreign"))
+
     def test_cross_namespace_ambiguous_reported_not_migrated(self):
         # §6.4 with no marker: in BOTH ledgers -> ambiguous, manual review.
         new, migs, skips = mesh_plan("// done.invoke contract fires in §6.4 only\n")
