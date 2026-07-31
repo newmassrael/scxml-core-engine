@@ -438,6 +438,7 @@ stdout — nothing more, nothing less. The shape is:
 {
   "v": 1,
   "kind": "generate",
+  "generator": "b497eacf7d94",
   "artifacts": [
     {"path": "/abs/path/foo_sm.rs"}
   ],
@@ -458,6 +459,7 @@ stdout — nothing more, nothing less. The shape is:
 |---|---|---|
 | `v` | integer | Schema version. Currently `1`. Bumped under the same policy as the error contract ([§8](#8-evolution-policy)). |
 | `kind` | string | Which subcommand produced this manifest. Agents branch on this before deserialising into a subcommand-specific shape. Currently only `"generate"`. |
+| `generator` | string | Commit of the `sce-codegen` build that produced these artifacts, or `"unknown"` when the build had no git checkout to read (vendored crate, release tarball). The crate version is frozen pre-1.0 and identifies nothing, so this is the field to record when attributing a committed artifact to a generator — reading it here costs no extra invocation and replaces a hand-maintained version sidecar. Identifies the committed state the generator was built from; uncommitted edits to the generator are not reflected (the §6.2.6 hashes cover the inputs, not the binary). Also available as `sce-codegen --version`. |
 | `artifacts` | array of `{path}` objects | Absolute path of every file written during the run, in emission order. Entries are objects (not bare strings) so the schema can grow additively — future fields (`size`, `hash`, `artifact_kind`) must extend the object without a `v` bump. |
 | `needs_script_engine` | bool | Whether the compiled machine embeds ECMAScript requiring a runtime engine. |
 | `script_engine_causes` | optional array of objects | **Why** `needs_script_engine` is `true` — one record per construct that forced the engine in. Present exactly when the flag is `true`; omitted (not `[]`) otherwise, so a pure-static manifest carries no new bytes. See [§10.4](#104-script-engine-causes). |
