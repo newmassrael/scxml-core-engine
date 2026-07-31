@@ -791,23 +791,21 @@ sce-build generates code that calls `dds_create_qos()` with every specified poli
 
 ### 6.4 Custom Transport
 
-To add a new transport, update three registries (authoritative list lives in `codegen.rs`):
+To add a new transport, update the single registry and the template (§10.4.2 defines the registry entry; this section is the step-by-step):
 
-1. **`codegen::transport_shape()`** — declare the field layout: per-target field (`true` for local/shm/someip/dds/can) or device-shared session (`true` for zenoh). Unknown transports cause a build error (`CodegenError::UnsupportedTransport`).
+1. **`mesh::transport` registry entry** — add one `TransportDescriptor` static and list it in `lookup()`. The descriptor declares the codegen shape, the supported communication patterns (§8.2), whether a template exists, the required deploy.yaml binding fields, and the capability flags §10.4.2 tabulates. An unknown transport name yields no descriptor, and codegen rejects it (`CodegenError::UnsupportedTransport`); a descriptor with `implemented: false` is rejected at the Rust stage rather than deferred to a C++ `#error`.
 
-2. **`pattern::transport_capabilities()`** — declare supported communication patterns (Section 8.2). Returns `None` for unknown transports (conservative: validation skipped).
-
-3. **`mesh_transport.h.jinja2` `{% elif %}` blocks** — add transport-specific code at four `NEW TRANSPORT` extension points:
+2. **`mesh_transport.h.jinja2` `{% elif %}` blocks** — add transport-specific code at four `NEW TRANSPORT` extension points:
    - (A) Includes
    - (B) Per-target constants
    - (C) Per-target send functions
    - (D1-D5) TransportRouter fields, constructor, init/shutdown, route_send
 
-4. If the transport has device-shared session config (like Zenoh), add a typed struct field to `deploy::TransportConfigs`. `serde` + `deny_unknown_fields` then reject invalid values at parse time.
+3. If the transport has device-shared session config (like Zenoh), add a typed struct field to `deploy::TransportConfigs`. `serde` + `deny_unknown_fields` then reject invalid values at parse time.
 
-5. Thread the new session config through `generate_mesh()` in `lib.rs`, pre-escaping for C++ via `cpp_string_literal()` before inserting into the template context.
+4. Thread the new session config through `generate_mesh()` in `lib.rs`, pre-escaping for C++ via `cpp_string_literal()` before inserting into the template context.
 
-The `transport_shape_and_capabilities_in_sync` test catches drift between steps 1 and 2. The template's `#error` fallback catches step 3 drift at C++ compile time.
+Steps 1 and 2 are the "exactly two changes" §10.4.2 names; steps 3-4 apply only to transports carrying device-shared session config. Because shape and capabilities now live in one descriptor rather than two parallel functions, they cannot drift apart; the template's `#error` fallback catches step 2 drift at C++ compile time.
 
 ```
 // Unknown transport in Rust pipeline:
@@ -1707,7 +1705,7 @@ Every transport implementation must honour the following lifecycle phases. The g
 
 #### 10.4.2 Transport Descriptor Interface
 
-`sce-build` reads transport metadata from the single registry (`mesh/transport.rs`). Each transport entry declares:
+`sce-build` reads transport metadata from the single registry (`mesh::transport`). Each transport entry declares:
 
 | Field | Type | Purpose |
 |---|---|---|
@@ -1715,10 +1713,17 @@ Every transport implementation must honour the following lifecycle phases. The g
 | `capabilities` | `[TransportCapability]` | Supported communication patterns. Build-time validation rejects pattern/transport mismatches (§8.2). |
 | `implemented` | `bool` | Template exists. `false` → build error at codegen stage (not deferred to C++ `#error`). |
 | `required_binding_fields` | `[&str]` | deploy.yaml fields that must be present. `[]` for transports with no binding-level config (local, shm). |
+| `supplies_dedup` | `bool` | Transport suppresses envelope duplicates itself. When every transport on a receiver sets it, codegen omits the `DedupRouter` member (§10.5). |
+| `supplies_ordering` | `bool` | Transport preserves per-sender envelope order, so the §10.6 ordering buffer is unnecessary. |
+| `ordering_representable` | `bool` | Transport can carry a sequence number at all; `false` makes a binding that declares `ordering: required` a topology reject. |
+| `supports_pool` | `bool` | Native routing layer can substitute a runtime value into a binding address, which is what a server-side pool needs (§14.4). |
+| `supports_machine_lifetime_subscribe` | `bool` | deploy.yaml `machines.<name>.subscriptions:` is realised end-to-end here (§13), which is narrower than the general PubSub capability. |
+| `supports_multi_instance_server` | `bool` | Inbound messages carry a peer-identifying instance dimension, so the machine can host a multi-instance server pool (§14.4). |
+| `supports_inter_partition_ipc` | `bool` | Transport may carry traffic between the OS processes a `partitions:` split creates (§14). |
 
-Adding a transport requires exactly **two changes** (Rust registry entry + Jinja2 template block); the template's `#error` fallback catches drift at C++ compile time.
+Adding a transport requires exactly **two changes** (Rust registry entry + Jinja2 template block); the template's `#error` fallback catches drift at C++ compile time. §6.4 is the step-by-step form of the same procedure.
 
-**Future extensions** (E2): `supplies_dedup: bool` (skip dedup layer for inherently-duplicate-free transports), `supplies_ordering: bool` + `ordering_representable: bool` (gate the §10.6 sequence-ordering runtime buffer and the CAN-style topology reject), `conformance_level: Complete | Degraded` (validated against deploy.yaml declarations), `max_payload_bytes: Option<usize>` (envelope size validation at build time).
+**Future extensions**: `conformance_level: Complete | Degraded` (validated against deploy.yaml declarations), `max_payload_bytes: Option<usize>` (envelope size validation at build time).
 
 #### 10.4.3 Conformance Verification
 
