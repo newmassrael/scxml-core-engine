@@ -151,12 +151,16 @@ severity_missing = "reject"
 # Path B curated: every §scxml-<id> cite is bound to a ratified
 # Section.implementations (file, symbol), so binding-class drift now fails.
 severity_binding = "reject"
-# Coverage stays advisory — the W3C SCXML spec mirror has prose/semantics/
-# appendix sections that legitimately carry no implements cite; the R385 split
-# enforces binding without a per-section non-code carve-out. Live counts are the
-# SSOT of `mnemosyne-cli report-coverage`; do not duplicate tallies in this
-# comment — hardcoded ones drift (they did: a stale 49/196 vs the actual 48/197).
-severity_coverage = "warn"
+# Coverage is now enforced: every section this mirror still classifies as
+# normative carries at least one `implements` binding, and the sections that
+# legitimately have no code behind them were reclassified informational or
+# out_of_scope_here instead of being carved out here. Regressing means either a
+# new normative section arrived without an implementation cite, or an existing
+# one lost its binding — both are real gaps, so they fail rather than warn. Live
+# counts are the SSOT of `mnemosyne-cli report-coverage`; do not duplicate
+# tallies in this comment — hardcoded ones drift (they did: a stale 49/196 vs
+# the actual 48/197).
+severity_coverage = "reject"
 # Verify axis (R413): a Normative + Dedicated section with zero `verifies`
 # bindings is a VerificationMissing gap that fails CI. Sections are
 # classified via verification_expectation (by_construction = structural-invariant
