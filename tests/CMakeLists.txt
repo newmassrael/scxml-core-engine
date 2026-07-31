@@ -1042,11 +1042,11 @@ find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND AND NOT EMSCRIPTEN)
     # Use the auto-generated W3C_AOT_TESTS list file as input for test-list.js generation
     add_custom_command(
-        OUTPUT ${CMAKE_SOURCE_DIR}/web/web/visualizer/test-list.js
+        OUTPUT ${CMAKE_SOURCE_DIR}/web/visualizer/test-list.js
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
                 ${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake
-                ${CMAKE_SOURCE_DIR}/web/web/visualizer/test-list.js
+                ${CMAKE_SOURCE_DIR}/web/visualizer/test-list.js
         DEPENDS ${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
         COMMENT "Generating web/visualizer/test-list.js from W3C_AOT_TESTS"
@@ -1054,7 +1054,7 @@ if(Python3_FOUND AND NOT EMSCRIPTEN)
     )
 
     add_custom_target(generate_test_list ALL
-        DEPENDS ${CMAKE_SOURCE_DIR}/web/web/visualizer/test-list.js
+        DEPENDS ${CMAKE_SOURCE_DIR}/web/visualizer/test-list.js
     )
 
     message(STATUS "Visualizer test list will be auto-generated from W3C_AOT_TESTS")
