@@ -98,6 +98,35 @@ pub enum CliError {
         expected_hex: String,
         actual_hex: String,
     },
+
+    /// Spec §synth-6.2.6 source-set coverage: the `source-hash` about to be
+    /// embedded in generated output does not describe the input that
+    /// produced it.
+    ///
+    /// The set is folded from every `**/*.scxml` under `root`; when that
+    /// walk resolves to nothing the fold still produces a well-formed
+    /// sha256 (the empty-input digest), which no downstream drift check
+    /// can tell apart from a real one. Refusing to emit is the only
+    /// signal that survives — a wrong-but-plausible hash does not.
+    ///
+    /// Two ways to get here, distinguishable from `hashed`:
+    /// - `hashed == 0` — the root resolved to nothing, so the header would
+    ///   carry the empty-input digest. Always an error.
+    /// - `hashed > 0` — the root was inferred from the input's own
+    ///   location, yet the input is absent from the set the walk built.
+    ///   A caller that named `--input-root` explicitly is not held to this:
+    ///   it may be generating from a staged derivative of a tracked source
+    ///   (the fixture regen scripts do exactly that), and the root it named
+    ///   is an assertion rather than an inference to second-guess.
+    #[error(
+        "{input}: §6.2.6 source-hash would not describe it — {hashed} file(s) \
+         collected from {root}; pass --input-root <DIR> containing the input"
+    )]
+    SourceHashInputUncovered {
+        input: String,
+        root: String,
+        hashed: usize,
+    },
 }
 
 impl CliError {
@@ -224,6 +253,20 @@ impl SingleDiagnostic for CliError {
                 // so consumers parsing the wire can identify which half
                 // drifted without re-reading the file.
                 Some(format!("{axis}-hash={actual_hex}")),
+                None,
+            ),
+            CliError::SourceHashInputUncovered {
+                input,
+                root,
+                hashed,
+            } => (
+                DiagnosticCode::ForgeSourceHashInputUncovered,
+                vec![input.clone(), root.clone()],
+                // `actual` carries the root that came up short plus the
+                // collected count, which is what an agent needs to decide
+                // between "root resolved to nothing" and "input lives
+                // elsewhere" without re-walking the tree itself.
+                Some(format!("root={root} hashed={hashed}")),
                 None,
             ),
         };

@@ -2317,6 +2317,19 @@ pub enum DiagnosticCode {
     #[serde(rename = "forge/source-hash-mismatch")]
     ForgeSourceHashMismatch,
 
+    // ── §synth-6.2.6 source-set coverage guard. The `source-hash` is
+    //    folded from every `**/*.scxml` under the input root, so a root
+    //    that resolves to nothing still yields a well-formed sha256 —
+    //    the empty-input digest — which is indistinguishable on the wire
+    //    from a successful hash. Fired at emit time when the digest about
+    //    to be embedded would not describe the input that produced it:
+    //    an empty set always, and additionally a set that omits the input
+    //    when the root was inferred from that input's own location.
+    //    Repair is a single deterministic move: point `--input-root` at
+    //    a directory that contains the input. ─────────────────────────
+    #[serde(rename = "forge/source-hash-input-uncovered")]
+    ForgeSourceHashInputUncovered,
+
     // ── Traceability §synth-5-O IR provenance pre-emit guard
     //    (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290 verbatim:
     //    "XInclude / sce:template composition MUST track per-element
@@ -2870,6 +2883,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshIo,
         // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
         ForgeSourceHashMismatch,
+        ForgeSourceHashInputUncovered,
         // Traceability §synth-5-O — IR provenance pre-emit guard
         // (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290).
         TraceabilityScxmlLineRangeMissing,
@@ -3333,6 +3347,10 @@ impl DiagnosticCode {
             //    + template-hash); the spec section defines the header
             //    contract + `sce-build verify` recompute pipeline.
             ForgeSourceHashMismatch => Some("SCE Protocol-Synthesis RFC §6.2.6"),
+            //    Same section: it defines the source set the header's
+            //    `source-hash` folds, which is the invariant this code
+            //    guards at emit time rather than at verify time.
+            ForgeSourceHashInputUncovered => Some("SCE Protocol-Synthesis RFC §6.2.6"),
 
             // ── §synth-5-O traceability IR provenance pre-emit
             //    guard. Spec lines 3289-3290 verbatim: "Codegen failure
@@ -3957,6 +3975,7 @@ impl DiagnosticCode {
             }
             MeshIo => "mesh/io",
             ForgeSourceHashMismatch => "forge/source-hash-mismatch",
+            ForgeSourceHashInputUncovered => "forge/source-hash-input-uncovered",
             TraceabilityScxmlLineRangeMissing => "traceability/scxml-line-range-missing",
             TraceabilityStateIdCollision => "traceability/state-id-collision",
             TraceabilitySymbolNameExceedsCIdentifierLimit => {
@@ -11536,6 +11555,23 @@ mod tests {
                 },
                 r#"{"v":1,"id":"fnv1a:6bbb966dd3008e84","code":"forge/source-hash-mismatch","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"out/foo_sm.rs: §6.2.6 source-hash mismatch (embedded=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, recomputed=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) — regenerate via sce-codegen","actual":"source-hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
             ),
+            // ── §synth-6.2.6 source-set coverage guard ──
+            //    Emit-time counterpart to the mismatch code above: that one
+            //    fires at `verify` when an embedded hash has gone stale,
+            //    this one refuses to embed a hash that never described the
+            //    input in the first place. `actual` carries the root and
+            //    the collected count so an agent can distinguish "root
+            //    resolved to nothing" (`hashed=0`) from "input lives
+            //    outside the root" without walking the tree itself.
+            (
+                "forge/source-hash-input-uncovered",
+                CliError::SourceHashInputUncovered {
+                    input: "src/scxml/pdc_reset.scxml".into(),
+                    root: "src/scxml".into(),
+                    hashed: 0,
+                },
+                r#"{"v":1,"id":"fnv1a:af571002d7ff22bd","code":"forge/source-hash-input-uncovered","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"src/scxml/pdc_reset.scxml: §6.2.6 source-hash would not describe it — 0 file(s) collected from src/scxml; pass --input-root <DIR> containing the input","actual":"root=src/scxml hashed=0"}"#,
+            ),
         ]
     }
 
@@ -12335,6 +12371,10 @@ mod tests {
             //    deterministic `sce-codegen <regen-command>` — no
             //    candidate set across multiple repair paths. ──
             | ForgeSourceHashMismatch
+            // ── §synth-6.2.6 source-set coverage guard. One repair
+            //    path — re-point `--input-root` at a directory that
+            //    contains the input — so there is no candidate set. ──
+            | ForgeSourceHashInputUncovered
             // ── §synth-5-O IR provenance guard. Codegen-internal
             //    invariant: an empty source_location means the parser
             //    site that produced this node failed to attach a
@@ -12927,6 +12967,8 @@ mod tests {
                 | MeshIo
                 // B9 §synth-6.2.6 generated-source drift detection
                 | ForgeSourceHashMismatch
+                // §synth-6.2.6 source-set coverage guard
+                | ForgeSourceHashInputUncovered
                 // §synth-5-O IR provenance pre-emit guard
                 | TraceabilityScxmlLineRangeMissing
                 // §synth-5-O symbol mangling + sourcemap contract
@@ -12974,9 +13016,9 @@ mod tests {
         }
         assert_eq!(
             ALL_DIAGNOSTIC_CODES.len(),
-            324,
+            325,
             "ALL_DIAGNOSTIC_CODES has duplicates or missing entries — \
-             expected 324 distinct variants to match the DiagnosticCode \
+             expected 325 distinct variants to match the DiagnosticCode \
              enum. When a commit adds or removes a variant, update this \
              count in the same commit and follow the variant checklist: \
              SCE_ERROR_CONTRACT.md plus the acceptance-doc appendix \
