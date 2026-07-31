@@ -154,6 +154,8 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
 
 bool EventRaiserImpl::raiseInternalEvent(const std::string &eventName, const std::string &eventData) {
     // §scxml-3.13: Internal events have higher priority than external events
+    // §scxml-4.2.2: enqueueing appends at the rear, so events raised by <raise> keep
+    // their arrival order behind whatever is already queued.
     return raiseEventWithPriority(eventName, eventData, EventPriority::INTERNAL, "", "", "");
 }
 
@@ -195,6 +197,9 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
     // W3C SCXML Test 230: Platform events (done.*, error.*) must be queued, not processed immediately
     // This prevents nested processing issues when child completes during parent transition
     // W3C SCXML Test 252: Events from other sessions (e.g., child->parent) must use EXTERNAL priority
+    // §scxml-3.12.2: an error is signalled by an event named 'error.*' that is placed
+    // on the queue and processed like any other event — never delivered inline, and
+    // simply dropped when no transition matches it.
     EventPriority priority = EventPriority::INTERNAL;
     if (isPlatformEvent(eventName)) {
         priority = EventPriority::EXTERNAL;  // Force queueing for platform events

@@ -13,6 +13,8 @@ namespace SCE {
 SendAction::SendAction(const std::string &event, const std::string &id) : BaseAction(id), event_(event) {}
 
 bool SendAction::execute(IExecutionContext &context) {
+    // §scxml-6.2.1: <send> sends events and data to external systems — including other
+    // SCXML interpreters — or raises an event in the current session.
     if (!context.isValid()) {
         return false;
     }

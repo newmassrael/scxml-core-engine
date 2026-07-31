@@ -140,6 +140,8 @@ public:
 #endif
     static std::vector<StateType> computeEntryOrder(const std::vector<StateType> &targetStates,
                                                     const std::vector<StateType> &currentStates) {
+        // §scxml-D-computeEntrySet: gather the transition targets, then the ancestors
+        // that must be entered with them, and return the set in entry order.
         std::vector<StateType> entrySet;
         std::unordered_set<StateType> currentSet(currentStates.begin(), currentStates.end());
 

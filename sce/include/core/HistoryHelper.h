@@ -179,6 +179,9 @@ std::vector<StateType> recordHistory(const std::vector<StateType> &activeStates,
 template <typename StateType, typename GetParentFunc>
 std::vector<StateType> getAncestorsToEnter(StateType target, std::optional<StateType> stopAtParent,
                                            GetParentFunc getParent) {
+    // §scxml-D-addAncestorStatesToEnter: add the ancestors of target up to, but not
+    // including, the stop state, since ancestors outside the transition domain were
+    // never exited.
     std::vector<StateType> ancestorsToEnter;
     StateType current = target;
 

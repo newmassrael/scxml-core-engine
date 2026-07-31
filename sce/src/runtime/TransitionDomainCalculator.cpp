@@ -16,6 +16,8 @@ TransitionDomainCalculator::TransitionDomainCalculator(std::shared_ptr<SCXMLMode
     : model_(std::move(model)), hierarchyManager_(hierarchyManager) {}
 
 std::vector<std::string> TransitionDomainCalculator::getProperAncestors(const std::string &stateId) const {
+    // §scxml-D-getProperAncestors: with no stop state, return every ancestor of
+    // stateId in ancestry order (parent, parent's parent, ... up to the root).
     std::vector<std::string> ancestors;
 
     if (!model_) {
@@ -217,6 +219,8 @@ TransitionDomainCalculator::computeExitSet(const std::string &sourceStateId, con
     }
 
     // §scxml-3.13: Find LCA (Lowest Common Ancestor) once
+    // §scxml-D-getTransitionDomain: the LCCA of source and target is the transition
+    // domain — the compound state every exited and entered state descends from.
     result.lca = findLCA(sourceStateId, targetStateId);
 
     // §scxml-3.13: Exit set = "all active states that are proper descendants of LCCA"

@@ -18,6 +18,9 @@ namespace SCE {
  * @return true if event name starts with "done." or "error."
  */
 inline bool isPlatformEvent(const std::string &eventName) {
+    // §scxml-3.12.3: the events the implementation generates on its own all live under
+    // these two prefixes — done.state.id / done.invoke.id, and the error.* family
+    // (error.execution, error.communication, error.platform).
     const size_t len = eventName.length();
 
     // Check "done." prefix (5 chars)

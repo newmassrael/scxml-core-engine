@@ -14,6 +14,8 @@ IfAction::IfAction(const std::string &condition, const std::string &id) : BaseAc
 }
 
 bool IfAction::execute(IExecutionContext &context) {
+    // §scxml-4.3: <if> is a container for conditionally executed elements; it is
+    // itself executable content, so nesting is legal.
     if (!context.isValid()) {
         return false;
     }
@@ -66,6 +68,8 @@ void IfAction::addElseIfCondition(const std::string &condition) {
 }
 
 IfAction::ConditionalBranch &IfAction::addElseIfBranch(const std::string &condition) {
+    // §scxml-4.3.2: each <elseif> opens a partition that runs to the next <elseif>,
+    // <else> or </if>, so a branch is appended in document order.
     ConditionalBranch branch;
     branch.condition = condition;
     branch.isElseBranch = false;
@@ -74,6 +78,8 @@ IfAction::ConditionalBranch &IfAction::addElseIfBranch(const std::string &condit
 }
 
 IfAction::ConditionalBranch &IfAction::addElseBranch() {
+    // §scxml-4.3.2: <else> opens the final partition, which runs to </if> and must
+    // follow every <elseif>.
     ConditionalBranch branch;
     branch.condition = "";
     branch.isElseBranch = true;

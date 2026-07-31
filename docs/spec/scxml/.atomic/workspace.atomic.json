@@ -629,6 +629,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.12",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::raiseEvent",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -650,6 +657,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.12",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/common/StringUtils.h",
+          "symbol": "isPlatformEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::generateDoneStateEvent",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -1927,6 +1946,11 @@
           "file": "sce/src/states/ConcurrentStateNode.cpp",
           "symbol": "ConcurrentStateNode::addChild",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentStateNode.cpp",
+          "symbol": "ConcurrentStateNode::areAllRegionsInFinalState",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2331,6 +2355,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.7",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseStateNode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::generateDoneStateEvent",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2776,6 +2812,11 @@
           "file": "tests/w3c/aot_tests/Test144.h",
           "symbol": "Test144",
           "kind": "verifies"
+        },
+        {
+          "file": "sce/src/actions/RaiseAction.cpp",
+          "symbol": "RaiseAction::execute",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2826,6 +2867,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeRaiseAction",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::raiseInternalEvent",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2862,6 +2915,11 @@
           "file": "tests/w3c/aot_tests/Test149.h",
           "symbol": "Test149",
           "kind": "verifies"
+        },
+        {
+          "file": "sce/src/actions/IfAction.cpp",
+          "symbol": "IfAction::execute",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -2912,6 +2970,23 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.3",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/actions/IfAction.cpp",
+          "symbol": "IfAction::addElseIfBranch",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/actions/IfAction.cpp",
+          "symbol": "IfAction::addElseBranch",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeIfAction",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -3185,6 +3260,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.6",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeForeachAction",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -3234,6 +3316,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.6",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/ForeachHelper.h",
+          "symbol": "executeForeachWithActions",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -3277,6 +3366,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.7",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeLogAction",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -3331,6 +3427,11 @@
           "file": "sce/src/parsing/ActionParser.cpp",
           "symbol": "SCE::ActionParser::parseActionNode",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::log",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -3395,6 +3496,11 @@
           "file": "sce/src/parsing/TransitionParser.cpp",
           "symbol": "SCE::TransitionParser::parseActions",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::executeActionNodes",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -4193,6 +4299,11 @@
         {
           "file": "backends/rust/runtime/src/lib.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "JSEngine::setCurrentEventInternal",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -4224,6 +4335,11 @@
         {
           "file": "sce-build/src/model.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/DataModelParser.cpp",
+          "symbol": "SCE::DataModelParser::parseDataModelNode",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -4538,6 +4654,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.3",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/DataModelParser.cpp",
+          "symbol": "SCE::DataModelParser::parseDataModelItem",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -4559,6 +4682,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.3",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/DataModelParser.cpp",
+          "symbol": "SCE::DataModelParser::parseDataContent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/DataModelParser.cpp",
+          "symbol": "SCE::DataModelParser::parseDataModelItem",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -4580,6 +4715,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.3",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/DataModelInitializer.cpp",
+          "symbol": "DataModelInitializer::initializeAllDataItems",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/DataModelInitializer.cpp",
+          "symbol": "DataModelInitializer::initializeStateDataOnEntry",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -4966,6 +5113,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.5",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/DoneDataParser.cpp",
+          "symbol": "SCE::DoneDataParser::parseDoneData",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -5002,6 +5156,11 @@
           "file": "tests/w3c/aot_tests/Test529.h",
           "symbol": "Test529",
           "kind": "verifies"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -5052,6 +5211,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.6",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/common/DoneDataHelper.h",
+          "symbol": "evaluateContent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/DoneDataParser.cpp",
+          "symbol": "SCE::DoneDataParser::parseContent",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -5328,6 +5499,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.8",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -5349,6 +5527,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.8",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::setupJSEnvironment",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -5593,6 +5783,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.9",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::evaluateExpression",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -6093,6 +6290,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/actions/SendAction.cpp",
+          "symbol": "SendAction::execute",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -6266,6 +6470,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-6.2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -7643,6 +7854,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/scripting/JSEngine.cpp",
+          "symbol": "JSEngine::inFunctionWrapper",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8194,6 +8412,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "JSEngine::setVariableInternal",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8215,6 +8440,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "JSEngine::executeScriptInternal",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8236,6 +8468,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/ForeachHelper.h",
+          "symbol": "isLegalVariableName",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/ForeachHelper.h",
+          "symbol": "evaluateForeachArray",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8333,6 +8577,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::assignVariable",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8354,6 +8605,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "JSEngine::evaluateExpressionInternal",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8375,6 +8633,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/DoneDataParser.cpp",
+          "symbol": "SCE::DoneDataParser::parseContent",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8396,6 +8661,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::assignVariable",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8417,6 +8689,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "JSEngine::setupSystemVariablesInternal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "JSEngine::setCurrentEventInternal",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8438,6 +8722,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2-8",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/scripting/JSEngineImpl.cpp",
+          "symbol": "parseEventData",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/DoneDataParser.cpp",
+          "symbol": "SCE::DoneDataParser::parseContent",
+          "kind": "references"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8459,6 +8755,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/common/EventDataHelper.cpp",
+          "symbol": "EventDataHelper::scriptValueToJsonString",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9089,6 +9392,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-C-2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "validateBasicHttpSend",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/common/SendHelper.h",
+          "symbol": "buildHttpPostBody",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9380,6 +9695,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/HistoryHelper.h",
+          "symbol": "getAncestorsToEnter",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9401,6 +9723,18 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "addParallelRegions",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "buildEntryChain",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9422,6 +9756,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/ParallelExitEntryHelper.h",
+          "symbol": "computeEntryOrder",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9545,6 +9886,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::stop",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9594,6 +9942,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/HierarchicalStateHelper.h",
+          "symbol": "findLCA",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9620,6 +9975,11 @@
           "file": "sce/src/parsing/StateNodeParser.cpp",
           "symbol": "SCE::StateNodeParser::parseChildStates",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/states/ConcurrentStateNode.cpp",
+          "symbol": "ConcurrentStateNode::addChild",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -9643,6 +10003,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/HistoryManager.cpp",
+          "symbol": "HistoryManager::restoreHistory",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9664,6 +10031,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
+          "symbol": "TransitionDomainCalculator::getProperAncestors",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9685,6 +10059,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/TransitionDomainCalculator.cpp",
+          "symbol": "TransitionDomainCalculator::computeExitSet",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9706,6 +10087,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::start",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9759,6 +10147,23 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/ParallelCompletionHelper.h",
+          "symbol": "areAllRegionsInFinal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentRegion.cpp",
+          "symbol": "ConcurrentRegion::determineIfInFinalState",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/states/ConcurrentStateNode.cpp",
+          "symbol": "ConcurrentStateNode::areAllRegionsInFinalState",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9947,6 +10352,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/core/EventProcessingAlgorithms.h",
+          "symbol": "checkEventlessTransitions",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {

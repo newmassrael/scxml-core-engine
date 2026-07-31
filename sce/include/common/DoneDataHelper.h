@@ -109,6 +109,9 @@ public:
         }
 
         // §scxml-5.5: Evaluate content as expression
+        // §scxml-5.6.2: when 'expr' is present its result is the output of <content>;
+        // if evaluating it errors, error.execution is queued and the value becomes the
+        // empty string.
         auto future = jsEngine.evaluateExpression(sessionId, contentExpr);
         auto result = future.get();
 
