@@ -86,6 +86,10 @@ impl fmt::Display for TransportCapability {
 /// pattern validation reads `capabilities`. Both come from the same
 /// `lookup()` entry — no possibility of drift.
 pub struct TransportDescriptor {
+    // §mesh-10.4.2: this field set IS the descriptor interface the spec
+    // tabulates. Adding a capability dimension means a field here plus the
+    // row that documents it — the registry stays the single place a
+    // transport's build-time properties are declared.
     /// C++ TransportRouter field layout.
     pub shape: TransportShape,
     /// Communication patterns this transport supports.

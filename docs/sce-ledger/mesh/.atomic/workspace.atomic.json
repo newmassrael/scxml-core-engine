@@ -118,7 +118,14 @@
       "title": "Transport Descriptor Interface",
       "parent_doc": "mesh",
       "parent_section": "mesh-10.4",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/transport/mod.rs",
+          "symbol": "TransportDescriptor",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-10.4.3": {
       "title": "Conformance Verification",
@@ -1977,7 +1984,14 @@
       "title": "Custom Transport",
       "parent_doc": "mesh",
       "parent_section": "mesh-6",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/codegen.rs",
+          "symbol": "generate_cpp_mesh",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-7": {
       "title": "Build Pipeline",
