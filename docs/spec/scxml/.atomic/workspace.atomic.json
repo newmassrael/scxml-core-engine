@@ -381,6 +381,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.10",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseHistoryType",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -402,6 +409,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.10",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseHistoryType",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -1357,6 +1371,21 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseScxmlNode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/parsing/ParsingCommon.h",
+          "symbol": "findChildElementsAnyOf",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "assign_document_order",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -1379,6 +1408,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseScxmlNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -1400,6 +1436,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::parseScxmlNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -1611,6 +1654,31 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
+        },
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseChildStates",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/parsing/ParsingCommon.h",
+          "symbol": "findChildElementsAnyOf",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "assign_document_order",
+          "kind": "references"
+        },
+        {
+          "file": "sce-build/src/parser.rs",
+          "symbol": "default_initial_follows_document_order_not_element_name",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseStateNode",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -1633,6 +1701,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.3",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseStateNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -1654,6 +1729,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.3",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseChildStates",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -1868,6 +1950,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.4",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseStateNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -1889,6 +1978,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.4",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseChildStates",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -1946,6 +2042,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.5",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/TransitionParser.cpp",
+          "symbol": "SCE::TransitionParser::parseTransitionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -1967,6 +2070,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.5",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/TransitionParser.cpp",
+          "symbol": "SCE::TransitionParser::parseActions",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2038,6 +2148,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.6",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2059,6 +2170,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.6",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseInitialElement",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2185,6 +2303,11 @@
         {
           "file": "sce-build/src/kotlin.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseStateNode",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -2370,6 +2493,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.8",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2391,6 +2515,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.8",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseEntryExitActionNodes",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2538,6 +2669,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.9",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2559,6 +2691,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-3.9",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseEntryExitActionNodes",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2659,6 +2798,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.2",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2738,6 +2884,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.3",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2780,6 +2933,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2801,6 +2955,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.4",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2822,6 +2983,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2843,6 +3005,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.5",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -2864,6 +3033,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.5",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -3036,6 +3206,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.6",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -3078,6 +3255,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -3120,6 +3298,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.7",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -3141,6 +3326,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-4.7",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "references"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -3193,6 +3385,16 @@
           "file": "tests/w3c/aot_tests/Test159.h",
           "symbol": "Test159",
           "kind": "verifies"
+        },
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseEntryExitActionNodes",
+          "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/TransitionParser.cpp",
+          "symbol": "SCE::TransitionParser::parseActions",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -4045,6 +4247,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.2",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -4506,6 +4709,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.4",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -4734,6 +4944,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.5",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -4813,6 +5024,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.6",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -4914,6 +5132,28 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.7",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/actions/SendAction.h",
+          "symbol": "valueExpr",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/actions/SendAction.h",
+          "symbol": "addParamWithLocation",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/ActionExecutorImpl.cpp",
+          "symbol": "ActionExecutorImpl::executeSendAction",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -4935,6 +5175,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-5.7",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -5877,6 +6118,11 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -6187,6 +6433,11 @@
         {
           "file": "backends/rust/runtime/src/invoke.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/ActionParser.cpp",
+          "symbol": "SCE::ActionParser::parseActionNode",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",
@@ -6210,6 +6461,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-6.3",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -7186,6 +7438,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-6.5",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -7341,6 +7594,11 @@
         {
           "file": "backends/rust/runtime/src/scripting/i_script_engine.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::addSystemVariables",
+          "kind": "implements"
         }
       ],
       "normative_excerpt": {
@@ -7363,6 +7621,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -7405,6 +7664,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -7426,6 +7686,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -7447,6 +7708,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -7468,6 +7730,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/SCXMLParser.cpp",
+          "symbol": "SCE::SCXMLParser::addSystemVariables",
+          "kind": "implements"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -7489,6 +7758,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-B-1",
       "decision_status": "active",
+      "coverage_expectation": "out_of_scope_here",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -8469,6 +8739,7 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-C-1",
       "decision_status": "active",
+      "coverage_expectation": "informational",
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
@@ -9344,6 +9615,13 @@
       "parent_doc": "scxml",
       "parent_section": "scxml-D-ProceduresandFunctions",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/src/parsing/StateNodeParser.cpp",
+          "symbol": "SCE::StateNodeParser::parseChildStates",
+          "kind": "references"
+        }
+      ],
       "verification_expectation": "by_construction",
       "normative_excerpt": {
         "excerpt": {
