@@ -1,0 +1,18 @@
+# LeakSanitizer suppressions — third-party zenoh-c runtime.
+#
+# `libzenohc.so` does not release the allocations its runtime makes when a
+# `zenoh::Session` is dropped: the transport manager, the routing tables
+# (`Network::new`, `HatCode::init`), the task controller and the plugin
+# search dirs stay allocated in detached runtime threads. A test that opens a
+# session and lets it go out of scope mid-run therefore ends with those blocks
+# unreachable, and LSan reports them.
+#
+# Measured on the SCE side before adding this file (2026-07-31): 50 records,
+# 22002 bytes in 118 allocations, all of them INDIRECT — zero direct leaks,
+# i.e. LSan found no leaked root pointer held by SCE code. Adding an explicit
+# `Session::close()` on every session the fixture opens left the numbers
+# byte-for-byte identical, which rules out a missing-close on our side.
+#
+# The suppression is scoped to the offending shared object, so every
+# allocation SCE itself makes stays under leak detection.
+leak:libzenohc.so

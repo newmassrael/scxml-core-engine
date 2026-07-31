@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include "common/ForwardedEvent.h"
+
 #include <array>
 #include <cstdint>
 #include <string>
@@ -45,12 +47,11 @@ public:
     /// the child's machine (graceful degrade per §scxml-6.4 — child silently
     /// ignores autoforwarded events it does not recognize).
     ///
-    /// The `sendId` parameter is reserved for future `_event.sendid`
-    /// preservation; the current implementation mirrors the local-invoke
-    /// autoforward path (invoke_methods.jinja2:287) and does not propagate
-    /// sendid into the child. Promoting full `_event.sendid` forwarding is
-    /// a separate landing shared with the local-invoke path.
-    virtual bool raiseExternal(const std::string &eventName, const std::string &data, const std::string &sendId) = 0;
+    /// Takes the same `ForwardedEvent` carrier the local-invoke autoforward
+    /// path uses, so the two paths cannot drift in what they preserve: the
+    /// caller fills the fields wire-17 carries (name, payload, sendid) and
+    /// the implementation stamps the §9.6.3 processor identity.
+    virtual bool raiseExternal(const ::SCE::Common::ForwardedEvent &forwarded) = 0;
 
     /// Return true when the child has reached a top-level `<final>` state
     /// (StaticExecutionEngine::isGlobalFinalState). WorkerSessionHost polls

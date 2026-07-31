@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include "common/ForwardedEvent.h"
+#include "common/SCXMLConstants.h"
 #include "common/Uuid.h"
 #include "mesh/IChildSession.h"
 #include "mesh/MeshEnvelope.h"
@@ -89,15 +91,22 @@ public:
         engine_.tick();
     }
 
-    bool raiseExternal(const std::string &eventName, const std::string &data, const std::string & /*sendId*/) override {
+    bool raiseExternal(const ::SCE::Common::ForwardedEvent &forwarded) override {
         if (cancelled_) {
             return false;
         }
-        // Engine's string-based raiseExternal handles graceful-degrade for
-        // unknown events (§scxml-6.4) and converts to the Event enum via
-        // PolicyType::getEventFromName. sendId preservation parity with
-        // local invoke is documented in IChildSession.h.
-        engine_.raiseExternal(eventName, data);
+        // SCE_MESH.md §mesh-9.6.3: a wire-17 `ParentEvent` always surfaces on
+        // the child as an external event from the SCXML Event I/O Processor —
+        // the remote transport is transparent per §scxml-6.2. The wire-carried
+        // fields (name, payload, sendid) arrive verbatim from the parent per
+        // §mesh-9.6.5; the processor identity is stamped here so every
+        // transport arm's `onWire17` gets it without repeating the constant.
+        ::SCE::Common::ForwardedEvent delivered = forwarded;
+        delivered.type = "external";
+        delivered.originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
+        // Engine's ForwardedEvent overload handles graceful-degrade for
+        // unknown events (§scxml-6.4) via PolicyType::getEventFromName.
+        engine_.raiseExternal(delivered);
         return true;
     }
 
