@@ -57,24 +57,39 @@ severity = "warn"
 #   severity_missing = "reject"  hallucination gate: a §mesh-<n> with no ledger
 #                                section fails the run. Strict from the start —
 #                                the migrator only emits ledger-present ids.
-#   severity_binding = "warn"    Path B (Section.implementations binding) is a
-#                                later round; advisory so unbacked cites pass.
+#   severity_binding = "reject"  Path B (Section.bindings) is curated for every
+#                                scanned tree, so an unbacked cite fails.
+#
+# `tests/w3c/dist` is in the scan set even though it is test code, because §16.8
+# describes the conformance harness itself: those files are the artifact the
+# section specifies, not a test of some other section's behaviour. Their cites
+# are bound `references` rather than `implements` — the harness there is the S4
+# seed (one test, hand-wired partitions), and the single-process-vs-distributed
+# comparison that is the substance of §16.8.1 does not exist yet, so claiming
+# coverage would overstate the tree. The rest of `tests/` stays out of `paths`;
+# widening happens one directory at a time, each with its citation migration and
+# bindings in the same commit (severity_binding is already reject, so a path
+# added without bindings turns the ledger red).
 [plugins.set_equality_validator]
 paths = [
     "sce/include/mesh",
     "sce/src/mesh",
     "sce/include/common",
     "sce/include/static",
+    "tests/w3c/dist",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
 # cannot gate vacuously. This ledger gates C++ only — `paths` lists no Rust tree,
 # so every Rust source in the repo is declared out.
 #
-# Measured, not assumed: the only §mesh- token anywhere in Rust is the wildcard
-# `§mesh-*` inside a comment in sce-build/tests/roadmap_marker_gate.rs, which
-# describes the marker grammar rather than citing a section. No hand-authored
-# §mesh- citation lives in Rust, so this declaration gates nothing away.
+# This list is the Rust-coverage declaration ONLY; it does not subtract from the
+# C++/YAML scan set. `tests/` appears here and `tests/w3c/dist` appears in
+# `paths` above, and the two do not conflict: the dist tree is scanned, while
+# any Rust that may later appear under `tests/` stays declared out.
+#
+# Measured, not assumed: `grep -rn '§mesh-' --include=*.rs` over the repo returns
+# zero hits, so declaring every Rust source out gates nothing away.
 scan_exclusions = [
     "backends/",
     "sce-build/",

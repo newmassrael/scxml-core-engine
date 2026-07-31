@@ -524,6 +524,16 @@
       "parent_doc": "mesh",
       "parent_section": "mesh-16",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "tests/w3c/dist/run_distributed.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "tests/w3c/dist/w3c_dist_partition_runner.cpp",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational"
     },
     "mesh-16.3": {
@@ -644,6 +654,10 @@
         {
           "file": "sce/src/mesh/MeshEnvelopeCodec.cpp",
           "symbol": "isValidPatternKind",
+          "kind": "references"
+        },
+        {
+          "file": "tests/w3c/dist/test417/Test417_Main.h",
           "kind": "references"
         }
       ]
@@ -922,13 +936,41 @@
       "parent_doc": "mesh",
       "parent_section": "mesh-16",
       "decision_status": "active",
+      "bindings": [
+        {
+          "file": "tests/w3c/dist/run_distributed.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "tests/w3c/dist/test417/Test417_Main.h",
+          "kind": "references"
+        },
+        {
+          "file": "tests/w3c/dist/test417/Test417_Worker.h",
+          "kind": "references"
+        }
+      ],
       "coverage_expectation": "informational"
     },
     "mesh-16.8.1": {
       "title": "Harness architecture",
       "parent_doc": "mesh",
       "parent_section": "mesh-16.8",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "tests/w3c/dist/PartitionRunner.h",
+          "kind": "references"
+        },
+        {
+          "file": "tests/w3c/dist/run_distributed.cpp",
+          "kind": "references"
+        },
+        {
+          "file": "tests/w3c/dist/w3c_dist_partition_runner.cpp",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-16.8.2": {
       "title": "IRP distributable subset",

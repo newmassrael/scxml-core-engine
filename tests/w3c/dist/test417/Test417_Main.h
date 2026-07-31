@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §16.8 seed — Root partition registration for W3C test417.
+// SCE Mesh §mesh-16.8 seed — Root partition registration for W3C test417.
 //
-// Hosts the `s1p11` region plus the §16.5 ParallelCompletionTracker for
+// Hosts the `s1p11` region plus the §mesh-16.5 ParallelCompletionTracker for
 // `<parallel id="s1p1">`. Drives the local region into its `<final>`
 // (NULL transitions run during `initialize()`), then pumps the inbound
 // wire-21 shm channel until the NonRoot partition's
@@ -17,8 +17,10 @@
 // Compiled once per partition binary via the w3c_dist_partition_runner
 // source — the per-partition binary includes exactly one of
 // Test417_Main.h / Test417_Worker.h via the CMake-supplied
-// `SCE_W3C_DIST_PARTITION_HEADER` preprocessor selection, dodging the
-// namespace collision that §16.8 arch-debt #4 tracks.
+// `SCE_W3C_DIST_PARTITION_HEADER` preprocessor selection. Codegen bakes
+// `P_<partition>` into the generated namespace, so co-including both
+// headers is legal; one header per binary is symmetry with the rule-12
+// fork+exec precedent, not an ODR workaround.
 
 #pragma once
 

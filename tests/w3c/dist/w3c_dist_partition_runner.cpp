@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §16.8.1 — distributed conformance partition runner main.
+// SCE Mesh §mesh-16.8.1 — distributed conformance partition runner main.
 //
 // Each `w3c_dist_<test_id>_<partition>` binary is this source file
 // compiled together with exactly one `Test<seed>_<partition>.h`
@@ -13,7 +13,7 @@
 // partition's verdict as the process exit code.
 //
 // Exit code contract:
-//   0     : partition reached success verdict (§16.2 property 1 locally).
+//   0     : partition reached success verdict (§mesh-16.2 property 1 locally).
 //   11-19 : partition-local failure (see individual partition's `run()`
 //           documentation; e.g. Test417_Main returns 11 on <final id="fail">).
 //   2     : CLI argument parse failure.
