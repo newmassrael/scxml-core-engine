@@ -131,6 +131,30 @@ bool tryDeliverInvokeStarted(const MeshEnvelope & /*env*/, Engine & /*engine*/, 
 }
 
 /// SFINAE probe: does `Engine` expose
+/// `hasActiveChildSession(const std::string&)`? Emitted by every SM with at
+/// least one `<invoke type="scxml">` targeting a mesh peer, alongside the
+/// wire-15/18 hooks. An engine that cannot answer it holds no invoke table
+/// and therefore cannot be the parent of any child session, so a wire-16
+/// envelope reaching it is misrouted and drops fail-closed — the same shape
+/// the wire-15/18 hooks use when absent.
+template <typename Engine, typename = void> struct HasActiveChildSessionHook : std::false_type {};
+
+template <typename Engine>
+struct HasActiveChildSessionHook<
+    Engine, std::void_t<decltype(std::declval<Engine &>().hasActiveChildSession(std::declval<const std::string &>()))>>
+    : std::true_type {};
+
+template <typename Engine>
+bool childSessionIsActive(const std::string &child_session_id, Engine &engine, std::true_type /*has_hook*/) {
+    return engine.hasActiveChildSession(child_session_id);
+}
+
+template <typename Engine>
+bool childSessionIsActive(const std::string & /*child_session_id*/, Engine & /*engine*/, std::false_type /*has_hook*/) {
+    return false;
+}
+
+/// SFINAE probe: does `Engine` expose
 /// `onInvokeDone(const MeshEnvelope&)`? Symmetric to `HasInvokeStartedHook`.
 template <typename Engine, typename = void> struct HasInvokeDoneHook : std::false_type {};
 
@@ -226,6 +250,22 @@ template <typename Policy, typename Engine> bool dispatchEnvelope(const MeshEnve
     // This wiring keeps the parent's existing local-invoke finalize/autoforward
     // code paths (`childSession.sessionId == meta.origin` match) unchanged.
     case PatternKind::ChildEvent: {
+        // SCE_MESH.md §mesh-9.6.4 steps 1-2 and its closing rule. This is the
+        // arrival point ("ChildEvent arrives at parent's transport layer"),
+        // and enqueueing here is what puts the event on the parent's external
+        // queue for the next macrostep. Step 4 — identifying the `<invoke>`
+        // the event belongs to — is resolved before the enqueue rather than
+        // after it: once the parent has left the invoking state the section
+        // requires the event to be "discarded silently (finalize not
+        // executed, transition not considered)", and an event already sitting
+        // in the queue would still be offered to transition selection.
+        // Gating on arrival, not on selection, is also what keeps a wire-16
+        // that landed *before* the exit eligible — `activeInvokes_` survives
+        // until the invoking state's onexit precisely so those still match.
+        if (!env.child_session_id ||
+            !detail::childSessionIsActive(*env.child_session_id, engine, detail::HasActiveChildSessionHook<Engine>{})) {
+            return false;
+        }
         auto ev = Policy::getEventFromName(env.type.c_str());
         if (!ev) {
             return false;

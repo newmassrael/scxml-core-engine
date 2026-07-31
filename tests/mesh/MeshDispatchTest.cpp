@@ -86,6 +86,21 @@ struct RecordingEngine {
     void raiseExternal(EventWithMetadata meta) {
         events.push_back({meta.event, std::move(meta.data), std::move(meta.invokeId)});
     }
+
+    // SCE_MESH.md §9.6.4 step 4: the parent identifies the `<invoke>` a
+    // wire-16 ChildEvent belongs to before the event may take part in
+    // transition selection. A real parent answers from `activeInvokes_`;
+    // the double answers from a set the test controls.
+    std::vector<std::string> activeChildSessions;
+
+    bool hasActiveChildSession(const std::string &childSessionId) const {
+        for (const auto &id : activeChildSessions) {
+            if (id == childSessionId) {
+                return true;
+            }
+        }
+        return false;
+    }
 };
 
 MeshEnvelope makeRequest(const std::string &type, std::vector<std::uint8_t> data = {}) {
@@ -240,6 +255,54 @@ TEST(MeshDispatchTest, InvokeStartIsRejectedAtDispatchLayer) {
 
     EXPECT_FALSE((dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(env, engine)));
     EXPECT_TRUE(engine.events.empty());
+}
+
+// SCE_MESH.md §9.6.4 — a wire-16 ChildEvent is enqueued on the parent only
+// while the invoke that produced it is still active. `child_session_id` is
+// the discriminator the section's step 4 matches on and the same key the
+// parent's `<finalize>` lookup uses.
+namespace {
+
+MeshEnvelope makeChildEvent(const std::string &childSessionId) {
+    MeshEnvelope env;
+    env.pattern = PatternKind::ChildEvent;
+    env.type = "service.request.compute_force";
+    env.child_session_id = childSessionId;
+    env.subject = "child_send_7";
+    env.invoke_id = std::array<std::uint8_t, 16>{
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x70, 0x08, 0x90, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+    };
+    return env;
+}
+
+}  // namespace
+
+TEST(MeshDispatchTest, ChildEventFromActiveInvokeIsDelivered) {
+    RecordingEngine engine;
+    engine.activeChildSessions.push_back("dev_a:parent:remote_inv");
+
+    EXPECT_TRUE((
+        dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(makeChildEvent("dev_a:parent:remote_inv"), engine)));
+    ASSERT_EQ(engine.events.size(), 1u);
+    // §mesh-9.6.3: the invoke correlation reaches the parent as _event.invokeid.
+    EXPECT_FALSE(engine.events[0].invokeId.empty());
+}
+
+TEST(MeshDispatchTest, ChildEventFromRetiredInvokeIsDiscarded) {
+    // §mesh-9.6.4: "If the parent has already exited the invoking state when
+    // the event arrives (step 4 fails), the event is discarded silently
+    // (finalize not executed, transition not considered)." Exiting the
+    // invoking state erases the `activeInvokes_` entry, so a late wire-16 —
+    // one the child emitted before its wire-19 cancel landed — must not reach
+    // the parent's queue, where it would otherwise be offered to transition
+    // selection in whatever state the parent moved on to.
+    RecordingEngine engine;
+    engine.activeChildSessions.push_back("dev_a:parent:other_inv");
+
+    EXPECT_FALSE((
+        dispatchEnvelope<RecordingEngine::Policy, RecordingEngine>(makeChildEvent("dev_a:parent:remote_inv"), engine)));
+    EXPECT_TRUE(engine.events.empty()) << "a ChildEvent whose invoke is no longer active was enqueued on the "
+                                          "parent — §9.6.4's late-event discard is not enforced";
 }
 
 TEST(MeshDispatchTest, DispatchesFieldAccessInboundOnServerRole) {
