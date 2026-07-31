@@ -4304,6 +4304,14 @@
           "file": "sce/src/scripting/JSEngineImpl.cpp",
           "symbol": "JSEngine::setCurrentEventInternal",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/ForwardedEvent.h",
+          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
@@ -6268,6 +6276,11 @@
         {
           "file": "backends/c/runtime/posix/clock.c",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/ChildSessionAdapter.h",
+          "symbol": "raiseExternal",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
@@ -7291,6 +7304,14 @@
           "file": "backends/rust/runtime/src/engine.rs",
           "symbol": "raise_external_with_meta",
           "kind": "implements"
+        },
+        {
+          "file": "backends/c/runtime/include/sce/types.h",
+          "kind": "references"
+        },
+        {
+          "file": "sce/include/common/ForwardedEvent.h",
+          "kind": "references"
         }
       ],
       "normative_excerpt": {
