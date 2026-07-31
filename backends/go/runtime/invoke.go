@@ -5,7 +5,6 @@ package sce
 
 import (
 	"fmt"
-	"strings"
 )
 
 // PendingInvoke represents a W3C SCXML 6.4 pending invoke structure for the
@@ -198,10 +197,4 @@ func RaiseDoneInvoke[S comparable, E comparable](
 	meta.Metadata.InvokeID = invokeID
 	meta.Metadata.Data = donedata
 	engine.RaiseExternalWithMeta(meta)
-}
-
-// IsPlatformEvent checks if an event name is a platform event that should NOT
-// be autoforwarded (W3C SCXML 6.4.1).
-func IsPlatformEvent(name string) bool {
-	return strings.HasPrefix(name, "#_")
 }

@@ -178,20 +178,22 @@ class {{ machine_name }}StateMachine(
     }
 
     // W3C SCXML 6.4: Resolve Event object to event name string
+{% if leaf_events %}
     override fun eventNameOf(event: {{ machine_name }}Event): String? = when (event) {
 {% for event_name in leaf_events | sort %}
         is {{ machine_name }}Event.{{ event_name | to_event_ref }} -> "{{ event_name }}"
 {% endfor %}
-{% if not leaf_events %}
-        // Empty sealed hierarchy (child SM inheriting the
-        // has_parent_communication override but declaring no events of
-        // its own). `when` with zero branches needs an explicit `else`
-        // for exhaustiveness; the non-empty case below is exhaustive
-        // by sealed-class smart-cast and `else` would trip
-        // -Wexhaustive-when-else-redundant under -Werror.
-        else -> null
-{% endif %}
     }
+{% else %}
+    // A child SM that inherits the has_parent_communication override while
+    // declaring no events of its own leaves the sealed hierarchy with zero
+    // implementors, so `{{ machine_name }}Event` is uninhabited: no caller can
+    // construct an argument and the body is unreachable. A `when` over an
+    // uninhabited sealed subject is vacuously exhaustive, so any branch —
+    // `else` included — is dead code the compiler rejects under -Werror.
+    // Returning the null directly is the honest expression of "unreachable".
+    override fun eventNameOf(event: {{ machine_name }}Event): String? = null
+{% endif %}
 {% endif %}
 
 {% include 'scriptengine_helpers.kt.jinja2' %}

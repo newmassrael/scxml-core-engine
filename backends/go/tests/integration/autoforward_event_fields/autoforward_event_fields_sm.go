@@ -1,6 +1,6 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 0dee5053a674bb8384e14f6d6265a3a1553a5a10e868880b16cae9929da099b7
-// template-hash: 7aab3b29aa8f5ef17f1c8730c3954aecc89c78aabf4a2226d70ddd8c24038efe
+// template-hash: e273e083fd84459760e6b7e00629aa0bbc396fdd49f2f0b96778152f02d02625
 // generated-at: 0
 
 
@@ -372,10 +372,15 @@ func (p *AutoforwardEventFieldsPolicy) TickChildren(engine *sce.Engine[Autoforwa
 // W3C 6.4 requires an exact copy, so the source event's metadata is forwarded
 // with the name: the child must observe the same _event.data, _event.origin,
 // _event.sendid, _event.origintype and _event.invokeid the parent observed.
+//
+// The event's name is not consulted. W3C SCXML Appendix D mainEventLoop
+// forwards whatever it dequeued from the external queue, and 6.4.2 has
+// `done.invoke.<id>` returned onto that queue, so a sibling invoke still
+// running must see it. Internal-queue events — `error.*` (3.12.2) and
+// `done.state.<id>` (3.7) — stay out of the forwarded set because this
+// method is reached only from the external drain, not because of how they
+// are spelled.
 func (p *AutoforwardEventFieldsPolicy) ForwardToAutoforwardChildren(eventName string, metadata sce.EventMetadata, engine *sce.Engine[AutoforwardEventFieldsState, AutoforwardEventFieldsEvent]) {
-	if sce.IsPlatformEvent(eventName) {
-		return
-	}
 	if cs, ok := p.activeInvokes["inv_echo"]; ok && cs.Autoforward {
 		if p.childInvEcho != nil {
 			p.childInvEcho.RaiseExternalByNameWithMeta(eventName, metadata)

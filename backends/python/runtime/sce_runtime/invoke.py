@@ -206,12 +206,6 @@ class ScxmlInvoke(Invoke):
         return self._child
 
 
-def is_platform_event(event_name: str) -> bool:
-    """W3C SCXML 6.4.1 — platform events (prefix `#_`) must not be
-    autoforwarded. Mirrors `sce.IsPlatformEvent` in Go."""
-    return event_name.startswith("#_")
-
-
 def create_done_invoke_event_name(invoke_id: str) -> str:
     """W3C SCXML 6.3.1 — `done.invoke.<id>` event name."""
     return f"done.invoke.{invoke_id}"

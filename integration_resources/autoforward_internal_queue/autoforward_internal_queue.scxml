@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.4 autoforward skips internal-queue events.
+
+     The companion fixture `autoforward_done_invoke` pins the positive half
+     of Appendix D's `mainEventLoop`: whatever comes off the *external*
+     queue is forwarded, `done.invoke.<id>` included, with no name test.
+     This fixture pins the negative half, which the same loop expresses
+     purely by position — the internal drain has no forwarding step at all:
+
+       while ...:
+           internalEvent = internalQueue.dequeue()      # no forward here
+           ...
+       externalEvent = externalQueue.dequeue()
+       for state in configuration:
+           for inv in state.invoke:
+               if inv.autoforward: send(inv.id, externalEvent)
+
+     §6.2 puts `error.execution` on the internal queue when `<send>` names a
+     type the processor does not support, so it must never reach an
+     `autoforward` child — and it must be excluded by *where it was raised*,
+     not by a filter that recognised its name. An engine that routes
+     platform events onto the external queue for some unrelated reason (to
+     keep them from being delivered inline, say) satisfies every name-blind
+     forwarding rule and still leaks them; only this shape catches that.
+
+     `error.execution` is the carrier because it needs no `<final>` nested
+     inside the parent: a nested final is a separate question from
+     forwarding, and mixing the two would let one regression masquerade as
+     the other. The unsupported-`type` trigger is the same one W3C test199
+     uses, so every backend already raises it.
+
+     Ordering is established without any wall-clock delay, and without
+     assuming when a backend starts its pending invokes relative to the
+     external drain: the *child* opens the exchange, so it is provably
+     alive for everything that follows.
+
+       inv_watch's onentry sends `ready` to the parent
+         -> `ready` fires the unsupported `<send>`, raising error.execution
+            (internal)
+         -> the parent's error.execution transition sends `probe`
+            (external)
+
+       correct  watcher sees only `probe`      -> sawProbeOnly -> pass
+       leaking  watcher sees error.execution   -> sawInternal  -> fail
+
+     Both watcher outcomes are `<final>`, so neither verdict depends on a
+     timeout. The watcher names the event in full because the AOT backends
+     resolve a forwarded event by exact name against the child's own event
+     enum and silently drop names it does not declare.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="autoforward_internal_queue">
+    <state id="phase">
+        <invoke type="scxml" id="inv_watch" autoforward="true">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="watch">
+                    <state id="watch">
+                        <onentry>
+                            <send target="#_parent" event="ready"/>
+                        </onentry>
+                        <transition event="error.execution" target="leaked">
+                            <send target="#_parent" event="sawInternal"/>
+                        </transition>
+                        <transition event="probe" target="clean">
+                            <send target="#_parent" event="sawProbeOnly"/>
+                        </transition>
+                    </state>
+                    <final id="leaked"/>
+                    <final id="clean"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="ready">
+            <send event="boom" type="urn:x-sce-unsupported-processor"/>
+        </transition>
+        <transition event="error.execution">
+            <send event="probe"/>
+        </transition>
+        <transition event="sawInternal" target="fail"/>
+        <transition event="sawProbeOnly" target="pass"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>
