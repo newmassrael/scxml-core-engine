@@ -338,6 +338,8 @@ public:
      */
     static bool validateBasicHttpSend(const std::string &sendType, const std::string &target,
                                       const std::string &targetExpr, std::string &errorMsg) {
+        // §scxml-C-2-2: a BasicHTTP send with neither 'target' nor 'targetexpr' adds
+        // error.communication to the sending session's internal event queue.
         if (requiresTargetAttribute(sendType) && target.empty() && targetExpr.empty()) {
             errorMsg = "BasicHTTPEventProcessor requires target attribute";
             return false;
@@ -510,6 +512,9 @@ public:
         bool firstParam = true;
 
         // §scxml-C-2: Add event name as _scxmleventname parameter
+        // §scxml-C-2-2: delivery is an HTTP POST whose parameters are encoded
+        // application/x-www-form-urlencoded, and the <send> 'event' value travels as
+        // the _scxmleventname parameter.
         if (!eventName.empty()) {
             payload = "_scxmleventname=" + UrlEncodingHelper::urlEncode(eventName);
             firstParam = false;

@@ -106,6 +106,10 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
         return false;
     }
 
+    // §scxml-B-2-4: any ECMAScript left-hand-side expression is a legal location, so
+    // member and index paths reach the script engine intact.
+    // §scxml-B-2-7: <assign> replaces the existing value at 'location' with the result
+    // of 'expr', and queues error.execution when it cannot (e.g. a read-only target).
     // Implementation-specific: Variable name format validation (Interpreter engine only)
     // Checks regex pattern for valid variable identifiers (not shared with AOT)
     if (!isValidLocation(location)) {
@@ -176,6 +180,9 @@ std::string ActionExecutorImpl::evaluateExpression(const std::string &expression
 
     // SCXML compliance: Try JavaScript evaluation first (most accurate approach)
     // This follows W3C SCXML specification delegating expression evaluation to native data model
+    // §scxml-5.9.4: SCE takes the runtime option — an ill-formed or illegally-valued
+    // expression is not rejected at load time, it raises the error at the point where
+    // the expression is evaluated.
     std::string jsResult;
     if (tryJavaScriptEvaluation(expression, jsResult)) {
         SCE_LOG_DEBUG("JavaScript evaluation succeeded: '{}' -> '{}'", expression, jsResult);
@@ -190,6 +197,8 @@ std::string ActionExecutorImpl::evaluateExpression(const std::string &expression
 }
 
 void ActionExecutorImpl::log(const std::string &level, const std::string &message) {
+    // §scxml-4.7.3: how the message is surfaced is platform-dependent, so it is routed
+    // to the host logger and left with no effect on document interpretation.
     // Map SCXML log levels to our logging system
     if (level == "error") {
         SCE_LOG_ERROR("SCXML: {}", message);
@@ -497,6 +506,7 @@ bool ActionExecutorImpl::executeAssignAction(const AssignAction &action) {
 }
 
 bool ActionExecutorImpl::executeLogAction(const LogAction &action) {
+    // §scxml-4.7.1: <log> lets an application emit a logging or debug message.
     SCE_LOG_DEBUG("Executing log action: {}", action.getId());
 
     try {
@@ -557,6 +567,8 @@ bool ActionExecutorImpl::executeRaiseAction(const RaiseAction &action) {
             SCE_LOG_ERROR("ActionExecutorImpl: EventRaiser not available - incomplete setup");
             return false;
         }
+        // §scxml-4.2.2: the generated event goes to the rear of this session's
+        // internal event queue, never straight to the front.
         bool result = eventRaiser_->raiseEvent(action.getEvent(), eventData);
         SCE_LOG_DEBUG("ActionExecutorImpl: eventRaiser returned: {}", result);
         return result;
@@ -576,7 +588,8 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
             return true;  // Empty if is valid but does nothing
         }
 
-        // Evaluate conditions in order and execute first matching branch
+        // §scxml-4.3.2: execute the first partition in document order whose defining
+        // tag has a 'cond' that evaluates to true; <else> defines an unconditional one.
         for (const auto &branch : branches) {
             bool shouldExecute = false;
 
@@ -802,6 +815,9 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         }
 
         // §scxml-C-1: Build event data from namelist and params (Test 354, 178)
+        // §scxml-6.2.6: the message body is authored one of two mutually exclusive
+        // ways — 'event' with 'namelist' and <param> children, or a single <content>
+        // child — and the interpreter forwards it to the target without altering it.
         // W3C SCXML: Supports duplicate param names - all values must be included (Test 178)
         std::map<std::string, std::vector<std::string>> evaluatedParams;
         std::map<std::string, ScriptValue> typedParams;
@@ -894,6 +910,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             event.params = evaluatedParams;   // W3C SCXML compliant: params evaluated at send time
             event.typedParams = typedParams;  // Engine-agnostic typed params (avoids JSON round-trip)
             // §scxml-C-2: Set content for HTTP body
+            // §scxml-5.6: <content> is the container whose data is handed to the
+            // external service named by the send target.
             event.content = action.getContent();
             // §scxml-5.10: Set event type for origintype field (test 253, 331, 352, 372)
             event.type = sendType.empty() ? Constants::SCXML_EVENT_PROCESSOR_TYPE : sendType;
@@ -997,6 +1015,8 @@ bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
 }
 
 bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
+    // §scxml-4.6.1: <foreach> walks a collection in the data model and runs the
+    // actions it contains once for each item.
     SCE_LOG_DEBUG("Executing foreach action: {}", action.getId());
 
     if (!isSessionReady()) {

@@ -62,6 +62,7 @@ public:
      * §scxml-B-2: Legal values for 'item' attribute are legal ECMAScript variable names
      */
     static inline bool isLegalVariableName(const std::string &name) {
+        // §scxml-B-2-11: the legal values of 'item' are legal ECMAScript variable names.
         if (name.empty()) {
             return false;
         }
@@ -178,6 +179,9 @@ public:
         }
 
         // §scxml-4.6: Validate that the value is an array
+        // §scxml-B-2-11: under the ECMAScript data model iteration is guaranteed only
+        // for objects satisfying instanceof(Array), which is the fallback probe below,
+        // and an array is visited from index 0 to length-1.
         if (!arrayResult.isArray()) {
             // Empty Lua table converts to ScriptObject with no properties — treat as empty array
             const auto &val = arrayResult.getInternalValue();
@@ -349,6 +353,9 @@ public:
         auto &arrayValues = arrayValuesOpt.value();
 
         // §scxml-4.6: Declare item and index variables BEFORE iteration
+        // §scxml-4.6.3: the processor declares 'item' — and 'index' when present — if
+        // it is not already defined, iterates over a shallow copy of the collection,
+        // and abandons the whole block when a nested action raises an error.
         if (!setLoopVariable(jsEngine, sessionId, itemVar, ScriptValue(ScriptUndefined{}))) {
             SCE_LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
             return false;

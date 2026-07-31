@@ -115,7 +115,8 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
         SCE_LOG_WARN("InvokeParser not set, skipping invoke elements");
     }
 
-    // Parse <donedata> element in <final> state
+    // §scxml-3.7.2: <final> takes optional <onentry> and <onexit> children plus an
+    // optional <donedata> whose value rides on the done.state.id / done.invoke.id event.
     if (stateType == Type::FINAL && doneDataParser_) {
         auto doneDataElement = SCE::ParsingCommon::findFirstChildElement(stateElement, "donedata");
         if (doneDataElement) {

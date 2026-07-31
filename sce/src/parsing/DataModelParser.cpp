@@ -31,6 +31,8 @@ SCE::DataModelParser::parseDataModelNode(const std::shared_ptr<IXMLElement> &dat
 
     SCE_LOG_DEBUG("Parsing datamodel node");
 
+    // §scxml-5.2: <datamodel> is a wrapper that encapsulates any number of <data>
+    // elements, each defining one data object.
     // Parse data nodes
     auto dataNodes = SCE::ParsingCommon::findChildElements(datamodelNode, "data");
     for (const auto &dataElement : dataNodes) {
@@ -58,6 +60,8 @@ SCE::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dat
         return nullptr;
     }
 
+    // §scxml-5.3.1: 'id' is the required name of the data item; 'src' gives a location
+    // to fetch the value from and 'expr' an expression that produces it.
     std::string id = dataNode->getAttribute("id");
     std::string expr;
 
@@ -107,7 +111,8 @@ SCE::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dat
         SCE_LOG_DEBUG("Scope: {}", scope);
     }
 
-    // Process content only if src doesn't exist with expr or content
+    // §scxml-5.3.2: 'src', 'expr' and children are mutually exclusive, so in-line
+    // content is read only when neither attribute has already supplied the value.
     if (!hasSrc || (hasSrc && expr.empty() && dataNode->getTextContent().empty())) {
         parseDataContent(dataNode, dataItem);
     }
@@ -123,6 +128,8 @@ void SCE::DataModelParser::parseDataContent(const std::shared_ptr<IXMLElement> &
     }
 
     // §scxml-B-2: Serialize data element content
+    // §scxml-5.3.2: the children of <data> are an in-line specification of the data
+    // object's value.
     // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
     std::string textContent = XmlSerializationHelper::serializeContent(dataNode);
 

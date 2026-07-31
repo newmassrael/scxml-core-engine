@@ -37,7 +37,8 @@ bool SCE::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &done
 
     SCE_LOG_DEBUG("Found {} <param> elements: {}", paramElements.size(), (hasParam ? "valid" : "invalid"));
 
-    // <content> and <param> cannot be used together
+    // §scxml-5.5.2: a conformant document names either a single <content> child or
+    // one or more <param> children under <donedata>, never both.
     if (hasContent && hasParam) {
         SCE_LOG_ERROR("<content> and <param> cannot be used together in <donedata>");
 
@@ -79,12 +80,16 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
                       (textContent.length() > 30 ? textContent.substr(0, 27) + "..." : textContent));
     }
 
-    // expr and content cannot be used together
+    // §scxml-5.6.2: a conformant document does not give <content> both an 'expr'
+    // attribute and child content.
     if (!exprValue.empty() && !textContent.empty()) {
         SCE_LOG_ERROR("<content> cannot have both 'expr' attribute and child content");
         return false;
     }
 
+    // §scxml-B-2-6: under the ECMAScript data model a <content> child of <donedata> is
+    // interpreted as §scxml-B-2-8-1 defines _event.data, which is why the text body
+    // becomes an expression here rather than a verbatim literal.
     // §scxml-5.5 + 5.6 + Appendix B.2.2:
     //   - `expr` attribute => Expression (evaluated against the datamodel).
     //   - Text body with ECMAScript datamodel => Expression (Appendix B.2.2:

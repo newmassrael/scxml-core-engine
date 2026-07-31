@@ -287,6 +287,9 @@ void DataModelInitializer::initializeAllDataItems(const std::string &binding) {
 
     // Use BindingHelper to determine initialization strategy
     // This ensures §scxml-5.3 compliance through shared logic with AOT engine
+    // §scxml-5.3.3: with binding="early" (the default) every data element is created
+    // and given its initial value at document initialization time; with "late" the
+    // elements are created now but the values wait for first entry of their state.
     bool shouldAssignValue = BindingHelper::shouldAssignValueAtDocumentLoad(binding);
 
     for (const auto &dataInfo : allDataItems) {
@@ -320,6 +323,8 @@ void DataModelInitializer::initializeStateDataOnEntry(const std::string &stateId
                     "DataModelInitializer: First entry to state '{}' - checking {} data items for late binding",
                     stateId, stateDataItems.size());
 
+                // §scxml-5.3.3: under late binding the initial value is assigned the
+                // first time the containing state is entered, before any <onentry>.
                 for (const auto &item : stateDataItems) {
                     bool hasExpr = !item->getExpr().empty();
 

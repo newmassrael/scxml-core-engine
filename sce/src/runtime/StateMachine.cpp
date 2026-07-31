@@ -228,6 +228,8 @@ bool StateMachine::start(bool autoProcessQueuedEvents) {
         SCE_LOG_WARN("StateMachine: EventRaiser is null - sessionId: {}", sessionId_);
     }
 
+    // §scxml-D-interpret: initialise the global data structures and the data model,
+    // run the global <script>, then enter the initial configuration and set running.
     // Set running state before entering initial state to handle immediate done.state events
     isRunning_ = true;
 
@@ -414,6 +416,8 @@ void StateMachine::stop() {
 
     // W3C SCXML Test 250: Exit ALL active states with onexit handlers (only if still running)
     // Must exit in reverse document order (children before parents)
+    // §scxml-D-exitInterpreter: exit every active state in exit order, running each
+    // state's <onexit> content, and clear the configuration.
     if (isRunning_) {
         auto activeStates = getActiveStates();
         for (auto it = activeStates.rbegin(); it != activeStates.rend(); ++it) {
@@ -3190,6 +3194,8 @@ bool StateMachine::setupJSEnvironment() {
     }
 
     // §scxml-5.8: Execute top-level scripts AFTER datamodel init, BEFORE start()
+    // §scxml-5.8.2: a <script> that is a child of <scxml> is evaluated at document
+    // load time; every other <script> runs as ordinary executable content.
     if (model_) {
         const auto &topLevelScripts = model_->getTopLevelScripts();
         if (!topLevelScripts.empty()) {
@@ -3316,6 +3322,8 @@ bool StateMachine::executeActionNodes(const std::vector<std::shared_ptr<SCE::IAc
         }
     }
 
+    // §scxml-4.9: the elements of a block run in document order, and once one of them
+    // raises an error the remaining elements of that block are not processed.
     for (const auto &action : actions) {
         if (!action) {
             SCE_LOG_WARN("StateMachine: Null action node encountered, skipping");
@@ -3591,6 +3599,10 @@ bool StateMachine::executeExitActions(const std::string &stateId) {
 }
 
 void StateMachine::generateDoneStateEvent(const std::string &stateId) {
+    // §scxml-3.7.2: entering the <final> child of a <state> makes the processor emit
+    // done.state.id for the parent once its <onentry> content has run.
+    // §scxml-3.12.3: done.state.id is one of the events the implementation generates
+    // automatically, alongside done.invoke.id and the error.* family.
     std::string doneEventName = "done.state." + stateId;
     SCE_LOG_INFO("Generating done.state event: {}", doneEventName);
 

@@ -100,6 +100,9 @@ public:
 #endif
     static bool checkEventlessTransitions(StateMachine &sm, EventQueue &queue,
                                           InternalEventProcessor &&processInternalEvent, int maxIterations = 100) {
+        // §scxml-D-selectEventlessTransitions: keep selecting transitions that carry
+        // no 'event' attribute and whose guard holds, taking them until none remain
+        // enabled in the current configuration.
         bool anyTransition = false;
         int iterations = 0;
 

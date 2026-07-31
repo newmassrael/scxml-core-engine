@@ -693,6 +693,9 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
     }
 
     // SCXML W3C Section 5.9.2: In() predicate function
+    // §scxml-B-1-2: In(id) is true exactly when that state is a member of the current
+    // configuration; it is the whole of the null data model's boolean expression
+    // language, and carries the same meaning under the ECMAScript one.
     // Recover this-engine via context opaque (set in setupQuickJSContext).
     auto *engine = static_cast<JSEngine *>(JS_GetContextOpaque(ctx));
     if (!engine) {

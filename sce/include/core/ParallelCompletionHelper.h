@@ -66,6 +66,8 @@ public:
 #endif
     static bool areAllRegionsInFinal(StateType parallelState, const std::vector<StateType> &activeStates) {
         // §scxml-3.4: Get all child regions of this parallel state
+        // §scxml-D-isInFinalState: the parallel branch, shared by both engines — the
+        // parallel state is final only when every child region is itself final.
         auto regions = PolicyType::getParallelRegions(parallelState);
 
         if (regions.empty()) {

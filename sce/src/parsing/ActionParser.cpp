@@ -275,6 +275,10 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         // §scxml-5.8: Check for external script source
         std::string content;
 
+        // §scxml-5.8.1: 'src' gives the URI the script is downloaded from, and may not
+        // occur when the element has children.
+        // §scxml-5.8.2: a conformant document supplies either 'src' or child content,
+        // never both; a src that cannot be downloaded makes the document non-conformant.
         if (actionElement->hasAttribute("src")) {
             // External script specified via 'src' attribute
             std::string srcPath = actionElement->getAttribute("src");
