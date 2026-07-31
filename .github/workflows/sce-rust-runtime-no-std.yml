@@ -1,6 +1,6 @@
 name: sce-rust-runtime no_std MCU target build
 
-# Watching-zenoh RFC §5.J.2 — proves the `sce-rust-runtime` crate's no_std
+# SCE Protocol-Synthesis RFC §5.J.2 — proves the `sce-rust-runtime` crate's no_std
 # variant compiles for an actual Cortex-M4F MCU target (`thumbv7em-none-eabihf`),
 # not just the host toolchain. Catches accidental `std::*` reintroduction in
 # the runtime crate or any of its helpers as a hard CI failure.
@@ -150,7 +150,7 @@ jobs:
           --manifest-path backends/rust/probes/nostd-build/Cargo.toml \
           --target=thumbv7em-none-eabihf
 
-    # Watching-zenoh RFC §5.J.2 single-emit portability: prove ONE `--no-std`
+    # SCE Protocol-Synthesis RFC §5.J.2 single-emit portability: prove ONE `--no-std`
     # emission compiles against BOTH runtime profiles. The emission names only
     # the runtime's profile-resolving collection aliases (SceBytes / SceString /
     # SceTransitionBuf / SceIndexBuf / SceDedupSet / StateChain), so the std
@@ -187,7 +187,7 @@ jobs:
     # A plain compile gate cannot catch a regression that reverts the per-machine
     # `StatePolicy::EventQueue` to the bare (depth-64) form — the depth-64 form
     # still compiles. This crate const-asserts `size_of::<Engine<P>>()`, so the
-    # reversion (watching-zenoh's MCU SRAM blocker) fails the build here.
+    # reversion (the downstream MCU SRAM blocker) fails the build here.
     # See backends/rust/probes/nostd-queue-size/README.md.
     - name: Generate the queue-size probe machine (sce:capacity=2)
       run: |

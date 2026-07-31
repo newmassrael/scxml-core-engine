@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Reassembly per-peer-quota cross-doc validator — watching-zenoh RFC
+// Reassembly per-peer-quota cross-doc validator — SCE Protocol-Synthesis RFC
 // §synth-5-M lines 2841-2861 invariant
 // `peer_table.capacity × per_peer_quota >= slot_count`.
 //

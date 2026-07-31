@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 
-//! Per-machine scheduled-send-id storage policy (watching-zenoh RFC §synth-5-J-2).
+//! Per-machine scheduled-send-id storage policy (SCE Protocol-Synthesis RFC §synth-5-J-2).
 //!
 //! The delayed-event scheduler ([`PullScheduler`](crate::engine::PullScheduler))
 //! keeps a `send_id` on every `ScheduledEntry` so §scxml-6.3

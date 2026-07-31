@@ -9,7 +9,7 @@
 //! Uses `std::sync::atomic` for the global counter, matching the C++ approach
 //! of `std::atomic<uint64_t> globalCounter_`.
 //!
-//! Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): under the no_std variant the
+//! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): under the no_std variant the
 //! Unix-epoch timestamp source (`SystemTime::now().duration_since(UNIX_EPOCH)`)
 //! is unavailable. Send/invoke/event IDs only need uniqueness within a single
 //! statechart instance (§scxml-5.10.1) — the `AtomicU64` counter alone
@@ -160,7 +160,7 @@ pub fn reset_for_testing() {
 
 /// Get current timestamp in milliseconds since Unix epoch.
 ///
-/// Watching-zenoh RFC §synth-5-J-2: under `--features=no_std` the Unix-epoch source is
+/// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--features=no_std` the Unix-epoch source is
 /// unavailable; the timestamp segment is reduced to zero and per-instance
 /// uniqueness is provided by `GLOBAL_COUNTER`.
 #[cfg(not(feature = "no_std"))]

@@ -1,7 +1,7 @@
 //! Bounded-collection Cpp + Kotlin template emit
 //! integration tests.
 //!
-//! Per watching-zenoh RFC §synth-5-L lines 2540-2655, this suite covers
+//! Per SCE Protocol-Synthesis RFC §synth-5-L lines 2540-2655, this suite covers
 //! the Cpp + Kotlin backends for `<scxml sce:kind=
 //! "bounded-collection">`. Both backends reuse the
 //! [`BoundedCollectionResolution`] resolution bundle threaded by

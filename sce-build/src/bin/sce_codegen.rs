@@ -216,7 +216,7 @@ fn write_if_changed_drift_aware(path: &Path, content: &str, ctx: &DriftContext) 
     write_if_changed(path, &final_content)
 }
 
-/// Watching-zenoh RFC §synth-5-O — emit the per-machine sourcemap
+/// SCE Protocol-Synthesis RFC §synth-5-O — emit the per-machine sourcemap
 /// JSON alongside the generated SM source. The output is
 /// byte-identical across the 6 backends because:
 ///
@@ -598,7 +598,7 @@ struct GenerateArgs {
     /// tables, lower for tighter CI budgets.
     #[arg(long)]
     const_fold_budget: Option<u64>,
-    /// Watching-zenoh RFC §synth-5-J-2: target the
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: target the
     /// `sce-rust-runtime` no_std variant.
     ///
     /// Only meaningful with `-l rust`; ignored for other
@@ -757,7 +757,7 @@ enum Commands {
     Generate(Box<GenerateArgs>),
     /// Multi-doc generate with cross-doc registry — wires
     /// `validate_on_sample_link_references` into production
-    /// (watching-zenoh RFC §synth-5-D).
+    /// (SCE Protocol-Synthesis RFC §synth-5-D).
     /// Use this when the build has multiple SCXML/forge docs that
     /// reference each other across files (`<sce:on-sample link>`,
     /// `<sce:outbox ref>`); single-file `Generate` does not
@@ -778,7 +778,7 @@ enum Commands {
         #[arg(short, long)]
         output_dir: String,
         /// Optional path to deploy.yaml. When provided, the orchestrator
-        /// runs watching-zenoh RFC §synth-5-K + §synth-5-M cross-doc validators that
+        /// runs SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M cross-doc validators that
         /// otherwise silent-skip:
         ///   - `validate_links_cross_doc` (§synth-5-K)
         ///   - `validate_links_burst_invariants` (§synth-5-K [lines 2489-2500])
@@ -978,7 +978,7 @@ enum Commands {
         cargo_lock: Option<String>,
     },
 
-    /// Watching-zenoh RFC §synth-5-O — resolve a mangled symbol or
+    /// SCE Protocol-Synthesis RFC §synth-5-O — resolve a mangled symbol or
     /// PC offset back to its originating SCXML coordinates.
     ///
     /// `--symbol <NAME>`  Look up a mangled `<machine>__<state_path>__
@@ -1115,7 +1115,7 @@ fn main() {
 
 // ── Subcommand: orchestrate ─────────────────────────────────────
 //
-// watching-zenoh RFC §synth-5-D entry point —
+// SCE Protocol-Synthesis RFC §synth-5-D entry point —
 // the production-side consumer that closes the silent
 // hole on `validate_on_sample_link_references`. Authors that hold
 // multi-doc builds (cross-file `<sce:on-sample link>` references, or
@@ -1166,7 +1166,7 @@ fn cmd_orchestrate(
 
     // C13 orchestrator wiring (`b501b18c`): parse the optional
     // deploy.yaml into a `DeployConfig` so the multi-doc compile path
-    // can fire watching-zenoh RFC §synth-5-K + §synth-5-M cross-doc validators.
+    // can fire SCE Protocol-Synthesis RFC §synth-5-K + §synth-5-M cross-doc validators.
     // Errors during read/parse route through the same Located<ForgeError>
     // pipeline `compile_scxml_with_imports` uses — `ForgeError::Mesh`
     // wraps `MeshError::Deploy` so the wire JSON shape matches every
@@ -1807,7 +1807,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
         error_format.emit_and_exit(&located, "");
     }
 
-    // Watching-zenoh RFC §synth-5-J-2: Rust no_std variant
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: Rust no_std variant
     // rejection. Only fires when `--no-std` is paired with `-l rust`
     // (the flag is a no-op for other language targets, mirroring how
     // `--go-module-prefix` is rust/kotlin-inert). Two axes:
@@ -2071,7 +2071,7 @@ fn cmd_generate(args: GenerateArgs, error_format: ErrorFormat) {
             output_paths.push(file_path);
         }
 
-        // Watching-zenoh RFC §synth-5-O — sourcemap JSON sidecar
+        // SCE Protocol-Synthesis RFC §synth-5-O — sourcemap JSON sidecar
         // alongside the per-language SM output. The single-SCXML codegen
         // path writes one sourcemap per emit; cross-backend byte-identity
         // is preserved because the symbol table + hashes are language-
@@ -3040,7 +3040,7 @@ fn generate_w3c_unified(
                         // Post-write hook (e.g. Rust writes initial mod.rs)
                         backend.post_write_parent(test_id, &test_mod_dir, input_stem, &drift_ctx);
 
-                        // Watching-zenoh RFC §synth-5-O — sourcemap
+                        // SCE Protocol-Synthesis RFC §synth-5-O — sourcemap
                         // JSON sidecar. Byte-identical across backends
                         // for the same SCXML input.
                         emit_sourcemap_for_machine(&model, &test_mod_dir, &drift_ctx);
@@ -4946,7 +4946,7 @@ impl TestInfo {
 
 // ── Subcommand: addr2sce ───────────────────────────────────────
 //
-// Watching-zenoh RFC §synth-5-O. Reverse-lookup from a mangled
+// SCE Protocol-Synthesis RFC §synth-5-O. Reverse-lookup from a mangled
 // symbol or PC address back to SCXML coordinates (file + state path +
 // line range).
 //

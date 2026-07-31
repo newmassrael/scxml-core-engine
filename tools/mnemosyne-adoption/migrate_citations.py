@@ -148,12 +148,12 @@ WIRE_LABEL_RE = r"W[0-9]+(?:\.[0-9]+)?"
 # "§6.3 Q3", the NL->IR design RFC's "§8 strict variant membership",
 # SCE_FORGE.md, SCE_ERROR_CONTRACT.md ...), and sibling-ledger exclusion
 # cannot see unregistered documents. So a numeric label is claimed ONLY
-# under a marker that names the document ("watching-zenoh RFC §7"); every
+# under a marker that names the document ("SCE Protocol-Synthesis RFC §7"); every
 # other numeric sighting is reported for manual review — the reviewer
 # resolves it by rewriting the confirmed-synth sites to the §synth-<id>
 # form directly (the namespace token itself names the document).
 SYNTH_LABEL_RE = r"[0-9]+(?:\.(?:[0-9]+|[A-Z]))*"
-SYNTH_DOC_MARKER_RE = re.compile(r"(?i)\bwatching-zenoh[ \t]+RFC[ \t]*§?[ \t]*$")
+SYNTH_DOC_MARKER_RE = re.compile(r"(?i)\bSCE[ \t]+Protocol-Synthesis[ \t]+RFC[ \t]*§?[ \t]*$")
 
 # The bytesguard namespace (EventSchema bytes-guard RFC, docs/sce-ledger/
 # bytesguard) has purely numeric labels (1, 1.3, 3, 3.1, 6) — every one
@@ -624,7 +624,7 @@ def _plan_bare(text, mask, target_ids, exclude_ids, namespace, lineno, line_star
                     }
                 )
             continue
-        # synth document-naming marker ("watching-zenoh RFC §8 Q8"): names
+        # synth document-naming marker ("SCE Protocol-Synthesis RFC §8 Q8"): names
         # the protocol-synthesis RFC explicitly, so a numeric label under it
         # is claimable. Ledger membership still gates either way.
         synth_doc_marked = namespace == "synth" and SYNTH_DOC_MARKER_RE.search(line_prefix)

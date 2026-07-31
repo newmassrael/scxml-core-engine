@@ -6,7 +6,7 @@
 # Proves the `<sce:capacity>`-declared event-queue depth actually shrinks the
 # generated `Engine`'s no_std footprint — and that a regression which silently
 # reverts the per-machine `type EventQueue` to the depth-64 default is caught in
-# SCE CI rather than downstream (watching-zenoh's MCU SRAM blocker). A plain
+# SCE CI rather than downstream (the downstream MCU SRAM blocker). A plain
 # compile gate cannot catch that revert because the depth-64 bare form still
 # compiles; only a size assertion does.
 #

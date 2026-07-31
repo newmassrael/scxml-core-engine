@@ -705,7 +705,7 @@ fn statechart_native_lowering_c11_compiles_freestanding() {
     // A5 north-star gate: a REAL bare-metal ARM cross-compile (Cortex-M4,
     // Thumb). The freestanding host compile above proves "no hosted-libc
     // calls"; this proves the value path actually builds for the MCU ISA
-    // the watching-zenoh consumer targets. Skipped (not failed) when the
+    // the downstream consumer targets. Skipped (not failed) when the
     // cross toolchain is absent, mirroring the host-compiler skips above —
     // CI installs `gcc-arm-none-eabi`.
     let Some(arm_cc) = resolve_tool("arm-none-eabi-gcc") else {

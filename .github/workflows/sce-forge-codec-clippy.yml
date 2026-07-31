@@ -3,8 +3,8 @@ name: sce-forge codec clippy (alloc on)
 # Clippy gate for SCE-generated Rust codecs. The workspace clippy gate
 # (clippy-check.yml) only lints hand-written `src/`; the generated codec
 # `.rs` are golden text files, not workspace members, so codegen clippy
-# regressions would otherwise reach a downstream consumer (e.g.
-# watching-zenoh) undetected — the rustc-green / consumer-clippy-red gap.
+# regressions would otherwise reach a downstream consumer
+# undetected — the rustc-green / consumer-clippy-red gap.
 # This gate compiles every committed codec golden with the `alloc` feature
 # ON (the consumer's build config, exercising the owned projection too) and
 # runs `cargo clippy -- -D warnings`. No blanket allow: the codegen emits

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  watching-zenoh RFC §synth-5-L (bounded-collection kind) + RFC §synth-5-A line 311
+  SCE Protocol-Synthesis RFC §synth-5-L (bounded-collection kind) + RFC §synth-5-A line 311
   + §synth-5-L line 2642-2647 (C7-lowering 2026-05-13): minimal BC consumed
   by `algorithm_bc_iter_minimal.scxml` to exercise the algorithm-over-
   BC `<sce:foreach in="<bc-alias>">` + `<sce:call target="alias.method">`

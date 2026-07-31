@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §synth-5-O — per-backend module-level SCE-MAP marker
+// SCE Protocol-Synthesis RFC §synth-5-O — per-backend module-level SCE-MAP marker
 // presence fixture.
 //
 // Each backend's state machine template (Rust / Cpp / C11 / Kotlin /

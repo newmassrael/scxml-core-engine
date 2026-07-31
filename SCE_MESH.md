@@ -2692,7 +2692,7 @@ topology:
       <scxml_name>:
         source: <path.scxml>
 
-        # Per-machine platform descriptor (watching-zenoh RFC §5.K, Phase A2).
+        # Per-machine platform descriptor (SCE Protocol-Synthesis RFC §5.K, Phase A2).
         # Optional. When present, `class` and `os` must be mutually admissible:
         # `class: mcu` admits os ∈ {bare_metal, rtos}; `class: ap` admits
         # os ∈ {linux, qnx, macos, freebsd, windows}. Numeric / required-when

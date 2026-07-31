@@ -1,7 +1,7 @@
 //! Bounded-collection Go + Python + C11 template emit
 //! integration tests.
 //!
-//! Per watching-zenoh RFC §synth-5-L lines 2540-2655, this suite covers
+//! Per SCE Protocol-Synthesis RFC §synth-5-L lines 2540-2655, this suite covers
 //! the Go, Python, and C11 backends for `<scxml
 //! sce:kind="bounded-collection">`, entirely closing the §synth-5-L
 //! 6-backend codegen matrix. All three backends reuse the

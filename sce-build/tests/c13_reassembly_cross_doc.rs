@@ -1,7 +1,7 @@
 //! Cross-doc validators for §synth-5-M reassembly + §synth-5-K burst
 //! invariants.
 //!
-//! Per watching-zenoh RFC §synth-5-M lines 2946-2995 + §synth-5-K lines 2489-2500:
+//! Per SCE Protocol-Synthesis RFC §synth-5-M lines 2946-2995 + §synth-5-K lines 2489-2500:
 //! 8 new codes total, all consuming the same
 //! [`resolve_link_rx_pool_slot_count`] 3-way join (deploy.links → forge
 //! `<sce:link>` → forge `<sce:rx-pool ref>` → `BufferPoolModel`).

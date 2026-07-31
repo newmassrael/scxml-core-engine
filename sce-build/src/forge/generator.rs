@@ -853,7 +853,7 @@ fn inject_runtime_dep_global(env: &mut minijinja::Environment, doc: &ForgeDocume
     env.add_global("runtime_dep", doc.runtime_dep().to_string());
 }
 
-/// Watching-zenoh RFC §synth-5-O — inject the per-kind
+/// SCE Protocol-Synthesis RFC §synth-5-O — inject the per-kind
 /// `source_location` into the Jinja2 environment so every forge
 /// template can call
 /// `{{ sce_map.source_marker(source_location, "<backend>") }}`
@@ -13405,12 +13405,12 @@ pub fn generate_rust_with_imports_and_externs(
 }
 
 /// Render a `<sce:kind="link">` document for the Rust backend
-/// (watching-zenoh RFC §synth-5-C, item B6). The template wires the §synth-5-B
+/// (SCE Protocol-Synthesis RFC §synth-5-C, item B6). The template wires the §synth-5-B
 /// `<sce:framer ref>` codec into RX (decode) and TX (encode) paths
 /// and exposes a constructor that the consumer threads through to a
 /// downstream `sce_link_runtime_<os>` `impl Link`. SCE owns the trait
 /// surface in the workspace member `sce-link-runtime`; per-OS impls
-/// (lwip/tokio/qnx) live downstream in watching-zenoh.
+/// (lwip/tokio/qnx) live downstream.
 fn render_link_rust(
     env: &minijinja::Environment<'_>,
     m: &LinkModel,
@@ -13499,7 +13499,7 @@ fn check_listener_sibling_emitted_rust(link_name: &str, rendered: &str) -> Resul
 }
 
 /// Item C10 per-machine LinkBus aggregator on the Rust (AP) backend
-/// (watching-zenoh RFC §synth-5-N lines 3041-3049). Emits the
+/// (SCE Protocol-Synthesis RFC §synth-5-N lines 3041-3049). Emits the
 /// `{Machine}LinkBus` struct + `LinkBusEvent` enum carrying one
 /// `tokio::sync::mpsc::Sender<Vec<u8>>` per link in
 /// `deploy.machines.<m>.links`. The orchestrator pipeline path
@@ -13543,7 +13543,7 @@ pub fn render_machine_link_bus_rust(
 }
 
 /// Item C10 per-machine cooperative scheduler on the Rust (MCU `no_std`)
-/// backend (watching-zenoh RFC §synth-5-N lines 3050-3055).
+/// backend (SCE Protocol-Synthesis RFC §synth-5-N lines 3050-3055).
 /// Emits the per-machine `tick()` function + round-robin
 /// `LINK_ORDER` constants. The orchestrator pipeline path pushes the
 /// rendered output as `{machine}_scheduler.rs`.
@@ -13583,7 +13583,7 @@ pub fn render_machine_scheduler_rust(
 }
 
 /// Item C10 per-machine emission entry point used by the orchestrator
-/// (watching-zenoh RFC §synth-5-N). The orchestrator
+/// (SCE Protocol-Synthesis RFC §synth-5-N). The orchestrator
 /// passes per-machine info from `deploy.machines.<m>` after the item
 /// C13 + listener-pair validators run; this helper builds the right env + dispatches
 /// to the language-specific render fn. Returns a list of
@@ -13693,7 +13693,7 @@ pub fn render_machine_scheduler_c(
 }
 
 /// Render a `<sce:kind="buffer-pool">` document for the Rust backend
-/// (watching-zenoh RFC §synth-5-E, items B7 + C5). Emits a struct owning a
+/// (SCE Protocol-Synthesis RFC §synth-5-E, items B7 + C5). Emits a struct owning a
 /// fixed-size `[[u8; SLOT_SIZE]; SLOT_COUNT]` slot table + per-slot
 /// state array. C5 wires §synth-5-I cache-maintenance intrinsics into the
 /// FSM lifecycle edges per spec lines 1182-1197: cache-clean before
@@ -13809,7 +13809,7 @@ fn check_reassembly_peer_id_zid_invariant_rust(
 }
 
 /// Render a `<sce:kind="worker">` document for the Rust backend
-/// (watching-zenoh RFC §synth-5-D, item C2). Emits a self-contained SPSC ring
+/// (SCE Protocol-Synthesis RFC §synth-5-D, item C2). Emits a self-contained SPSC ring
 /// buffer with the inbox depth from `<sce:inbox depth>` baked in as a
 /// `const` and the ordering choice from `<sce:inbox ordering>` driving
 /// `Ordering::Acquire`/`Release` vs `Ordering::Relaxed` selection on
@@ -13954,7 +13954,7 @@ fn resolve_bounded_collection_inputs(
 }
 
 /// Render a `<sce:kind="bounded-collection">` document for the Rust
-/// backend (watching-zenoh RFC §synth-5-L, item C6). Emits a slot table over
+/// backend (SCE Protocol-Synthesis RFC §synth-5-L, item C6). Emits a slot table over
 /// `Vec<Option<T>>` (std) or `heapless::Vec<Option<T>, N>` (no_std)
 /// per spec line 2571-2572, with a parallel `[u32; N]` generation
 /// counter, `[u32; (N+31)/32]` occupancy bitmap, and the operations
@@ -14043,7 +14043,7 @@ fn render_bounded_collection_rust(
 }
 
 /// Render a `<sce:kind="bounded-collection">` document for the C++
-/// backend (watching-zenoh RFC §synth-5-L, item C6). Emits `std::array<T, N>` +
+/// backend (SCE Protocol-Synthesis RFC §synth-5-L, item C6). Emits `std::array<T, N>` +
 /// `std::bitset<N>` + `std::array<std::uint32_t, N>` generation
 /// counter per spec line 2576-2577. Handle is a POD struct over
 /// `uint32_t` (ABI-parity with C11
@@ -14103,7 +14103,7 @@ fn render_bounded_collection_cpp(
 }
 
 /// Render a `<sce:kind="bounded-collection">` document for the
-/// Kotlin backend (watching-zenoh RFC §synth-5-L, item C6). Emits
+/// Kotlin backend (SCE Protocol-Synthesis RFC §synth-5-L, item C6). Emits
 /// `Array<T?>(N)` + `BooleanArray(N)` occupancy + `IntArray(N)`
 /// generation per spec line 2578. Handle is `@JvmInline value class
 /// <Pascal>Handle(val raw: UInt)` (zero-allocation at runtime,
@@ -14160,7 +14160,7 @@ fn render_bounded_collection_kotlin(
 }
 
 /// Render a `<sce:kind="bounded-collection">` document for the C11
-/// backend (watching-zenoh RFC §synth-5-L, item C6). Emits the
+/// backend (SCE Protocol-Synthesis RFC §synth-5-L, item C6). Emits the
 /// `struct { T slots[N]; uint32_t generation[N]; uint32_t bitmap[(N+31)/32];
 /// uint32_t count; }` shape per spec lines 2573-2575 verbatim, with the
 /// `<snake>_insert/_remove/_find_by_index` API per spec line 2575 and
@@ -14232,7 +14232,7 @@ fn render_bounded_collection_c(
 }
 
 /// Render a `<sce:kind="bounded-collection">` document for the Go
-/// backend (watching-zenoh RFC §synth-5-L, item C6). Emits `[N]T` + `[N]bool`
+/// backend (SCE Protocol-Synthesis RFC §synth-5-L, item C6). Emits `[N]T` + `[N]bool`
 /// occupancy + `[N]uint32` generation + `int count` per spec line 2579
 /// verbatim. Handle is `type <Pascal>Handle uint32` with receiver methods
 /// `Slot()` / `Generation()` (ABI-parity with the Rust / Cpp /
@@ -14338,7 +14338,7 @@ fn render_bounded_collection_go(
 }
 
 /// Render a `<sce:kind="bounded-collection">` document for the Python
-/// backend (watching-zenoh RFC §synth-5-L, item C6). Emits `list` of length N
+/// backend (SCE Protocol-Synthesis RFC §synth-5-L, item C6). Emits `list` of length N
 /// initialized to `None` + `bytearray(N)` occupancy + per-slot
 /// generation packed into a sibling `bytearray(N * 2)` (u16 per slot,
 /// little-endian internal) + `int count` per spec lines 2580-2581. The
@@ -14421,7 +14421,7 @@ fn render_bounded_collection_python(
 }
 
 /// Render a `<sce:kind="link">` document for the C11 backend
-/// (watching-zenoh RFC §synth-5-C, item B6). Mirrors `render_link_rust` but
+/// (SCE Protocol-Synthesis RFC §synth-5-C, item B6). Mirrors `render_link_rust` but
 /// emits a header that composes a `sce_forge_link_t` driver handle
 /// from `backends/c/forge-runtime/include/sce/forge/link.h`. The dispatch
 /// shape is the canonical Linux-kernel separate-vtable
@@ -14511,7 +14511,7 @@ fn check_listener_sibling_emitted_c(
 }
 
 /// Render the `.h` header for a `<sce:kind="worker">` document on the
-/// C11 backend (watching-zenoh RFC §synth-5-D, item C2). Declares the opaque
+/// C11 backend (SCE Protocol-Synthesis RFC §synth-5-D, item C2). Declares the opaque
 /// `_inbox_producer_t` / `_inbox_consumer_t` family + thin function
 /// prototypes. The `.c` sibling carries the ring-buffer storage and
 /// impl bodies (`render_worker_c_impl`) — both files emit in a single
@@ -14586,7 +14586,7 @@ fn render_worker_c_impl(
 }
 
 /// Render a `<sce:kind="buffer-pool">` document for the C11 backend
-/// (watching-zenoh RFC §synth-5-E, items B7 + C5). Mirrors `render_buffer_pool_rust`
+/// (SCE Protocol-Synthesis RFC §synth-5-E, items B7 + C5). Mirrors `render_buffer_pool_rust`
 /// but emits a header that places the slot storage table in the
 /// section declared by `<sce:section>` via `__attribute__((section,
 /// aligned))`. The sidecar linker fragment that pairs with this
@@ -19344,7 +19344,7 @@ fn render_timer(
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
-    // Single-timer-per-doc shape per watching-zenoh RFC §synth-5-D line
+    // Single-timer-per-doc shape per SCE Protocol-Synthesis RFC §synth-5-D line
     // 880-886. Body-text duration is normalized to microseconds in
     // the IR; the codegen templates emit milliseconds (period_us /
     // 1000) for runtime APIs that take ms (Rust `tokio::time::interval`
@@ -21325,7 +21325,7 @@ fn render_algorithm(
 /// `<sce:test-vector hex value/>` row maps unambiguously only to a
 /// single-bytes-input shape (multi-field oracle grammar defers to
 /// B5 alongside the Zenoh msg-set authoring).
-/// watching-zenoh RFC §synth-5-I — `<sce:extern>` sidecar emit.
+/// SCE Protocol-Synthesis RFC §synth-5-I — `<sce:extern>` sidecar emit.
 /// 3-language scope (Rust + C11 + Cpp). Renders the
 /// per-document declaration block to a sidecar file alongside the
 /// kind's primary output (`<snake>_externs.{rs,h}`) so the kind
@@ -21786,8 +21786,7 @@ fn render_codec_test_vector_sidecar(
     // arm to the per-language sidecar template + golden — at which
     // point the matching `forge_codec_..._<lang>_no_sidecar_until_closure`
     // gate-rejection test rotates to a positive sidecar-emission test
-    // (mirrors the trunk-then-closures cadence,
-    // documented in `next_watching_zenoh_rfc_phase_b.md`).
+    // (mirrors the trunk-then-closures cadence).
     if !matches!(lang, Language::Rust | Language::C11) {
         return Ok(None);
     }

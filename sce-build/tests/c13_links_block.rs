@@ -1,7 +1,7 @@
 //! Deploy.yaml §synth-5-K `machines.<n>.links.<name>` block
 //! schema + parse-time validators + cross-doc link-name resolution.
 //!
-//! Per watching-zenoh RFC §synth-5-K lines 2232-2540: per-machine `links:`
+//! Per SCE Protocol-Synthesis RFC §synth-5-K lines 2232-2540: per-machine `links:`
 //! HashMap with required `bind` + `driver` and optional `mtu_bytes`,
 //! `expected_p99_bytes`, `burst_pps`, `rx_dispatch`, `domain_attrs`.
 //! Five intra-link parse-time validators (driver-unknown, mtu-below-

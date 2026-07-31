@@ -1,7 +1,7 @@
 //! C7-lowering — algorithm-over-BC dispatch integration tests across
 //! all 6 backends.
 //!
-//! Per watching-zenoh RFC §synth-5-A line 311 + §synth-5-L lines 2642-2647: an
+//! Per SCE Protocol-Synthesis RFC §synth-5-A line 311 + §synth-5-L lines 2642-2647: an
 //! algorithm body that imports a
 //! bounded-collection emits a uniform index-loop `<sce:foreach
 //! in="<bc-alias>">` and dispatches into the BC's read-only method

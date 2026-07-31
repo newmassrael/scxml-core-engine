@@ -1,7 +1,7 @@
 //! Fragment / reassembly buffer-pool variant schema + parse +
 //! 2 parse-time structure validators.
 //!
-//! Per watching-zenoh RFC §synth-5-M lines 2676-2698 + 2944-2945: the
+//! Per SCE Protocol-Synthesis RFC §synth-5-M lines 2676-2698 + 2944-2945: the
 //! `<sce:variant>reassembly</sce:variant>` discriminator on a
 //! `<scxml sce:kind="buffer-pool">` document opens three required
 //! sibling elements:

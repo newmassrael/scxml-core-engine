@@ -44,7 +44,7 @@ fn located_at_line<E: Into<ForgeError>>(
     Located::new(err.into(), name, line, None)
 }
 
-/// Watching-zenoh RFC §synth-5-O — build the per-IR-node
+/// SCE Protocol-Synthesis RFC §synth-5-O — build the per-IR-node
 /// `SourceLocation` for a forge model root.
 ///
 /// Mirrors [`crate::parser::source_location_of`] so the SCXML and Forge
@@ -225,7 +225,7 @@ fn synthesize_cache_externs() -> Vec<crate::forge::model::ExternDeclaration> {
 }
 
 /// Scan `<sce:extern>` children of the document root and validate
-/// each against the §synth-5-I baseline registry (watching-zenoh RFC
+/// each against the §synth-5-I baseline registry (SCE Protocol-Synthesis RFC
 /// §synth-5-I). Mirrors `parse_imports` shape — parse-time
 /// rejection — but raises one of four distinct `ValidationError`
 /// variants per failure axis (`ExternSymbolNotInWhitelist` /
@@ -5688,7 +5688,7 @@ fn parse_interpolation(
 
 // ── Timer parsing ─────────────────────────────────────────────
 
-/// Parse `<sce:period>` body-text with unit suffix (watching-zenoh
+/// Parse `<sce:period>` body-text with unit suffix (SCE Protocol-Synthesis
 /// RFC §synth-5-D line 881 — `<sce:period>5s</sce:period>`). Accepted
 /// units: `us`, `ms`, `s`, `m`. Returns the period normalized to
 /// microseconds (u64) so a single integer type covers MCU
@@ -5726,7 +5726,7 @@ fn parse_duration_to_us(s: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("duration overflow on '{trimmed}'"))
 }
 
-/// Parse `<scxml sce:kind="timer">` per watching-zenoh RFC §synth-5-D
+/// Parse `<scxml sce:kind="timer">` per SCE Protocol-Synthesis RFC §synth-5-D
 /// line 880-886. Single-timer-per-doc shape with body-text durations
 /// and event-driven reset / state-exit cancel lifecycle.
 fn parse_timer(
@@ -7834,7 +7834,7 @@ fn require_u32_body(
 // ── Bounded-collection kind parsing (RFC §synth-5-L) ────────────────
 
 /// Parse a `<scxml sce:kind="bounded-collection">` document body per
-/// watching-zenoh RFC §synth-5-L lines 2540-2655.
+/// SCE Protocol-Synthesis RFC §synth-5-L lines 2540-2655.
 ///
 /// Item C6 parse-time scope: schema + parse + 2 parse-time structure validators
 /// (`collection/ordering-sorted-requires-index-by` from spec line 2559 +

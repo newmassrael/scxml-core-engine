@@ -12,5 +12,5 @@
 # `sce_forge_runtime.h` (M3+) hosts shared helpers (cursor, Result
 # enum, pool API).
 #
-# Mesh codegen for C11 is explicitly out of scope (the watching-zenoh
-# downstream project does not consume Mesh codegen — see RFC §5.K).
+# Mesh codegen for C11 is explicitly out of scope (the downstream
+# project does not consume Mesh codegen — see RFC §5.K).

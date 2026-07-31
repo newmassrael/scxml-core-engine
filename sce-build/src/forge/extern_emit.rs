@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` per-language emit — watching-zenoh RFC §synth-5-I.
+// `<sce:extern>` per-language emit — SCE Protocol-Synthesis RFC §synth-5-I.
 //
 // 3-language scope (Rust + C11 + Cpp); Kotlin/Go/Python
 // reject `<sce:extern>` via the existing

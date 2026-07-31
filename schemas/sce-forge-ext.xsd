@@ -52,15 +52,15 @@
       <xs:enumeration value="interpolation"/>
       <xs:enumeration value="timer"/>
       <xs:enumeration value="observer"/>
-      <!-- watching-zenoh RFC §synth-5-A (item A3) -->
+      <!-- SCE Protocol-Synthesis RFC §synth-5-A (item A3) -->
       <xs:enumeration value="algorithm"/>
-      <!-- watching-zenoh RFC §synth-5-C (item B6, MCU-class) -->
+      <!-- SCE Protocol-Synthesis RFC §synth-5-C (item B6, MCU-class) -->
       <xs:enumeration value="link"/>
-      <!-- watching-zenoh RFC §synth-5-E (item B7, MCU-class) -->
+      <!-- SCE Protocol-Synthesis RFC §synth-5-E (item B7, MCU-class) -->
       <xs:enumeration value="buffer-pool"/>
-      <!-- watching-zenoh RFC §synth-5-D (item C2, MCU-class) -->
+      <!-- SCE Protocol-Synthesis RFC §synth-5-D (item C2, MCU-class) -->
       <xs:enumeration value="worker"/>
-      <!-- watching-zenoh RFC §synth-5-L (item C6, Generic-class) -->
+      <!-- SCE Protocol-Synthesis RFC §synth-5-L (item C6, Generic-class) -->
       <xs:enumeration value="bounded-collection"/>
       <!-- NL→IR Item C1 Path A — Closed set of named variants with
            1:1 wire-key values. Distinct from `lookup` by the
@@ -1058,7 +1058,7 @@
   </xs:element>
 
   <!-- ═══════════════════════════════════════════════════════════════
-       Algorithm kind body (watching-zenoh RFC §synth-5-A item A3)
+       Algorithm kind body (SCE Protocol-Synthesis RFC §synth-5-A item A3)
 
        Pure synchronous functions with bounded loops and mutable
        locals. Body statements are <sce:var>/<sce:assign>/<sce:if>/
@@ -1253,7 +1253,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §synth-5-C (item B6, MCU-class): byte-stream link
+    SCE Protocol-Synthesis RFC §synth-5-C (item B6, MCU-class): byte-stream link
     endpoint declared via `<scxml sce:kind="link">`. This surface is
     the minimum vertical slice that exercises the rust codegen path:
     `<sce:link-class>` enum body + `<sce:framer ref="..."/>` (required) +
@@ -1331,7 +1331,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §synth-5-E: link-side `<sce:rx-pool>`
+    SCE Protocol-Synthesis RFC §synth-5-E: link-side `<sce:rx-pool>`
     / `<sce:tx-pool>` reference a `<scxml sce:kind="buffer-pool">`
     sibling document by name. The cross-resolution validator
     (`link/pool-slot-smaller-than-framer-max`) wires pool ↔ framer
@@ -1350,7 +1350,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §synth-5-E sample-callback surface: link-side `<sce:stage-pool>`
+    SCE Protocol-Synthesis RFC §synth-5-E sample-callback surface: link-side `<sce:stage-pool>`
     references a `<scxml sce:kind="buffer-pool">` sibling document by
     name. Single source of truth for `Sample::take()`'s stage-copy
     destination, co-located with `<sce:rx-pool>` / `<sce:tx-pool>` on
@@ -1366,7 +1366,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §synth-5-E (item B7, MCU-class): SRAM-placed,
+    SCE Protocol-Synthesis RFC §synth-5-E (item B7, MCU-class): SRAM-placed,
     DMA-aligned slot table declared via `<scxml sce:kind="buffer-pool">`.
     The schema here is the minimum vertical slice; the 7-state
     lifecycle FSM and cache-maintenance pinning are realised by the
@@ -1470,7 +1470,7 @@
   </xs:element>
 
   <!--
-    watching-zenoh RFC §synth-5-D (item C2, MCU-class): Worker kind declared
+    SCE Protocol-Synthesis RFC §synth-5-D (item C2, MCU-class): Worker kind declared
     via `<scxml sce:kind="worker">`. The schema vertical slice covers
     the four worker body elements:
       - <sce:link-rx ref="..."/>  required driving link kind reference
@@ -1490,7 +1490,7 @@
   <xs:element name="inbox">
     <xs:complexType>
       <xs:attribute name="depth" type="xs:positiveInteger" use="required"/>
-      <!-- watching-zenoh RFC §synth-5-I lines 1752-1758: SPSC inbox
+      <!-- SCE Protocol-Synthesis RFC §synth-5-I lines 1752-1758: SPSC inbox
            ordering choice. Spec phrasing labels missing-ordering a
            "warning"; SCE's error-only wire realizes the warning as a
            required-when-worker-exists error (parse-time
@@ -1520,7 +1520,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- watching-zenoh RFC §synth-5-E sample-callback: SCXML state-level
+  <!-- SCE Protocol-Synthesis RFC §synth-5-E sample-callback: SCXML state-level
        subscriber declaration. Lifts the spec line 1269 callback
        contract ("the subscriber callback receives `&Sample<'_>`")
        into a state-scoped `<sce:on-sample link="X" event="E"/>`
@@ -1543,7 +1543,7 @@
     </xs:complexType>
   </xs:element>
 
-  <!-- watching-zenoh RFC §5.2: top-level driver-header
+  <!-- SCE Protocol-Synthesis RFC §5.2: top-level driver-header
        reference. Allowed only as a direct child of `<scxml>` root;
        the C11 backend emits `#include "<resolved>"`
        at the top of the generated `*_sm.c` so cross-TU symbol

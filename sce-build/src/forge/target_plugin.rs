@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` target-plugin loader — watching-zenoh RFC §synth-5-I.
+// `<sce:extern>` target-plugin loader — SCE Protocol-Synthesis RFC §synth-5-I.
 // Spec lines 1760-1787 verbatim: architectures may extend the §synth-5-I
 // whitelist through a target plugin declared via deploy.yaml
 // (`extern_symbols.target_plugin: <path>`). The plugin file is a YAML

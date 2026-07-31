@@ -13,7 +13,7 @@
 // Exit status is the verdict (0 = PASS, 1 = FAIL); CTest reports it as
 // the test result. No GTest because the C11 backend has no C++ runtime
 // link — keeping the runner C11-pure preserves the cross-compile story
-// for the watching-zenoh MCU target.
+// for the downstream MCU target.
 
 #include <stdio.h>
 

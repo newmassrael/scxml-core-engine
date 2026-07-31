@@ -17,7 +17,7 @@
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
-    {# Watching-zenoh RFC §synth-5-O — function-scope SCE-MAP marker
+    {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
        above `process_transition` and `execute_transition_actions`. #}
     {{ sce_map.source_marker(model.source_location, "rust") }}
     fn process_transition(

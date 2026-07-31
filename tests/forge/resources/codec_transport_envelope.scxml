@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: codec multi-bit-flag variant dispatch (RFC §synth-5-B multi-bit dispatch,
-     surface B from the watching-zenoh authoring path) + RFC §synth-5-B
+     surface B from the downstream authoring path) + RFC §synth-5-B
      full Zenoh transport envelope (RFC §synth-5-B). Composes all 7
      transport body codecs into a
      single dispatcher fixture.

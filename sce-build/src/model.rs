@@ -108,7 +108,7 @@ pub struct Transition {
     pub is_true_internal: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub internal_source: Option<String>,
-    /// Watching-zenoh RFC §synth-5-O source traceability: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O source traceability: post-preprocessor source
     /// position of the `<transition>` element, populated by
     /// [`crate::parser::SCXMLParser::parse_transition`] from
     /// `roxmltree::Document::text_pos_at`. Templates emit
@@ -248,7 +248,7 @@ pub struct Action {
     // conventions (mesh::pattern), RPC reply pairing is inferred from
     // topology structure (mesh::topology::detect_rpc_pairs), and QoS is
     // a transport binding concern (deploy.yaml).
-    /// Watching-zenoh RFC §synth-5-O source traceability: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O source traceability: post-preprocessor source
     /// position of the executable-content element this action
     /// represents (`<raise>` / `<send>` / `<assign>` / `<log>` /
     /// `<script>` / `<if>` / `<foreach>` / `<cancel>`). Populated by
@@ -872,7 +872,7 @@ impl SessionRoleKind {
     }
 }
 
-/// `<sce:on-sample>` SCXML extension (watching-zenoh RFC §synth-5-E). Wraps
+/// `<sce:on-sample>` SCXML extension (SCE Protocol-Synthesis RFC §synth-5-E). Wraps
 /// the RFC's subscriber callback contract ("the subscriber callback
 /// receives `&Sample<'_>`; the slot returns to the pool when the
 /// callback returns") into a state-level declaration that the codegen
@@ -946,7 +946,7 @@ pub struct State {
     pub initial_history_id: String,
     pub initial_history_default_target: String,
     pub initial_history_default_actions: Vec<Action>,
-    /// Watching-zenoh RFC §synth-5-O source traceability: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O source traceability: post-preprocessor source
     /// position of the `<state>` / `<final>` / `<parallel>` element.
     /// Populated by [`crate::parser::SCXMLParser::parse_states`].
     /// Drives the per-state SCE-MAP marker that codegen templates
@@ -1032,7 +1032,7 @@ pub struct SCXMLModel {
     pub binding: String,
     pub datamodel_type: String,
 
-    /// Watching-zenoh RFC §synth-5-J-2 + §synth-5-L: per-document event-queue
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2 + §synth-5-L: per-document event-queue
     /// capacity declared via
     /// `<scxml sce:capacity="N">` on the root element. Drives the
     /// generated `EVENT_QUEUE_CAPACITY` bound that the heapless
@@ -1141,7 +1141,7 @@ pub struct SCXMLModel {
     pub has_history_states: bool,
     pub has_event_metadata: bool,
     pub has_parent_communication: bool,
-    /// watching-zenoh RFC §synth-5-E sample-callback codegen wire-up —
+    /// SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up —
     /// sorted set of every `link` name referenced by any state's
     /// `<sce:on-sample link="X" .../>` block. Derived in
     /// [`crate::analyzer::analyze_model_features`] as the union over
@@ -1515,7 +1515,7 @@ pub struct SCXMLModel {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub machine_liveliness_opt_in: bool,
 
-    /// Watching-zenoh RFC §synth-5-O source traceability: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O source traceability: post-preprocessor source
     /// position of the `<scxml>` root element. Populated by
     /// [`crate::parser::SCXMLParser::parse_impl`]. Drives the
     /// per-backend SCE-MAP marker above the generated state machine's

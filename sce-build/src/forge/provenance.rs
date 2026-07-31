@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §synth-5-O — IR provenance pre-emit guard.
+// SCE Protocol-Synthesis RFC §synth-5-O — IR provenance pre-emit guard.
 //
 // Codegen consumes per-IR-node `source_location` to emit SCE-MAP
 // markers above every generated function header and to drive the
@@ -222,7 +222,7 @@ fn action_pinned_id(state_id: &str, action: &Action) -> String {
     }
 }
 
-/// Watching-zenoh RFC §synth-5-O — forge IR provenance pre-emit
+/// SCE Protocol-Synthesis RFC §synth-5-O — forge IR provenance pre-emit
 /// guard. Counterpart to [`validate_emission_provenance`] for the
 /// non-statechart kinds: each `ForgeDocument` variant lowers to a
 /// per-kind body function that carries an SCE-MAP marker driven by

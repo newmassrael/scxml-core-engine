@@ -10,7 +10,7 @@
 // against `pending_payload`, with NO script engine. The driver fills the
 // no-alloc bounded-buffer payload (`uint8_t raw[CAP]; size_t raw_len;`) and
 // injects it through the per-event `..._raise_signal_received_typed` seam —
-// the entry the watching-zenoh consumer calls after decoding bytes — then
+// the entry the downstream consumer calls after decoding bytes — then
 // asserts the guard fires for "ack" and misses for "no".
 //
 // MCU-clean acceptance: the harness target links NO runtime library

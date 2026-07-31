@@ -16,7 +16,7 @@
 // reference index existed —
 // SCXML validators could only consult one parsed doc at a time.
 //
-// Spec anchors. Watching-zenoh RFC §synth-5-E sample-callback work
+// Spec anchors. SCE Protocol-Synthesis RFC §synth-5-E sample-callback work
 // introduced the `<sce:on-sample link="X">` cross-reference
 // (link-kind axis). The RFC §synth-5-D worker outbox surface extends the
 // same registry to cover statechart + worker recipient kinds for

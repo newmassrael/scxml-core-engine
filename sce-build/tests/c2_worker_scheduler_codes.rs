@@ -1,5 +1,5 @@
 //! Scheduler-capacity axis integration tests (4 spec-named
-//! codes + 1 renamed wire, watching-zenoh RFC §synth-5-K lines 2423 / 2426 /
+//! codes + 1 renamed wire, SCE Protocol-Synthesis RFC §synth-5-K lines 2423 / 2426 /
 //! 2428-9 / 2430-1 + RFC §synth-5-D line 912).
 //!
 //! Each test exercises one spec-named code with its co-landed

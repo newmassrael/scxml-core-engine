@@ -1,6 +1,6 @@
 //! Listener-link sibling-pair + its 2 diagnostic codes.
 //!
-//! Per watching-zenoh RFC §synth-5-C lines 802-833 + 849-856 + §synth-5-M lines
+//! Per SCE Protocol-Synthesis RFC §synth-5-C lines 802-833 + 849-856 + §synth-5-M lines
 //! 2771-2828 + 2982-2994: a `<sce:link>` whose deploy-resolved
 //! `domain_attrs.trust_class: session_arming` × machine source SCXML
 //! `Accepting.*` substate-present pair makes it a listener; codegen
@@ -316,7 +316,7 @@ fn listener_sibling_self_check_fires_on_force_dropped_suffix() {
         "diagnostic message must surface the missing-sibling text: {rendered}"
     );
     assert!(
-        rendered.contains("watching-zenoh RFC §5.C lines 849-856"),
+        rendered.contains("SCE Protocol-Synthesis RFC §5.C lines 849-856"),
         "diagnostic message must quote the spec anchor: {rendered}"
     );
 }

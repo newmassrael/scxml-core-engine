@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 //! Generated-source drift detection per spec §synth-6.2.6
-//! (`watching-zenoh/docs/rfc-sce-protocol-synthesis.md` lines 3496-3519).
+//! (`docs/spec/synth/rfc-sce-protocol-synthesis.md` lines 3496-3519).
 //!
 //! Every emitted file carries a 4-line header:
 //!

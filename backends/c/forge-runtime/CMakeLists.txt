@@ -10,7 +10,7 @@
 # The include/ tree carries the codec / procedure / link / bytes /
 # limits runtime headers consumed by generated C11 forge code; pure
 # inline kinds (e.g. Transform) need no runtime header. Downstream
-# consumers (e.g. watching-zenoh's MCU half) import this stable
+# consumers (e.g. a bare-metal MCU consumer) import this stable
 # target.
 
 cmake_minimum_required(VERSION 3.16)

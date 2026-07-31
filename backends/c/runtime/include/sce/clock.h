@@ -13,8 +13,8 @@
 //     W3C 204 conformance runner and any host-compatible consumer.
 //
 //   - Downstream `sce_c_runtime_<target>` (e.g. lwip, FreeRTOS) — bare-
-//     metal / RTOS implementations supplied by the consumer's link tree
-//     (see `consumer_watching_zenoh.md`). Must satisfy the contract:
+//     metal / RTOS implementations supplied by the consumer's link
+//     tree. Must satisfy the contract:
 //
 //   * Returns a monotonically non-decreasing millisecond counter.
 //   * Origin is implementation-defined (epoch-since-boot, since-startup,
