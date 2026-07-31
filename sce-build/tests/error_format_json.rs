@@ -1191,11 +1191,24 @@ fn stdout_emits_single_json_manifest_on_success() {
     let obj = parsed.as_object().expect("root must be an object");
 
     // Required keys per SCE_ERROR_CONTRACT.md §10.
-    for key in ["v", "kind", "artifacts", "needs_script_engine"] {
+    for key in ["v", "kind", "generator", "artifacts", "needs_script_engine"] {
         assert!(obj.contains_key(key), "manifest missing '{key}': {line}");
     }
     assert_eq!(obj["v"].as_u64(), Some(1), "schema v pinned at 1: {line}");
     assert_eq!(obj["kind"], "generate", "kind pinned to subcommand: {line}");
+    // Generator identity: the crate version is frozen pre-1.0, so this is
+    // the only field that says which build produced the artifacts. A
+    // consumer that commits generated output reads it here instead of
+    // hand-maintaining a version sidecar. `unknown` is the honest answer
+    // on a build with no git checkout, so both shapes are legal — what is
+    // not legal is the field being absent or empty.
+    let generator = obj["generator"]
+        .as_str()
+        .unwrap_or_else(|| panic!("generator must be a string: {line}"));
+    assert!(
+        !generator.is_empty(),
+        "generator identity must not be blank: {line}"
+    );
     assert_eq!(
         obj["needs_script_engine"].as_bool(),
         Some(false),
@@ -1705,4 +1718,73 @@ fn loose_equality_outside_the_typed_path_still_generates() {
     let manifest = manifest_of(&run_generate(&sce_codegen_bin(), &scxml, "json"));
 
     assert_eq!(manifest["needs_script_engine"], true);
+}
+
+/// `--version` must name the commit, not just the frozen crate version.
+///
+/// The reported failure downstream was a committed generated tree that no
+/// single generator commit reproduced, kept undetected because the
+/// generator commit was recorded by hand in a sidecar file. `0.1.0` alone
+/// cannot distinguish two generators three months apart; the commit can,
+/// and being able to ask the binary is what removes the hand-maintained
+/// record that drifted.
+#[test]
+fn version_reports_the_generator_commit() {
+    let out = Command::new(sce_codegen_bin())
+        .arg("--version")
+        .output()
+        .expect("sce-codegen must be runnable");
+    assert!(out.status.success());
+    let text = String::from_utf8_lossy(&out.stdout);
+    let commit = text
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(c, _)| c)
+        .unwrap_or_else(|| panic!("--version must carry a parenthesised commit, got: {text}"));
+    assert!(
+        !commit.is_empty(),
+        "--version commit field must not be blank: {text}"
+    );
+    // In this repo the build has a checkout, so the fallback would mean
+    // build.rs stopped resolving it — the exact silent degradation that
+    // makes a stamp untrustworthy.
+    assert_ne!(
+        commit, "unknown",
+        "build.rs must resolve the commit in a git checkout: {text}"
+    );
+    assert!(
+        commit.chars().all(|c| c.is_ascii_hexdigit()),
+        "commit must be a hex object name: {text}"
+    );
+}
+
+/// The manifest and `--version` must agree — two spellings of the same
+/// fact that can disagree are worse than one.
+#[test]
+fn manifest_generator_matches_version_output() {
+    let version_out = Command::new(sce_codegen_bin())
+        .arg("--version")
+        .output()
+        .expect("sce-codegen must be runnable");
+    let version_text = String::from_utf8_lossy(&version_out.stdout).into_owned();
+    let from_version = version_text
+        .split_once('(')
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(c, _)| c.to_string())
+        .expect("--version carries a commit");
+
+    let (dir, scxml) = write_trivial_statechart_fixture();
+    let out = Command::new(sce_codegen_bin())
+        .args([
+            "generate",
+            scxml.to_str().unwrap(),
+            "--language",
+            "rust",
+            "--output-dir",
+            dir.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn sce-codegen");
+    let manifest = manifest_of(&out);
+    assert_eq!(manifest["generator"], from_version);
 }
