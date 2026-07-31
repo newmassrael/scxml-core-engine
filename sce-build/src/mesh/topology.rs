@@ -2664,6 +2664,9 @@ pub fn validate_pattern_capability(
             None => continue, // Unresolved target — caught by resolve_targets()
         };
 
+        // §mesh-8.2 capability matrix: a pattern the bound transport does not
+        // support is a build error, not a warning. Collecting the mismatch
+        // here is what makes the caller reject the build.
         let required = pattern.required_capability();
         if !transport::supports(&binding.transport, required) {
             violations.push(PatternViolation {

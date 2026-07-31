@@ -176,6 +176,10 @@ pub fn partition_for_machine(cfg: &DeployConfig, machine: &str) -> String {
             }
         }
     }
+    // §mesh-9.6.6 rule 3: a machine synthesised from inline `<content>` and
+    // not reassigned above runs in its parent's partition. One infix layer is
+    // unwound per call so nested inline invoke resolves to the outermost
+    // author-declared parent.
     if let Some((parent, _)) = machine.rsplit_once(crate::mesh::deploy::SYNTH_INVOKE_INFIX) {
         if !parent.is_empty() {
             return partition_for_machine(cfg, parent);
