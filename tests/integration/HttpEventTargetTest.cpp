@@ -213,8 +213,20 @@ TEST_F(HttpEventTargetTest, BasicHttpsTargetValidation) {
  * @brief Test HTTP error handling
  */
 TEST_F(HttpEventTargetTest, HttpErrorHandling) {
-    // Create target pointing to non-existent server
-    auto httpTarget = std::make_shared<HttpEventTarget>("http://non-existent-server-12345.com/");
+    // Unreachable server on loopback. Port 1 is reserved and unbound, so the
+    // connect is refused immediately — no DNS lookup (the previous
+    // `non-existent-server-12345.com` target made this test depend on the
+    // host resolver, and on any ISP wildcard DNS it would have resolved to a
+    // parking page answering 200), and no external network, matching the
+    // mock-server principle the rest of this fixture follows.
+    //
+    // Timeout and retries are pinned instead of left at the constructor
+    // defaults (5000ms x 2 attempts = 10.1s worst case): that budget exceeds
+    // the 5s deadline below, so the assertion only held while the failure
+    // happened to surface faster than the target's own configured timeout —
+    // under a parallel `ctest -j` run it did not.
+    auto httpTarget = std::make_shared<HttpEventTarget>("http://127.0.0.1:1/", std::chrono::milliseconds(500),
+                                                        /*maxRetries*/ 0);
 
     // Create test event
     EventDescriptor event;
