@@ -527,7 +527,7 @@ func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(_ *sce.EventWith
 {% set autoforward_invokes = model.invokes | scxml | selectattr('autoforward') | list if model.invokes | scxml else [] %}
 {% if not autoforward_invokes %}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
-func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(_ string, _ *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {}
+func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {}
 {% endif %}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).

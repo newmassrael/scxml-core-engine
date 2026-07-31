@@ -192,6 +192,7 @@
                         _name,
                         data=_data,
                         invoke_id=_invoke_id_field,
+                        origin=_invoke.origin(),
                         origin_type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
                     )
                 # W3C SCXML 6.4 — children that reach final during their
@@ -239,7 +240,7 @@
 {% endfor %}
         return
 
-    def forward_to_autoforward_children(self, event_name: str, data, engine) -> None:
+    def forward_to_autoforward_children(self, event_name: str, metadata, engine) -> None:
 {% if ns_any.any %}
         if is_platform_event(event_name):
             return
@@ -248,7 +249,7 @@
 {% if inv.autoforward %}
         _inv = engine._active_invokes.get({{ inv.invoke_id | py_string_literal }})
         if _inv is not None and not _inv.is_done():
-            _inv.forward_event(event_name, data)
+            _inv.forward_event(event_name, metadata)
 {% endif %}
 {% endfor %}
 {% endfor %}

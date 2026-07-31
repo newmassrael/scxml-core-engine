@@ -862,8 +862,13 @@ impl{{ policy_generics_decl }} StatePolicy for {{ machine_name }}Policy{{ policy
 {% endif %}
 {% if model.invokes | scxml | selectattr('autoforward') | list %}
     // W3C SCXML 6.4.1: Forward external events to autoforward children
-    fn forward_to_autoforward_children(&mut self, event_name: &str, engine: &mut Engine<Self>) {
-        self.do_forward_to_autoforward_children(event_name, engine);
+    fn forward_to_autoforward_children(
+        &mut self,
+        event_name: &str,
+        metadata: &sce_rust_runtime::EventMetadata,
+        engine: &mut Engine<Self>,
+    ) {
+        self.do_forward_to_autoforward_children(event_name, metadata, engine);
     }
 {% endif %}
 {% if model.invokes | scxml | selectattr('finalize_content') | list %}

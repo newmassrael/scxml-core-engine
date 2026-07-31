@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 7072491d11c203791302209b1bf9b82270fe7555d8209b82381d2a9f2ebc3c9f
-// template-hash: f160b18d725f2c0387242c0463da6808a5b8be392d0dc888f0d564e42c83db17
-// generated-at: 1785486334
+// template-hash: 7aab3b29aa8f5ef17f1c8730c3954aecc89c78aabf4a2226d70ddd8c24038efe
+// generated-at: 1785489706
 
 
 // SPDX-License-Identifier: MIT
@@ -456,6 +456,7 @@ func (w *childEngineWrapperInvParam) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvParam) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperInvParam) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvParam) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvParam) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvParam) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvParam) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvParam) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
@@ -467,6 +468,7 @@ func (w *childEngineWrapperInvContent) Initialize() { w.engine.Initialize() }
 func (w *childEngineWrapperInvContent) Tick() { w.engine.Tick() }
 func (w *childEngineWrapperInvContent) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapperInvContent) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapperInvContent) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapperInvContent) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapperInvContent) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapperInvContent) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
@@ -649,7 +651,7 @@ func (p *DonedataLocalInvokePolicy) GetInitialOrHistoryChild(state DonedataLocal
 // ExecuteFinalizeForChildEvent is a no-op (no finalize invokes).
 func (p *DonedataLocalInvokePolicy) ExecuteFinalizeForChildEvent(_ *sce.EventWithMetadata[DonedataLocalInvokeEvent], _ *sce.Engine[DonedataLocalInvokeState, DonedataLocalInvokeEvent]) {}
 // ForwardToAutoforwardChildren is a no-op (no autoforward invokes).
-func (p *DonedataLocalInvokePolicy) ForwardToAutoforwardChildren(_ string, _ *sce.Engine[DonedataLocalInvokeState, DonedataLocalInvokeEvent]) {}
+func (p *DonedataLocalInvokePolicy) ForwardToAutoforwardChildren(_ string, _ sce.EventMetadata, _ *sce.Engine[DonedataLocalInvokeState, DonedataLocalInvokeEvent]) {}
 
 // PopulateEventMetadata stores pending event metadata (W3C SCXML 5.10).
 // Note: event name is set separately via setCurrentEvent(), not from metadata.

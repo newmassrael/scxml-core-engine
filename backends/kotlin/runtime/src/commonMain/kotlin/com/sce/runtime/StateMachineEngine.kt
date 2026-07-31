@@ -706,7 +706,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     if (isInFinalState) break
                     currentEventMetadata = queued.metadata
                     populateTypedPayload(queued.metadata)
-                    processMicrostep(queued.event)
+                    processMicrostep(queued.event, queued.metadata)
                 }
             }
 
@@ -828,7 +828,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 currentEventMetadata = queued.metadata
                 populateTypedPayload(queued.metadata)
                 executeFinalizeForChildEvent(queued.event)
-                autoForwardEvent(queued.event)
+                autoForwardEvent(queued.event, queued.metadata)
                 processOneEvent(queued.event)
                 flushPendingFinalState()
             }
@@ -1334,14 +1334,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * 5. Execute pending invokes at macrostep end (W3C SCXML 6.4)
      * 6. Clean up completed invoke sessions
      */
-    private fun processMicrostep(event: E) {
+    private fun processMicrostep(event: E, metadata: EventMetadata) {
         // W3C SCXML 6.5: Execute finalize before event processing
         executeFinalizeForChildEvent(event)
         // W3C SCXML 6.4: Auto-forward external events to child invoke sessions.
         // Only external events (from the event channel) reach processMicrostep;
         // internal events from <raise> are processed in drainEventlessAndInternal
         // and must NOT be forwarded per spec.
-        autoForwardEvent(event)
+        autoForwardEvent(event, metadata)
         processOneEvent(event)
         drainEventlessAndInternal()
         // W3C SCXML 6.4: Execute deferred invokes at macrostep end
@@ -1879,14 +1879,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * all events without platform event filtering. Child's resolveEventByName
      * silently ignores unrecognized events (e.g., done.invoke).
      */
-    private fun autoForwardEvent(event: E) {
+    private fun autoForwardEvent(event: E, metadata: EventMetadata) {
         if (activeInvokes.isEmpty()) return
 
         val eventName = eventNameOf(event) ?: return
 
         for ((_, entry) in activeInvokes) {
             if (entry.autoforward) {
-                entry.child.sendByName(eventName)
+                // W3C SCXML 6.4 requires an exact copy of the event to reach
+                // the child, so the parent's `_event` fields travel with the
+                // name: the name is the only identity the two machines share
+                // (the child's Event type is unrelated). `typedPayload` is
+                // dropped deliberately — it is bound to the parent's own event
+                // type and the child re-hydrates from `data`.
+                entry.child.sendEventByName(eventName, metadata.copy(typedPayload = null))
             }
         }
     }

@@ -7,24 +7,30 @@ each fixture is regenerated to `test<N>.scxml` and consumed by the
 per-backend W3C harnesses) remains the spec-conformance baseline; the
 integration layer described here is strictly additive.
 
-Only one such fixture exists today: `donedata_local_invoke`.
+Two such fixtures exist today: `donedata_local_invoke` and
+`autoforward_event_fields`.
 
 A fixture placed under `integration_resources/` is a **five-backend
 commitment**, not merely a shared file: `sce-codegen generate-integration`
 enumerates every directory there and requires
 `scripts/regen_<stem>{,_kotlin,_go,_python}.sh` per stem, so
 `scripts/regen_all_committed_trees.sh` fails on a stem that has none. A
-fixture whose semantics only some backends implement therefore stays in its
-own backend's test tree until the parity gap closes — otherwise its committed
-trees advertise coverage that does not exist.
+fixture whose semantics only some backends implement does not belong here —
+its committed trees would advertise coverage that does not exist. Close the
+parity gap first, then add the fixture.
 
-One fixture is in that position at HEAD: the W3C §6.4 autoforward
-field-preservation machine at
-`tests/integration/fixtures/autoforward_event_fields.scxml`, exercised on both
-C++ channels (`tests/integration/AutoforwardEventFields{,Aot}Test.cpp`) by an
-explicit codegen rule in `tests/CMakeLists.txt`. The Rust and Go invoke
-templates still forward the event name alone, Python forwards name + data, and
-C11 has no autoforward path, so it is deliberately not fanned out yet.
+`autoforward_event_fields` covers W3C §6.4's exact-copy requirement for
+`<invoke autoforward="true">`: the forwarded event must reach the child with
+its `_event.data`, `_event.origin` and `_event.invokeid` intact. Every channel
+asserts it — C++ Interpreter + AOT, Rust, Go, Kotlin, Python, C11 — because
+each backend forwarded only the event name (Python: name + payload) until the
+carrier landed.
+
+**Fixtures stay on one axis.** `autoforward_event_fields` returns the child's
+verdict as its own event rather than as `<donedata>`, so a regression in the
+donedata lift cannot surface as an autoforward failure; `donedata_local_invoke`
+owns that axis. An earlier revision coupled the two and a C11 donedata gap
+masqueraded as an autoforward bug on that backend alone.
 
 The full uniformity roadmap (per-backend layout migration, AOT/Interpreter
 two-channel parity, SSoT canonical fixture path) lives in

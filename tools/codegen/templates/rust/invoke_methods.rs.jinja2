@@ -371,7 +371,12 @@
 {% if autoforward_invokes %}
     // W3C SCXML 6.4.1: Forward external events to children with autoforward=true
     // 1:1 port of C++ forwardToAutoforwardChildren() in entry_exit_actions.jinja2
-    fn do_forward_to_autoforward_children(&mut self, event_name: &str, _engine: &mut sce_rust_runtime::Engine<Self>) {
+    fn do_forward_to_autoforward_children(
+        &mut self,
+        event_name: &str,
+        metadata: &sce_rust_runtime::EventMetadata,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
 {% for invoke_info in autoforward_invokes %}
         // Check if child {{ invoke_info.invoke_id }} has autoforward enabled and is active
         {
@@ -380,8 +385,10 @@
                 .map_or(false, |cs| cs.autoforward);
             if is_autoforward {
                 if let Some(ref mut child) = self.child_{{ invoke_info.field_suffix }} {
-                    // W3C SCXML 6.4.1: Forward by event name string to child
-                    child.raise_external_by_name(event_name, "");
+                    // W3C SCXML 6.4.1: the child resolves the name against its
+                    // own Event enum; §6.4 requires the copy be exact, so the
+                    // source event's metadata goes with it.
+                    child.raise_external_by_name_with_meta(event_name, metadata);
                 }
             }
         }

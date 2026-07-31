@@ -240,14 +240,18 @@ func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_na
 {% set autoforward_invokes = model.invokes | scxml | selectattr('autoforward') | list %}
 {% if autoforward_invokes %}
 // ForwardToAutoforwardChildren forwards external events to children with autoforward=true (W3C SCXML 6.4.1).
-func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+//
+// W3C 6.4 requires an exact copy, so the source event's metadata is forwarded
+// with the name: the child must observe the same _event.data, _event.origin,
+// _event.sendid, _event.origintype and _event.invokeid the parent observed.
+func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string, metadata sce.EventMetadata, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
 	if sce.IsPlatformEvent(eventName) {
 		return
 	}
 {% for invoke_info in autoforward_invokes %}
 	if cs, ok := p.activeInvokes["{{ invoke_info.invoke_id }}"]; ok && cs.Autoforward {
 		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
-			p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName(eventName, "")
+			p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByNameWithMeta(eventName, metadata)
 		}
 	}
 {% endfor %}
@@ -307,6 +311,7 @@ func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Initial
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }
@@ -320,6 +325,7 @@ func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Initial
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByNameWithMeta(name string, metadata sce.EventMetadata) { w.engine.RaiseExternalByNameWithMeta(name, metadata) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
 func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) DonedataAtFinal() string { return w.engine.DonedataAtFinal() }

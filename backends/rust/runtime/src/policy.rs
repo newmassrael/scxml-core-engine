@@ -35,7 +35,7 @@
 use core::fmt::Debug;
 use core::hash::Hash;
 
-use crate::event::EventWithMetadata;
+use crate::event::{EventMetadata, EventWithMetadata};
 use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::hierarchy::{self, StateChain};
@@ -419,7 +419,23 @@ pub trait StatePolicy: Sized + 'static {
     /// Forward external events to autoforward children (§scxml-6.4.1).
     ///
     /// Generated only when `HAS_AUTOFORWARD` is `true`.
-    fn forward_to_autoforward_children(&mut self, _event_name: &str, _engine: &mut Engine<Self>) {}
+    ///
+    /// §scxml-6.4 requires an *exact copy* of the source event to reach the
+    /// child, so the metadata travels alongside the name: the child must see
+    /// the same `_event.data`, `_event.origin`, `_event.sendid`,
+    /// `_event.origintype` and `_event.invokeid` the parent saw. The name is
+    /// passed separately because it is the only identity the two machines
+    /// share — the child's `Event` enum is an unrelated type. Under `no_std`
+    /// every metadata field except `event_type` is elided from
+    /// [`EventMetadata`], so nothing extra crosses on MCU targets by
+    /// construction.
+    fn forward_to_autoforward_children(
+        &mut self,
+        _event_name: &str,
+        _metadata: &EventMetadata,
+        _engine: &mut Engine<Self>,
+    ) {
+    }
 
     /// Tick child state machines (§scxml-6.4).
     ///

@@ -388,6 +388,37 @@ set_tests_properties(c11_integration_donedata_local_invoke PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# W3C SCXML 6.4 autoforward field preservation. The IRP suite checks only
+# that the event name crosses (test229) or leaves the field comparison to a
+# human (test230 is a manual test), so a name-only forward passes both; this
+# fixture asserts the copy is exact.
+sce_generate_static_integration_c_test(autoforward_event_fields "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    SYNTH_INVOKE_CHILDREN inv_echo
+)
+
+add_executable(sce_c_integration_autoforward_event_fields
+    integration/test_autoforward_event_fields.c
+    ${INTEGRATION_C_TEST_autoforward_event_fields_SOURCES}
+)
+target_link_libraries(sce_c_integration_autoforward_event_fields PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_autoforward_event_fields PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_autoforward_event_fields PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_autoforward_event_fields
+    COMMAND sce_c_integration_autoforward_event_fields
+)
+set_tests_properties(c11_integration_autoforward_event_fields PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─
 #
 # Proves the C11 backend's native typed `_event.data` lowering at runtime
