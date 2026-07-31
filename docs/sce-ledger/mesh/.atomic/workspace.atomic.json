@@ -2051,7 +2051,13 @@
       "title": "Generated Transport Code",
       "parent_doc": "mesh",
       "parent_section": "mesh-7",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-7.5": {
       "title": "Generated Event Serialization",

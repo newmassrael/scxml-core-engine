@@ -10,6 +10,14 @@
    build with `traceability/meta-generated-source-line-marker-missing`. #}
 {{ sce_map.source_marker(source_location, "cpp", module_level=true) }}
 
+{# §mesh-7.4: this template IS the "generated transport code" that section
+   specifies — one dedicated send path per binding, calling the transport's
+   native API with no SCE-side indirection. The citation lives in a Jinja
+   comment, which is not rendered, so no §id reaches the generated files or
+   the committed generated trees that the scan set excludes. Prose cites in
+   the `//` comments below stay bare on purpose: those DO ship into generated
+   code, and rewriting them to §-form is what this channel exists to avoid. #}
+
 {# SCE Mesh — unified transport routing (per-target transport dispatch).
 
    Each target's transport type determines its send function and router field.
