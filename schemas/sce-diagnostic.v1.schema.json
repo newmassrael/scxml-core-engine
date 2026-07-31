@@ -329,6 +329,7 @@
         "mesh/codegen-pool-with-rpc-client-unsupported",
         "mesh/io",
         "forge/source-hash-mismatch",
+        "forge/source-hash-input-uncovered",
         "traceability/scxml-line-range-missing",
         "traceability/state-id-collision",
         "traceability/symbol-name-exceeds-c-identifier-limit",
