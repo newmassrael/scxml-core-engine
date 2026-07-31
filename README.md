@@ -1297,6 +1297,7 @@ ctest -R benchmark.*quick
 ## Documentation
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - Detailed design and principles
+- **[docs/SCE_CODEGEN_DETERMINISM.md](docs/SCE_CODEGEN_DETERMINISM.md)** - Reproducible output: committing generated code, pinning the generator, regeneration gates
 - **[W3C SCXML Spec](https://www.w3.org/TR/scxml/)** - Official specification
 
 ---
