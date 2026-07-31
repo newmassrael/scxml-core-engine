@@ -1979,6 +1979,10 @@ impl RetryPolicyConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ZenohMode {
+    // §mesh-15.4: the deployment topology is exactly these three roles, so the
+    // set is closed here rather than passed through as a string — a vehicle
+    // network mixes peers with a router+client gateway, and a typo that
+    // silently degraded a gateway to a peer would partition the mesh.
     /// Peer-to-peer: each node publishes and forwards.
     Peer,
     /// Client: connects to a router/peer, does not forward.

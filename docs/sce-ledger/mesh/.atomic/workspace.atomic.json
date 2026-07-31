@@ -77,7 +77,14 @@
       "title": "Thread Safety Model",
       "parent_doc": "mesh",
       "parent_section": "mesh-10",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/mesh/EventQueueBridge.h",
+          "symbol": "try_push",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-10.4": {
       "title": "Transport Contract",
@@ -1021,7 +1028,14 @@
       "title": "Deployment Topology",
       "parent_doc": "mesh",
       "parent_section": "mesh-15",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "ZenohMode",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-15.5": {
       "title": "Zenoh SHM and `shm_transport` Template Relationship",

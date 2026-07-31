@@ -87,6 +87,11 @@ public:
     /// @return true if the event was enqueued, false if the queue is full.
     ///         Callers should back off or drop the event on false.
     [[nodiscard]] bool try_push(T event) noexcept {
+        // §mesh-10.3: this is where concurrent transport deliveries are
+        // serialised into one instance's queue. Many producers claim cells
+        // here; exactly one consumer drains them, so the engine still sees
+        // one event at a time and the W3C run-to-completion guarantee holds
+        // without a lock on the processing path.
         Cell *cell;
         std::size_t pos = write_pos_.load(std::memory_order_relaxed);
 
