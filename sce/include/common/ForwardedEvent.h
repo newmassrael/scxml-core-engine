@@ -22,7 +22,11 @@ namespace SCE::Common {
 
 /**
  * @brief One external event addressed by NAME rather than by a machine-local
- *        `Event` enum (§scxml-6.4 autoforward carrier).
+ *        `Event` enum (W3C SCXML 6.4 autoforward carrier).
+ *
+ * A data carrier, not an implementation of any clause: the §-form citations
+ * that belong to the autoforward contract live on the functions that satisfy
+ * it (`StaticExecutionEngine::raiseExternal`), not on these fields.
  *
  * Autoforward is the one path where an event must leave the machine that
  * owns its enum: the parent hands a copy to an invoked child whose `Event`
@@ -43,13 +47,14 @@ namespace SCE::Common {
  * the mesh wire-16 inbound path does.
  */
 struct ForwardedEvent {
-    std::string name;        // §scxml-5.10.1: _event.name
-    std::string data;        // §scxml-5.10.1: _event.data (serialized payload)
-    std::string origin;      // §scxml-5.10.1: _event.origin
-    std::string sendId;      // §scxml-5.10.1: _event.sendid
-    std::string type;        // §scxml-5.10.1: _event.type
-    std::string originType;  // §scxml-5.10.1: _event.origintype
-    std::string invokeId;    // §scxml-5.10.1: _event.invokeid
+    // W3C SCXML 5.10.1 `_event` fields, in the spec's own order.
+    std::string name;
+    std::string data;  // serialized payload
+    std::string origin;
+    std::string sendId;
+    std::string type;
+    std::string originType;
+    std::string invokeId;
 };
 
 }  // namespace SCE::Common
