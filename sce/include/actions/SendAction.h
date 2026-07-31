@@ -190,9 +190,26 @@ public:
      */
     struct SendParam {
         std::string name;
-        std::string expr;  // SCXML expr attribute for dynamic evaluation
+        std::string expr;      // SCXML expr attribute for dynamic evaluation
+        std::string location;  // SCXML location attribute (data model location)
 
         SendParam(const std::string &paramName, const std::string &paramExpr) : name(paramName), expr(paramExpr) {}
+
+        SendParam(const std::string &paramName, const std::string &paramExpr, const std::string &paramLocation)
+            : name(paramName), expr(paramExpr), location(paramLocation) {}
+
+        /**
+         * @brief The expression to evaluate for this parameter's value.
+         *
+         * §scxml-5.7.1 lets a <param> carry either 'expr' or 'location', and
+         * the value of a location is what the send carries, so a location is
+         * evaluated as a value expression. Mirrors the AOT emit, whose send
+         * templates select `param.expr or param.location`, so both engines
+         * put the same payload on the wire.
+         */
+        const std::string &valueExpr() const {
+            return expr.empty() ? location : expr;
+        }
     };
 
     /**
@@ -201,6 +218,13 @@ public:
      * @param expr Parameter expression to evaluate at send time
      */
     void addParamWithExpr(const std::string &name, const std::string &expr);
+
+    /**
+     * @brief Add a parameter that reads its value from a data model location
+     * @param name Parameter name
+     * @param location Location expression read at send time (§scxml-5.7.1)
+     */
+    void addParamWithLocation(const std::string &name, const std::string &location);
 
     /**
      * @brief Get parameters with expressions for W3C SCXML compliance
