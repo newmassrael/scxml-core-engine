@@ -71,6 +71,31 @@ severity = "warn"
 # bindings in the same commit (severity_binding is already reject, so a path
 # added without bindings turns the ledger red).
 #
+# `tools/codegen/templates/mesh` is enrolled on a TWO-CHANNEL rule, because a
+# template comment has two audiences: its own documentation, and the text it
+# emits verbatim into every generated file.
+#
+#   `{# ... #}` Jinja comments  — NOT rendered. §mesh- form lives here, gets
+#                                 scanned, and gets bound. Nothing reaches the
+#                                 generated trees the scan set excludes.
+#   `// ...` comments           — DO ship into generated code. Their cites stay
+#                                 bare (`§14.4`), which section_namespace skips,
+#                                 so they never enter the gate.
+#
+# So do NOT run `migrate_citations.py --namespace mesh --apply` over this tree:
+# it claims bare `§<n>` for the mesh namespace and would rewrite the shipping
+# `//` cites, putting §ids inside every generated file. That is the failure the
+# migrator's own `--check-ledger` note describes (measured: Mnemosyne R840 then
+# reported 7 sections as reachable only from an excluded tree). The `{# #}`
+# cites here are hand-authored one at a time, alongside their binding.
+#
+# Precedent, not invention: docs/spec/synth already scans this same tree and
+# cites §synth-5-O / §synth-6.2.6 from `{# #}` comments in this very template.
+#
+# Cost to know about: the generated files carry a template-hash, so editing any
+# template requires the §6.2.6 regen sweep (scripts/regen_all_committed_trees.sh)
+# — ~1.5k hash-only file changes — in a following chore commit.
+#
 # `sce-build/src/mesh` is the Rust deploy/topology/codegen tree — the build-time
 # half of mesh, whose C++ runtime half the four `sce/` entries already cover.
 # Note it is also scanned by docs/spec/synth, which lists `sce-build/src`;
@@ -93,6 +118,7 @@ paths = [
     "sce/include/static",
     "tests/w3c/dist",
     "sce-build/src/mesh",
+    "tools/codegen/templates/mesh",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
