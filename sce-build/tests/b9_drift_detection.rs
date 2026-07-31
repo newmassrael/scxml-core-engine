@@ -686,3 +686,142 @@ fn verify_passes_on_real_committed_forge_default_round_trip_go_tree() {
          result. stderr:\n{stderr}"
     );
 }
+
+// ── §synth-6.2.6 source-set coverage guard ──────────────────────────
+//
+// The `source-hash` fold is total over whatever the walk collected, so a
+// walk that collected nothing still yields a well-formed 64-hex digest —
+// sha256 of the empty input. On the wire that is indistinguishable from a
+// successful hash, which makes the header unauditable rather than merely
+// wrong. These assert the emit-time refusal, and the one case that is
+// deliberately allowed to pass through it.
+
+/// Minimal statechart the `generate` subcommand will actually emit for.
+const COVERAGE_FIXTURE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="covered" initial="s0">
+  <state id="s0">
+    <transition event="go" target="s1"/>
+  </state>
+  <final id="s1"/>
+</scxml>
+"#;
+
+fn run_generate(doc: &Path, out: &Path, extra: &[&str]) -> (Option<i32>, String) {
+    let result = Command::new(env_bin())
+        .arg("generate")
+        .arg(doc)
+        .arg("-o")
+        .arg(out)
+        .arg("-l")
+        .arg("rust")
+        .args(extra)
+        .env("SOURCE_DATE_EPOCH", "0")
+        .output()
+        .expect("sce-codegen must be runnable");
+    (
+        result.status.code(),
+        String::from_utf8_lossy(&result.stderr).into_owned(),
+    )
+}
+
+/// An input root that resolves to nothing must be refused rather than
+/// embedding the empty-input digest.
+#[test]
+fn generate_refuses_when_the_source_set_is_empty() {
+    let root = TempDir::new().unwrap();
+    let doc = root.path().join("covered.scxml");
+    fs::write(&doc, COVERAGE_FIXTURE).unwrap();
+    let empty = root.path().join("empty");
+    let out = root.path().join("out");
+    fs::create_dir_all(&empty).unwrap();
+    fs::create_dir_all(&out).unwrap();
+
+    let (code, stderr) = run_generate(
+        &doc,
+        &out,
+        &[
+            "--input-root",
+            empty.to_str().unwrap(),
+            "--error-format=json",
+        ],
+    );
+    assert_ne!(code, Some(0), "empty source set must not emit");
+    assert!(
+        stderr.contains("forge/source-hash-input-uncovered"),
+        "refusal must carry the contract code, got: {stderr}"
+    );
+    assert!(
+        !out.join("covered_sm.rs").exists(),
+        "nothing may be written when the header cannot be trusted"
+    );
+}
+
+/// A declared `--input-root` that does collect sources is an assertion
+/// about where the sources live, so generating from a staged derivative of
+/// them is allowed — this is what the fixture regen scripts do, and the
+/// empty-set floor above still applies to them.
+#[test]
+fn generate_allows_a_staged_derivative_under_a_declared_root() {
+    let root = TempDir::new().unwrap();
+    let tracked = root.path().join("tracked");
+    let stage = root.path().join("stage");
+    let out = root.path().join("out");
+    fs::create_dir_all(&tracked).unwrap();
+    fs::create_dir_all(&stage).unwrap();
+    fs::create_dir_all(&out).unwrap();
+    fs::write(tracked.join("covered.scxml"), COVERAGE_FIXTURE).unwrap();
+    // The staged document differs from the tracked one — a synthesized
+    // child, in the real workflow — so a content match would not save it.
+    let staged = stage.join("covered.scxml");
+    fs::write(&staged, COVERAGE_FIXTURE.replace("covered", "derived")).unwrap();
+
+    let (code, stderr) = run_generate(&staged, &out, &["--input-root", tracked.to_str().unwrap()]);
+    assert_eq!(
+        code,
+        Some(0),
+        "a declared root with a non-empty set must not be second-guessed: {stderr}"
+    );
+}
+
+/// With the root inferred from the input's own location, the input has to
+/// be in the set — if it is not, the walk lost it, which is exactly the
+/// symlinked-sandbox failure this guard exists for.
+#[test]
+fn generate_hashes_a_symlinked_input_rather_than_the_empty_digest() {
+    let real = TempDir::new().unwrap();
+    let sandbox = TempDir::new().unwrap();
+    let out = sandbox.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    let target = real.path().join("covered.scxml");
+    fs::write(&target, COVERAGE_FIXTURE).unwrap();
+    // Build sandboxes materialise declared inputs as links into the real
+    // tree; the emitted hash must match generating from the real file.
+    let link = sandbox.path().join("covered.scxml");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    let (code, stderr) = run_generate(&link, &out, &[]);
+    assert_eq!(code, Some(0), "symlinked input must generate: {stderr}");
+
+    let direct_out = real.path().join("out");
+    fs::create_dir_all(&direct_out).unwrap();
+    let (code, stderr) = run_generate(&target, &direct_out, &[]);
+    assert_eq!(code, Some(0), "{stderr}");
+
+    let via_link = fs::read_to_string(out.join("covered_sm.rs")).unwrap();
+    let direct = fs::read_to_string(direct_out.join("covered_sm.rs")).unwrap();
+    let hash_of = |s: &str| {
+        s.lines()
+            .find_map(|l| l.strip_prefix("// source-hash: ").map(str::to_string))
+            .expect("header carries a source-hash")
+    };
+    assert_eq!(
+        hash_of(&via_link),
+        hash_of(&direct),
+        "a symlinked input must hash as the file it points at"
+    );
+    assert_ne!(
+        hash_of(&via_link),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "the empty-input digest must never reach a header"
+    );
+}

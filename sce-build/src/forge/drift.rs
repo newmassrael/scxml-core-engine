@@ -34,7 +34,7 @@
 //!   linker-non-deterministic.
 
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -77,26 +77,95 @@ pub enum DriftHashError {
     },
 }
 
-/// Source-set rule (§synth-6.2.6): walks `input_root` recursively for `**/*.scxml`, hashes
-/// each file's raw bytes, and folds the sorted `(rel_path, file_hash)`
-/// pairs through a final BTreeMap digest. If `deploy_yaml` is provided,
-/// its raw bytes are included under the canonical key `"deploy.yaml"`.
+/// The resolved §synth-6.2.6 source set behind a `source-hash`: every
+/// `**/*.scxml` under the input root, plus `deploy.yaml` when supplied,
+/// keyed by root-relative path.
+///
+/// Held as a set rather than folded straight to a digest so a caller can
+/// assert [`covers`](Self::covers) — that the document it was asked to
+/// generate actually contributed — before embedding the digest in output.
+/// Without that check a source set that silently collected nothing still
+/// produces a well-formed 64-hex digest (the empty-input sha256), which a
+/// downstream drift check cannot distinguish from a successful hash.
+#[derive(Clone, Debug)]
+pub struct SourceSet {
+    root: PathBuf,
+    entries: BTreeMap<PathBuf, [u8; 32]>,
+}
+
+impl SourceSet {
+    /// Source-set rule (§synth-6.2.6): walks `input_root` recursively for
+    /// `**/*.scxml` and hashes each file's raw bytes. If `deploy_yaml` is
+    /// provided, its raw bytes are included under the canonical key
+    /// `"deploy.yaml"`.
+    pub fn collect(input_root: &Path, deploy_yaml: Option<&Path>) -> Result<Self, DriftHashError> {
+        let mut entries: BTreeMap<PathBuf, [u8; 32]> = BTreeMap::new();
+        walk_filtered(input_root, input_root, &mut entries, &|p| {
+            p.extension().is_some_and(|e| e == "scxml")
+        })?;
+        if let Some(deploy) = deploy_yaml {
+            let bytes = fs::read(deploy).map_err(|e| DriftHashError::Io {
+                path: deploy.to_path_buf(),
+                source: e,
+            })?;
+            entries.insert(PathBuf::from("deploy.yaml"), sha256_bytes(&bytes));
+        }
+        Ok(Self {
+            root: input_root.to_path_buf(),
+            entries,
+        })
+    }
+
+    /// Folds the set to the `source-hash` value embedded in the header.
+    pub fn digest(&self) -> [u8; 32] {
+        hash_btreemap(&self.entries)
+    }
+
+    /// Root the set was collected from — carried for diagnostics that need
+    /// to tell the caller which directory came up short.
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    /// Number of contributing files (`.scxml` plus `deploy.yaml`).
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Did `path`'s bytes contribute to this set?
+    ///
+    /// Matched on content rather than path. The same document reaches the
+    /// walk under different names depending on how the build addressed it —
+    /// a sandbox link name, a canonicalized real path, a root-relative
+    /// path — and comparing those spellings answers a question about path
+    /// arithmetic, not the one that matters: whether these bytes are in
+    /// the digest. Reading the file back costs one syscall per generate.
+    ///
+    /// Returns `false` when `path` cannot be read, which is the correct
+    /// answer for the caller: bytes it cannot read are bytes it cannot
+    /// prove contributed.
+    pub fn covers(&self, path: &Path) -> bool {
+        let Ok(bytes) = fs::read(path) else {
+            return false;
+        };
+        let digest = sha256_bytes(&bytes);
+        self.entries.values().any(|h| *h == digest)
+    }
+}
+
+/// Digest-only convenience over [`SourceSet::collect`]. Use the set itself
+/// wherever the coverage invariant has to be asserted before the digest is
+/// embedded; this entry point suits `sce-codegen verify`, which recomputes
+/// against values already on disk.
 pub fn compute_source_hash(
     input_root: &Path,
     deploy_yaml: Option<&Path>,
 ) -> Result<[u8; 32], DriftHashError> {
-    let mut entries: BTreeMap<PathBuf, [u8; 32]> = BTreeMap::new();
-    walk_filtered_recursive(input_root, input_root, &mut entries, &|p| {
-        p.extension().is_some_and(|e| e == "scxml")
-    })?;
-    if let Some(deploy) = deploy_yaml {
-        let bytes = fs::read(deploy).map_err(|e| DriftHashError::Io {
-            path: deploy.to_path_buf(),
-            source: e,
-        })?;
-        entries.insert(PathBuf::from("deploy.yaml"), sha256_bytes(&bytes));
-    }
-    Ok(hash_btreemap(&entries))
+    Ok(SourceSet::collect(input_root, deploy_yaml)?.digest())
 }
 
 /// Template-hash rule (§synth-6.2.6): walks `template_root` recursively for every file
@@ -108,7 +177,7 @@ pub fn compute_template_hash(
     cargo_lock: &Path,
 ) -> Result<[u8; 32], DriftHashError> {
     let mut entries: BTreeMap<PathBuf, [u8; 32]> = BTreeMap::new();
-    walk_filtered_recursive(template_root, template_root, &mut entries, &|_| true)?;
+    walk_filtered(template_root, template_root, &mut entries, &|_| true)?;
     let lock_bytes = fs::read(cargo_lock).map_err(|e| DriftHashError::Io {
         path: cargo_lock.to_path_buf(),
         source: e,
@@ -254,15 +323,28 @@ pub fn parse_embedded_hashes(content: &str) -> Option<EmbeddedHashes> {
 
 // ── internal helpers ──────────────────────────────────────────────────
 
-/// Recursively walks `root` collecting every file whose path predicate
-/// returns true. Returns sorted `(rel_path_from_anchor, sha256)` pairs.
-/// `anchor` is the path canonicalization basis so the BTreeMap key stays
-/// stable across absolute/relative invocations.
+/// Walks `root` collecting every file whose path predicate returns true.
+/// Returns sorted `(rel_path_from_anchor, sha256)` pairs. `anchor` is the
+/// path canonicalization basis so the BTreeMap key stays stable across
+/// absolute/relative invocations.
+fn walk_filtered(
+    anchor: &Path,
+    root: &Path,
+    out: &mut BTreeMap<PathBuf, [u8; 32]>,
+    keep: &dyn Fn(&Path) -> bool,
+) -> Result<(), DriftHashError> {
+    let mut visited: BTreeSet<PathBuf> = BTreeSet::new();
+    walk_filtered_recursive(anchor, root, out, keep, &mut visited)
+}
+
+/// Recursive half of [`walk_filtered`]. `visited` carries the canonicalized
+/// directories already descended into so a symlink cycle terminates.
 fn walk_filtered_recursive(
     anchor: &Path,
     dir: &Path,
     out: &mut BTreeMap<PathBuf, [u8; 32]>,
     keep: &dyn Fn(&Path) -> bool,
+    visited: &mut BTreeSet<PathBuf>,
 ) -> Result<(), DriftHashError> {
     let entries = fs::read_dir(dir).map_err(|e| DriftHashError::Io {
         path: dir.to_path_buf(),
@@ -274,13 +356,39 @@ fn walk_filtered_recursive(
             source: e,
         })?;
         let path = entry.path();
-        let file_type = entry.file_type().map_err(|e| DriftHashError::Io {
+        let link_type = entry.file_type().map_err(|e| DriftHashError::Io {
             path: path.clone(),
             source: e,
         })?;
-        if file_type.is_dir() {
-            walk_filtered_recursive(anchor, &path, out, keep)?;
-        } else if file_type.is_file() && keep(&path) {
+        // `entry.file_type()` is an lstat: for a symlink it reports neither
+        // dir nor file, so trusting it drops the entry from the source set.
+        // Build sandboxes (Bazel execroot, Nix, staged CMake inputs) expose
+        // declared inputs as links into the real tree rather than copies, and
+        // a source set that drops every entry folds to the empty-input
+        // digest — a valid-looking hash the §synth-6.2.6 drift check cannot
+        // tell apart from a successful one. Resolve through the link.
+        let target_type = if link_type.is_symlink() {
+            match fs::metadata(&path) {
+                Ok(meta) => meta.file_type(),
+                // A dangling link names no bytes, so it contributes nothing
+                // by definition. The source-set coverage invariant asserted
+                // by `SourceSet::covers` is what catches the case where the
+                // dangling link was the input document itself.
+                Err(_) => continue,
+            }
+        } else {
+            link_type
+        };
+        if target_type.is_dir() {
+            // Symlinked directories can form cycles. Key the guard on the
+            // canonical target so two links to the same directory are
+            // descended once, and a self-referential one terminates.
+            let key = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !visited.insert(key) {
+                continue;
+            }
+            walk_filtered_recursive(anchor, &path, out, keep, visited)?;
+        } else if target_type.is_file() && keep(&path) {
             let bytes = fs::read(&path).map_err(|e| DriftHashError::Io {
                 path: path.clone(),
                 source: e,
@@ -400,6 +508,124 @@ mod tests {
         fs::write(&path, b"<scxml version='1.0'/>").unwrap();
         let h_post = compute_source_hash(root, None).unwrap();
         assert_ne!(h_pre, h_post);
+    }
+
+    /// A source tree may reach `input_root` through symlinks — build
+    /// sandboxes (Bazel execroot, Nix, `cmake` staged inputs) materialise
+    /// declared inputs as links into the real tree rather than copies.
+    /// `entry.file_type()` does not traverse them, so a walk that trusts it
+    /// collects nothing and folds to the empty-input digest, which is a
+    /// valid-looking hash a consumer cannot distinguish from success.
+    #[test]
+    fn source_hash_follows_symlinked_scxml_file() {
+        let real = TempDir::new().unwrap();
+        let sandbox = TempDir::new().unwrap();
+        let target = write_file(real.path(), "doc.scxml", b"<scxml/>");
+        std::os::unix::fs::symlink(&target, sandbox.path().join("doc.scxml")).unwrap();
+
+        let linked = compute_source_hash(sandbox.path(), None).unwrap();
+        let direct = compute_source_hash(real.path(), None).unwrap();
+        assert_eq!(
+            linked, direct,
+            "a symlinked .scxml must hash identically to the file it points at"
+        );
+    }
+
+    /// Same traversal defect one level up: a symlinked *directory* under
+    /// `input_root` is neither `is_dir()` nor `is_file()` to `lstat`, so
+    /// everything beneath it disappears from the source set.
+    #[test]
+    fn source_hash_follows_symlinked_directory() {
+        let real = TempDir::new().unwrap();
+        let sandbox = TempDir::new().unwrap();
+        write_file(real.path(), "nested/doc.scxml", b"<scxml/>");
+        std::os::unix::fs::symlink(real.path().join("nested"), sandbox.path().join("nested"))
+            .unwrap();
+
+        let linked = compute_source_hash(sandbox.path(), None).unwrap();
+        let direct = compute_source_hash(real.path(), None).unwrap();
+        assert_eq!(
+            linked, direct,
+            "a symlinked subdirectory must contribute the .scxml files beneath it"
+        );
+    }
+
+    /// A symlink cycle must terminate the walk instead of recursing until
+    /// the stack runs out.
+    #[test]
+    fn source_hash_terminates_on_symlink_cycle() {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        write_file(root, "nested/doc.scxml", b"<scxml/>");
+        // nested/loop -> nested (a directory containing the link itself)
+        std::os::unix::fs::symlink(root.join("nested"), root.join("nested/loop")).unwrap();
+
+        let h = compute_source_hash(root, None).unwrap();
+        let flat = {
+            let plain = TempDir::new().unwrap();
+            write_file(plain.path(), "nested/doc.scxml", b"<scxml/>");
+            compute_source_hash(plain.path(), None).unwrap()
+        };
+        assert_eq!(
+            h, flat,
+            "a cyclic directory link must be descended once and contribute \
+             nothing beyond the files already collected"
+        );
+    }
+
+    /// The coverage invariant: the document codegen was handed must be in
+    /// the set whose digest gets embedded.
+    #[test]
+    fn source_set_covers_the_input_document() {
+        let dir = TempDir::new().unwrap();
+        let doc = write_file(dir.path(), "doc.scxml", b"<scxml/>");
+        let set = SourceSet::collect(dir.path(), None).unwrap();
+        assert!(set.covers(&doc));
+        assert_eq!(set.len(), 1);
+    }
+
+    /// Coverage is content-keyed, so a sandbox link name resolves against a
+    /// set collected from the real tree and vice versa — the two spellings
+    /// of the same document must both answer "covered".
+    #[test]
+    fn source_set_covers_document_addressed_through_a_symlink() {
+        let real = TempDir::new().unwrap();
+        let sandbox = TempDir::new().unwrap();
+        let target = write_file(real.path(), "doc.scxml", b"<scxml/>");
+        let link = sandbox.path().join("doc.scxml");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let from_real = SourceSet::collect(real.path(), None).unwrap();
+        assert!(from_real.covers(&link), "link name must resolve to covered");
+        let from_sandbox = SourceSet::collect(sandbox.path(), None).unwrap();
+        assert!(from_sandbox.covers(&target), "real path must resolve too");
+    }
+
+    /// The reported failure mode: the walk collects nothing, the digest is
+    /// still a well-formed sha256, and only the coverage check can tell.
+    #[test]
+    fn source_set_rejects_document_outside_the_collected_root() {
+        let elsewhere = TempDir::new().unwrap();
+        let doc = write_file(elsewhere.path(), "doc.scxml", b"<scxml/>");
+        let empty_root = TempDir::new().unwrap();
+
+        let set = SourceSet::collect(empty_root.path(), None).unwrap();
+        assert!(set.is_empty());
+        assert_eq!(
+            hex_encode(&set.digest()),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "an empty source set still folds to a well-formed digest — this \
+             is why coverage has to be asserted separately"
+        );
+        assert!(!set.covers(&doc));
+    }
+
+    #[test]
+    fn source_set_rejects_unreadable_document() {
+        let dir = TempDir::new().unwrap();
+        write_file(dir.path(), "doc.scxml", b"<scxml/>");
+        let set = SourceSet::collect(dir.path(), None).unwrap();
+        assert!(!set.covers(&dir.path().join("no-such-file.scxml")));
     }
 
     #[test]
