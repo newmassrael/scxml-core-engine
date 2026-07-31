@@ -114,3 +114,27 @@ target_compile_features(serialize_child_content_xmlns_test PRIVATE cxx_std_17)
 apply_sce_test_policies(serialize_child_content_xmlns_test)
 
 add_test(NAME SerializeChildContentXmlnsTests COMMAND serialize_child_content_xmlns_test)
+
+# Child-state collection order. §scxml-3.2 / §scxml-3.3 read the default
+# initial state off "the first child state in document order", so a
+# per-element-name collection (every <state>, then <parallel>, then
+# <final>, then <history>) picks the wrong one whenever a document does
+# not write its <state> children first.
+add_executable(child_state_document_order_test
+    ChildStateDocumentOrder_test.cpp
+)
+
+target_link_libraries(child_state_document_order_test
+    PRIVATE
+        sce_runtime
+        sce_core
+        GTest::GTest
+        GTest::Main
+        pthread
+)
+
+target_compile_features(child_state_document_order_test PRIVATE cxx_std_17)
+
+apply_sce_test_policies(child_state_document_order_test)
+
+add_test(NAME ChildStateDocumentOrderTests COMMAND child_state_document_order_test)

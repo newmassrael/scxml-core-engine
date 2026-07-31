@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425169
+// generated-at: 1785455069
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -340,12 +340,12 @@ impl StatePolicy for Test406Policy {
             Test406State::Pass => 8,
             Test406State::S0 => 0,
             Test406State::S01 => 1,
-            Test406State::S01p21 => 6,
-            Test406State::S01p22 => 7,
-            Test406State::S03 => 2,
-            Test406State::S04 => 3,
-            Test406State::S05 => 4,
-            Test406State::S0p2 => 5,
+            Test406State::S01p21 => 3,
+            Test406State::S01p22 => 4,
+            Test406State::S03 => 5,
+            Test406State::S04 => 6,
+            Test406State::S05 => 7,
+            Test406State::S0p2 => 2,
         }
     }
 

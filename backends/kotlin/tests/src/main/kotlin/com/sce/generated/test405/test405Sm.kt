@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425248
+// generated-at: 1785455070
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/405/test405.scxml
@@ -135,16 +135,16 @@ class Test405StateMachine(
         is Test405State.Fail -> 12
         is Test405State.Pass -> 11
         is Test405State.S0 -> 0
-        is Test405State.S01p -> 4
-        is Test405State.S01p1 -> 5
-        is Test405State.S01p11 -> 6
-        is Test405State.S01p12 -> 7
-        is Test405State.S01p2 -> 8
-        is Test405State.S01p21 -> 9
-        is Test405State.S01p22 -> 10
-        is Test405State.S02 -> 1
-        is Test405State.S03 -> 2
-        is Test405State.S04 -> 3
+        is Test405State.S01p -> 1
+        is Test405State.S01p1 -> 2
+        is Test405State.S01p11 -> 3
+        is Test405State.S01p12 -> 4
+        is Test405State.S01p2 -> 5
+        is Test405State.S01p21 -> 6
+        is Test405State.S01p22 -> 7
+        is Test405State.S02 -> 8
+        is Test405State.S03 -> 9
+        is Test405State.S04 -> 10
     }
 
 
@@ -423,22 +423,22 @@ class Test405StateMachine(
                 // prevent double-exit. This code is needed for direct onExit() calls.
                 val toExit = mutableListOf<Pair<Test405State, Int>>()
                 if (activeStateIds.contains("s01p1")) {
-                    toExit.add(Test405State.S01p1 to 5)
+                    toExit.add(Test405State.S01p1 to 2)
                 }
                 if (activeStateIds.contains("s01p11")) {
-                    toExit.add(Test405State.S01p11 to 6)
+                    toExit.add(Test405State.S01p11 to 3)
                 }
                 if (activeStateIds.contains("s01p12")) {
-                    toExit.add(Test405State.S01p12 to 7)
+                    toExit.add(Test405State.S01p12 to 4)
                 }
                 if (activeStateIds.contains("s01p2")) {
-                    toExit.add(Test405State.S01p2 to 8)
+                    toExit.add(Test405State.S01p2 to 5)
                 }
                 if (activeStateIds.contains("s01p21")) {
-                    toExit.add(Test405State.S01p21 to 9)
+                    toExit.add(Test405State.S01p21 to 6)
                 }
                 if (activeStateIds.contains("s01p22")) {
-                    toExit.add(Test405State.S01p22 to 10)
+                    toExit.add(Test405State.S01p22 to 7)
                 }
                 toExit.sortByDescending { it.second }
                 for ((desc, _) in toExit) {

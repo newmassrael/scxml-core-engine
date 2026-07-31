@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425169
+// generated-at: 1785455069
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -572,16 +572,16 @@ impl StatePolicy for Test570Policy {
 
     fn get_document_order(state: Self::State) -> u32 {
         match state {
-            Test570State::Fail => 2,
-            Test570State::P0 => 3,
-            Test570State::P0s1 => 4,
-            Test570State::P0s11 => 5,
-            Test570State::P0s1final => 6,
-            Test570State::P0s2 => 7,
-            Test570State::P0s21 => 8,
-            Test570State::P0s2final => 9,
-            Test570State::Pass => 1,
-            Test570State::S1 => 0,
+            Test570State::Fail => 9,
+            Test570State::P0 => 0,
+            Test570State::P0s1 => 1,
+            Test570State::P0s11 => 2,
+            Test570State::P0s1final => 3,
+            Test570State::P0s2 => 4,
+            Test570State::P0s21 => 5,
+            Test570State::P0s2final => 6,
+            Test570State::Pass => 8,
+            Test570State::S1 => 7,
         }
     }
 

@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425248
+// generated-at: 1785455070
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/404/test404.scxml
@@ -115,13 +115,13 @@ class Test404StateMachine(
         is Test404State.Fail -> 9
         is Test404State.Pass -> 8
         is Test404State.S0 -> 0
-        is Test404State.S01p -> 5
-        is Test404State.S01p1 -> 6
-        is Test404State.S01p2 -> 7
-        is Test404State.S02 -> 1
-        is Test404State.S03 -> 2
-        is Test404State.S04 -> 3
-        is Test404State.S05 -> 4
+        is Test404State.S01p -> 1
+        is Test404State.S01p1 -> 2
+        is Test404State.S01p2 -> 3
+        is Test404State.S02 -> 4
+        is Test404State.S03 -> 5
+        is Test404State.S04 -> 6
+        is Test404State.S05 -> 7
     }
 
 
@@ -277,10 +277,10 @@ class Test404StateMachine(
                 // prevent double-exit. This code is needed for direct onExit() calls.
                 val toExit = mutableListOf<Pair<Test404State, Int>>()
                 if (activeStateIds.contains("s01p1")) {
-                    toExit.add(Test404State.S01p1 to 6)
+                    toExit.add(Test404State.S01p1 to 2)
                 }
                 if (activeStateIds.contains("s01p2")) {
-                    toExit.add(Test404State.S01p2 to 7)
+                    toExit.add(Test404State.S01p2 to 3)
                 }
                 toExit.sortByDescending { it.second }
                 for ((desc, _) in toExit) {

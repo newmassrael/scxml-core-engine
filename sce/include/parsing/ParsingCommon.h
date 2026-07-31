@@ -65,6 +65,26 @@ public:
                                                                        const std::string &childName);
 
     /**
+     * @brief Find child elements matching ANY of the given local names,
+     *        in document order, with the same namespace filter as
+     *        `findChildElements`.
+     *
+     * Calling `findChildElements` once per name and concatenating the
+     * results groups siblings by element name, which is NOT document
+     * order for a mixed set. §scxml-3.2 and §scxml-3.3 both make "the
+     * first child state in document order" the default initial state,
+     * and Appendix D orders region entry by `getChildStates`, so a
+     * `<parallel>` written before a `<state>` must stay first. This
+     * walks the child list once and preserves that order.
+     *
+     * @param element Parent element
+     * @param childNames Child local names to accept
+     * @return Matching child elements in document order
+     */
+    static std::vector<std::shared_ptr<IXMLElement>> findChildElementsAnyOf(const std::shared_ptr<IXMLElement> &element,
+                                                                            const std::vector<std::string> &childNames);
+
+    /**
      * @brief Find first child element with matching local name AND the
      *        W3C SCXML namespace. See `findChildElements` for the
      *        namespace-filter contract.

@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425248
+// generated-at: 1785455070
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/436/test436.scxml
@@ -90,12 +90,12 @@ class Test436StateMachine(
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test436State): Int = when (state) {
-        is Test436State.Fail -> 2
-        is Test436State.P -> 3
-        is Test436State.Pass -> 1
-        is Test436State.Ps0 -> 4
-        is Test436State.Ps1 -> 5
-        is Test436State.S1 -> 0
+        is Test436State.Fail -> 5
+        is Test436State.P -> 0
+        is Test436State.Pass -> 4
+        is Test436State.Ps0 -> 1
+        is Test436State.Ps1 -> 2
+        is Test436State.S1 -> 3
     }
 
 
@@ -186,10 +186,10 @@ class Test436StateMachine(
                 // prevent double-exit. This code is needed for direct onExit() calls.
                 val toExit = mutableListOf<Pair<Test436State, Int>>()
                 if (activeStateIds.contains("ps0")) {
-                    toExit.add(Test436State.Ps0 to 4)
+                    toExit.add(Test436State.Ps0 to 1)
                 }
                 if (activeStateIds.contains("ps1")) {
-                    toExit.add(Test436State.Ps1 to 5)
+                    toExit.add(Test436State.Ps1 to 2)
                 }
                 toExit.sortByDescending { it.second }
                 for ((desc, _) in toExit) {

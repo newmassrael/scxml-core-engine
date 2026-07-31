@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425248
+// generated-at: 1785455070
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/310/test310.scxml
@@ -87,11 +87,11 @@ class Test310StateMachine(
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test310State): Int = when (state) {
-        is Test310State.Fail -> 1
-        is Test310State.P -> 2
-        is Test310State.Pass -> 0
-        is Test310State.S0 -> 3
-        is Test310State.S1 -> 4
+        is Test310State.Fail -> 4
+        is Test310State.P -> 0
+        is Test310State.Pass -> 3
+        is Test310State.S0 -> 1
+        is Test310State.S1 -> 2
     }
 
 
@@ -177,10 +177,10 @@ class Test310StateMachine(
                 // prevent double-exit. This code is needed for direct onExit() calls.
                 val toExit = mutableListOf<Pair<Test310State, Int>>()
                 if (activeStateIds.contains("s0")) {
-                    toExit.add(Test310State.S0 to 3)
+                    toExit.add(Test310State.S0 to 1)
                 }
                 if (activeStateIds.contains("s1")) {
-                    toExit.add(Test310State.S1 to 4)
+                    toExit.add(Test310State.S1 to 2)
                 }
                 toExit.sortByDescending { it.second }
                 for ((desc, _) in toExit) {

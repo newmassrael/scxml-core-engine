@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425169
+// generated-at: 1785455069
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -616,15 +616,15 @@ impl StatePolicy for Test533Policy {
 
     fn get_document_order(state: Self::State) -> u32 {
         match state {
-            Test533State::Fail => 5,
-            Test533State::P => 6,
-            Test533State::Pass => 4,
-            Test533State::Ps1 => 7,
-            Test533State::Ps2 => 8,
+            Test533State::Fail => 8,
+            Test533State::P => 1,
+            Test533State::Pass => 7,
+            Test533State::Ps1 => 2,
+            Test533State::Ps2 => 3,
             Test533State::S1 => 0,
-            Test533State::S2 => 1,
-            Test533State::S3 => 2,
-            Test533State::S4 => 3,
+            Test533State::S2 => 4,
+            Test533State::S3 => 5,
+            Test533State::S4 => 6,
         }
     }
 

@@ -295,7 +295,13 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
     // Create and initialize SCXMLContext
     SCXMLContext context;
 
-    // Parse basic attributes
+    // §scxml-3.2.1: the <scxml> attribute table. Every attribute in it is
+    // optional except 'xmlns' and 'version', whose fixed values the XML layer
+    // enforces (an xmlns-less root surfaces ParseWrongRootElement), so nothing
+    // is stored for them here. Each remaining attribute is read only when
+    // present; an absent 'initial' leaves the model's initial state empty and
+    // StateMachine resolves the §scxml-3.2 default (first child state in
+    // document order) at start.
     if (scxmlNode->hasAttribute("name")) {
         std::string name = scxmlNode->getAttribute("name");
         model->setName(name);
@@ -402,18 +408,14 @@ bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
                       scriptElements.size());
     }
 
-    // Parse states
+    // §scxml-3.2.2: the children <scxml> admits — <datamodel> and <script>
+    // (each 0 or 1 / 0 or more, read above) and the <state>, <parallel> and
+    // <final> children collected here. Document order across the three state
+    // element names is what the §scxml-3.2 initial-state default indexes into,
+    // so they are gathered into one list rather than handled per name.
     SCE_LOG_DEBUG("Looking for root state nodes");
 
-    std::vector<std::shared_ptr<IXMLElement>> rootStateElements;
-    auto stateElements = SCE::ParsingCommon::findChildElements(scxmlNode, "state");
-    rootStateElements.insert(rootStateElements.end(), stateElements.begin(), stateElements.end());
-
-    auto parallelElements = SCE::ParsingCommon::findChildElements(scxmlNode, "parallel");
-    rootStateElements.insert(rootStateElements.end(), parallelElements.begin(), parallelElements.end());
-
-    auto finalElements = SCE::ParsingCommon::findChildElements(scxmlNode, "final");
-    rootStateElements.insert(rootStateElements.end(), finalElements.begin(), finalElements.end());
+    auto rootStateElements = SCE::ParsingCommon::findChildElementsAnyOf(scxmlNode, {"state", "parallel", "final"});
 
     if (rootStateElements.empty()) {
         // §wire-W5 D5: typed-throw — folded onto `validation/empty-collection`
@@ -667,6 +669,10 @@ void SCE::SCXMLParser::addSystemVariables(std::shared_ptr<SCXMLModel> model) {
 
     std::string datamodelType = model->getDatamodel();
     if (datamodelType.empty() || datamodelType == "null") {
+        // §scxml-B-1: datamodel="null" (and an absent attribute, whose
+        // platform default this build treats the same way) means an absent or
+        // empty data model, so no system variable is declared for it —
+        // §scxml-B-1-6 states they are not accessible there.
         SCE_LOG_DEBUG("Skipping system variables for null datamodel");
         return;
     }

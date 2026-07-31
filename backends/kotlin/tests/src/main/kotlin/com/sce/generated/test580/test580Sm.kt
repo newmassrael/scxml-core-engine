@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425248
+// generated-at: 1785455070
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/580/test580.scxml
@@ -109,13 +109,13 @@ class Test580StateMachine(
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test580State): Int = when (state) {
-        is Test580State.Fail -> 1
-        is Test580State.P1 -> 2
-        is Test580State.Pass -> 0
-        is Test580State.S0 -> 3
-        is Test580State.S1 -> 4
-        is Test580State.S11 -> 5
-        is Test580State.S12 -> 6
+        is Test580State.Fail -> 6
+        is Test580State.P1 -> 0
+        is Test580State.Pass -> 5
+        is Test580State.S0 -> 1
+        is Test580State.S1 -> 2
+        is Test580State.S11 -> 3
+        is Test580State.S12 -> 4
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -390,16 +390,16 @@ class Test580StateMachine(
                 // prevent double-exit. This code is needed for direct onExit() calls.
                 val toExit = mutableListOf<Pair<Test580State, Int>>()
                 if (activeStateIds.contains("s0")) {
-                    toExit.add(Test580State.S0 to 3)
+                    toExit.add(Test580State.S0 to 1)
                 }
                 if (activeStateIds.contains("s1")) {
-                    toExit.add(Test580State.S1 to 4)
+                    toExit.add(Test580State.S1 to 2)
                 }
                 if (activeStateIds.contains("s11")) {
-                    toExit.add(Test580State.S11 to 5)
+                    toExit.add(Test580State.S11 to 3)
                 }
                 if (activeStateIds.contains("s12")) {
-                    toExit.add(Test580State.S12 to 6)
+                    toExit.add(Test580State.S12 to 4)
                 }
                 toExit.sortByDescending { it.second }
                 for ((desc, _) in toExit) {
