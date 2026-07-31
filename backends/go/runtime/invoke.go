@@ -121,6 +121,12 @@ type ChildEngine interface {
 	Tick()
 	IsInFinalState() bool
 	RaiseExternalByName(eventName, eventData string)
+
+	// RaiseExternalByNameWithMeta delivers an autoforwarded event whose
+	// _event fields are the parent's (W3C SCXML 6.4 exact-copy contract).
+	// Name-addressed because the child's Event enum is an unrelated type.
+	RaiseExternalByNameWithMeta(eventName string, metadata EventMetadata)
+
 	SetCompletionCallback(callback func())
 	GetParentEventQueue() chan ParentEvent
 

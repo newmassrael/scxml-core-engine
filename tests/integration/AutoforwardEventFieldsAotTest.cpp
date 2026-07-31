@@ -8,13 +8,11 @@
 // codegen consumers — so each is held to the §6.4 "exact copy" contract
 // independently against one canonical fixture.
 //
-// Fixture: tests/integration/fixtures/autoforward_event_fields.scxml
+// Fixture: integration_resources/autoforward_event_fields/autoforward_event_fields.scxml
 //
-// Regeneration: automatic at CMake build time into
-// `${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated/`. The rule is
-// explicit rather than `sce_generate_static_integration_test` — see the
-// comment beside it in tests/CMakeLists.txt for why this fixture stays out
-// of the five-backend `integration_resources/` fan-out.
+// Regeneration: automatic at CMake build time via
+// `sce_generate_static_integration_test(autoforward_event_fields ...)`
+// under `${CMAKE_CURRENT_BINARY_DIR}/integration_static_generated/`.
 
 #include "autoforward_event_fields_sm.h"
 #include "scripting/ScriptEngineProvider.h"

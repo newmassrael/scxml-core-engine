@@ -77,7 +77,7 @@
    the event is lost"). #}
 {{ indent }}_inv_target = engine._active_invokes.get({{ action.target | slice_from(2) | py_string_literal }})
 {{ indent }}if _inv_target is not None and not _inv_target.is_done():
-{{ indent }}    _inv_target.forward_event({{ action.event | py_string_literal }}, "")
+{{ indent }}    _inv_target.forward_event({{ action.event | py_string_literal }}, EventMetadata(event_type="external"))
 {% elif action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
 {# W3C SCXML 6.2 — `<send type="...">` referencing an Event I/O Processor
    the platform does not support raises `error.execution`. The processor
@@ -218,7 +218,7 @@
 {{ indent }}    _inv_id = _target_str[2:]
 {{ indent }}    _inv_obj = engine._active_invokes.get(_inv_id)
 {{ indent }}    if _inv_obj is not None and not _inv_obj.is_done():
-{{ indent }}        _inv_obj.forward_event(_dyn_evt_name, _data)
+{{ indent }}        _inv_obj.forward_event(_dyn_evt_name, EventMetadata(event_type="external", data=_data))
 {{ indent }}    else:
 {{ indent }}        _dyn_evt = self.get_event_from_name(_dyn_evt_name)
 {{ indent }}        if _dyn_evt is not None:

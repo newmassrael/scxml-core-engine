@@ -485,6 +485,14 @@ void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.
    unknown event targets). */
 void {{ csym_prefix }}{{ model.name }}_raise_external_by_name({{ csym_prefix }}{{ model.name }}_t *sm, const char *event_name);
 
+/* W3C SCXML 6.4: autoforward entry point. §6.4 requires the parent to
+   forward an *exact copy* of the event, so this sibling of
+   `_raise_external_by_name` takes the source event's `_event` fields in a
+   transport-neutral carrier (the child's own event record type is
+   unrelated to the parent's). Names absent from this SM's enum drop
+   silently, same as the by-name form. */
+void {{ csym_prefix }}{{ model.name }}_raise_external_forwarded({{ csym_prefix }}{{ model.name }}_t *sm, const sce_forwarded_event_t *fwd);
+
 /* W3C SCXML 6.4 / 3.4 (test236): natural-termination exit walk.
    Runs `<onexit>` on every active state so a `<final>` state with an
    `<onexit><send target="#_parent">` body fires the send onto the

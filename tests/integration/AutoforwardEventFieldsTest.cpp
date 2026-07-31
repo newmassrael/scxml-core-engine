@@ -10,12 +10,10 @@
 // two log dumps. A forwarded copy that arrives stripped of `_event.data`,
 // `_event.origin` and `_event.invokeid` therefore passes both.
 //
-// Fixture: tests/integration/fixtures/autoforward_event_fields.scxml — the
-// same source the AOT sibling `AutoforwardEventFieldsAotTest` compiles, so
-// the two engines are held to one machine rather than two hand-kept copies.
-// It lives in the C++ test tree rather than `integration_resources/` because
-// that directory is a five-backend contract; see the comment on the fixture's
-// codegen rule in tests/CMakeLists.txt.
+// Fixture: integration_resources/autoforward_event_fields/autoforward_event_fields.scxml
+// — the canonical source all six backends compile, so the C++ Interpreter and
+// AOT channels are held to the same machine as the Rust / Go / Kotlin / Python
+// / C11 channels rather than to hand-kept copies.
 
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
@@ -54,8 +52,8 @@ protected:
 };
 
 TEST_F(AutoforwardEventFieldsTest, ForwardedCopyKeepsDataOriginAndInvokeid) {
-    const std::string fixture =
-        std::string(SCE_PROJECT_ROOT) + "/tests/integration/fixtures/autoforward_event_fields.scxml";
+    const std::string fixture = std::string(SCE_PROJECT_ROOT) +
+                                "/integration_resources/autoforward_event_fields/autoforward_event_fields.scxml";
     std::ifstream in(fixture);
     ASSERT_TRUE(in.is_open()) << "canonical fixture not readable: " << fixture;
     std::ostringstream buffer;

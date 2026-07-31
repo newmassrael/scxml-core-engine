@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
-// template-hash: f160b18d725f2c0387242c0463da6808a5b8be392d0dc888f0d564e42c83db17
-// generated-at: 1785486330
+// template-hash: 7aab3b29aa8f5ef17f1c8730c3954aecc89c78aabf4a2226d70ddd8c24038efe
+// generated-at: 1785489702
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -331,6 +331,7 @@ impl Test229Policy {
     fn do_forward_to_autoforward_children(
         &mut self,
         event_name: &str,
+        metadata: &sce_rust_runtime::EventMetadata,
         _engine: &mut sce_rust_runtime::Engine<Self>,
     ) {
         // Check if child _invoke_0 has autoforward enabled and is active
@@ -341,8 +342,10 @@ impl Test229Policy {
                 .map_or(false, |cs| cs.autoforward);
             if is_autoforward {
                 if let Some(ref mut child) = self.child_invoke_0 {
-                    // W3C SCXML 6.4.1: Forward by event name string to child
-                    child.raise_external_by_name(event_name, "");
+                    // W3C SCXML 6.4.1: the child resolves the name against its
+                    // own Event enum; §6.4 requires the copy be exact, so the
+                    // source event's metadata goes with it.
+                    child.raise_external_by_name_with_meta(event_name, metadata);
                 }
             }
         }
@@ -665,8 +668,13 @@ impl StatePolicy for Test229Policy {
         self.do_tick_children(engine);
     }
     // W3C SCXML 6.4.1: Forward external events to autoforward children
-    fn forward_to_autoforward_children(&mut self, event_name: &str, engine: &mut Engine<Self>) {
-        self.do_forward_to_autoforward_children(event_name, engine);
+    fn forward_to_autoforward_children(
+        &mut self,
+        event_name: &str,
+        metadata: &sce_rust_runtime::EventMetadata,
+        engine: &mut Engine<Self>,
+    ) {
+        self.do_forward_to_autoforward_children(event_name, metadata, engine);
     }
 }
 

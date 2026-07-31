@@ -45,6 +45,19 @@ static void {{ csym_prefix }}{{ model.name }}_dispatch_external_by_name(void *op
     {{ csym_prefix }}{{ model.name }}_event_with_meta_t evt;
     memset(&evt, 0, sizeof(evt));
     sce_copy_bounded_id(evt.invoke_id, invoke_id);
+    /* W3C SCXML 5.10.1 `_event.origin`: an invoked session is an external
+       entity from the parent's point of view, so its parent-bound events
+       carry an origin the parent can address a reply to. The spec's own
+       child-addressing form is `#_<invokeid>` (§6.4), which is what the
+       parent's `<send target="#_<invokeid>">` resolves against — so that
+       is the URI recorded here rather than an invented identifier. */
+    if (invoke_id != NULL && invoke_id[0] != '\0') {
+        char _origin_uri[SCE_MAX_ID_LEN];
+        _origin_uri[0] = '#';
+        _origin_uri[1] = '_';
+        sce_copy_bounded_n(&_origin_uri[2], invoke_id, (size_t)SCE_MAX_ID_LEN - 2u);
+        sce_copy_bounded_id(evt.origin, _origin_uri);
+    }
     /* W3C SCXML 6.4 (test233): copy child-supplied `<send><param>` Lua-
        source string into `event_with_meta_t.data`. The dequeue path
        loads it into the parent's L state as `_event.data` before
