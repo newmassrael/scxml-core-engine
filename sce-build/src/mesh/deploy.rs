@@ -42,8 +42,9 @@ pub struct DeployConfig {
     /// instead of the generic `deny_unknown_fields` error. SCE Mesh §3.3
     /// is the invariant: transport-native routing is the source of truth
     /// for peer availability; SCE does not maintain a peer table, and
-    /// the §2572 rejected list + §2574 rejection of `discovery.mode`
-    /// both hold unconditionally. For per-binding runtime target
+    /// the §13 rejected list — which rejects SCE-maintained peer tables
+    /// and a `discovery.mode: static | dynamic` deploy switch — holds
+    /// unconditionally. For per-binding runtime target
     /// selection use value-field placeholders (§14.4); for
     /// transport-level peer discovery configure external OEM config
     /// (zenoh.json5 scouting, vsomeip.json service-discovery).
@@ -4446,8 +4447,8 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
-/// Reject any `discovery:` top-level block (SCE Mesh §3.3 + §2572 +
-/// §2574). Parsed as opaque [`serde_yaml_ng::Value`] so an authored
+/// Reject any `discovery:` top-level block (SCE Mesh §3.3 invariant,
+/// §13 rejected list). Parsed as opaque [`serde_yaml_ng::Value`] so an authored
 /// `discovery:` key lands here rather than triggering the generic
 /// `deny_unknown_fields` message; the validator produces a spec-linked
 /// diagnostic that names the replacement mechanisms (§14.4 binding
@@ -7488,7 +7489,8 @@ topology:
 
     #[test]
     fn discovery_block_with_keys_rejected() {
-        // Authored §4.3 example-shaped block — rejected per §3.3 / §2574.
+        // Authored §4.3 example-shaped block — rejected per §3.3 and the
+        // §13 rejection of `discovery.mode: static | dynamic`.
         let yaml = r#"
 version: "1.0"
 discovery:
