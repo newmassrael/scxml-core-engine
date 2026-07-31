@@ -1,9 +1,9 @@
 {
   "clang_version": "Ubuntu clang version 19.1.7 (++20250114103320+cd708029e0b2-1~exp1~20250114103432.75)",
-  "embed_version": "086eef3f0",
+  "embed_version": "4d0de62c7",
   "non_self_contained_headers": [],
   "schema": "sce-embed-manifest.v1",
-  "symbol_count": 239,
+  "symbol_count": 241,
   "symbols": [
     {
       "header": "GuardUtils.h",
@@ -211,6 +211,27 @@
         "Critical",
         "Off"
       ]
+    },
+    {
+      "header": "common/IOProcessorHelper.h",
+      "kind": "class",
+      "members": [],
+      "name": "SCE::IOProcessorHelper"
+    },
+    {
+      "header": "common/IOProcessorHelper.h",
+      "kind": "struct",
+      "members": [
+        "field std::string location",
+        "field std::string name",
+        "method IOProcessorDescriptor &(IOProcessorDescriptor &&) operator=",
+        "method IOProcessorDescriptor &(const IOProcessorDescriptor &) operator=",
+        "method void () IOProcessorDescriptor",
+        "method void () noexcept ~IOProcessorDescriptor",
+        "method void (IOProcessorDescriptor &&) noexcept IOProcessorDescriptor",
+        "method void (const IOProcessorDescriptor &) IOProcessorDescriptor"
+      ],
+      "name": "SCE::IOProcessorDescriptor"
     },
     {
       "header": "common/InPredicateHelper.h",
