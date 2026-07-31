@@ -679,14 +679,32 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
         }
     }
 
-    // W3C SCXML 1.0 Section 6.4: Auto-forward external events to child invoke sessions
-    // Autoforward all events EXCEPT platform events (done.*, error.*) which are state machine internal
-    // W3C Test 230: Events from child sessions ARE autoforwarded back to verify field preservation
+    // §scxml-D-mainEventLoop: auto-forward to child invoke sessions at the
+    // one point the algorithm names — immediately after an event is removed
+    // from the *external* queue, before transition selection:
+    //
+    //     externalEvent = externalQueue.dequeue()
+    //     if isCancelEvent(externalEvent): running = false; continue
+    //     for state in configuration: for inv in state.invoke:
+    //         if inv.autoforward: send(inv.id, externalEvent)
+    //
+    // The loop consults no event name, and 6.4.2 requires an exact copy of
+    // "every external event it receives" — including `done.invoke.<id>`,
+    // which the same section returns "to the external event queue of the
+    // invoking process", so a sibling invoke still
+    // running must see it. `error.*` and `done.state.*` stay out of the
+    // forwarded set because they are raised onto the internal queue and
+    // never reach this point, not because of how they are spelled: this
+    // function serves both queues, so the queue category is carried on the
+    // dispatch context rather than re-derived from the name.
+    //
+    // W3C Test 230: events from child sessions ARE autoforwarded back, to
+    // verify field preservation.
     // Use shared_ptr to prevent use-after-free if child reaches final state during processEvent
-    bool isPlatform = isPlatformEvent(eventName);
-    SCE_LOG_DEBUG("W3C SCXML 6.4: Autoforward check - event='{}', invokeExecutor={}, isPlatform={}", eventName,
-                  (invokeExecutor_ ? "YES" : "NO"), isPlatform);
-    if (invokeExecutor_ && !isPlatform) {
+    const bool fromExternalQueue = EventRaiserImpl::isCurrentEventFromExternalQueue();
+    SCE_LOG_DEBUG("W3C SCXML 6.4: Autoforward check - event='{}', invokeExecutor={}, fromExternalQueue={}", eventName,
+                  (invokeExecutor_ ? "YES" : "NO"), fromExternalQueue);
+    if (invokeExecutor_ && fromExternalQueue) {
         auto autoForwardSessions = invokeExecutor_->getAutoForwardSessions(sessionId_);
         SCE_LOG_DEBUG("W3C SCXML 6.4: Found {} autoforward sessions for parent '{}'", autoForwardSessions.size(),
                       sessionId_);

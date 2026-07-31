@@ -194,16 +194,31 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
                  eventName, originSessionId, invokeId, originType, (void *)this);
 
     // §scxml-5.10: Raise event with full metadata (origin, invoke ID, and origintype)
-    // W3C SCXML Test 230: Platform events (done.*, error.*) must be queued, not processed immediately
-    // This prevents nested processing issues when child completes during parent transition
-    // W3C SCXML Test 252: Events from other sessions (e.g., child->parent) must use EXTERNAL priority
-    // §scxml-3.12.2: an error is signalled by an event named 'error.*' that is placed
-    // on the queue and processed like any other event — never delivered inline, and
-    // simply dropped when no transition matches it.
+    //
+    // Queue membership answers one question only — which of the two queues
+    // Appendix D's mainEventLoop drains this event from — and it is decided by
+    // where the event came from, never by how it is named. An event carrying
+    // another session's id is external (§scxml-5.10.1, W3C Test 252:
+    // child->parent). Everything the processor raises for itself is internal:
+    // §scxml-3.12.2 signals an error with an `error.*` event placed on the
+    // queue and processed like any other — never delivered inline, and simply
+    // dropped when no transition matches it — and 3.7 puts `done.state.<id>`
+    // there too. `done.invoke.<id>` is external and stays so without a name
+    // test, because 6.4.2 has it returned by the invoked service —
+    // `InvokeExecutor` raises it with the child's session id as origin, which
+    // is exactly the branch below.
+    //
+    // Naming the done/error families here once forced them external for an
+    // unrelated reason: to stop them being delivered inline (W3C Test 230 —
+    // a child completing mid-transition must not re-enter the parent). That
+    // is a re-entrancy property, not a queue, and it has its own guard in
+    // `raiseEventWithPriority` below, where `isPlatformEvent` gates immediate
+    // mode directly. Conflating the two put `error.*` and `done.state.*` on
+    // the external queue, where the autoforward step hands whatever it
+    // dequeues to every `autoforward` child — events the spec never forwards,
+    // reaching children that must not see them.
     EventPriority priority = EventPriority::INTERNAL;
-    if (isPlatformEvent(eventName)) {
-        priority = EventPriority::EXTERNAL;  // Force queueing for platform events
-    } else if (!originSessionId.empty()) {
+    if (!originSessionId.empty()) {
         // §scxml-5.10.1: Events from other SCXML sessions are EXTERNAL
         // This ensures correct event priority ordering (FIFO within same priority)
         priority = EventPriority::EXTERNAL;
@@ -288,6 +303,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                     ctx.originType = originType;
                     ctx.eventType = EventTypeHelper::classifyEventType(eventName, !isInternal);
                     ctx.typedData = typedData;
+                    ctx.isExternalQueue = !isInternal;
                     EventContextGuard guard(ctx);
 
                     bool result = callback(eventName, eventData);
@@ -406,6 +422,7 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
         ctx.originType = event.originType;
         ctx.eventType = EventTypeHelper::classifyEventType(event.eventName, isExternal);
         ctx.typedData = event.typedData;
+        ctx.isExternalQueue = isExternal;
         EventContextGuard guard(ctx);
 
         bool result = callback(event.eventName, event.eventData);
@@ -476,10 +493,23 @@ void EventRaiserImpl::processQueuedEvents() {
 bool EventRaiserImpl::processNextQueuedEvent() {
     SCE_LOG_DEBUG("EventRaiserImpl: Processing ONE queued event (W3C SCXML compliance)");
 
-    // §scxml-6.5.2: Get event from queue but DON'T remove yet
-    // Finalize handler must execute BEFORE removing event from queue
+    // §scxml-D-mainEventLoop: dequeue, *then* dispatch. The algorithm removes
+    // the event before it runs `applyFinalize` and selects transitions, and
+    // §scxml-6.5.2's "right before it removes the event from the event queue
+    // for processing" is still honoured because `<finalize>` runs inside the
+    // callback below, ahead of transition selection — so the ordering holds
+    // without leaving the event in the queue across the dispatch.
+    //
+    // Leaving it there is not a smaller change, it is a different algorithm.
+    // Executable content dispatched from a transition re-enters this drain
+    // (`<send>` -> dispatcher -> processQueuedEvents), and a re-entrant call
+    // sees the event still at the head and processes it a second time.
+    // Removal afterwards then compared `top().eventName` against the name it
+    // started with, which is not identity: once the nested pass had changed
+    // the head, the compare failed and the event was never removed at all.
+    // One `<send>` inside a targetless transition was enough to reprocess a
+    // single event hundreds of times while the event it raised never ran.
     QueuedEvent eventToProcess{"", "", EventPriority::EXTERNAL};
-    bool hasEvent = false;
 
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
@@ -491,30 +521,14 @@ bool EventRaiserImpl::processNextQueuedEvent() {
 
         // W3C SCXML compliance: Get highest priority event (INTERNAL before EXTERNAL)
         eventToProcess = synchronousQueue_.top();
-        hasEvent = true;
+        synchronousQueue_.pop();
 
         SCE_LOG_DEBUG(
-            "EventRaiserImpl: Selected event '{}' with priority {} - {} events in queue", eventToProcess.eventName,
+            "EventRaiserImpl: Dequeued event '{}' with priority {} - {} events left in queue", eventToProcess.eventName,
             (eventToProcess.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), synchronousQueue_.size());
     }
 
-    if (!hasEvent) {
-        return false;
-    }
-
-    // §scxml-6.5.2: Execute callback (including finalize) BEFORE removing from queue
-    bool success = executeEventCallback(eventToProcess);
-
-    // §scxml-6.5.2: Only NOW remove event from queue (after finalize executed)
-    {
-        std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
-        if (!synchronousQueue_.empty() && synchronousQueue_.top().eventName == eventToProcess.eventName) {
-            synchronousQueue_.pop();
-            SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' removed from queue after processing", eventToProcess.eventName);
-        }
-    }
-
-    return success;
+    return executeEventCallback(eventToProcess);
 }
 
 bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
@@ -543,6 +557,7 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         ctx.originType = event.originType;
         ctx.eventType = EventTypeHelper::classifyEventType(event.eventName, isExternal);
         ctx.typedData = event.typedData;
+        ctx.isExternalQueue = isExternal;
         EventContextGuard guard(ctx);
 
         // Store last processed event for time-travel debugging
