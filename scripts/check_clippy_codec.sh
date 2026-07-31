@@ -4,8 +4,8 @@
 #
 # Clippy gate for SCE-generated Rust codecs. Proves that EVERY committed
 # codec golden passes `cargo clippy -- -D warnings` with the `alloc`
-# feature ON — the configuration a downstream consumer (e.g.
-# watching-zenoh) builds them in. SCE's workspace clippy gate
+# feature ON — the configuration a downstream consumer
+# builds them in. SCE's workspace clippy gate
 # (clippy-check.yml) only covers hand-written `src/`; the generated codec
 # `.rs` are golden text files, not workspace members, so without this gate
 # clippy regressions in the codegen reach the consumer undetected (the

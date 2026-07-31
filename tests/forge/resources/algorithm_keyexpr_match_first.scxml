@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  watching-zenoh RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7 keyexpr-
+  SCE Protocol-Synthesis RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7 keyexpr-
   fixture sub-atomic 3 of 3, 2026-05-13): outer algorithm — runtime
   KeyExpr matching reference exemplar. Iterates the bounded-collection
   `subs` (via the C7-foundation `get_by_slot` index-loop) and dispatches
@@ -10,7 +10,7 @@
   return contract).
 
   locked decision — v1 calls `keyexpr_intersect(entry.callback_id,
-  target)` for exact uint32 ID equality. Watching-zenoh-side fixtures
+  target)` for exact uint32 ID equality. downstream-side fixtures
   (C8 multicast session FSM, C12 liveliness token FSM) author their
   own `keyexpr_intersect` variants with wildcard / prefix semantics
   against this v1 BC-iter contract.

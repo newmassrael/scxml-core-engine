@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` parse-time validator — watching-zenoh RFC §synth-5-I.
+// `<sce:extern>` parse-time validator — SCE Protocol-Synthesis RFC §synth-5-I.
 // Closed-set lookup over [`crate::forge::intrinsic_registry::BASELINE_SYMBOLS`];
 // rejection is parse-time (matches the `LinkLinkClassUnknown`
 // closed-enum precedent).

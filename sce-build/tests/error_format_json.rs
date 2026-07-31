@@ -672,7 +672,7 @@ fn json_mode_observer_missing_enter_reports_monitor_data_line() {
 /// Timer doc missing `<sce:period>` must report at the document
 /// root (`<scxml>`) line — the validator anchors at the parent
 /// node because the missing child has no source location of its
-/// own. Pins parse_timer (watching-zenoh RFC §synth-5-D shape).
+/// own. Pins parse_timer (SCE Protocol-Synthesis RFC §synth-5-D shape).
 fn write_timer_missing_period_fixture() -> (ScratchDir, PathBuf) {
     let dir = ScratchDir::new("leaf-precision");
     let path = dir.path().join("timer_missing_period.scxml");

@@ -1661,7 +1661,7 @@ fn forge_codec_vle_zint_u64() {
 
 // ── RFC §synth-5-B item B5 Zenoh transport-message body codecs ────
 // First reachable downstream consumers of B1-B4 primitives from
-// the watching-zenoh authoring path (RFC §synth-7 B-track sequence).
+// the downstream authoring path (RFC §synth-7 B-track sequence).
 // Pure composition — no new IR / parser / template surface.
 // Validates that the B-track primitives compose for actual Zenoh
 // transport-message body shapes. Upstream parity:
@@ -1681,7 +1681,7 @@ fn forge_codec_zenoh_frame_cpp() {
 }
 
 // ── RFC §synth-5-B cross-codec composition (Cpp) ───────────────
-// Cross-codec composition fixtures from the watching-zenoh authoring
+// Cross-codec composition fixtures from the downstream authoring
 // path (RFC §synth-7 B-track). Pure composition of B1-B5 primitives — no
 // new IR / parser / template surface. Each fixture mirrors an upstream
 // zenoh-pico encoder; see the SCXML resource header for line refs.
@@ -1756,8 +1756,7 @@ fn forge_codec_zenoh_keep_alive_cpp() {
 // `codec_flags_basic` declares a uint8 carrier `header` with four
 // named bits; codegen emits per-flag get/set accessors while the wire
 // layout is unchanged from a plain uint8 field. The fixture mirrors
-// the Zenoh Fragment header (reliable / more / drop / first) — see
-// watching-zenoh/docs/wire-spec-subset.md §4.2 for the upstream shape.
+// the Zenoh Fragment header (reliable / more / drop / first).
 
 #[test]
 fn forge_codec_flags_basic() {
@@ -4515,8 +4514,8 @@ fn forge_codec_variant_arm_inner_mid_undeclared_rejects() {
 /// RFC variant-default-uniformity: every
 /// `<sce:variant>` must declare an `<sce:arm default="true"/>` —
 /// codegen rejects the legacy "no marker = pick first declared
-/// arm" implicit fallback that led to the watching-zenoh R87
-/// defect. The catch-all `<sce:default>` is a separate concept
+/// arm" implicit fallback that led to the default-arm
+/// fallback defect. The catch-all `<sce:default>` is a separate concept
 /// and does not satisfy the requirement.
 #[test]
 fn forge_codec_variant_no_default_arm_rejects() {
@@ -9882,7 +9881,7 @@ fn forge_parent_tag_round_trip_local_nonlocal_rust() {
     );
     // Dispatcher self-gen cosmetic gap — variant-only
     // dispatchers (no own `<sce:field>` siblings before the variant)
-    // must NOT emit the dead prefix-decode block. Watching-zenoh R125c2
+    // must NOT emit the dead prefix-decode block. Downstream
     // follow-up: under `warnings = "deny"`, the unused `let raw = ...`
     // would trip rustc's `unused_variables` lint. Negative assertion
     // mirrors the 11287248 / b35dbb66 substring-pattern.
@@ -11097,7 +11096,7 @@ path = "src/lib.rs"
 # only the sink-based primary. The harness opts the entire crate into
 # `alloc` so the heap facade is exercised in the rustc-check + sidecar
 # round-trip tests. Default = ["alloc"] so a bare `cargo build` /
-# `cargo test` reproduces what watching-zenoh sees.
+# `cargo test` reproduces what a downstream consumer sees.
 default = ["alloc"]
 alloc = []
 
@@ -11108,7 +11107,7 @@ sce-portable-bytes = {{ path = "{}", default-features = false, features = ["allo
 [workspace]
 
 # RFC §5.B dispatcher self-gen — mirror the strictness
-# watching-zenoh applies in their workspace (`warnings = "deny"`).
+# a downstream consumer applies in their workspace (`warnings = "deny"`).
 # Lint regressions like dead `let raw` bindings for variant-only
 # dispatchers (R125c2 cosmetic Gap) become hard compile errors here,
 # so the harness catches them at SCE-side fixture time.
@@ -12620,7 +12619,7 @@ fn forge_codec_length_ref_multibyte_round_trip_runtime() {
 /// under `alloc` a codec's `{Codec}Owned` form must hold a payload that
 /// exceeds the declared cap. Two end-to-end guards against `codec_tail`
 /// (`sce:max-size="32"`), compiled in the `default = ["alloc"]` temp crate
-/// (the AP profile watching-zenoh ships):
+/// (the AP profile downstream consumers ship):
 ///   1. decode path — decode a 100 B tail frame, `try_into_owned`, assert
 ///      the owned `payload` carries all 100 bytes (pre-portable this raised
 ///      `TooManyElements` from `heapless::Vec<u8, 32>`).

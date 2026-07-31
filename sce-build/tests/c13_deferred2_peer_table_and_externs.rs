@@ -1,7 +1,7 @@
 //! C13 deferred-2 — peer_table invariant + stateless_accept extern
 //! allowlist validators.
 //!
-//! Per watching-zenoh RFC §synth-5-K lines 2460-2462 + 2466-2469, this
+//! Per SCE Protocol-Synthesis RFC §synth-5-K lines 2460-2462 + 2466-2469, this
 //! file pins two spec codes:
 //!
 //!   1. `deploy/session-arming-quota-vs-peer-table-invariant-violated`

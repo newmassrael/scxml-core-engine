@@ -132,6 +132,55 @@ class RustNesting(unittest.TestCase):
         self.assertEqual(ids, ["scxml-5.3", "scxml-6.2"])
 
 
+SYNTH_LEDGER = {"synth-5-B", "synth-7", "synth-6.2.6"}
+
+
+def plan_synth(text, name="f.h"):
+    """Plan `text` against the synth ledger (bare-sigil path, synth rules)."""
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, name)
+        with open(p, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        return mc.plan_file(p, SYNTH_LEDGER, "W3C SCXML", "synth")
+
+
+class SynthDocMarker(unittest.TestCase):
+    """A numeric synth label is claimable only under the marker that names the
+    document. The marker is a bare string constant with no other reader, so a
+    rename silently unclaims every numeric cite unless it is pinned here."""
+
+    def test_numeric_claimed_under_document_marker(self):
+        new, migs, _ = plan_synth("// SCE Protocol-Synthesis RFC §7 rollout\n")
+        self.assertIn("§synth-7", new)
+        self.assertEqual([m["id"] for m in migs], ["synth-7"])
+
+    def test_numeric_without_marker_is_reported_not_claimed(self):
+        src = "// RFC §7 rollout\n"
+        new, migs, skipped = plan_synth(src)
+        self.assertEqual(new, src)
+        self.assertEqual(migs, [])
+        self.assertIn("document-naming marker", skipped[0]["reason"])
+
+    def test_other_document_marker_does_not_claim(self):
+        # Only the SCE-owned document name claims a numeric label. Any other
+        # document-naming prose in that position — including a marker this
+        # constant used to carry — must leave the label for manual review,
+        # since "RFC §<n>" names at least six documents in this tree.
+        for marker in ("Legacy Upstream", "C11 Backend", "EventSchema"):
+            src = f"// {marker} RFC §7 rollout\n"
+            new, migs, skipped = plan_synth(src)
+            self.assertEqual(new, src, marker)
+            self.assertEqual(migs, [], marker)
+            self.assertIn("document-naming marker", skipped[0]["reason"], marker)
+
+    def test_lettered_label_claimable_without_marker(self):
+        # Lettered labels are structurally unique to this RFC, so they never
+        # needed the marker — pinned so the two paths stay distinguishable.
+        new, migs, _ = plan_synth("// RFC §5.B codec DSL\n")
+        self.assertIn("§synth-5-B", new)
+        self.assertEqual([m["id"] for m in migs], ["synth-5-B"])
+
+
 class SlashChain(unittest.TestCase):
     def test_chain_each_member_migrated(self):
         new, migs, _ = plan("// per W3C SCXML 3.13/5.10 both apply\n")

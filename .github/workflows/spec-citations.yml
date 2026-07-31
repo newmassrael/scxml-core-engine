@@ -6,8 +6,8 @@ name: Spec Citations (Mnemosyne adoption)
 #   docs/spec/scxml     §scxml-<n>   W3C SCXML Recommendation mirror
 #   docs/sce-ledger/mesh §mesh-<n>   SCE_MESH.md design ledger
 #   docs/sce-ledger/wire §wire-W<n>  Wire RFC design ledger
-#   docs/spec/synth     §synth-<id>  protocol-synthesis RFC mirror (revision-
-#                                    pinned snapshot of the watching-zenoh RFC)
+#   docs/spec/synth     §synth-<id>  SCE Protocol-Synthesis RFC (SCE-owned,
+#                                    tracked in-tree; no external upstream)
 #   docs/sce-ledger/bytesguard §bytesguard-<n>  EventSchema bytes-guard RFC
 #
 # `validate-code-refs` fails (severity_missing = "reject") on any §<ns>-<id>
@@ -170,7 +170,7 @@ jobs:
 
       # Same form gate for the protocol-synthesis RFC: a claimable free-text
       # cite ("RFC §5.B" with a lettered label, or a numeric one under the
-      # watching-zenoh document marker) must be in §synth- form so
+      # protocol-synthesis document marker) must be in §synth- form so
       # validate-code-refs gates it; skipped sightings (sibling-namespace
       # numbers, other documents' ids) legitimately stay prose.
       - name: Forbid claimable free-text synth RFC cites (force §synth- form)

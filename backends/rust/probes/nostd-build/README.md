@@ -1,6 +1,6 @@
 # sce-nostd-build-probe
 
-Watching-zenoh RFC §5.J.2 — a compile gate proving that **generated** SCE state
+SCE Protocol-Synthesis RFC §5.J.2 — a compile gate proving that **generated** SCE state
 machines (not just the `backends/rust/runtime` crate) are allocator-free under
 `--no-std`.
 

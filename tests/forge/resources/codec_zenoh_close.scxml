@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Close body (RFC §synth-5-B
      zenoh groundwork — first reachable downstream consumer of B1-B4 primitives
-     from the watching-zenoh authoring path).
+     from the downstream authoring path).
 
      Upstream zenoh-pico shape (`_z_close_encode` in
      src/protocol/codec/transport.c:335-343): the Close body is a

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// watching-zenoh RFC §synth-5-I `<sce:extern>` target-plugin extension —
+// SCE Protocol-Synthesis RFC §synth-5-I `<sce:extern>` target-plugin extension —
 // end-to-end fixtures. Each test exercises plugin loading
 // through a constructed `DeployConfig` + `compile_forge_with_deploy`,
 // asserting on the surfaced diagnostic axis:

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §synth-5-O — symbol mangling.
+// SCE Protocol-Synthesis RFC §synth-5-O — symbol mangling.
 //
 // Spec lines 3055-3057 (`<machine>__<state_path>__<artifact>`) fix the
 // per-symbol identifier shape the sourcemap JSON keys off. The mangler

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: codec parent-flags dependency (RFC §synth-5-B parent-flags,
-     surface C from the watching-zenoh authoring path).
+     surface C from the downstream authoring path).
 
      Mirrors the upstream Zenoh InitSyn body's layout (zenoh-pico
      src/protocol/codec/transport.c:_z_init_decode lines 237-285 + the

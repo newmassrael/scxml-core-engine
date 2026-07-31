@@ -38,7 +38,7 @@ pub fn matches_event_descriptor(event_name: &str, descriptor: &str) -> bool {
     // match" semantics. The previous `Vec<&str>` accumulation was redundant
     // (each token is independently testable in iteration order) and
     // alloc-coupled; iterating the `split_whitespace` adapter directly is
-    // both no_std-portable and zero-allocation. Watching-zenoh RFC §synth-5-J-2.
+    // both no_std-portable and zero-allocation. SCE Protocol-Synthesis RFC §synth-5-J-2.
     for token in descriptor.split_whitespace() {
         // §scxml-5.9.3: Universal wildcard "*" matches any event
         if token == "*" {

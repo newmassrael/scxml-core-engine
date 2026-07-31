@@ -504,7 +504,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "validation/cross-kind-circular-dependency")]
     ValidationCrossKindCircularDependency,
 
-    // ── Algorithm kind (watching-zenoh RFC §synth-5-A, item A3).
+    // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A, item A3).
     //    Parser-stage sema for the pure-function kind. Three of
     //    the six RFC §synth-5-A diagnostics are implemented; the rest
     //    (`return-type-mismatch`, `while-unbounded`,
@@ -605,7 +605,7 @@ pub enum DiagnosticCode {
     ScxmlAlwaysFalseGuard,
     #[serde(rename = "scxml/shadowed-transition")]
     ScxmlShadowedTransition,
-    // ── watching-zenoh RFC §synth-5-E sample-callback SCXML on-sample family ──
+    // ── SCE Protocol-Synthesis RFC §synth-5-E sample-callback SCXML on-sample family ──
     // Author-facing rules for `<sce:on-sample>` SCE extension: the
     // structural diagnostics (placement, uniqueness,
     // event-name-conflict) here, plus the cross-ref diagnostics
@@ -617,7 +617,7 @@ pub enum DiagnosticCode {
     ScxmlOnSampleLinkDuplicateInState,
     #[serde(rename = "scxml/on-sample-event-name-conflict")]
     ScxmlOnSampleEventNameConflict,
-    // ── watching-zenoh RFC §synth-5-E sample-callback cross-ref family ──
+    // ── SCE Protocol-Synthesis RFC §synth-5-E sample-callback cross-ref family ──
     // Cross-reference resolution surface for `<sce:on-sample link="X">`
     // against the build's `SceCrossDocRegistry`, complementing the
     // structural codes above.
@@ -659,7 +659,7 @@ pub enum DiagnosticCode {
     //    rather than deleting it outright.
     #[serde(rename = "scxml/accept-side-states-without-role-declaration")]
     ScxmlAcceptSideStatesWithoutRoleDeclaration,
-    // ── Declared-consumption invariant (watching-zenoh RFC §synth-5-M
+    // ── Declared-consumption invariant (SCE Protocol-Synthesis RFC §synth-5-M
     //    lines 2841-2861) — `peer_table.capacity × per_peer_quota ≥
     //    slot_count` invariant. Forge buffer-pool declares its quota
     //    + slot count; deploy.yaml link declares its peer-table
@@ -711,7 +711,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "generate/unsupported-feature")]
     GenerateUnsupportedFeature,
 
-    // ── Codegen matrix invariants (watching-zenoh RFC §synth-5-J-4 / §synth-5-J-5).
+    // ── Codegen matrix invariants (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5).
     //    The variants shipped first as shells (item A1) so downstream
     //    consumers could pin the wire IDs; the producer + matrix walker
     //    live in `forge/codegen_matrix.rs` (landed with the §synth-5-A
@@ -727,7 +727,7 @@ pub enum DiagnosticCode {
     //    Producer: `cmd_generate` walks the parsed SCXML model when
     //    `--no-std` is passed to `sce-codegen generate -l rust` and
     //    rejects documents that depend on std-coupled runtime
-    //    features. Watching-zenoh RFC §synth-5-J-2 line 1989 prescribes
+    //    features. SCE Protocol-Synthesis RFC §synth-5-J-2 line 1989 prescribes
     //    `zero alloc dependency`; the `sce-rust-runtime` feature
     //    matrix encodes the same: `no_std` is incompatible with
     //    `http-send`, `script-engine-lua`, and `script-engine-quickjs`.
@@ -748,7 +748,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codegen/no-std-invoke-not-supported")]
     CodegenNoStdInvokeNotSupported,
 
-    // ── §synth-5-F build-time const-fold (watching-zenoh RFC §synth-5-F, item A4).
+    // ── §synth-5-F build-time const-fold (SCE Protocol-Synthesis RFC §synth-5-F, item A4).
     //    The host interpreter (`forge::const_fold`) emits these
     //    codegen-time errors when a `<sce:fold>` body — or a scalar
     //    `<sce:const init=...>` — fails the foldable substrate, blows
@@ -764,7 +764,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "algorithm/const-yield-type-mismatch")]
     AlgorithmConstYieldTypeMismatch,
 
-    // ── §synth-5-B variant primitive (watching-zenoh RFC §synth-5-B, item B1).
+    // ── §synth-5-B variant primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1).
     //    Build-time check on `<sce:variant>` codec suffix: the
     //    enumerated `<sce:arm value=...>` set must cover the tag
     //    field's value domain when no `<sce:default>` is declared,
@@ -918,7 +918,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/flag-bind-carrier-after-embed")]
     CodecFlagBindCarrierAfterEmbed,
 
-    // ── §synth-5-B present-if primitive (watching-zenoh RFC §synth-5-B, item B1).
+    // ── §synth-5-B present-if primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1).
     //    Build-time check on `<sce:field sce:present-if="X.Y"/>`: the
     //    referenced field `X` must be declared earlier in the same
     //    codec so the streaming decoder has already consumed it by
@@ -930,7 +930,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/present-if-refs-later-field")]
     CodecPresentIfRefsLaterField,
 
-    // ── §synth-5-B repeat primitive (watching-zenoh RFC §synth-5-B, B2). Build-
+    // ── §synth-5-B repeat primitive (SCE Protocol-Synthesis RFC §synth-5-B, B2). Build-
     //    time check on `<sce:repeat sce:count="X"/>`: the referenced
     //    count field `X` must be declared earlier in the same codec
     //    so the streaming decoder has already consumed it by the time
@@ -941,7 +941,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/repeat-count-refs-later-field")]
     CodecRepeatCountRefsLaterField,
 
-    // ── §synth-5-B test-vector primitive (watching-zenoh RFC §synth-5-B,
+    // ── §synth-5-B test-vector primitive (SCE Protocol-Synthesis RFC §synth-5-B,
     //    items B2 + B5) ── `<sce:test-vector hex value/>` is
     //    supported on `sce:kind="algorithm"` and `sce:kind="codec"`;
     //    any other kind is rejected here (the kind-specific harness
@@ -950,7 +950,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "algorithm/test-vector-unsupported-kind")]
     AlgorithmTestVectorUnsupportedKind,
 
-    // ── §synth-5-B B3 TLV chain primitive (watching-zenoh RFC §synth-5-B) ──
+    // ── §synth-5-B B3 TLV chain primitive (SCE Protocol-Synthesis RFC §synth-5-B) ──
     //    `<sce:tlv-chain>` is MCU-class and the runtime decoder needs a
     //    build-time bound to size its working set; missing `max-depth`
     //    is rejected here. RFC line 488 "max-depth MUST be specified
@@ -960,7 +960,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/tlv-chain-depth-unspecified")]
     CodecTlvChainDepthUnspecified,
 
-    // ── §synth-5-B B3 DMA alignment primitive (watching-zenoh RFC §synth-5-B) ──
+    // ── §synth-5-B B3 DMA alignment primitive (SCE Protocol-Synthesis RFC §synth-5-B) ──
     //    `sce:dma-burst-align="N"` requires the field's `sce:byte` be
     //    divisible by N AND every preceding field be Fixed bit-size
     //    (RFC line 558-583 "fixed-offset positions only — no VLE-
@@ -981,7 +981,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "codec/peek-byte-flag-layout-mismatch")]
     CodecPeekByteFlagLayoutMismatch,
 
-    // ── §synth-5-C link kind (watching-zenoh RFC §synth-5-C, item B6). MCU-class
+    // ── §synth-5-C link kind (SCE Protocol-Synthesis RFC §synth-5-C, item B6). MCU-class
     //    byte-stream link endpoint. The parse-time trio
     //    (`link/framer-missing`, `link/link-class-unknown`,
     //    `link/backpressure-undeclared`) fires from the forge parser;
@@ -1155,7 +1155,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/cache-pre-arm-invalidate-missing-on-speculative-core")]
     PoolCachePreArmInvalidateMissingOnSpeculativeCore,
 
-    // ── §synth-5-E pool kind Layer 1 ownership (watching-zenoh RFC §synth-5-E,
+    // ── §synth-5-E pool kind Layer 1 ownership (SCE Protocol-Synthesis RFC §synth-5-E,
     //    item B7). Layer 1 typestate-attribute family is exposed to
     //    consumer builds through `backends/c/runtime/include/sce/sample.h`,
     //    pulled in by the generated pool header. The diagnostic catches
@@ -1184,7 +1184,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/sample-typestate-attributes-disabled")]
     PoolSampleTypestateAttributesDisabled,
 
-    /// watching-zenoh RFC §synth-5-E sample-callback application-layer
+    /// SCE Protocol-Synthesis RFC §synth-5-E sample-callback application-layer
     /// ownership diagnostic (spec lines 1513-1515): a state declares
     /// `<sce:on-sample link="X">` and link X is registered, but the
     /// link's forge document does not declare a `<sce:stage-pool>`
@@ -1205,7 +1205,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/sample-take-without-stage-pool")]
     PoolSampleTakeWithoutStagePool,
 
-    /// watching-zenoh RFC §synth-5-E sample-callback callback-path
+    /// SCE Protocol-Synthesis RFC §synth-5-E sample-callback callback-path
     /// diagnostic (spec lines 1516-1519): an
     /// `<sce:on-sample callback="rust:...">` attribute carries an
     /// authoring path that fails the `rust:crate::module::fn` path
@@ -1220,7 +1220,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/sample-callback-signature-non-borrow")]
     PoolSampleCallbackSignatureNonBorrow,
 
-    // ── §synth-5-D Worker kind (watching-zenoh RFC §synth-5-D, item C2). The
+    // ── §synth-5-D Worker kind (SCE Protocol-Synthesis RFC §synth-5-D, item C2). The
     //    worker primitive is a concurrent execution context driven
     //    by a `<sce:link-rx>` source; it owns an SPSC inbox and
     //    communicates only through that channel + an optional outbox.
@@ -1356,7 +1356,7 @@ pub enum DiagnosticCode {
     WorkerOutboxTargetSuffixInvalid,
 
     // ── §synth-5-M Fragment-reassembly buffer-pool variant diagnostics
-    //    (watching-zenoh RFC §synth-5-M lines 2944-2945, item C9). The two
+    //    (SCE Protocol-Synthesis RFC §synth-5-M lines 2944-2945, item C9). The two
     //    parse-level structure codes live here; the cross-doc
     //    validators that reference §synth-5-K `links.<name>.{mtu_bytes,
     //    expected_p99_bytes, domain_attrs.trust_class}`
@@ -1401,7 +1401,7 @@ pub enum DiagnosticCode {
     MemReassemblyPoolVariantMissingTimeout,
 
     // ── §synth-5-M Fragment-reassembly cross-doc validators (items C9 +
-    //    C13, watching-zenoh RFC §synth-5-M lines 2946-2995).
+    //    C13, SCE Protocol-Synthesis RFC §synth-5-M lines 2946-2995).
     //    Each fires from a cross-doc resolver that walks
     //    `deploy.links.<X>` → forge `<sce:link name=X>` → its
     //    `<sce:rx-pool ref=Y>` → `ForgePoolRegistry`'s BufferPoolModel
@@ -1517,7 +1517,7 @@ pub enum DiagnosticCode {
     /// (deploy `domain_attrs.trust_class: session_arming` × machine
     /// source SCXML `Accepting.*` substate-present) pair makes it a
     /// listener emitted the Listener half but did NOT emit the paired
-    /// `established_session` Sibling half. watching-zenoh RFC §synth-5-C
+    /// `established_session` Sibling half. SCE Protocol-Synthesis RFC §synth-5-C
     /// lines 849-856 verbatim: "codegen self-check that every
     /// `session_arming` listener instance has emitted its
     /// `established_session` sibling per the 'Listener-link sibling
@@ -1544,7 +1544,7 @@ pub enum DiagnosticCode {
 
     /// Author-facing hard error: a reassembly-pool binding has
     /// resolved to a `session_arming` link instance whose paired
-    /// `established_session` sibling does not exist. watching-zenoh
+    /// `established_session` sibling does not exist. SCE Protocol-Synthesis
     /// RFC §synth-5-M lines 2982-2994 verbatim: "a reassembly-pool binding
     /// has resolved to a `session_arming` link instance whose paired
     /// `established_session` sibling does not exist. Hard error. In
@@ -1574,7 +1574,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "reassembly/binding-on-unpaired-listener")]
     MeshDeployReassemblyBindingOnUnpairedListener,
 
-    /// Watching-zenoh RFC §synth-5-N line 3060 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-N line 3060 verbatim
     /// (`link/concurrent-count-exceeds-scheduler-slots`) — MCU-only
     /// cooperative-scheduler accounting: more links than the
     /// scheduler can accommodate within one tick. Hard error.
@@ -1591,7 +1591,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "link/concurrent-count-exceeds-scheduler-slots")]
     LinkConcurrentCountExceedsSchedulerSlots,
 
-    /// Watching-zenoh RFC §synth-5-N line 3061 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-N line 3061 verbatim
     /// (`link/per-link-budget-exceeds-tick-period`). Per-link budget
     /// must fit inside one cooperative tick:
     /// `per_link_budget_us > tick_period_us` is the single-link
@@ -1603,7 +1603,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "link/per-link-budget-exceeds-tick-period")]
     LinkPerLinkBudgetExceedsTickPeriod,
 
-    /// Watching-zenoh RFC §synth-5-N line 3062 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-N line 3062 verbatim
     /// (`link/inbound-event-queue-unsized`). A `<sce:link>` declares
     /// at least one `<sce:inbound>` event but the downstream FSM's
     /// event queue depth is undeclared. Hard error.
@@ -1623,7 +1623,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "link/inbound-event-queue-unsized")]
     LinkInboundEventQueueUnsized,
 
-    // ── §synth-5-L Bounded-collection kind diagnostics (watching-zenoh RFC
+    // ── §synth-5-L Bounded-collection kind diagnostics (SCE Protocol-Synthesis RFC
     //    §synth-5-L lines 2540-2655, item C6). Two structure-only parse-time
     //    codes, three cross-doc codes (element-type-not-a-kind /
     //    index-by-field-missing / multi-writer-without-atomics), and
@@ -1697,7 +1697,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "collection/capacity-unresolved")]
     CollectionCapacityUnresolved,
 
-    // ── §synth-5-D Timer kind diagnostics (watching-zenoh RFC §synth-5-D
+    // ── §synth-5-D Timer kind diagnostics (SCE Protocol-Synthesis RFC §synth-5-D
     //    lines 909-910). Both codes fire on the MCU cooperative
     //    scheduler axis — silent-skip on AP / preemptive targets
     //    where the runtime owns deadline tracking. ──
@@ -1722,7 +1722,7 @@ pub enum DiagnosticCode {
     TimerSlotOverflow,
 
     // ── §synth-5-I `<sce:extern>` whitelisted intrinsic registry
-    //    (watching-zenoh RFC §synth-5-I, item C4). Four spec-verbatim
+    //    (SCE Protocol-Synthesis RFC §synth-5-I, item C4). Four spec-verbatim
     //    codes (lines 1847-1850) that fire at parse-time on
     //    `<sce:extern>` declarations. The 101-symbol baseline lives
     //    in `crate::forge::intrinsic_registry::BASELINE_SYMBOLS`;
@@ -1838,7 +1838,7 @@ pub enum DiagnosticCode {
     MeshDeployPoolInvalidPlaceholder,
     #[serde(rename = "mesh/deploy-server-pool-not-supported")]
     MeshDeployServerPoolNotSupported,
-    // ── watching-zenoh RFC §synth-5-E sample-callback deploy.yaml stage_pool family ──
+    // ── SCE Protocol-Synthesis RFC §synth-5-E sample-callback deploy.yaml stage_pool family ──
     // These diagnostics validate the deploy.yaml `binding.stage_pool:`
     // cross-reference into the forge buffer-pool registry. Distinct
     // family from the `mesh/deploy-pool-*` SOME/IP-instance-routing
@@ -1917,22 +1917,22 @@ pub enum DiagnosticCode {
     // §14 per-machine platform/scheduler schema (RFC §synth-5-K, item A2)
     #[serde(rename = "mesh/deploy-platform-class-os-mismatch")]
     MeshDeployPlatformClassOsMismatch,
-    /// Watching-zenoh RFC §synth-5-K line 2426 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2426 verbatim
     /// (`deploy/worker-stack-budget-missing`). Cooperative scheduler
     /// declared without `worker_stack_budget`. Renamed from the
     /// SCE-Mesh-prefix wire (`mesh/deploy-scheduler-cooperative-missing-stack-budget`)
-    /// to the watching-zenoh-prefix wire; SCE Mesh §14
+    /// to the deploy-prefix wire; SCE Mesh §14
     /// continues to anchor to the same variant.
     #[serde(rename = "deploy/worker-stack-budget-missing")]
     MeshDeploySchedulerCooperativeMissingStackBudget,
-    /// Watching-zenoh RFC §synth-5-K line 2428-2429 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2428-2429 verbatim
     /// (`deploy/worker-slot-budget-missing`). Cooperative scheduler
     /// declared without `worker_slot_budget_us`. Validator
     /// [`crate::mesh::deploy::validate_worker_slot_budget_required_when_cooperative`]
     /// fires at deploy.yaml parse time.
     #[serde(rename = "deploy/worker-slot-budget-missing")]
     MeshDeploySchedulerCooperativeMissingSlotBudget,
-    /// Watching-zenoh RFC §synth-5-K line 2430-2431 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2430-2431 verbatim
     /// (`deploy/keepalive-jitter-budget-missing`). Cooperative
     /// scheduler declared without `keepalive_jitter_budget_us`.
     /// Validator
@@ -1940,7 +1940,7 @@ pub enum DiagnosticCode {
     /// fires at deploy.yaml parse time.
     #[serde(rename = "deploy/keepalive-jitter-budget-missing")]
     MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
-    /// Watching-zenoh RFC §synth-5-K line 2423 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2423 verbatim
     /// (`deploy/scheduler-incompatible-with-worker-count`). Cooperative
     /// scheduler's derived slot count (`floor(tick_period_us /
     /// worker_slot_budget_us)`) is less than the number of workers
@@ -1954,7 +1954,7 @@ pub enum DiagnosticCode {
     MeshDeploySchedulerIncompatibleWithWorkerCount,
 
     // ── §synth-5-K `links:` block parse-time + cross-doc validators
-    //    (watching-zenoh RFC §synth-5-K lines 2232-2540, item C13). 9 codes:
+    //    (SCE Protocol-Synthesis RFC §synth-5-K lines 2232-2540, item C13). 9 codes:
     //    7 spec-named (`link-driver-unknown` at line 2421, `link-mtu-*`
     //    at lines 2440-2448, `link-burst-*` at lines 2489-2503) plus 2
     //    cross-doc joins that pair forge `<sce:link name>`
@@ -1966,7 +1966,7 @@ pub enum DiagnosticCode {
     //    binding, trust-class-missing-on-fragmenting-link, stage-copy-
     //    wcet-exceeds-slot-budget}`) are declared in their own
     //    sections. ──
-    /// Watching-zenoh RFC §synth-5-K line 2421 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2421 verbatim
     /// (`deploy/link-driver-unknown`). `machines.<n>.links.<name>.driver`
     /// value is not in the known-driver baseline (currently
     /// `{lwip_udp, lwip_tcp}`; extends as new forge link-kind docs
@@ -1979,7 +1979,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-driver-unknown")]
     MeshDeployLinkDriverUnknown,
 
-    /// Watching-zenoh RFC §synth-5-K line 2440-2442 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2440-2442 verbatim
     /// (`deploy/link-mtu-missing-on-fragmenting-link`). A
     /// `machines.<n>.links.<name>` entry is bound to a forge
     /// `<sce:link name="...">` whose FSM emits/consumes Fragment codec
@@ -1996,7 +1996,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-mtu-missing-on-fragmenting-link")]
     MeshDeployLinkMtuMissingOnFragmentingLink,
 
-    /// Watching-zenoh RFC §synth-5-K line 2443-2445 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2443-2445 verbatim
     /// (`deploy/link-mtu-below-driver-floor`). `mtu_bytes` declared
     /// smaller than the driver's minimum payload (e.g. UDP/IPv6's
     /// 56-byte floor); driver default would override silently. The
@@ -2007,7 +2007,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-mtu-below-driver-floor")]
     MeshDeployLinkMtuBelowDriverFloor,
 
-    /// Watching-zenoh RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 3747
+    /// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 3747
     /// (`deploy/link-driver-class-mismatch`). The forge
     /// `<sce:link-class>` value on the link doc does not match the
     /// protocol class implied by the deploy.yaml `driver:` allowlist
@@ -2025,7 +2025,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-driver-class-mismatch")]
     MeshDeployLinkDriverClassMismatch,
 
-    /// Watching-zenoh RFC §synth-5-K line 2446-2448 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2446-2448 verbatim
     /// (`deploy/link-expected-p99-exceeds-mtu`). `expected_p99_bytes >
     /// mtu_bytes` AND no reassembly pool is bound to the link (this
     /// parse-time detector fires the warning whenever
@@ -2037,7 +2037,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-expected-p99-exceeds-mtu")]
     MeshDeployLinkExpectedP99ExceedsMtu,
 
-    /// Watching-zenoh RFC §synth-5-K line 2489-2495 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2489-2495 verbatim
     /// (`deploy/link-burst-absorption-insufficient`). `burst_pps × 1s`
     /// of worst-case inbound exceeds the RX pool's drain rate within
     /// one cooperative tick window: `slot_count × ticks_per_second /
@@ -2054,7 +2054,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/link-burst-absorption-insufficient")]
     MeshDeployLinkBurstAbsorptionInsufficient,
 
-    /// Watching-zenoh RFC §synth-5-K line 2496-2500 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2496-2500 verbatim
     /// (`deploy/link-rx-dispatch-worker-tick-on-high-burst`).
     /// `rx_dispatch: worker_tick` declared but `burst_pps ×
     /// tick_period_us / 1_000_000 > slot_count` (one tick window of
@@ -2073,7 +2073,7 @@ pub enum DiagnosticCode {
     //    2350-2369 + 2504-2519, item C13). Three codes wire the policy enum
     //    plus the per-link `<sce:accept-stage-copy-rate>` opt-out
     //    semantics. ──
-    /// Watching-zenoh RFC §synth-5-K line 2504-2511 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2504-2511 verbatim
     /// (`pool/stage-copy-policy-error`). `pool_defaults.stage_copy_policy:
     /// error` (or `forbid`) AND the §synth-5-M / ARCHITECTURE §9.3
     /// stage-copy-rate gate fires. The warning that would have
@@ -2087,7 +2087,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/stage-copy-policy-error")]
     PoolStageCopyPolicyError,
 
-    /// Watching-zenoh RFC §synth-5-K line 2512-2516 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2512-2516 verbatim
     /// (`pool/stage-copy-accept-rejected-under-forbid`).
     /// `pool_defaults.stage_copy_policy: forbid` AND a link source
     /// carries `<sce:accept-stage-copy-rate>`. The opt-out is rejected
@@ -2098,7 +2098,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "pool/stage-copy-accept-rejected-under-forbid")]
     PoolStageCopyAcceptRejectedUnderForbid,
 
-    /// Watching-zenoh RFC §synth-5-K line 2517-2519 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2517-2519 verbatim
     /// (`deploy/stage-copy-policy-unknown`).
     /// `pool_defaults.stage_copy_policy` declared with a value other
     /// than `warn` / `error` / `forbid`. Hard error (typo guard).
@@ -2121,7 +2121,7 @@ pub enum DiagnosticCode {
     //        where the §synth-5-I baseline + loaded `target_plugin`
     //        symbols converge, mirroring the
     //        `extern/target-plugin-symbol-conflict` precedent.
-    /// Watching-zenoh RFC §synth-5-K line 2449-2451 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2449-2451 verbatim
     /// (`deploy/session-arming-quota-missing`). Link declares
     /// `trust_class: session_arming` but no `session_arming_quota`.
     /// Hard error; without a cap an attacker can fill every
@@ -2132,7 +2132,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/session-arming-quota-missing")]
     MeshDeploySessionArmingQuotaMissing,
 
-    /// Watching-zenoh RFC §synth-5-K line 2452-2453 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2452-2453 verbatim
     /// (`deploy/accept-rate-config-missing`). `trust_class:
     /// session_arming` link missing `accept_rate_per_sec` or
     /// `accept_rate_burst`. Hard error.
@@ -2140,7 +2140,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/accept-rate-config-missing")]
     MeshDeployAcceptRateConfigMissing,
 
-    /// Watching-zenoh RFC §synth-5-K line 2454-2459 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2454-2459 verbatim
     /// (`deploy/session-arming-fields-on-non-arming-link`). Anti-
     /// flood / stateless_accept fields declared on a `trust_class:
     /// untrusted` or `established_session` link where `Accepting.*`
@@ -2151,7 +2151,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/session-arming-fields-on-non-arming-link")]
     MeshDeploySessionArmingFieldsOnNonArmingLink,
 
-    /// Watching-zenoh RFC §synth-5-K line 2463-2465 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2463-2465 verbatim
     /// (`deploy/stateless-accept-required-on-untrusted-source`).
     /// Link with `domain_attrs.untrusted_source: true` but no
     /// `stateless_accept` block. Hard error.
@@ -2159,7 +2159,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/stateless-accept-required-on-untrusted-source")]
     MeshDeployStatelessAcceptRequiredOnUntrustedSource,
 
-    /// Watching-zenoh RFC §synth-5-K line 2470-2473 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2470-2473 verbatim
     /// (`deploy/stateless-accept-key-rotation-shorter-than-lifetime`).
     /// `key_rotation_s × 1000 ≤ 2 × cookie_lifetime_ms`. The
     /// previous-key honor window cannot bridge a rotation, so
@@ -2170,7 +2170,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/stateless-accept-key-rotation-shorter-than-lifetime")]
     MeshDeployStatelessAcceptKeyRotationShorterThanLifetime,
 
-    /// Watching-zenoh RFC §synth-5-K line 2460-2462 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2460-2462 verbatim
     /// (`deploy/session-arming-quota-vs-peer-table-invariant-violated`).
     /// `session_arming_quota × max_handshake_time_s > peer_table.capacity`.
     /// A slow legitimate handshake can be evicted under attack when
@@ -2185,7 +2185,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/session-arming-quota-vs-peer-table-invariant-violated")]
     MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated,
 
-    /// Watching-zenoh RFC §synth-5-K line 2466-2469 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2466-2469 verbatim
     /// (`deploy/stateless-accept-extern-not-whitelisted`).
     /// `hmac_extern` or `rng_extern` symbol not present in the
     /// `sce_intrinsics_runtime` core whitelist AND not declared in
@@ -2200,7 +2200,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "deploy/stateless-accept-extern-not-whitelisted")]
     MeshDeployStatelessAcceptExternNotWhitelisted,
 
-    /// Watching-zenoh RFC §synth-5-K line 2501-2503 verbatim
+    /// SCE Protocol-Synthesis RFC §synth-5-K line 2501-2503 verbatim
     /// (`deploy/link-burst-pps-missing-on-isr-dispatch`). The resolved
     /// `rx_dispatch` (per [`super::super::mesh::deploy::LinkConfig::resolved_rx_dispatch`])
     /// is `IsrToPool` but `burst_pps` is not declared. ISR fast-path
@@ -2304,7 +2304,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "mesh/io")]
     MeshIo,
 
-    // ── Forge generated-source drift detection (watching-zenoh RFC
+    // ── Forge generated-source drift detection (SCE Protocol-Synthesis RFC
     //    §synth-6.2.6, item B9). Single code covers both axes
     //    of `sce-codegen verify`'s recomputed-vs-embedded comparison:
     //    `source-hash` mismatch (input SCXML or deploy.yaml drifted
@@ -2318,7 +2318,7 @@ pub enum DiagnosticCode {
     ForgeSourceHashMismatch,
 
     // ── Traceability §synth-5-O IR provenance pre-emit guard
-    //    (watching-zenoh RFC §synth-5-O lines 3289-3290 verbatim:
+    //    (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290 verbatim:
     //    "XInclude / sce:template composition MUST track per-element
     //    (file_id, line, column) and attach it to every IR node.
     //    Codegen failure ... surfaced via
@@ -2386,7 +2386,7 @@ pub enum DiagnosticCode {
     #[serde(rename = "traceability/meta-generated-source-line-marker-missing")]
     TraceabilityMetaGeneratedSourceLineMarkerMissing,
 
-    // ── MCU driver/class boundary on the C11 backend (watching-zenoh
+    // ── MCU driver/class boundary on the C11 backend (SCE Protocol-Synthesis
     //    RFC §5.2). The two codes split by repair surface:
     //    `mcu/driver-header-not-found` fires at compile-model time
     //    when `<sce:driver href="..."/>` cannot be resolved against
@@ -2543,7 +2543,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         ValidationCrossKindFieldNotFound,
         ValidationCrossKindTypeMismatch,
         ValidationCrossKindCircularDependency,
-        // Algorithm (watching-zenoh RFC §synth-5-A, item A3)
+        // Algorithm (SCE Protocol-Synthesis RFC §synth-5-A, item A3)
         AlgorithmLocalShadowsParam,
         AlgorithmLvalueUnsupported,
         AlgorithmReturnMissing,
@@ -2607,20 +2607,20 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         GenerateTemplateLoad,
         GenerateTemplateRender,
         GenerateUnsupportedFeature,
-        // Codegen matrix shells (watching-zenoh RFC §synth-5-J-4 / §synth-5-J-5)
+        // Codegen matrix shells (SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5)
         CodegenMcuClassKindOnNonMcuLanguage,
         CodegenGenericKindBackendEmitMissing,
-        // Codegen Rust no_std variant rejection (watching-zenoh RFC §synth-5-J-2,
+        // Codegen Rust no_std variant rejection (SCE Protocol-Synthesis RFC §synth-5-J-2,
         // item C3)
         CodegenNoStdScriptNotSupported,
         CodegenNoStdHttpNotSupported,
         CodegenNoStdFsLoadNotSupported,
         CodegenNoStdInvokeNotSupported,
-        // Algorithm §synth-5-F const-fold (watching-zenoh RFC §synth-5-F, item A4)
+        // Algorithm §synth-5-F const-fold (SCE Protocol-Synthesis RFC §synth-5-F, item A4)
         AlgorithmConstNotFoldable,
         AlgorithmConstFoldBudgetExceeded,
         AlgorithmConstYieldTypeMismatch,
-        // Codec §synth-5-B variant primitive (watching-zenoh RFC §synth-5-B, item B1)
+        // Codec §synth-5-B variant primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1)
         CodecVariantArmUnreachable,
         // RFC variant-default-uniformity — duplicate default-arm marker
         CodecVariantDuplicateDefaultArm,
@@ -2648,90 +2648,90 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         CodecFlagInputUnbound,
         CodecFlagBindDuplicateInput,
         CodecFlagBindCarrierAfterEmbed,
-        // Codec §synth-5-B present-if primitive (watching-zenoh RFC §synth-5-B, item B1)
+        // Codec §synth-5-B present-if primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1)
         CodecPresentIfRefsLaterField,
-        // Codec §synth-5-B repeat primitive (watching-zenoh RFC §synth-5-B, B2)
+        // Codec §synth-5-B repeat primitive (SCE Protocol-Synthesis RFC §synth-5-B, B2)
         CodecRepeatCountRefsLaterField,
-        // Algorithm §synth-5-B test-vector primitive (watching-zenoh RFC §synth-5-B, items B2 + B5)
+        // Algorithm §synth-5-B test-vector primitive (SCE Protocol-Synthesis RFC §synth-5-B, items B2 + B5)
         AlgorithmTestVectorUnsupportedKind,
-        // Codec §synth-5-B B3 TLV chain primitive (watching-zenoh RFC §synth-5-B)
+        // Codec §synth-5-B B3 TLV chain primitive (SCE Protocol-Synthesis RFC §synth-5-B)
         CodecTlvChainDepthUnspecified,
-        // Codec §synth-5-B B3 DMA alignment primitive (watching-zenoh RFC §synth-5-B)
+        // Codec §synth-5-B B3 DMA alignment primitive (SCE Protocol-Synthesis RFC §synth-5-B)
         CodecDmaAlignmentUnsatisfiable,
         // Codec §synth-5-B peek-byte cross-codec layout match
         CodecPeekByteFlagLayoutMismatch,
-        // Link §synth-5-C byte-stream link endpoint (watching-zenoh RFC §synth-5-C, item B6)
+        // Link §synth-5-C byte-stream link endpoint (SCE Protocol-Synthesis RFC §synth-5-C, item B6)
         LinkFramerMissing,
         LinkLinkClassUnknown,
         LinkBackpressureUndeclared,
         LinkClassUnsupportedOnTarget,
         LinkPoolSlotSmallerThanFramerMax,
-        // BufferPool §synth-5-E DMA-aligned slot table (watching-zenoh RFC §synth-5-E, item B7)
+        // BufferPool §synth-5-E DMA-aligned slot table (SCE Protocol-Synthesis RFC §synth-5-E, item B7)
         MemPoolSectionConflict,
         MemPoolTooLarge,
         MemInterPoolPaddingNotEmitted,
-        // BufferPool §synth-5-E C5 cache-maintenance validation + codegen self-checks (watching-zenoh RFC §synth-5-E + §synth-5-I)
+        // BufferPool §synth-5-E C5 cache-maintenance validation + codegen self-checks (SCE Protocol-Synthesis RFC §synth-5-E + §synth-5-I)
         MemCacheLineAlignment,
         MemSlotSizeNotCacheLineMultiple,
         MemCachePolicyUnsupportedOnNoDcacheCore,
         PoolCacheMaintenanceMisplaced,
         PoolSpeculativePrefetchFlagMissing,
         PoolCachePreArmInvalidateMissingOnSpeculativeCore,
-        // BufferPool §synth-5-E Layer 1 ownership pull-through (watching-zenoh RFC §synth-5-E, item B7)
+        // BufferPool §synth-5-E Layer 1 ownership pull-through (SCE Protocol-Synthesis RFC §synth-5-E, item B7)
         PoolSampleTypestateAttributesDisabled,
-        // Sample API §synth-5-E sample-callback application-layer ownership (watching-zenoh RFC §synth-5-E)
+        // Sample API §synth-5-E sample-callback application-layer ownership (SCE Protocol-Synthesis RFC §synth-5-E)
         PoolSampleTakeWithoutStagePool,
-        // Sample API §synth-5-E sample-callback callback-path syntax (watching-zenoh RFC §synth-5-E)
+        // Sample API §synth-5-E sample-callback callback-path syntax (SCE Protocol-Synthesis RFC §synth-5-E)
         PoolSampleCallbackSignatureNonBorrow,
-        // Worker kind shared-state encapsulation (watching-zenoh RFC §synth-5-D, item C2)
+        // Worker kind shared-state encapsulation (SCE Protocol-Synthesis RFC §synth-5-D, item C2)
         WorkerSharedMutableState,
-        // Worker kind cross-resolution + inbox ordering (watching-zenoh RFC §synth-5-D + §synth-5-I, item C2)
+        // Worker kind cross-resolution + inbox ordering (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-I, item C2)
         WorkerLinkRxRefUnknown,
         WorkerInboxOrderingUnspecified,
         WorkerInboxOrderingRelaxedAcrossCores,
-        // Worker kind scheduler-capacity forge-side anchor (watching-zenoh RFC §synth-5-D, item C2)
+        // Worker kind scheduler-capacity forge-side anchor (SCE Protocol-Synthesis RFC §synth-5-D, item C2)
         WorkerSchedulerUnsupported,
-        // Worker kind SCXML-side outbox cross-resolution (watching-zenoh RFC §synth-5-D, item C2)
+        // Worker kind SCXML-side outbox cross-resolution (SCE Protocol-Synthesis RFC §synth-5-D, item C2)
         WorkerOutboxRefUnknown,
         WorkerOutboxTargetWrongKind,
         WorkerOutboxTargetSuffixInvalid,
-        // Fragment-reassembly buffer-pool variant parse-time structure validators (watching-zenoh RFC §synth-5-M, item C9)
+        // Fragment-reassembly buffer-pool variant parse-time structure validators (SCE Protocol-Synthesis RFC §synth-5-M, item C9)
         MemReassemblyPoolVariantMissingMaxFragments,
         MemReassemblyPoolVariantMissingTimeout,
-        // Fragment-reassembly cross-doc validators (watching-zenoh RFC §synth-5-M, items C9 + C13)
+        // Fragment-reassembly cross-doc validators (SCE Protocol-Synthesis RFC §synth-5-M, items C9 + C13)
         MemReassemblySlotSizeBelowDeclaredMtu,
         ReassemblyMaxFragmentsInsufficientForMtu,
         ReassemblyExpectedFragmentationRateHigh,
         ReassemblyUntrustedLinkBinding,
         ReassemblyTrustClassMissingOnFragmentingLink,
         ReassemblyStageCopyWcetExceedsSlotBudget,
-        // Fragment-reassembly codegen self-check (watching-zenoh RFC §synth-5-M, item C9)
+        // Fragment-reassembly codegen self-check (SCE Protocol-Synthesis RFC §synth-5-M, item C9)
         ReassemblyPeerIdNotZidOnEstablishedSession,
-        // Listener-link sibling-pair (watching-zenoh RFC §synth-5-C + §synth-5-M, item C10)
+        // Listener-link sibling-pair (SCE Protocol-Synthesis RFC §synth-5-C + §synth-5-M, item C10)
         LinkListenerLinkNotPairedWithEstablishedSibling,
         MeshDeployReassemblyBindingOnUnpairedListener,
-        // Multi-link concurrency contract (watching-zenoh RFC §synth-5-N, item C10)
+        // Multi-link concurrency contract (SCE Protocol-Synthesis RFC §synth-5-N, item C10)
         LinkConcurrentCountExceedsSchedulerSlots,
         LinkPerLinkBudgetExceedsTickPeriod,
         LinkInboundEventQueueUnsized,
-        // Bounded-collection kind parse-time structure validators (watching-zenoh RFC §synth-5-L, item C6)
+        // Bounded-collection kind parse-time structure validators (SCE Protocol-Synthesis RFC §synth-5-L, item C6)
         CollectionOrderingSortedRequiresIndexBy,
         CollectionOverflowPolicyOldestWinsRequiresOrderingInsertion,
-        // Bounded-collection kind cross-doc resolution (watching-zenoh RFC §synth-5-L, item C6)
+        // Bounded-collection kind cross-doc resolution (SCE Protocol-Synthesis RFC §synth-5-L, item C6)
         CollectionElementTypeNotAKind,
         CollectionIndexByFieldMissing,
         CollectionMultiWriterWithoutAtomics,
-        // Bounded-collection kind deploy-time capacity resolution (watching-zenoh RFC §synth-5-L, item C6)
+        // Bounded-collection kind deploy-time capacity resolution (SCE Protocol-Synthesis RFC §synth-5-L, item C6)
         CollectionCapacityUnresolved,
-        // Timer kind diagnostics (watching-zenoh RFC §synth-5-D, C1)
+        // Timer kind diagnostics (SCE Protocol-Synthesis RFC §synth-5-D, C1)
         TimerPeriodBelowTickRate,
         TimerSlotOverflow,
-        // `<sce:extern>` whitelisted intrinsic registry (watching-zenoh RFC §synth-5-I, item C4)
+        // `<sce:extern>` whitelisted intrinsic registry (SCE Protocol-Synthesis RFC §synth-5-I, item C4)
         ExternSymbolNotInWhitelist,
         ExternAbiMismatch,
         ExternSignatureMismatch,
         ExternOrderingUnspecified,
-        // `<sce:extern>` target-plugin extension (watching-zenoh RFC §synth-5-I, item C4)
+        // `<sce:extern>` target-plugin extension (SCE Protocol-Synthesis RFC §synth-5-I, item C4)
         ExternTargetPluginSymbolConflict,
         // Io
         IoFilesystem,
@@ -2802,7 +2802,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshDistributabilityR2CrossRegionTransition,
         MeshDeployPlatformClassOsMismatch,
         MeshDeploySchedulerCooperativeMissingStackBudget,
-        // Scheduler-capacity axis (watching-zenoh RFC §synth-5-K lines 2423/2428-9/2430-1)
+        // Scheduler-capacity axis (SCE Protocol-Synthesis RFC §synth-5-K lines 2423/2428-9/2430-1)
         MeshDeploySchedulerCooperativeMissingSlotBudget,
         MeshDeploySchedulerCooperativeMissingKeepaliveJitterBudget,
         MeshDeploySchedulerIncompatibleWithWorkerCount,
@@ -2868,13 +2868,13 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         MeshCodegenPoolWithRpcClientUnsupported,
         // Mesh Io
         MeshIo,
-        // Forge generated-source drift detection (watching-zenoh RFC §synth-6.2.6)
+        // Forge generated-source drift detection (SCE Protocol-Synthesis RFC §synth-6.2.6)
         ForgeSourceHashMismatch,
         // Traceability §synth-5-O — IR provenance pre-emit guard
-        // (watching-zenoh RFC §synth-5-O lines 3289-3290).
+        // (SCE Protocol-Synthesis RFC §synth-5-O lines 3289-3290).
         TraceabilityScxmlLineRangeMissing,
         // Traceability §synth-5-O — symbol mangling + sourcemap
-        // contract (watching-zenoh RFC §synth-5-O lines 3055-3057, 3219-3243,
+        // contract (SCE Protocol-Synthesis RFC §synth-5-O lines 3055-3057, 3219-3243,
         // 3321-3324, OQ-W16 a/b locks).
         TraceabilityStateIdCollision,
         TraceabilitySymbolNameExceedsCIdentifierLimit,
@@ -2885,7 +2885,7 @@ pub(crate) const ALL_DIAGNOSTIC_CODES: &[DiagnosticCode] = {
         // its SCE-MAP marker. ARCHITECTURE.md "Traceability Ownership
         // Boundary" defines the scope.
         TraceabilityMetaGeneratedSourceLineMarkerMissing,
-        // MCU driver/class boundary on the C11 backend (watching-zenoh
+        // MCU driver/class boundary on the C11 backend (SCE Protocol-Synthesis
         // RFC §5.2). `mcu/driver-header-not-found`
         // covers `<sce:driver href="..."/>` resolution failure;
         // `mcu/section-attribute-on-non-mcu-target` covers the
@@ -2998,10 +2998,10 @@ impl DiagnosticCode {
             // ── SCXML §5.8 top-level script (§wire-W5) ─────────────
             ScxmlTopLevelScriptUnloaded => Some("W3C SCXML §5.8"),
 
-            // ── Algorithm kind (watching-zenoh RFC §synth-5-A) ──────────
+            // ── Algorithm kind (SCE Protocol-Synthesis RFC §synth-5-A) ──────────
             AlgorithmLocalShadowsParam
             | AlgorithmLvalueUnsupported
-            | AlgorithmReturnMissing => Some("watching-zenoh RFC §5.A"),
+            | AlgorithmReturnMissing => Some("SCE Protocol-Synthesis RFC §5.A"),
 
             // ── Algorithm-over-BC dispatch (C7-lowering: RFC §synth-5-A
             //    line 311 + §synth-5-L lines 2611-2618 + 2642-2647). Six
@@ -3013,7 +3013,7 @@ impl DiagnosticCode {
             | AlgorithmCallTargetMethodUnknown
             | AlgorithmBcMutationForbidden
             | AlgorithmForeachSourceBcWithBytesItemType
-            | AlgorithmCallArgCountMismatch => Some("watching-zenoh RFC §5.A + §5.L"),
+            | AlgorithmCallArgCountMismatch => Some("SCE Protocol-Synthesis RFC §5.A + §5.L"),
 
             // ── Algorithm byte-buffer-build (SCE-owned, SCE_FORGE.md §4.12) ─
             AlgorithmAppendTargetNotBuffer | AlgorithmAppendTypeMismatch => {
@@ -3023,7 +3023,7 @@ impl DiagnosticCode {
             // ── Algorithm §synth-5-F build-time const-fold ─────────────
             AlgorithmConstNotFoldable
             | AlgorithmConstFoldBudgetExceeded
-            | AlgorithmConstYieldTypeMismatch => Some("watching-zenoh RFC §5.F"),
+            | AlgorithmConstYieldTypeMismatch => Some("SCE Protocol-Synthesis RFC §5.F"),
 
             // ── Codec §synth-5-B variant + present-if + repeat + tlv-chain + dma-align primitives (items B1 + B2 + B3) ─
             CodecVariantArmUnreachable
@@ -3049,14 +3049,14 @@ impl DiagnosticCode {
             | AlgorithmTestVectorUnsupportedKind
             | CodecTlvChainDepthUnspecified
             | CodecDmaAlignmentUnsatisfiable
-            | CodecPeekByteFlagLayoutMismatch => Some("watching-zenoh RFC §5.B"),
+            | CodecPeekByteFlagLayoutMismatch => Some("SCE Protocol-Synthesis RFC §5.B"),
 
             // ── Link §synth-5-C byte-stream link endpoint (B6) ─────────
             LinkFramerMissing
             | LinkLinkClassUnknown
             | LinkBackpressureUndeclared
             | LinkClassUnsupportedOnTarget
-            | LinkPoolSlotSmallerThanFramerMax => Some("watching-zenoh RFC §5.C"),
+            | LinkPoolSlotSmallerThanFramerMax => Some("SCE Protocol-Synthesis RFC §5.C"),
 
             // ── BufferPool §synth-5-E DMA-aligned slot table + Layer 1
             //    ownership pull-through + sample-callback Sample API
@@ -3080,7 +3080,7 @@ impl DiagnosticCode {
             | ScxmlOnSampleLinkDuplicateInState
             | ScxmlOnSampleEventNameConflict
             | ScxmlOnSampleLinkNotDeclared
-            | ScxmlOnSampleLinkWrongKind => Some("watching-zenoh RFC §5.E"),
+            | ScxmlOnSampleLinkWrongKind => Some("SCE Protocol-Synthesis RFC §5.E"),
 
             // ── §synth-5-I `<sce:extern>` whitelisted intrinsic registry
             //    (baseline + target-plugin extension, item C4) ──
@@ -3088,19 +3088,19 @@ impl DiagnosticCode {
             | ExternAbiMismatch
             | ExternSignatureMismatch
             | ExternOrderingUnspecified
-            | ExternTargetPluginSymbolConflict => Some("watching-zenoh RFC §5.I"),
+            | ExternTargetPluginSymbolConflict => Some("SCE Protocol-Synthesis RFC §5.I"),
 
             // ── §synth-5-D Worker kind encapsulation (item C2) ───────────
-            WorkerSharedMutableState => Some("watching-zenoh RFC §5.D"),
+            WorkerSharedMutableState => Some("SCE Protocol-Synthesis RFC §5.D"),
 
             // ── Worker cross-resolution (RFC §synth-5-D) + SPSC inbox
             //    ordering (RFC §synth-5-I lines 1752-1758) ──
             //    Cross-ref codes carry §synth-5-D spec anchor (worker schema
             //    is §synth-5-D's domain). Ordering codes carry §synth-5-I anchor
             //    (the SPSC/MPSC ordering contract is §synth-5-I's domain).
-            WorkerLinkRxRefUnknown => Some("watching-zenoh RFC §5.D"),
+            WorkerLinkRxRefUnknown => Some("SCE Protocol-Synthesis RFC §5.D"),
             WorkerInboxOrderingUnspecified
-            | WorkerInboxOrderingRelaxedAcrossCores => Some("watching-zenoh RFC §5.I"),
+            | WorkerInboxOrderingRelaxedAcrossCores => Some("SCE Protocol-Synthesis RFC §5.I"),
 
             // ── Worker scheduler-capacity axis (RFC §synth-5-D + §synth-5-K) ──
             //    Forge-side anchor (line 912) lives in §synth-5-D worker
@@ -3108,7 +3108,7 @@ impl DiagnosticCode {
             //    2428-9 / 2430-1) live in §synth-5-K deploy.yaml domain.
             WorkerSchedulerUnsupported
             | TimerPeriodBelowTickRate
-            | TimerSlotOverflow => Some("watching-zenoh RFC §5.D"),
+            | TimerSlotOverflow => Some("SCE Protocol-Synthesis RFC §5.D"),
 
             // ── Worker SCXML-side outbox cross-resolution (RFC §synth-5-D,
             //    item C2). All three axes live in §synth-5-D
@@ -3117,10 +3117,10 @@ impl DiagnosticCode {
             //    inbox lowering).
             WorkerOutboxRefUnknown
             | WorkerOutboxTargetWrongKind
-            | WorkerOutboxTargetSuffixInvalid => Some("watching-zenoh RFC §5.D"),
+            | WorkerOutboxTargetSuffixInvalid => Some("SCE Protocol-Synthesis RFC §5.D"),
 
             // ── §synth-5-L Bounded-collection kind parse-time structure
-            //    validators (watching-zenoh RFC §synth-5-L lines 2540-2655,
+            //    validators (SCE Protocol-Synthesis RFC §synth-5-L lines 2540-2655,
             //    item C6). The parse-time codes are XML-structure-only
             //    — the sorted ordering requires an explicit
             //    `<sce:index-by>` field (spec line 2559), and
@@ -3136,11 +3136,11 @@ impl DiagnosticCode {
             | CollectionIndexByFieldMissing
             | CollectionMultiWriterWithoutAtomics
             | CollectionCapacityUnresolved => {
-                Some("watching-zenoh RFC §5.L")
+                Some("SCE Protocol-Synthesis RFC §5.L")
             }
 
             // ── §synth-5-M Fragment-reassembly variant parse-time structure
-            //    validators (watching-zenoh RFC §synth-5-M lines 2944-2945,
+            //    validators (SCE Protocol-Synthesis RFC §synth-5-M lines 2944-2945,
             //    item C9). Both codes fire when
             //    `<sce:variant>reassembly</sce:variant>` is declared
             //    without one of its required sibling elements
@@ -3165,13 +3165,13 @@ impl DiagnosticCode {
             // codegen self-check + the 6 cross-doc
             // reassembly codes.
             | MeshDeployReassemblyBindingOnUnpairedListener => {
-                Some("watching-zenoh RFC §5.M")
+                Some("SCE Protocol-Synthesis RFC §5.M")
             }
             // Listener-pair codegen self-check (RFC §synth-5-C lines
             // 849-856). The §synth-5-C anchor matches the existing item B6
             // link family.
             LinkListenerLinkNotPairedWithEstablishedSibling => {
-                Some("watching-zenoh RFC §5.C")
+                Some("SCE Protocol-Synthesis RFC §5.C")
             }
 
             // Multi-link concurrency contract (RFC §synth-5-N lines
@@ -3181,7 +3181,7 @@ impl DiagnosticCode {
             // readable.
             LinkConcurrentCountExceedsSchedulerSlots
             | LinkPerLinkBudgetExceedsTickPeriod
-            | LinkInboundEventQueueUnsized => Some("watching-zenoh RFC §5.N"),
+            | LinkInboundEventQueueUnsized => Some("SCE Protocol-Synthesis RFC §5.N"),
 
             // ── Session C/D attribute deprecation (SCE_MESH.md §13) ──
             ValidationRemovedAttribute => Some("SCE Mesh §13"),
@@ -3255,9 +3255,9 @@ impl DiagnosticCode {
             | MeshDeployPlatformClassOsMismatch => Some("SCE Mesh §14"),
 
             // ── Scheduler-capacity deploy-side anchors
-            //    (watching-zenoh RFC §synth-5-K lines 2423 / 2426 / 2428-9 / 2430-1).
+            //    (SCE Protocol-Synthesis RFC §synth-5-K lines 2423 / 2426 / 2428-9 / 2430-1).
             //    The stack-budget variant was renamed
-            //    from the SCE-Mesh-prefix wire to the watching-zenoh-prefix
+            //    from the SCE-Mesh-prefix wire to the deploy-prefix
             //    wire (`deploy/worker-stack-budget-missing`); the spec
             //    anchor follows the rename. The three sibling variants
             //    follow the same anchor. ──
@@ -3294,7 +3294,7 @@ impl DiagnosticCode {
             // 2460-2462) + extern allowlist (RFC §synth-5-K line 2466-2469).
             | MeshDeploySessionArmingQuotaVsPeerTableInvariantViolated
             | MeshDeployStatelessAcceptExternNotWhitelisted
-                => Some("watching-zenoh RFC §5.K"),
+                => Some("SCE Protocol-Synthesis RFC §5.K"),
 
             // ── Mesh rule 12 — parallel root designation (SCE_MESH.md §14 rule 12) ──
             MeshPartitionParallelRootUndesignated
@@ -3317,7 +3317,7 @@ impl DiagnosticCode {
             | MeshDistributabilityR2CrossRegionTransition => Some("SCE Mesh §16.3"),
 
             // ── §synth-5-J-2 Rust no_std variant (item C3) ─────────────
-            //    Both rejections anchor on the watching-zenoh RFC
+            //    Both rejections anchor on the SCE Protocol-Synthesis RFC
             //    section that defines the no_std variant of the Rust
             //    backend; the script-engine incompatibility is line
             //    1989 ("zero alloc dependency") and the http-send
@@ -3326,13 +3326,13 @@ impl DiagnosticCode {
             CodegenNoStdScriptNotSupported
             | CodegenNoStdHttpNotSupported
             | CodegenNoStdFsLoadNotSupported
-            | CodegenNoStdInvokeNotSupported => Some("watching-zenoh RFC §5.J.2"),
+            | CodegenNoStdInvokeNotSupported => Some("SCE Protocol-Synthesis RFC §5.J.2"),
 
             // ── §synth-6.2.6 generated-source drift detection (B9, 2026-05-14) ──
             //    The single mismatch code covers both axes (source-hash
             //    + template-hash); the spec section defines the header
             //    contract + `sce-build verify` recompute pipeline.
-            ForgeSourceHashMismatch => Some("watching-zenoh RFC §6.2.6"),
+            ForgeSourceHashMismatch => Some("SCE Protocol-Synthesis RFC §6.2.6"),
 
             // ── §synth-5-O traceability IR provenance pre-emit
             //    guard. Spec lines 3289-3290 verbatim: "Codegen failure
@@ -3341,10 +3341,10 @@ impl DiagnosticCode {
             //    against the per-IR-node `(file_id, line, column)`
             //    invariant the SCE-MAP markers + sourcemap
             //    both consume.
-            TraceabilityScxmlLineRangeMissing => Some("watching-zenoh RFC §5.O"),
+            TraceabilityScxmlLineRangeMissing => Some("SCE Protocol-Synthesis RFC §5.O"),
 
             // ── §synth-5-O symbol mangling + sourcemap contract.
-            //    All 4 anchor at watching-zenoh RFC §synth-5-O (the same
+            //    All 4 anchor at SCE Protocol-Synthesis RFC §synth-5-O (the same
             //    section heading): spec lines 3055-3057
             //    (mangling pattern), 3219-3243 (sourcemap JSON shape),
             //    3321-3324 (source_hash byte-equality), OQ-W16 a/b
@@ -3353,14 +3353,14 @@ impl DiagnosticCode {
             | TraceabilitySymbolNameExceedsCIdentifierLimit
             | TraceabilitySourcemapSourceHashMismatch
             | TraceabilitySceMapAttributeStripped
-            | TraceabilityMetaGeneratedSourceLineMarkerMissing => Some("watching-zenoh RFC §5.O"),
+            | TraceabilityMetaGeneratedSourceLineMarkerMissing => Some("SCE Protocol-Synthesis RFC §5.O"),
 
             // ── MCU driver/class boundary on the C11 backend
-            //    (watching-zenoh RFC §5.2). Both anchor at §5.2
+            //    (SCE Protocol-Synthesis RFC §5.2). Both anchor at §5.2
             //    (driver header reference
             //    + non-MCU section attribute reject).
             McuDriverHeaderNotFound | McuSectionAttributeOnNonMcuTarget => {
-                Some("watching-zenoh RFC §5.2")
+                Some("SCE Protocol-Synthesis RFC §5.2")
             }
 
             // ── No authoritative citation ────────────────────────
@@ -3456,7 +3456,7 @@ impl DiagnosticCode {
             | MeshCodegenPoolWithRpcClientUnsupported
             | MeshIo
             // The listener-role contract is
-            // SCE-internal, not a watching-zenoh spec section. The
+            // SCE-internal, not a synthesis-RFC spec section. The
             // codes describe an SCE-only cross-doc role contract;
             // spec_anchor stays None until / unless a future spec
             // section adopts the same vocabulary.
@@ -3504,7 +3504,7 @@ impl DiagnosticCode {
             // The reassembly declared-consumption invariant carries the spec anchor
             // that lived in the diagnostic.rs:1170 placeholder comment.
             ReassemblyPerPeerQuotaBuildInvariantViolated => {
-                Some("watching-zenoh RFC §5.M")
+                Some("SCE Protocol-Synthesis RFC §5.M")
             }
             // NL→IR Item C1 Path A: Enum kind invariants live in the
             // design RFC and prescoping-reopen RFC, not in an
@@ -6794,7 +6794,7 @@ fn validation_fields(e: &ValidationError) -> DiagnosticPayload {
                 key_fragments: vec![file.clone()],
             }
         }
-        // ── MCU `<sce:driver href>` (watching-zenoh RFC §5.2) —
+        // ── MCU `<sce:driver href>` (SCE Protocol-Synthesis RFC §5.2) —
         //    resolution failure. `actual` carries the verbatim author-
         //    written href so the diagnostic message round-trips the
         //    original string; `key_fragments` include both href and
@@ -7223,7 +7223,7 @@ fn generate_fields(e: &GenerateError) -> DiagnosticPayload {
             }
         }
         // ── Non-MCU backend refuses `platform.c11_section_attribute`
-        //    (watching-zenoh RFC §5.2).
+        //    (SCE Protocol-Synthesis RFC §5.2).
         //    `actual` carries the offending backend name (`cpp` /
         //    `rust` / `kotlin` / `go` / `python`); `key_fragments`
         //    use the same single value so the wire-id is stable per
@@ -8271,7 +8271,7 @@ mod tests {
                 r#"{"v":1,"id":"fnv1a:d4a8c789490ede2b","code":"scxml/shadowed-transition","stage":"validation","message":"Transition #1 in state 'armed' (event 'fire') is shadowed by an earlier unconditional transition #0 with the same event descriptor. The shadowed transition can never fire. Reorder the transitions, add a guard to the shadowing transition, or remove the shadowed transition.","actual":"fire"}"#,
             ),
             (
-                // watching-zenoh RFC §synth-5-E sample-callback placement rule
+                // SCE Protocol-Synthesis RFC §synth-5-E sample-callback placement rule
                 "forge/scxml-on-sample-invalid-parent",
                 ValidationError::OnSampleInvalidParent {
                     path: "scxml > onentry".into(),
@@ -8279,10 +8279,10 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:90051ac7a8571e3a","code":"scxml/on-sample-invalid-parent","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"<sce:on-sample> at scxml > onentry: must appear directly inside a <state> or <parallel>; found inside <onentry>. Move the element under a state or parallel ancestor.","actual":"onentry"}"#,
+                r#"{"v":1,"id":"fnv1a:90051ac7a8571e3a","code":"scxml/on-sample-invalid-parent","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"<sce:on-sample> at scxml > onentry: must appear directly inside a <state> or <parallel>; found inside <onentry>. Move the element under a state or parallel ancestor.","actual":"onentry"}"#,
             ),
             (
-                // watching-zenoh RFC §synth-5-E sample-callback per-state uniqueness rule
+                // SCE Protocol-Synthesis RFC §synth-5-E sample-callback per-state uniqueness rule
                 "forge/scxml-on-sample-link-duplicate-in-state",
                 ValidationError::OnSampleLinkDuplicateInState {
                     state_id: "running".into(),
@@ -8290,10 +8290,10 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:ab4ec9e9ef9663b9","code":"scxml/on-sample-link-duplicate-in-state","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': duplicate <sce:on-sample link=\"scout_link\"> declarations. Each link is allowed at most one on-sample block per state; merge the duplicates or rename one of the link references.","actual":"scout_link"}"#,
+                r#"{"v":1,"id":"fnv1a:ab4ec9e9ef9663b9","code":"scxml/on-sample-link-duplicate-in-state","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"state 'running': duplicate <sce:on-sample link=\"scout_link\"> declarations. Each link is allowed at most one on-sample block per state; merge the duplicates or rename one of the link references.","actual":"scout_link"}"#,
             ),
             (
-                // watching-zenoh RFC §synth-5-E sample-callback reserved-event-name rule
+                // SCE Protocol-Synthesis RFC §synth-5-E sample-callback reserved-event-name rule
                 "forge/scxml-on-sample-event-name-conflict",
                 ValidationError::OnSampleEventNameConflict {
                     event: "error.io".into(),
@@ -8301,10 +8301,10 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:3b804e5f18b5b65a","code":"scxml/on-sample-event-name-conflict","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"<sce:on-sample event=\"error.io\"> collides with the reserved W3C SCXML internal event prefix 'error.'. Pick an event name outside that family (e.g. 'sample.error.io') so dispatched samples stay distinct from built-in lifecycle events.","actual":"error.io"}"#,
+                r#"{"v":1,"id":"fnv1a:3b804e5f18b5b65a","code":"scxml/on-sample-event-name-conflict","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"<sce:on-sample event=\"error.io\"> collides with the reserved W3C SCXML internal event prefix 'error.'. Pick an event name outside that family (e.g. 'sample.error.io') so dispatched samples stay distinct from built-in lifecycle events.","actual":"error.io"}"#,
             ),
             (
-                // watching-zenoh RFC §synth-5-E sample-callback
+                // SCE Protocol-Synthesis RFC §synth-5-E sample-callback
                 // cross-ref pair — `not-declared` is reachable today.
                 "forge/scxml-on-sample-link-not-declared",
                 ValidationError::OnSampleLinkNotDeclared {
@@ -8314,7 +8314,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:b635927d2fa69152","code":"scxml/on-sample-link-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\"> references a name that no `.forge` file in the build declares as a link kind. Add a forge `<scxml sce:kind=\"link\" name=\"scout_link\">` document or fix the reference. See watching-zenoh RFC §5.E.","actual":"scout_link","fix":{"kind":"replace_one_of","candidates":["status_link"]}}"#,
+                r#"{"v":1,"id":"fnv1a:b635927d2fa69152","code":"scxml/on-sample-link-not-declared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\"> references a name that no `.forge` file in the build declares as a link kind. Add a forge `<scxml sce:kind=\"link\" name=\"scout_link\">` document or fix the reference. See SCE Protocol-Synthesis RFC §5.E.","actual":"scout_link","fix":{"kind":"replace_one_of","candidates":["status_link"]}}"#,
             ),
             (
                 // `wrong-kind` — forward-compat per stage_pool precedent.
@@ -8330,7 +8330,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:38b424712554fe91","code":"scxml/on-sample-link-wrong-kind","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_codec\"> resolves to a forge 'codec' kind, not 'link'. Only link kind documents back the on-sample subscriber contract. Repoint the reference at one of the build's link kind names. See watching-zenoh RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_link"]}}"#,
+                r#"{"v":1,"id":"fnv1a:38b424712554fe91","code":"scxml/on-sample-link-wrong-kind","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_codec\"> resolves to a forge 'codec' kind, not 'link'. Only link kind documents back the on-sample subscriber contract. Repoint the reference at one of the build's link kind names. See SCE Protocol-Synthesis RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_link"]}}"#,
             ),
             (
                 // Listener-role — `<sce:session-role kind="X"/>`
@@ -8422,7 +8422,7 @@ mod tests {
                     product: 8,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:3c94c473897424b8","code":"reassembly/per-peer-quota-build-invariant-violated","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (slot_count=16) bound to machine 'mcu_node' link 'udp_listener' violates the per-peer-quota build invariant: `peer_table.capacity (2) × per_peer_quota (4) = 8` < `slot_count (16)`. RFC §5.M lines 2841-2861 — without this bound a peer storm can occupy more slots than the per-peer cap permits, silently degrading per-peer accounting into shared-pool contention. Repair: raise `peer_table.capacity` on the link's `stateless_accept`, raise `per_peer_quota` on the pool, or lower `slot_count` on the pool.","actual":"8 < 16"}"#,
+                r#"{"v":1,"id":"fnv1a:3c94c473897424b8","code":"reassembly/per-peer-quota-build-invariant-violated","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (slot_count=16) bound to machine 'mcu_node' link 'udp_listener' violates the per-peer-quota build invariant: `peer_table.capacity (2) × per_peer_quota (4) = 8` < `slot_count (16)`. RFC §5.M lines 2841-2861 — without this bound a peer storm can occupy more slots than the per-peer cap permits, silently degrading per-peer accounting into shared-pool contention. Repair: raise `peer_table.capacity` on the link's `stateless_accept`, raise `per_peer_quota` on the pool, or lower `slot_count` on the pool.","actual":"8 < 16"}"#,
             ),
             (
                 // RFC §synth-5-E sample-callback: on-sample subscriber on a
@@ -8438,7 +8438,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:1c55aabc0ddc8d36","code":"pool/sample-take-without-stage-pool","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\"> targets a link kind whose forge document does not declare a `<sce:stage-pool>` element. Subscriber callbacks on this link cannot escape the borrow lifetime via `Sample::take()` because there is no stage-copy destination. Add `<sce:stage-pool ref=\"...\">` to the link's `.forge` document or restrict callbacks to borrow-only access. See watching-zenoh RFC §5.E.","actual":"scout_link","fix":{"kind":"replace_one_of","candidates":["scout_stage_pool"]}}"#,
+                r#"{"v":1,"id":"fnv1a:1c55aabc0ddc8d36","code":"pool/sample-take-without-stage-pool","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\"> targets a link kind whose forge document does not declare a `<sce:stage-pool>` element. Subscriber callbacks on this link cannot escape the borrow lifetime via `Sample::take()` because there is no stage-copy destination. Add `<sce:stage-pool ref=\"...\">` to the link's `.forge` document or restrict callbacks to borrow-only access. See SCE Protocol-Synthesis RFC §5.E.","actual":"scout_link","fix":{"kind":"replace_one_of","candidates":["scout_stage_pool"]}}"#,
             ),
             (
                 // RFC §synth-5-E sample-callback callback-path syntax: an
@@ -8460,7 +8460,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:c1db04cc9e2b921b","code":"pool/sample-callback-signature-non-borrow","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\" callback=\"cpp:my_app::on_scout\"> uses an unsupported language prefix `cpp` (only `rust:` is accepted today). The `callback` value must match the `rust:crate::module::fn` path subset. The borrow-mode contract is enforced at the dispatch site; rustc rejects owned-mode signatures at user-crate compile time. See watching-zenoh RFC §5.E.","actual":"cpp:my_app::on_scout"}"#,
+                r#"{"v":1,"id":"fnv1a:c1db04cc9e2b921b","code":"pool/sample-callback-signature-non-borrow","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"state 'running': <sce:on-sample link=\"scout_link\" callback=\"cpp:my_app::on_scout\"> uses an unsupported language prefix `cpp` (only `rust:` is accepted today). The `callback` value must match the `rust:crate::module::fn` path subset. The borrow-mode contract is enforced at the dispatch site; rustc rejects owned-mode signatures at user-crate compile time. See SCE Protocol-Synthesis RFC §5.E.","actual":"cpp:my_app::on_scout"}"#,
             ),
             (
                 // RFC §synth-5-D line 911: worker shared-state encapsulation.
@@ -8485,7 +8485,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:f054d112eea16560","code":"worker/shared-mutable-state","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': declares <sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>; workers cannot import other worker kinds. Workers must communicate with other workers only through their own inbox (consume) and the recipient's inbox via <sce:outbox ref=\"...\"> (produce); all other paths to another worker's state are forbidden per RFC §5.D line 911 (\"any non-inbox access to another worker's state\").","actual":"<sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>"}"#,
+                r#"{"v":1,"id":"fnv1a:f054d112eea16560","code":"worker/shared-mutable-state","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"worker 'rx_loop': declares <sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>; workers cannot import other worker kinds. Workers must communicate with other workers only through their own inbox (consume) and the recipient's inbox via <sce:outbox ref=\"...\"> (produce); all other paths to another worker's state are forbidden per RFC §5.D line 911 (\"any non-inbox access to another worker's state\").","actual":"<sce:import as=\"tx_loop\" src=\"tx_loop.scxml\" kind=\"worker\"/>"}"#,
             ),
             // ── §synth-5-D worker cross-resolution: link-rx + outbox ref ──
             (
@@ -8503,7 +8503,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:60c2fe22d1085b50","code":"worker/link-rx-ref-unknown","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:link-rx ref=\"udp_scout\"> references a name that is not imported as a link kind. Declare the link via <sce:import as=\"udp_scout\" src=\"...\" kind=\"link\"/> on this worker document, or replace the ref with one of the imported link-kind aliases (closest matches: status_link).","actual":"udp_scout","fix":{"kind":"replace_one_of","candidates":["status_link"]}}"#,
+                r#"{"v":1,"id":"fnv1a:60c2fe22d1085b50","code":"worker/link-rx-ref-unknown","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"worker 'rx_loop': <sce:link-rx ref=\"udp_scout\"> references a name that is not imported as a link kind. Declare the link via <sce:import as=\"udp_scout\" src=\"...\" kind=\"link\"/> on this worker document, or replace the ref with one of the imported link-kind aliases (closest matches: status_link).","actual":"udp_scout","fix":{"kind":"replace_one_of","candidates":["status_link"]}}"#,
             ),
             // ── §synth-5-I SPSC inbox ordering ──
             (
@@ -8518,7 +8518,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:066432600b5950a2","code":"worker/inbox-ordering-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"worker 'rx_loop': <sce:inbox> declared without an `ordering` attribute. Pick `ordering=\"acq_rel\"` (safe default; producer and consumer pair head/tail with acquire+release on every push/pop) or `ordering=\"relaxed\"` (single-core fast-path; cross-core placement raises `worker/inbox-ordering-relaxed-across-cores`). Spec §5.I line 1752-1758 mandates one of these two for every SPSC inbox."}"#,
+                r#"{"v":1,"id":"fnv1a:066432600b5950a2","code":"worker/inbox-ordering-unspecified","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"worker 'rx_loop': <sce:inbox> declared without an `ordering` attribute. Pick `ordering=\"acq_rel\"` (safe default; producer and consumer pair head/tail with acquire+release on every push/pop) or `ordering=\"relaxed\"` (single-core fast-path; cross-core placement raises `worker/inbox-ordering-relaxed-across-cores`). Spec §5.I line 1752-1758 mandates one of these two for every SPSC inbox."}"#,
             ),
             (
                 // RFC §synth-5-I lines 1755-1756: codegen-invariant
@@ -8536,7 +8536,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:b605193320262358","code":"worker/inbox-ordering-relaxed-across-cores","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"worker 'rx_loop': <sce:inbox ordering=\"relaxed\"> declared but deploy.placement pins producer on core 0 and consumer on core 1. Cross-core SPSC inboxes require acquire/release pairing on head/tail (per spec §5.I lines 1752-1758). Replace with `ordering=\"acq_rel\"` or co-locate producer + consumer on the same core via deploy.placement.","actual":"relaxed"}"#,
+                r#"{"v":1,"id":"fnv1a:b605193320262358","code":"worker/inbox-ordering-relaxed-across-cores","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"worker 'rx_loop': <sce:inbox ordering=\"relaxed\"> declared but deploy.placement pins producer on core 0 and consumer on core 1. Cross-core SPSC inboxes require acquire/release pairing on head/tail (per spec §5.I lines 1752-1758). Replace with `ordering=\"acq_rel\"` or co-locate producer + consumer on the same core via deploy.placement.","actual":"relaxed"}"#,
             ),
             (
                 // RFC §synth-5-D line 912: forge-side anchor for scheduler
@@ -8552,7 +8552,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:39f753b9c4918241","code":"worker/scheduler-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': not declared in deploy.yaml under `machines.mcu_node.workers`. watching-zenoh RFC §5.D line 912 (`worker/scheduler-unsupported`) — the cooperative scheduler tracks one tick slot per declared worker; an undeclared worker has no slot. Repair: add `rx_loop:` under `machines.mcu_node.workers:` in deploy.yaml, or remove the Worker doc from the build.","actual":"rx_loop"}"#,
+                r#"{"v":1,"id":"fnv1a:39f753b9c4918241","code":"worker/scheduler-unsupported","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"worker 'rx_loop': not declared in deploy.yaml under `machines.mcu_node.workers`. SCE Protocol-Synthesis RFC §5.D line 912 (`worker/scheduler-unsupported`) — the cooperative scheduler tracks one tick slot per declared worker; an undeclared worker has no slot. Repair: add `rx_loop:` under `machines.mcu_node.workers:` in deploy.yaml, or remove the Worker doc from the build.","actual":"rx_loop"}"#,
             ),
             // ── §synth-5-D worker outbox cross-resolution ──
             (
@@ -8573,7 +8573,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:99378501ddb9866e","code":"worker/outbox-ref-unknown","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"sesion_fsm.inbox\"> names owner 'sesion_fsm' which is not a registered statechart or worker. Declare the recipient as a separate `.scxml` document in this build (statechart: `<scxml name=\"sesion_fsm\">`; worker: `<scxml sce:kind=\"worker\" name=\"sesion_fsm\">`), or replace the ref with one of the registered recipients: session_fsm.inbox, tx_loop.inbox.","actual":"sesion_fsm.inbox","fix":{"kind":"replace_one_of","candidates":["session_fsm.inbox","tx_loop.inbox"]}}"#,
+                r#"{"v":1,"id":"fnv1a:99378501ddb9866e","code":"worker/outbox-ref-unknown","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"sesion_fsm.inbox\"> names owner 'sesion_fsm' which is not a registered statechart or worker. Declare the recipient as a separate `.scxml` document in this build (statechart: `<scxml name=\"sesion_fsm\">`; worker: `<scxml sce:kind=\"worker\" name=\"sesion_fsm\">`), or replace the ref with one of the registered recipients: session_fsm.inbox, tx_loop.inbox.","actual":"sesion_fsm.inbox","fix":{"kind":"replace_one_of","candidates":["session_fsm.inbox","tx_loop.inbox"]}}"#,
             ),
             (
                 // RFC §synth-5-D worker outbox: owner found but kind not
@@ -8595,7 +8595,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:1efb5e754cd03d3d","code":"worker/outbox-target-wrong-kind","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"udp_scout.inbox\"> names 'udp_scout' which is registered as a link kind, not a statechart or worker. Outbox refs may only target statechart or worker inboxes (RFC §5.D line 911 \"any non-inbox access\" by negation admits inbox access on statechart + worker kinds). Replace with one of: session_fsm.inbox, tx_loop.inbox.","actual":"udp_scout.inbox","fix":{"kind":"replace_one_of","candidates":["session_fsm.inbox","tx_loop.inbox"]}}"#,
+                r#"{"v":1,"id":"fnv1a:1efb5e754cd03d3d","code":"worker/outbox-target-wrong-kind","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"udp_scout.inbox\"> names 'udp_scout' which is registered as a link kind, not a statechart or worker. Outbox refs may only target statechart or worker inboxes (RFC §5.D line 911 \"any non-inbox access\" by negation admits inbox access on statechart + worker kinds). Replace with one of: session_fsm.inbox, tx_loop.inbox.","actual":"udp_scout.inbox","fix":{"kind":"replace_one_of","candidates":["session_fsm.inbox","tx_loop.inbox"]}}"#,
             ),
             (
                 // RFC §synth-5-D worker outbox: suffix !=  `inbox` per
@@ -8611,7 +8611,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:a8a2cabe814a473a","code":"worker/outbox-target-suffix-invalid","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"session_fsm.inbx\"> declares suffix 'inbx' but the only legal suffix is 'inbox' (RFC §5.D line 895 example: `<owner>.inbox`; spec line 1998 codegen table fixes the recipient queue name to `inbox`). Replace with `session_fsm.inbox`.","actual":"session_fsm.inbx","fix":{"kind":"replace_with","to":"session_fsm.inbox"}}"#,
+                r#"{"v":1,"id":"fnv1a:a8a2cabe814a473a","code":"worker/outbox-target-suffix-invalid","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"worker 'rx_loop': <sce:outbox ref=\"session_fsm.inbx\"> declares suffix 'inbx' but the only legal suffix is 'inbox' (RFC §5.D line 895 example: `<owner>.inbox`; spec line 1998 codegen table fixes the recipient queue name to `inbox`). Replace with `session_fsm.inbox`.","actual":"session_fsm.inbx","fix":{"kind":"replace_with","to":"session_fsm.inbox"}}"#,
             ),
             (
                 // RFC §synth-5-D line 909 C1: forge-side anchor. Per-doc
@@ -8627,7 +8627,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:a84c33faf2495d72","code":"timer/period-below-tick-rate","stage":"validation","spec":"watching-zenoh RFC §5.D","message":"timer 'keepalive': <sce:period> = 500 us is shorter than scheduler.tick_period_us = 1000 us on machine 'mcu_node'. watching-zenoh RFC §5.D line 909 (`timer/period-below-tick-rate`) — the cooperative scheduler dispatches at most one timer per tick, so a period below the tick rate would miss every other deadline. Repair: raise `<sce:period>` to >= 1000us, or lower `scheduler.tick_period_us` (warning: lowering tick rate increases scheduler overhead), or switch the target machine to `scheduler.kind: tokio` / `rt` (preemptive).","expected":["1000"],"actual":"500"}"#,
+                r#"{"v":1,"id":"fnv1a:a84c33faf2495d72","code":"timer/period-below-tick-rate","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.D","message":"timer 'keepalive': <sce:period> = 500 us is shorter than scheduler.tick_period_us = 1000 us on machine 'mcu_node'. SCE Protocol-Synthesis RFC §5.D line 909 (`timer/period-below-tick-rate`) — the cooperative scheduler dispatches at most one timer per tick, so a period below the tick rate would miss every other deadline. Repair: raise `<sce:period>` to >= 1000us, or lower `scheduler.tick_period_us` (warning: lowering tick rate increases scheduler overhead), or switch the target machine to `scheduler.kind: tokio` / `rt` (preemptive).","expected":["1000"],"actual":"500"}"#,
             ),
             // ── §synth-5-L Bounded-collection parse-time structure validators (item C6) ──
             (
@@ -8640,7 +8640,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — byte-stability assertion patches.
-                r#"{"v":1,"id":"fnv1a:e42ff124e4f1930b","code":"collection/ordering-sorted-requires-index-by","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:ordering>sorted-by(index-by)</sce:ordering> declared without <sce:index-by field=\"...\"/>. watching-zenoh RFC §5.L line 2559 fixes sorted iteration to the `index-by` field; without it the codegen has no comparator to lower. Repair: add an `<sce:index-by field=\"FIELD\"/>` element naming a field of the element-type struct, or change `<sce:ordering>` to `insertion`."}"#,
+                r#"{"v":1,"id":"fnv1a:e42ff124e4f1930b","code":"collection/ordering-sorted-requires-index-by","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:ordering>sorted-by(index-by)</sce:ordering> declared without <sce:index-by field=\"...\"/>. SCE Protocol-Synthesis RFC §5.L line 2559 fixes sorted iteration to the `index-by` field; without it the codegen has no comparator to lower. Repair: add an `<sce:index-by field=\"FIELD\"/>` element naming a field of the element-type struct, or change `<sce:ordering>` to `insertion`."}"#,
             ),
             (
                 // RFC §synth-5-L line 2655: oldest-wins policy paired with
@@ -8653,7 +8653,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — byte-stability assertion patches.
-                r#"{"v":1,"id":"fnv1a:31723798e4ccd410","code":"collection/overflow-policy-oldest-wins-requires-ordering-insertion","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:on-overflow>oldest-wins</sce:on-overflow> requires <sce:ordering>insertion</sce:ordering>, but ordering is `sorted-by(index-by)`. watching-zenoh RFC §5.L line 2655 lists this combination as the explicit anti-pattern: `oldest-wins` presumes a temporal ordering that `sorted-by` replaces with the `index-by` field comparator. Repair: change `<sce:ordering>` to `insertion` (keeps the oldest-wins policy), or change `<sce:on-overflow>` to `reject` / `diagnostic-event`."}"#,
+                r#"{"v":1,"id":"fnv1a:31723798e4ccd410","code":"collection/overflow-policy-oldest-wins-requires-ordering-insertion","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:on-overflow>oldest-wins</sce:on-overflow> requires <sce:ordering>insertion</sce:ordering>, but ordering is `sorted-by(index-by)`. SCE Protocol-Synthesis RFC §5.L line 2655 lists this combination as the explicit anti-pattern: `oldest-wins` presumes a temporal ordering that `sorted-by` replaces with the `index-by` field comparator. Repair: change `<sce:ordering>` to `insertion` (keeps the oldest-wins policy), or change `<sce:on-overflow>` to `reject` / `diagnostic-event`."}"#,
             ),
             // ── §synth-5-M Fragment-reassembly variant parse-time structure validators (item C9) ──
             (
@@ -8667,7 +8667,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — byte-stability assertion patches.
-                r#"{"v":1,"id":"fnv1a:02053e3d69a3f3f4","code":"mem/reassembly-pool-variant-missing-max-fragments","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"buffer-pool 'rx_reassembly_pool': <sce:variant>reassembly</sce:variant> declared without <sce:max-fragments-per-message>N</sce:max-fragments-per-message>. watching-zenoh RFC §5.M line 2688 fixes the per-slot fragment-index bitmap width to this value; without it codegen has no upper bound on the per-slot fragment-ID tracking. Repair: add an `<sce:max-fragments-per-message>N</sce:max-fragments-per-message>` element with a positive integer N derived from the wire framer's per-message maximum."}"#,
+                r#"{"v":1,"id":"fnv1a:02053e3d69a3f3f4","code":"mem/reassembly-pool-variant-missing-max-fragments","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"buffer-pool 'rx_reassembly_pool': <sce:variant>reassembly</sce:variant> declared without <sce:max-fragments-per-message>N</sce:max-fragments-per-message>. SCE Protocol-Synthesis RFC §5.M line 2688 fixes the per-slot fragment-index bitmap width to this value; without it codegen has no upper bound on the per-slot fragment-ID tracking. Repair: add an `<sce:max-fragments-per-message>N</sce:max-fragments-per-message>` element with a positive integer N derived from the wire framer's per-message maximum."}"#,
             ),
             (
                 // RFC §synth-5-M line 2945: <sce:variant>reassembly with no
@@ -8680,7 +8680,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — byte-stability assertion patches.
-                r#"{"v":1,"id":"fnv1a:1c6a61294467efab","code":"mem/reassembly-pool-variant-missing-timeout","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"buffer-pool 'rx_reassembly_pool': <sce:variant>reassembly</sce:variant> declared without <sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>. watching-zenoh RFC §5.M line 2689 fixes the per-slot deadline field to this value; without it the reassembly FSM has no `Receiving → TimedOut` edge timer (`docs/reassembly-fsm.md` §2.4.5). Repair: add an `<sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>` element with a positive integer N (milliseconds) derived from link latency budget and acceptable hold time."}"#,
+                r#"{"v":1,"id":"fnv1a:1c6a61294467efab","code":"mem/reassembly-pool-variant-missing-timeout","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"buffer-pool 'rx_reassembly_pool': <sce:variant>reassembly</sce:variant> declared without <sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>. SCE Protocol-Synthesis RFC §5.M line 2689 fixes the per-slot deadline field to this value; without it the reassembly FSM has no `Receiving → TimedOut` edge timer (`docs/reassembly-fsm.md` §2.4.5). Repair: add an `<sce:reassembly-timeout-ms>N</sce:reassembly-timeout-ms>` element with a positive integer N (milliseconds) derived from link latency budget and acceptable hold time."}"#,
             ),
             // ── §synth-5-M Fragment-reassembly cross-doc validators (items C9 + C13) ──
             (
@@ -8696,7 +8696,7 @@ mod tests {
                     link_name: "udp_data".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:eba6a0d43209c75a","code":"mem/reassembly-slot-size-below-declared-mtu","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"buffer-pool 'rx_data_pool' is bound as RX pool for link 'udp_data' on machine 'mcu_node', but `<sce:slot-size>256</sce:slot-size>` is smaller than the link's `mtu_bytes: 512`. watching-zenoh RFC §5.M line 2946 — the slot cannot admit a single full-MTU datagram, so even the non-fragmented happy path fails. Repair: raise `<sce:slot-size>` on pool 'rx_data_pool' to >= 512, lower `mtu_bytes` on link 'udp_data', or bind a different (larger) pool.","expected":["512"],"actual":"256"}"#,
+                r#"{"v":1,"id":"fnv1a:eba6a0d43209c75a","code":"mem/reassembly-slot-size-below-declared-mtu","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"buffer-pool 'rx_data_pool' is bound as RX pool for link 'udp_data' on machine 'mcu_node', but `<sce:slot-size>256</sce:slot-size>` is smaller than the link's `mtu_bytes: 512`. SCE Protocol-Synthesis RFC §5.M line 2946 — the slot cannot admit a single full-MTU datagram, so even the non-fragmented happy path fails. Repair: raise `<sce:slot-size>` on pool 'rx_data_pool' to >= 512, lower `mtu_bytes` on link 'udp_data', or bind a different (larger) pool.","expected":["512"],"actual":"256"}"#,
             ),
             (
                 // RFC §synth-5-M line 2947-2949: reassembly slot_size < max-fragments × mtu.
@@ -8713,7 +8713,7 @@ mod tests {
                     link_name: "udp_data".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:3460f145fdcb9f41","code":"reassembly/max-fragments-insufficient-for-mtu","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_data' on machine 'mcu_node', but `<sce:slot-size>1024</sce:slot-size>` cannot hold the worst-case reassembled message: `<sce:max-fragments-per-message>8</sce:max-fragments-per-message> × link.mtu_bytes (512) = 4096` bytes required. watching-zenoh RFC §5.M line 2947-2949 verbatim: `slot_size >= max-fragments-per-message × mtu_bytes` — worst-case message must complete reassembly within declared bounds. Repair: raise `<sce:slot-size>` on pool 'rx_reassembly_pool' to >= 4096, lower `<sce:max-fragments-per-message>`, or lower link `mtu_bytes`.","expected":["4096"],"actual":"1024"}"#,
+                r#"{"v":1,"id":"fnv1a:3460f145fdcb9f41","code":"reassembly/max-fragments-insufficient-for-mtu","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_data' on machine 'mcu_node', but `<sce:slot-size>1024</sce:slot-size>` cannot hold the worst-case reassembled message: `<sce:max-fragments-per-message>8</sce:max-fragments-per-message> × link.mtu_bytes (512) = 4096` bytes required. SCE Protocol-Synthesis RFC §5.M line 2947-2949 verbatim: `slot_size >= max-fragments-per-message × mtu_bytes` — worst-case message must complete reassembly within declared bounds. Repair: raise `<sce:slot-size>` on pool 'rx_reassembly_pool' to >= 4096, lower `<sce:max-fragments-per-message>`, or lower link `mtu_bytes`.","expected":["4096"],"actual":"1024"}"#,
             ),
             (
                 // RFC §synth-5-M line 2950-2952: expected_p99 vs rx_pool slot_size
@@ -8729,7 +8729,7 @@ mod tests {
                     link_name: "udp_data".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:79cd242c82f712e0","code":"reassembly/expected-fragmentation-rate-high","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': `expected_p99_bytes: 1024` exceeds RX pool 'rx_data_pool' `<sce:slot-size>700</sce:slot-size>` by more than the 25% default stage-copy threshold (rate = 31%). watching-zenoh RFC §5.M line 2950-2952 — `(expected_p99_bytes - rx_pool.slot_size) / expected_p99_bytes > 0.25` triggers the warning. Repair: raise `<sce:slot-size>` on pool 'rx_data_pool', lower `expected_p99_bytes` (with justification), or add `<sce:accept-stage-copy-rate>` on the link source.","expected":["25"],"actual":"31"}"#,
+                r#"{"v":1,"id":"fnv1a:79cd242c82f712e0","code":"reassembly/expected-fragmentation-rate-high","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': `expected_p99_bytes: 1024` exceeds RX pool 'rx_data_pool' `<sce:slot-size>700</sce:slot-size>` by more than the 25% default stage-copy threshold (rate = 31%). SCE Protocol-Synthesis RFC §5.M line 2950-2952 — `(expected_p99_bytes - rx_pool.slot_size) / expected_p99_bytes > 0.25` triggers the warning. Repair: raise `<sce:slot-size>` on pool 'rx_data_pool', lower `expected_p99_bytes` (with justification), or add `<sce:accept-stage-copy-rate>` on the link source.","expected":["25"],"actual":"31"}"#,
             ),
             (
                 // RFC §synth-5-M line 2964-2969: reassembly pool bound to a
@@ -8744,7 +8744,7 @@ mod tests {
                     link_name: "udp_listener".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:9f94349333d3b9ad","code":"reassembly/untrusted-link-binding","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node', but the link declares `trust_class: session_arming`. watching-zenoh RFC §5.M line 2964-2969 — only `trust_class: established_session` links may carry fragmented traffic; reassembly on `untrusted` / `session_arming` links exposes the per-peer quota space to source-IP spoofing. Repair: change link 'udp_listener' to `trust_class: established_session` (only if the link is in fact post-handshake), or remove the reassembly-pool binding.","actual":"session_arming"}"#,
+                r#"{"v":1,"id":"fnv1a:9f94349333d3b9ad","code":"reassembly/untrusted-link-binding","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node', but the link declares `trust_class: session_arming`. SCE Protocol-Synthesis RFC §5.M line 2964-2969 — only `trust_class: established_session` links may carry fragmented traffic; reassembly on `untrusted` / `session_arming` links exposes the per-peer quota space to source-IP spoofing. Repair: change link 'udp_listener' to `trust_class: established_session` (only if the link is in fact post-handshake), or remove the reassembly-pool binding.","actual":"session_arming"}"#,
             ),
             (
                 // RFC §synth-5-M line 2970-2975: domain_attrs absent on a
@@ -8757,7 +8757,7 @@ mod tests {
                     link_name: "udp_data".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d09ad5b8d7cdc514","code":"reassembly/trust-class-missing-on-fragmenting-link","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_data' on machine 'mcu_node', but the link does not declare `domain_attrs.trust_class`. watching-zenoh RFC §5.M line 2970-2975 — build cannot decide whether the binding is safe without a declared trust class. Repair: declare `domain_attrs: { trust_class: established_session }` on link 'udp_data' (data-plane links), or remove the reassembly-pool binding (control-plane links)."}"#,
+                r#"{"v":1,"id":"fnv1a:d09ad5b8d7cdc514","code":"reassembly/trust-class-missing-on-fragmenting-link","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_data' on machine 'mcu_node', but the link does not declare `domain_attrs.trust_class`. SCE Protocol-Synthesis RFC §5.M line 2970-2975 — build cannot decide whether the binding is safe without a declared trust class. Repair: declare `domain_attrs: { trust_class: established_session }` on link 'udp_data' (data-plane links), or remove the reassembly-pool binding (control-plane links)."}"#,
             ),
             (
                 // RFC §synth-5-M line 2995-2999: stage-copy WCET vs slot budget.
@@ -8773,7 +8773,7 @@ mod tests {
                     stage_copy_wcet_us: 1365,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c41a9b3397849183","code":"reassembly/stage-copy-wcet-exceeds-slot-budget","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': stage-copy WCET (1365 µs) exceeds `scheduler.worker_slot_budget_us: 200`. watching-zenoh RFC §5.M line 2995-2999 — `expected_p99_bytes (16384) × memcpy_cycles_per_byte (4) / clock_freq_mhz (48) > worker_slot_budget_us`. The stage copy alone starves Keepalive and parallel-region timers (ARCHITECTURE §9.3 + §3.4). Repair: raise `worker_slot_budget_us` (and re-validate every algorithm), lower `expected_p99_bytes` so stage copy is never invoked at that size, or raise the bound pool's `<sce:slot-size>` to absorb p99 without invoking stage copy.","expected":["200"],"actual":"1365"}"#,
+                r#"{"v":1,"id":"fnv1a:c41a9b3397849183","code":"reassembly/stage-copy-wcet-exceeds-slot-budget","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"link 'udp_data' on machine 'mcu_node': stage-copy WCET (1365 µs) exceeds `scheduler.worker_slot_budget_us: 200`. SCE Protocol-Synthesis RFC §5.M line 2995-2999 — `expected_p99_bytes (16384) × memcpy_cycles_per_byte (4) / clock_freq_mhz (48) > worker_slot_budget_us`. The stage copy alone starves Keepalive and parallel-region timers (ARCHITECTURE §9.3 + §3.4). Repair: raise `worker_slot_budget_us` (and re-validate every algorithm), lower `expected_p99_bytes` so stage copy is never invoked at that size, or raise the bound pool's `<sce:slot-size>` to absorb p99 without invoking stage copy.","expected":["200"],"actual":"1365"}"#,
             ),
             (
                 // RFC §synth-5-M line 2976-2981: codegen self-check —
@@ -8787,7 +8787,7 @@ mod tests {
                     language: "rust".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c88b0fe4fe0b1ff7","code":"reassembly/peer-id-not-zid-on-established-session","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (rust backend): emitted per-slot peer-id is not the 16-byte ZID signature required for `trust_class: established_session` bindings. watching-zenoh RFC §5.M line 2976-2981 — codegen invariant violation: per-peer quota check must use the handshake-derived ZID as the peer key, not the wire source address (defends against UDP source-IP spoofing on `established_session` links). In well-formed templates the reassembly variant always emits the 16-byte ZID typedef (the cross-doc validator `reassembly/untrusted-link-binding` gates non-`established_session` bindings upstream), so this diagnostic fires only on template regression; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+                r#"{"v":1,"id":"fnv1a:c88b0fe4fe0b1ff7","code":"reassembly/peer-id-not-zid-on-established-session","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' (rust backend): emitted per-slot peer-id is not the 16-byte ZID signature required for `trust_class: established_session` bindings. SCE Protocol-Synthesis RFC §5.M line 2976-2981 — codegen invariant violation: per-peer quota check must use the handshake-derived ZID as the peer key, not the wire source address (defends against UDP source-IP spoofing on `established_session` links). In well-formed templates the reassembly variant always emits the 16-byte ZID typedef (the cross-doc validator `reassembly/untrusted-link-binding` gates non-`established_session` bindings upstream), so this diagnostic fires only on template regression; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
             (
                 // RFC §synth-5-C lines 849-856: codegen self-check —
@@ -8802,7 +8802,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:1018399a1345bb35","code":"link/listener-link-not-paired-with-established-sibling","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_listener' (rust backend): listener-link sibling emission missing the `established_session` half. watching-zenoh RFC §5.C lines 849-856 — codegen invariant violation: every `session_arming` listener must emit its paired `established_session` sibling so per-peer dispatch retains a stable codegen-time identity (re-introduces OQ-W22 if dropped). In well-formed templates the diagnostic never fires (the per-language link template emits both halves unconditionally when `listener_links` contains this name); report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+                r#"{"v":1,"id":"fnv1a:1018399a1345bb35","code":"link/listener-link-not-paired-with-established-sibling","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.C","message":"link 'udp_listener' (rust backend): listener-link sibling emission missing the `established_session` half. SCE Protocol-Synthesis RFC §5.C lines 849-856 — codegen invariant violation: every `session_arming` listener must emit its paired `established_session` sibling so per-peer dispatch retains a stable codegen-time identity (re-introduces OQ-W22 if dropped). In well-formed templates the diagnostic never fires (the per-language link template emits both halves unconditionally when `listener_links` contains this name); report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
             (
                 // RFC §synth-5-M lines 2982-2994: reassembly binding on
@@ -8818,7 +8818,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:c9d90099f8ed9a01","code":"reassembly/binding-on-unpaired-listener","stage":"validation","spec":"watching-zenoh RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node'; the link declares `trust_class: session_arming` but its machine source SCXML did not pair with a listener-role declaration (deploy `role: listener` + SCXML `<sce:session-role kind=\"accept-side\"/>`), so codegen cannot synthesize the paired `established_session` sibling. watching-zenoh RFC §5.M lines 2982-2994 — only listeners (the explicit deploy/SCXML role pair) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. Repair: declare `role: listener` on the deploy link AND add `<sce:session-role kind=\"accept-side\"/>` to machine 'mcu_node's source SCXML (making link 'udp_listener' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link 'udp_listener'."}"#,
+                r#"{"v":1,"id":"fnv1a:c9d90099f8ed9a01","code":"reassembly/binding-on-unpaired-listener","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.M","message":"reassembly-variant buffer-pool 'rx_reassembly_pool' is bound to link 'udp_listener' on machine 'mcu_node'; the link declares `trust_class: session_arming` but its machine source SCXML did not pair with a listener-role declaration (deploy `role: listener` + SCXML `<sce:session-role kind=\"accept-side\"/>`), so codegen cannot synthesize the paired `established_session` sibling. SCE Protocol-Synthesis RFC §5.M lines 2982-2994 — only listeners (the explicit deploy/SCXML role pair) auto-rebind a `session_arming` reassembly binding to the `established_session` sibling; without that pairing the binding has no valid landing site. Repair: declare `role: listener` on the deploy link AND add `<sce:session-role kind=\"accept-side\"/>` to machine 'mcu_node's source SCXML (making link 'udp_listener' a real listener so the sibling auto-synthesizes), or remove the reassembly-pool binding from link 'udp_listener'."}"#,
             ),
             (
                 // RFC §synth-5-N line 3062: cross-doc link has inbound
@@ -8833,7 +8833,7 @@ mod tests {
                     inbound_event_count: 3,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d927379bfa06a12a","code":"link/inbound-event-queue-unsized","stage":"validation","spec":"watching-zenoh RFC §5.N","message":"link 'udp_listener' on machine 'mcu_node': declares 3 inbound event(s) but no downstream FSM event-queue capacity is bound. watching-zenoh RFC §5.N line 3062 — link declared but downstream FSM inbox depth unset. Repair: add `<scxml sce:capacity=\"N\">` to machine 'mcu_node's source SCXML (per-instance), or add `scheduler.default_event_queue_capacity: N` under `machines.mcu_node` (per-machine fallback).","actual":"3"}"#,
+                r#"{"v":1,"id":"fnv1a:d927379bfa06a12a","code":"link/inbound-event-queue-unsized","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.N","message":"link 'udp_listener' on machine 'mcu_node': declares 3 inbound event(s) but no downstream FSM event-queue capacity is bound. SCE Protocol-Synthesis RFC §5.N line 3062 — link declared but downstream FSM inbox depth unset. Repair: add `<scxml sce:capacity=\"N\">` to machine 'mcu_node's source SCXML (per-instance), or add `scheduler.default_event_queue_capacity: N` under `machines.mcu_node` (per-machine fallback).","actual":"3"}"#,
             ),
             // ── §synth-5-K stage-copy policy promotion + opt-out rejection ──
             (
@@ -8850,7 +8850,7 @@ mod tests {
                     policy: "error".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c91f1db81740d284","code":"pool/stage-copy-policy-error","stage":"validation","spec":"watching-zenoh RFC §5.K","message":"link 'udp_data' on machine 'mcu_node': `expected_p99_bytes: 1024` vs RX pool 'rx_data_pool' `<sce:slot-size>700</sce:slot-size>` triggers stage-copy rate 31% (> 25% threshold), promoted to hard error under `pool_defaults.stage_copy_policy: error`. watching-zenoh RFC §5.K line 2504-2511 — author resolution: raise `<sce:slot-size>` on pool 'rx_data_pool', lower `expected_p99_bytes`, or add `<sce:accept-stage-copy-rate>` on link 'udp_data' (last option unavailable under `forbid`).","expected":["25"],"actual":"31"}"#,
+                r#"{"v":1,"id":"fnv1a:c91f1db81740d284","code":"pool/stage-copy-policy-error","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.K","message":"link 'udp_data' on machine 'mcu_node': `expected_p99_bytes: 1024` vs RX pool 'rx_data_pool' `<sce:slot-size>700</sce:slot-size>` triggers stage-copy rate 31% (> 25% threshold), promoted to hard error under `pool_defaults.stage_copy_policy: error`. SCE Protocol-Synthesis RFC §5.K line 2504-2511 — author resolution: raise `<sce:slot-size>` on pool 'rx_data_pool', lower `expected_p99_bytes`, or add `<sce:accept-stage-copy-rate>` on link 'udp_data' (last option unavailable under `forbid`).","expected":["25"],"actual":"31"}"#,
             ),
             (
                 // RFC §synth-5-K line 2512-2516: forbid rejects the opt-out outright.
@@ -8861,7 +8861,7 @@ mod tests {
                     link_name: "udp_data".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c4ce58defa7ffd7f","code":"pool/stage-copy-accept-rejected-under-forbid","stage":"validation","spec":"watching-zenoh RFC §5.K","message":"link 'udp_data' on machine 'mcu_node': `<sce:accept-stage-copy-rate>` declared but `pool_defaults.stage_copy_policy: forbid` rejects the opt-out outright. watching-zenoh RFC §5.K line 2512-2516 — only structural fixes (raise `<sce:slot-size>` or lower `expected_p99_bytes`) are accepted under `forbid`. Repair: remove `<sce:accept-stage-copy-rate>` from link 'udp_data', or change `pool_defaults.stage_copy_policy` to `error` (which permits the opt-out).","actual":"<sce:accept-stage-copy-rate>"}"#,
+                r#"{"v":1,"id":"fnv1a:c4ce58defa7ffd7f","code":"pool/stage-copy-accept-rejected-under-forbid","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.K","message":"link 'udp_data' on machine 'mcu_node': `<sce:accept-stage-copy-rate>` declared but `pool_defaults.stage_copy_policy: forbid` rejects the opt-out outright. SCE Protocol-Synthesis RFC §5.K line 2512-2516 — only structural fixes (raise `<sce:slot-size>` or lower `expected_p99_bytes`) are accepted under `forbid`. Repair: remove `<sce:accept-stage-copy-rate>` from link 'udp_data', or change `pool_defaults.stage_copy_policy` to `error` (which permits the opt-out).","actual":"<sce:accept-stage-copy-rate>"}"#,
             ),
             // ── §synth-5-L Bounded-collection cross-doc resolution (item C6) ──
             (
@@ -8882,7 +8882,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:653bda4f395fa2f4","code":"collection/element-type-not-a-kind","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:element-type>subscrription_entry</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. watching-zenoh RFC §5.L line 2566-2567 — element types must reference another forge kind by name (codec for byte-encoded structs, procedure for stateful records). Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"subscrription_entry\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"subscrription_entry\">`), or replace the body text with one of the registered candidates: router_handle, subscription_entry.","actual":"subscrription_entry","fix":{"kind":"replace_one_of","candidates":["router_handle","subscription_entry"]}}"#,
+                r#"{"v":1,"id":"fnv1a:653bda4f395fa2f4","code":"collection/element-type-not-a-kind","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:element-type>subscrription_entry</sce:element-type> does not name a codec-kind struct or procedure-kind state record in this build. SCE Protocol-Synthesis RFC §5.L line 2566-2567 — element types must reference another forge kind by name (codec for byte-encoded structs, procedure for stateful records). Declare the element type as a separate `.scxml` document (codec: `<scxml sce:kind=\"codec\" name=\"subscrription_entry\">`; procedure: `<scxml sce:kind=\"procedure\" name=\"subscrription_entry\">`), or replace the body text with one of the registered candidates: router_handle, subscription_entry.","actual":"subscrription_entry","fix":{"kind":"replace_one_of","candidates":["router_handle","subscription_entry"]}}"#,
             ),
             (
                 // RFC §synth-5-L line 2615: index-by field absent from the
@@ -8904,7 +8904,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:4a9fd47c8aae2381","code":"collection/index-by-field-missing","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:index-by field=\"key_id\"/> names a field that does not exist on element-type 'subscription_entry' (codec kind). watching-zenoh RFC §5.L line 2615 — the `index-by` field enables `find_by_index(IndexKey)` and must name an actual struct field of the element type. Replace `field=\"key_id\"` with one of the subscription_entry's declared fields: callback_id, key_expr_id.","actual":"key_id","fix":{"kind":"replace_one_of","candidates":["callback_id","key_expr_id"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4a9fd47c8aae2381","code":"collection/index-by-field-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:index-by field=\"key_id\"/> names a field that does not exist on element-type 'subscription_entry' (codec kind). SCE Protocol-Synthesis RFC §5.L line 2615 — the `index-by` field enables `find_by_index(IndexKey)` and must name an actual struct field of the element type. Replace `field=\"key_id\"` with one of the subscription_entry's declared fields: callback_id, key_expr_id.","actual":"key_id","fix":{"kind":"replace_one_of","candidates":["callback_id","key_expr_id"]}}"#,
             ),
             (
                 // RFC §synth-5-L lines 2560-2562: multi-writer concurrency
@@ -8919,7 +8919,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:b944cb27eabbfac8","code":"collection/multi-writer-without-atomics","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:concurrency>multi-writer</sce:concurrency> requires at least one §5.I atomic intrinsic to be declared via <sce:extern> somewhere in this build. watching-zenoh RFC §5.L lines 2560-2562 — multi-writer codegen lowers to acquire/release atomics on head/tail; the build's <sce:extern> trust-surface must acknowledge atomic intrinsics for codegen to emit them. Repair: either declare an atomic intrinsic via <sce:extern> (e.g. `<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u32\" abi=\"c\"/>` in any forge doc in this build), or change `<sce:concurrency>` to `single-writer`."}"#,
+                r#"{"v":1,"id":"fnv1a:b944cb27eabbfac8","code":"collection/multi-writer-without-atomics","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:concurrency>multi-writer</sce:concurrency> requires at least one §5.I atomic intrinsic to be declared via <sce:extern> somewhere in this build. SCE Protocol-Synthesis RFC §5.L lines 2560-2562 — multi-writer codegen lowers to acquire/release atomics on head/tail; the build's <sce:extern> trust-surface must acknowledge atomic intrinsics for codegen to emit them. Repair: either declare an atomic intrinsic via <sce:extern> (e.g. `<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u32\" abi=\"c\"/>` in any forge doc in this build), or change `<sce:concurrency>` to `single-writer`."}"#,
             ),
             // ── §synth-5-L Bounded-collection deploy-time capacity resolution (item C6) ──
             (
@@ -8942,7 +8942,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:4604decf96012397","code":"collection/capacity-unresolved","stage":"validation","spec":"watching-zenoh RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:capacity source=\"deploy\" key=\"machines.mcu_node.limits.local_subscriptions\"/> references limit 'local_subscriptions' on machine 'mcu_node', but deploy.yaml does not declare `machines.mcu_node.limits.local_subscriptions`. watching-zenoh RFC §5.L lines 2583-2585 — `<sce:capacity source=\"deploy\">` resolves at codegen time to a per-language compile-time constant from `machines.<machine>.limits.<limit>:`; an unresolved limit blocks emission. Repair: declare `local_subscriptions: <count>` under `machines.mcu_node.limits:` in deploy.yaml (declared limits today: in_flight_reassembly, subscription_table), or switch the BC's `<sce:capacity>` to `const=\"N\"`.","actual":"machines.mcu_node.limits.local_subscriptions","fix":{"kind":"replace_one_of","candidates":["in_flight_reassembly","subscription_table"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4604decf96012397","code":"collection/capacity-unresolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.L","message":"bounded-collection 'local_sub_table': <sce:capacity source=\"deploy\" key=\"machines.mcu_node.limits.local_subscriptions\"/> references limit 'local_subscriptions' on machine 'mcu_node', but deploy.yaml does not declare `machines.mcu_node.limits.local_subscriptions`. SCE Protocol-Synthesis RFC §5.L lines 2583-2585 — `<sce:capacity source=\"deploy\">` resolves at codegen time to a per-language compile-time constant from `machines.<machine>.limits.<limit>:`; an unresolved limit blocks emission. Repair: declare `local_subscriptions: <count>` under `machines.mcu_node.limits:` in deploy.yaml (declared limits today: in_flight_reassembly, subscription_table), or switch the BC's `<sce:capacity>` to `const=\"N\"`.","actual":"machines.mcu_node.limits.local_subscriptions","fix":{"kind":"replace_one_of","candidates":["in_flight_reassembly","subscription_table"]}}"#,
             ),
             // ── §synth-5-I `<sce:extern>` whitelisted intrinsic registry ──
             (
@@ -8962,7 +8962,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:173e706863ec82de","code":"extern/symbol-not-in-whitelist","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_compare_exchange_u32\"> references a symbol that is not on the §5.I baseline whitelist. Choose a registry-listed name (closest matches: sce_atomic_cas_strong_acq_rel_u32, sce_atomic_cas_weak_acq_rel_u32) or extend the whitelist via a target plugin (deploy.yaml `extern_symbols.target_plugin`).","actual":"sce_atomic_compare_exchange_u32","fix":{"kind":"replace_one_of","candidates":["sce_atomic_cas_strong_acq_rel_u32","sce_atomic_cas_weak_acq_rel_u32"]}}"#,
+                r#"{"v":1,"id":"fnv1a:173e706863ec82de","code":"extern/symbol-not-in-whitelist","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"<sce:extern name=\"sce_atomic_compare_exchange_u32\"> references a symbol that is not on the §5.I baseline whitelist. Choose a registry-listed name (closest matches: sce_atomic_cas_strong_acq_rel_u32, sce_atomic_cas_weak_acq_rel_u32) or extend the whitelist via a target plugin (deploy.yaml `extern_symbols.target_plugin`).","actual":"sce_atomic_compare_exchange_u32","fix":{"kind":"replace_one_of","candidates":["sce_atomic_cas_strong_acq_rel_u32","sce_atomic_cas_weak_acq_rel_u32"]}}"#,
             ),
             (
                 // RFC §synth-5-I line 1848: ABI mismatch — closed two-element
@@ -8975,7 +8975,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:c41d4f3a5258039c","code":"extern/abi-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" abi=\"rust\"> uses a non-canonical ABI; the registry entry requires `abi=\"c\"`. The accepted set is [\"c\", \"rust\"].","expected":["c"],"actual":"rust","fix":{"kind":"replace_one_of","candidates":["c","rust"]}}"#,
+                r#"{"v":1,"id":"fnv1a:c41d4f3a5258039c","code":"extern/abi-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" abi=\"rust\"> uses a non-canonical ABI; the registry entry requires `abi=\"c\"`. The accepted set is [\"c\", \"rust\"].","expected":["c"],"actual":"rust","fix":{"kind":"replace_one_of","candidates":["c","rust"]}}"#,
             ),
             (
                 // RFC §synth-5-I line 1849: signature mismatch — `Fix::ReplaceWith`
@@ -8988,7 +8988,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:36a8a1a0fbe59da6","code":"extern/signature-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u64\"> declares a signature that does not match the registry entry. Replace with `sig=\"(*const u32) -> u32\"`.","expected":["(*const u32) -> u32"],"actual":"(*const u32) -> u64","fix":{"kind":"replace_with","to":"(*const u32) -> u32"}}"#,
+                r#"{"v":1,"id":"fnv1a:36a8a1a0fbe59da6","code":"extern/signature-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"<sce:extern name=\"sce_atomic_load_acquire_u32\" sig=\"(*const u32) -> u64\"> declares a signature that does not match the registry entry. Replace with `sig=\"(*const u32) -> u32\"`.","expected":["(*const u32) -> u32"],"actual":"(*const u32) -> u64","fix":{"kind":"replace_with","to":"(*const u32) -> u32"}}"#,
             ),
             (
                 // RFC §synth-5-I line 1850: atomic-family base without ordering
@@ -9006,7 +9006,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:4e511900e9aed2c8","code":"extern/ordering-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"<sce:extern name=\"sce_atomic_load\"> is an atomic-family base without an explicit ordering + width suffix. Pick one of: sce_atomic_load_acquire_u32, sce_atomic_load_relaxed_u32.","actual":"sce_atomic_load","fix":{"kind":"replace_one_of","candidates":["sce_atomic_load_acquire_u32","sce_atomic_load_relaxed_u32"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4e511900e9aed2c8","code":"extern/ordering-unspecified","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"<sce:extern name=\"sce_atomic_load\"> is an atomic-family base without an explicit ordering + width suffix. Pick one of: sce_atomic_load_acquire_u32, sce_atomic_load_relaxed_u32.","actual":"sce_atomic_load","fix":{"kind":"replace_one_of","candidates":["sce_atomic_load_acquire_u32","sce_atomic_load_relaxed_u32"]}}"#,
             ),
             (
                 // RFC §synth-5-I line 1852: target plugin redefines
@@ -9021,7 +9021,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:0133c811a527ab82","code":"extern/target-plugin-symbol-conflict","stage":"validation","spec":"watching-zenoh RFC §5.I","message":"target plugin configs/target_extensions_stm32h7.yaml redefines core whitelist symbol `sce_atomic_load_acquire_u32`. Plugin entries extend the §5.I baseline registry but cannot override it (additive composition — extend, never override). Rename the plugin entry to a name not already in the §5.I baseline; for a platform-specific impl, declare the entry under a vendor-prefixed name (e.g. `sce_hw_<symbol>`) and route through the registry entry's `crate` field.","actual":"sce_atomic_load_acquire_u32"}"#,
+                r#"{"v":1,"id":"fnv1a:0133c811a527ab82","code":"extern/target-plugin-symbol-conflict","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.I","message":"target plugin configs/target_extensions_stm32h7.yaml redefines core whitelist symbol `sce_atomic_load_acquire_u32`. Plugin entries extend the §5.I baseline registry but cannot override it (additive composition — extend, never override). Rename the plugin entry to a name not already in the §5.I baseline; for a platform-specific impl, declare the entry under a vendor-prefixed name (e.g. `sce_hw_<symbol>`) and route through the registry entry's `crate` field.","actual":"sce_atomic_load_acquire_u32"}"#,
             ),
             (
                 "forge/expression-empty",
@@ -9285,7 +9285,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:b3b0c2c9723a4ca2","code":"xml/template-too-deep","stage":"xml","message":"<sce:use> template nesting exceeds depth limit of 10"}"#,
             ),
-            // ── Watching-zenoh RFC §synth-5-J-4 / §synth-5-J-5 codegen matrix shells.
+            // ── SCE Protocol-Synthesis RFC §synth-5-J-4 / §synth-5-J-5 codegen matrix shells.
             //    Producer constructors are reachable; the matrix walker
             //    in `forge/codegen_matrix.rs` invokes them. ──
             (
@@ -9295,7 +9295,7 @@ mod tests {
                     language: "kotlin".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:0e78c9c56b3c4d51","code":"codegen/mcu-class-kind-on-non-mcu-language","stage":"generate","message":"MCU-class kind 'link' cannot be lowered to language 'kotlin': only rust and c11 have MCU substrate (watching-zenoh RFC §5.J.4)","actual":"kotlin"}"#,
+                r#"{"v":1,"id":"fnv1a:0e78c9c56b3c4d51","code":"codegen/mcu-class-kind-on-non-mcu-language","stage":"generate","message":"MCU-class kind 'link' cannot be lowered to language 'kotlin': only rust and c11 have MCU substrate (SCE Protocol-Synthesis RFC §5.J.4)","actual":"kotlin"}"#,
             ),
             (
                 "forge/codegen-generic-kind-backend-emit-missing",
@@ -9304,9 +9304,9 @@ mod tests {
                     language: "python".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (watching-zenoh RFC §5.J.4 expects all six backends to emit)"}"#,
+                r#"{"v":1,"id":"fnv1a:d54c90195c019259","code":"codegen/generic-kind-backend-emit-missing","stage":"generate","message":"generic-class kind 'algorithm': template missing for language 'python' (SCE Protocol-Synthesis RFC §5.J.4 expects all six backends to emit)"}"#,
             ),
-            // ── Watching-zenoh RFC §synth-5-J-2 Rust no_std variant rejections
+            // ── SCE Protocol-Synthesis RFC §synth-5-J-2 Rust no_std variant rejections
             //    (item C3). Author-side `--no-std` gate on
             //    `sce-codegen generate -l rust`. ──
             (
@@ -9316,7 +9316,7 @@ mod tests {
                     locations: "<script> in state 'init'".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:99d806fa3e160004","code":"codegen/no-std-script-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects `<script>`: document 'demo' uses ECMAScript at <script> in state 'init' (watching-zenoh RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `script-engine-lua` and `script-engine-quickjs`)"}"#,
+                r#"{"v":1,"id":"fnv1a:99d806fa3e160004","code":"codegen/no-std-script-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects `<script>`: document 'demo' uses ECMAScript at <script> in state 'init' (SCE Protocol-Synthesis RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `script-engine-lua` and `script-engine-quickjs`)"}"#,
             ),
             (
                 "forge/codegen-no-std-http-not-supported",
@@ -9325,9 +9325,9 @@ mod tests {
                     locations: "<send target=\"http://localhost\"> in state 'send_step'".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1e0ad94889d9bb0c","code":"codegen/no-std-http-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects HTTP send: document 'demo' uses BasicHTTPEventProcessor at <send target=\"http://localhost\"> in state 'send_step' (watching-zenoh RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `http-send`)"}"#,
+                r#"{"v":1,"id":"fnv1a:1e0ad94889d9bb0c","code":"codegen/no-std-http-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects HTTP send: document 'demo' uses BasicHTTPEventProcessor at <send target=\"http://localhost\"> in state 'send_step' (SCE Protocol-Synthesis RFC §5.J.2; sce-rust-runtime no_std feature is incompatible with `http-send`)"}"#,
             ),
-            // ── Watching-zenoh RFC §synth-5-J-2 Rust no_std variant rejections
+            // ── SCE Protocol-Synthesis RFC §synth-5-J-2 Rust no_std variant rejections
             //    (item C3). Helper runtime cfg-gate companion
             //    pair: filesystem load + invoke. ──
             (
@@ -9337,7 +9337,7 @@ mod tests {
                     locations: "<data id='cfg' src='file:cfg.json'>".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:69b3678acabbba8d","code":"codegen/no-std-fs-load-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects external `<data src>`: document 'demo' loads file content at <data id='cfg' src='file:cfg.json'> (watching-zenoh RFC §5.J.2; filesystem helpers are gated to !no_std and unreachable from emitted code)"}"#,
+                r#"{"v":1,"id":"fnv1a:69b3678acabbba8d","code":"codegen/no-std-fs-load-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects external `<data src>`: document 'demo' loads file content at <data id='cfg' src='file:cfg.json'> (SCE Protocol-Synthesis RFC §5.J.2; filesystem helpers are gated to !no_std and unreachable from emitted code)"}"#,
             ),
             (
                 "forge/codegen-no-std-invoke-not-supported",
@@ -9346,9 +9346,9 @@ mod tests {
                     locations: "<invoke type='scxml' src='child.scxml'>".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d46720a4cb2f313e","code":"codegen/no-std-invoke-not-supported","stage":"generate","spec":"watching-zenoh RFC §5.J.2","message":"Rust no_std variant rejects `<invoke>`: document 'demo' invokes child sessions at <invoke type='scxml' src='child.scxml'> (watching-zenoh RFC §5.J.2; invoke processing is gated to !no_std and unreachable from emitted code)"}"#,
+                r#"{"v":1,"id":"fnv1a:d46720a4cb2f313e","code":"codegen/no-std-invoke-not-supported","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.J.2","message":"Rust no_std variant rejects `<invoke>`: document 'demo' invokes child sessions at <invoke type='scxml' src='child.scxml'> (SCE Protocol-Synthesis RFC §5.J.2; invoke processing is gated to !no_std and unreachable from emitted code)"}"#,
             ),
-            // ── Algorithm kind sema (watching-zenoh RFC §synth-5-A) ───────
+            // ── Algorithm kind sema (SCE Protocol-Synthesis RFC §synth-5-A) ───────
             (
                 "forge/algorithm-local-shadows-param",
                 ValidationError::AlgorithmLocalShadowsParam {
@@ -9356,7 +9356,7 @@ mod tests {
                     what: "param".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:438800138df5f1c2","code":"algorithm/local-shadows-param","stage":"validation","spec":"watching-zenoh RFC §5.A","message":"algorithm: identifier 'data' shadows param","actual":"data"}"#,
+                r#"{"v":1,"id":"fnv1a:438800138df5f1c2","code":"algorithm/local-shadows-param","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A","message":"algorithm: identifier 'data' shadows param","actual":"data"}"#,
             ),
             (
                 "forge/algorithm-lvalue-unsupported",
@@ -9365,12 +9365,12 @@ mod tests {
                     restriction: "algorithm parameters are read-only in v1".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:397b595293daf8ef","code":"algorithm/lvalue-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.A","message":"<sce:assign target=\"data\">: algorithm parameters are read-only in v1","actual":"data"}"#,
+                r#"{"v":1,"id":"fnv1a:397b595293daf8ef","code":"algorithm/lvalue-unsupported","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A","message":"<sce:assign target=\"data\">: algorithm parameters are read-only in v1","actual":"data"}"#,
             ),
             (
                 "forge/algorithm-return-missing",
                 ValidationError::AlgorithmReturnMissing.into(),
-                r#"{"v":1,"id":"fnv1a:e2582bd483bbf621","code":"algorithm/return-missing","stage":"validation","spec":"watching-zenoh RFC §5.A","message":"algorithm: signature declares return type but body's last statement is not <sce:return>"}"#,
+                r#"{"v":1,"id":"fnv1a:e2582bd483bbf621","code":"algorithm/return-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A","message":"algorithm: signature declares return type but body's last statement is not <sce:return>"}"#,
             ),
             // ── C7-lowering: algorithm-over-BC dispatch goldens
             //    (RFC §synth-5-A line 311 + §synth-5-L lines 2611-2618 + 2642-2647).
@@ -9382,7 +9382,7 @@ mod tests {
                     candidates: vec!["data".into(), "subs".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:8e088992b058a56d","code":"algorithm/foreach-source-not-iterable","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:foreach in=\"missing_bc\">: source does not resolve to a bytes param or a bounded-collection import alias","actual":"missing_bc"}"#,
+                r#"{"v":1,"id":"fnv1a:8e088992b058a56d","code":"algorithm/foreach-source-not-iterable","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A + §5.L","message":"algorithm: <sce:foreach in=\"missing_bc\">: source does not resolve to a bytes param or a bounded-collection import alias","actual":"missing_bc"}"#,
             ),
             (
                 "forge/algorithm-call-target-unknown",
@@ -9392,7 +9392,7 @@ mod tests {
                     candidates: vec!["subs".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:7ca80fadd3ca6709","code":"algorithm/call-target-unknown","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"missing_alias.find_by_index\">: alias 'missing_alias' is not a declared import","actual":"missing_alias","fix":{"kind":"replace_one_of","candidates":["subs"]}}"#,
+                r#"{"v":1,"id":"fnv1a:7ca80fadd3ca6709","code":"algorithm/call-target-unknown","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"missing_alias.find_by_index\">: alias 'missing_alias' is not a declared import","actual":"missing_alias","fix":{"kind":"replace_one_of","candidates":["subs"]}}"#,
             ),
             (
                 "forge/algorithm-call-target-method-unknown",
@@ -9410,7 +9410,7 @@ mod tests {
                     ],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:18c90b6a637ace44","code":"algorithm/call-target-method-unknown","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.unknown_method\">: method 'unknown_method' is not callable on import 'subs' (kind=bounded-collection)","actual":"unknown_method","fix":{"kind":"replace_one_of","candidates":["capacity","find_by_index","get","get_by_slot","len"]}}"#,
+                r#"{"v":1,"id":"fnv1a:18c90b6a637ace44","code":"algorithm/call-target-method-unknown","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.unknown_method\">: method 'unknown_method' is not callable on import 'subs' (kind=bounded-collection)","actual":"unknown_method","fix":{"kind":"replace_one_of","candidates":["capacity","find_by_index","get","get_by_slot","len"]}}"#,
             ),
             (
                 "forge/algorithm-bc-mutation-forbidden",
@@ -9419,7 +9419,7 @@ mod tests {
                     method: "insert".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:7fa7fc026ed6fad4","code":"algorithm/bc-mutation-forbidden","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.insert\">: mutating bounded-collection method 'insert' is forbidden from algorithm body (algorithms are pure per RFC §5.A)","actual":"insert"}"#,
+                r#"{"v":1,"id":"fnv1a:7fa7fc026ed6fad4","code":"algorithm/bc-mutation-forbidden","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.insert\">: mutating bounded-collection method 'insert' is forbidden from algorithm body (algorithms are pure per RFC §5.A)","actual":"insert"}"#,
             ),
             (
                 "forge/algorithm-foreach-source-bc-with-bytes-item-type",
@@ -9428,7 +9428,7 @@ mod tests {
                     var_name: "b".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:6b9c5ec0f8cf743f","code":"algorithm/foreach-source-bc-with-bytes-item-type","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:foreach in=\"subs\"> over bounded-collection: body's <sce:var name=\"b\" type=\"uint8\"> uses the bytes-iteration pattern but 'subs' is a bounded-collection (item carries element-type)","actual":"b"}"#,
+                r#"{"v":1,"id":"fnv1a:6b9c5ec0f8cf743f","code":"algorithm/foreach-source-bc-with-bytes-item-type","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A + §5.L","message":"algorithm: <sce:foreach in=\"subs\"> over bounded-collection: body's <sce:var name=\"b\" type=\"uint8\"> uses the bytes-iteration pattern but 'subs' is a bounded-collection (item carries element-type)","actual":"b"}"#,
             ),
             (
                 "forge/algorithm-call-arg-count-mismatch",
@@ -9438,7 +9438,7 @@ mod tests {
                     expected: 1,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:bd464011584cd3c9","code":"algorithm/call-arg-count-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.find_by_index\">: argument count 2 does not match callable's arity 1"}"#,
+                r#"{"v":1,"id":"fnv1a:bd464011584cd3c9","code":"algorithm/call-arg-count-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.A + §5.L","message":"algorithm: <sce:call target=\"subs.find_by_index\">: argument count 2 does not match callable's arity 1"}"#,
             ),
             // ── Byte-buffer-build (SCE-owned, SCE_FORGE.md §4.12) ─
             (
@@ -9459,7 +9459,7 @@ mod tests {
                 .into(),
                 r#"{"v":1,"id":"fnv1a:e63c3542ddb12c1f","code":"algorithm/append-type-mismatch","stage":"validation","spec":"SCE Forge §4.12","message":"algorithm: <sce:append target=\"out\">: expr must be uint8 or bytes, got uint16","expected":["uint8","bytes"],"actual":"uint16"}"#,
             ),
-            // ── §synth-5-F build-time const-fold (watching-zenoh RFC §synth-5-F) ─
+            // ── §synth-5-F build-time const-fold (SCE Protocol-Synthesis RFC §synth-5-F) ─
             (
                 "forge/algorithm-const-not-foldable",
                 GenerateError::ConstNotFoldable {
@@ -9468,7 +9468,7 @@ mod tests {
                     detail: "arithmetic on non-numeric operand".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f005de566be48738","code":"algorithm/const-not-foldable","stage":"generate","spec":"watching-zenoh RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-not-foldable: arithmetic on non-numeric operand","actual":"table"}"#,
+                r#"{"v":1,"id":"fnv1a:f005de566be48738","code":"algorithm/const-not-foldable","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-not-foldable: arithmetic on non-numeric operand","actual":"table"}"#,
             ),
             (
                 "forge/algorithm-const-fold-budget-exceeded",
@@ -9478,7 +9478,7 @@ mod tests {
                     budget: 1_000_000,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d1dee18e4cb7eeba","code":"algorithm/const-fold-budget-exceeded","stage":"generate","spec":"watching-zenoh RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-fold-budget-exceeded: total iteration count exceeded the configured budget of 1000000 (RFC §5.F bound 1; override with --const-fold-budget=N)","actual":"table"}"#,
+                r#"{"v":1,"id":"fnv1a:d1dee18e4cb7eeba","code":"algorithm/const-fold-budget-exceeded","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-fold-budget-exceeded: total iteration count exceeded the configured budget of 1000000 (RFC §5.F bound 1; override with --const-fold-budget=N)","actual":"table"}"#,
             ),
             (
                 "forge/algorithm-const-yield-type-mismatch",
@@ -9489,9 +9489,9 @@ mod tests {
                     actual: "float".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:5d993dd11e2f6ddb","code":"algorithm/const-yield-type-mismatch","stage":"generate","spec":"watching-zenoh RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-yield-type-mismatch: cannot coerce float to Uint16","actual":"float"}"#,
+                r#"{"v":1,"id":"fnv1a:5d993dd11e2f6ddb","code":"algorithm/const-yield-type-mismatch","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.F","message":"algorithm 'crc16': <sce:const name=\"table\">: const-yield-type-mismatch: cannot coerce float to Uint16","actual":"float"}"#,
             ),
-            // ── §synth-5-B variant primitive (watching-zenoh RFC §synth-5-B, item B1) ─
+            // ── §synth-5-B variant primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1) ─
             (
                 "forge/codec-variant-arm-unreachable",
                 ValidationError::CodecVariantArmUnreachable {
@@ -9502,7 +9502,7 @@ mod tests {
                     domain_size: Some(256),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:fb2f4b7fefc04603","code":"codec/variant-arm-unreachable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': variant on tag 'msg_id' (type uint8) has 3 arm(s) but no <sce:default> declared (tag type domain has 256 values) — at least one tag value would have no matching arm at runtime; add <sce:default type=\"...\"/> or enumerate the missing values explicitly","actual":"msg_id"}"#,
+                r#"{"v":1,"id":"fnv1a:fb2f4b7fefc04603","code":"codec/variant-arm-unreachable","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': variant on tag 'msg_id' (type uint8) has 3 arm(s) but no <sce:default> declared (tag type domain has 256 values) — at least one tag value would have no matching arm at runtime; add <sce:default type=\"...\"/> or enumerate the missing values explicitly","actual":"msg_id"}"#,
             ),
             // ── RFC variant-default-uniformity — duplicate default-arm marker ─
             (
@@ -9513,7 +9513,7 @@ mod tests {
                     second_arm_value: 0x02,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:e0a8b8b88b736596","code":"codec/variant-duplicate-default-arm","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares more than one <sce:arm default=\"true\"/> (first arm value=0x1, second arm value=0x2) — only one arm may be marked the Default-trait starting value; remove default=\"true\" from all but the intended arm. (The catch-all <sce:default> element is unrelated and still permitted once.)","actual":"session_envelope"}"#,
+                r#"{"v":1,"id":"fnv1a:e0a8b8b88b736596","code":"codec/variant-duplicate-default-arm","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares more than one <sce:arm default=\"true\"/> (first arm value=0x1, second arm value=0x2) — only one arm may be marked the Default-trait starting value; remove default=\"true\" from all but the intended arm. (The catch-all <sce:default> element is unrelated and still permitted once.)","actual":"session_envelope"}"#,
             ),
             // ── RFC variant-default-uniformity — outer arm vs inner flag mismatch ─
             (
@@ -9526,7 +9526,7 @@ mod tests {
                     inner_flag_value: 0x01,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:27db9fad022a4f48","code":"codec/variant-arm-mid-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:arm value=0x2/> selects inner codec 'session_put' but that codec declares <sce:flag name='mid' value=0x1/> on its dispatch field — outer arm value and inner flag value must match for round-trip dispatch to resolve to the same arm; align one to the other","expected":["0x2"],"actual":"0x1"}"#,
+                r#"{"v":1,"id":"fnv1a:27db9fad022a4f48","code":"codec/variant-arm-mid-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': <sce:arm value=0x2/> selects inner codec 'session_put' but that codec declares <sce:flag name='mid' value=0x1/> on its dispatch field — outer arm value and inner flag value must match for round-trip dispatch to resolve to the same arm; align one to the other","expected":["0x2"],"actual":"0x1"}"#,
             ),
             // ── RFC variant-default-uniformity — inner codec missing wire-MID ─
             (
@@ -9538,7 +9538,7 @@ mod tests {
                     expected_flag: "mid".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:0bf3318e19f672aa","code":"codec/variant-arm-inner-mid-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:arm value=0x2/> selects inner codec 'session_put', but 'session_put' does not declare a <sce:flag value=\"...\"/> constant on its dispatch field — the inner's Default would zero-fill the wire byte and break round-trip; add <sce:flag name='mid' value=0x2/> to 'session_put'","expected":["0x2"],"actual":"session_put"}"#,
+                r#"{"v":1,"id":"fnv1a:0bf3318e19f672aa","code":"codec/variant-arm-inner-mid-undeclared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': <sce:arm value=0x2/> selects inner codec 'session_put', but 'session_put' does not declare a <sce:flag value=\"...\"/> constant on its dispatch field — the inner's Default would zero-fill the wire byte and break round-trip; add <sce:flag name='mid' value=0x2/> to 'session_put'","expected":["0x2"],"actual":"session_put"}"#,
             ),
             // ── Caller-tag variant shape — variant arm body is caller-tag dispatcher ─
             (
@@ -9550,7 +9550,7 @@ mod tests {
                     embedded_codec: "session_inner".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:8259656376e7288f","code":"codec/variant-arm-body-caller-tag-unsupported","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': variant arm value=0x3 (alias 'session_inner') resolves to codec 'session_inner' whose <sce:variant> is in caller-tag shape (no tag= attribute) — there is no natural source for the inner tag in a variant-arm context. Either add tag=\"<field>\" to 'session_inner' so it reads its tag from its own wire bytes, or expose 'session_inner' via <sce:embed> + <sce:variant-dispatch> on a parent flag instead of as a variant arm body.","expected":["0x3"],"actual":"session_inner"}"#,
+                r#"{"v":1,"id":"fnv1a:8259656376e7288f","code":"codec/variant-arm-body-caller-tag-unsupported","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': variant arm value=0x3 (alias 'session_inner') resolves to codec 'session_inner' whose <sce:variant> is in caller-tag shape (no tag= attribute) — there is no natural source for the inner tag in a variant-arm context. Either add tag=\"<field>\" to 'session_inner' so it reads its tag from its own wire bytes, or expose 'session_inner' via <sce:embed> + <sce:variant-dispatch> on a parent flag instead of as a variant arm body.","expected":["0x3"],"actual":"session_inner"}"#,
             ),
             // ── RFC variant-default-uniformity — no default arm declared ─
             (
@@ -9559,7 +9559,7 @@ mod tests {
                     codec: "session_envelope".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:9778351f6ba08771","code":"codec/variant-no-default-arm","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares no <sce:arm default=\"true\"/> — every variant must mark one arm as the deliberate Default-trait starting value so codegen does not implicitly pick the first declared arm; add default=\"true\" to the intended arm. (The catch-all <sce:default> element is a separate concept and does not satisfy this requirement.)","actual":"session_envelope"}"#,
+                r#"{"v":1,"id":"fnv1a:9778351f6ba08771","code":"codec/variant-no-default-arm","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': <sce:variant> declares no <sce:arm default=\"true\"/> — every variant must mark one arm as the deliberate Default-trait starting value so codegen does not implicitly pick the first declared arm; add default=\"true\" to the intended arm. (The catch-all <sce:default> element is a separate concept and does not satisfy this requirement.)","actual":"session_envelope"}"#,
             ),
             // ── RFC variant-default-overlay — deploy.yaml overlay ─
             (
@@ -9570,7 +9570,7 @@ mod tests {
                     declared_arms: vec![0x01, 0x02, 0x03],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:eeb51f3d4f6560b6","code":"codec/variant-default-overlay-arm-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': deploy.yaml variant_defaults names arm value 0xff, but the codec declares no matching <sce:arm value=...> — declared arms: [0x1, 0x2, 0x3]; align the overlay entry with one of the declared values or remove it from variant_defaults","expected":["0xff"],"actual":"session_envelope","fix":{"kind":"replace_one_of","candidates":["0x1","0x2","0x3"]}}"#,
+                r#"{"v":1,"id":"fnv1a:eeb51f3d4f6560b6","code":"codec/variant-default-overlay-arm-not-declared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': deploy.yaml variant_defaults names arm value 0xff, but the codec declares no matching <sce:arm value=...> — declared arms: [0x1, 0x2, 0x3]; align the overlay entry with one of the declared values or remove it from variant_defaults","expected":["0xff"],"actual":"session_envelope","fix":{"kind":"replace_one_of","candidates":["0x1","0x2","0x3"]}}"#,
             ),
             // ── Parent-tag dispatch — parent-side variant-dispatch (5 codes) ─
             (
@@ -9583,7 +9583,7 @@ mod tests {
                     candidates: vec!["header.M".into(), "header.N".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:70575bd712ca76c4","code":"codec/variant-dispatch-flag-not-resolved","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"parent codec 'codec_zenoh_push': <sce:variant-dispatch flag=\"header.X\"/> on import 'key' does not resolve — flag 'X' is not declared on carrier 'header'. Correct the dotted reference to one of: [header.M, header.N].","expected":["header.X"],"actual":"codec_zenoh_push","fix":{"kind":"replace_one_of","candidates":["header.M","header.N"]}}"#,
+                r#"{"v":1,"id":"fnv1a:70575bd712ca76c4","code":"codec/variant-dispatch-flag-not-resolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': <sce:variant-dispatch flag=\"header.X\"/> on import 'key' does not resolve — flag 'X' is not declared on carrier 'header'. Correct the dotted reference to one of: [header.M, header.N].","expected":["header.X"],"actual":"codec_zenoh_push","fix":{"kind":"replace_one_of","candidates":["header.M","header.N"]}}"#,
             ),
             (
                 "forge/codec-variant-dispatch-bit-width-mismatch",
@@ -9598,7 +9598,7 @@ mod tests {
                     arm_count: 4,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:e63d7bb728560215","code":"codec/variant-dispatch-bit-width-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"parent codec 'codec_zenoh_push': <sce:variant-dispatch flag=\"header.M\"/> on import 'key' (codec 'codec_zenoh_keyexpr') — flag width 1 can encode at most 2 dispatch values, but the imported codec declares 4 arms. Widen the flag or reduce the arm count.","expected":["flag width ≥ ceil(log2(4))"],"actual":"width=1 (max 2 values) vs 4 arms"}"#,
+                r#"{"v":1,"id":"fnv1a:e63d7bb728560215","code":"codec/variant-dispatch-bit-width-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': <sce:variant-dispatch flag=\"header.M\"/> on import 'key' (codec 'codec_zenoh_keyexpr') — flag width 1 can encode at most 2 dispatch values, but the imported codec declares 4 arms. Widen the flag or reduce the arm count.","expected":["flag width ≥ ceil(log2(4))"],"actual":"width=1 (max 2 values) vs 4 arms"}"#,
             ),
             (
                 "forge/codec-variant-dispatch-arms-not-distinguishable-without-default",
@@ -9608,7 +9608,7 @@ mod tests {
                     embedded_codec: "codec_zenoh_keyexpr".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:bbab0d15f3268277","code":"codec/variant-dispatch-arms-not-distinguishable-without-default","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"parent codec 'codec_zenoh_decl_kexpr': import 'key' (codec 'codec_zenoh_keyexpr') is a variant codec but the import declares no <sce:variant-dispatch> and the imported codec has no <sce:arm default=\"true\"/> marker. Add <sce:variant-dispatch flag=\"...\"/> to the import, or mark one arm in 'codec_zenoh_keyexpr' as default=\"true\".","expected":["<sce:variant-dispatch flag=\"...\"/> on the import OR <sce:arm default=\"true\"/> in the imported codec"],"actual":"codec_zenoh_keyexpr"}"#,
+                r#"{"v":1,"id":"fnv1a:bbab0d15f3268277","code":"codec/variant-dispatch-arms-not-distinguishable-without-default","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_decl_kexpr': import 'key' (codec 'codec_zenoh_keyexpr') is a variant codec but the import declares no <sce:variant-dispatch> and the imported codec has no <sce:arm default=\"true\"/> marker. Add <sce:variant-dispatch flag=\"...\"/> to the import, or mark one arm in 'codec_zenoh_keyexpr' as default=\"true\".","expected":["<sce:variant-dispatch flag=\"...\"/> on the import OR <sce:arm default=\"true\"/> in the imported codec"],"actual":"codec_zenoh_keyexpr"}"#,
             ),
             (
                 "forge/codec-variant-dispatch-flag-has-static-value",
@@ -9620,7 +9620,7 @@ mod tests {
                     static_value: 1,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:1fdcd474ff7c7fc7","code":"codec/variant-dispatch-flag-has-static-value","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"parent codec 'codec_zenoh_push': flag 'header.M' has static <sce:flag value=0x1/>, but <sce:variant-dispatch flag=\"header.M\"/> on import 'key' would derive the same bit from the variant's arm choice — static and derived cannot coexist. Remove the value= constant or move the dispatch to a different flag.","actual":"codec_zenoh_push.header.M=0x1"}"#,
+                r#"{"v":1,"id":"fnv1a:1fdcd474ff7c7fc7","code":"codec/variant-dispatch-flag-has-static-value","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': flag 'header.M' has static <sce:flag value=0x1/>, but <sce:variant-dispatch flag=\"header.M\"/> on import 'key' would derive the same bit from the variant's arm choice — static and derived cannot coexist. Remove the value= constant or move the dispatch to a different flag.","actual":"codec_zenoh_push.header.M=0x1"}"#,
             ),
             (
                 "forge/codec-variant-dispatch-carrier-after-embed",
@@ -9634,7 +9634,7 @@ mod tests {
                     embedded_index: 0,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:ca182b36796032f0","code":"codec/variant-dispatch-carrier-after-embed","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"parent codec 'codec_zenoh_push': field 'key' (import 'key') has <sce:variant-dispatch flag=\"header.M\"/>, but carrier 'header' is declared at field index 1 which is AFTER the embed field at index 0. Reorder fields so 'header' precedes 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
+                r#"{"v":1,"id":"fnv1a:ca182b36796032f0","code":"codec/variant-dispatch-carrier-after-embed","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"parent codec 'codec_zenoh_push': field 'key' (import 'key') has <sce:variant-dispatch flag=\"header.M\"/>, but carrier 'header' is declared at field index 1 which is AFTER the embed field at index 0. Reorder fields so 'header' precedes 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
             ),
             // ── Flag inversion — parent-side flag-bind validators ─
             (
@@ -9647,7 +9647,7 @@ mod tests {
                     available_inputs: "has_suffix".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:218d5e66e1cbff7a","code":"codec/flag-bind-input-not-declared","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"is_admin\"/> on <sce:import as=\"key\"> targets a leaf-side input that 'codec_zenoh_wireexpr' does not declare. Available inputs on the imported leaf: [has_suffix]. Align the bind's input= attribute with a declared <sce:flag-input name=\"…\">, or remove the bind if the leaf no longer needs that input.","expected":["is_admin"],"actual":"declared on codec_zenoh_wireexpr: [has_suffix]","fix":{"kind":"replace_one_of","candidates":["has_suffix"]}}"#,
+                r#"{"v":1,"id":"fnv1a:218d5e66e1cbff7a","code":"codec/flag-bind-input-not-declared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"is_admin\"/> on <sce:import as=\"key\"> targets a leaf-side input that 'codec_zenoh_wireexpr' does not declare. Available inputs on the imported leaf: [has_suffix]. Align the bind's input= attribute with a declared <sce:flag-input name=\"…\">, or remove the bind if the leaf no longer needs that input.","expected":["is_admin"],"actual":"declared on codec_zenoh_wireexpr: [has_suffix]","fix":{"kind":"replace_one_of","candidates":["has_suffix"]}}"#,
             ),
             (
                 "forge/codec-flag-bind-source-not-resolved",
@@ -9659,7 +9659,7 @@ mod tests {
                     detail: "flag 'K' is not declared on local carrier 'header'".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:52e7c2d46ebfffe6","code":"codec/flag-bind-source-not-resolved","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.K\"/> on <sce:import as=\"key\"> cannot be resolved against this codec's namespace. flag 'K' is not declared on local carrier 'header'. Use <carrier>.<flag> form to reference a local flags-carrier flag, or the bare input name to forward one of this codec's own <sce:flag-input> declarations.","expected":["header.K"],"actual":"codec_zenoh_request"}"#,
+                r#"{"v":1,"id":"fnv1a:52e7c2d46ebfffe6","code":"codec/flag-bind-source-not-resolved","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.K\"/> on <sce:import as=\"key\"> cannot be resolved against this codec's namespace. flag 'K' is not declared on local carrier 'header'. Use <carrier>.<flag> form to reference a local flags-carrier flag, or the bare input name to forward one of this codec's own <sce:flag-input> declarations.","expected":["header.K"],"actual":"codec_zenoh_request"}"#,
             ),
             (
                 "forge/codec-flag-bind-width-mismatch",
@@ -9672,7 +9672,7 @@ mod tests {
                     input_width: 1,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:29ec86e6e42266e2","code":"codec/flag-bind-width-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.priority\"/> on <sce:import as=\"key\"> has source width 3 but leaf-side input 'has_suffix' declares width 1. v1 lock-in fixes flag-input width at 1; multi-bit inputs defer to a reachable consumer.","expected":["input width 1"],"actual":"source width 3"}"#,
+                r#"{"v":1,"id":"fnv1a:29ec86e6e42266e2","code":"codec/flag-bind-width-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.priority\"/> on <sce:import as=\"key\"> has source width 3 but leaf-side input 'has_suffix' declares width 1. v1 lock-in fixes flag-input width at 1; multi-bit inputs defer to a reachable consumer.","expected":["input width 1"],"actual":"source width 3"}"#,
             ),
             (
                 "forge/codec-flag-input-unbound",
@@ -9683,7 +9683,7 @@ mod tests {
                     input: "has_suffix".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:6f64a9b2f3e7bfd3","code":"codec/flag-input-unbound","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> imports 'codec_zenoh_wireexpr' which declares <sce:flag-input name=\"has_suffix\"/> but no matching <sce:flag-bind input=\"has_suffix\"/> is supplied. Bind the input to one of this codec's local flags-carrier flags (<sce:flag-bind input=\"has_suffix\" source=\"carrier.flag\"/>) or to one of this codec's own <sce:flag-input> declarations (<sce:flag-bind input=\"has_suffix\" source=\"local_input\"/>).","expected":["<sce:flag-bind input=\"has_suffix\" source=\"...\"/>"],"actual":"codec_zenoh_wireexpr declares <sce:flag-input name=\"has_suffix\"/>","fix":{"kind":"add_attribute","element":"<sce:import as=\"key\">","attr":"<sce:flag-bind input=\"has_suffix\" source=\"...\"/>"}}"#,
+                r#"{"v":1,"id":"fnv1a:6f64a9b2f3e7bfd3","code":"codec/flag-input-unbound","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> imports 'codec_zenoh_wireexpr' which declares <sce:flag-input name=\"has_suffix\"/> but no matching <sce:flag-bind input=\"has_suffix\"/> is supplied. Bind the input to one of this codec's local flags-carrier flags (<sce:flag-bind input=\"has_suffix\" source=\"carrier.flag\"/>) or to one of this codec's own <sce:flag-input> declarations (<sce:flag-bind input=\"has_suffix\" source=\"local_input\"/>).","expected":["<sce:flag-bind input=\"has_suffix\" source=\"...\"/>"],"actual":"codec_zenoh_wireexpr declares <sce:flag-input name=\"has_suffix\"/>","fix":{"kind":"add_attribute","element":"<sce:import as=\"key\">","attr":"<sce:flag-bind input=\"has_suffix\" source=\"...\"/>"}}"#,
             ),
             (
                 "forge/codec-flag-bind-duplicate-input",
@@ -9693,7 +9693,7 @@ mod tests {
                     input: "has_suffix".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:171f17f551b318d7","code":"codec/flag-bind-duplicate-input","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> has duplicate <sce:flag-bind input=\"has_suffix\"/> declarations. Each leaf-side input may be bound at most once per import site.","actual":"key.has_suffix"}"#,
+                r#"{"v":1,"id":"fnv1a:171f17f551b318d7","code":"codec/flag-bind-duplicate-input","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:import as=\"key\"> has duplicate <sce:flag-bind input=\"has_suffix\"/> declarations. Each leaf-side input may be bound at most once per import site.","actual":"key.has_suffix"}"#,
             ),
             (
                 "forge/codec-flag-bind-carrier-after-embed",
@@ -9708,9 +9708,9 @@ mod tests {
                     embedded_index: 0,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:3bb9387760da5afb","code":"codec/flag-bind-carrier-after-embed","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.N\"/> on <sce:import as=\"key\"> references a carrier 'header' declared at field-index 1 but the embed 'key' (which consumes the bound input) is at field-index 0. Streaming decode requires carrier to precede consumer — reorder the fields so 'header' is declared before 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
+                r#"{"v":1,"id":"fnv1a:3bb9387760da5afb","code":"codec/flag-bind-carrier-after-embed","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_zenoh_request': <sce:flag-bind input=\"has_suffix\" source=\"header.N\"/> on <sce:import as=\"key\"> references a carrier 'header' declared at field-index 1 but the embed 'key' (which consumes the bound input) is at field-index 0. Streaming decode requires carrier to precede consumer — reorder the fields so 'header' is declared before 'key'.","expected":["carrier 'header' before field 'key'"],"actual":"carrier at index 1, embed at index 0"}"#,
             ),
-            // ── §synth-5-B present-if primitive (watching-zenoh RFC §synth-5-B, item B1) ─
+            // ── §synth-5-B present-if primitive (SCE Protocol-Synthesis RFC §synth-5-B, item B1) ─
             (
                 "forge/codec-present-if-refs-later-field",
                 ValidationError::CodecPresentIfRefsLaterField {
@@ -9719,9 +9719,9 @@ mod tests {
                     refers_to: "trailer_flags".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f6f6bd818f8e28d9","code":"codec/present-if-refs-later-field","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': field 'key' has sce:present-if=\"trailer_flags.…\" but 'trailer_flags' is not declared earlier in this codec — present-if predicates must reference a flags-bearing carrier that the streaming decoder has already consumed; reorder the fields so the carrier comes first, or correct the predicate","actual":"key"}"#,
+                r#"{"v":1,"id":"fnv1a:f6f6bd818f8e28d9","code":"codec/present-if-refs-later-field","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': field 'key' has sce:present-if=\"trailer_flags.…\" but 'trailer_flags' is not declared earlier in this codec — present-if predicates must reference a flags-bearing carrier that the streaming decoder has already consumed; reorder the fields so the carrier comes first, or correct the predicate","actual":"key"}"#,
             ),
-            // ── §synth-5-B repeat primitive (watching-zenoh RFC §synth-5-B, B2) ─
+            // ── §synth-5-B repeat primitive (SCE Protocol-Synthesis RFC §synth-5-B, B2) ─
             (
                 "forge/codec-repeat-count-refs-later-field",
                 ValidationError::CodecRepeatCountRefsLaterField {
@@ -9730,9 +9730,9 @@ mod tests {
                     refers_to: "num_frags".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f1e97717ebdba39a","code":"codec/repeat-count-refs-later-field","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'fragment_burst': repeat field 'frags' has sce:count=\"num_frags\" but 'num_frags' is not declared earlier in this codec — repeat count references must resolve to a sibling integer field that the streaming decoder has already consumed; reorder the fields so the count comes first, or correct the attribute","actual":"frags"}"#,
+                r#"{"v":1,"id":"fnv1a:f1e97717ebdba39a","code":"codec/repeat-count-refs-later-field","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'fragment_burst': repeat field 'frags' has sce:count=\"num_frags\" but 'num_frags' is not declared earlier in this codec — repeat count references must resolve to a sibling integer field that the streaming decoder has already consumed; reorder the fields so the count comes first, or correct the attribute","actual":"frags"}"#,
             ),
-            // ── §synth-5-B test-vector primitive (watching-zenoh RFC §synth-5-B, items B2 + B5) ─
+            // ── §synth-5-B test-vector primitive (SCE Protocol-Synthesis RFC §synth-5-B, items B2 + B5) ─
             (
                 "forge/algorithm-test-vector-unsupported-kind",
                 ValidationError::TestVectorUnsupportedKind {
@@ -9740,9 +9740,9 @@ mod tests {
                     kind: ForgeKind::Filter,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:b10188077e684de4","code":"algorithm/test-vector-unsupported-kind","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"<sce:test-vector> is only supported on sce:kind=\"algorithm\" and sce:kind=\"codec\", but 'session_filter' declares sce:kind=\"Filter\" — move the test vector to an algorithm/codec file or use the kind-specific harness oracle","actual":"session_filter"}"#,
+                r#"{"v":1,"id":"fnv1a:b10188077e684de4","code":"algorithm/test-vector-unsupported-kind","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"<sce:test-vector> is only supported on sce:kind=\"algorithm\" and sce:kind=\"codec\", but 'session_filter' declares sce:kind=\"Filter\" — move the test vector to an algorithm/codec file or use the kind-specific harness oracle","actual":"session_filter"}"#,
             ),
-            // ── §synth-5-B B3 TLV chain primitive (watching-zenoh RFC §synth-5-B) ─
+            // ── §synth-5-B B3 TLV chain primitive (SCE Protocol-Synthesis RFC §synth-5-B) ─
             (
                 "forge/codec-tlv-chain-depth-unspecified",
                 ValidationError::CodecTlvChainDepthUnspecified {
@@ -9750,9 +9750,9 @@ mod tests {
                     field: "extensions".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:569cbc9e420b26e4","code":"codec/tlv-chain-depth-unspecified","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': tlv-chain field 'extensions' is missing the required `max-depth` attribute — TLV chain decoders need a build-time bound to size their working set and enforce iterative-only parse (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0","actual":"extensions"}"#,
+                r#"{"v":1,"id":"fnv1a:569cbc9e420b26e4","code":"codec/tlv-chain-depth-unspecified","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': tlv-chain field 'extensions' is missing the required `max-depth` attribute — TLV chain decoders need a build-time bound to size their working set and enforce iterative-only parse (RFC §5.B line 488); add `max-depth=\"N\"` for some N > 0","actual":"extensions"}"#,
             ),
-            // ── §synth-5-B B3 DMA alignment primitive (watching-zenoh RFC §synth-5-B) ─
+            // ── §synth-5-B B3 DMA alignment primitive (SCE Protocol-Synthesis RFC §synth-5-B) ─
             (
                 "forge/codec-dma-alignment-unsatisfiable",
                 ValidationError::CodecDmaAlignmentUnsatisfiable {
@@ -9762,7 +9762,7 @@ mod tests {
                     reason: "preceding field 'value' has bit-size 'vle' (variable-length); static padding cannot honor sce:dma-burst-align when any prior field's wire size depends on runtime values (RFC §5.B \"fixed-offset positions only — no VLE-following alignment\")".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:98584368c0e405fa","code":"codec/dma-alignment-unsatisfiable","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'session_envelope': field 'aligned_payload' with sce:dma-burst-align=\"32\" cannot be honored — preceding field 'value' has bit-size 'vle' (variable-length); static padding cannot honor sce:dma-burst-align when any prior field's wire size depends on runtime values (RFC §5.B \"fixed-offset positions only — no VLE-following alignment\")","actual":"aligned_payload"}"#,
+                r#"{"v":1,"id":"fnv1a:98584368c0e405fa","code":"codec/dma-alignment-unsatisfiable","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'session_envelope': field 'aligned_payload' with sce:dma-burst-align=\"32\" cannot be honored — preceding field 'value' has bit-size 'vle' (variable-length); static padding cannot honor sce:dma-burst-align when any prior field's wire size depends on runtime values (RFC §5.B \"fixed-offset positions only — no VLE-following alignment\")","actual":"aligned_payload"}"#,
             ),
             // ── §synth-5-B peek-byte cross-codec layout ─
             (
@@ -9773,16 +9773,16 @@ mod tests {
                     reason: "parent <sce:peek-byte id=\"peek\"> places flag 'kind' at bit=0 width=2 but arm body 'codec_peek_arm_a' header field 'header' places 'kind' at bit=1 width=2 — fix one side (the peeked byte and the arm body's own first byte are the same wire byte, so the two declarations MUST agree)".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f143872e85c94270","code":"codec/peek-byte-flag-layout-mismatch","stage":"validation","spec":"watching-zenoh RFC §5.B","message":"codec 'codec_peek_arm_a' (arm body): peek-byte flag layout mismatch against parent codec 'codec_variant_peek_basic' — parent <sce:peek-byte id=\"peek\"> places flag 'kind' at bit=0 width=2 but arm body 'codec_peek_arm_a' header field 'header' places 'kind' at bit=1 width=2 — fix one side (the peeked byte and the arm body's own first byte are the same wire byte, so the two declarations MUST agree)","actual":"codec_peek_arm_a"}"#,
+                r#"{"v":1,"id":"fnv1a:f143872e85c94270","code":"codec/peek-byte-flag-layout-mismatch","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.B","message":"codec 'codec_peek_arm_a' (arm body): peek-byte flag layout mismatch against parent codec 'codec_variant_peek_basic' — parent <sce:peek-byte id=\"peek\"> places flag 'kind' at bit=0 width=2 but arm body 'codec_peek_arm_a' header field 'header' places 'kind' at bit=1 width=2 — fix one side (the peeked byte and the arm body's own first byte are the same wire byte, so the two declarations MUST agree)","actual":"codec_peek_arm_a"}"#,
             ),
-            // ── §synth-5-C link kind (watching-zenoh RFC §synth-5-C) ─
+            // ── §synth-5-C link kind (SCE Protocol-Synthesis RFC §synth-5-C) ─
             (
                 "forge/link-framer-missing",
                 ValidationError::LinkFramerMissing {
                     name: "udp_scout".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:293d71926c63758a","code":"link/framer-missing","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': missing required <sce:framer ref=\"...\"/> child — `sce:kind=\"link\"` requires a framer codec reference so RX bytes can be decoded and TX events can be encoded; add a <sce:framer ref=\"<codec_name>\"/> child","actual":"udp_scout"}"#,
+                r#"{"v":1,"id":"fnv1a:293d71926c63758a","code":"link/framer-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.C","message":"link 'udp_scout': missing required <sce:framer ref=\"...\"/> child — `sce:kind=\"link\"` requires a framer codec reference so RX bytes can be decoded and TX events can be encoded; add a <sce:framer ref=\"<codec_name>\"/> child","actual":"udp_scout"}"#,
             ),
             // ── §synth-5-C link kind negative coverage parse-time pair ─
             (
@@ -9792,7 +9792,7 @@ mod tests {
                     value: "udpx".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:cb784501438f471c","code":"link/link-class-unknown","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': <sce:link-class> body text \"udpx\" is not in the closed enum {`udp`, `tcp`, `serial`, `websocket`, `raw_eth`} per RFC §5.C lines 765-771; replace with one of the listed candidates (OS-specific classes such as `unix_socket` or `qnx_msg` land additively in later phases)","actual":"udpx","fix":{"kind":"replace_one_of","candidates":["udp","tcp","serial","websocket","raw_eth"]}}"#,
+                r#"{"v":1,"id":"fnv1a:cb784501438f471c","code":"link/link-class-unknown","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.C","message":"link 'udp_scout': <sce:link-class> body text \"udpx\" is not in the closed enum {`udp`, `tcp`, `serial`, `websocket`, `raw_eth`} per RFC §5.C lines 765-771; replace with one of the listed candidates (OS-specific classes such as `unix_socket` or `qnx_msg` land additively in later phases)","actual":"udpx","fix":{"kind":"replace_one_of","candidates":["udp","tcp","serial","websocket","raw_eth"]}}"#,
             ),
             (
                 "forge/link-backpressure-undeclared",
@@ -9800,7 +9800,7 @@ mod tests {
                     name: "udp_scout".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d9cf8dea54e29a00","code":"link/backpressure-undeclared","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': missing required <sce:backpressure> child — `sce:kind=\"link\"` requires an explicit backpressure policy declaration per RFC §5.C; add a <sce:backpressure>drop|block|signal-event</sce:backpressure> child","actual":"udp_scout"}"#,
+                r#"{"v":1,"id":"fnv1a:d9cf8dea54e29a00","code":"link/backpressure-undeclared","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.C","message":"link 'udp_scout': missing required <sce:backpressure> child — `sce:kind=\"link\"` requires an explicit backpressure policy declaration per RFC §5.C; add a <sce:backpressure>drop|block|signal-event</sce:backpressure> child","actual":"udp_scout"}"#,
             ),
             // ── §synth-5-C OS-axis validate-time diagnostic ────────────
             (
@@ -9812,7 +9812,7 @@ mod tests {
                     candidates: vec!["bare_metal".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:5b4e6cb8ccacd634","code":"link/class-unsupported-on-target","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': link-class `serial` cannot run on target OS `linux` per RFC §5.C lines 765-771; the matrix admits `serial` on [\"bare_metal\"] only — change either the <sce:link-class> body or the deploy.yaml `machines.<id>.platform.os` for the target machine","actual":"linux","fix":{"kind":"replace_one_of","candidates":["bare_metal"]}}"#,
+                r#"{"v":1,"id":"fnv1a:5b4e6cb8ccacd634","code":"link/class-unsupported-on-target","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.C","message":"link 'udp_scout': link-class `serial` cannot run on target OS `linux` per RFC §5.C lines 765-771; the matrix admits `serial` on [\"bare_metal\"] only — change either the <sce:link-class> body or the deploy.yaml `machines.<id>.platform.os` for the target machine","actual":"linux","fix":{"kind":"replace_one_of","candidates":["bare_metal"]}}"#,
             ),
             // ── §synth-5-C link↔pool cross-resolution diagnostic ───────
             (
@@ -9826,7 +9826,7 @@ mod tests {
                     framer_max_bytes: 256,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:b02945fcd497fac4","code":"link/pool-slot-smaller-than-framer-max","stage":"validation","spec":"watching-zenoh RFC §5.C","message":"link 'udp_scout': rx-pool 'rx_pool_sram1' slot-size 64 bytes is smaller than framer 'scout_frame_codec' worst-case encoded size 256 bytes — raise <sce:slot-size> on the bound pool or shrink the codec's worst-case body","actual":"64"}"#,
+                r#"{"v":1,"id":"fnv1a:b02945fcd497fac4","code":"link/pool-slot-smaller-than-framer-max","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.C","message":"link 'udp_scout': rx-pool 'rx_pool_sram1' slot-size 64 bytes is smaller than framer 'scout_frame_codec' worst-case encoded size 256 bytes — raise <sce:slot-size> on the bound pool or shrink the codec's worst-case body","actual":"64"}"#,
             ),
             // ── §synth-5-E buffer-pool placement validate-time diagnostic ─
             (
@@ -9838,7 +9838,7 @@ mod tests {
                     candidates: vec!["dtcm".into(), "sram2".into()],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:12ceca0bfb0b761a","code":"mem/pool-section-conflict","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': section `sram1` is not declared in deploy.yaml `machines.mcu_node.memory.sram_regions` — extend the memory map or rename the pool's <sce:section> body to one of [\"dtcm\", \"sram2\"]","actual":"sram1","fix":{"kind":"replace_one_of","candidates":["dtcm","sram2"]}}"#,
+                r#"{"v":1,"id":"fnv1a:12ceca0bfb0b761a","code":"mem/pool-section-conflict","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': section `sram1` is not declared in deploy.yaml `machines.mcu_node.memory.sram_regions` — extend the memory map or rename the pool's <sce:section> body to one of [\"dtcm\", \"sram2\"]","actual":"sram1","fix":{"kind":"replace_one_of","candidates":["dtcm","sram2"]}}"#,
             ),
             // ── §synth-5-E buffer-pool size validate-time diagnostic ──
             (
@@ -9853,7 +9853,7 @@ mod tests {
                     region_size: 65536,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:8eb07e1d20f16ce2","code":"mem/pool-too-large","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': storage footprint 131072 bytes (32 × 4096) does not fit in deploy.yaml `machines.mcu_node.memory.sram_regions.sram1` of size 65536 bytes — raise the region size or shrink slot-count/slot-size","actual":"131072"}"#,
+                r#"{"v":1,"id":"fnv1a:8eb07e1d20f16ce2","code":"mem/pool-too-large","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': storage footprint 131072 bytes (32 × 4096) does not fit in deploy.yaml `machines.mcu_node.memory.sram_regions.sram1` of size 65536 bytes — raise the region size or shrink slot-count/slot-size","actual":"131072"}"#,
             ),
             // ── §synth-5-E linker fragment codegen self-check ──────────
             (
@@ -9862,7 +9862,7 @@ mod tests {
                     name: "rx_pool_sram1".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f3d92b158c62567b","code":"mem/inter-pool-padding-not-emitted","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': linker fragment is missing the inter-pool `. = ALIGN(N);` sentinel — codegen invariant violation per RFC §5.E lines 1059-1064; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+                r#"{"v":1,"id":"fnv1a:f3d92b158c62567b","code":"mem/inter-pool-padding-not-emitted","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': linker fragment is missing the inter-pool `. = ALIGN(N);` sentinel — codegen invariant violation per RFC §5.E lines 1059-1064; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
             // ── §synth-5-E pool header Layer 1 ownership pull-through self-check ─
             (
@@ -9871,7 +9871,7 @@ mod tests {
                     name: "rx_pool_sram1".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:43b2c0bb267f73f5","code":"pool/sample-typestate-attributes-disabled","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated C11 header is missing the `#include <sce/sample.h>` directive — Layer 1 typestate attributes will be unavailable on consumer builds, codegen invariant violation per RFC §5.E lines 1276-1346; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+                r#"{"v":1,"id":"fnv1a:43b2c0bb267f73f5","code":"pool/sample-typestate-attributes-disabled","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated C11 header is missing the `#include <sce/sample.h>` directive — Layer 1 typestate attributes will be unavailable on consumer builds, codegen invariant violation per RFC §5.E lines 1276-1346; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
             // ── §synth-5-E C5 cache-maintenance validation: alignment vs platform.dcache_line_size ─
             (
@@ -9883,7 +9883,7 @@ mod tests {
                     dcache_line_size: 32,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:9871be15958d973d","code":"mem/cache-line-alignment","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': alignment 16 is smaller than target platform's `dcache_line_size` 32 on machine 'mcu_node' under `cache-policy: maintain`. Partial-line cache_invalidate_by_addr corrupts adjacent slot data on the start side. Raise <sce:alignment> to at least 32.","actual":"16"}"#,
+                r#"{"v":1,"id":"fnv1a:9871be15958d973d","code":"mem/cache-line-alignment","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': alignment 16 is smaller than target platform's `dcache_line_size` 32 on machine 'mcu_node' under `cache-policy: maintain`. Partial-line cache_invalidate_by_addr corrupts adjacent slot data on the start side. Raise <sce:alignment> to at least 32.","actual":"16"}"#,
             ),
             // ── §synth-5-E C5 cache-maintenance validation: slot_size vs platform.dcache_line_size ─
             (
@@ -9897,7 +9897,7 @@ mod tests {
                     next_multiple: 128,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:ad64c9aa97912ef0","code":"mem/slot-size-not-cache-line-multiple","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': slot-size 100 is not a whole-number multiple of target platform's `dcache_line_size` 32 on machine 'mcu_node' (remainder 4) under `cache-policy: maintain`. The boundary cache line is shared with the adjacent slot — cache_invalidate_by_addr after RX would corrupt it. Round slot-size up to 128 (next cache-line multiple).","actual":"100"}"#,
+                r#"{"v":1,"id":"fnv1a:ad64c9aa97912ef0","code":"mem/slot-size-not-cache-line-multiple","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': slot-size 100 is not a whole-number multiple of target platform's `dcache_line_size` 32 on machine 'mcu_node' (remainder 4) under `cache-policy: maintain`. The boundary cache line is shared with the adjacent slot — cache_invalidate_by_addr after RX would corrupt it. Round slot-size up to 128 (next cache-line multiple).","actual":"100"}"#,
             ),
             // ── §synth-5-E C5 cache-policy on no-dcache core (Fix::ReplaceOneOf [\"none\"]) ─
             (
@@ -9908,7 +9908,7 @@ mod tests {
                     declared_policy: "maintain".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:3144879193ab848a","code":"mem/cache-policy-unsupported-on-no-dcache-core","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': `cache-policy: maintain` declared on machine 'mcu_node' which has `platform.has_dcache: false`. Cache maintenance is meaningless on a core without a data cache. Switch to `cache-policy: none`.","actual":"maintain","fix":{"kind":"replace_one_of","candidates":["none"]}}"#,
+                r#"{"v":1,"id":"fnv1a:3144879193ab848a","code":"mem/cache-policy-unsupported-on-no-dcache-core","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': `cache-policy: maintain` declared on machine 'mcu_node' which has `platform.has_dcache: false`. Cache maintenance is meaningless on a core without a data cache. Switch to `cache-policy: none`.","actual":"maintain","fix":{"kind":"replace_one_of","candidates":["none"]}}"#,
             ),
             // ── §synth-5-E C5 author guard: <sce:extern> for cache trio rejected per spec lines 1222-1227 ─
             (
@@ -9917,7 +9917,7 @@ mod tests {
                     attempted_symbol: "sce_dcache_clean_by_addr".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:dd94b2147bfbcdf3","code":"pool/cache-maintenance-misplaced","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"<sce:extern name=\"sce_dcache_clean_by_addr\">: cache-maintenance intrinsics are FSM-driven and authored automatically by the buffer-pool kind under `cache-policy: maintain` (RFC §5.E lines 1222-1227). Author <sce:extern> for the cache trio is forbidden — remove the declaration; codegen emits the calls on lifecycle edges.","actual":"sce_dcache_clean_by_addr"}"#,
+                r#"{"v":1,"id":"fnv1a:dd94b2147bfbcdf3","code":"pool/cache-maintenance-misplaced","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"<sce:extern name=\"sce_dcache_clean_by_addr\">: cache-maintenance intrinsics are FSM-driven and authored automatically by the buffer-pool kind under `cache-policy: maintain` (RFC §5.E lines 1222-1227). Author <sce:extern> for the cache trio is forbidden — remove the declaration; codegen emits the calls on lifecycle edges.","actual":"sce_dcache_clean_by_addr"}"#,
             ),
             // ── §synth-5-E C5 config-completeness: has_dcache=true requires has_speculative_prefetch ─
             (
@@ -9927,7 +9927,7 @@ mod tests {
                     pool_name: "rx_pool_sram1".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:101a5c631d3b5278","code":"pool/speculative-prefetch-flag-missing","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"machine 'mcu_node': `platform.has_dcache: true` is set but `platform.has_speculative_prefetch` is not. Buffer-pool 'rx_pool_sram1' uses `cache-policy: maintain` and codegen cannot decide whether to emit the pre-DMA-RX invalidate edge. Declare `has_speculative_prefetch` per the SoC datasheet (M7+/A-class = true, M3/M4 = false)."}"#,
+                r#"{"v":1,"id":"fnv1a:101a5c631d3b5278","code":"pool/speculative-prefetch-flag-missing","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"machine 'mcu_node': `platform.has_dcache: true` is set but `platform.has_speculative_prefetch` is not. Buffer-pool 'rx_pool_sram1' uses `cache-policy: maintain` and codegen cannot decide whether to emit the pre-DMA-RX invalidate edge. Declare `has_speculative_prefetch` per the SoC datasheet (M7+/A-class = true, M3/M4 = false)."}"#,
             ),
             // ── §synth-5-E C5 codegen self-check: pre-arm cache-invalidate edge missing on speculative core ─
             (
@@ -9937,7 +9937,7 @@ mod tests {
                     backend: "rust".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:e043d4876ee880bd","code":"pool/cache-pre-arm-invalidate-missing-on-speculative-core","stage":"validation","spec":"watching-zenoh RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated source for backend `rust` is missing the `sce_dcache_invalidate_by_addr` call on the `free → dma-armed-rx` edge despite `cache-policy: maintain` + `platform.has_speculative_prefetch: true` — codegen invariant violation per RFC §5.E lines 1186-1198 + 1552; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
+                r#"{"v":1,"id":"fnv1a:e043d4876ee880bd","code":"pool/cache-pre-arm-invalidate-missing-on-speculative-core","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.E","message":"buffer-pool 'rx_pool_sram1': generated source for backend `rust` is missing the `sce_dcache_invalidate_by_addr` call on the `free → dma-armed-rx` edge despite `cache-policy: maintain` + `platform.has_speculative_prefetch: true` — codegen invariant violation per RFC §5.E lines 1186-1198 + 1552; report at https://github.com/newmassrael/scxml-core-engine/issues"}"#,
             ),
             // ── §synth-5-O IR provenance pre-emit guard ──────────────────
             //    Codegen-internal invariant: a node eligible for SCE-
@@ -9952,7 +9952,7 @@ mod tests {
                     node_id: "S0".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c468c384e2af3fcf","code":"traceability/scxml-line-range-missing","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"<state> 'S0': source_location not populated — sourcemap pre-emit guard (parser site missed)"}"#,
+                r#"{"v":1,"id":"fnv1a:c468c384e2af3fcf","code":"traceability/scxml-line-range-missing","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.O","message":"<state> 'S0': source_location not populated — sourcemap pre-emit guard (parser site missed)"}"#,
             ),
             // ── §synth-5-O symbol mangling + sourcemap contract goldens ──
             //    Dual-location collision report. `actual` is the
@@ -9969,7 +9969,7 @@ mod tests {
                     second_line: 4,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:acb9750dd735a718","code":"traceability/state-id-collision","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"symbol collision: 'motor__armed___state_body' maps to two IR nodes — motor.scxml:10 and imports/armed.scxml:4. Repair: rename one of the colliding ids so the mangled symbols differ","actual":"motor__armed___state_body","fix":{"kind":"replace_one_of","candidates":["motor.scxml:10","imports/armed.scxml:4"]}}"#,
+                r#"{"v":1,"id":"fnv1a:acb9750dd735a718","code":"traceability/state-id-collision","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.O","message":"symbol collision: 'motor__armed___state_body' maps to two IR nodes — motor.scxml:10 and imports/armed.scxml:4. Repair: rename one of the colliding ids so the mangled symbols differ","actual":"motor__armed___state_body","fix":{"kind":"replace_one_of","candidates":["motor.scxml:10","imports/armed.scxml:4"]}}"#,
             ),
             //    Symbol length cap (C99 §5.2.4.1, 31 chars). `actual`
             //    is the offending mangled id; the key_fragments triple
@@ -9983,7 +9983,7 @@ mod tests {
                     over_by: 18,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:9af98c119a0b235a","code":"traceability/symbol-name-exceeds-c-identifier-limit","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"mangled symbol 'very_long_machine__nested_state_path___state_body' exceeds C99 external identifier limit by 18 char(s) (got 49, max 31). Repair: shorten one of the contributing names (machine id, state id, or artifact suffix) or enable `platform.strict_c99_identifiers: false` in deploy.yaml to suppress this warning","actual":"very_long_machine__nested_state_path___state_body"}"#,
+                r#"{"v":1,"id":"fnv1a:9af98c119a0b235a","code":"traceability/symbol-name-exceeds-c-identifier-limit","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.O","message":"mangled symbol 'very_long_machine__nested_state_path___state_body' exceeds C99 external identifier limit by 18 char(s) (got 49, max 31). Repair: shorten one of the contributing names (machine id, state id, or artifact suffix) or enable `platform.strict_c99_identifiers: false` in deploy.yaml to suppress this warning","actual":"very_long_machine__nested_state_path___state_body"}"#,
             ),
             //    Sourcemap source_hash drift (codegen-invariant).
             //    `actual` carries the sourcemap-recorded hex hash;
@@ -9997,7 +9997,7 @@ mod tests {
                     header_hash: "789aaaabbbb0".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d7a5b77c40fb62ef","code":"traceability/sourcemap-source-hash-mismatch","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"sourcemap source_hash drift: sourcemap recorded 'abc123def456' but §6.2.6 header recorded '789aaaabbbb0' on out/rust/sce_sourcemap.json. Repair: regenerate via `sce-codegen generate` to rebuild both sides from the same inputs","actual":"abc123def456"}"#,
+                r#"{"v":1,"id":"fnv1a:d7a5b77c40fb62ef","code":"traceability/sourcemap-source-hash-mismatch","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.O","message":"sourcemap source_hash drift: sourcemap recorded 'abc123def456' but §6.2.6 header recorded '789aaaabbbb0' on out/rust/sce_sourcemap.json. Repair: regenerate via `sce-codegen generate` to rebuild both sides from the same inputs","actual":"abc123def456"}"#,
             ),
             //    Rust SCE-MAP `#[doc]` preservation heads-up (OQ-W16 b).
             //    `actual` is the function name; `crate_name` + `profile`
@@ -10011,7 +10011,7 @@ mod tests {
                     profile: "release".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:eefcdcd7864bca4d","code":"traceability/sce-map-attribute-stripped","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"SCE-MAP `#[doc]` marker stripped from 'test144::on_entry_s0_0' in sce_rust_tests (release); falling back to `// SCE-MAP:` line comments. Repair: re-emit with the dual-marker form (the default dual-marker form) or upstream the rustdoc fix","actual":"test144::on_entry_s0_0"}"#,
+                r#"{"v":1,"id":"fnv1a:eefcdcd7864bca4d","code":"traceability/sce-map-attribute-stripped","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.O","message":"SCE-MAP `#[doc]` marker stripped from 'test144::on_entry_s0_0' in sce_rust_tests (release); falling back to `// SCE-MAP:` line comments. Repair: re-emit with the dual-marker form (the default dual-marker form) or upstream the rustdoc fix","actual":"test144::on_entry_s0_0"}"#,
             ),
             //    SCE-MAP marker missing on a §6.2.6-headered file
             //    (codegen-internal invariant per ARCHITECTURE.md
@@ -10024,9 +10024,9 @@ mod tests {
                     file: "out/test144/test144_sm.rs".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:052d4d7f20b67021","code":"traceability/meta-generated-source-line-marker-missing","stage":"generate","spec":"watching-zenoh RFC §5.O","message":"emitted file 'out/test144/test144_sm.rs' carries a §6.2.6 drift header but no `SCE-MAP:` marker line. Per ARCHITECTURE.md \"Traceability Ownership Boundary\", every SCE-emitted file must carry at least one marker. Repair: a template under `tools/codegen/templates/` is missing its `sce_map_marker` macro call — report upstream","actual":"out/test144/test144_sm.rs"}"#,
+                r#"{"v":1,"id":"fnv1a:052d4d7f20b67021","code":"traceability/meta-generated-source-line-marker-missing","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.O","message":"emitted file 'out/test144/test144_sm.rs' carries a §6.2.6 drift header but no `SCE-MAP:` marker line. Per ARCHITECTURE.md \"Traceability Ownership Boundary\", every SCE-emitted file must carry at least one marker. Repair: a template under `tools/codegen/templates/` is missing its `sce_map_marker` macro call — report upstream","actual":"out/test144/test144_sm.rs"}"#,
             ),
-            // ── MCU driver/class boundary (watching-zenoh RFC §5.2) — driver header
+            // ── MCU driver/class boundary (SCE Protocol-Synthesis RFC §5.2) — driver header
             //    reference cannot be resolved against the platform
             //    driver_root (or SCXML file's parent). `actual` carries
             //    the verbatim href; `key_fragments` add both href and
@@ -10039,10 +10039,10 @@ mod tests {
                     resolved_dir: "/tmp/round_f_alpha".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:a887dfe8c01e0694","code":"mcu/driver-header-not-found","stage":"validation","spec":"watching-zenoh RFC §5.2","message":"driver header reference 'missing.h' could not be resolved (searched under '/tmp/round_f_alpha'). Repair: correct the `<sce:driver href=\"...\"/>` value, add the missing header, or set `platform.driver_root` in deploy.yaml so the relative path resolves.","actual":"missing.h"}"#,
+                r#"{"v":1,"id":"fnv1a:a887dfe8c01e0694","code":"mcu/driver-header-not-found","stage":"validation","spec":"SCE Protocol-Synthesis RFC §5.2","message":"driver header reference 'missing.h' could not be resolved (searched under '/tmp/round_f_alpha'). Repair: correct the `<sce:driver href=\"...\"/>` value, add the missing header, or set `platform.driver_root` in deploy.yaml so the relative path resolves.","actual":"missing.h"}"#,
             ),
             // ── Non-MCU backend refuses `platform.c11_section_attribute`
-            //    (watching-zenoh RFC §5.2; mirrors
+            //    (SCE Protocol-Synthesis RFC §5.2; mirrors
             //    `codegen/mcu-class-kind-on-non-mcu-language`). `actual` carries the offending
             //    backend; `key_fragments` reuse the same single value
             //    so the wire-id is stable per backend across runs.
@@ -10052,7 +10052,7 @@ mod tests {
                     backend: "rust".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:d9ee1c8383fc6b8f","code":"mcu/section-attribute-on-non-mcu-target","stage":"generate","spec":"watching-zenoh RFC §5.2","message":"platform.c11_section_attribute is set in deploy.yaml but the target backend is 'rust', not 'c11'. The section attribute injects `__attribute__((section(...)))` which only the C11 backend emits. Repair: remove the section attribute, switch the backend to 'c11', or split deploy configurations per target.","actual":"rust"}"#,
+                r#"{"v":1,"id":"fnv1a:d9ee1c8383fc6b8f","code":"mcu/section-attribute-on-non-mcu-target","stage":"generate","spec":"SCE Protocol-Synthesis RFC §5.2","message":"platform.c11_section_attribute is set in deploy.yaml but the target backend is 'rust', not 'c11'. The section attribute injects `__attribute__((section(...)))` which only the C11 backend emits. Repair: remove the section attribute, switch the backend to 'c11', or split deploy configurations per target.","actual":"rust"}"#,
             ),
             // ── NL→IR Item C1 Path A: Enum kind invariants ──
             //   `id` hashes are placeholders; the goldens test prints
@@ -10354,7 +10354,7 @@ mod tests {
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion
                 // on first run. Shape + message are the contract.
-                r#"{"v":1,"id":"fnv1a:43c3861fc17b431c","code":"mesh/deploy-stage-pool-not-declared","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.E","message":"machine 'mcu_node': binding '#sub' references stage_pool 'rx_pool_sram1' but no `.forge` file in the build declares a pool by that name. Add a forge `<scxml sce:kind=\"buffer-pool\" name=\"rx_pool_sram1\">` document or fix the reference. See watching-zenoh RFC §5.E.","actual":"rx_pool_sram1","fix":{"kind":"replace_one_of","candidates":["scout_rx_pool"]}}"#,
+                r#"{"v":1,"id":"fnv1a:43c3861fc17b431c","code":"mesh/deploy-stage-pool-not-declared","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.E","message":"machine 'mcu_node': binding '#sub' references stage_pool 'rx_pool_sram1' but no `.forge` file in the build declares a pool by that name. Add a forge `<scxml sce:kind=\"buffer-pool\" name=\"rx_pool_sram1\">` document or fix the reference. See SCE Protocol-Synthesis RFC §5.E.","actual":"rx_pool_sram1","fix":{"kind":"replace_one_of","candidates":["scout_rx_pool"]}}"#,
             ),
             (
                 "mesh/deploy-stage-pool-wrong-kind",
@@ -10367,7 +10367,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:e05f280783ac494b","code":"mesh/deploy-stage-pool-wrong-kind","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.E","message":"machine 'mcu_node': binding '#sub' references stage_pool 'scout_codec' which resolves to a forge 'codec' kind, not 'buffer-pool'. Only buffer-pool kind documents back the `Sample::take()` slot contract. Repoint the reference at one of the build's buffer-pool kind names. See watching-zenoh RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_rx_pool"]}}"#,
+                r#"{"v":1,"id":"fnv1a:e05f280783ac494b","code":"mesh/deploy-stage-pool-wrong-kind","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.E","message":"machine 'mcu_node': binding '#sub' references stage_pool 'scout_codec' which resolves to a forge 'codec' kind, not 'buffer-pool'. Only buffer-pool kind documents back the `Sample::take()` slot contract. Repoint the reference at one of the build's buffer-pool kind names. See SCE Protocol-Synthesis RFC §5.E.","actual":"codec","fix":{"kind":"replace_one_of","candidates":["scout_rx_pool"]}}"#,
             ),
             (
                 "mesh/deploy-stage-pool-transport-mismatch",
@@ -10379,7 +10379,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:5e3fe77a13dd48d3","code":"mesh/deploy-stage-pool-transport-mismatch","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.E","message":"machine 'mcu_node': binding '#sub' declares stage_pool 'scout_rx_pool' on transport 'zenoh', which has no buffer-pool RX staging surface. The `stage_pool` field is meaningful only for transports that bind a forge buffer-pool kind on their RX path. Drop the field or change the transport. See watching-zenoh RFC §5.E.","actual":"zenoh","fix":{"kind":"remove_fields","location":"topology.*.machines.mcu_node.bindings.#sub","fields":["stage_pool"]}}"#,
+                r#"{"v":1,"id":"fnv1a:5e3fe77a13dd48d3","code":"mesh/deploy-stage-pool-transport-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.E","message":"machine 'mcu_node': binding '#sub' declares stage_pool 'scout_rx_pool' on transport 'zenoh', which has no buffer-pool RX staging surface. The `stage_pool` field is meaningful only for transports that bind a forge buffer-pool kind on their RX path. Drop the field or change the transport. See SCE Protocol-Synthesis RFC §5.E.","actual":"zenoh","fix":{"kind":"remove_fields","location":"topology.*.machines.mcu_node.bindings.#sub","fields":["stage_pool"]}}"#,
             ),
             (
                 "mesh/deploy-scxml-invoke-target-conflict",
@@ -10743,7 +10743,7 @@ mod tests {
                     machine: "mcu_node".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:936f4785a68e36b5","code":"deploy/worker-stack-budget-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.worker_stack_budget (bytes). watching-zenoh RFC §5.K line 2426 (`deploy/worker-stack-budget-missing`) — cooperative drives the `<send>` queue inside a fixed stack frame; a missing budget would let TLV-decode recursion silently overflow. Repair: add `worker_stack_budget: <bytes>` under `scheduler:` (e.g. 4096), or change `kind:` to `tokio` / `rt` to inherit the host runtime's stack defaults.","actual":"mcu_node"}"#,
+                r#"{"v":1,"id":"fnv1a:936f4785a68e36b5","code":"deploy/worker-stack-budget-missing","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.worker_stack_budget (bytes). SCE Protocol-Synthesis RFC §5.K line 2426 (`deploy/worker-stack-budget-missing`) — cooperative drives the `<send>` queue inside a fixed stack frame; a missing budget would let TLV-decode recursion silently overflow. Repair: add `worker_stack_budget: <bytes>` under `scheduler:` (e.g. 4096), or change `kind:` to `tokio` / `rt` to inherit the host runtime's stack defaults.","actual":"mcu_node"}"#,
             ),
             (
                 "deploy/worker-slot-budget-missing",
@@ -10751,7 +10751,7 @@ mod tests {
                     machine: "mcu_node".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:c7e272ab44356ef1","code":"deploy/worker-slot-budget-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.worker_slot_budget_us (microseconds). watching-zenoh RFC §5.K line 2428-2429 (`deploy/worker-slot-budget-missing`) — per-slot WCET ceiling drives the §5.B aggregate WCET check and the cooperative slot-count derivation. Repair: add `worker_slot_budget_us: <us>` under `scheduler:` (e.g. 200), or change `kind:` to `tokio` / `rt` to skip the WCET check.","actual":"mcu_node"}"#,
+                r#"{"v":1,"id":"fnv1a:c7e272ab44356ef1","code":"deploy/worker-slot-budget-missing","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.worker_slot_budget_us (microseconds). SCE Protocol-Synthesis RFC §5.K line 2428-2429 (`deploy/worker-slot-budget-missing`) — per-slot WCET ceiling drives the §5.B aggregate WCET check and the cooperative slot-count derivation. Repair: add `worker_slot_budget_us: <us>` under `scheduler:` (e.g. 200), or change `kind:` to `tokio` / `rt` to skip the WCET check.","actual":"mcu_node"}"#,
             ),
             (
                 "deploy/keepalive-jitter-budget-missing",
@@ -10759,7 +10759,7 @@ mod tests {
                     machine: "mcu_node".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:79db8ea5ee156731","code":"deploy/keepalive-jitter-budget-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.keepalive_jitter_budget_us (microseconds). watching-zenoh RFC §5.K line 2430-2431 (`deploy/keepalive-jitter-budget-missing`) — sum of worst-case slot budgets in one tick window must fit inside this bound. Repair: add `keepalive_jitter_budget_us: <us>` under `scheduler:` (recommended default: 0.5 × min lease), or change `kind:` to `tokio` / `rt` to inherit host runtime jitter.","actual":"mcu_node"}"#,
+                r#"{"v":1,"id":"fnv1a:79db8ea5ee156731","code":"deploy/keepalive-jitter-budget-missing","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': scheduler.kind 'cooperative' requires scheduler.keepalive_jitter_budget_us (microseconds). SCE Protocol-Synthesis RFC §5.K line 2430-2431 (`deploy/keepalive-jitter-budget-missing`) — sum of worst-case slot budgets in one tick window must fit inside this bound. Repair: add `keepalive_jitter_budget_us: <us>` under `scheduler:` (recommended default: 0.5 × min lease), or change `kind:` to `tokio` / `rt` to inherit host runtime jitter.","actual":"mcu_node"}"#,
             ),
             (
                 "deploy/scheduler-incompatible-with-worker-count",
@@ -10771,7 +10771,7 @@ mod tests {
                     worker_slot_budget_us: 300,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f26a225afadc7a9a","code":"deploy/scheduler-incompatible-with-worker-count","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': declared 5 workers under machines.mcu_node.workers, but cooperative scheduler can host only 3 per tick window (derived from tick_period_us 1000 / worker_slot_budget_us 300). watching-zenoh RFC §5.K line 2423 (`deploy/scheduler-incompatible-with-worker-count`). Repair: raise `tick_period_us`, lower `worker_slot_budget_us`, remove excess workers, or switch `scheduler.kind:` to a preemptive host (`tokio` / `rt`).","expected":["3"],"actual":"5"}"#,
+                r#"{"v":1,"id":"fnv1a:f26a225afadc7a9a","code":"deploy/scheduler-incompatible-with-worker-count","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': declared 5 workers under machines.mcu_node.workers, but cooperative scheduler can host only 3 per tick window (derived from tick_period_us 1000 / worker_slot_budget_us 300). SCE Protocol-Synthesis RFC §5.K line 2423 (`deploy/scheduler-incompatible-with-worker-count`). Repair: raise `tick_period_us`, lower `worker_slot_budget_us`, remove excess workers, or switch `scheduler.kind:` to a preemptive host (`tokio` / `rt`).","expected":["3"],"actual":"5"}"#,
             ),
             // ── §synth-5-K `links:` block (RFC §synth-5-K lines 2232-2540) ──
             (
@@ -10784,7 +10784,7 @@ mod tests {
                     candidates_list: "lwip_tcp, lwip_udp".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:29690d741179d6f1","code":"deploy/link-driver-unknown","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares driver 'foo_udp' which is unknown. watching-zenoh RFC §5.K line 2421 (`deploy/link-driver-unknown`) — the build's closed-allowlist + forge `<sce:link>` cross-doc registry union does not contain this driver. Repair: pick one of [lwip_tcp, lwip_udp].","actual":"foo_udp","fix":{"kind":"replace_one_of","candidates":["lwip_tcp","lwip_udp"]}}"#,
+                r#"{"v":1,"id":"fnv1a:29690d741179d6f1","code":"deploy/link-driver-unknown","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares driver 'foo_udp' which is unknown. SCE Protocol-Synthesis RFC §5.K line 2421 (`deploy/link-driver-unknown`) — the build's closed-allowlist + forge `<sce:link>` cross-doc registry union does not contain this driver. Repair: pick one of [lwip_tcp, lwip_udp].","actual":"foo_udp","fix":{"kind":"replace_one_of","candidates":["lwip_tcp","lwip_udp"]}}"#,
             ),
             (
                 "deploy/link-mtu-missing-on-fragmenting-link",
@@ -10793,7 +10793,7 @@ mod tests {
                     link_name: "udp_data".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:863c8c160c2fe018","code":"deploy/link-mtu-missing-on-fragmenting-link","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `domain_attrs.trust_class: established_session` but `mtu_bytes:` is absent. watching-zenoh RFC §5.K line 2440-2442 (`deploy/link-mtu-missing-on-fragmenting-link`) — only `established_session` trust class carries Fragment traffic (RFC §5.M line 2731) and the build cannot size reassembly pool slots without the link-layer MTU. Repair: add `mtu_bytes: <bytes>` under this link entry (e.g. 1472 for UDP/IPv4 over Ethernet)."}"#,
+                r#"{"v":1,"id":"fnv1a:863c8c160c2fe018","code":"deploy/link-mtu-missing-on-fragmenting-link","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `domain_attrs.trust_class: established_session` but `mtu_bytes:` is absent. SCE Protocol-Synthesis RFC §5.K line 2440-2442 (`deploy/link-mtu-missing-on-fragmenting-link`) — only `established_session` trust class carries Fragment traffic (RFC §5.M line 2731) and the build cannot size reassembly pool slots without the link-layer MTU. Repair: add `mtu_bytes: <bytes>` under this link entry (e.g. 1472 for UDP/IPv4 over Ethernet)."}"#,
             ),
             (
                 "deploy/link-mtu-below-driver-floor",
@@ -10805,7 +10805,7 @@ mod tests {
                     driver_floor: 28,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:b923c818f30343df","code":"deploy/link-mtu-below-driver-floor","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `mtu_bytes: 20` which is below driver 'lwip_udp's minimum payload floor (28). watching-zenoh RFC §5.K line 2443-2445 (`deploy/link-mtu-below-driver-floor`) — the driver's default minimum would override the declared value silently. Repair: raise `mtu_bytes` to >= 28, or change the driver to one with a smaller header floor.","expected":["28"],"actual":"20"}"#,
+                r#"{"v":1,"id":"fnv1a:b923c818f30343df","code":"deploy/link-mtu-below-driver-floor","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `mtu_bytes: 20` which is below driver 'lwip_udp's minimum payload floor (28). SCE Protocol-Synthesis RFC §5.K line 2443-2445 (`deploy/link-mtu-below-driver-floor`) — the driver's default minimum would override the declared value silently. Repair: raise `mtu_bytes` to >= 28, or change the driver to one with a smaller header floor.","expected":["28"],"actual":"20"}"#,
             ),
             (
                 // C11-WebSocket follow-up sibling — driver↔class
@@ -10827,7 +10827,7 @@ mod tests {
                     },
                 ))
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. watching-zenoh RFC §5.C lines 765-771 + §8 Q8 line 3747 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","expected":["tcp"],"actual":"websocket","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
+                r#"{"v":1,"id":"fnv1a:4ac5fbe980bb4938","code":"deploy/link-driver-class-mismatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'ws_control' declares forge `<sce:link-class>websocket</sce:link-class>` but deploy.yaml binds `driver: lwip_tcp` which implements class 'tcp'. SCE Protocol-Synthesis RFC §5.C lines 765-771 + §8 Q8 line 3747 (`deploy/link-driver-class-mismatch`) — each core driver implements exactly one protocol class. Repair: change `driver:` to the entry matching the declared class, or change `<sce:link-class>` to match the bound driver.","expected":["tcp"],"actual":"websocket","fix":{"kind":"replace_one_of","candidates":["websocket_tcp"]}}"#,
             ),
             (
                 "deploy/link-expected-p99-exceeds-mtu",
@@ -10838,7 +10838,7 @@ mod tests {
                     mtu_bytes: 1472,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:04a20137542a8e63","code":"deploy/link-expected-p99-exceeds-mtu","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `expected_p99_bytes: 2048` which exceeds `mtu_bytes: 1472`. watching-zenoh RFC §5.K line 2446-2448 (`deploy/link-expected-p99-exceeds-mtu`) — the p99 message would always fragment. Repair: lower `expected_p99_bytes` to <= `mtu_bytes`, or raise `mtu_bytes` (driver permitting), or bind a reassembly pool to this link via a forge `<sce:link>` declaration.","expected":["1472"],"actual":"2048"}"#,
+                r#"{"v":1,"id":"fnv1a:04a20137542a8e63","code":"deploy/link-expected-p99-exceeds-mtu","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `expected_p99_bytes: 2048` which exceeds `mtu_bytes: 1472`. SCE Protocol-Synthesis RFC §5.K line 2446-2448 (`deploy/link-expected-p99-exceeds-mtu`) — the p99 message would always fragment. Repair: lower `expected_p99_bytes` to <= `mtu_bytes`, or raise `mtu_bytes` (driver permitting), or bind a reassembly pool to this link via a forge `<sce:link>` declaration.","expected":["1472"],"actual":"2048"}"#,
             ),
             (
                 "deploy/link-burst-pps-missing-on-isr-dispatch",
@@ -10847,7 +10847,7 @@ mod tests {
                     link_name: "udp_data".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:ae5e6142a2e8c826","code":"deploy/link-burst-pps-missing-on-isr-dispatch","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' resolves to `rx_dispatch: isr_to_pool` but `burst_pps` is not declared. watching-zenoh RFC §5.K line 2501-2503 (`deploy/link-burst-pps-missing-on-isr-dispatch`) — ISR fast-path requires `burst_pps` to size the descriptor ring and validate the stack budget. Repair: declare `burst_pps: <pps>`, or explicitly set `rx_dispatch: worker_tick` to opt into the slower cooperative-tick path."}"#,
+                r#"{"v":1,"id":"fnv1a:ae5e6142a2e8c826","code":"deploy/link-burst-pps-missing-on-isr-dispatch","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' resolves to `rx_dispatch: isr_to_pool` but `burst_pps` is not declared. SCE Protocol-Synthesis RFC §5.K line 2501-2503 (`deploy/link-burst-pps-missing-on-isr-dispatch`) — ISR fast-path requires `burst_pps` to size the descriptor ring and validate the stack budget. Repair: declare `burst_pps: <pps>`, or explicitly set `rx_dispatch: worker_tick` to opt into the slower cooperative-tick path."}"#,
             ),
             (
                 // Cross-doc: declared burst_pps overruns RX
@@ -10863,7 +10863,7 @@ mod tests {
                     drain_per_second: 16_000,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:149ee464a43d20f6","code":"deploy/link-burst-absorption-insufficient","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `burst_pps: 50000` against RX pool 'rx_data_pool' with `<sce:slot-count>16</sce:slot-count>` and scheduler `tick_period_us: 1000`. Effective drain capacity is 16000 pps (with the 2.0 safety factor required by watching-zenoh RFC §5.K line 2489-2495), insufficient for the declared burst. Repair: raise `<sce:slot-count>` on pool 'rx_data_pool', lower `scheduler.tick_period_us`, or switch `rx_dispatch: isr_to_pool` when currently `worker_tick`.","expected":["16000"],"actual":"50000"}"#,
+                r#"{"v":1,"id":"fnv1a:149ee464a43d20f6","code":"deploy/link-burst-absorption-insufficient","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `burst_pps: 50000` against RX pool 'rx_data_pool' with `<sce:slot-count>16</sce:slot-count>` and scheduler `tick_period_us: 1000`. Effective drain capacity is 16000 pps (with the 2.0 safety factor required by SCE Protocol-Synthesis RFC §5.K line 2489-2495), insufficient for the declared burst. Repair: raise `<sce:slot-count>` on pool 'rx_data_pool', lower `scheduler.tick_period_us`, or switch `rx_dispatch: isr_to_pool` when currently `worker_tick`.","expected":["16000"],"actual":"50000"}"#,
             ),
             (
                 // Cross-doc: rx_dispatch: worker_tick overruns
@@ -10879,7 +10879,7 @@ mod tests {
                     arrivals_per_tick: 100,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f396cb2184d51ea2","code":"deploy/link-rx-dispatch-worker-tick-on-high-burst","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' resolves to `rx_dispatch: worker_tick` but one tick window of arrivals overruns RX pool 'rx_data_pool'. `burst_pps × tick_period_us / 1_000_000 = 100` exceeds `<sce:slot-count>16</sce:slot-count>`. watching-zenoh RFC §5.K line 2496-2500 (`deploy/link-rx-dispatch-worker-tick-on-high-burst`). Repair: switch `rx_dispatch: isr_to_pool` (descriptor-ring re-arm absorbs the burst), raise `<sce:slot-count>` on pool 'rx_data_pool' to admit the per-tick arrivals, or lower `scheduler.tick_period_us` so each window admits fewer arrivals.","expected":["16"],"actual":"100"}"#,
+                r#"{"v":1,"id":"fnv1a:f396cb2184d51ea2","code":"deploy/link-rx-dispatch-worker-tick-on-high-burst","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' resolves to `rx_dispatch: worker_tick` but one tick window of arrivals overruns RX pool 'rx_data_pool'. `burst_pps × tick_period_us / 1_000_000 = 100` exceeds `<sce:slot-count>16</sce:slot-count>`. SCE Protocol-Synthesis RFC §5.K line 2496-2500 (`deploy/link-rx-dispatch-worker-tick-on-high-burst`). Repair: switch `rx_dispatch: isr_to_pool` (descriptor-ring re-arm absorbs the burst), raise `<sce:slot-count>` on pool 'rx_data_pool' to admit the per-tick arrivals, or lower `scheduler.tick_period_us` so each window admits fewer arrivals.","expected":["16"],"actual":"100"}"#,
             ),
             (
                 "deploy/link-not-declared-in-deploy",
@@ -10889,7 +10889,7 @@ mod tests {
                     candidates_list: "udp_scout".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:7769451379390caa","code":"deploy/link-not-declared-in-deploy","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"forge `<sce:link name=\"udp_data\">` declared but no `deploy.yaml::machines.<n>.links.udp_data` entry exists. Cross-doc validator (`deploy/link-not-declared-in-deploy`). Repair: add the deploy entry under one of [udp_scout] or another machine, or remove the forge link doc.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
+                r#"{"v":1,"id":"fnv1a:7769451379390caa","code":"deploy/link-not-declared-in-deploy","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"forge `<sce:link name=\"udp_data\">` declared but no `deploy.yaml::machines.<n>.links.udp_data` entry exists. Cross-doc validator (`deploy/link-not-declared-in-deploy`). Repair: add the deploy entry under one of [udp_scout] or another machine, or remove the forge link doc.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
             ),
             (
                 "deploy/link-not-declared-in-forge",
@@ -10900,7 +10900,7 @@ mod tests {
                     candidates_list: "udp_scout".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:68d69cab5e950a11","code":"deploy/link-not-declared-in-forge","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declared in deploy.yaml but no forge `<scxml sce:kind=\"link\" name=\"udp_data\">` document was declared/imported. Cross-doc validator (`deploy/link-not-declared-in-forge`). Repair: declare the forge link doc and import it from a statechart/worker on this machine, or pick one of [udp_scout] (forge link doc names known to this build), or remove the orphan deploy entry.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
+                r#"{"v":1,"id":"fnv1a:68d69cab5e950a11","code":"deploy/link-not-declared-in-forge","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declared in deploy.yaml but no forge `<scxml sce:kind=\"link\" name=\"udp_data\">` document was declared/imported. Cross-doc validator (`deploy/link-not-declared-in-forge`). Repair: declare the forge link doc and import it from a statechart/worker on this machine, or pick one of [udp_scout] (forge link doc names known to this build), or remove the orphan deploy entry.","actual":"udp_data","fix":{"kind":"replace_one_of","candidates":["udp_scout"]}}"#,
             ),
             (
                 // Parse-time typo guard for the policy enum.
@@ -10917,7 +10917,7 @@ mod tests {
                     candidates_list: "warn, error, forbid".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:5ca8faec9e11c481","code":"deploy/stage-copy-policy-unknown","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': `pool_defaults.stage_copy_policy: errr` is not a known policy. watching-zenoh RFC §5.K line 2517-2519 (`deploy/stage-copy-policy-unknown`) — closed-set typo guard. Repair: pick one of [warn, error, forbid].","actual":"errr","fix":{"kind":"replace_one_of","candidates":["warn","error","forbid"]}}"#,
+                r#"{"v":1,"id":"fnv1a:5ca8faec9e11c481","code":"deploy/stage-copy-policy-unknown","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': `pool_defaults.stage_copy_policy: errr` is not a known policy. SCE Protocol-Synthesis RFC §5.K line 2517-2519 (`deploy/stage-copy-policy-unknown`) — closed-set typo guard. Repair: pick one of [warn, error, forbid].","actual":"errr","fix":{"kind":"replace_one_of","candidates":["warn","error","forbid"]}}"#,
             ),
             // ── Anti-flood + stateless_accept (RFC §synth-5-K lines 2272-2349 + 2449-2473) ──
             (
@@ -10927,7 +10927,7 @@ mod tests {
                     link_name: "udp_listener".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f5f597205aa5b0e5","code":"deploy/session-arming-quota-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' declares `trust_class: session_arming` but no `session_arming_quota`. watching-zenoh RFC §5.K line 2449-2451 — without a cap an attacker can fill every `Accepting.*` slot. Repair: declare `session_arming_quota: <count>` (MCU recommended 8, AP recommended 32 per spec line 2282)."}"#,
+                r#"{"v":1,"id":"fnv1a:f5f597205aa5b0e5","code":"deploy/session-arming-quota-missing","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' declares `trust_class: session_arming` but no `session_arming_quota`. SCE Protocol-Synthesis RFC §5.K line 2449-2451 — without a cap an attacker can fill every `Accepting.*` slot. Repair: declare `session_arming_quota: <count>` (MCU recommended 8, AP recommended 32 per spec line 2282)."}"#,
             ),
             (
                 "deploy/accept-rate-config-missing",
@@ -10937,7 +10937,7 @@ mod tests {
                     missing_fields: "accept_rate_per_sec, accept_rate_burst".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:6fbd647f1bd1aeb1","code":"deploy/accept-rate-config-missing","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' declares `trust_class: session_arming` but missing accept-rate config: accept_rate_per_sec, accept_rate_burst. watching-zenoh RFC §5.K line 2452-2453 — token-bucket rate-limit is required to prevent half-open quota saturation. Repair: declare both `accept_rate_per_sec` and `accept_rate_burst` (spec line 2290-2302 recommends defaults `accept_rate_per_sec: 4` MCU / `16` AP and `accept_rate_burst: 2 × accept_rate_per_sec`).","actual":"accept_rate_per_sec, accept_rate_burst"}"#,
+                r#"{"v":1,"id":"fnv1a:6fbd647f1bd1aeb1","code":"deploy/accept-rate-config-missing","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' declares `trust_class: session_arming` but missing accept-rate config: accept_rate_per_sec, accept_rate_burst. SCE Protocol-Synthesis RFC §5.K line 2452-2453 — token-bucket rate-limit is required to prevent half-open quota saturation. Repair: declare both `accept_rate_per_sec` and `accept_rate_burst` (spec line 2290-2302 recommends defaults `accept_rate_per_sec: 4` MCU / `16` AP and `accept_rate_burst: 2 × accept_rate_per_sec`).","actual":"accept_rate_per_sec, accept_rate_burst"}"#,
             ),
             (
                 "deploy/session-arming-fields-on-non-arming-link",
@@ -10948,7 +10948,7 @@ mod tests {
                     offending_fields: "session_arming_quota".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:a981ec0d75389842","code":"deploy/session-arming-fields-on-non-arming-link","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `trust_class: established_session` but anti-flood / stateless_accept fields are present (session_arming_quota). watching-zenoh RFC §5.K line 2454-2459 — `Accepting.*` is never instantiated on this trust class so the fields are dead config (suggests author confusion about which link is the listener). Repair: change `trust_class` to `session_arming` on link 'udp_data' if it is in fact the listener, or remove the dead fields.","actual":"established_session"}"#,
+                r#"{"v":1,"id":"fnv1a:a981ec0d75389842","code":"deploy/session-arming-fields-on-non-arming-link","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_data' declares `trust_class: established_session` but anti-flood / stateless_accept fields are present (session_arming_quota). SCE Protocol-Synthesis RFC §5.K line 2454-2459 — `Accepting.*` is never instantiated on this trust class so the fields are dead config (suggests author confusion about which link is the listener). Repair: change `trust_class` to `session_arming` on link 'udp_data' if it is in fact the listener, or remove the dead fields.","actual":"established_session"}"#,
             ),
             (
                 "deploy/stateless-accept-required-on-untrusted-source",
@@ -10957,7 +10957,7 @@ mod tests {
                     link_name: "udp_listener".into(),
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:06e17061b74e6486","code":"deploy/stateless-accept-required-on-untrusted-source","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' declares `domain_attrs.untrusted_source: true` but no `stateless_accept` block. watching-zenoh RFC §5.K line 2463-2465 — links exposed to networks the deployment does not control must use HMAC cookies to prevent stateful spoofing. Repair: add a `stateless_accept:` block with `mode`, `cookie_lifetime_ms`, `key_rotation_s`, `hmac_extern`, `rng_extern` per spec line 2320-2349, or set `untrusted_source: false` if the link is on a controlled network."}"#,
+                r#"{"v":1,"id":"fnv1a:06e17061b74e6486","code":"deploy/stateless-accept-required-on-untrusted-source","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' declares `domain_attrs.untrusted_source: true` but no `stateless_accept` block. SCE Protocol-Synthesis RFC §5.K line 2463-2465 — links exposed to networks the deployment does not control must use HMAC cookies to prevent stateful spoofing. Repair: add a `stateless_accept:` block with `mode`, `cookie_lifetime_ms`, `key_rotation_s`, `hmac_extern`, `rng_extern` per spec line 2320-2349, or set `untrusted_source: false` if the link is on a controlled network."}"#,
             ),
             (
                 "deploy/stateless-accept-key-rotation-shorter-than-lifetime",
@@ -10970,7 +10970,7 @@ mod tests {
                     lifetime_doubled: 60_000,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:16e83b54ae5813fa","code":"deploy/stateless-accept-key-rotation-shorter-than-lifetime","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `stateless_accept.key_rotation_s: 30` × 1000 ≤ 2 × `cookie_lifetime_ms: 30000` (30000 ≤ 60000). watching-zenoh RFC §5.K line 2470-2473 — the previous-key honor window cannot bridge a rotation, so handshakes near rotation boundaries get spurious cookie rejection. Repair: raise `key_rotation_s` to > `2 × cookie_lifetime_ms / 1000`, or lower `cookie_lifetime_ms` to < `key_rotation_s × 500`.","expected":["60000"],"actual":"30000"}"#,
+                r#"{"v":1,"id":"fnv1a:16e83b54ae5813fa","code":"deploy/stateless-accept-key-rotation-shorter-than-lifetime","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `stateless_accept.key_rotation_s: 30` × 1000 ≤ 2 × `cookie_lifetime_ms: 30000` (30000 ≤ 60000). SCE Protocol-Synthesis RFC §5.K line 2470-2473 — the previous-key honor window cannot bridge a rotation, so handshakes near rotation boundaries get spurious cookie rejection. Repair: raise `key_rotation_s` to > `2 × cookie_lifetime_ms / 1000`, or lower `cookie_lifetime_ms` to < `key_rotation_s × 500`.","expected":["60000"],"actual":"30000"}"#,
             ),
             (
                 "deploy/session-arming-quota-vs-peer-table-invariant-violated",
@@ -10983,7 +10983,7 @@ mod tests {
                     product: 16,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:4fea7d1c968b2879","code":"deploy/session-arming-quota-vs-peer-table-invariant-violated","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `session_arming_quota: 8` × `stateless_accept.max_handshake_time_s: 2` > `stateless_accept.peer_table.capacity: 8` (16 > 8). watching-zenoh RFC §5.K line 2460-2462 — a slow legitimate handshake can be evicted under attack when the attacker churns the quota faster than the per-peer table can absorb. Repair: raise `peer_table.capacity` to ≥ 16, or lower `session_arming_quota` or `max_handshake_time_s` so the product fits the table.","expected":["8"],"actual":"16"}"#,
+                r#"{"v":1,"id":"fnv1a:4fea7d1c968b2879","code":"deploy/session-arming-quota-vs-peer-table-invariant-violated","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `session_arming_quota: 8` × `stateless_accept.max_handshake_time_s: 2` > `stateless_accept.peer_table.capacity: 8` (16 > 8). SCE Protocol-Synthesis RFC §5.K line 2460-2462 — a slow legitimate handshake can be evicted under attack when the attacker churns the quota faster than the per-peer table can absorb. Repair: raise `peer_table.capacity` to ≥ 16, or lower `session_arming_quota` or `max_handshake_time_s` so the product fits the table.","expected":["8"],"actual":"16"}"#,
             ),
             (
                 "deploy/stateless-accept-extern-not-whitelisted",
@@ -10998,7 +10998,7 @@ mod tests {
                     ],
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:023288f561f5a592","code":"deploy/stateless-accept-extern-not-whitelisted","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `stateless_accept.hmac_extern: my_custom_hmac` not present in the §5.I baseline intrinsics whitelist AND not declared in any loaded `target_plugin`. watching-zenoh RFC §5.K line 2466-2469 — `hmac_extern` and `rng_extern` symbols must come from the baseline registry or a target-plugin entry. Repair: spell the symbol exactly as it appears in the baseline registry or add the symbol to a loaded target-plugin file.","actual":"my_custom_hmac","fix":{"kind":"replace_one_of","candidates":["__sce_intrinsic_cookie_hmac_sha256","__sce_intrinsic_csprng"]}}"#,
+                r#"{"v":1,"id":"fnv1a:023288f561f5a592","code":"deploy/stateless-accept-extern-not-whitelisted","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.K","message":"machine 'mcu_node': link 'udp_listener' `stateless_accept.hmac_extern: my_custom_hmac` not present in the §5.I baseline intrinsics whitelist AND not declared in any loaded `target_plugin`. SCE Protocol-Synthesis RFC §5.K line 2466-2469 — `hmac_extern` and `rng_extern` symbols must come from the baseline registry or a target-plugin entry. Repair: spell the symbol exactly as it appears in the baseline registry or add the symbol to a loaded target-plugin file.","actual":"my_custom_hmac","fix":{"kind":"replace_one_of","candidates":["__sce_intrinsic_cookie_hmac_sha256","__sce_intrinsic_csprng"]}}"#,
             ),
             (
                 "timer/slot-overflow",
@@ -11008,7 +11008,7 @@ mod tests {
                     wheel_depth: 4,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:f5757abc38261115","code":"timer/slot-overflow","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.D","message":"machine 'mcu_node': declared 5 timers under machines.mcu_node.timers, but scheduler.timer_wheel_depth = 4 slots cannot accommodate them. watching-zenoh RFC §5.D line 910 (`timer/slot-overflow`) — the static timer wheel is sized at compile time. Repair: raise `scheduler.timer_wheel_depth`, remove excess timers, or switch to `scheduler.kind: tokio` / `rt` to inherit host runtime timer scheduling.","expected":["4"],"actual":"5"}"#,
+                r#"{"v":1,"id":"fnv1a:f5757abc38261115","code":"timer/slot-overflow","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.D","message":"machine 'mcu_node': declared 5 timers under machines.mcu_node.timers, but scheduler.timer_wheel_depth = 4 slots cannot accommodate them. SCE Protocol-Synthesis RFC §5.D line 910 (`timer/slot-overflow`) — the static timer wheel is sized at compile time. Repair: raise `scheduler.timer_wheel_depth`, remove excess timers, or switch to `scheduler.kind: tokio` / `rt` to inherit host runtime timer scheduling.","expected":["4"],"actual":"5"}"#,
             ),
             (
                 // RFC §synth-5-N line 3060: MCU cooperative scheduler slot
@@ -11025,7 +11025,7 @@ mod tests {
                 }
                 .into(),
                 // Hash placeholder — patched by byte-stability assertion.
-                r#"{"v":1,"id":"fnv1a:e23d9c6761cfacc7","code":"link/concurrent-count-exceeds-scheduler-slots","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.N","message":"machine 'mcu_node' (MCU): 4 links declared but the cooperative scheduler accommodates only 2 per-tick slots (`floor(tick_period_us 1000 / per_link_budget_us 500) = 2`). watching-zenoh RFC §5.N line 3060 — more links than the cooperative scheduler can accommodate. Repair: raise `per_link_budget_us`, lower `tick_period_us`, or remove a link declaration from `machines.<m>.links`.","expected":["2"],"actual":"4"}"#,
+                r#"{"v":1,"id":"fnv1a:e23d9c6761cfacc7","code":"link/concurrent-count-exceeds-scheduler-slots","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.N","message":"machine 'mcu_node' (MCU): 4 links declared but the cooperative scheduler accommodates only 2 per-tick slots (`floor(tick_period_us 1000 / per_link_budget_us 500) = 2`). SCE Protocol-Synthesis RFC §5.N line 3060 — more links than the cooperative scheduler can accommodate. Repair: raise `per_link_budget_us`, lower `tick_period_us`, or remove a link declaration from `machines.<m>.links`.","expected":["2"],"actual":"4"}"#,
             ),
             (
                 // RFC §synth-5-N line 3061: per-link budget can't fit one
@@ -11037,7 +11037,7 @@ mod tests {
                     tick_period_us: 1000,
                 }
                 .into(),
-                r#"{"v":1,"id":"fnv1a:b3df0736b5b45af5","code":"link/per-link-budget-exceeds-tick-period","stage":"mesh-deploy","spec":"watching-zenoh RFC §5.N","message":"machine 'mcu_node': `scheduler.per_link_budget_us: 2000` exceeds `scheduler.tick_period_us: 1000`. watching-zenoh RFC §5.N line 3061 — a single link's budget cannot exceed the entire cooperative tick. Repair: lower `per_link_budget_us` to ≤ `tick_period_us`, or raise `tick_period_us`.","expected":["1000"],"actual":"2000"}"#,
+                r#"{"v":1,"id":"fnv1a:b3df0736b5b45af5","code":"link/per-link-budget-exceeds-tick-period","stage":"mesh-deploy","spec":"SCE Protocol-Synthesis RFC §5.N","message":"machine 'mcu_node': `scheduler.per_link_budget_us: 2000` exceeds `scheduler.tick_period_us: 1000`. SCE Protocol-Synthesis RFC §5.N line 3061 — a single link's budget cannot exceed the entire cooperative tick. Repair: lower `per_link_budget_us` to ≤ `tick_period_us`, or raise `tick_period_us`.","expected":["1000"],"actual":"2000"}"#,
             ),
             (
                 "mesh/external-read",
@@ -11534,7 +11534,7 @@ mod tests {
                     actual_hex: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
                         .into(),
                 },
-                r#"{"v":1,"id":"fnv1a:6bbb966dd3008e84","code":"forge/source-hash-mismatch","stage":"cli","spec":"watching-zenoh RFC §6.2.6","message":"out/foo_sm.rs: §6.2.6 source-hash mismatch (embedded=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, recomputed=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) — regenerate via sce-codegen","actual":"source-hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
+                r#"{"v":1,"id":"fnv1a:6bbb966dd3008e84","code":"forge/source-hash-mismatch","stage":"cli","spec":"SCE Protocol-Synthesis RFC §6.2.6","message":"out/foo_sm.rs: §6.2.6 source-hash mismatch (embedded=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, recomputed=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) — regenerate via sce-codegen","actual":"source-hash=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#,
             ),
         ]
     }
@@ -12357,7 +12357,7 @@ mod tests {
             //    call. NeutralOrDeterministic since the diagnostic is
             //    informational toward upstream pipeline-bug repair. ──
             | TraceabilityMetaGeneratedSourceLineMarkerMissing
-            // ── MCU driver/class boundary (watching-zenoh RFC §5.2)
+            // ── MCU driver/class boundary (SCE Protocol-Synthesis RFC §5.2)
             //    — both codes ride NeutralOrDeterministic.
             //    `mcu/driver-header-not-found`: author-domain repair
             //    (fix href / add file / set driver_root) — no closed
@@ -12936,7 +12936,7 @@ mod tests {
                 | TraceabilitySceMapAttributeStripped
                 // §synth-5-O boundary walker
                 | TraceabilityMetaGeneratedSourceLineMarkerMissing
-                // MCU driver/class boundary (watching-zenoh RFC §5.2)
+                // MCU driver/class boundary (SCE Protocol-Synthesis RFC §5.2)
                 // codes; both ride NeutralOrDeterministic per
                 // the non_overlap_class match above.
                 | McuDriverHeaderNotFound

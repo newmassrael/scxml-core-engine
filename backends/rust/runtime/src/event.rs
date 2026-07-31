@@ -12,7 +12,7 @@
 //! `_event` system variable exposes these fields to ECMAScript expressions
 //! (e.g., `_event.name`, `_event.data`, `_event.sendid`, `_event.origin`).
 //!
-//! Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): string-typed fields are
+//! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): string-typed fields are
 //! backed by [`crate::SceString`], which is `std::string::String` under the
 //! default std build and `heapless::String<MAX_EVENT_STRING_LEN>` under
 //! `--features=no_std`. The cap and motivation are documented at

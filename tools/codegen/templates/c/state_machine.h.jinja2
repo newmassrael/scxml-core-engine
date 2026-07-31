@@ -12,7 +12,7 @@
 
 {% include 'license_header.jinja2' %}
 {%- import '_macros/sce_map_marker.jinja2' as sce_map %}
-{# Watching-zenoh RFC §synth-5-O: SCE-MAP marker anchoring the
+{# SCE Protocol-Synthesis RFC §synth-5-O: SCE-MAP marker anchoring the
    generated C11 header. Module-level form is a comment, not the
    `#line` directive — `#line` in a header would propagate into
    every including translation unit's diagnostics. #}
@@ -29,7 +29,7 @@
 #include "sce/types.h"
 
 {% if model.on_sample_links %}
-/* watching-zenoh RFC §synth-5-E sample-callback codegen wire-up. `sce_sample_t`
+/* SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up. `sce_sample_t`
    borrow type + `sce_sub_callback_t` typedef live in the runtime
    header; the per-link `_deliver_link_<X>_sample` declarations
    below take a `const sce_sample_t *sample` borrow. */
@@ -468,7 +468,7 @@ void {{ csym_prefix }}{{ model.name }}_raise_external({{ csym_prefix }}{{ model.
    natively — each binds the event name, the payload tag, and the union
    member in a single call so the name↔type pairing cannot be constructed
    inconsistently (the C twin of the Rust per-event `Engine<Policy>`
-   wrappers). The watching-zenoh MCU consumer decodes received bytes into
+   wrappers). The downstream MCU consumer decodes received bytes into
    the per-event payload struct and calls the matching entry; everything
    inside is SCE (zenoh/keyexpr never enters). */
 {{ event_payload_entry_decls }}
@@ -509,7 +509,7 @@ bool {{ csym_prefix }}{{ model.name }}_is_in_final_state(const {{ csym_prefix }}
 bool {{ csym_prefix }}{{ model.name }}_is_final_state({{ csym_prefix }}{{ model.name }}_state_t s);
 
 {% if model.on_sample_links %}
-/* watching-zenoh RFC §synth-5-E sample-callback codegen wire-up — per-link Sample
+/* SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up — per-link Sample
    delivery surface. Host's link RX path (zenoh-pico subscriber,
    custom_tcp dispatch loop, …) calls the matching function for
    every Sample arriving on the named link. The body iterates the

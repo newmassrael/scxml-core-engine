@@ -4,7 +4,7 @@
 //! SCE Forge — codegen kind × language matrix (RFC §synth-5-J-4 / §synth-5-J-5).
 //!
 //! Single source of truth for which `(ForgeKind, Language)` pairs are
-//! emit-eligible per the watching-zenoh RFC §synth-5-J-4 matrix. Two
+//! emit-eligible per the SCE Protocol-Synthesis RFC §synth-5-J-4 matrix. Two
 //! invariants live here:
 //!
 //! 1. Every `ForgeKind` declares a `KindClass` (`Generic` or
@@ -21,9 +21,9 @@
 //! - `codegen/generic-kind-backend-emit-missing` — generic-class kind
 //!   whose backend template has not yet shipped.
 //!
-//! Trust-boundary rationale (see memory `next_watching_zenoh_rfc_phase_a`):
-//! SCE owns the contract, so this matrix is declared in SCE code (X
-//! form). It extends the existing `SIX_BACKENDS` const at
+//! Trust-boundary rationale: SCE owns the contract, so this matrix
+//! is declared in SCE code (X form). It extends the existing
+//! `SIX_BACKENDS` const at
 //! `sce-build/tests/forge_conformance.rs` from a backend-only list to
 //! a `(kind, backend)` pair set.
 
@@ -268,7 +268,7 @@ pub fn check(kind: ForgeKind, lang: Language) -> Result<(), GenerateError> {
     }
 }
 
-/// Watching-zenoh RFC §5.2 MCU section-attribute reject: when
+/// SCE Protocol-Synthesis RFC §5.2 MCU section-attribute reject: when
 /// `deploy.yaml`'s `platform.c11_section_attribute` is present but the
 /// target codegen backend is not C11, surface
 /// `mcu/section-attribute-on-non-mcu-target`. The section attribute

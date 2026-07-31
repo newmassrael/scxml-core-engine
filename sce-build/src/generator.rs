@@ -27,7 +27,7 @@ pub(crate) fn new_env<'a>() -> Environment<'a> {
 
 /// Target language for code generation.
 ///
-/// `C11` is the embedded MCU backend per watching-zenoh RFC §synth-5-J-1.
+/// `C11` is the embedded MCU backend per SCE Protocol-Synthesis RFC §synth-5-J-1.
 /// Enum membership lets every dispatch site handle the C11 case
 /// explicitly rather than silently routing C11 through a more
 /// permissive arm.
@@ -256,7 +256,7 @@ fn reject_liveliness_without_handler(model: &SCXMLModel) -> Result<(), GenerateE
 /// unaffected.
 #[derive(Default, Clone, Debug)]
 pub struct StatechartCodegenOptions {
-    /// `no_std` codegen mode (watching-zenoh RFC §synth-5-J-2): emits
+    /// `no_std` codegen mode (SCE Protocol-Synthesis RFC §synth-5-J-2): emits
     /// `#![no_std]` at the crate root and switches
     /// `parent_external_queue` + microstep `HashSet` to heapless
     /// variants. Default `false` keeps std-coupled output for the
@@ -590,7 +590,7 @@ fn render_cpp(
 
 // ── C11 generator ────────────────────────────────────────────────
 //
-// RFC §synth-5-J-1 — watching-zenoh consumer (MCU AOT backend). Mirrors the
+// RFC §synth-5-J-1 — downstream consumer (MCU AOT backend). Mirrors the
 // C++ pair-render shape (`generate_cpp` above) but emits a `.h` + `.c`
 // translation unit instead of `.h` + `.inl` because C11 has no in-class
 // definitions to hide behind a textual include.
@@ -1280,7 +1280,7 @@ fn load_template_strings(
 
 /// Recursively load all .jinja2 templates from a directory.
 ///
-/// Watching-zenoh RFC §synth-5-O (generated-source traceability) — also loads the workspace-
+/// SCE Protocol-Synthesis RFC §synth-5-O (generated-source traceability) — also loads the workspace-
 /// shared `_macros/` directory (one level up from the per-backend
 /// template root) so cross-backend shared macros like
 /// `_macros/sce_map_marker.jinja2` are visible to every language
@@ -1605,7 +1605,7 @@ mod tests {
 
     // ── Language enum / FromStr drift guards ────────────────────
     //
-    // RFC §synth-5-J-1 (watching-zenoh consumer, M1 foundation): the C11 enum
+    // RFC §synth-5-J-1 (downstream consumer, M1 foundation): the C11 enum
     // variant was added without a working emitter. These tests pin the
     // boundary contract so future edits cannot silently drop "c11"/"c"
     // recognition (which would silently route C11 callers to

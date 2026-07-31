@@ -9,7 +9,7 @@
 # `Vec` / `String` / `VecSink` / `encode_to_vec` site behind
 # `#[cfg(feature = "alloc")]`, so the decode + sink-based encode path
 # is reachable on a heap-free MCU target. This is the SCE-side mirror
-# of the consumer build that motivated the round (watching-zenoh's
+# of the consumer build that motivated the round (a downstream
 # codec crate failing `--no-default-features`).
 #
 # Scope: scalar codecs (Tail / LengthRef byte views) AND list-bearing

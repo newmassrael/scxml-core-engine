@@ -1,6 +1,6 @@
 # sce-portable-emit-probe
 
-Watching-zenoh RFC §5.J.2 — a compile gate proving that a **single** `--no-std`
+SCE Protocol-Synthesis RFC §5.J.2 — a compile gate proving that a **single** `--no-std`
 generated machine compiles against **both** runtime profiles:
 
 - the **std** runtime (the AP profile — `cargo build`, host target), and

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Forge: Buffer-pool slot-lifecycle FSM (watching-zenoh RFC §synth-5-E
+// SCE Forge: Buffer-pool slot-lifecycle FSM (SCE Protocol-Synthesis RFC §synth-5-E
 // lines 1116-1180). Single source of truth for the canonical 7-state
 // FSM declared by the `buffer-pool` kind itself; consumed by the Rust
 // + C11 buffer-pool templates as the contract that pins their

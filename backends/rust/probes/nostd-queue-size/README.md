@@ -1,6 +1,6 @@
 # sce-nostd-queue-size-probe
 
-Watching-zenoh MCU footprint report — a compile-time `size_of` gate over a
+Downstream MCU footprint report — a compile-time `size_of` gate over a
 generated state machine's no_std `Engine`. It now guards three per-machine
 footprint levers: the per-machine `<scxml sce:capacity="N">` queue sizing (so
 the runtime does not fall back to the crate-global depth-64 default), the
@@ -15,7 +15,7 @@ RFC: `claudedocs/rfc-nostd-per-machine-event-queue-sizing.md`.
 `backends/rust/probes/nostd-build` proves generated machines are *allocator-free*. It cannot
 catch a regression where the per-machine `StatePolicy::EventQueue` silently
 reverts to the depth-64 default — because the depth-64 bare form **still
-compiles**. That reversion is exactly watching-zenoh's blocker: each `Engine`'s
+compiles**. That reversion is exactly the downstream MCU blocker: each `Engine`'s
 two W3C Appendix D queues balloon by `2 × 64 × size_of::<EventWithMetadata<_>>()`
 (~205 KiB for this machine), making a per-slot `Engine` pool infeasible on MCU
 SRAM. Only a *size* assertion distinguishes the depth-2 machine from a depth-64

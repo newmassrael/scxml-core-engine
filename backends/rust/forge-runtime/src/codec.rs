@@ -3,7 +3,7 @@
 
 //! Codec cursor + typed error contract for `sce:kind="codec"` decode bodies.
 //!
-//! RFC `watching-zenoh/docs/rfc-sce-protocol-synthesis.md` §synth-5-B L494-519
+//! RFC `docs/spec/synth/rfc-sce-protocol-synthesis.md` §synth-5-B L494-519
 //! pins a per-language cursor + Result/Option shape on decode so a
 //! truncated input never aborts — it returns `NeedMoreBytes` and the
 //! caller resumes after additional bytes arrive (DMA boundary,

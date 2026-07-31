@@ -84,7 +84,7 @@ pub trait StatePolicy: Sized + 'static {
     /// `EventWithMetadata` derives; `'static` because payloads carry no borrows.
     type Payload: Clone + Default + Debug + 'static;
 
-    /// HAL impl bound to this policy (watching-zenoh RFC §synth-5-J-2 line 1984).
+    /// HAL impl bound to this policy (SCE Protocol-Synthesis RFC §synth-5-J-2 line 1984).
     ///
     /// Determines which [`Hal`] impl the [`Engine`] dispatches `ticks` /
     /// `wake` / `irq-save` calls through. Generated code emits
@@ -261,7 +261,7 @@ pub trait StatePolicy: Sized + 'static {
     /// Get initial children of a compound state (§scxml-3.6).
     /// Returns the resolved initial child state(s) for deep initial targets.
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: returns the bounded
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the bounded
     /// [`StateChain<Self::State>`](crate::helpers::hierarchy::StateChain) — aliased
     /// to `Vec<Self::State>` under std (ABI-preserving — existing generated
     /// overrides keep emitting `Vec<...>` which is the same type via the alias)
@@ -408,7 +408,7 @@ pub trait StatePolicy: Sized + 'static {
     ///
     /// Generated only when `HAS_ACTIVE_STATES` is `true`.
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: return type matches the cfg-conditional
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: return type matches the cfg-conditional
     /// [`StateChain`] alias — see [`get_initial_children`](Self::get_initial_children)
     /// above for the std/no_std mapping rationale. The default no-op returns
     /// an empty chain.

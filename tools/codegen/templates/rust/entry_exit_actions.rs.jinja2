@@ -18,7 +18,7 @@
 {%- import '_macros/sce_annotation_marker.jinja2' as annot %}
 
     // W3C SCXML 3.7: Execute <onentry> actions for a state
-    {# Watching-zenoh RFC §synth-5-O — function-scope SCE-MAP marker
+    {# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP marker
        above `execute_entry_actions`. `#[doc]` attaches to the function
        item; the `//` comment-form survives stable as a grep target. #}
     {{ sce_map.source_marker(model.source_location, "rust") }}
@@ -26,7 +26,7 @@
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
         //
-        // Watching-zenoh RFC §synth-5-J-2: `push_chain` is the runtime crate's
+        // SCE Protocol-Synthesis RFC §synth-5-J-2: `push_chain` is the runtime crate's
         // cfg-branched push wrapper — `Vec::push` under std, `heapless::Vec::push`
         // with the depth-guard `.expect()` under no_std. Lets template-emitted code
         // share the same call shape with `Engine::get_active_states`.
@@ -347,7 +347,7 @@
         if state == {{ machine_name }}State::{{ history_info.parent | to_state_variant }} {
 {% if history_info.type == 'deep' %}
             // W3C SCXML 3.11: Deep history - record all active descendants.
-            // Watching-zenoh RFC §synth-5-J-2: [`StateChain`] alias (heapless under
+            // SCE Protocol-Synthesis RFC §synth-5-J-2: [`StateChain`] alias (heapless under
             // no_std); recorded history is a subset of the active configuration
             // so it stays within MAX_HIERARCHY_DEPTH.
             let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> = pre_transition_active.iter()
@@ -357,7 +357,7 @@
                 .collect();
 {% else %}
             // W3C SCXML 3.11: Shallow history - record direct children only.
-            // Watching-zenoh RFC §synth-5-J-2: [`StateChain`] alias (heapless under no_std).
+            // SCE Protocol-Synthesis RFC §synth-5-J-2: [`StateChain`] alias (heapless under no_std).
             let filtered: ::sce_rust_runtime::helpers::hierarchy::StateChain<Self::State> = pre_transition_active.iter()
                 .filter(|&&s| Self::get_parent(s) == Some({{ machine_name }}State::{{ history_info.parent | to_state_variant }}))
                 .copied()

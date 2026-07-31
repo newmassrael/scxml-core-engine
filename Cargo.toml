@@ -44,7 +44,7 @@ mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
 # Compile-time test registration — C++ AotTestRegistrar equivalent
 linkme = "0.3"
 # Fixed-capacity collections without `alloc` — used by `sce-rust-runtime`'s
-# `no_std` feature variant per watching-zenoh RFC §5.J.2 line 1989
+# `no_std` feature variant per SCE Protocol-Synthesis RFC §5.J.2 line 1989
 # ("zero `alloc` dependency"). MCU consumers source capacities from
 # deploy.yaml + `<sce:capacity>` per §5.L. Stays optional everywhere
 # (std builds do not pull it in).

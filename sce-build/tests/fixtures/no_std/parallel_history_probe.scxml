@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Watching-zenoh RFC 5.J.2 no_std MCU-target compile gate fixture.
+  SCE Protocol-Synthesis RFC 5.J.2 no_std MCU-target compile gate fixture.
 
   Exercises every construct whose Rust no_std emission is allocator-free yet
   was historically std-coupled, so a regression that reintroduces an alloc

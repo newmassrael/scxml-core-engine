@@ -34,7 +34,7 @@
 //! HTTP send (§scxml-C-2, `http-send` feature) and `<invoke>` plumbing
 //! (§scxml-6.4) are `!no_std`-gated.
 
-// Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): `Arc`/`Mutex` back the
+// SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): `Arc`/`Mutex` back the
 // parent→child external event queue plumbing in `get_external_queue_handle`,
 // which is invoke-coupled. The codegen-time validator rejects `<invoke>` under
 // `--no-std` via `codegen/no-std-invoke-not-supported`, so the handle is never
@@ -60,7 +60,7 @@ use crate::hal::Hal;
 use crate::helpers::event_queue::EventQueueLike;
 use crate::helpers::{hierarchy, state_policy_concepts as concepts};
 use crate::sched_send_id::ScheduledSendIdLike;
-// Watching-zenoh RFC §synth-5-J-2: the HTTP module is alloc-coupled
+// SCE Protocol-Synthesis RFC §synth-5-J-2: the HTTP module is alloc-coupled
 // (HashMap<String, Vec<String>> + reqwest) and whole-module-gated to `!no_std`
 // in `lib.rs`. The codegen-time validator rejects
 // `BasicHTTPEventProcessor` `<send>` under `--no-std` via
@@ -74,7 +74,7 @@ use crate::MAX_SCHEDULED_EVENTS;
 use crate::{sce_log_debug, SceString};
 
 // ─────────────────────────────────────────────────────────────────────
-// Scheduler time point alias (Watching-zenoh RFC §synth-5-J-2 line 1984 HAL)
+// Scheduler time point alias (SCE Protocol-Synthesis RFC §synth-5-J-2 line 1984 HAL)
 // ─────────────────────────────────────────────────────────────────────
 // `SchedTimePoint` decouples the scheduler's comparable-timestamp type from
 // the host clock. Both build profiles use `u64` millisecond ticks read from
@@ -110,7 +110,7 @@ pub type SchedTimePoint = u64;
 /// keeps the scheduler clock-source-agnostic and makes it unit-testable with
 /// synthetic clocks.
 ///
-/// Watching-zenoh RFC §synth-5-J-2 (lines 1989-1994): under `--features=no_std`
+/// SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): under `--features=no_std`
 /// the backing store is a stack-allocated `heapless::Vec` capped at
 /// [`crate::MAX_SCHEDULED_EVENTS`] (= 32 in v1; see the `lib.rs` doc-comment for the
 /// reasoning and the deferred per-document tunable). Capacity overflow under
@@ -141,7 +141,7 @@ struct ScheduledEntry<E, S> {
     event: E,
     /// Delayed-send `_event.data` JSON payload.
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: elided under `--features=no_std`. The no_std
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: elided under `--features=no_std`. The no_std
     /// build has no script engine, and the scheduler drain
     /// ([`Engine::tick`] → [`Engine::raise_external`]) discards the data string
     /// under no_std (`let _ = (event_data, origin)`), so storing it per entry is
@@ -177,7 +177,7 @@ impl<E: Clone, S: ScheduledSendIdLike> PullScheduler<E, S> {
     /// computing `ready_at` from the current clock + delay — `Engine<P>`'s
     /// `schedule_event` wrapper does this via `sched_now_plus(delay)`.
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: under `--features=no_std` an attempted
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: under `--features=no_std` an attempted
     /// push past [`crate::MAX_SCHEDULED_EVENTS`] panics rather than silently dropping
     /// the event (W3C SCXML no-silent-drop discipline).
     pub fn schedule_event_at(
@@ -323,7 +323,7 @@ impl<E: Clone, S: ScheduledSendIdLike> Default for PullScheduler<E, S> {
 /// Generic over a [`StatePolicy`] `P` that encodes the state machine structure
 /// at compile time. Matches C++ `StaticExecutionEngine<StatePolicy>`.
 ///
-/// ## HAL routing (watching-zenoh RFC §synth-5-J-2)
+/// ## HAL routing (SCE Protocol-Synthesis RFC §synth-5-J-2)
 ///
 /// The std-touching surface (ticks / wake / irq-save) is reachable through
 /// the [`crate::hal::Hal`] trait via the policy's [`StatePolicy::Hal`]
@@ -351,7 +351,7 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) is_running: bool,
     /// §scxml-6.4: Completion callback invoked when reaching a final state.
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: `Box<dyn FnMut>` is alloc-coupled and gated to
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: `Box<dyn FnMut>` is alloc-coupled and gated to
     /// `!no_std`. Embedded consumers poll [`is_in_final_state`](Self::is_in_final_state)
     /// instead; a future no_std-compatible completion ABI (extern "C" fn +
     /// userdata) lands when a consumer demands it. Mirrors the gate applied to
@@ -365,7 +365,7 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) completion_callback: Option<Box<dyn FnMut() + Send>>,
     /// §scxml-C-2: HTTP send dispatch callback.
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: HTTP is rejected upstream under `--no-std`
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: HTTP is rejected upstream under `--no-std`
     /// via `codegen/no-std-http-not-supported`, so the callback field + setter +
     /// dispatcher are all gated to `!no_std`. Generated no_std code never
     /// emits a `perform_http_send` call site.
@@ -454,7 +454,7 @@ impl<P: StatePolicy> Engine<P> {
     }
 
     // ════════════════════════════════════════
-    // HAL-routed queries (watching-zenoh RFC §synth-5-J-2 line 1984)
+    // HAL-routed queries (SCE Protocol-Synthesis RFC §synth-5-J-2 line 1984)
     // ════════════════════════════════════════
 
     /// Return the policy's [`Hal`]-routed monotonic millisecond tick count.
@@ -621,7 +621,7 @@ impl<P: StatePolicy> Engine<P> {
         }
 
         // §scxml-6.4: Fire completion callback if we reached a final state during init.
-        // Watching-zenoh RFC §synth-5-J-2: Box<dyn FnMut> callback is alloc-coupled and gated
+        // SCE Protocol-Synthesis RFC §synth-5-J-2: Box<dyn FnMut> callback is alloc-coupled and gated
         // to `!no_std` (see field declaration above).
         #[cfg(not(feature = "no_std"))]
         if self.is_in_final_state() && self.completion_callback.is_some() {
@@ -735,7 +735,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Parallel machines: returns the union of all active regions via
     /// [`StatePolicy::get_active_states`].
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: returns the bounded
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: returns the bounded
     /// [`StateChain`](crate::helpers::hierarchy::StateChain) which
     /// aliases `Vec<P::State>` under std (ABI-preserving) and
     /// `heapless::Vec<P::State, MAX_HIERARCHY_DEPTH>` under no_std. The parallel
@@ -797,7 +797,7 @@ impl<P: StatePolicy> Engine<P> {
     /// Returns an `Arc<Mutex<Vec<(event_name, event_data)>>>` that child state machines
     /// can push events into via `#_parent` send targets. Parent drains this in `tick_children()`.
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because `Arc`/`Mutex`/`Vec` are
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because `Arc`/`Mutex`/`Vec` are
     /// alloc-coupled and the `<invoke>` author surface that wires this handle into
     /// generated code is rejected at codegen time under `--no-std`.
     #[cfg(not(feature = "no_std"))]
@@ -868,7 +868,7 @@ impl<P: StatePolicy> Engine<P> {
     /// to the policy at dispatch via
     /// [`StatePolicy::populate_event_payload`], where `_event.data.<field>`
     /// guards read it natively — no script engine, no string serialization, so
-    /// the value path holds on no_std MCU. A consumer (e.g. watching-zenoh)
+    /// the value path holds on no_std MCU. A consumer
     /// decodes its wire bytes into the payload struct and calls this; everything
     /// inside is SCE's.
     pub fn raise_external_typed(&mut self, event: P::Event, payload: P::Payload) {
@@ -1015,7 +1015,7 @@ impl<P: StatePolicy> Engine<P> {
 
     /// §scxml-6.4: Register a callback invoked when the engine reaches a final state.
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because `Box<dyn FnMut>` is
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because `Box<dyn FnMut>` is
     /// alloc-coupled (mirrors `helpers::entry_exit::execute_*_blocks` gate from
     /// B-γ2d-2). Embedded consumers poll [`is_in_final_state`](Self::is_in_final_state)
     /// instead.
@@ -1031,7 +1031,7 @@ impl<P: StatePolicy> Engine<P> {
     /// into the external queue — enabling real HTTP round-trips against the
     /// shared W3C test server (`standalone_http_server.js`).
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` (HTTP itself is whole-module
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` (HTTP itself is whole-module
     /// gated; the codegen-time validator rejects `BasicHTTPEventProcessor`
     /// `<send>` under `--no-std` via `codegen/no-std-http-not-supported`).
     #[cfg(not(feature = "no_std"))]
@@ -1049,7 +1049,7 @@ impl<P: StatePolicy> Engine<P> {
     /// external queue. The engine has no knowledge of HTTP transport — callers
     /// supply the implementation via [`set_http_send_callback`](Self::set_http_send_callback).
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` — see
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` — see
     /// [`set_http_send_callback`](Self::set_http_send_callback) for the upstream rejection rationale.
     #[cfg(not(feature = "no_std"))]
     pub fn perform_http_send(
@@ -1089,7 +1089,7 @@ impl<P: StatePolicy> Engine<P> {
     /// and calls `tick()` in a loop until either the final state is reached or
     /// `timeout` elapses. Returns `true` on completion, `false` on timeout.
     ///
-    /// Watching-zenoh RFC §synth-5-J-2: gated to `!no_std` because the polling loop
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2: gated to `!no_std` because the polling loop
     /// uses `std::thread::sleep` for cooperative blocking and `Instant::elapsed`
     /// for the timeout — both host-thread-coupled. no_std consumers drive their
     /// own executor loop, calling [`tick`](Self::tick) plus

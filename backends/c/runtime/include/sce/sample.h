@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// watching-zenoh RFC §synth-5-E lines 1276-1346 — application-facing Sample
+// SCE Protocol-Synthesis RFC §synth-5-E lines 1276-1346 — application-facing Sample
 // API + Layer 1 Clang typestate + capability-attribute family. Lives
 // in the C11 backend's Tier 1 INTERFACE (sce_c_runtime per
 // `c11_4tier_layering.md`) so generated code, downstream consumer
@@ -43,7 +43,7 @@
 //
 //   * Concrete `sce_keyexpr_t` / `sce_timestamp_t` definitions —
 //     opaque forward-declared structs. Downstream consumers
-//     (e.g. `consumer_watching_zenoh.md` zenoh-pico bindings) supply
+//     (e.g. zenoh-pico bindings) supply
 //     the bodies via their own typedefs against the same struct tags.
 //     SCE-side cannot commit to zenoh / DDS / MQTT key-space
 //     semantics without coupling the C runtime to one transport.

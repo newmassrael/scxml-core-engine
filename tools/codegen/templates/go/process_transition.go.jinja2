@@ -18,7 +18,7 @@
 
 // ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
 // Returns true if a transition was taken.
-{# Watching-zenoh RFC §synth-5-O — function-scope SCE-MAP markers
+{# SCE Protocol-Synthesis RFC §synth-5-O — function-scope SCE-MAP markers
    above each Go transition function. #}
 {{ sce_map.source_marker(model.source_location, "go") }}
 func (p *{{ machine_name }}Policy) ProcessTransition(currentState *{{ machine_name }}State, event {{ machine_name }}Event, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) bool {

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  watching-zenoh RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7 keyexpr-
+  SCE Protocol-Synthesis RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7 keyexpr-
   fixture sub-atomic 3 of 3, 2026-05-13): inner algorithm for the
   runtime KeyExpr matching reference exemplar. Locked decision —
   v1 matching semantics are exact uint32 ID equality. The BC's
   element-type carries `callback_id: uint32` registered at compile
   time (RFC §3 line 4001-4003 — KeyExpr set is compile-time fixed).
   The matching algorithm composes ID equality; wildcard / prefix
-  semantics defer to consumer authoring in watching-zenoh-side
+  semantics defer to consumer authoring in downstream-side
   fixtures (C8 multicast session, C12 liveliness token).
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"

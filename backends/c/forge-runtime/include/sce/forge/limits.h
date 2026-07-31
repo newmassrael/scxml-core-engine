@@ -13,7 +13,7 @@
  *
  * Rationale: 256 bytes covers the UDS / OBD-II / automotive
  * diagnostic single-frame
- * payload max and the watching-zenoh MCU consumer's stack budget without
+ * payload max and the downstream MCU consumer's stack budget without
  * bloat. A fixture needing more (or less) declares its own
  * `sce:max-size` per slot.
  */

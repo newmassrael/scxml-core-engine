@@ -14,7 +14,7 @@
 // fields), and deploy.yaml validators only consulted the `DeployConfig`
 // itself.
 //
-// Spec anchor. watching-zenoh RFC §synth-5-E (Sample API contract) introduces
+// Spec anchor. SCE Protocol-Synthesis RFC §synth-5-E (Sample API contract) introduces
 // the `<sce:on-sample>` callback path whose `Sample::take()` requires a
 // stage-copy destination pool, declared via `binding.stage_pool` in
 // deploy.yaml. The cross-reference resolution this module implements is

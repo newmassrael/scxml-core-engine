@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §synth-5-O — sourcemap + symbol mangling +
+// SCE Protocol-Synthesis RFC §synth-5-O — sourcemap + symbol mangling +
 // addr2sce integration fixture.
 //
 // The contract (spec lines 3055-3057, 3219-3243, 3253-3278,

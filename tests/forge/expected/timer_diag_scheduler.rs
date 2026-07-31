@@ -2,7 +2,7 @@
 // SCE-MAP: timer_diag_scheduler:1
 
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
-// Shape: watching-zenoh RFC §synth-5-D line 880-886 — single timer per
+// Shape: SCE Protocol-Synthesis RFC §synth-5-D line 880-886 — single timer per
 // doc with event-driven reset / state-exit cancel / fire event.
 // Runtime: sce_forge_runtime::hal
 // Do not edit — regenerate from the source SCXML file.
@@ -43,7 +43,7 @@ pub const RESET_ON_EVENT: &'static str = "diag.heartbeat";
 /// cancel the timer.
 pub const CANCEL_ON_STATE_EXIT: &'static str = "diag.idle";
 
-/// Generated single-timer scheduler per watching-zenoh RFC §synth-5-D.
+/// Generated single-timer scheduler per SCE Protocol-Synthesis RFC §synth-5-D.
 /// Generic over a concrete platform [`Timer`] type and a user-supplied
 /// [`TimerDiagSchedulerHandler`]. The fire trampoline erases the
 /// lifetime via raw pointer when crossing FFI; the scheduler must be

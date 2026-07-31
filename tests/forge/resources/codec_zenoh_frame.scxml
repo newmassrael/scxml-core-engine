@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh transport-layer Frame body (RFC §synth-5-B
      zenoh groundwork — first reachable downstream consumer of B1-B4 primitives
-     from the watching-zenoh authoring path).
+     from the downstream authoring path).
 
      Upstream zenoh-pico shape (`_z_frame_encode` in
      src/protocol/codec/transport.c:386-395): VLE-encoded sequence
@@ -21,7 +21,7 @@
 
      max-size for payload is set to 65536 (a permissive upper bound
      for a single Frame batch); deploy-time configuration can tighten
-     this in the watching-zenoh consumer via deploy.yaml. -->
+     this in the downstream consumer via deploy.yaml. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
        xmlns:sce="http://sce.dev/ext"
        sce:kind="codec" sce:default-endian="big" name="codec_zenoh_frame">

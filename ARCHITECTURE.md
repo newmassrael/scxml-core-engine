@@ -167,7 +167,7 @@ The C11 backend mirrors the 4-tier shape with a small adaptation. Generated C11 
 | Tier 3 (Scripting) | `sce_c_scripting` | STATIC, optional | Lua-bound bridges over `sce_c_base` + platform impl; gated by `SCE_ENABLE_LUA` |
 | Tier 4 (Platform) | `sce_c_runtime_posix` | STATIC, optional | POSIX reference impl (`posix/clock.c`, `posix/http_client.c`); gated by `SCE_C_RUNTIME_POSIX` (default ON for host) |
 
-Bare-metal / RTOS consumers (e.g. `consumer_watching_zenoh.md`) opt out of `sce_c_runtime_posix` and supply their own `sce_c_runtime_<target>` library providing the same symbol contract (`_sce_clock_now_ms` for the W3C 6.2 scheduler; HTTP impl optional). The interface contract in `backends/c/runtime/include/sce/` is the single source of truth — the test runner (`backends/c/tests`) is the contract-test consumer that pins the API against drift.
+Bare-metal / RTOS consumers opt out of `sce_c_runtime_posix` and supply their own `sce_c_runtime_<target>` library providing the same symbol contract (`_sce_clock_now_ms` for the W3C 6.2 scheduler; HTTP impl optional). The interface contract in `backends/c/runtime/include/sce/` is the single source of truth — the test runner (`backends/c/tests`) is the contract-test consumer that pins the API against drift.
 
 **Generated C11 code** consumes these tiers via stable headers (`#include <sce/clock.h>` etc.), never via host-relative paths — the headers and their impls are decoupled by the `sce_c_runtime` INTERFACE include path.
 

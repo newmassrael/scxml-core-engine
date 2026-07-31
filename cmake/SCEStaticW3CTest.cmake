@@ -311,7 +311,7 @@ endfunction()
 # the caller can conditionally `target_link_libraries(... lua54)` only for
 # fixtures whose codegen embedded `luaL_dostring` calls. Datamodel-less
 # fixtures (e.g. test355, test144) leave Lua out of the link entirely so
-# the MCU footprint stays minimal for the watching-zenoh consumer.
+# the MCU footprint stays minimal for the downstream consumer.
 #
 # Optional flag NEEDS_DOM: append the test to W3C_C_AOT_TESTS_NEEDS_DOM so
 # the caller can link the host-side XML DOM helper (backends/c/tests/support/
