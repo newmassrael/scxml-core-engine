@@ -1886,6 +1886,11 @@
           "file": "sce-build/src/mesh/transport/mod.rs",
           "symbol": "TransportDescriptor",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/deploy.rs",
+          "symbol": "validate_discovery_not_supported",
+          "kind": "implements"
         }
       ]
     },
@@ -2075,6 +2080,11 @@
         {
           "file": "sce-build/src/mesh/pattern.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/topology.rs",
+          "symbol": "validate_pattern_capability",
+          "kind": "implements"
         }
       ]
     },
@@ -2673,6 +2683,11 @@
           "file": "sce-build/src/mesh/partitions.rs",
           "symbol": "tests",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/src/mesh/partitions.rs",
+          "symbol": "partition_for_machine",
+          "kind": "implements"
         }
       ]
     },

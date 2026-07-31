@@ -4456,6 +4456,9 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// external OEM config for transport-level peer discovery). `null` /
 /// absent discovery values deserialise as `None` and pass through.
 fn validate_discovery_not_supported(cfg: &DeployConfig) -> Result<(), DeployError> {
+    // §mesh-3.3: transport-native routing is the source of truth for peer
+    // availability, so there is no SCE-side discovery config to interpret.
+    // Absence is the only supported state; anything authored is an error.
     let Some(value) = &cfg.discovery else {
         return Ok(());
     };
