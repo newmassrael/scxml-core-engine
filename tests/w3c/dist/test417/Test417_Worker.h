@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §16.8 seed — NonRoot partition registration for W3C test417.
+// SCE Mesh §mesh-16.8 seed — NonRoot partition registration for W3C test417.
 //
 // Hosts the `s1p12` region. `initialize()` drives the local region
 // through its NULL-transition chain into `<final id="s1p12final">`;

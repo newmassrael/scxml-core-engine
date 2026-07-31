@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §16.8.1 — distributed conformance driver.
+// SCE Mesh §mesh-16.8.1 — distributed conformance driver.
 //
 // Per-test invocation: spawns every partition binary via fork+exec,
 // collects their exit codes, and compares the aggregate verdict
 // against the known-correct W3C single-process outcome. The W3C IRP
-// `conf:pass` / `conf:fail` final-state convention is the §16.2
+// `conf:pass` / `conf:fail` final-state convention is the §mesh-16.2
 // property-1 equivalence witness for this seed — test417 has no
 // `<log>` elements, so the property-6 output-multiset check reduces
 // to "did every partition reach a success verdict in its local
 // configuration?". Property 1 equivalence for the Root is decided
 // inside the Root's `run()` (checks SM reaches `<final id="pass">`);
 // the NonRoot's success is "wire-21 was dispatched". The driver
-// composes these local verdicts into the overall §16.8 PASS.
+// composes these local verdicts into the overall §mesh-16.8 PASS.
 //
 // Partition launch order: the NonRoot partition (worker) launches
 // first so it creates the outbound wire-21 shm segment in
@@ -28,7 +28,7 @@
 // avoid zombies under ctest -j. If a partition crashes before dtor,
 // the segment survives until the OS reboots — `/dev/shm/sce_p21_*`
 // can be purged manually without impacting other tests because
-// SCE_MESH §16.8 seed partitions are per-test-named
+// SCE_MESH §mesh-16.8 seed partitions are per-test-named
 // (`test417_worker_test417_main`), so no cross-test namespace
 // collision is possible.
 

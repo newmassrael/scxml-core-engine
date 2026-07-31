@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// SCE Mesh §16.8.1 — distributed conformance partition runner registry.
+// SCE Mesh §mesh-16.8.1 — distributed conformance partition runner registry.
 //
 // Mirrors the shape of `tests/w3c/aot_tests/AotTestRegistry.h` (keyed by
 // test-id string) but widens the key to (test_id, partition_name) so a
