@@ -10230,6 +10230,16 @@
         {
           "file": "backends/rust/runtime/src/engine.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce/src/runtime/EventRaiserImpl.cpp",
+          "symbol": "EventRaiserImpl::processNextQueuedEvent",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/src/runtime/StateMachine.cpp",
+          "symbol": "StateMachine::processEvent",
+          "kind": "implements"
         }
       ],
       "verification_expectation": "by_construction",

@@ -72,6 +72,13 @@ public:
         std::string originType;                // §scxml-5.10: _event.origintype
         std::string eventType;                 // §scxml-5.10: "internal"/"platform"/"external"
         std::optional<ScriptValue> typedData;  // Engine-agnostic typed data (avoids JSON round-trip)
+        // W3C SCXML Appendix D mainEventLoop: which of the two queues this
+        // event was dequeued from. Distinct from `eventType`, which is the
+        // 5.10.1 `_event.type` string and reads "platform" for the done and
+        // error families whichever queue carried them. Consumers that must
+        // act only at the external-dequeue point — autoforward is the one
+        // the spec names — key on this, never on the event's name.
+        bool isExternalQueue = false;
 
         void clear() {
             originSessionId.clear();
@@ -80,6 +87,7 @@ public:
             originType.clear();
             eventType.clear();
             typedData.reset();
+            isExternalQueue = false;
         }
     };
 
@@ -351,6 +359,19 @@ public:
 
     static const std::string &getCurrentEventType() {
         return currentEventContext_.eventType;
+    }
+
+    /**
+     * @brief Whether the event being dispatched came off the external queue
+     *
+     * W3C SCXML Appendix D mainEventLoop performs autoforward and
+     * `<finalize>` at one point only: after `externalQueue.dequeue()`.
+     * Internal-queue events never reach that point, which is what keeps
+     * `error.*` and `done.state.*` out of the forwarded set — the exclusion
+     * is the queue they were raised onto, not how their names are spelled.
+     */
+    static bool isCurrentEventFromExternalQueue() {
+        return currentEventContext_.isExternalQueue;
     }
 
     static const std::optional<ScriptValue> &getCurrentTypedData() {
