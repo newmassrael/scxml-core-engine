@@ -105,9 +105,12 @@ coverage/
 tmp/
 temp/
 
-# Core dumps
-core
-core.*
+# Core dumps. Anchored: an unanchored `core` also matches the directory
+# `sce/include/core/`, so a new shared helper added there was silently
+# unstageable. Dumps land in the working directory of the crashing process,
+# which is the repo root or `build/` (already ignored via `**/build/`).
+/core
+/core.*
 
 # Documentation generated files
 docs/generated/
