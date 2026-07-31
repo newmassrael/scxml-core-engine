@@ -29,6 +29,11 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
         return nullptr;
     }
 
+    // §scxml-3.5.1: all four <transition> attributes are optional. An absent
+    // 'event' makes the transition eventless, an absent 'target' makes it
+    // targetless (the state is not exited), and 'type' defaults to "external"
+    // — the three defaults this function encodes below. 'cond' defaults to
+    // true, so an absent one leaves the guard unset rather than always-false.
     std::string event = transElement->hasAttribute("event") ? transElement->getAttribute("event") : "";
     std::string target = transElement->hasAttribute("target") ? transElement->getAttribute("target") : "";
 
@@ -202,7 +207,9 @@ void SCE::TransitionParser::parseActions(const std::shared_ptr<IXMLElement> &tra
     }
 
     {
-        // SCXML specification compliance: Store ActionNode objects directly
+        // §scxml-3.5.2: the children of <transition> are executable content,
+        // run after the source state's <onexit> handlers and before the target
+        // state's <onentry> handlers — one §scxml-4.9 block per transition.
         auto actionNodes = actionParser_->parseActionsInElement(transElement);
         for (const auto &actionNode : actionNodes) {
             if (actionNode) {
