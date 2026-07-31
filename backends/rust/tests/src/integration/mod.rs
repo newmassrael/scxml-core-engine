@@ -14,7 +14,9 @@
 //! never touches it and adding or dropping an integration fixture is
 //! a single-line edit here.
 
+pub mod autoforward_done_invoke;
 pub mod autoforward_event_fields;
+pub mod autoforward_internal_queue;
 pub mod donedata_local_invoke;
 pub mod event_schema_native;
 pub mod native_action;

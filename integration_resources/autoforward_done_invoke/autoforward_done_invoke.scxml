@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- W3C SCXML 6.4 autoforward reaches a `done.invoke.<id>` raised by a sibling.
+
+     Appendix D's `mainEventLoop` forwards to autoforward children without
+     consulting the event's name:
+
+       externalEvent = externalQueue.dequeue()
+       if isCancelEvent(externalEvent): running = false; continue
+       for state in configuration:
+           for inv in state.invoke:
+               if inv.invokeid == externalEvent.invokeid: applyFinalize(...)
+               if inv.autoforward:                        send(inv.id, externalEvent)
+
+     The only exclusion is the cancel event, and it is expressed as control
+     flow (`continue`) rather than as a name test. §6.4.2 puts
+     `done.invoke.<id>` squarely inside the forwarded set: the external
+     service "MUST return a special event 'done.invoke.id' to the external
+     event queue of the invoking process", and the parent "MUST send an
+     exact copy of every external event it receives" at "the point at which
+     it removes it from the external event queue". `error.*` and
+     `done.state.*` stay out of the forwarded set because they belong to the
+     internal queue, not because of how they are spelled.
+
+     The public IRP suite cannot see this: test229 checks only that a name
+     crosses, and test230 is a manual test. Neither runs two concurrent
+     invokes, which is what it takes to observe a `done.invoke` while a
+     second autoforward child is still alive.
+
+     Shape:
+
+       inv_watch  (autoforward="true")  declared FIRST so it is already
+                                        running when the sibling completes
+       inv_short  (autoforward="false") reaches `<final>` during its own
+                                        init, raising done.invoke.inv_short
+                                        onto the parent's external queue
+
+     The parent's `done.invoke.inv_short` transition is targetless — it must
+     not exit `phase`, which would cancel both invokes — and sends `probe`
+     to its own external queue. That orders the two events the watcher can
+     see without any wall-clock delay:
+
+       conformant  watcher sees done.invoke.inv_short first  -> sawPlatform -> pass
+       filtered    watcher sees only probe                   -> sawProbeOnly -> fail
+
+     Both watcher outcomes are `<final>`, so neither verdict depends on a
+     timeout. The watcher names the event in full (`done.invoke.inv_short`,
+     not the `done.invoke` prefix form) because the AOT backends resolve a
+     forwarded event by exact name against the child's own event enum and
+     silently drop names it does not declare.
+
+     This fixture is single-axis: it asserts only *whether* the copy
+     arrives. Field preservation belongs to `autoforward_event_fields` and
+     the enqueue-vs-dequeue forwarding point is a separate axis again.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0" datamodel="ecmascript" initial="phase"
+       name="autoforward_done_invoke">
+    <state id="phase">
+        <invoke type="scxml" id="inv_watch" autoforward="true">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="watch">
+                    <state id="watch">
+                        <transition event="done.invoke.inv_short" target="saw">
+                            <send target="#_parent" event="sawPlatform"/>
+                        </transition>
+                        <transition event="probe" target="missed">
+                            <send target="#_parent" event="sawProbeOnly"/>
+                        </transition>
+                    </state>
+                    <final id="saw"/>
+                    <final id="missed"/>
+                </scxml>
+            </content>
+        </invoke>
+        <invoke type="scxml" id="inv_short" autoforward="false">
+            <content>
+                <scxml xmlns="http://www.w3.org/2005/07/scxml"
+                       version="1.0" datamodel="ecmascript" initial="over">
+                    <final id="over"/>
+                </scxml>
+            </content>
+        </invoke>
+        <transition event="done.invoke.inv_short">
+            <send event="probe"/>
+        </transition>
+        <transition event="sawPlatform" target="pass"/>
+        <transition event="sawProbeOnly" target="fail"/>
+        <transition event="error.execution" target="fail"/>
+    </state>
+    <final id="pass"/>
+    <final id="fail"/>
+</scxml>

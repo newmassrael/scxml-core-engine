@@ -241,9 +241,18 @@
         return
 
     def forward_to_autoforward_children(self, event_name: str, metadata, engine) -> None:
+        """W3C SCXML 6.4.1 — forward an external event into every active
+        ``autoforward`` child.
+
+        The event's name is not consulted. Appendix D ``mainEventLoop``
+        forwards whatever it dequeued from the external queue, and 6.4.2 has
+        ``done.invoke.<id>`` returned onto that queue, so a sibling invoke
+        still running must see it. Internal-queue events — ``error.*``
+        (3.12.2) and ``done.state.<id>`` (3.7) — stay out of the forwarded
+        set because this method is reached only from the external drain, not
+        because of how they are spelled.
+        """
 {% if ns_any.any %}
-        if is_platform_event(event_name):
-            return
 {% for state_id, state in model.states | dictsort %}
 {% for inv in state.invokes | scxml_family %}
 {% if inv.autoforward %}

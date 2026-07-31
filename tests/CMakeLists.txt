@@ -456,6 +456,10 @@ add_executable(integration_tests
     integration/DonedataLocalInvokeAotTest.cpp
     integration/AutoforwardEventFieldsTest.cpp
     integration/AutoforwardEventFieldsAotTest.cpp
+    integration/AutoforwardDoneInvokeTest.cpp
+    integration/AutoforwardDoneInvokeAotTest.cpp
+    integration/AutoforwardInternalQueueTest.cpp
+    integration/AutoforwardInternalQueueAotTest.cpp
     integration/SCXMLEventTest.cpp
     integration/ParallelStateIntegrationTest.cpp
     integration/SCXMLParallelParsingTest.cpp
@@ -743,6 +747,23 @@ sce_generate_static_integration_test(donedata_local_invoke ${STATIC_INTEGRATION_
 
 sce_generate_static_integration_test(autoforward_event_fields ${STATIC_INTEGRATION_OUTPUT_DIR}
     SYNTH_INVOKE_CHILDREN inv_echo
+)
+
+# W3C SCXML 6.4: Appendix D `mainEventLoop` forwards every event dequeued from
+# the external queue to each autoforward child and excludes only the cancel
+# event, and §6.4.2 puts `done.invoke.<id>` on that queue. Two concurrent
+# invokes are what it takes to observe the forward, which is why no IRP test
+# covers it.
+sce_generate_static_integration_test(autoforward_done_invoke ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_watch inv_short
+)
+
+# W3C SCXML 6.4: the negative half of the same loop. The internal drain has
+# no forwarding step, so `error.execution` (§6.2, unsupported `<send>` type)
+# must never reach an autoforward child — excluded by the queue it was
+# raised onto, not by a filter that recognises its name.
+sce_generate_static_integration_test(autoforward_internal_queue ${STATIC_INTEGRATION_OUTPUT_DIR}
+    SYNTH_INVOKE_CHILDREN inv_watch
 )
 
 # Wire the integration headers + include path into the integration_tests

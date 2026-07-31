@@ -9,7 +9,6 @@
 //! Provides higher-level helpers used by generated invoke code:
 //! - [`drain_and_raise_child_events`]: drain child-to-parent event queue and raise with metadata
 //! - [`raise_done_invoke`]: generate done.invoke.{id} event when child completes
-//! - [`is_platform_event`]: §scxml-6.4.1 platform event filter for autoforward
 //!
 //! SCE Protocol-Synthesis RFC §synth-5-J-2 (lines 1989-1994): the entire module is gated to
 //! `cfg(not(feature = "no_std"))` because `Arc`/`Mutex`/`Vec`/`HashMap` are
@@ -94,12 +93,4 @@ pub fn raise_done_invoke<P: StatePolicy>(
         meta.metadata.data = donedata;
         engine.raise_external_with_meta(meta);
     }
-}
-
-/// §scxml-6.4.1: Check if an event is a platform event (should not autoforward).
-///
-/// 1:1 port of C++ `InvokeProcessingAlgorithms::isPlatformEvent`.
-/// Platform events start with `"#_"` and must never be autoforwarded to children.
-pub fn is_platform_event(event_name: &str) -> bool {
-    event_name.starts_with("#_")
 }
