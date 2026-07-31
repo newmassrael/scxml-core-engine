@@ -145,6 +145,10 @@ void SendAction::addParamWithExpr(const std::string &name, const std::string &ex
     paramsWithExpr_.emplace_back(name, expr);
 }
 
+void SendAction::addParamWithLocation(const std::string &name, const std::string &location) {
+    paramsWithExpr_.emplace_back(name, std::string{}, location);
+}
+
 const std::vector<SendAction::SendParam> &SendAction::getParamsWithExpr() const {
     return paramsWithExpr_;
 }
