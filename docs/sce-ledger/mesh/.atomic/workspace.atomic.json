@@ -2140,14 +2140,7 @@
       "title": "Remote Invoke Lifecycle",
       "parent_doc": "mesh",
       "parent_section": "mesh-9",
-      "decision_status": "active",
-      "bindings": [
-        {
-          "file": "sce-build/src/mesh/deploy.rs",
-          "symbol": "StageCopyPolicy",
-          "kind": "references"
-        }
-      ]
+      "decision_status": "active"
     },
     "mesh-9.4": {
       "title": "Limitations",
