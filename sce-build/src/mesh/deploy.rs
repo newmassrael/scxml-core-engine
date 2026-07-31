@@ -740,7 +740,7 @@ pub enum RxDispatch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StageCopyPolicy {
-    /// Spec line 2352-2357: default. §synth-5-M / ARCHITECTURE §mesh-9.3
+    /// Spec line 2352-2357: default. §synth-5-M / ARCHITECTURE §9.3
     /// stage-copy-rate gate emits `reassembly/expected-fragmentation-
     /// rate-high` as a warning; the per-link
     /// `<sce:accept-stage-copy-rate>` opt-out suppresses it.
