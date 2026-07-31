@@ -825,3 +825,80 @@ fn generate_hashes_a_symlinked_input_rather_than_the_empty_digest() {
         "the empty-input digest must never reach a header"
     );
 }
+/// Every committed generated tree must carry a pinned `generated-at`.
+///
+/// The stamp feeds neither hash, so it is free to pin — and pinning it is
+/// what makes the committed trees byte-reproducible from a pinned
+/// generator. An unpinned regeneration is silent: it rewrites every file
+/// with a fresh wall-clock value, producing a diff that looks like churn
+/// and hides any real change inside it. `scripts/regen_all_committed_trees.sh`
+/// exports `SOURCE_DATE_EPOCH`; this is what notices when something
+/// regenerated without it.
+#[test]
+fn committed_trees_carry_a_pinned_generated_at() {
+    let workspace = workspace_root();
+    let roots = [
+        "backends/rust/tests/src/generated",
+        "backends/rust/tests/src/integration",
+        "backends/kotlin/tests/src/main/kotlin/com/sce/generated",
+        "backends/go/tests/generated",
+    ];
+
+    let mut checked = 0usize;
+    let mut unpinned: Vec<String> = Vec::new();
+    for rel in roots {
+        let root = workspace.join(rel);
+        if !root.is_dir() {
+            continue;
+        }
+        collect_generated_at(&root, &mut checked, &mut unpinned);
+    }
+
+    assert!(
+        checked > 0,
+        "no committed generated files found — the roots this test walks moved"
+    );
+    assert!(
+        unpinned.is_empty(),
+        "{} of {checked} committed files carry a wall-clock `generated-at`. \
+         Re-run `scripts/regen_all_committed_trees.sh` (it exports \
+         SOURCE_DATE_EPOCH) and commit the result. First few:\n{}",
+        unpinned.len(),
+        unpinned
+            .iter()
+            .take(5)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+}
+
+/// Recursive helper for [`committed_trees_carry_a_pinned_generated_at`].
+/// Only files that actually carry a §synth-6.2.6 header are considered —
+/// hand-written siblings in the same tree are not generated output.
+fn collect_generated_at(dir: &Path, checked: &mut usize, unpinned: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_generated_at(&path, checked, unpinned);
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(stamp) = content
+            .lines()
+            .take(8)
+            .find_map(|l| l.trim_start().strip_prefix("// generated-at: "))
+        else {
+            continue;
+        };
+        *checked += 1;
+        if stamp.trim() != "0" {
+            unpinned.push(format!("{} -> {stamp}", path.display()));
+        }
+    }
+}
