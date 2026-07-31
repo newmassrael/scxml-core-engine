@@ -4217,6 +4217,18 @@
         {
           "file": "tools/codegen/templates/mesh/cpp/mesh_transport.h.jinja2",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_event_fields.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_event_fields_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_event_fields_kotlin.sh",
+          "kind": "references"
         }
       ]
     },
