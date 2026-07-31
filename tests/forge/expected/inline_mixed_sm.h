@@ -226,6 +226,16 @@ public:
         this->policy_.setScriptEngine(::std::move(engine));
     }
 
+    // §scxml-C-2-3: forward the deployment's inbound BasicHTTP endpoint to the
+    // policy, which publishes it as the processor's 'location' in
+    // `_ioprocessors`. Emitted on every machine for the same reason
+    // setScriptEngine() is — callers inject without member-detection traits.
+    // A machine with no script engine has no `_ioprocessors` to publish into,
+    // so the body is a no-op there.
+    void setBasicHttpAccessUri([[maybe_unused]] ::std::string accessUri) const {
+        this->policy_.setBasicHttpAccessUri(::std::move(accessUri));
+    }
+
 };
 
 // W3C SCXML: Compile-time StatePolicy interface verification

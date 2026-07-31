@@ -27,6 +27,7 @@
 //! - [`foreach`]: Foreach iteration (static variant)
 //! - [`hierarchy`]: LCA, entry/exit chain construction (`HierarchicalStateHelper`)
 //! - `invoke_processing` (std-only): §scxml-6.4 invoke processing algorithms
+//! - `io_processors` (std-only): §scxml-C-1-1 `_ioprocessors` descriptors
 //! - [`logger`]: thin `log` crate re-exports (`SCE_LOG_*` macros)
 //! - [`scxml_constants`]: W3C URIs and string literals
 //! - [`send`]: Send action helpers (static-target subset)

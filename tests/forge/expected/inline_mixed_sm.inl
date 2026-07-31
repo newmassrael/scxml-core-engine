@@ -166,6 +166,15 @@ void setScriptEngine(::std::shared_ptr<::SCE::IScriptEngine> engine) const {
     return *scriptEngine_;
 }
 
+// §scxml-C-2-3: inbound BasicHTTP endpoint serving this machine, declared
+// by the deployment before initialize(). Empty means no such endpoint is
+// deployed, and no BasicHTTP entry is published.
+mutable ::std::string basicHttpAccessUri_;
+
+void setBasicHttpAccessUri(::std::string accessUri) const {
+    basicHttpAccessUri_ = ::std::move(accessUri);
+}
+
 // Helper: Ensure JSEngine is initialized (lazy initialization)
 void ensureScriptEngine() const {
     if (scriptEngineInitialized_) return;
@@ -174,8 +183,10 @@ void ensureScriptEngine() const {
     auto& scriptEngine = getScriptEngine();
     scriptEngine.createSession(sessionId_.value());
 
-    // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-    std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
+    // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+    // same helper the Interpreter uses, so a machine reads the same entry
+    // names and the same addresses whichever engine runs it.
+    auto ioProcessors = ::SCE::IOProcessorHelper::build(sessionId_.value(), basicHttpAccessUri_);
     auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "inline_mixed", ioProcessors).get();
     if (!setupResult.isSuccess()) {
         SCE_LOG_ERROR("AOT ensureScriptEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
@@ -202,8 +213,10 @@ void initializeDataModel([[maybe_unused]] Engine& engine) {
     auto& scriptEngine = getScriptEngine();
     scriptEngine.createSession(sessionId_.value());
 
-    // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
-    std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
+    // §scxml-C-1-1 / §scxml-C-2-3: the `_ioprocessors` entries come from the
+    // same helper the Interpreter uses, so a machine reads the same entry
+    // names and the same addresses whichever engine runs it.
+    auto ioProcessors = ::SCE::IOProcessorHelper::build(sessionId_.value(), basicHttpAccessUri_);
     auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "inline_mixed", ioProcessors).get();
     if (!setupResult.isSuccess()) {
         SCE_LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
