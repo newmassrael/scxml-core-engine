@@ -447,6 +447,13 @@ struct RejectedDocument {
 struct GenerateManifest<'a> {
     v: u32,
     kind: &'static str,
+    /// Commit of the generator that produced these artifacts, or
+    /// `"unknown"` on a build with no git checkout to read. Present so a
+    /// build system capturing this manifest attributes its output without
+    /// a second invocation and without maintaining a version sidecar by
+    /// hand — the bookkeeping that leaves a committed tree traceable to no
+    /// single commit once it drifts.
+    generator: &'static str,
     artifacts: Vec<ArtifactEntry>,
     needs_script_engine: bool,
     /// Omitted (not `[]`) on a pure-static machine, so a pure-static
@@ -474,6 +481,7 @@ fn emit_generate_manifest(report: &GenerateReport) {
     let manifest = GenerateManifest {
         v: 1,
         kind: "generate",
+        generator: env!("SCE_GIT_COMMIT"),
         artifacts: report
             .artifacts
             .iter()
@@ -495,11 +503,21 @@ fn emit_generate_manifest(report: &GenerateReport) {
 
 // ── CLI Definition ──────────────────────────────────────────────
 
+/// Generator identity: crate version plus the commit it was built from.
+///
+/// The crate version is frozen pre-1.0 and identifies nothing on its own,
+/// so a consumer pinning this binary needs the commit to attribute a
+/// generated artifact to the generator that produced it — otherwise the
+/// attribution has to be recorded by hand, which drifts. `unknown` when
+/// the build had no git checkout to read (vendored crate, release
+/// tarball); see `build.rs` for the resolution and its limits.
+const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), " (", env!("SCE_GIT_COMMIT"), ")");
+
 #[derive(Parser)]
 #[command(
     name = "sce-codegen",
     about = "SCE SCXML Code Generator",
-    version = env!("CARGO_PKG_VERSION"),
+    version = VERSION,
 )]
 struct Cli {
     /// Override the SCE workspace root. The workspace root is the

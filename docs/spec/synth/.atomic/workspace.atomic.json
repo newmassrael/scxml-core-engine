@@ -4233,6 +4233,10 @@
         {
           "file": "sce-build/tests/codegen_invocation_determinism.rs",
           "kind": "references"
+        },
+        {
+          "file": "sce-build/build.rs",
+          "kind": "references"
         }
       ]
     },

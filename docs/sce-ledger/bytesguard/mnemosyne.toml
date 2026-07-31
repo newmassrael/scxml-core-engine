@@ -112,6 +112,10 @@ paths = [
 # Rust files citing this namespace sit under sce-build/src + sce-build/tests,
 # both of which `paths` already scans. This declaration gates nothing away.
 scan_exclusions = [
+    # Build-time generator-identity resolution. Measured: it carries exactly
+    # one citation, §synth-6.2.6, and none in this workspace's namespace —
+    # so excluding it swallows no section from this gate.
+    "sce-build/build.rs",
     "backends/go/forge-runtime/conformance/",
     "backends/rust/link-runtime/",
     "backends/rust/lua/",

@@ -75,6 +75,10 @@ paths = [
     "tools/codegen/templates",
     "sce-build/src",
     "sce-build/tests",
+    # Generator identity is resolved at build time, so `build.rs` is part of
+    # the authored cite-bearing surface even though it sits beside `src/`
+    # rather than inside it.
+    "sce-build/build.rs",
     "backends/rust/runtime/src",
     "backends/c/forge-runtime",
     # Source subdirs only: the parent holds a gitignored `build/` whose artifacts
