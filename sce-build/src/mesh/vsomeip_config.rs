@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Partial-schema parser for OEM-supplied `vsomeip.json` (SCE_MESH.md §13).
+// Partial-schema parser for OEM-supplied `vsomeip.json` (SCE_MESH.md §mesh-13).
 //
 // vsomeip.json is owned by the platform team / ARXML pipeline — sce-build
 // must not rewrite it or demand fields outside the documented vsomeip

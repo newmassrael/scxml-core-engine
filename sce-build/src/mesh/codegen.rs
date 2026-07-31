@@ -77,7 +77,7 @@ fn cpp_string_literal(s: &str) -> String {
 /// contents are a valid JSON5 fragment (produced by `serde_json`).
 ///
 /// `config_file` references the external zenoh.json5 via `Config::from_file`
-/// at runtime (SCE_MESH.md §13, §14) — deploy.yaml-level overrides
+/// at runtime (SCE_MESH.md §mesh-13, §mesh-14) — deploy.yaml-level overrides
 /// (mode/connect/listen) merge over the file.
 #[derive(Debug, Clone, Default, serde::Serialize)]
 struct ZenohSessionJson5 {
@@ -137,7 +137,7 @@ impl ZenohSessionJson5 {
 /// Currently carries only `application_name` — the vsomeip application
 /// identity that binds generated per-target `vsomeip::application`
 /// instances to an entry in `applications[*].name` inside vsomeip.json
-/// (SCE_MESH.md §13). The template uses it verbatim as the argument to
+/// (SCE_MESH.md §mesh-13). The template uses it verbatim as the argument to
 /// `vsomeip::runtime::get()->create_application(<name>)`; when `None`
 /// the template falls back to the synthetic `<machine>_<target>` name so
 /// test fixtures that predate the external-config integration keep
@@ -312,13 +312,13 @@ struct TargetContext {
     /// directly. The default SOME/IP path (UDP + multicast SD) still
     /// needs dedup.
     ///
-    /// SCE_MESH.md §10.5: the runtime DedupWindow is keyed on
+    /// SCE_MESH.md §mesh-10.5: the runtime DedupWindow is keyed on
     /// `(env.source, env.id)` and emitted per-machine when any binding
     /// reports `needs_dedup = true` via the machine-wide
     /// `has_undeduped_transport` flag.
     needs_dedup: bool,
     /// Does THIS binding need the runtime OrderingBuffer on inbound
-    /// envelopes (SCE_MESH.md §10.6)?
+    /// envelopes (SCE_MESH.md §mesh-10.6)?
     ///
     /// `true` iff the binding declares `ordering: required` AND the
     /// transport cannot supply order natively AND no per-binding
@@ -326,7 +326,7 @@ struct TargetContext {
     /// Drives both the per-target `seq_counter` emission on the
     /// sender side and the receiver-side `admitOrdered` branch.
     needs_ordering: bool,
-    /// SCE_MESH.md §16.7 row 3 retry policy carried verbatim into the
+    /// SCE_MESH.md §mesh-16.7 row 3 retry policy carried verbatim into the
     /// template context. `None` ⇒ the OutboundBuffer's dispatcher
     /// goes straight to the transport-send closure (Stage 1/2
     /// behaviour). `Some(_)` ⇒ codegen emits a per-target
@@ -336,7 +336,7 @@ struct TargetContext {
     /// retrying wrapper.
     #[serde(skip_serializing_if = "Option::is_none")]
     retry: Option<RetryPolicyContext>,
-    /// SCE_MESH.md §16.7 row 10 — per-binding auth policy projected into
+    /// SCE_MESH.md §mesh-16.7 row 10 — per-binding auth policy projected into
     /// the template context. `None` ⇒ no row-10 wiring is emitted;
     /// transport rejection signals stay classified as row 1 / row 8.
     /// `Some(_)` ⇒ the generator's transport classify-arm reads
@@ -362,7 +362,7 @@ struct TargetContext {
     /// being non-empty (`has_mesh_rpc.v` flag).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     invoke_sites: Vec<super::topology::MeshRpcInvokeSite>,
-    /// SCE_MESH.md §14.4 — runtime pool substitution plan. `None` when the
+    /// SCE_MESH.md §mesh-14.4 — runtime pool substitution plan. `None` when the
     /// binding has no placeholder (all existing fixtures). When present,
     /// the template routes the matched-site block through a pool-specific
     /// dispatch path that decodes `env.data` JSON once per invoke and
@@ -374,7 +374,7 @@ struct TargetContext {
     pool_plan: Option<super::topology::PoolPlan>,
 }
 
-/// SCE_MESH.md §16.7 row 3 retry policy as it surfaces to the
+/// SCE_MESH.md §mesh-16.7 row 3 retry policy as it surfaces to the
 /// template. Mirrors `RetryPolicyConfig` field-for-field, but typed
 /// as plain serializable scalars so the jinja template can emit
 /// numeric initializers directly. `Option`-wrapping a struct that
@@ -402,7 +402,7 @@ impl From<super::deploy::RetryPolicyConfig> for RetryPolicyContext {
     }
 }
 
-/// SCE Mesh §16.7 row 10 — codegen-side projection of the per-binding
+/// SCE Mesh §mesh-16.7 row 10 — codegen-side projection of the per-binding
 /// auth policy. Mirrors [`RetryPolicyContext`] in shape and rationale:
 /// the deploy.yaml struct is `Option`-rich, but the template only sees
 /// either "no auth wiring" (None at the TargetContext level) or a
@@ -448,7 +448,7 @@ impl AuthPolicyContext {
 /// Carries both the pattern classification and the per-event SOME/IP
 /// numeric IDs so the template can emit per-event constants and dispatch
 /// on event name (different SCXML events on the same target can use
-/// different methods or event groups, SCE_MESH.md §14).
+/// different methods or event groups, SCE_MESH.md §mesh-14).
 ///
 /// Template dispatch is driven by `field_kind` (`"method"` /
 /// `"event_group"` / `"getter"` / `"setter"`), NOT by probing which ID
@@ -578,7 +578,7 @@ fn event_ids_to_template(ids: &crate::mesh::topology::SomeipEventIds) -> EventId
     }
 }
 
-// ── Server-side template context (SCE_MESH.md §13 Session E) ──
+// ── Server-side template context (SCE_MESH.md §mesh-13 Session E) ──
 
 /// Template context for server-side transport registration.
 ///
@@ -595,7 +595,7 @@ struct ServerContext {
     /// Per-RPC-pair context for server handler registration.
     rpc_pairs: Vec<ServerRpcPairContext>,
     /// Per-event context for FireForget inbound handler registration
-    /// (SCE_MESH.md §8.3). SOME/IP registers one
+    /// (SCE_MESH.md §mesh-8.3). SOME/IP registers one
     /// `register_message_handler` per event; Zenoh shares a single
     /// `declare_subscriber` on the server key across all FireForget
     /// events and dispatches by `env.type`. The template uses
@@ -604,7 +604,7 @@ struct ServerContext {
     /// True when [`Self::fire_forget_events`] is non-empty.
     has_fire_forget: bool,
     /// Per-pair context for FieldAccess inbound handler registration
-    /// (SCE_MESH.md §8.3). SOME/IP registers one
+    /// (SCE_MESH.md §mesh-8.3). SOME/IP registers one
     /// `register_message_handler` per (getter or setter) method; Zenoh
     /// shares the single queryable (FieldRead) and the single server
     /// subscriber (FieldWrite) declared for RPC + FireForget and
@@ -612,7 +612,7 @@ struct ServerContext {
     /// routed through `handleServerResponse` identically to RPC.
     field_access_pairs: Vec<ServerFieldAccessContext>,
     /// True when the server must accept inbound `session.put` — either
-    /// for FireForget (§8.3) or FieldWrite, which also uses
+    /// for FireForget (§mesh-8.3) or FieldWrite, which also uses
     /// `session.put` on the Zenoh key. Controls emission of the Zenoh
     /// `zenoh_server_put_sub_` subscriber.
     has_server_put: bool,
@@ -625,14 +625,14 @@ struct ServerContext {
     /// generated `if` chain has no duplicates.
     field_notify_events: Vec<String>,
     /// Per-event context for eventgroup notification publish
-    /// (SCE_MESH.md §8.1). SOME/IP: `offer_event` + `notify`. Zenoh:
+    /// (SCE_MESH.md §mesh-8.1). SOME/IP: `offer_event` + `notify`. Zenoh:
     /// `session.put`. Empty when no eventgroup events are declared.
     eventgroup_events: Vec<ServerEventgroupContext>,
     /// True when [`Self::eventgroup_events`] is non-empty. Controls
     /// emission of `publishEventgroupNotify` and the fallback path in
     /// the mesh send callback.
     has_eventgroup: bool,
-    /// SCE Mesh §9.5 gap Z2: per-server Zenoh queryable response
+    /// SCE Mesh §mesh-9.5 gap Z2: per-server Zenoh queryable response
     /// deadline in milliseconds. `None` ⇒ no deadline emitted,
     /// matching the pre-Z2 behaviour where `pending_server_queries_`
     /// leaks entries whose engine never responds. Some ⇒ the template
@@ -641,7 +641,7 @@ struct ServerContext {
     /// scheduler entry at every `pending_server_queries_` insert.
     #[serde(skip_serializing_if = "Option::is_none")]
     query_timeout_ms: Option<u64>,
-    /// SCE_MESH.md §14.4 (Gap 7): multi-instance
+    /// SCE_MESH.md §mesh-14.4 (Gap 7): multi-instance
     /// server pool member list. Propagated from
     /// [`crate::mesh::topology::ServerBinding::instance_pool`]. When
     /// present, the template renders `SOMEIP_SERVER_INSTANCES` as the
@@ -661,7 +661,7 @@ struct ServerContext {
 ///
 /// The inbound request event no longer appears here because the server
 /// handler trusts the decoded envelope's `env.type` verbatim (SCE_MESH.md
-/// §13 Session H: wire format is SSOT). Only fields the template actually
+/// §mesh-13 Session H: wire format is SSOT). Only fields the template actually
 /// reads are kept; adding fields back requires a matching template
 /// consumer.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -680,7 +680,7 @@ struct ServerRpcPairContext {
 }
 
 /// Per-event context for server-side FireForget inbound handler codegen
-/// (SCE_MESH.md §8.3). SOME/IP resolves `method_id` from the deploy.yaml
+/// (SCE_MESH.md §mesh-8.3). SOME/IP resolves `method_id` from the deploy.yaml
 /// `server.events.<event>.method` binding; Zenoh leaves it absent because
 /// all FireForget events land on the shared server key.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -693,7 +693,7 @@ struct ServerFireForgetContext {
 }
 
 /// Per-pair context for server-side FieldAccess handler codegen
-/// (SCE_MESH.md §8.3). Mirrors [`ServerRpcPairContext`] — both patterns
+/// (SCE_MESH.md §mesh-8.3). Mirrors [`ServerRpcPairContext`] — both patterns
 /// ride the same transport-level reply path (`create_response` /
 /// `Query::reply`).
 ///
@@ -716,7 +716,7 @@ struct ServerFieldAccessContext {
 }
 
 /// Per-event context for server-side eventgroup notification codegen
-/// (SCE_MESH.md §8.1). SOME/IP: `offer_event` + `notify`. Zenoh:
+/// (SCE_MESH.md §mesh-8.1). SOME/IP: `offer_event` + `notify`. Zenoh:
 /// `session.put` on the server key.
 ///
 /// Eventgroup events are published spontaneously (without a preceding
@@ -807,7 +807,7 @@ fn build_server_context(binding: &super::topology::ServerBinding) -> ServerConte
         })
         .collect();
     // Zenoh server needs a `session.put` subscriber for every inbound
-    // pattern that uses `put` on the wire — FireForget (SCE_MESH.md §8.3)
+    // pattern that uses `put` on the wire — FireForget (SCE_MESH.md §mesh-8.3)
     // and FieldWrite. The subscriber is a single declaration shared
     // across those patterns; the template toggles it on `has_server_put`.
     let has_setter = binding
@@ -890,7 +890,7 @@ fn build_server_context(binding: &super::topology::ServerBinding) -> ServerConte
 /// when the corresponding `transports:` block is absent.
 ///
 /// `server` is the resolved server-side binding for machines that act
-/// as RPC servers (SCE_MESH.md §13 Session E). `None` for pure-client
+/// as RPC servers (SCE_MESH.md §mesh-13 Session E). `None` for pure-client
 /// machines.
 /// Public mesh codegen input bundle — aggregates the 20 deploy /
 /// topology / transport / partition / SOMEIP / source-location /
@@ -936,7 +936,7 @@ pub fn generate_mesh(
     let needs_custom_tcp_server = inputs
         .custom_tcp_config
         .is_some_and(CustomTcpTransportConfig::hosts_server);
-    // SCE_MESH.md §16.5 wire-21: a partition with non-empty wire-21
+    // SCE_MESH.md §mesh-16.5 wire-21: a partition with non-empty wire-21
     // routes still needs `<machine>_transport.h` even when no
     // conventional `<send>`-driven targets, server, subscriptions, or
     // custom_tcp listen exist (rule 12 fixture). Mirrors the same
@@ -961,7 +961,7 @@ pub fn generate_mesh(
     }
 }
 
-/// Per-binding dedup decision (SCE_MESH.md §10.5).
+/// Per-binding dedup decision (SCE_MESH.md §mesh-10.5).
 ///
 /// The decision composes two facts:
 ///   1. the transport-level default (`!transport_supplies_dedup`), and
@@ -997,7 +997,7 @@ fn compute_needs_dedup(
     default_needs_dedup
 }
 
-/// Per-binding ordering decision (SCE_MESH.md §10.6).
+/// Per-binding ordering decision (SCE_MESH.md §mesh-10.6).
 ///
 /// Composes three facts:
 ///   1. The per-binding `ordering:` declaration from deploy.yaml
@@ -1036,7 +1036,7 @@ fn compute_needs_ordering(
     default_needs_ordering
 }
 
-/// SCE_MESH.md §10.9 invariant 8: classify the pool + RPC-client
+/// SCE_MESH.md §mesh-10.9 invariant 8: classify the pool + RPC-client
 /// rejection surface. The caller has already decided the machine is
 /// a pool router (`n_sessions > 1`); this helper inspects the
 /// target contexts and returns:
@@ -1052,7 +1052,7 @@ fn compute_needs_ordering(
 ///   pool coexistence is safe.
 ///
 /// Mesh-rpc wins reporting priority when both apply so the author
-/// lands on the spec-level feature (§9.5) rather than the
+/// lands on the spec-level feature (§mesh-9.5) rather than the
 /// by-event-name inference.
 fn classify_pool_rpc_client_conflict(
     target_contexts: &[TargetContext],
@@ -1217,7 +1217,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
             let has_rpc = event_patterns
                 .iter()
                 .any(|ep| category_of(ep.pattern_kind) == Some(TransportCapability::RequestReply));
-            // SCE_MESH.md §13: `has_pubsub` fires for either (a) an
+            // SCE_MESH.md §mesh-13: `has_pubsub` fires for either (a) an
             // outbound pub/sub send in the SCXML model, or (b) a
             // machine-lifetime subscription declared in deploy.yaml.
             // The two signals are kept in separate fields so
@@ -1270,7 +1270,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     let mut transport_types: BTreeSet<&str> =
         targets.iter().map(|t| t.state.transport_name()).collect();
 
-    // Server-side transport context (SCE_MESH.md §13 Session E).
+    // Server-side transport context (SCE_MESH.md §mesh-13 Session E).
     let server_context = server.map(build_server_context);
 
     // Include server transport in transport_types so the correct
@@ -1284,7 +1284,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         });
     }
 
-    // SCE_MESH.md §14.4: session count hosted by this router.
+    // SCE_MESH.md §mesh-14.4: session count hosted by this router.
     // A SOME/IP server pool with N declared instances backs N
     // independent SCXML document sessions (one per offered
     // vsomeip instance). Every other router shape runs exactly
@@ -1297,7 +1297,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         .filter(|&len| len > 0)
         .unwrap_or(1);
 
-    // SCE_MESH.md §14.4 + §10.9 invariant 8: pool + any outbound
+    // SCE_MESH.md §mesh-14.4 + §mesh-10.9 invariant 8: pool + any outbound
     // RPC client whose correlation state lives in a router-scoped
     // table cannot share a router. Delegation to
     // `classify_pool_rpc_client_conflict` keeps the decision table
@@ -1321,7 +1321,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         transport_types.insert("custom_tcp");
     }
 
-    // SCE_MESH.md §9.6 Session 2: scxml-remote invoke peers that opted
+    // SCE_MESH.md §mesh-9.6 Session 2: scxml-remote invoke peers that opted
     // into custom_tcp demand the same CustomTcpTransport.h include + any
     // `{% if "custom_tcp" in transport_types %}` scaffolding, even when
     // no `<send>` target on this machine selected custom_tcp. The send
@@ -1335,7 +1335,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         transport_types.insert("custom_tcp");
     }
 
-    // SCE_MESH.md §9.6 Session 4b: scxml-remote invoke peers that opted
+    // SCE_MESH.md §mesh-9.6 Session 4b: scxml-remote invoke peers that opted
     // into someip demand the ScxmlInvokeEndpoint helper + the shared
     // SCE app `<machine>[_<partition>]_sce_app_` (RFC F.X-2), which is
     // orthogonal to any per-`<send>`-target someip application emitted
@@ -1350,15 +1350,15 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         transport_types.insert("someip");
     }
 
-    // SCE_MESH.md §9.6 Session 5: scxml-remote invoke peers that opted
+    // SCE_MESH.md §mesh-9.6 Session 5: scxml-remote invoke peers that opted
     // into zenoh demand `zenoh_session_` to exist (the per-peer
     // ScxmlInvokeEndpoint takes a reference to it) and the
     // `<zenoh.hxx>` include block to fire. Both are gated by the
     // template's `{% if "zenoh" in transport_types %}`, so add the
-    // variant when no `<send>` target selected zenoh but a §9.6 peer
+    // variant when no `<send>` target selected zenoh but a §mesh-9.6 peer
     // did. Mirrors the someip insertion above. The same gate also
     // pulls the existing `zenoh::Session::open(...)` init() block
-    // — the §9.6 endpoint emplace then chains off the session that
+    // — the §mesh-9.6 endpoint emplace then chains off the session that
     // block produces.
     if scxml_remote_outbound_peers
         .iter()
@@ -1368,7 +1368,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         transport_types.insert("zenoh");
     }
 
-    // SCE_MESH.md §10.5: per-binding dedup decision drives machine-level
+    // SCE_MESH.md §mesh-10.5: per-binding dedup decision drives machine-level
     // emission. A receiver emits the runtime DedupRouter iff at least one
     // inbound path on the machine actually needs runtime dedup — that's
     // any target with `needs_dedup = true` (typically Zenoh, or a SOME/IP
@@ -1392,7 +1392,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     });
     let has_undeduped_transport = any_target_needs_dedup || server_needs_dedup;
 
-    // SCE_MESH.md §10.6: machine-level ordering flag drives
+    // SCE_MESH.md §mesh-10.6: machine-level ordering flag drives
     // OrderingBuffer include/member/seq_counter emission. The server
     // role does not yet carry an `ordering:` declaration, so the
     // server side never contributes here — extend the expression
@@ -1465,7 +1465,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         .get_template("mesh_transport.h.jinja2")
         .map_err(|e| CodegenError::TemplateRender(e.to_string()))?;
 
-    // SCE_MESH.md §10.6.1: per-machine ordering buffer timings.
+    // SCE_MESH.md §mesh-10.6.1: per-machine ordering buffer timings.
     // Always emitted, whether or not the machine has an ordered
     // binding — the template only reads inside `{% if
     // has_ordered_binding %}`, but the absent-section default
@@ -1477,7 +1477,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         "tick_period_ms": machine_ordering.tick_period_ms,
     });
 
-    // SCE Mesh §16.7 row 8 (PEER_PARTITIONED): per-machine Zenoh
+    // SCE Mesh §mesh-16.7 row 8 (PEER_PARTITIONED): per-machine Zenoh
     // liveliness opt-in. `null` when the deploy.yaml author declared no
     // `liveliness:` section, which the template reads as a falsy gate —
     // zero lines of liveliness code emitted. Present value carries the
@@ -1489,7 +1489,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         None => serde_json::Value::Null,
     };
 
-    // SCE Mesh §10.10 (OutboundBuffer): per-machine readiness-gated
+    // SCE Mesh §mesh-10.10 (OutboundBuffer): per-machine readiness-gated
     // buffering opt-in. `null` when the deploy.yaml author declared no
     // `outbound_buffer:` section — template reads as a falsy gate and
     // emits zero buffer code. Present value carries the deploy-
@@ -1502,7 +1502,7 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
         None => serde_json::Value::Null,
     };
 
-    // SCE_MESH.md §16.5 wire-21: materialize partition routing context
+    // SCE_MESH.md §mesh-16.5 wire-21: materialize partition routing context
     // for the template. Outbound entries are keyed by parallel_id with
     // the root partition as value; dedup across parallels sharing the
     // same root so the template emits exactly one shm channel per
@@ -1557,16 +1557,16 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // and clash on vsomeip's routing-manager application-name uniqueness.
     // F.X-3 onwards, additional SCE-reserved subsystems (region-liveness,
     // future) register on the same app — see SomeipScxmlInvokeEndpoint.h's
-    // §13 docstring for the SCE-vs-OEM rationale that survives
+    // §mesh-13 docstring for the SCE-vs-OEM rationale that survives
     // consolidation.
     let someip_sce_app_vsomeip_name = sce_app_vsomeip_name(machine_name, partition_self_name);
     let someip_sce_app_field = format!("{someip_sce_app_vsomeip_name}_app_");
     let someip_sce_app_thread = format!("{someip_sce_app_vsomeip_name}_thread_");
 
     // SCE Mesh RFC F.X-1: per-target SOMEIP service ID constants. Self is
-    // present iff this machine is a §9.6 SOMEIP scxml-invoke participant
+    // present iff this machine is a §mesh-9.6 SOMEIP scxml-invoke participant
     // (the deploy-wide assigner already filtered on participation). Peers
-    // are listed for every §9.6 SOMEIP outbound + inbound peer the codegen
+    // are listed for every §mesh-9.6 SOMEIP outbound + inbound peer the codegen
     // sees on this machine; the template emits one named constant per
     // entry (`SCE_SOMEIP_SERVICE_PEER_<peer_name_upper>`) and a single
     // `SCE_SOMEIP_SERVICE_SELF`. Replaces the legacy
@@ -1743,7 +1743,7 @@ mod tests {
         // Without `--partition`, the SCE app is named `<machine>_sce`
         // — single binary per machine, no infix needed. The `_sce`
         // suffix is RFC F.X-2's generic SCE-namespace marker (the
-        // app hosts every SCE-reserved subsystem, not just §9.6 invoke).
+        // app hosts every SCE-reserved subsystem, not just §mesh-9.6 invoke).
         assert_eq!(sce_app_vsomeip_name("brake", None), "brake_sce");
         assert_eq!(
             sce_app_vsomeip_name("scxml_invoke_someip_parent", None),
@@ -1887,7 +1887,7 @@ mod tests {
         assert!(j.is_empty());
     }
 
-    // ── compute_needs_dedup (SCE_MESH.md §10.5) ─────────────────
+    // ── compute_needs_dedup (SCE_MESH.md §mesh-10.5) ─────────────────
     //
     // These tests exercise the per-binding dedup decision in isolation.
     // The helper synthesises a minimal TransportState rather than driving
@@ -1990,7 +1990,7 @@ mod tests {
         assert!(!compute_needs_dedup(&state, true));
     }
 
-    // ── compute_needs_ordering (SCE_MESH.md §10.6) ─────────────
+    // ── compute_needs_ordering (SCE_MESH.md §mesh-10.6) ─────────────
     //
     // Exercise the per-binding ordering decision across the four
     // relevant axes: transport supplies_ordering, per-binding
@@ -2123,11 +2123,11 @@ mod tests {
         ));
     }
 
-    // ── classify_pool_rpc_client_conflict (SCE_MESH.md §10.9 invariant 8) ─────
+    // ── classify_pool_rpc_client_conflict (SCE_MESH.md §mesh-10.9 invariant 8) ─────
     //
     // The generated TransportRouter's `invoke_correlation_`,
     // `active_invokes_`, and `pending_rpcs_` are all router-scoped
-    // containers. A §14.4 server pool hosts N sessions under one router,
+    // containers. A §mesh-14.4 server pool hosts N sessions under one router,
     // so any router-scoped RPC-client correlation would alias across
     // sessions. `classify_pool_rpc_client_conflict` names the surface
     // that drove the rejection so the author can act on the repair
@@ -2235,7 +2235,7 @@ mod tests {
     fn zenoh_with_rpc_is_safe() {
         // Zenoh's `session.get()` on_reply closure correlates natively per
         // query handle — no router-scoped `pending_rpcs_` entry is
-        // emitted. A pool router (§14.4 excludes Zenoh server pools anyway)
+        // emitted. A pool router (§mesh-14.4 excludes Zenoh server pools anyway)
         // that had a Zenoh RPC client target would not trigger this
         // rejection surface. Guards against a future Zenoh server-pool
         // extension accidentally treating Zenoh clients as unsafe.
@@ -2254,7 +2254,7 @@ mod tests {
     fn mesh_rpc_priority_wins_over_someip_rpc_request() {
         // Machine has BOTH `<invoke>` sites (on one target) AND a SOME/IP
         // `<send>` RpcRequest client (on another target). Report mesh-rpc
-        // first — its surface is spec-level (§9.5) so the repair suggestion
+        // first — its surface is spec-level (§mesh-9.5) so the repair suggestion
         // is more tractable than the by-event-name inference. Also keeps
         // the single-diagnostic shape of `CodegenError` stable.
         let mesh_rpc_target =

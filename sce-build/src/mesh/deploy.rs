@@ -4,7 +4,7 @@
 // SCE Mesh deploy.yaml parser — topology, device-level shared transport
 // config, per-target bindings, scheduler.
 //
-// Schema shape (SCE_MESH.md §14):
+// Schema shape (SCE_MESH.md §mesh-14):
 //   topology.<device>.transports.<transport>   — device-shared session config
 //   topology.<device>.machines.<name>.bindings — per-target binding config
 //
@@ -39,18 +39,18 @@ pub struct DeployConfig {
     pub topology: HashMap<String, DeviceConfig>,
     /// Reserved `discovery:` top-level key. Parsed as opaque `Value` so
     /// the parse-time validator can surface a spec-linked diagnostic
-    /// instead of the generic `deny_unknown_fields` error. SCE Mesh §3.3
+    /// instead of the generic `deny_unknown_fields` error. SCE Mesh §mesh-3.3
     /// is the invariant: transport-native routing is the source of truth
     /// for peer availability; SCE does not maintain a peer table, and
-    /// the §13 rejected list — which rejects SCE-maintained peer tables
+    /// the §mesh-13 rejected list — which rejects SCE-maintained peer tables
     /// and a `discovery.mode: static | dynamic` deploy switch — holds
     /// unconditionally. For per-binding runtime target
-    /// selection use value-field placeholders (§14.4); for
+    /// selection use value-field placeholders (§mesh-14.4); for
     /// transport-level peer discovery configure external OEM config
     /// (zenoh.json5 scouting, vsomeip.json service-discovery).
     pub discovery: Option<serde_yaml_ng::Value>,
-    /// Aggressive-distribution partition declarations (SCE_MESH.md §14
-    /// "Partition resolution rules" + §16). A machine whose name does
+    /// Aggressive-distribution partition declarations (SCE_MESH.md §mesh-14
+    /// "Partition resolution rules" + §mesh-16). A machine whose name does
     /// not appear in any partition's `contains:` runs monolithically on
     /// its device — the absence of a `partitions:` block is the normal
     /// single-process case. Absent ⇒ `None`; present ⇒ `Some(map)` with
@@ -62,13 +62,13 @@ pub struct DeployConfig {
     /// custom [`serde::Deserialize`] that rejects redeclarations via a
     /// sentinel-tagged error message — parse_deploy_str intercepts the
     /// sentinel and surfaces it as
-    /// [`DeployError::PartitionDuplicateName`] (§14 rule 6).
+    /// [`DeployError::PartitionDuplicateName`] (§mesh-14 rule 6).
     #[serde(default)]
     pub partitions: Option<PartitionMap>,
-    /// SCE_MESH.md §16.3 — strict vs permissive distributability
+    /// SCE_MESH.md §mesh-16.3 — strict vs permissive distributability
     /// mode. `strict` fails the build on any R1/R2 violation;
     /// `permissive` (the absent-value default) auto-merges offending
-    /// regions per §16.4 and records a [`crate::mesh::distributability::MergeNotice`].
+    /// regions per §mesh-16.4 and records a [`crate::mesh::distributability::MergeNotice`].
     /// The knob is meaningful only when `partitions:` is present; an
     /// absent key means "permissive".
     #[serde(default)]
@@ -134,7 +134,7 @@ pub struct ExternSymbolsConfig {
     pub target_plugin: Option<PathBuf>,
 }
 
-/// SCE_MESH.md §16.3 strict/permissive toggle. Default is
+/// SCE_MESH.md §mesh-16.3 strict/permissive toggle. Default is
 /// [`DistributabilityMode::Permissive`] so authors who author a
 /// partition plan that happens to violate R1/R2 still get a
 /// minimum-merge build rather than a hard failure.
@@ -147,7 +147,7 @@ pub enum DistributabilityMode {
     Permissive,
 }
 
-// SCE_MESH.md §14 rules 6-10 — partitions schema.
+// SCE_MESH.md §mesh-14 rules 6-10 — partitions schema.
 //
 // The typed parse of a YAML mapping into `BTreeMap<String, T>` silently
 // drops duplicate keys (last-wins). Rule 6 (partition names globally
@@ -196,7 +196,7 @@ impl PartitionMap {
     /// path goes through the custom
     /// [`PartitionMap::deserialize`] visitor, which enforces rule-6
     /// uniqueness. Callers that build a map from post-merge state
-    /// (§16.4 resolver) have already walked the original
+    /// (§mesh-16.4 resolver) have already walked the original
     /// [`PartitionMap`] and therefore carry the rule-6 guarantee by
     /// construction; they merely rearrange entries.
     pub(crate) fn from_map(map: BTreeMap<String, PartitionDecl>) -> Self {
@@ -242,7 +242,7 @@ impl<'de> serde::Deserialize<'de> for PartitionMap {
 
 /// One partition entry under `partitions:`. A partition is the unit of
 /// single-process execution for a machine's parallel regions and/or
-/// invokes (SCE_MESH.md §14).
+/// invokes (SCE_MESH.md §mesh-14).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PartitionDecl {
@@ -257,18 +257,18 @@ pub struct PartitionDecl {
     /// Orthogonal units this partition runs.
     pub contains: PartitionContains,
     /// Transport used for inter-partition traffic within the same
-    /// machine. Defaults handled at codegen time per SCE_MESH.md §14
+    /// machine. Defaults handled at codegen time per SCE_MESH.md §mesh-14
     /// rule 4 (shm for single-device, custom_tcp otherwise).
     #[serde(default)]
     pub transport_binding: Option<String>,
     /// Per-partition parallel-final barrier timeout (SCE_MESH.md
-    /// §16.5). `None` means "use the W3C normative default"
+    /// §mesh-16.5). `None` means "use the W3C normative default"
     /// (infinity). Only meaningful on partitions hosting the root of
     /// a `<parallel>`.
     #[serde(default)]
     pub barrier_timeout_ms: Option<u32>,
     /// Distributed `<parallel>`s this partition claims as the root
-    /// (SCE_MESH.md §14 rule 12, L2729-2735). Each entry names a
+    /// (SCE_MESH.md §mesh-14 rule 12, L2729-2735). Each entry names a
     /// `<parallel>` in one of the partition's listed machines; the
     /// rule-12 cross-reference validator (see
     /// [`crate::mesh::partitions::validate_parallel_root_designation`])
@@ -282,7 +282,7 @@ pub struct PartitionDecl {
     /// deploys if they prefer the explicit marker).
     #[serde(default)]
     pub hosts_parallel_roots: Option<Vec<HostsParallelRoot>>,
-    /// Author-pinned vsomeip `service_t` for this partition's §16.4
+    /// Author-pinned vsomeip `service_t` for this partition's §mesh-16.4
     /// region-partition liveness service (RFC F.X-3 D3). Optional —
     /// when `None`, the F.X-3 assigner
     /// ([`crate::mesh::transport::someip::assign_liveness_service_ids`])
@@ -306,7 +306,7 @@ pub struct PartitionDecl {
 }
 
 /// Custom deserializer for [`PartitionDecl::someip_liveness_service_id`].
-/// Parallel to [`deserialize_someip_service_id`] for §16.4 region-liveness
+/// Parallel to [`deserialize_someip_service_id`] for §mesh-16.4 region-liveness
 /// pins (RFC F.X-3). Accepts both YAML integer literals and quoted hex
 /// strings; bare hex strings without `0x` prefix are rejected.
 fn deserialize_someip_liveness_service_id<'de, D>(deserializer: D) -> Result<Option<u16>, D::Error>
@@ -348,7 +348,7 @@ where
 
 /// One entry under `partitions.<name>.hosts_parallel_roots:` — a
 /// `(machine, parallel)` pair naming the `<parallel>` this partition
-/// claims as the root (SCE_MESH.md §14 rule 12). `parallel` is the
+/// claims as the root (SCE_MESH.md §mesh-14 rule 12). `parallel` is the
 /// `<parallel>` element's `id` attribute as authored in the SCXML
 /// document for `machine`.
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
@@ -363,7 +363,7 @@ pub struct HostsParallelRoot {
 }
 
 /// Orthogonal units assigned to a partition — parallel regions and
-/// invokes, both of which are distribution axes per §16.3 + §14.
+/// invokes, both of which are distribution axes per §mesh-16.3 + §mesh-14.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PartitionContains {
@@ -371,13 +371,13 @@ pub struct PartitionContains {
     #[serde(default)]
     pub parallel_regions: Vec<PartitionUnitRef>,
     /// `<invoke>` IDs (including synthesized `__sce_synth_invoke__*`
-    /// machines from §9.6.6).
+    /// machines from §mesh-9.6.6).
     #[serde(default)]
     pub invokes: Vec<PartitionInvokeRef>,
 }
 
 /// A parallel-region unit reference — the (machine, region) pair is
-/// the §14 rule 8 uniqueness key.
+/// the §mesh-14 rule 8 uniqueness key.
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
 #[serde(deny_unknown_fields)]
 pub struct PartitionUnitRef {
@@ -387,7 +387,7 @@ pub struct PartitionUnitRef {
     pub region: String,
 }
 
-/// An invoke unit reference — the (machine, invoke) pair is the §14
+/// An invoke unit reference — the (machine, invoke) pair is the §mesh-14
 /// rule 8 uniqueness key.
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
 #[serde(deny_unknown_fields)]
@@ -395,11 +395,11 @@ pub struct PartitionInvokeRef {
     /// SCXML machine name hosting the invoke site.
     pub machine: String,
     /// `<invoke id>` of the invoke. May be a synthesized
-    /// `<parent>__sce_synth_invoke__<id>` identifier per §9.6.6.
+    /// `<parent>__sce_synth_invoke__<id>` identifier per §mesh-9.6.6.
     pub invoke: String,
 }
 
-/// Per-machine platform classification (SCE Mesh §14, SCE Protocol-Synthesis
+/// Per-machine platform classification (SCE Mesh §mesh-14, SCE Protocol-Synthesis
 /// RFC §synth-5-K). The class axis chooses between MCU-class targets (small,
 /// bare-metal / RTOS, no general-purpose OS) and AP-class targets
 /// (Linux/QNX/macOS/FreeBSD/Windows). The class gates downstream
@@ -414,7 +414,7 @@ pub enum PlatformClass {
     Mcu,
 }
 
-/// Per-machine OS axis (SCE Mesh §14, SCE Protocol-Synthesis RFC §synth-5-K).
+/// Per-machine OS axis (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC §synth-5-K).
 ///
 /// Authored values are gated against `class` by
 /// [`validate_platform_class_os_consistency`]: when `class: mcu`, only
@@ -471,7 +471,7 @@ impl PlatformClass {
     }
 }
 
-/// Per-machine platform descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC
+/// Per-machine platform descriptor (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC
 /// §synth-5-K). Captures the target's class/OS plus cache and core-count
 /// invariants the codegen-matrix walker (RFC §synth-5-J-4 / §synth-5-J-5) and the
 /// §synth-5-E cache-policy validator consume.
@@ -740,7 +740,7 @@ pub enum RxDispatch {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StageCopyPolicy {
-    /// Spec line 2352-2357: default. §synth-5-M / ARCHITECTURE §9.3
+    /// Spec line 2352-2357: default. §synth-5-M / ARCHITECTURE §mesh-9.3
     /// stage-copy-rate gate emits `reassembly/expected-fragmentation-
     /// rate-high` as a warning; the per-link
     /// `<sce:accept-stage-copy-rate>` opt-out suppresses it.
@@ -1101,7 +1101,7 @@ impl LinkConfig {
     }
 }
 
-/// Per-machine scheduler descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC
+/// Per-machine scheduler descriptor (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC
 /// §synth-5-K lines 2209-2222).
 ///
 /// Three knobs are REQUIRED when `kind: cooperative`:
@@ -1193,7 +1193,7 @@ pub struct MachineSchedulerConfig {
     pub per_link_budget_us: Option<u32>,
 }
 
-/// Per-machine scheduler kind axis (SCE Mesh §14, SCE Protocol-Synthesis RFC
+/// Per-machine scheduler kind axis (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC
 /// §synth-5-K). `tokio` and `rt` host the scheduler in async / RTOS-task
 /// contexts; `cooperative` is the SCE-built single-thread tick loop
 /// used on bare-metal MCUs (the §synth-7 foundation target).
@@ -1263,7 +1263,7 @@ pub struct WorkerDeployConfig {
 #[serde(deny_unknown_fields)]
 pub struct TimerDeployConfig {}
 
-/// SRAM region descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC §synth-5-K).
+/// SRAM region descriptor (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC §synth-5-K).
 /// Region attributes ride as raw strings at parse time so the schema
 /// admits forward-extension ("dma_coherent", "non_cacheable", "fast",
 /// "nocache") without a closed enum here; the §synth-5-E placement validator
@@ -1283,7 +1283,7 @@ pub struct SramRegionConfig {
     pub attr: Vec<String>,
 }
 
-/// Per-machine memory layout (SCE Mesh §14, SCE Protocol-Synthesis RFC §synth-5-K).
+/// Per-machine memory layout (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC §synth-5-K).
 /// SRAM region map and DMA-channel inventory feed the §synth-5-E placement /
 /// cache-policy validators (the buffer-pool placement checks in
 /// `lib.rs` consume `sram_regions` and the pool `cache_policy`).
@@ -1326,7 +1326,7 @@ pub struct DeviceConfig {
 /// transport that has no shared state (local, shm) does not appear here —
 /// its entire config is per-binding. SOME/IP and Zenoh appear here because
 /// they carry device-shared identity (vsomeip application name, zenoh
-/// session) and reference external OEM config files (SCE_MESH.md §13).
+/// session) and reference external OEM config files (SCE_MESH.md §mesh-13).
 /// `deny_unknown_fields` catches typos in transport names (e.g. `zneoh:`)
 /// at parse time.
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1339,7 +1339,7 @@ pub struct TransportConfigs {
     /// vsomeip.json (single source of truth for service/method IDs) and
     /// binds the generated runtime to a vsomeip application identity.
     pub someip: Option<SomeipTransportConfig>,
-    /// custom_tcp device-shared listen endpoint (SCE_MESH.md §16.8.3).
+    /// custom_tcp device-shared listen endpoint (SCE_MESH.md §mesh-16.8.3).
     /// One TCP server per device on `127.0.0.1:<port>`; each binding's
     /// per-target `connect:` reaches another device's server. Omit for
     /// devices that only initiate connections.
@@ -1363,11 +1363,11 @@ pub struct ZenohTransportConfig {
     pub listen: Option<Vec<String>>,
     /// Path (relative to deploy.yaml) to an external zenoh.json5 session
     /// config. `mode`/`connect`/`listen` above, when present, merge over
-    /// this file at runtime. SCE_MESH.md §13 / §14.
+    /// this file at runtime. SCE_MESH.md §mesh-13 / §mesh-14.
     pub config: Option<PathBuf>,
 }
 
-/// custom_tcp device-shared listen endpoint (SCE_MESH.md §16.8.3).
+/// custom_tcp device-shared listen endpoint (SCE_MESH.md §mesh-16.8.3).
 ///
 /// IPv4 loopback only; the harness reference transport is local-only
 /// by design. `listen:` is omitted when the device only acts as a TCP
@@ -1398,7 +1398,7 @@ impl CustomTcpTransportConfig {
     }
 }
 
-/// SOME/IP device-shared configuration (SCE_MESH.md §13).
+/// SOME/IP device-shared configuration (SCE_MESH.md §mesh-13).
 ///
 /// `config:` points to the OEM-supplied `vsomeip.json`; `application_name`
 /// matches one of `applications[*].name` inside it. `deny_unknown_fields`
@@ -1412,7 +1412,7 @@ pub struct SomeipTransportConfig {
     pub application_name: Option<String>,
 }
 
-/// Ordering guarantee declared on a per-binding basis (SCE_MESH.md §10.6).
+/// Ordering guarantee declared on a per-binding basis (SCE_MESH.md §mesh-10.6).
 ///
 /// - `None` (default): the receiver sees envelopes in arrival order. This is
 ///   correct for transports that natively preserve per-sender FIFO (local,
@@ -1440,19 +1440,19 @@ impl OrderingRequirement {
 }
 
 /// Default `gap_timeout_ms` applied when a machine omits the `ordering:`
-/// section (SCE_MESH.md §10.6.1). 100 ms covers the Zenoh session-refresh
+/// section (SCE_MESH.md §mesh-10.6.1). 100 ms covers the Zenoh session-refresh
 /// window and the SOME/IP retransmit envelope at 1 kHz sender rates. This
 /// constant is the single source of truth — the C++ runtime no longer
 /// hard-codes a fallback; every emitted router carries an explicit value.
 pub const DEFAULT_GAP_TIMEOUT_MS: u64 = 100;
 
 /// Default `tick_period_ms` applied when a machine omits the `ordering:`
-/// section (SCE_MESH.md §10.6.1). One half of [`DEFAULT_GAP_TIMEOUT_MS`]
+/// section (SCE_MESH.md §mesh-10.6.1). One half of [`DEFAULT_GAP_TIMEOUT_MS`]
 /// (Nyquist) so worst-case gap recovery latency is bounded by
 /// `gap_timeout + tick_period`.
 pub const DEFAULT_TICK_PERIOD_MS: u64 = 50;
 
-/// Per-machine ordering buffer timings (SCE_MESH.md §10.6.1).
+/// Per-machine ordering buffer timings (SCE_MESH.md §mesh-10.6.1).
 ///
 /// Both fields are required when the `ordering:` section is present —
 /// no field-level default. Authors who want one knob accept both
@@ -1468,11 +1468,11 @@ pub const DEFAULT_TICK_PERIOD_MS: u64 = 50;
 #[serde(deny_unknown_fields)]
 pub struct OrderingTimings {
     /// Worst-case wait before fast-forwarding past a missing sequence
-    /// number. SCE_MESH.md §10.6.4 — the receiver buffer drains contiguous
+    /// number. SCE_MESH.md §mesh-10.6.4 — the receiver buffer drains contiguous
     /// envelopes and emits `ORDERING_GAP` on timeout.
     pub gap_timeout_ms: u64,
     /// Cadence at which the generated router drives `OrderingBuffer::tick`
-    /// (SCE_MESH.md §10.6.4). Must be strictly less than
+    /// (SCE_MESH.md §mesh-10.6.4). Must be strictly less than
     /// [`Self::gap_timeout_ms`] so a single missed sequence is detected
     /// within `gap_timeout + tick_period`.
     pub tick_period_ms: u64,
@@ -1517,7 +1517,7 @@ impl Default for OrderingTimings {
 
 /// Minimum `lease_ms` accepted in a `liveliness:` section.
 ///
-/// SCE Mesh §16.7 row 8 (`PEER_PARTITIONED`) couples peer-failure
+/// SCE Mesh §mesh-16.7 row 8 (`PEER_PARTITIONED`) couples peer-failure
 /// detection latency to Zenoh's own keepalive cadence. Values below
 /// this floor race the router's own internal heartbeat and generate
 /// spurious DELETE/PUT churn, so parse-time rejection is preferred
@@ -1527,7 +1527,7 @@ pub const MIN_LIVELINESS_LEASE_MS: u64 = 100;
 
 /// Minimum `query_timeout_ms` accepted in a `server:` section.
 ///
-/// SCE Mesh §9.5 Zenoh server queryable timeout (gap Z2): values
+/// SCE Mesh §mesh-9.5 Zenoh server queryable timeout (gap Z2): values
 /// below this floor are almost certainly typos — even a trivial
 /// engine macrostep usually takes longer than 10 ms, so a sub-floor
 /// value would cause every inbound query to time out before the
@@ -1536,7 +1536,7 @@ pub const MIN_LIVELINESS_LEASE_MS: u64 = 100;
 /// cleanup cascade.
 pub const MIN_SERVER_QUERY_TIMEOUT_MS: u64 = 10;
 
-/// Per-machine Zenoh liveliness configuration (SCE Mesh §16.7 row 8).
+/// Per-machine Zenoh liveliness configuration (SCE Mesh §mesh-16.7 row 8).
 ///
 /// Opt-in: absent section ⇒ no liveliness token declared, no
 /// subscriber installed, zero generated code — matches the
@@ -1552,8 +1552,8 @@ pub const MIN_SERVER_QUERY_TIMEOUT_MS: u64 = 10;
 /// (or binding-less) machine declaring `liveliness:` without that gate
 /// would compile but never raise the `error.communication` signal its
 /// required handler awaits (`feedback_silently_broken_hooks`). SomeIP
-/// per-partition liveness is tracked as a separate §16.9 E2/F
-/// sub-landing — see SCE_MESH.md §16.4 for the deferral rationale.
+/// per-partition liveness is tracked as a separate §mesh-16.9 E2/F
+/// sub-landing — see SCE_MESH.md §mesh-16.4 for the deferral rationale.
 ///
 /// `lease_ms` is the keepalive cadence negotiated with the Zenoh
 /// router — the application-side bound on DELETE-sample latency
@@ -1588,22 +1588,22 @@ impl LivelinessConfig {
 /// Minimum `max_pending_per_target` accepted in an `outbound_buffer:`
 /// section.
 ///
-/// SCE Mesh §10.10 (`OutboundBuffer`): a buffer with capacity zero is
-/// semantically equivalent to the pre-§10.10 "silently drop if not
+/// SCE Mesh §mesh-10.10 (`OutboundBuffer`): a buffer with capacity zero is
+/// semantically equivalent to the pre-§mesh-10.10 "silently drop if not
 /// ready" behaviour — it cannot hold anything. Rejecting zero at parse
 /// time surfaces the mistake at the offending deploy.yaml line rather
-/// than generating a router that compiles but cannot honour the §10.7
+/// than generating a router that compiles but cannot honour the §mesh-10.7
 /// contract. Values of one or above are accepted regardless of
 /// perceived "too small" judgement: a single-slot buffer is a
 /// legitimate test-harness shape (one in-flight envelope during
 /// readiness gating).
 pub const MIN_OUTBOUND_BUFFER_MAX_PENDING: u32 = 1;
 
-/// Per-machine outbound readiness-gated buffer (SCE Mesh §10.10).
+/// Per-machine outbound readiness-gated buffer (SCE Mesh §mesh-10.10).
 ///
 /// Opt-in: absent section ⇒ no buffer emitted; every outbound send
 /// goes straight to the transport and any pre-readiness send is
-/// silently lost per the pre-§10.10 behaviour. Section present ⇒ the
+/// silently lost per the pre-§mesh-10.10 behaviour. Section present ⇒ the
 /// generated router declares an [`OutboundBuffer`] per opt-in target
 /// (SOME/IP targets and Zenoh PUT-pattern targets), wires the
 /// transport's readiness callback, and drains buffered envelopes on
@@ -1619,7 +1619,7 @@ pub const MIN_OUTBOUND_BUFFER_MAX_PENDING: u32 = 1;
 pub struct OutboundBufferConfig {
     /// Maximum number of envelopes buffered per opt-in target before
     /// overflow raises `error.communication` with reason
-    /// `BACKPRESSURE_DROP` (§16.7 row 9) and drops the newest. Must
+    /// `BACKPRESSURE_DROP` (§mesh-16.7 row 9) and drops the newest. Must
     /// be `>= MIN_OUTBOUND_BUFFER_MAX_PENDING`.
     pub max_pending_per_target: u32,
 }
@@ -1644,7 +1644,7 @@ impl OutboundBufferConfig {
 
 /// Minimum `max_retries` accepted in a per-binding `retry:` section.
 ///
-/// SCE Mesh §16.7 row 3 retry layer: `max_retries: 0` is semantically
+/// SCE Mesh §mesh-16.7 row 3 retry layer: `max_retries: 0` is semantically
 /// equivalent to omitting the section — the retry wrapper would fast-fail
 /// every dispatcher failure and SEND_FAILED would fire per Stage 1/2
 /// behaviour. Rejecting zero at parse time surfaces the mistake at the
@@ -1655,7 +1655,7 @@ impl OutboundBufferConfig {
 /// shape that some authors prefer over either extreme.
 pub const MIN_RETRY_MAX_RETRIES: u32 = 1;
 
-/// Per-binding retry policy (SCE Mesh §16.7 row 3 DELIVERY_EXHAUSTED).
+/// Per-binding retry policy (SCE Mesh §mesh-16.7 row 3 DELIVERY_EXHAUSTED).
 ///
 /// Opt-in: absent section ⇒ no retry layer emitted; the OutboundBuffer's
 /// dispatcher closure goes straight to the transport and any
@@ -1711,7 +1711,7 @@ pub struct RetryPolicyConfig {
     pub backoff_jitter_pct: u32,
 }
 
-/// Per-binding authorization policy (SCE Mesh §16.7 row 10 UNAUTHORIZED).
+/// Per-binding authorization policy (SCE Mesh §mesh-16.7 row 10 UNAUTHORIZED).
 ///
 /// Opt-in: absent section ⇒ no auth layer emitted; transport-level
 /// rejection (Zenoh `ZException` on `Session::open`, SOME/IP
@@ -2018,7 +2018,7 @@ pub struct MachineConfig {
     /// stringly-free past the deploy.yaml boundary.
     #[serde(default)]
     pub bindings: HashMap<TargetId, BindingConfig>,
-    /// Machine-lifetime subscriptions (SCE_MESH.md §13). Subscribe on
+    /// Machine-lifetime subscriptions (SCE_MESH.md §mesh-13). Subscribe on
     /// engine init, unsubscribe on engine shutdown. Each entry names an
     /// event to subscribe to and the source target that hosts the
     /// publisher.
@@ -2030,7 +2030,7 @@ pub struct MachineConfig {
     /// ```
     #[serde(default)]
     pub subscriptions: Vec<SubscriptionConfig>,
-    /// Server-side transport registration (SCE_MESH.md §13 Session E).
+    /// Server-side transport registration (SCE_MESH.md §mesh-13 Session E).
     ///
     /// Declares that this machine acts as a transport-native server: it
     /// receives inbound RPC requests through the transport layer and
@@ -2053,7 +2053,7 @@ pub struct MachineConfig {
     /// ```
     #[serde(default)]
     pub server: Option<ServerConfig>,
-    /// Per-machine ordering buffer timings (SCE_MESH.md §10.6.1). Absent
+    /// Per-machine ordering buffer timings (SCE_MESH.md §mesh-10.6.1). Absent
     /// section ⇒ [`OrderingTimings::default_const`] (100 ms /
     /// 50 ms). Section present ⇒ both fields are required and validated
     /// (positive, Nyquist) at parse time. The values are emitted directly
@@ -2061,7 +2061,7 @@ pub struct MachineConfig {
     /// layer.
     #[serde(default)]
     pub ordering: Option<OrderingTimings>,
-    /// Per-machine Zenoh liveliness configuration (SCE Mesh §16.7 row 8).
+    /// Per-machine Zenoh liveliness configuration (SCE Mesh §mesh-16.7 row 8).
     /// Absent section ⇒ no liveliness token declared and no subscriber
     /// installed; the generated router emits zero liveliness code.
     /// Section present ⇒ `lease_ms` is required and validated at parse
@@ -2069,25 +2069,25 @@ pub struct MachineConfig {
     #[serde(default)]
     pub liveliness: Option<LivelinessConfig>,
     /// Per-machine outbound buffer for readiness-gated send paths
-    /// (SCE Mesh §10.10). Absent section ⇒ no buffer emitted; outbound
+    /// (SCE Mesh §mesh-10.10). Absent section ⇒ no buffer emitted; outbound
     /// sends go straight to the transport and any pre-readiness send
     /// is silently lost (SOME/IP before `offer_service`, Zenoh PUT
     /// before any subscriber declares). Section present ⇒ opt-in
     /// targets route through `OutboundBuffer::admit`, the transport's
     /// native readiness primitive feeds `markReady` / `markNotReady`,
     /// and overflow raises `error.communication` with reason
-    /// `BACKPRESSURE_DROP` (§16.7 row 9). See [`OutboundBufferConfig`].
+    /// `BACKPRESSURE_DROP` (§mesh-16.7 row 9). See [`OutboundBufferConfig`].
     #[serde(default)]
     pub outbound_buffer: Option<OutboundBufferConfig>,
-    /// Author-pinned §9.6 SOMEIP scxml-invoke service ID (RFC F.X-1
+    /// Author-pinned §mesh-9.6 SOMEIP scxml-invoke service ID (RFC F.X-1
     /// hybrid allocator). Optional — when present, the hybrid allocator
     /// reserves this ID for the machine and skips it during counter
     /// auto-assignment. Absent ⇒ counter auto-assigns from the lowest
     /// unreserved slot in lex order.
     ///
-    /// **Range constraint**: must lie inside the §9.6 invoke sub-range
+    /// **Range constraint**: must lie inside the §mesh-9.6 invoke sub-range
     /// `[0x8100, 0x817F]` — the upper half of the SCE-reserved 256-slot
-    /// space is reserved for §16.4 region-liveness (RFC F.X-3).
+    /// space is reserved for §mesh-16.4 region-liveness (RFC F.X-3).
     /// [`crate::mesh::transport::someip::assign_invoke_service_ids`]
     /// rejects out-of-range pins with
     /// [`DeployError::SomeipScxmlInvokeServiceIdPinOutOfRange`].
@@ -2103,7 +2103,7 @@ pub struct MachineConfig {
     #[serde(default, deserialize_with = "deserialize_someip_service_id")]
     pub someip_service_id: Option<u16>,
 
-    /// Optional author-pin for the §16.7 row 8 SOME/IP machine-level
+    /// Optional author-pin for the §mesh-16.7 row 8 SOME/IP machine-level
     /// liveness service ID, validated against the F.X-4 sub-range
     /// `[0x8280, 0x82FF]`. Symmetric with [`MachineConfig::someip_service_id`]
     /// at the per-machine block (the participant key for machine-liveness
@@ -2125,7 +2125,7 @@ pub struct MachineConfig {
     )]
     pub someip_machine_liveness_service_id: Option<u16>,
 
-    /// Per-machine platform descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC
+    /// Per-machine platform descriptor (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC
     /// §synth-5-K). Absent ⇒ no platform classification declared on this
     /// machine; downstream codegen-matrix consumers fall back to their
     /// own defaults. Present ⇒ class/os pair is admissible per
@@ -2134,14 +2134,14 @@ pub struct MachineConfig {
     #[serde(default)]
     pub platform: Option<PlatformConfig>,
 
-    /// Per-machine scheduler descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC
+    /// Per-machine scheduler descriptor (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC
     /// §synth-5-K). Absent ⇒ machine inherits the partition / device runtime
     /// defaults. Present ⇒ `kind` is required, and `kind: cooperative`
     /// requires `worker_stack_budget` ([`validate_scheduler_cooperative_stack_budget`]).
     #[serde(default)]
     pub scheduler: Option<MachineSchedulerConfig>,
 
-    /// Per-machine memory layout (SCE Mesh §14, SCE Protocol-Synthesis RFC §synth-5-K).
+    /// Per-machine memory layout (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC §synth-5-K).
     /// Absent ⇒ no SRAM/DMA layout declared; the §synth-5-E placement
     /// validator skips this machine. Present ⇒ region attributes ride as
     /// raw strings; structural interpretation lives in the §synth-5-E
@@ -2301,7 +2301,7 @@ where
 }
 
 /// Custom deserializer for [`MachineConfig::someip_machine_liveness_service_id`].
-/// Parallel to [`deserialize_someip_service_id`] for §16.7 row 8 SOME/IP
+/// Parallel to [`deserialize_someip_service_id`] for §mesh-16.7 row 8 SOME/IP
 /// machine-level liveness pins (RFC F.X-4 D3).
 fn deserialize_someip_machine_liveness_service_id<'de, D>(
     deserializer: D,
@@ -2351,7 +2351,7 @@ impl MachineConfig {
     }
 }
 
-/// Server-side transport binding (SCE_MESH.md §13 Session E).
+/// Server-side transport binding (SCE_MESH.md §mesh-13 Session E).
 ///
 /// Mirrors [`BindingConfig`] shape but scoped to the server role: the
 /// machine IS the target, not a client sending to one. Transport-specific
@@ -2375,7 +2375,7 @@ pub struct ServerConfig {
     /// Zenoh key expression for queryable registration.
     #[serde(default)]
     pub key: Option<String>,
-    /// SCE Mesh §14.4 — server-side multi-instance pool.
+    /// SCE Mesh §mesh-14.4 — server-side multi-instance pool.
     ///
     /// Accepted on transports whose registry entry sets
     /// [`crate::mesh::transport::TransportDescriptor::supports_multi_instance_server`]
@@ -2390,7 +2390,7 @@ pub struct ServerConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instances: Option<Vec<u16>>,
 
-    /// Per-server Zenoh queryable response deadline (SCE Mesh §9.5, gap
+    /// Per-server Zenoh queryable response deadline (SCE Mesh §mesh-9.5, gap
     /// Z2).
     ///
     /// **Zenoh-only scope**: SOME/IP (and other non-zenoh) server-side
@@ -2456,7 +2456,7 @@ impl ServerConfig {
     }
 }
 
-/// A single machine-lifetime subscription declaration (SCE_MESH.md §13).
+/// A single machine-lifetime subscription declaration (SCE_MESH.md §mesh-13).
 ///
 /// Codegen emits subscribe on engine init and unsubscribe on engine
 /// shutdown. The SCXML document is not touched — these subscriptions
@@ -2474,7 +2474,7 @@ pub struct SubscriptionConfig {
     pub source: String,
 }
 
-/// Per-event SOME/IP binding (SCE_MESH.md §14).
+/// Per-event SOME/IP binding (SCE_MESH.md §mesh-14).
 ///
 /// A binding declares one `EventBinding` per SCXML event routed to the
 /// target, letting different events map to different methods or event
@@ -2522,7 +2522,7 @@ impl EventBinding {
 /// Name-based fields (`service:`, `method:`, `event_group:`, `getter:`,
 /// `setter:`, `events:`) reference entities in the external OEM config
 /// (vsomeip.json); sce-build resolves them into numeric IDs at build
-/// time (SCE_MESH.md §13, §14).
+/// time (SCE_MESH.md §mesh-13, §mesh-14).
 ///
 /// The per-event `events:` block is the canonical path — it lets different
 /// SCXML events on the same target map to different methods or event groups.
@@ -2577,7 +2577,7 @@ pub struct BindingConfig {
     pub events: BTreeMap<String, EventBinding>,
 
     /// Binding-level fallback for `<invoke type="sce:mesh-rpc">`
-    /// deadline (SCE_MESH.md §9.5 precedence). Applied when a per-invoke
+    /// deadline (SCE_MESH.md §mesh-9.5 precedence). Applied when a per-invoke
     /// `<param name="_mesh_deadline_ms">` is absent. A per-invoke value
     /// always overrides; if both are present with different values
     /// `sce-build` emits an informational notice (per-invoke override is
@@ -2586,7 +2586,7 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deadline_ms: Option<u64>,
 
-    /// Per-binding ordering declaration (SCE_MESH.md §10.6). Default
+    /// Per-binding ordering declaration (SCE_MESH.md §mesh-10.6). Default
     /// `None` keeps the legacy "engine sees arrival order" behavior;
     /// `Required` activates the runtime `OrderingBuffer` for transports
     /// whose `supplies_ordering` is `false`, and is a topology error for
@@ -2594,7 +2594,7 @@ pub struct BindingConfig {
     #[serde(default)]
     pub ordering: OrderingRequirement,
 
-    /// SCE Mesh §14.4 — bounded instance pool for a SOME/IP binding that
+    /// SCE Mesh §mesh-14.4 — bounded instance pool for a SOME/IP binding that
     /// carries a placeholder. vsomeip's
     /// `request_service(SERVICE, ANY_INSTANCE)` does not actually
     /// subscribe to every instance (treated as specific 0xFFFF), so
@@ -2606,7 +2606,7 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instances: Option<Vec<u16>>,
 
-    /// SCE Mesh §14.4 — names the `<param>` whose runtime value feeds
+    /// SCE Mesh §mesh-14.4 — names the `<param>` whose runtime value feeds
     /// `message->set_instance(...)` on a SOME/IP pool binding. Unified
     /// with the Zenoh `{name}` KeyExpr mechanism: both describe "the
     /// binding references an author-named `<param>`". SOME/IP uses an
@@ -2645,7 +2645,7 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_pool: Option<String>,
 
-    /// SCE Mesh §16.7 row 3 — per-binding retry policy. Opt-in: absent
+    /// SCE Mesh §mesh-16.7 row 3 — per-binding retry policy. Opt-in: absent
     /// ⇒ no retry layer, SEND_FAILED fires per Stage 1/2 on the first
     /// dispatcher decline. Present ⇒ the generated router wraps the
     /// OutboundBuffer's dispatcher in a `RetryingDispatcher` configured
@@ -2655,7 +2655,7 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry: Option<RetryPolicyConfig>,
 
-    /// SCE Mesh §16.7 row 10 — per-binding authorization policy.
+    /// SCE Mesh §mesh-16.7 row 10 — per-binding authorization policy.
     /// Opt-in: absent / `required: false` ⇒ transport-level rejection
     /// signals stay classified as row 1 TRANSPORT_UNAVAILABLE or
     /// row 8 PEER_PARTITIONED. Present + `required: true` ⇒ the
@@ -3887,7 +3887,7 @@ pub fn validate_stateless_accept_externs(
     Ok(())
 }
 
-/// SCE Mesh §14 (SCE Protocol-Synthesis RFC §synth-5-K) — when a machine declares a
+/// SCE Mesh §mesh-14 (SCE Protocol-Synthesis RFC §synth-5-K) — when a machine declares a
 /// `platform:` block, the `class` axis (`mcu` / `ap`) and the `os`
 /// axis must be mutually admissible per [`PlatformClass::admits_os`].
 /// `class: mcu` admits only `bare_metal` / `rtos`; `class: ap` admits
@@ -3915,7 +3915,7 @@ fn validate_platform_class_os_consistency(cfg: &DeployConfig) -> Result<(), Depl
     Ok(())
 }
 
-/// SCE Mesh §14 (SCE Protocol-Synthesis RFC §synth-5-K, line 2160-2164) — when a
+/// SCE Mesh §mesh-14 (SCE Protocol-Synthesis RFC §synth-5-K, line 2160-2164) — when a
 /// machine's scheduler runs in cooperative mode, `worker_stack_budget`
 /// is REQUIRED. The cooperative worker drives `<send>` queue draining
 /// inside a fixed stack frame; without an authored bound the codegen
@@ -4168,14 +4168,14 @@ fn validate_machine_timer_wheel_capacity(cfg: &DeployConfig) -> Result<(), Deplo
     Ok(())
 }
 
-/// SCE Mesh §14 rule 5 — author-declared machine ids must not use the
+/// SCE Mesh §mesh-14 rule 5 — author-declared machine ids must not use the
 /// reserved `__sce_synth_invoke__` infix. Synthesized children from
-/// `<invoke type="scxml">` inline `<content>` (§9.6.6) are named
+/// `<invoke type="scxml">` inline `<content>` (§mesh-9.6.6) are named
 /// `<parent>__sce_synth_invoke__<id>`; a collision would silently
 /// shadow or be shadowed by the synthesized peer at runtime, and the
 /// partition coverage rules could not tell the two apart.
 ///
-/// **Explicit override carve-out** (§9.6.6 rule 3): when the author
+/// **Explicit override carve-out** (§mesh-9.6.6 rule 3): when the author
 /// reassigns a synth machine to a different partition, they must also
 /// add the synth to `topology.*.machines` so transport codegen can
 /// emit the wire. Such an entry carries the reserved infix by
@@ -4214,12 +4214,12 @@ fn validate_synth_invoke_infix(cfg: &DeployConfig) -> Result<(), DeployError> {
 }
 
 /// The infix that names a machine synthesized from `<invoke type="scxml">`
-/// inline `<content>` (SCE_MESH.md §14 rule 5 + §9.6.6). Single source
+/// inline `<content>` (SCE_MESH.md §mesh-14 rule 5 + §mesh-9.6.6). Single source
 /// of truth so the parser, the validator, and any future synthesizer
 /// agree on the reserved string.
 pub const SYNTH_INVOKE_INFIX: &str = "__sce_synth_invoke__";
 
-/// SCE_MESH.md §14 rules 7-10 — structural checks on `partitions:`
+/// SCE_MESH.md §mesh-14 rules 7-10 — structural checks on `partitions:`
 /// that do not require SCXML cross-reference. Rule 6 (duplicate
 /// partition names) is enforced at deserialization time via the
 /// custom [`PartitionMap`] visitor; rules 1, 2, 5, 11 (coverage,
@@ -4227,7 +4227,7 @@ pub const SYNTH_INVOKE_INFIX: &str = "__sce_synth_invoke__";
 /// nested-parallel partitioning) require SCXML inspection and land
 /// in a later phase. This validator is a no-op when `partitions:` is
 /// absent.
-/// SCE_MESH §14 arch-debt #4 closure helper — partition names are
+/// SCE_MESH §mesh-14 arch-debt #4 closure helper — partition names are
 /// emitted as a C++ namespace segment (`P_<partition>`) by codegen, so
 /// they must be valid C++ identifiers. Mirrors the C/C++ identifier
 /// rule: first character is a letter (ASCII) or underscore, subsequent
@@ -4259,7 +4259,7 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
         }
     }
 
-    // SCE_MESH.md §14.4 × §14 — SOME/IP server pool machines cannot be
+    // SCE_MESH.md §mesh-14.4 × §mesh-14 — SOME/IP server pool machines cannot be
     // partitioned. Pool semantics scope one router to N SOME/IP sessions
     // on a single process; partition semantics split one machine across
     // M OS processes. deploy.yaml defines neither a pool-of-partitions
@@ -4286,7 +4286,7 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
     let mut unit_owners: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
     for (partition_name, decl) in partitions.iter() {
-        // SCE_MESH §14 arch-debt #4 closure — codegen bakes the
+        // SCE_MESH §mesh-14 arch-debt #4 closure — codegen bakes the
         // partition name into `SCE::Generated::<machine>::P_<partition>`.
         // A name that is not a legal C++ identifier (starts with a
         // digit, contains hyphens / dots / spaces / etc.) would emit
@@ -4306,12 +4306,12 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
             });
         }
 
-        // §14 L2729-2730 — `transport_binding:` must name a transport
+        // §mesh-14 L2729-2730 — `transport_binding:` must name a transport
         // whose primary purpose is same-machine IPC. Unknown names and
         // known-but-incapable transports both fall here, with `reason`
         // telling the two shapes apart so the diagnostic is self-
         // explaining without the reader needing to cross-reference the
-        // registry. Absent ⇒ skip (§14 L2730 defaults apply at codegen
+        // registry. Absent ⇒ skip (§mesh-14 L2730 defaults apply at codegen
         // time).
         if let Some(transport_name) = decl.transport_binding.as_deref() {
             match crate::mesh::transport::lookup(transport_name) {
@@ -4339,9 +4339,9 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
             }
         }
 
-        // §14 L2731-2732 — `barrier_timeout_ms:` is Option<u32>; `None`
+        // §mesh-14 L2731-2732 — `barrier_timeout_ms:` is Option<u32>; `None`
         // / absent selects the W3C normative default of infinity. A
-        // finite value of `0` would fire the §16.5 barrier before any
+        // finite value of `0` would fire the §mesh-16.5 barrier before any
         // region can report `ParallelRegionDone`, unconditionally
         // raising `error.communication / PARALLEL_BARRIER_TIMEOUT` on
         // every `<parallel>` activation — the knob exists to bound
@@ -4349,7 +4349,7 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
         // wanting "do not wait" must omit the key and rely on standard
         // SCXML transitions. Root-hosting-only semantics (spec
         // L2733-2735 "applies only to partitions hosting the root of a
-        // `<parallel>`") is SCXML cross-reference scope (§16.5 runtime)
+        // `<parallel>`") is SCXML cross-reference scope (§mesh-16.5 runtime)
         // and is not enforced here — schema accept + range check only.
         if let Some(value) = decl.barrier_timeout_ms {
             if value == 0 {
@@ -4363,7 +4363,7 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
             }
         }
 
-        // §14.4 × §14 pool-in-partition guard — reject before rule 7
+        // §mesh-14.4 × §mesh-14 pool-in-partition guard — reject before rule 7
         // so a pool machine listed across multiple devices surfaces the
         // spec-linked message instead of the generic multi-device one.
         // Iteration follows `machines:` author order, matching rule 7's
@@ -4447,11 +4447,11 @@ fn validate_partitions_schema(cfg: &DeployConfig) -> Result<(), DeployError> {
     Ok(())
 }
 
-/// Reject any `discovery:` top-level block (SCE Mesh §3.3 invariant,
-/// §13 rejected list). Parsed as opaque [`serde_yaml_ng::Value`] so an authored
+/// Reject any `discovery:` top-level block (SCE Mesh §mesh-3.3 invariant,
+/// §mesh-13 rejected list). Parsed as opaque [`serde_yaml_ng::Value`] so an authored
 /// `discovery:` key lands here rather than triggering the generic
 /// `deny_unknown_fields` message; the validator produces a spec-linked
-/// diagnostic that names the replacement mechanisms (§14.4 binding
+/// diagnostic that names the replacement mechanisms (§mesh-14.4 binding
 /// value-field placeholders for per-binding runtime target selection,
 /// external OEM config for transport-level peer discovery). `null` /
 /// absent discovery values deserialise as `None` and pass through.
@@ -4613,7 +4613,7 @@ fn machine_uses_zenoh_transport(machine: &MachineConfig) -> bool {
 /// Returns true when at least one of the machine's bindings or its
 /// server declaration selects the SomeIP transport. Sibling to
 /// [`machine_uses_zenoh_transport`]; used by [`validate_liveliness`]
-/// for the §16.4 SomeIP region-liveness acceptance branch (RFC F.X-3).
+/// for the §mesh-16.4 SomeIP region-liveness acceptance branch (RFC F.X-3).
 fn machine_uses_someip_transport(machine: &MachineConfig) -> bool {
     machine.bindings.values().any(|b| b.transport == "someip")
         || machine
@@ -4622,7 +4622,7 @@ fn machine_uses_someip_transport(machine: &MachineConfig) -> bool {
             .is_some_and(|s| s.transport == "someip")
 }
 
-// ── SCE Mesh §14.4 binding pool support ─────────────────────
+// ── SCE Mesh §mesh-14.4 binding pool support ─────────────────────
 //
 // A binding value field may carry `{name}` tokens substituted at runtime
 // from `<send>`/`<invoke>` `<param>` values. Detection is textual and
@@ -4705,7 +4705,7 @@ fn binding_placeholder_names(binding: &BindingConfig) -> Result<Vec<String>, Str
     Ok(names)
 }
 
-/// SCE_MESH.md §14.4 — server-side multi-instance pool gating.
+/// SCE_MESH.md §mesh-14.4 — server-side multi-instance pool gating.
 ///
 /// A machine declaring `server.instances:` is accepted iff its server
 /// transport's registry flag `supports_multi_instance_server` is `true`
@@ -4744,7 +4744,7 @@ fn validate_server_pool_rejection(cfg: &DeployConfig) -> Result<(), DeployError>
     Ok(())
 }
 
-/// SCE_MESH.md §14.4 — a binding requesting a runtime pool may only
+/// SCE_MESH.md §mesh-14.4 — a binding requesting a runtime pool may only
 /// target a transport whose
 /// [`crate::mesh::transport::TransportDescriptor::supports_pool`] is
 /// `true`. A pool request is expressed via one of two transport-specific
@@ -5037,7 +5037,7 @@ fn validate_stage_pool_references_with(
 }
 
 /// Walk every binding that declared an explicit `retry:` section and
-/// reject malformed values (SCE Mesh §16.7 row 3). Runs at parse time
+/// reject malformed values (SCE Mesh §mesh-16.7 row 3). Runs at parse time
 /// so the diagnostic surfaces the offending deploy.yaml line rather
 /// than generating a router whose retry layer behaves identically to
 /// the opt-out path or whose timing values are arithmetically degenerate
@@ -5072,7 +5072,7 @@ fn validate_retry_policy(cfg: &DeployConfig) -> Result<(), DeployError> {
 
 /// Walk every binding that declared an explicit `auth:` section and
 /// reject malformed values + per-transport unsupported placements
-/// (SCE Mesh §16.7 row 10). Runs at parse time so the diagnostic
+/// (SCE Mesh §mesh-16.7 row 10). Runs at parse time so the diagnostic
 /// surfaces the offending deploy.yaml line rather than generating a
 /// router whose row-10 wiring would silently no-op (custom_tcp / shm
 /// have no observable auth signal) or whose pinned fingerprint cannot
@@ -5109,7 +5109,7 @@ fn validate_auth_policy(cfg: &DeployConfig) -> Result<(), DeployError> {
 }
 
 /// Walk every machine that declared an explicit `outbound_buffer:`
-/// section and reject capacity-zero values (SCE Mesh §10.10). Runs at
+/// section and reject capacity-zero values (SCE Mesh §mesh-10.10). Runs at
 /// parse time so the diagnostic surfaces the offending deploy.yaml
 /// line rather than generating a router whose buffer behaves
 /// identically to the opt-out path.
@@ -5193,7 +5193,7 @@ fn validate_machine_name_uniqueness(cfg: &DeployConfig) -> Result<(), DeployErro
     Ok(())
 }
 
-/// SCE Mesh RFC F.X-1 — hybrid (counter + optional author-pin) §9.6 SOMEIP
+/// SCE Mesh RFC F.X-1 — hybrid (counter + optional author-pin) §mesh-9.6 SOMEIP
 /// scxml-invoke service ID assignment. Returns the assignment map for use
 /// by codegen; errors are converted to [`DeployError`] variants on the way
 /// out so the validator and the codegen call site share one source of
@@ -5212,8 +5212,8 @@ fn validate_machine_name_uniqueness(cfg: &DeployConfig) -> Result<(), DeployErro
 /// 1. **Overflow** — participant count > 128 (the invoke sub-range ceiling
 ///    under subsystem range partitioning).
 /// 2. **Pin out-of-range** — author-pinned `someip_service_id:` falls
-///    outside the §9.6 invoke sub-range `[0x8100, 0x817F]` (the upper half
-///    of the SCE-reserved range is reserved for §16.4 region-liveness).
+///    outside the §mesh-9.6 invoke sub-range `[0x8100, 0x817F]` (the upper half
+///    of the SCE-reserved range is reserved for §mesh-16.4 region-liveness).
 /// 3. **Pin-vs-pin collision** — two or more machines pin the same value.
 ///
 /// Pin-vs-auto collision is impossible by construction:
@@ -5253,7 +5253,7 @@ pub(crate) fn assign_someip_invoke_service_ids(
     // Build the (machine_name → optional pin) map the assigner consumes.
     // A non-participant machine's `someip_service_id:` (if any) is ignored
     // — the field carries no meaning for machines that do not register a
-    // §9.6 service. Surfacing a "pin on non-participant" rejection would
+    // §mesh-9.6 service. Surfacing a "pin on non-participant" rejection would
     // duplicate the upstream "binding refers to non-existent peer" check,
     // so silent ignore is the right shape (consistent with the participant
     // projection the legacy validator uses).
@@ -5305,7 +5305,7 @@ fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), De
     assign_someip_invoke_service_ids(cfg).map(|_| ())
 }
 
-/// Walk the deploy participant set for §16.4 SomeIP region-partition
+/// Walk the deploy participant set for §mesh-16.4 SomeIP region-partition
 /// liveness, project each (machine, partition) pair into the canonical
 /// participant key `<machine>__P__<partition>`, gather per-partition
 /// pins from `someip_liveness_service_id:`, and run the F.X-3 hybrid
@@ -5313,7 +5313,7 @@ fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), De
 /// ([`crate::mesh::transport::someip::assign_liveness_service_ids`]).
 /// Returns the deterministic
 /// `BTreeMap<participant_key, vsomeip::service_t>` codegen consumes for
-/// the §16.4 SomeIP path.
+/// the §mesh-16.4 SomeIP path.
 ///
 /// **Participant projection.** Every partition that hosts a machine
 /// which (a) declares `liveliness:` AND (b) uses SomeIP transport AND
@@ -5326,7 +5326,7 @@ fn validate_someip_scxml_invoke_service_ids(cfg: &DeployConfig) -> Result<(), De
 /// 1. **Overflow** — participant count > 128 (the liveness sub-range
 ///    ceiling under subsystem range partitioning, RFC F.X-3 D1).
 /// 2. **Pin out-of-range** — author-pinned `someip_liveness_service_id:`
-///    falls outside the §16.4 liveness sub-range `[0x8180, 0x81FF]`.
+///    falls outside the §mesh-16.4 liveness sub-range `[0x8180, 0x81FF]`.
 /// 3. **Pin-vs-pin collision** — two or more partitions pin the same
 ///    value.
 ///
@@ -5432,7 +5432,7 @@ fn validate_someip_liveness_service_ids(cfg: &DeployConfig) -> Result<(), Deploy
     assign_someip_liveness_service_ids(cfg).map(|_| ())
 }
 
-/// Walk the deploy participant set for §16.7 row 8 SOME/IP machine-level
+/// Walk the deploy participant set for §mesh-16.7 row 8 SOME/IP machine-level
 /// liveness, collect each SOME/IP `liveliness:`-opt-in machine as a
 /// participant keyed on `<machine>`, gather per-machine pins from
 /// `someip_machine_liveness_service_id:`, and run the F.X-4 hybrid
@@ -5440,7 +5440,7 @@ fn validate_someip_liveness_service_ids(cfg: &DeployConfig) -> Result<(), Deploy
 /// ([`crate::mesh::transport::someip::assign_machine_liveness_service_ids`]).
 /// Returns the deterministic
 /// `BTreeMap<machine_name, vsomeip::service_t>` codegen consumes for the
-/// §16.7 SOMEIP machine-level liveness path.
+/// §mesh-16.7 SOMEIP machine-level liveness path.
 ///
 /// **Participant projection (RFC F.X-4 D4-shape-1).** Every machine that
 /// (a) declares `liveliness:` AND (b) uses SOME/IP transport AND (c) does
@@ -5456,7 +5456,7 @@ fn validate_someip_liveness_service_ids(cfg: &DeployConfig) -> Result<(), Deploy
 /// 1. **Overflow** — participant count > 128 (the F.X-4 sub-range
 ///    ceiling, RFC F.X-4 D1).
 /// 2. **Pin out-of-range** — author-pinned
-///    `someip_machine_liveness_service_id:` falls outside the §16.7
+///    `someip_machine_liveness_service_id:` falls outside the §mesh-16.7
 ///    SOME/IP machine-liveness sub-range `[0x8280, 0x82FF]`.
 /// 3. **Pin-vs-pin collision** — two or more machines pin the same value.
 ///
@@ -6287,7 +6287,7 @@ topology:
         assert!(matches!(parse_deploy_str(yaml), Err(DeployError::Yaml(_))));
     }
 
-    // ── ordering (SCE_MESH.md §10.6) ──────────────────────────
+    // ── ordering (SCE_MESH.md §mesh-10.6) ──────────────────────────
 
     #[test]
     fn binding_ordering_required_parsed() {
@@ -6379,7 +6379,7 @@ topology:
         assert!(brake.subscriptions.is_empty());
     }
 
-    // ── ordering timings (SCE_MESH.md §10.6.1) ────────────────
+    // ── ordering timings (SCE_MESH.md §mesh-10.6.1) ────────────────
 
     #[test]
     fn ordering_timings_absent_section_resolves_to_defaults() {
@@ -6689,7 +6689,7 @@ topology:
         }
     }
 
-    // ── §16.4 SomeIP region-liveness validator (RFC F.X-3) ─────────────
+    // ── §mesh-16.4 SomeIP region-liveness validator (RFC F.X-3) ─────────────
 
     #[test]
     fn liveliness_someip_with_two_partitions_accepted() {
@@ -7226,7 +7226,7 @@ topology:
         }
     }
 
-    // ── §16.7 row 10 auth-policy parser tests ─────────────────────
+    // ── §mesh-16.7 row 10 auth-policy parser tests ─────────────────────
 
     #[test]
     fn auth_section_absent_is_none() {
@@ -7489,8 +7489,8 @@ topology:
 
     #[test]
     fn discovery_block_with_keys_rejected() {
-        // Authored §4.3 example-shaped block — rejected per §3.3 and the
-        // §13 rejection of `discovery.mode: static | dynamic`.
+        // Authored §mesh-4.3 example-shaped block — rejected per §mesh-3.3 and
+        // §mesh-13 rejection of `discovery.mode: static | dynamic`.
         let yaml = r#"
 version: "1.0"
 discovery:
@@ -7516,7 +7516,7 @@ topology:
 
     #[test]
     fn discovery_empty_map_rejected() {
-        // An empty `discovery: {}` map is still Some(Value::Mapping(_)); §3.3
+        // An empty `discovery: {}` map is still Some(Value::Mapping(_)); §mesh-3.3
         // rejects the existence of the block, not its contents, so the
         // validator fires here too. Covers the "author sketched the key
         // but did not fill it in" shape.
@@ -7708,7 +7708,7 @@ topology:
         }
     }
 
-    // ── SCE Mesh §14.4 binding pool ──────────────────────────
+    // ── SCE Mesh §mesh-14.4 binding pool ──────────────────────────
 
     #[test]
     fn pool_placeholder_grammar_unbalanced_brace_rejected() {
@@ -7911,7 +7911,7 @@ topology:
 
     #[test]
     fn server_pool_accepted_on_someip() {
-        // SCE_MESH.md §14.4 (Gap 7): SOME/IP is the
+        // SCE_MESH.md §mesh-14.4 (Gap 7): SOME/IP is the
         // sole transport whose native routing distinguishes inbound by
         // peer identity (instance_id in vsomeip's message header), so
         // it is the only transport for which multi-instance server pool
@@ -8026,7 +8026,7 @@ topology:
         parse_deploy_str(yaml).expect("parse");
     }
 
-    // SCE_MESH.md §14 rules 6-10 — partitions schema coverage. Each
+    // SCE_MESH.md §mesh-14 rules 6-10 — partitions schema coverage. Each
     // test pins one rejection shape via its structured DeployError
     // variant so golden snapshots do not drift on message tweaks.
 
@@ -8244,7 +8244,7 @@ partitions:
 
     #[test]
     fn reject_pool_machine_listed_in_partition() {
-        // SCE_MESH.md §14.4 × §14 — a SOME/IP pool machine declares
+        // SCE_MESH.md §mesh-14.4 × §mesh-14 — a SOME/IP pool machine declares
         // `server.instances:` (pool = one router, N sessions, one
         // process). The moment any partition's `machines:` lists the
         // pool, the author is requesting a per-partition split that
@@ -8287,7 +8287,7 @@ partitions:
     #[test]
     fn pool_machine_without_partition_listing_passes() {
         // Regression guard — a SOME/IP pool machine that appears in no
-        // partition must parse (§14.4 pool + absent partitioning is
+        // partition must parse (§mesh-14.4 pool + absent partitioning is
         // the canonical single-process pool shape).
         let yaml = r##"
 version: "1.0"
@@ -8357,7 +8357,7 @@ partitions:
 
     #[test]
     fn accept_partition_transport_binding_shm() {
-        // §14 L2729-2730 — `shm` is the canonical same-machine IPC
+        // §mesh-14 L2729-2730 — `shm` is the canonical same-machine IPC
         // transport. Schema must accept it end-to-end without
         // diagnostic noise.
         let yaml = r##"
@@ -8388,8 +8388,8 @@ partitions:
 
     #[test]
     fn accept_partition_transport_binding_custom_tcp() {
-        // §14 L2730 "kind tcp/shm" — the `tcp` half is `custom_tcp`
-        // (§16.8.3 reference transport).
+        // §mesh-14 L2730 "kind tcp/shm" — the `tcp` half is `custom_tcp`
+        // (§mesh-16.8.3 reference transport).
         let yaml = r##"
 version: "1.0"
 topology:
@@ -8419,7 +8419,7 @@ partitions:
     #[test]
     fn reject_partition_transport_binding_unknown() {
         // Unknown transport name — `iceoryx2` is not in the registry.
-        // §14 L2729-2730 accepts only registry-known transports whose
+        // §mesh-14 L2729-2730 accepts only registry-known transports whose
         // `supports_inter_partition_ipc` is true.
         let yaml = r##"
 version: "1.0"
@@ -8469,7 +8469,7 @@ partitions:
     #[test]
     fn reject_partition_transport_binding_local() {
         // `local` is intra-process direct dispatch; it cannot cross
-        // the OS process boundary `partitions:` defines. §14 L2729
+        // the OS process boundary `partitions:` defines. §mesh-14 L2729
         // requires same-machine IPC, not intra-process dispatch.
         let yaml = r##"
 version: "1.0"
@@ -8517,7 +8517,7 @@ partitions:
     fn reject_partition_transport_binding_someip() {
         // SOME/IP is inter-machine middleware routed through the
         // vsomeip daemon; not the direct same-machine IPC channel
-        // §14 L2729 intends.
+        // §mesh-14 L2729 intends.
         let yaml = r##"
 version: "1.0"
 topology:
@@ -8552,7 +8552,7 @@ partitions:
     #[test]
     fn reject_partition_transport_binding_zenoh() {
         // Zenoh is an inter-machine routing fabric; not the direct
-        // same-machine IPC channel §14 L2729 intends.
+        // same-machine IPC channel §mesh-14 L2729 intends.
         let yaml = r##"
 version: "1.0"
 topology:
@@ -8586,8 +8586,8 @@ partitions:
 
     #[test]
     fn accept_partition_barrier_timeout_positive() {
-        // §14 L2731-2732 — finite positive values are accepted; the
-        // runtime consumer (§16.5) interprets them against the
+        // §mesh-14 L2731-2732 — finite positive values are accepted; the
+        // runtime consumer (§mesh-16.5) interprets them against the
         // partition's <parallel> root hosting status.
         let yaml = r##"
 version: "1.0"
@@ -8618,7 +8618,7 @@ partitions:
     #[test]
     fn accept_partition_barrier_timeout_absent_is_infinity() {
         // Field omission ⇒ None ⇒ W3C normative default (infinity)
-        // per §14 L2732. Regression guard: the knob must stay
+        // per §mesh-14 L2732. Regression guard: the knob must stay
         // optional, and absent must deserialize as None (not 0).
         let yaml = r##"
 version: "1.0"
@@ -8644,7 +8644,7 @@ partitions:
 
     #[test]
     fn reject_partition_barrier_timeout_zero() {
-        // §16.5 barrier timeout: zero would fire before the first
+        // §mesh-16.5 barrier timeout: zero would fire before the first
         // region can report `ParallelRegionDone`, unconditionally
         // raising `error.communication / PARALLEL_BARRIER_TIMEOUT`.
         // The knob exists to bound hangs, not to convert every
@@ -8699,7 +8699,7 @@ topology:
         assert!(cfg.partitions.is_none());
     }
 
-    // ── §9.6.6 rule 3 explicit override carve-out ─────────────
+    // ── §mesh-9.6.6 rule 3 explicit override carve-out ─────────────
 
     /// Author overrides a synth machine's partition by adding it to
     /// `topology.*.machines` with a source that matches the parser's
@@ -8750,7 +8750,7 @@ topology:
         }
     }
 
-    // ── §9.6 Session 4c legacy validator tests removed under RFC F.X-1.
+    // ── §mesh-9.6 Session 4c legacy validator tests removed under RFC F.X-1.
     //    The counter scheme is collision-free by construction; the
     //    `someip_service_id_*` tests below cover the F.X-1 rejection
     //    shapes (overflow / pin-out-of-range / pin-vs-pin collision).
@@ -8760,7 +8760,7 @@ topology:
     /// allocator: lex-sorted counter assigns brake=0x8100, motor=0x8101,
     /// parent=0x8102, worker=0x8103 (all distinct, well under the
     /// 128-slot ceiling). Accept regardless of which machine declares
-    /// the outbound binding to whom — the §9.6 participant union is
+    /// the outbound binding to whom — the §mesh-9.6 participant union is
     /// `{parent, worker, motor, brake}` and the counter assignment is
     /// collision-free by construction.
     #[test]
@@ -8799,7 +8799,7 @@ topology:
         assert_eq!(cfg.topology.len(), 4);
     }
 
-    /// Single §9.6 someip participant (one machine references one peer)
+    /// Single §mesh-9.6 someip participant (one machine references one peer)
     /// has participant-set size 2, so the validator does run; but the
     /// two pinned names parent/worker hash to distinct service IDs. To
     /// exercise the literal "single-participant short-circuit", we use
@@ -9024,7 +9024,7 @@ topology:
     #[test]
     fn someip_service_id_pin_on_non_participant_silently_ignored() {
         // A machine with `someip_service_id:` but no SOMEIP binding is not
-        // a §9.6 invoke participant. The pin carries no meaning and the
+        // a §mesh-9.6 invoke participant. The pin carries no meaning and the
         // validator silently ignores it — matching the participant
         // projection of the legacy collision validator. The participant
         // projection (zero participants here) keeps the validator from
@@ -9044,7 +9044,7 @@ topology:
         parse_deploy_str(yaml).expect("non-participant pin must be silently ignored");
     }
 
-    // ── §14 / RFC §synth-5-K item A2 — per-machine platform/scheduler/memory ──
+    // ── §mesh-14 / RFC §synth-5-K item A2 — per-machine platform/scheduler/memory ──
 
     #[test]
     fn platform_mcu_with_baremetal_parses() {
@@ -9263,7 +9263,7 @@ topology:
 
     #[test]
     fn machine_without_platform_section_parses_unclassified() {
-        // The §14 sections are all optional; absence ⇒ no classification.
+        // The §mesh-14 sections are all optional; absence ⇒ no classification.
         let yaml = r##"
 version: "1.0"
 topology:

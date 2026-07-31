@@ -1,16 +1,16 @@
-//! SCE_MESH.md §9.6.2 Session 5 — Zenoh cross-device scxml-invoke Rust mirror.
+//! SCE_MESH.md §mesh-9.6.2 Session 5 — Zenoh cross-device scxml-invoke Rust mirror.
 //!
 //! ## Why a shared zenoh::Session (Zenoh diverges from SOME/IP here)
 //!
-//! §9.6 cross-device `<invoke type="scxml" src="#peer">` traffic on Zenoh
+//! §mesh-9.6 cross-device `<invoke type="scxml" src="#peer">` traffic on Zenoh
 //! rides the SAME `zenoh_session_` that ordinary `<send>` zenoh targets use,
 //! not a dedicated one. The Session 4b SOME/IP rationale for a dedicated
 //! `<machine>[_<partition>]_sce_app_` does NOT carry over:
 //!
-//!   1. **No §13 OEM boundary on the Zenoh side.** `vsomeip.json applications[*]`
+//!   1. **No §mesh-13 OEM boundary on the Zenoh side.** `vsomeip.json applications[*]`
 //!      is OEM-owned territory; Zenoh has no equivalent OEM-allocated
 //!      identifier whose registration must stay outside SCE-named spaces.
-//!      The SCE-reserved §9.6 namespace is carved out via key-expression
+//!      The SCE-reserved §mesh-9.6 namespace is carved out via key-expression
 //!      prefix ([`SCXML_INVOKE_KEY_PREFIX`]), not via session identity.
 //!   2. **No 128-ID counter or service_id collision domain.** SOME/IP's
 //!      RFC F.X-1 hybrid (counter + author-pin) allocator carves out a
@@ -18,7 +18,7 @@
 //!      on its own routing tuple; Zenoh routes by full key-expression
 //!      with no analogous bounded namespace, so the parallel allocator
 //!      is unnecessary.
-//!   3. **Failure isolation.** A §9.6 peer disconnect surfaces on the same
+//!   3. **Failure isolation.** A §mesh-9.6 peer disconnect surfaces on the same
 //!      Zenoh runtime callback thread as `<send>` traffic — sharing the
 //!      session matches the existing `zenoh_subscribers_` map that already
 //!      dispatches on the same callback thread without per-pattern
@@ -37,9 +37,9 @@
 //!   the prefix or the direction segment) trips the tests on
 //!   `cargo test -p sce-build --lib` long before the C++ side compiles
 //!   a wrong key into generated code.
-//! * **Future validator hook** — a deploy-time `<send>`-key vs. §9.6
+//! * **Future validator hook** — a deploy-time `<send>`-key vs. §mesh-9.6
 //!   reservation collision check (an author-supplied zenoh `key:` value
-//!   that begins with `sce/scxml_invoke/...` would interfere with §9.6
+//!   that begins with `sce/scxml_invoke/...` would interfere with §mesh-9.6
 //!   traffic) will call [`SCXML_INVOKE_KEY_PREFIX`] from the topology
 //!   stage to reject such conflicts. Mirrors how the SOME/IP module
 //!   exposes [`SCXML_INVOKE_SERVICE_BASE`] for the future
@@ -51,16 +51,16 @@
 //!
 //! [`SCXML_INVOKE_SERVICE_BASE`]: super::someip::SCXML_INVOKE_SERVICE_BASE
 
-// ── SCE-reserved §9.6 namespace constants ───────────────────────────────────
+// ── SCE-reserved §mesh-9.6 namespace constants ───────────────────────────────────
 
-/// SCE-reserved §9.6 scxml-invoke key-expression prefix. All §9.6
+/// SCE-reserved §mesh-9.6 scxml-invoke key-expression prefix. All §mesh-9.6
 /// cross-device traffic over Zenoh travels under
 /// `sce/scxml_invoke/...`. Mirror of the C++
 /// `SCE::Mesh::Zenoh::SCXML_INVOKE_KEY_PREFIX` constant in
 /// `ZenohScxmlInvokeEndpoint.h`.
 ///
 /// Author-supplied `<send>` zenoh `key:` values do not begin with `sce/`
-/// by SCE convention, so the §9.6 namespace stays disjoint from
+/// by SCE convention, so the §mesh-9.6 namespace stays disjoint from
 /// arbitrary author keys. A future deploy-time validator will grep
 /// author keys for this prefix to reject reservation collisions.
 pub const SCXML_INVOKE_KEY_PREFIX: &str = "sce/scxml_invoke";
@@ -133,7 +133,7 @@ mod tests {
     fn p2c_and_c2p_are_distinct_for_same_pair() {
         // Each peer-pair declares two keys. They MUST differ — same key
         // for both directions would let the parent's publisher feed
-        // its own subscriber (loopback), which the §9.6 lifecycle
+        // its own subscriber (loopback), which the §mesh-9.6 lifecycle
         // does not survive (wire-14 would re-enter the parent as if
         // the worker had emitted it).
         let p = key_expr_p2c("alpha", "beta");
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn keys_carry_reserved_prefix() {
         // Every emitted key starts with the SCE-reserved prefix so a
-        // future §9.6-reservation collision validator can grep author
+        // future §mesh-9.6 reservation collision validator can grep author
         // `<send>` keys for this prefix without false negatives. If a
         // refactor moves the prefix into a sub-namespace (e.g.
         // `sce/v1/scxml_invoke`) this guard fails before the codegen

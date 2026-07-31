@@ -70,6 +70,21 @@ severity = "warn"
 # widening happens one directory at a time, each with its citation migration and
 # bindings in the same commit (severity_binding is already reject, so a path
 # added without bindings turns the ledger red).
+#
+# `sce-build/src/mesh` is the Rust deploy/topology/codegen tree — the build-time
+# half of mesh, whose C++ runtime half the four `sce/` entries already cover.
+# Note it is also scanned by docs/spec/synth, which lists `sce-build/src`;
+# section_namespace keeps the two apart, so a file may carry §mesh- and §synth-
+# cites at once and each ledger checks only its own.
+#
+# Binding kinds there follow the store convention rather than the tool's
+# proposal (propose-implementations offers `implements` for everything):
+# production functions are `implements`; serde/DTO types, capability tables,
+# consts, `mod tests` symbols and file-level cites are `references`. Citations
+# written in a doc comment resolve to no symbol at all — the resolver does not
+# attribute them to the item they document — so those land as file-level
+# `references` and their sections stay uncovered until the cite moves into the
+# function body it describes.
 [plugins.set_equality_validator]
 paths = [
     "sce/include/mesh",
@@ -77,19 +92,20 @@ paths = [
     "sce/include/common",
     "sce/include/static",
     "tests/w3c/dist",
+    "sce-build/src/mesh",
 ]
 # Mnemosyne R783 scan coverage: every Rust source under [workspace] root must be
 # either scanned by `paths` or declared here, so a configured-but-empty scan set
-# cannot gate vacuously. This ledger gates C++ only — `paths` lists no Rust tree,
-# so every Rust source in the repo is declared out.
+# cannot gate vacuously. `sce-build/src/mesh` in `paths` above is the one Rust
+# tree this ledger scans; every other Rust source in the repo is declared out
+# here.
 #
-# This list is the Rust-coverage declaration ONLY; it does not subtract from the
-# C++/YAML scan set. `tests/` appears here and `tests/w3c/dist` appears in
-# `paths` above, and the two do not conflict: the dist tree is scanned, while
-# any Rust that may later appear under `tests/` stays declared out.
-#
-# Measured, not assumed: `grep -rn '§mesh-' --include=*.rs` over the repo returns
-# zero hits, so declaring every Rust source out gates nothing away.
+# An entry here does not subtract from `paths` — the two lists are read
+# independently, and a prefix may appear in both. `sce-build/` is declared out
+# while `sce-build/src/mesh` is scanned, exactly as `tests/` is declared out
+# while `tests/w3c/dist` is scanned. Measured, not assumed: adding those two
+# `paths` entries moved the scan set from 58 files to 81, with both prefixes
+# still listed below.
 scan_exclusions = [
     "backends/",
     "sce-build/",
@@ -115,6 +131,14 @@ section_namespace = "mesh"
 [plugins.symbol_resolver.cpp]
 transport = "in-process"
 backend = "tree-sitter-cpp"
+
+# Rust half of the same axis, for the `sce-build/src/mesh` deploy/topology/
+# codegen tree. Without it every cite in that tree would resolve to no symbol
+# and the bindings would degrade to file-level, which is weaker than what the
+# C++ side already enforces.
+[plugins.symbol_resolver.rust]
+transport = "in-process"
+backend = "tree-sitter-rust"
 
 # Tool pin (Mnemosyne R826/R832). Cargo pins library dependencies through
 # Cargo.lock and pins nothing about a binary invoked by name, so a gate runs

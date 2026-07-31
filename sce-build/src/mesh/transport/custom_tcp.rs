@@ -1,4 +1,4 @@
-//! SCE_MESH.md §9.6 L1399 (b) — per-transport scxml-invoke codegen helpers
+//! SCE_MESH.md §mesh-9.6 L1399 (b) — per-transport scxml-invoke codegen helpers
 //! for `custom_tcp`. Lives under `mesh::transport::custom_tcp` alongside the
 //! sibling `shm` / `someip` modules; the parent `transport` module stays
 //! focused on cross-transport descriptor metadata (capabilities, ordering,
@@ -7,7 +7,7 @@
 //!
 //! The public surface is intentionally narrow at this landing — only the
 //! helper consumed by [`crate::collect_scxml_remote_peers`] is exposed.
-//! Future work (e.g. device-level `listen:` lifting from §9.6 L1397 if
+//! Future work (e.g. device-level `listen:` lifting from §mesh-9.6 L1397 if
 //! multi-machine-per-device ever lands) continues here so lib.rs does not
 //! re-grow inline per-transport branches.
 
@@ -16,7 +16,7 @@ use crate::mesh;
 /// Resolve the cross-device connect endpoint for a `custom_tcp` scxml-remote
 /// invoke peer. Returns `None` unless all three conditions hold:
 ///
-///   1. `transport == Some("custom_tcp")` — this is the only §9.6 transport
+///   1. `transport == Some("custom_tcp")` — this is the only §mesh-9.6 transport
 ///      that consumes a peer connect endpoint at template time (shm emits
 ///      two `ShmChannel<>` members directly from model fields; someip uses
 ///      SCE-reserved service/instance/method constants baked into the
