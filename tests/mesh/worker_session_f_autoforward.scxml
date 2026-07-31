@@ -1,12 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Mesh §9.6.5 autoforward="true" worker. Stays in `await` until
-     a wire-17 ParentEvent carrying `trigger` arrives, then transitions
-     to `done`. The host detects `isFinal()` on its next tick and
-     emits wire-18 `InvokeDone`. -->
+     a wire-17 ParentEvent carrying `trigger` arrives, then reports what
+     survived the forward.
+
+     §9.6.5 requires the parent to emit the autoforwarded event "copied
+     verbatim". Two of the source event's fields have a slot on the
+     wire-17 envelope and must therefore arrive intact:
+
+       _event.data     envelope `data` (payload, codec-tagged)
+       _event.sendid   envelope `reply_to`
+
+     `_event.origin` and `_event.invokeid` are deliberately NOT asserted
+     here: §9.6.3 re-derives those at the child from the envelope's own
+     identity rather than copying the parent's values, so they are that
+     section's contract, not this one's.
+
+     The verdict rides back to the parent as `<donedata>` on wire-18, so a
+     stripped forward surfaces as an explicit `fail` rather than a timeout. -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml"
-       version="1.0" datamodel="null" initial="await" name="worker_session_f_autoforward">
+       version="1.0" datamodel="lua" initial="await" name="worker_session_f_autoforward">
     <state id="await">
-        <transition event="trigger" target="done"/>
+        <transition event="trigger"
+                    cond="_event.data ~= nil and _event.data.value == 42 and _event.sendid == 'trigger_send_1'"
+                    target="done"/>
+        <transition event="trigger" target="stripped"/>
     </state>
-    <final id="done"/>
+    <final id="done">
+        <donedata>
+            <param name="verdict" expr="'preserved'"/>
+        </donedata>
+    </final>
+    <final id="stripped">
+        <donedata>
+            <param name="verdict" expr="'stripped'"/>
+        </donedata>
+    </final>
 </scxml>

@@ -19,6 +19,7 @@
 #include "common/CompilerHints.h"
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
+#include "common/ForwardedEvent.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"
@@ -607,6 +608,32 @@ public:
     }
 
     /**
+     * @brief Raise an autoforwarded external event carrying its source
+     *        `_event` fields (§scxml-6.4 exact-copy contract)
+     *
+     * The receiving end of `SCE::Common::ForwardedEvent`: the event crosses
+     * the machine boundary by name because the sender's `Event` enum is a
+     * different type (local invoke child) or lives on another device
+     * (SCE_MESH.md §9.6.5 wire-17). Unknown names degrade silently — a child
+     * is not required to declare every event its parent forwards
+     * (§scxml-6.4).
+     *
+     * @param forwarded Source event's name and `_event` fields
+     */
+    void raiseExternal(const ::SCE::Common::ForwardedEvent &forwarded) {
+        auto event = policy_.getEventFromName(forwarded.name);
+        if (!event) {
+            SCE_LOG_DEBUG("AOT raiseExternal: Forwarded event '{}' not in Event enum, ignoring", forwarded.name);
+            return;
+        }
+        // `target` stays default-constructed: the forwarded copy is delivered
+        // to this machine, never re-routed to the original event's target.
+        EventWithMetadata meta(*event, forwarded.data, forwarded.origin, forwarded.sendId, forwarded.type,
+                               forwarded.originType, forwarded.invokeId);
+        raiseExternal(meta);
+    }
+
+    /**
      * @brief Raise external event with full metadata (§scxml-6.4.1)
      *
      * Used for child-to-parent communication where invokeid must be preserved.
@@ -645,11 +672,27 @@ public:
 
         // §scxml-6.4: Autoforward - forward external events to children with autoforward=true
         // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
+        //
+        // SCE_MESH.md §mesh-9.6.5: this is the "parent runtime observes each
+        // external event" point the section names, and the copy handed to the
+        // policy is verbatim — §scxml-6.4 requires an exact copy, so the child
+        // must see the same `_event.data`, `_event.origin`, `_event.sendid`,
+        // `_event.origintype` and `_event.invokeid` the parent sees. Only
+        // `target` is withheld (a routing decision owned by the originating
+        // `<send>`; inheriting it would bounce the copy back onto the mesh
+        // instead of delivering it to the child) — see ForwardedEvent.h.
         SCE_LOG_DEBUG("AOT raiseExternal: About to check autoforward capability");
         if constexpr (SCE::Core::HasAutoforward<StatePolicy, StaticExecutionEngine>) {
             SCE_LOG_DEBUG("AOT raiseExternal: Policy has autoforward capability");
-            const std::string eventName = policy_.getEventName(eventWithMetadata.event);
-            policy_.forwardToAutoforwardChildren(eventName, *this);
+            ::SCE::Common::ForwardedEvent forwarded;
+            forwarded.name = policy_.getEventName(eventWithMetadata.event);
+            forwarded.data = eventWithMetadata.data;
+            forwarded.origin = eventWithMetadata.origin;
+            forwarded.sendId = eventWithMetadata.sendId;
+            forwarded.type = eventWithMetadata.type;
+            forwarded.originType = eventWithMetadata.originType;
+            forwarded.invokeId = eventWithMetadata.invokeId;
+            policy_.forwardToAutoforwardChildren(forwarded, *this);
         } else {
             SCE_LOG_DEBUG("AOT raiseExternal: Policy does NOT have autoforward capability");
         }
