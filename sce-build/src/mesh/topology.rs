@@ -1770,6 +1770,11 @@ pub fn build_resolved_targets(
     machine_name: &str,
     external: &super::external::ExternalResolution,
 ) -> Result<TargetResolution, TopologyError> {
+    // §mesh-4.1: every `#target` is resolved to a physical binding here, at
+    // build time, so the generated router carries constant routing and asks
+    // nothing at runtime. A target with no binding fails now rather than
+    // becoming a lookup that could miss on a device.
+    //
     // Single lookup of the machine's deploy.yaml bindings drives every
     // contributor. They all consult the same map so a future divergence
     // (e.g. subscriptions targeting a binding that SCXML also uses)

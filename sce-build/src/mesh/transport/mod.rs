@@ -36,6 +36,10 @@ use std::fmt;
 /// names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TransportShape {
+    // §mesh-3.2: dispatch is decided here, at build time, and never at
+    // runtime — there is no ITransport to virtual-call through. These two
+    // flags are the whole decision surface the one shared template needs to
+    // emit transport-native code per target.
     /// Does this transport emit a per-target field in TransportRouter
     /// (and a matching entry in the constructor initializer list)?
     ///
