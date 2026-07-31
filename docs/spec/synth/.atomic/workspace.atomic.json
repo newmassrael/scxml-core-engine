@@ -4237,6 +4237,30 @@
         {
           "file": "sce-build/build.rs",
           "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_done_invoke.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_done_invoke_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_done_invoke_kotlin.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_internal_queue.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_internal_queue_go.sh",
+          "kind": "references"
+        },
+        {
+          "file": "scripts/regen_autoforward_internal_queue_kotlin.sh",
+          "kind": "references"
         }
       ]
     },

@@ -19,7 +19,6 @@ from .invoke import (
     PendingInvoke,
     ScxmlInvoke,
     create_done_invoke_event_name,
-    is_platform_event,
 )
 from .policy import StatePolicy, TransitionResult
 from .scheduler import ScheduledEvent, Scheduler
@@ -52,7 +51,6 @@ __all__ = [
     "StatePolicy",
     "TransitionResult",
     "create_done_invoke_event_name",
-    "is_platform_event",
     "scripting",
 ]
 

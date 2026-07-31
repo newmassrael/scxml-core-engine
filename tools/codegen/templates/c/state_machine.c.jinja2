@@ -3446,18 +3446,26 @@ static void SCE_SM_FN set_current_event(lua_State *L, const {{ csym_prefix }}{{ 
 static void SCE_SM_FN check_eventless_transitions({{ csym_prefix }}{{ model.name }}_t *sm);
 
 {% if model.has_autoforward_invoke %}
-/* W3C SCXML 6.4 (test229): forward each non-platform external event to
-   active autoforward children. cpp `StateMachine::processEvent`
-   (sce/src/runtime/StateMachine.cpp:683) does the same via
-   `getAutoForwardSessions` + `child->processEvent`; mirrored here by a
-   per-event switch arm that calls each active autoforward child's
-   `_raise_external_by_name` shim with the parent-side event-name string.
-   Platform events (done.*, error.*, cancel.invoke), the wildcard sentinel,
-   and the empty-name placeholder are excluded — those are state-machine
-   internal and forwarding them across session boundaries is not spec'd
-   (cpp filters them via `isPlatformEvent`). The shim ignores names not
-   in the child's enum (silently falls through), so a child SM with a
-   smaller event vocabulary than the parent is safely tolerated. */
+/* W3C SCXML 6.4 (test229): forward each external event to active
+   autoforward children, via a per-event switch arm that calls the child's
+   `_raise_external_forwarded` shim with the parent-side event-name string.
+   The shim ignores names not in the child's enum (silently falls through),
+   so a child SM with a smaller event vocabulary than the parent is safely
+   tolerated.
+
+   W3C SCXML Appendix D `mainEventLoop` forwards whatever it dequeued from
+   the external queue without testing the event's name, so no name-based
+   platform-event filter belongs here. `error.*` and `done.state.*` stay
+   out of the forwarded set structurally — they are raised onto the
+   internal queue, and this function is reachable only from the external
+   drain below. `done.invoke.<id>` is in the set by W3C SCXML 6.4.2, which
+   returns it "to the external event queue of the invoking process": a
+   sibling invoke that is still running must see it.
+
+   The exclusions that remain are not events. `cancel.invoke` mirrors
+   Appendix D's `isCancelEvent` arm, which `continue`s past the forward
+   block entirely; the wildcard sentinel and the empty-name placeholder are
+   codegen bookkeeping with no name to copy. */
 static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_children({{ csym_prefix }}{{ model.name }}_t *sm,
         const {{ csym_prefix }}{{ model.name }}_event_with_meta_t *evt) {
     /* W3C SCXML 6.4: the copy handed to each child is exact, so the source
@@ -3474,7 +3482,7 @@ static void SCE_SM_FN {{ csym_prefix }}{{ model.name }}_forward_to_autoforward_c
     sce_copy_bounded_id(fwd.invoke_id, evt->invoke_id);
     switch (evt->event) {
         {% for ev_name in model.events | sort %}
-        {% if ev_name and ev_name != 'Wildcard' and not ev_name.startswith('done.') and not ev_name.startswith('error.') and ev_name != 'cancel.invoke' %}
+        {% if ev_name and ev_name != 'Wildcard' and ev_name != 'cancel.invoke' %}
         case {{ csym_prefix | upper }}{{ model.name | upper }}_EVENT_{{ ev_name | upper | replace('.', '_') | replace('-', '_') }}:
             sce_copy_bounded_id(fwd.name, "{{ ev_name }}");
             {% for state_id, state in model.states | dictsort %}

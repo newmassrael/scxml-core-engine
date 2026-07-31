@@ -419,6 +419,69 @@ set_tests_properties(c11_integration_autoforward_event_fields PROPERTIES
     LABELS "integration;c11;aot"
 )
 
+# W3C SCXML 6.4 autoforward carries `done.invoke.<id>`. Appendix D
+# `mainEventLoop` forwards every event dequeued from the external queue to each
+# autoforward child and excludes only the cancel event; §6.4.2 puts
+# `done.invoke.<id>` on that queue. Observing it needs two concurrent invokes,
+# which is why no IRP test covers it.
+sce_generate_static_integration_c_test(autoforward_done_invoke "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    SYNTH_INVOKE_CHILDREN inv_watch inv_short
+)
+
+add_executable(sce_c_integration_autoforward_done_invoke
+    integration/test_autoforward_done_invoke.c
+    ${INTEGRATION_C_TEST_autoforward_done_invoke_SOURCES}
+)
+target_link_libraries(sce_c_integration_autoforward_done_invoke PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_autoforward_done_invoke PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_autoforward_done_invoke PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_autoforward_done_invoke
+    COMMAND sce_c_integration_autoforward_done_invoke
+)
+set_tests_properties(c11_integration_autoforward_done_invoke PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
+# W3C SCXML 6.4: the negative half of the same loop. The internal drain has
+# no forwarding step, so `error.execution` (6.2, unsupported `<send>` type)
+# must never reach an autoforward child — excluded by the queue it was
+# raised onto, not by a filter that recognises its name.
+sce_generate_static_integration_c_test(autoforward_internal_queue "${SCE_C_INTEGRATION_GENERATED_DIR}"
+    SYNTH_INVOKE_CHILDREN inv_watch
+)
+
+add_executable(sce_c_integration_autoforward_internal_queue
+    integration/test_autoforward_internal_queue.c
+    ${INTEGRATION_C_TEST_autoforward_internal_queue_SOURCES}
+)
+target_link_libraries(sce_c_integration_autoforward_internal_queue PRIVATE
+    sce_c_runtime sce_c_runtime_posix lua54
+)
+target_include_directories(sce_c_integration_autoforward_internal_queue PRIVATE
+    "${SCE_C_INTEGRATION_GENERATED_DIR}"
+)
+set_target_properties(sce_c_integration_autoforward_internal_queue PROPERTIES
+    C_STANDARD 11
+    C_STANDARD_REQUIRED ON
+    C_EXTENSIONS OFF
+)
+add_test(NAME c11_integration_autoforward_internal_queue
+    COMMAND sce_c_integration_autoforward_internal_queue
+)
+set_tests_properties(c11_integration_autoforward_internal_queue PROPERTIES
+    TIMEOUT 30
+    LABELS "integration;c11;aot"
+)
+
 # ─── EventSchema native lowering fixture (NL→IR C1 Path A, RFC §10.4 step 5) ─
 #
 # Proves the C11 backend's native typed `_event.data` lowering at runtime

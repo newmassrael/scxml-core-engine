@@ -7404,10 +7404,6 @@
           "file": "backends/rust/runtime/src/policy.rs",
           "symbol": "StatePolicy",
           "kind": "implements"
-        },
-        {
-          "file": "backends/rust/runtime/src/helpers/invoke_processing.rs",
-          "kind": "references"
         }
       ],
       "verification_expectation": "by_construction",
