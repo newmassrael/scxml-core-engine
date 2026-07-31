@@ -62,6 +62,31 @@ std::vector<std::shared_ptr<IXMLElement>> ParsingCommon::findChildElements(const
     return result;
 }
 
+std::vector<std::shared_ptr<IXMLElement>>
+ParsingCommon::findChildElementsAnyOf(const std::shared_ptr<IXMLElement> &element,
+                                      const std::vector<std::string> &childNames) {
+    if (!element) {
+        return {};
+    }
+
+    std::vector<std::shared_ptr<IXMLElement>> result;
+
+    for (const auto &child : element->getChildren()) {
+        if (!isScxmlNamespace(child)) {
+            continue;
+        }
+        const std::string childName = child->getName();
+        for (const auto &accepted : childNames) {
+            if (matchNodeName(childName, accepted)) {
+                result.push_back(child);
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
 std::shared_ptr<IXMLElement> ParsingCommon::findFirstChildElement(const std::shared_ptr<IXMLElement> &element,
                                                                   const std::string &childName) {
     if (!element) {

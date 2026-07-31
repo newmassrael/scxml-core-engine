@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425248
+// generated-at: 1785455070
 
 // GENERATED CODE — DO NOT EDIT
 // Source: resources/570/test570.scxml
@@ -131,16 +131,16 @@ class Test570StateMachine(
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test570State): Int = when (state) {
-        is Test570State.Fail -> 2
-        is Test570State.P0 -> 3
-        is Test570State.P0s1 -> 4
-        is Test570State.P0s11 -> 5
-        is Test570State.P0s1final -> 6
-        is Test570State.P0s2 -> 7
-        is Test570State.P0s21 -> 8
-        is Test570State.P0s2final -> 9
-        is Test570State.Pass -> 1
-        is Test570State.S1 -> 0
+        is Test570State.Fail -> 9
+        is Test570State.P0 -> 0
+        is Test570State.P0s1 -> 1
+        is Test570State.P0s11 -> 2
+        is Test570State.P0s1final -> 3
+        is Test570State.P0s2 -> 4
+        is Test570State.P0s21 -> 5
+        is Test570State.P0s2final -> 6
+        is Test570State.Pass -> 8
+        is Test570State.S1 -> 7
     }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
@@ -477,22 +477,22 @@ class Test570StateMachine(
                 // prevent double-exit. This code is needed for direct onExit() calls.
                 val toExit = mutableListOf<Pair<Test570State, Int>>()
                 if (activeStateIds.contains("p0s1")) {
-                    toExit.add(Test570State.P0s1 to 4)
+                    toExit.add(Test570State.P0s1 to 1)
                 }
                 if (activeStateIds.contains("p0s11")) {
-                    toExit.add(Test570State.P0s11 to 5)
+                    toExit.add(Test570State.P0s11 to 2)
                 }
                 if (activeStateIds.contains("p0s1final")) {
-                    toExit.add(Test570State.P0s1final to 6)
+                    toExit.add(Test570State.P0s1final to 3)
                 }
                 if (activeStateIds.contains("p0s2")) {
-                    toExit.add(Test570State.P0s2 to 7)
+                    toExit.add(Test570State.P0s2 to 4)
                 }
                 if (activeStateIds.contains("p0s21")) {
-                    toExit.add(Test570State.P0s21 to 8)
+                    toExit.add(Test570State.P0s21 to 5)
                 }
                 if (activeStateIds.contains("p0s2final")) {
-                    toExit.add(Test570State.P0s2final to 9)
+                    toExit.add(Test570State.P0s2final to 6)
                 }
                 toExit.sortByDescending { it.second }
                 for ((desc, _) in toExit) {

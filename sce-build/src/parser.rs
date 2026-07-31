@@ -76,6 +76,9 @@ pub static RESERVED_CONTEXT_IDS: LazyLock<&'static [&'static str]> = LazyLock::n
 
 pub struct SCXMLParser {
     document_order_counter: u32,
+    /// XML node id -> document-order rank for every state element, filled
+    /// by [`SCXMLParser::assign_document_order`] before the states pass.
+    document_order_by_node: BTreeMap<usize, u32>,
     invoke_counter: u32,
     hybrid_invoke_counter: u32,
     send_counter: u32,
@@ -454,6 +457,7 @@ impl SCXMLParser {
     pub fn new() -> Self {
         Self {
             document_order_counter: 0,
+            document_order_by_node: BTreeMap::new(),
             invoke_counter: 0,
             hybrid_invoke_counter: 0,
             send_counter: 0,
@@ -895,6 +899,11 @@ impl SCXMLParser {
         // outside the v1 vocabulary) and `scxml/duplicate-session-
         // role-declaration` (same kind declared twice on one doc).
         self.parse_sce_session_roles(&root, &mut model, diag_label)?;
+
+        // Rank state elements by document position before parsing them —
+        // `parse_states` visits one element name at a time, so it cannot
+        // number a mixed sibling set correctly on its own.
+        self.assign_document_order(&root);
 
         // Parse states recursively
         self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
@@ -1412,6 +1421,42 @@ impl SCXMLParser {
         }
     }
 
+    /// Pin every state element's `document_order` to its position in the
+    /// document, keyed by XML node identity.
+    ///
+    /// Pre-order traversal IS document order for XML, so this walk hands
+    /// out the same dense numbering the parse-order counter used to, only
+    /// in the right order. It ranks every state element it meets and
+    /// recurses through all of them, so the set it numbers is a superset
+    /// of what [`Self::parse_states`] (which skips id-less elements and
+    /// does not descend into them) later looks up.
+    fn assign_document_order(&mut self, elem: &roxmltree::Node) {
+        // §scxml-3.2 and §scxml-3.3 both make "the first child state in
+        // document order" the default initial state, and the rank is emitted
+        // into generated code as the state's document-order index (the
+        // conflict-resolution and exit-set order every backend reads). But
+        // `parse_states` visits one element name at a time — every <state>,
+        // then every <final>, then every <parallel> — so a counter bumped as
+        // elements are parsed ranks a mixed sibling set by element name
+        // instead of by position, and a <parallel> written before a <state>
+        // came out second. Hence a separate pass over document positions.
+        for child in scxml_children_any_of(elem, STATE_ELEMENT_TAGS) {
+            self.document_order_by_node
+                .insert(child.id().get_usize(), self.document_order_counter);
+            self.document_order_counter += 1;
+            self.assign_document_order(&child);
+        }
+    }
+
+    /// Document-order rank of a state element, assigned by
+    /// [`Self::assign_document_order`]. Indexing is deliberate: that pass
+    /// ranks a superset of the elements reaching this lookup, so a miss is
+    /// a broken invariant rather than a document the parser should guess a
+    /// rank for — and rank 0 would claim "first in document order".
+    fn document_order_of(&self, elem: &roxmltree::Node) -> u32 {
+        self.document_order_by_node[&elem.id().get_usize()]
+    }
+
     /// Threaded `source_name` lets leaf validation errors
     /// (`parse_invoke` mesh-rpc reserved-param rules) construct
     /// `Located<ForgeError>` records with the same file label the
@@ -1436,11 +1481,10 @@ impl SCXMLParser {
                 id: state_id.clone(),
                 initial: child.attribute("initial").unwrap_or("").to_string(),
                 parent: parent_id.map(|s| s.to_string()),
-                document_order: self.document_order_counter,
+                document_order: self.document_order_of(&child),
                 source_location: source_location_of(&child, source_name),
                 ..Default::default()
             };
-            self.document_order_counter += 1;
             state.req =
                 collect_sce_req(&child, || format!("<state id=\"{state_id}\">"), source_name)?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
@@ -1574,11 +1618,10 @@ impl SCXMLParser {
                 id: final_id.clone(),
                 is_final: true,
                 parent: parent_id.map(|s| s.to_string()),
-                document_order: self.document_order_counter,
+                document_order: self.document_order_of(&child),
                 source_location: source_location_of(&child, source_name),
                 ..Default::default()
             };
-            self.document_order_counter += 1;
             state.req =
                 collect_sce_req(&child, || format!("<final id=\"{final_id}\">"), source_name)?;
             state.unresolved = collect_sce_unresolved(&child, source_name);
@@ -1627,11 +1670,10 @@ impl SCXMLParser {
                 id: parallel_id.clone(),
                 is_parallel: true,
                 parent: parent_id.map(|s| s.to_string()),
-                document_order: self.document_order_counter,
+                document_order: self.document_order_of(&child),
                 source_location: source_location_of(&child, source_name),
                 ..Default::default()
             };
-            self.document_order_counter += 1;
             state.req = collect_sce_req(
                 &child,
                 || format!("<parallel id=\"{parallel_id}\">"),
@@ -3791,6 +3833,27 @@ fn scxml_children<'a>(
         .filter(move |c| c.is_element() && c.tag_name().name() == tag && is_scxml_ns(c))
 }
 
+/// The element names that carry a state in the model, in the order the
+/// spec lists them. Shared by the document-order pre-pass and the
+/// per-name parse loops so the two cannot drift apart.
+const STATE_ELEMENT_TAGS: &[&str] = &["state", "final", "parallel"];
+
+/// SCXML-namespaced children matching ANY of the given local names, in
+/// document order.
+///
+/// Calling [`scxml_children`] once per name and chaining the results
+/// groups siblings by element name, which is not document order for a
+/// mixed set. See [`SCXMLParser::assign_document_order`] for why that
+/// distinction is observable.
+fn scxml_children_any_of<'a>(
+    parent: &'a roxmltree::Node<'a, 'a>,
+    tags: &'a [&'a str],
+) -> impl Iterator<Item = roxmltree::Node<'a, 'a>> {
+    parent
+        .children()
+        .filter(move |c| c.is_element() && is_scxml_ns(c) && tags.contains(&c.tag_name().name()))
+}
+
 /// Find first SCXML-namespaced child with a given local name. See
 /// [`scxml_children`] for the namespace-filter contract.
 fn scxml_child<'a>(
@@ -5734,6 +5797,63 @@ mod tests {
              only the parse-time capture sees it); got {:?}",
             model.raised_events
         );
+    }
+
+    #[test]
+    fn default_initial_follows_document_order_not_element_name() {
+        // §scxml-3.3: the default initial state is the first child state in
+        // document order. `parse_states` visits one element name at a time, so
+        // before `assign_document_order` ranked elements by position the
+        // <state> child won regardless of where it was written — this document
+        // resolved to `cs` instead of `cf`.
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c">
+            <state id="c">
+                <final id="cf"/>
+                <state id="cs"/>
+            </state>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+        assert_eq!(
+            model.states["c"].initial, "cf",
+            "<final> written first is the first child state in document order"
+        );
+        assert!(
+            model.states["cf"].document_order < model.states["cs"].document_order,
+            "document_order must follow document position: cf={} cs={}",
+            model.states["cf"].document_order,
+            model.states["cs"].document_order
+        );
+    }
+
+    /// The rank is emitted into generated code as each state's
+    /// document-order index, so a mixed sibling set must come out in
+    /// written order across all three state element names.
+    #[test]
+    fn document_order_ranks_mixed_siblings_in_written_order() {
+        let scxml = r#"<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="c">
+            <state id="c">
+                <final id="f1"/>
+                <parallel id="p1">
+                    <state id="pa"/>
+                    <state id="pb"/>
+                </parallel>
+                <state id="s2"/>
+            </state>
+        </scxml>"#;
+        let mut parser = SCXMLParser::new();
+        let model = parser.parse_string(scxml, "test").unwrap();
+
+        let mut ranked: Vec<(&str, u32)> = ["c", "f1", "p1", "pa", "pb", "s2"]
+            .iter()
+            .map(|id| (*id, model.states[*id].document_order))
+            .collect();
+        ranked.sort_by_key(|(_, order)| *order);
+
+        // Pre-order: the parallel's own children precede the sibling
+        // written after it, which is what document order means for a tree.
+        let ids: Vec<&str> = ranked.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, vec!["c", "f1", "p1", "pa", "pb", "s2"]);
     }
 
     #[test]

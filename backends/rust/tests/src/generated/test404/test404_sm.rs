@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
 // template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425169
+// generated-at: 1785455069
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -337,13 +337,13 @@ impl StatePolicy for Test404Policy {
             Test404State::Fail => 9,
             Test404State::Pass => 8,
             Test404State::S0 => 0,
-            Test404State::S01p => 5,
-            Test404State::S01p1 => 6,
-            Test404State::S01p2 => 7,
-            Test404State::S02 => 1,
-            Test404State::S03 => 2,
-            Test404State::S04 => 3,
-            Test404State::S05 => 4,
+            Test404State::S01p => 1,
+            Test404State::S01p1 => 2,
+            Test404State::S01p2 => 3,
+            Test404State::S02 => 4,
+            Test404State::S03 => 5,
+            Test404State::S04 => 6,
+            Test404State::S05 => 7,
         }
     }
 
