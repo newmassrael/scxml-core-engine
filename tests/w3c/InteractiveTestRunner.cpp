@@ -1628,6 +1628,9 @@ InteractiveTestRunner::serializeActions(const std::vector<std::shared_ptr<IActio
                         auto paramObj = emscripten::val::object();
                         paramObj.set("name", param.name);
                         paramObj.set("expr", param.expr);
+                        if (!param.location.empty()) {
+                            paramObj.set("location", param.location);
+                        }
                         paramsArray.call<void>("push", paramObj);
                     }
                     actionObj.set("params", paramsArray);

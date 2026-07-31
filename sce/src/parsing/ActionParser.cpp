@@ -297,6 +297,9 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         return std::make_shared<SCE::ScriptAction>(content, id);
 
     } else if (elementName == "assign") {
+        // §scxml-5.4.2: the child content of <assign> is an in-line
+        // specification of the value, mutually exclusive with 'expr' — so the
+        // text content is read only when 'expr' is absent.
         std::string location = actionElement->hasAttribute("location") ? actionElement->getAttribute("location") : "";
         std::string expr;
 
@@ -314,6 +317,11 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         return std::make_shared<SCE::AssignAction>(location, expr, id);
 
     } else if (elementName == "log") {
+        // §scxml-4.7.2: both <log> attributes are optional — 'expr' is the
+        // value to log, 'label' a string identifying the message. This build
+        // logs one string, preferring 'expr' and falling back to 'label',
+        // which §scxml-4.7.3 permits by leaving the manner of logging
+        // platform-dependent.
         std::string message;
         if (actionElement->hasAttribute("expr")) {
             message = actionElement->getAttribute("expr");
@@ -323,10 +331,15 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         return std::make_shared<SCE::LogAction>(message, id);
 
     } else if (elementName == "raise") {
+        // §scxml-4.2.1: 'event' is <raise>'s only attribute and is required.
         std::string event = actionElement->hasAttribute("event") ? actionElement->getAttribute("event") : "";
         return std::make_shared<SCE::RaiseAction>(event, id);
 
     } else if (elementName == "if") {
+        // §scxml-4.3.1: 'cond' is required on <if>; §scxml-4.4.1 gives <elseif>
+        // its own required 'cond' and §scxml-4.5.1 makes <else> an unguarded
+        // partition, which is why the branch walk below reads a condition for
+        // the first two and none for the third.
         std::string condition = actionElement->hasAttribute("cond") ? actionElement->getAttribute("cond") : "";
         auto ifAction = std::make_shared<SCE::IfAction>(condition, id);
 
@@ -388,6 +401,12 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
 
         auto sendAction = std::make_shared<SCE::SendAction>(event, id);
 
+        // §scxml-6.2.2: every <send> attribute is optional and each of event /
+        // target / type / delay / id has an "expr" twin the table declares
+        // mutually exclusive with it. Both members of each pair are stored
+        // rather than collapsed here, so SendAction::validateSpecific can
+        // report a document that specifies both instead of the parser
+        // silently picking one.
         // Parse idlocation attribute for W3C compliance
         if (actionElement->hasAttribute("idlocation")) {
             sendAction->setIdLocation(actionElement->getAttribute("idlocation"));
@@ -456,22 +475,38 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             }
         }
 
-        // Parse param child elements for W3C SCXML compliance
+        // §scxml-5.7.1: <param> requires 'name' and carries either 'expr' or
+        // 'location'; both forms are accepted here so a location-valued param
+        // reaches the event the same way it does on the AOT path, which stores
+        // it too (`sce-build/src/parser.rs` Param::location). §scxml-5.6.1
+        // gives <content> the same expr-or-child-content split, handled above.
         auto paramElements = ParsingCommon::findChildElements(actionElement, "param");
         for (const auto &paramElement : paramElements) {
-            if (paramElement->hasAttribute("name") && paramElement->hasAttribute("expr")) {
-                std::string paramName = paramElement->getAttribute("name");
+            if (!paramElement->hasAttribute("name")) {
+                SCE_LOG_WARN("ActionParser: send param element missing required name attribute");
+                continue;
+            }
+
+            std::string paramName = paramElement->getAttribute("name");
+            if (paramElement->hasAttribute("expr")) {
                 std::string paramExpr = paramElement->getAttribute("expr");
                 sendAction->addParamWithExpr(paramName, paramExpr);
                 SCE_LOG_DEBUG("ActionParser: Added send param '{}' with expr '{}'", paramName, paramExpr);
+            } else if (paramElement->hasAttribute("location")) {
+                std::string paramLocation = paramElement->getAttribute("location");
+                sendAction->addParamWithLocation(paramName, paramLocation);
+                SCE_LOG_DEBUG("ActionParser: Added send param '{}' with location '{}'", paramName, paramLocation);
             } else {
-                SCE_LOG_WARN("ActionParser: send param element missing name or expr attribute");
+                SCE_LOG_WARN("ActionParser: send param '{}' has neither expr nor location", paramName);
             }
         }
 
         return sendAction;
 
     } else if (elementName == "cancel") {
+        // §scxml-6.3.1: 'sendid' and 'sendidexpr' are both optional and
+        // mutually exclusive; each is stored as written so the evaluation step
+        // resolves the expression form at execution time.
         std::string sendid = actionElement->hasAttribute("sendid") ? actionElement->getAttribute("sendid") : "";
         auto cancelAction = std::make_shared<SCE::CancelAction>(sendid, id);
 
@@ -483,7 +518,9 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         return cancelAction;
 
     } else if (elementName == "foreach") {
-        // SCXML W3C standard: Parse foreach element
+        // §scxml-4.6.2: 'array' and 'item' are required, 'index' optional —
+        // 'item' and 'index' name locations the loop declares, so they are
+        // carried as written rather than evaluated here.
         std::string array = actionElement->hasAttribute("array") ? actionElement->getAttribute("array") : "";
         std::string item = actionElement->hasAttribute("item") ? actionElement->getAttribute("item") : "";
         std::string index = actionElement->hasAttribute("index") ? actionElement->getAttribute("index") : "";

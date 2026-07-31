@@ -840,11 +840,15 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             size_t paramCount = 0;
             for (const auto &param : params) {
                 paramCount++;
+                // §scxml-5.7.1: a <param> carries 'expr' or 'location'; the
+                // value of the named location is what the send carries, so
+                // SendParam::valueExpr() picks whichever the document wrote.
+                const std::string &paramValueExpr = param.valueExpr();
                 try {
                     // Evaluate and preserve both string (for JSON serialization) and ScriptValue (for typed pipeline)
-                    auto evalResult = scriptEngine_.evaluateExpression(sessionId_, param.expr).get();
+                    auto evalResult = scriptEngine_.evaluateExpression(sessionId_, paramValueExpr).get();
                     std::string paramValue =
-                        ScriptResultUtils::resultToString(evalResult, &scriptEngine_, sessionId_, param.expr);
+                        ScriptResultUtils::resultToString(evalResult, &scriptEngine_, sessionId_, paramValueExpr);
                     evaluatedParams[param.name].push_back(
                         paramValue);  // W3C SCXML: Support duplicate param names (Test 178)
                     // Preserve ScriptValue for engine-agnostic typed data pipeline
@@ -852,10 +856,10 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                         typedParams[param.name] = evalResult.getInternalValue();
                     }
                     SCE_LOG_DEBUG("ActionExecutorImpl: Param[{}] {}={} (expr: '{}')", paramCount, param.name,
-                                  paramValue, param.expr);
+                                  paramValue, paramValueExpr);
                 } catch (const std::exception &e) {
                     SCE_LOG_ERROR("ActionExecutorImpl: Failed to evaluate param '{}' expr '{}': {}", param.name,
-                                  param.expr, e.what());
+                                  paramValueExpr, e.what());
                     // W3C SCXML: Continue with other params despite failures
                 }
             }

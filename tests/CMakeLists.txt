@@ -273,6 +273,7 @@ add_executable(action_tests
     actions/ScriptActionTest.cpp
     actions/AssignActionTest.cpp
     actions/ForeachActionTest.cpp
+    actions/SendParamLocationTest.cpp
     runtime/ActionExecutorImplTest.cpp
     mocks/MockActionExecutor.cpp
     mocks/MockEventRaiser.cpp
