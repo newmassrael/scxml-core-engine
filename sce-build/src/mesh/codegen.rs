@@ -1098,7 +1098,9 @@ fn generate_cpp_mesh(inputs: MeshCodegenInputs<'_>) -> Result<GeneratedOutput, C
     // have a template implementation. Two distinct failure modes:
     //   - Unknown transport (not in registry at all)
     //   - Known but not implemented (capabilities known, no template yet)
-    // Both fail here at the Rust level — no deferred C++ #error.
+    // Both fail here at the Rust level — no deferred C++ #error. This is
+    // what makes the §mesh-6.4 add-a-transport procedure enforceable: a
+    // registry entry missing or half-finished is rejected before codegen.
     for t in targets {
         let name = t.state.transport_name();
         match transport::lookup(name) {
