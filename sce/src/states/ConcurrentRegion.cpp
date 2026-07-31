@@ -734,6 +734,8 @@ bool ConcurrentRegion::determineIfInFinalState() const {
 
     // §scxml-3.4: Check final state even if status is already FINAL
     // This handles cases where setCurrentState() is called multiple times (e.g., during hierarchyManager sync)
+    // §scxml-D-isInFinalState: the compound-state branch — a region is in a final
+    // state when one of its child states is a <final> and is currently active.
     if (!rootState_) {
         SCE_LOG_DEBUG("Region {} has no root state", id_);
         return false;

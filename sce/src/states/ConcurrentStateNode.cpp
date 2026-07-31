@@ -51,7 +51,7 @@ void ConcurrentStateNode::addChild(std::shared_ptr<IStateNode> child) {
         children_.push_back(child);
 
         // §scxml-3.4: the children of <parallel> that run concurrently are its
-        // child states, which Appendix D's getChildStates defines as the
+        // child states, which §scxml-D-getChildStates defines as the
         // <state>, <final>, and <parallel> children only. <history> and
         // <initial> are pseudo-states: §scxml-3.10 makes <history> a legal
         // child of <parallel>, but it is a record of a past configuration, not
@@ -606,7 +606,8 @@ bool ConcurrentStateNode::areAllRegionsInFinalState() const {
         return false;
     }
 
-    // SCXML W3C specification section 3.4: All child regions must be in final state
+    // §scxml-3.4 / §scxml-D-isInFinalState: the parallel branch — a <parallel> is in
+    // a final state only when isInFinalState holds for every one of its children.
     for (const auto &region : regions_) {
         assert(region && "SCXML violation: parallel state cannot have null regions");
 

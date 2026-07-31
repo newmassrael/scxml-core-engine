@@ -151,7 +151,9 @@ HistoryRestorationResult HistoryManager::restoreHistory(const std::string &histo
 
     const auto &historyInfo = it->second;
 
-    // Check if we have recorded history
+    // §scxml-D-getEffectiveTargetStates: a transition targeting a history state is
+    // dereferenced to the recorded configuration when one exists, and to the history
+    // state's default transition targets when it does not.
     auto historyIt = recordedHistory_.find(historyStateId);
     if (historyIt != recordedHistory_.end() && historyIt->second.isValid) {
         // Restore from recorded history

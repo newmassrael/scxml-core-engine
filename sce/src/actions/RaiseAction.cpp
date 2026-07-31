@@ -10,6 +10,9 @@ namespace SCE {
 RaiseAction::RaiseAction(const std::string &event, const std::string &id) : BaseAction(id), event_(event) {}
 
 bool RaiseAction::execute(IExecutionContext &context) {
+    // §scxml-4.2: <raise> raises an event in the current SCXML session. The event is
+    // not seen until the enclosing block of executable content has finished and every
+    // event already on the internal queue has been processed.
     if (!context.isValid()) {
         return false;
     }

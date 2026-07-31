@@ -69,6 +69,9 @@ struct HierarchicalAlgorithms {
     template <typename StateType, typename GetParentFn>
     [[nodiscard]] static std::optional<StateType> findLCA(const StateType &state1, const StateType &state2,
                                                           GetParentFn getParent) {
+        // §scxml-D-findLCCA: the Least Common Compound Ancestor is the state that
+        // is a proper ancestor of every state in the list and has no descendant
+        // with that property. Both engines reach the procedure through here.
         if (state1 == state2) {
             return state1;
         }
@@ -205,6 +208,9 @@ public:
 private:
     // §scxml-3.4: Add parallel region children to entry chain if StatePolicy supports parallel states
     static void addParallelRegions(std::vector<State> &chain, State leafState) {
+        // §scxml-D-addDescendantStatesToEnter: when the state being entered is a
+        // parallel state, every one of its regions is entered too, each descending
+        // to its own default initial child.
         if constexpr (IsParallelStatePolicy<StatePolicy>) {
             SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Checking if leafState {} is parallel",
                           static_cast<int>(leafState));
@@ -318,6 +324,8 @@ public:
 
         // §scxml-3.3: If leaf is compound state, add initial child hierarchy
         // This ensures S01 (compound) automatically enters S011 (initial child)
+        // §scxml-D-addDescendantStatesToEnter: a compound state drags in its default
+        // initial descendants until an atomic state is reached.
         State leafToCheck = leafState;
         depth = 0;
         while (depth < MAX_DEPTH && StatePolicy::isCompoundState(leafToCheck)) {

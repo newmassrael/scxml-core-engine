@@ -28,6 +28,8 @@ ScriptResult JSEngine::executeScriptInternal(const std::string &sessionId, const
 
     JSContext *ctx = session->jsContext;
 
+    // §scxml-B-2-10: the content of <script> may be any ECMAScript program, so it is
+    // evaluated as global code rather than restricted to a statement subset.
     // Execute script with QuickJS global evaluation
     SCE_LOG_DEBUG("JSEngine: Executing script with QuickJS...");
 
@@ -64,6 +66,8 @@ ScriptResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, 
 
     JSContext *ctx = session->jsContext;
 
+    // §scxml-B-2-5: any ECMAScript expression is a legal value expression, so the text
+    // is handed to the engine unrestricted rather than matched against a subset.
     // First try to evaluate as-is
     ::JSValue result = JS_Eval(ctx, expression.c_str(), expression.length(), "<expression>", JS_EVAL_TYPE_GLOBAL);
 
@@ -200,6 +204,8 @@ ScriptResult JSEngine::setVariableInternal(const std::string &sessionId, const s
     JSContext *ctx = session->jsContext;
     ::JSValue global = JS_GetGlobalObject(ctx);
 
+    // §scxml-B-2-1: each <data> element becomes an ECMAScript variable object whose
+    // name is the element's 'id', holding the JSON, DOM or string value it was given.
     // Log the value using variant visit pattern
     std::string valueStr = std::visit(
         [](const auto &v) -> std::string {
@@ -335,6 +341,9 @@ ScriptResult JSEngine::getVariableInternal(const std::string &sessionId, const s
 
 // §scxml-B-2: Helper function to parse event data as JSON, XML DOM, or space-normalized string
 static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
+    // §scxml-B-2-8-1: _event.data carries what the event supplied — key-value pairs
+    // become named properties, JSON becomes the corresponding object, valid XML becomes
+    // a DOM, and anything else becomes a space-normalized string.
     // Skip leading whitespace for XML detection
     size_t firstNonWhitespace = dataStr.find_first_not_of(" \t\r\n");
     bool isXML = firstNonWhitespace != std::string::npos && dataStr[firstNonWhitespace] == '<';
@@ -392,6 +401,9 @@ ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, con
     ::JSValue eventObj = JS_NewObject(ctx);
 
     if (event) {
+        // §scxml-B-2-8: _event is an object with one property per field of §scxml-5.10.1 —
+        // name, type, sendid, origin, origintype and invokeid are Strings while data may
+        // hold any type; a field this specification leaves unset is ECMAScript undefined.
         // Set event properties
         JS_SetPropertyStr(ctx, eventObj, "name", JS_NewString(ctx, event->getName().c_str()));
         JS_SetPropertyStr(ctx, eventObj, "type", JS_NewString(ctx, event->getType().c_str()));
@@ -525,6 +537,9 @@ ScriptResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId
 
     // §scxml-5.10: System variables must be read-only and raise error.execution on modification attempts
     // Use JavaScript code to define read-only properties with error handlers (tests 322, 326, 346)
+    // §scxml-B-2-8: every system variable is a read-only ECMAScript variable — _sessionid
+    // and _name are Strings, and _ioprocessors is an object with one named property per
+    // supported Event I/O Processor.
 
     // The three values below all originate outside the engine: the session id
     // is embedder- or <invoke>-supplied, the session name is the <scxml>

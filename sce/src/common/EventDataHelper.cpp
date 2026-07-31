@@ -88,6 +88,9 @@ std::string EventDataHelper::buildEventDataJson(const std::map<std::string, std:
 }
 
 std::string EventDataHelper::scriptValueToJsonString(const ScriptValue &value) {
+    // §scxml-B-2-9: when data has to leave the ECMAScript data model — as it does for
+    // the BasicHTTP Event I/O Processor — it is serialized to JSON, which reconstructs
+    // the value in full rather than falling back to a lossy platform format.
     return JsonUtils::toCompactString(scriptValueToJson(value));
 }
 
