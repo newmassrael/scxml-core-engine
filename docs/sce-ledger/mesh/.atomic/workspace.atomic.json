@@ -2686,6 +2686,11 @@
         {
           "file": "sce/include/static/StaticExecutionEngine.h",
           "kind": "references"
+        },
+        {
+          "file": "sce/include/mesh/ChildSessionAdapter.h",
+          "symbol": "raiseExternal",
+          "kind": "implements"
         }
       ]
     },
@@ -2693,13 +2698,32 @@
       "title": "`<finalize>` semantics preserved",
       "parent_doc": "mesh",
       "parent_section": "mesh-9.6",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/mesh/MeshDispatch.h",
+          "symbol": "dispatchEnvelope",
+          "kind": "implements"
+        }
+      ]
     },
     "mesh-9.6.5": {
       "title": "`autoforward=\"true\"` semantics",
       "parent_doc": "mesh",
       "parent_section": "mesh-9.6",
-      "decision_status": "active"
+      "decision_status": "active",
+      "bindings": [
+        {
+          "file": "sce/include/static/StaticExecutionEngine.h",
+          "symbol": "raiseExternal",
+          "kind": "implements"
+        },
+        {
+          "file": "sce/include/mesh/ChildSessionAdapter.h",
+          "symbol": "raiseExternal",
+          "kind": "references"
+        }
+      ]
     },
     "mesh-9.6.6": {
       "title": "Inline `<content>` and child SCXML precompilation",
