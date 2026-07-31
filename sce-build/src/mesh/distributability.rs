@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Mesh §16.3/§16.4 — distributability analyzer (R1-R4) and
+// SCE Mesh §mesh-16.3/§mesh-16.4 — distributability analyzer (R1-R4) and
 // cross-region transition auto-merge.
 //
 // Entry point: [`analyze_distributability`]. Consumes a parsed
@@ -9,11 +9,11 @@
 // [`ResolvedPartitionPlan`] whose `resolved` field is the partition
 // map the downstream pipeline (codegen, wire-21 routing, barrier
 // timer install) consumes. In `permissive` mode the resolver merges
-// regions that violate R1 or R2 into a single partition (§16.4
+// regions that violate R1 or R2 into a single partition (§mesh-16.4
 // fixed-point); in `strict` mode any R1/R2 violation is returned as
 // a [`DeployError`] and the build halts before codegen.
 //
-// Algorithm shape (mirrors SCE_MESH.md §16.3 pseudocode):
+// Algorithm shape (mirrors SCE_MESH.md §mesh-16.3 pseudocode):
 //
 //   for each <parallel> P in every machine M:
 //     A = ancestor-scope(P)   // root + ancestor-state datamodels
@@ -35,10 +35,10 @@
 // - R4 ("script opacity") lands as a conservative text-identifier
 //   match: a `<script>` body is treated as writing every
 //   ancestor-scope data id that appears as an identifier token in
-//   the script source. This matches SCE_MESH.md §16.3 R4 prose
+//   the script source. This matches SCE_MESH.md §mesh-16.3 R4 prose
 //   ("writes every ancestor-scope data name observed in the
 //   script's lexical context") without requiring a per-language
-//   script parser. The `sce:script-safe="true"` opt-out from §16.3
+//   script parser. The `sce:script-safe="true"` opt-out from §mesh-16.3
 //   has no parser surface today — until an author hits a false
 //   positive and opens a consumer, the conservative default is the
 //   safe direction (more merges, not fewer).
@@ -50,7 +50,7 @@
 //   an informational notice, never a build error.
 //
 // - Merge selects the lowest sort-ordered partition name as the
-//   canonical survivor (§16.4). BTreeMap iteration preserves
+//   canonical survivor (§mesh-16.4). BTreeMap iteration preserves
 //   lexicographic order so the fixed-point reaches a deterministic
 //   result regardless of constraint discovery order.
 
@@ -68,17 +68,17 @@ use std::collections::{BTreeMap, BTreeSet};
 /// in `sce-build/src/lib.rs::compile_mesh_transport`, wire-21
 /// routing, barrier timer install) consumes. It is either the
 /// author's original [`PartitionMap`] (no violations found) or the
-/// §16.4 minimum-merge result (permissive mode merged one or more
+/// §mesh-16.4 minimum-merge result (permissive mode merged one or more
 /// regions).
 #[derive(Debug, Clone)]
 pub struct ResolvedPartitionPlan {
     /// The merged partition map. Equal to the author's original when
     /// the analyzer found no R1/R2 violations.
     pub resolved: PartitionMap,
-    /// §16.4 merge notices — one per merge that collapsed two or
+    /// §mesh-16.4 merge notices — one per merge that collapsed two or
     /// more partitions. Empty in strict mode (strict never merges).
     pub merge_notices: Vec<MergeNotice>,
-    /// §16.3 R3 snapshot-read notices — informational guidance for
+    /// §mesh-16.3 R3 snapshot-read notices — informational guidance for
     /// the author ("entry-point sync required"). Never blocks the
     /// build and is emitted identically in strict and permissive
     /// modes.
@@ -105,7 +105,7 @@ pub struct MergeNotice {
     pub absorbed: Vec<String>,
     /// Canonical partition name that the absorbed partitions merged
     /// into. Lowest sort-ordered name from the pre-merge set, per
-    /// §16.4.
+    /// §mesh-16.4.
     pub canonical: String,
 }
 
@@ -122,7 +122,7 @@ pub enum MergeRule {
 
 /// Informational R3 notice: a region reads an ancestor-scope data
 /// location that a sibling region writes. The read is snapshot-
-/// captured at parallel entry per §16.3 R3. No build error — the
+/// captured at parallel entry per §mesh-16.3 R3. No build error — the
 /// notice only advises the author that entry-point sync is required.
 #[derive(Debug, Clone)]
 pub struct SnapshotNotice {
@@ -134,7 +134,7 @@ pub struct SnapshotNotice {
 }
 
 /// Internal representation of a "these regions must share a
-/// partition" obligation emitted by R1/R2. Drives the §16.4 merge
+/// partition" obligation emitted by R1/R2. Drives the §mesh-16.4 merge
 /// fixed-point and the strict-mode error stream.
 #[derive(Debug, Clone)]
 struct Constraint {
@@ -147,7 +147,7 @@ struct Constraint {
     regions: Vec<String>,
 }
 
-/// Run the §16.3/§16.4 analyzer against a parsed deploy config and
+/// Run the §mesh-16.3/§mesh-16.4 analyzer against a parsed deploy config and
 /// the machines it references.
 ///
 /// Returns:
@@ -160,7 +160,7 @@ struct Constraint {
 ///
 /// No-ops to `Ok(author_plan)` when `cfg.partitions` is absent
 /// (documents that opt out of partitioning never run through the
-/// analyzer — §14 partitions is the opt-in surface).
+/// analyzer — §mesh-14 partitions is the opt-in surface).
 pub fn analyze_distributability(
     cfg: &DeployConfig,
     models: &BTreeMap<String, SCXMLModel>,
@@ -210,7 +210,7 @@ pub fn analyze_distributability(
     })
 }
 
-/// §16.3 per-parallel analysis: produce R1/R2 constraints and R3
+/// §mesh-16.3 per-parallel analysis: produce R1/R2 constraints and R3
 /// notices for a single `<parallel>` inside one machine.
 fn analyze_parallel(
     machine_name: &str,
@@ -385,7 +385,7 @@ fn collect_state_writes_reads(
         }
     }
     // Region-local <datamodel> expressions — only reads (R1 note in
-    // §16.3: a region-local <data expr="ancestor_name + 1"/> is
+    // §mesh-16.3: a region-local <data expr="ancestor_name + 1"/> is
     // a **read** of `ancestor_name`, subject to R3 snapshot).
     for var in &state.datamodel {
         text_read_match(&var.expr, ancestor_data, reads);
@@ -430,7 +430,7 @@ fn collect_action_writes_reads(
             // R4: conservative — every ancestor-scope identifier
             // that appears as a token in the script body is treated
             // as a write. Matches "observed in the script's lexical
-            // context" prose from §16.3 R4.
+            // context" prose from §mesh-16.3 R4.
             script_identifier_match(&action.content, ancestor_data, writes);
             script_identifier_match(&action.content_transformed, ancestor_data, writes);
             script_identifier_match(&action.content_kt, ancestor_data, writes);
@@ -677,7 +677,7 @@ fn constraint_to_error(c: Constraint) -> DeployError {
     }
 }
 
-/// §16.4 auto-merge fixed-point. Repeatedly collapses partitions
+/// §mesh-16.4 auto-merge fixed-point. Repeatedly collapses partitions
 /// that share a constraint-group until no more changes are needed,
 /// selecting the lowest sort-ordered partition name as canonical
 /// survivor for each merge event.
@@ -690,7 +690,7 @@ fn apply_constraints(
     }
 
     // Build region-id → partition-name index. A region id can only
-    // appear in a single partition per §14 rule 8 (enforced at
+    // appear in a single partition per §mesh-14 rule 8 (enforced at
     // deploy-parse time), so the map is well-defined.
     let mut region_to_partition: BTreeMap<(String, String), String> = BTreeMap::new();
     for (part_name, decl) in author_plan.iter() {
@@ -774,7 +774,7 @@ fn apply_constraints(
     (PartitionMap::from_map(working), notices)
 }
 
-/// Absorb one partition's contents into another. Used by the §16.4
+/// Absorb one partition's contents into another. Used by the §mesh-16.4
 /// merge loop when a violating constraint forces two partitions to
 /// collapse.
 fn merge_into(dest: &mut PartitionDecl, src: PartitionDecl) {

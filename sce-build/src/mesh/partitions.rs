@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// SCE Mesh §14 partition resolution — cross-reference validators that
+// SCE Mesh §mesh-14 partition resolution — cross-reference validators that
 // require SCXML AST in addition to deploy.yaml.
 //
 // The `partitions:` schema checks that run at `parse_deploy_str` time
@@ -45,13 +45,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 /// The reserved `<machine>_default:` partition name suffix
-/// (SCE_MESH.md §14 rule 2). A machine `brake` with partial coverage
+/// (SCE_MESH.md §mesh-14 rule 2). A machine `brake` with partial coverage
 /// is directed to a partition literally named `brake_default`; the
 /// constant is shared with rule 1 so the two diagnostics agree on
 /// which partition they are looking for.
 const DEFAULT_PARTITION_SUFFIX: &str = "_default";
 
-/// Canonical path for a parallel region unit (SCE_MESH.md §14 rule 8
+/// Canonical path for a parallel region unit (SCE_MESH.md §mesh-14 rule 8
 /// key shape). Emitted in rule-1 / rule-2 diagnostics so authors can
 /// locate the unit in their SCXML directly.
 fn unit_path_region(machine: &str, region: &str) -> String {
@@ -73,7 +73,7 @@ fn invoke_id_of(invoke: &Invoke) -> &str {
     }
 }
 
-/// Enumerate every orthogonal unit that SCE Mesh §14 rule 1 requires
+/// Enumerate every orthogonal unit that SCE Mesh §mesh-14 rule 1 requires
 /// the partition graph to cover for a given machine.
 ///
 /// Returns the canonical unit paths as they appear in
@@ -117,7 +117,7 @@ fn collect_covered_units(cfg: &DeployConfig) -> BTreeSet<String> {
     covered
 }
 
-/// SCE_MESH.md §14 rule 12 scaffolding carve-out (L2844): does the
+/// SCE_MESH.md §mesh-14 rule 12 scaffolding carve-out (L2844): does the
 /// machine appear under any partition's `machines:` list?
 ///
 /// The predicate reads only existence — partition names, unit
@@ -129,7 +129,7 @@ fn collect_covered_units(cfg: &DeployConfig) -> BTreeSet<String> {
 /// copy of the inline path, so true/false produce the same code for a
 /// single-process machine. Widening the signal (reading partition
 /// values) would re-introduce the "built but unconsumed" anti-pattern
-/// the banner explicitly forbids until the §16.5 runtime and rule 12
+/// the banner explicitly forbids until the §mesh-16.5 runtime and rule 12
 /// validator land atomically.
 pub fn is_machine_partition_listed(cfg: &DeployConfig, machine: &str) -> bool {
     let Some(partitions) = &cfg.partitions else {
@@ -140,7 +140,7 @@ pub fn is_machine_partition_listed(cfg: &DeployConfig, machine: &str) -> bool {
         .any(|(_, decl)| decl.machines.iter().any(|m| m == machine))
 }
 
-/// SCE_MESH.md §9.6.6 rule 3 + §14 partition resolution — return an
+/// SCE_MESH.md §mesh-9.6.6 rule 3 + §mesh-14 partition resolution — return an
 /// opaque "execution location" token for `machine`. Two machines share
 /// an OS process when, and only when, this function returns the same
 /// token for both.
@@ -151,11 +151,11 @@ pub fn is_machine_partition_listed(cfg: &DeployConfig, machine: &str) -> bool {
 ///    `machine` appears under some partition's `machines:` list, the
 ///    partition name is the token — whether the machine is an author
 ///    peer or a synthesised child. This is the `deploy.yaml` override
-///    surface spec §9.6.6 rule 3 names for "reassigning the synth to a
+///    surface spec §mesh-9.6.6 rule 3 names for "reassigning the synth to a
 ///    different partition".
 /// 2. **Synthesised machine inheritance.** When a `machine` carries the
 ///    reserved `__sce_synth_invoke__` infix and was not caught by rule 1,
-///    spec §9.6.6 rule 3 places it in the *parent's* partition by
+///    spec §mesh-9.6.6 rule 3 places it in the *parent's* partition by
 ///    default. Strip the infix to recover the parent id and recurse.
 ///    `rsplit_once` handles nested inline invoke (`parent__sce_synth_invoke__X__sce_synth_invoke__Y`)
 ///    by unwinding one layer per call.
@@ -200,7 +200,7 @@ pub fn partition_listed_machines(cfg: &DeployConfig) -> BTreeSet<String> {
     listed
 }
 
-/// SCE_MESH.md §14 rule 12 cross-reference validator. Every
+/// SCE_MESH.md §mesh-14 rule 12 cross-reference validator. Every
 /// distributed `<parallel>` (regions span two or more partitions) must
 /// have exactly one partition claiming its root via
 /// `partitions.<name>.hosts_parallel_roots:`, and every such claim
@@ -233,9 +233,9 @@ pub fn validate_parallel_root_designation(
     let mut claims_by_parallel: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
 
     for (partition_name, decl) in partitions.iter() {
-        // §14 rule 12 L2842 — `barrier_timeout_ms:` without any
+        // §mesh-14 rule 12 L2842 — `barrier_timeout_ms:` without any
         // `hosts_parallel_roots:` entry is a silent-broken knob (no
-        // §16.5 tracker exists on the partition to gate). Treat the
+        // §mesh-16.5 tracker exists on the partition to gate). Treat the
         // `None` and `Some(vec![])` shapes identically — neither
         // declares a root.
         let declares_root = decl
@@ -257,7 +257,7 @@ pub fn validate_parallel_root_designation(
         };
 
         for root in roots {
-            // §14 rule 12 L2840 — rule-9 shape: the claimed machine
+            // §mesh-14 rule 12 L2840 — rule-9 shape: the claimed machine
             // must be one the partition already lists.
             if !decl.machines.iter().any(|m| m == &root.machine) {
                 return Err(DeployError::PartitionParallelRootNotInMachines {
@@ -267,7 +267,7 @@ pub fn validate_parallel_root_designation(
                 });
             }
 
-            // §14 rule 12 L2841 — non-host: the partition must
+            // §mesh-14 rule 12 L2841 — non-host: the partition must
             // co-host at least one region of the claimed parallel.
             // The claim is "a region of <parallel id=root.parallel>
             // in machine=root.machine sits in this partition's
@@ -353,7 +353,7 @@ pub fn validate_parallel_root_designation(
                 });
             }
 
-            // §16.5 wire-21 transport implementation gap. The
+            // §mesh-16.5 wire-21 transport implementation gap. The
             // `mesh_transport.h.jinja2` channel emitter materializes
             // `PartitionWire21Channel = SCE::Mesh::ShmChannel<>`
             // unconditionally. An explicit `transport_binding:
@@ -385,7 +385,7 @@ pub fn validate_parallel_root_designation(
 }
 
 /// Pure cross-reference validator: given a parsed
-/// [`DeployConfig`] and a model-per-machine map, apply SCE_MESH.md §14
+/// [`DeployConfig`] and a model-per-machine map, apply SCE_MESH.md §mesh-14
 /// rules 1, 2, 11, and 12.
 ///
 /// The caller is responsible for having parsed every machine named in
@@ -441,7 +441,7 @@ pub fn validate_partitions_against_models(
         });
     }
 
-    // §14 rule 12 — parallel root designation. Runs after rules
+    // §mesh-14 rule 12 — parallel root designation. Runs after rules
     // 1/2/11 so a coverage failure surfaces the repair for the cheaper
     // cause before the author is asked about distributed-parallel
     // designation.
@@ -457,7 +457,7 @@ pub fn validate_partitions_against_models(
 ///
 /// Called from the mesh compile pipeline after `parse_deploy` but
 /// before any topology work so a coverage violation aborts the build
-/// at the same pipeline stage (§14 rules 1/2/11 are mesh-deploy-stage
+/// at the same pipeline stage (§mesh-14 rules 1/2/11 are mesh-deploy-stage
 /// diagnostics even though they inspect SCXML — the failure is still
 /// that deploy.yaml's partition graph disagrees with the machines it
 /// names).
@@ -484,7 +484,7 @@ pub fn validate_partitions_against_scxml(
 
 /// Shared helper: parse every SCXML source referenced by a partition-
 /// listed machine in `cfg.topology`. Used by
-/// [`validate_partitions_against_scxml`] and the §16.3 distributability
+/// [`validate_partitions_against_scxml`] and the §mesh-16.3 distributability
 /// analyzer — both need the same model set to reason about partition
 /// coverage and region-level write/transition graphs.
 ///
@@ -568,7 +568,7 @@ mod tests {
 
     /// Nested parallel: outer region `outer_r` contains another
     /// `<parallel>` whose child `inner_r` must also be covered
-    /// (SCE_MESH.md §14 rule 11).
+    /// (SCE_MESH.md §mesh-14 rule 11).
     const NESTED_PARALLEL: &str = r#"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" name="brake" initial="outer" version="1.0">
   <parallel id="outer">
@@ -811,7 +811,7 @@ topology:
             .expect("absent partitions block must short-circuit to Ok");
     }
 
-    // ── §14 rule 12 — parallel root designation ─────────────────
+    // ── §mesh-14 rule 12 — parallel root designation ─────────────────
 
     #[test]
     fn rule12_distributed_parallel_without_root_fires_undesignated() {
@@ -1108,7 +1108,7 @@ partitions:
     #[test]
     fn rule12_wire21_custom_tcp_on_root_fires_unimplemented() {
         // Distributed parallel where the Root partition declares
-        // `transport_binding: custom_tcp`. The §16.5 wire-21 emitter
+        // `transport_binding: custom_tcp`. The §mesh-16.5 wire-21 emitter
         // is shm-only — accepting custom_tcp here would compile to
         // a shm channel the runtime never opens. Validator must
         // reject at deploy time so the gap surfaces here instead of
@@ -1317,7 +1317,7 @@ partitions:
         assert_eq!(partition_for_machine(&cfg, "motor"), "right");
     }
 
-    /// §9.6.6 rule 3 default: an un-declared synth machine inherits
+    /// §mesh-9.6.6 rule 3 default: an un-declared synth machine inherits
     /// its parent's location via string decomposition. Parent is
     /// monolithic → synth is the same monolith → same location.
     #[test]
@@ -1334,7 +1334,7 @@ topology:
         assert_eq!(parent, synth, "synth must inherit parent's location");
     }
 
-    /// §9.6.6 rule 3 default with partitions declared: the parent is
+    /// §mesh-9.6.6 rule 3 default with partitions declared: the parent is
     /// listed under partition P, so an undeclared synth inherits P.
     #[test]
     fn partition_for_machine_synth_inherits_parent_partition() {

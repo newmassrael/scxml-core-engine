@@ -27,8 +27,8 @@ pub mod vsomeip_config;
 use std::path::Path;
 
 /// Resolved view of a parsed `deploy.yaml` after the SCE_MESH.md
-/// §16.3 distributability analyzer has either accepted the author's
-/// `partitions:` plan unchanged or produced a §16.4 auto-merge.
+/// §mesh-16.3 distributability analyzer has either accepted the author's
+/// `partitions:` plan unchanged or produced a §mesh-16.4 auto-merge.
 ///
 /// Downstream consumers (`inject_partition_context_for`,
 /// `compile_mesh_transport`) read `resolved_partitions()` rather than
@@ -65,14 +65,14 @@ impl<'a> ResolvedDeployConfig<'a> {
         }
     }
 
-    /// §16.4 merge notices recorded while collapsing partitions.
+    /// §mesh-16.4 merge notices recorded while collapsing partitions.
     /// Consumers that want to surface the notice stream (CLI
     /// `--verbose` mode, IDE tooling) iterate this slice.
     pub fn merge_notices(&self) -> &[distributability::MergeNotice] {
         &self.plan.merge_notices
     }
 
-    /// §16.3 R3 snapshot-read notices. Advisory only — the analyzer
+    /// §mesh-16.3 R3 snapshot-read notices. Advisory only — the analyzer
     /// never rejects a build on R3 grounds; this surface is for
     /// author-facing warning channels.
     pub fn snapshot_notices(&self) -> &[distributability::SnapshotNotice] {
@@ -80,7 +80,7 @@ impl<'a> ResolvedDeployConfig<'a> {
     }
 }
 
-/// Run SCE_MESH.md §14 coverage rules (rules 1/2/11) *and* §16.3
+/// Run SCE_MESH.md §mesh-14 coverage rules (rules 1/2/11) *and* §mesh-16.3
 /// distributability (R1-R4) against a parsed deploy config, producing
 /// a [`ResolvedDeployConfig`]. Strict-mode R1/R2 violations surface
 /// here as the first [`error::DeployError`] the analyzer emits;
@@ -99,7 +99,7 @@ pub fn resolve_deploy_config<'a>(
     // already incoherent).
     partitions::validate_partitions_against_scxml(deploy_dir, cfg)?;
 
-    // §16.3 analyzer needs all partition-listed machines' models.
+    // §mesh-16.3 analyzer needs all partition-listed machines' models.
     // For non-partitioned deploys this is an empty set and the
     // analyzer short-circuits to `Ok(unchanged)` — zero cost.
     let listed = partitions::partition_listed_machines(cfg);

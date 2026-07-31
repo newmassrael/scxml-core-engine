@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// External infrastructure config resolution (SCE_MESH.md §13, §14).
+// External infrastructure config resolution (SCE_MESH.md §mesh-13, §mesh-14).
 //
 // Runs between deploy.yaml parsing and topology analysis. Two inputs
 // converge into one uniform per-event ID table:
@@ -101,7 +101,7 @@ pub fn resolve_external_bindings(
     // by many bindings and there's no value in parsing it more than once.
     let mut someip_cache: HashMap<String, (PathBuf, VsomeipConfig)> = HashMap::new();
 
-    // SCE_MESH.md §9.6 Session 4b: a someip binding whose target name is a
+    // SCE_MESH.md §mesh-9.6 Session 4b: a someip binding whose target name is a
     // declared machine in the topology is a scxml-invoke peer binding, not
     // an OEM `<send>` target. It needs no vsomeip.json name resolution —
     // the service IDs are produced by the RFC F.X-1 hybrid (counter +
@@ -151,10 +151,10 @@ pub fn resolve_external_bindings(
                     continue;
                 }
 
-                // SCE_MESH.md §9.6 Session 4b: a someip binding with NO
+                // SCE_MESH.md §mesh-9.6 Session 4b: a someip binding with NO
                 // OEM-resolvable fields (no `service`, no flat event
                 // sugar, no `events:` block) whose target names a
-                // declared machine is a §9.6 scxml-invoke peer binding.
+                // declared machine is a §mesh-9.6 scxml-invoke peer binding.
                 // Skip external resolution — service IDs are derived
                 // from machine names by SomeipScxmlInvokeEndpoint, not
                 // looked up against vsomeip.json. An ordinary `<send>`
@@ -214,7 +214,7 @@ pub fn resolve_external_bindings(
                 }
             }
 
-            // Server-side SOME/IP resolution (SCE_MESH.md §13 Session E).
+            // Server-side SOME/IP resolution (SCE_MESH.md §mesh-13 Session E).
             // Same resolution pipeline as client bindings — service name +
             // per-event method names resolve against vsomeip.json.
             if let Some(ref server_cfg) = machine.server {
@@ -334,7 +334,7 @@ fn reject_someip_fields_on_foreign_transport(
 
 /// Reject the reserved SOME/IP numeric-ID key names on a binding. The
 /// SOME/IP identity goes through name-based references against
-/// vsomeip.json (SCE_MESH.md §14); numeric keys in deploy.yaml have no
+/// vsomeip.json (SCE_MESH.md §mesh-14); numeric keys in deploy.yaml have no
 /// defined meaning. Lists every offending key in one error so the
 /// operator fixes them all in one pass.
 fn reject_reserved_id_keys(
@@ -678,7 +678,7 @@ fn resolve_relative(base: &Path, rel: &Path) -> PathBuf {
     }
 }
 
-// ── Server-side resolution (SCE_MESH.md §13 Session E) ──────
+// ── Server-side resolution (SCE_MESH.md §mesh-13 Session E) ──────
 
 /// Resolve a deploy.yaml `server:` section for a machine.
 ///
@@ -844,7 +844,7 @@ topology:
 
     #[test]
     fn per_event_block_resolves_into_by_event_map() {
-        // Per-event SCE_MESH.md §14 schema: distinct method per event.
+        // Per-event SCE_MESH.md §mesh-14 schema: distinct method per event.
         let dir = std::env::temp_dir().join("sce_ext_cfg_per_event");
         std::fs::create_dir_all(&dir).unwrap();
         let cfg_path = write_tmp(&dir, "vsomeip.json", SAMPLE_VSOMEIP);

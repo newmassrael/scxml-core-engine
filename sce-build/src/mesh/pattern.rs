@@ -57,7 +57,7 @@ pub enum CommunicationPattern {
     Subscribe,
     /// `event.unsubscribe` — Cancel interest in a topic/event group (Pub/Sub teardown).
     /// Lifecycle-emitted by codegen for auto-symmetry (`<onexit>` unsubscribe
-    /// paired with `<onentry>` subscribe — SCE_MESH.md §13). Authors may also
+    /// paired with `<onentry>` subscribe — SCE_MESH.md §mesh-13). Authors may also
     /// write explicit `<send event="event.unsubscribe.*">` when auto-symmetry
     /// does not apply (conditional subscribe, manual lifecycle management).
     Unsubscribe,
@@ -68,7 +68,7 @@ pub enum CommunicationPattern {
     /// `field.set` — Write a named data field (property access).
     FieldSet,
     /// `field.notify` — Reply to a prior `field.get`/`field.set` (paired response).
-    /// SCE_MESH.md §8.3: server-role machines emit `<raise event="field.notify.X">`
+    /// SCE_MESH.md §mesh-8.3: server-role machines emit `<raise event="field.notify.X">`
     /// after handling a field access request. The build-time
     /// `inject_server_response_sends` appends a synthetic `<send>` alongside
     /// the raise so the transport layer routes the response through
@@ -202,7 +202,7 @@ impl CommunicationPattern {
     }
 
     /// Derive the paired reply event name for an RPC request by convention
-    /// (SCE_MESH.md §13 path B). Returns `None` for patterns that have no
+    /// (SCE_MESH.md §mesh-13 path B). Returns `None` for patterns that have no
     /// reply semantics or for events that do not match this variant's prefix.
     ///
     /// Only `ServiceRequest` has a paired reply under path B — other
@@ -230,7 +230,7 @@ impl CommunicationPattern {
 /// `event.subscribe`   → `Some("event.unsubscribe")`
 /// anything else        → `None`
 ///
-/// SCE_MESH.md §13 auto-symmetry: the topology analyzer uses this to
+/// SCE_MESH.md §mesh-13 auto-symmetry: the topology analyzer uses this to
 /// synthesize `<onexit>` unsubscribe sends from `<onentry>` subscribe sends.
 pub fn subscribe_to_unsubscribe(event: &str) -> Option<String> {
     let suffix = CommunicationPattern::Subscribe.match_suffix(event)?;
@@ -277,7 +277,7 @@ impl fmt::Display for CommunicationPattern {
 
 /// Detect communication pattern from event name prefix convention.
 ///
-/// SCE_MESH.md §13 path B (SCXML purity): pattern annotations are no longer
+/// SCE_MESH.md §mesh-13 path B (SCXML purity): pattern annotations are no longer
 /// carried as `sce:pattern` attributes. The event name itself is the pattern
 /// declaration — the reserved prefixes returned by `prefix_str` form the
 /// stable vocabulary that SCXML authors commit to.
@@ -301,7 +301,7 @@ pub fn detect_pattern(event: &str) -> Option<CommunicationPattern> {
 /// A single pattern/transport capability mismatch detected at build time.
 ///
 /// Produced by `validate_pattern_capability()` in topology.rs. When non-empty,
-/// the mesh pipeline emits a build error (not a warning) per SCE_MESH.md §8.2.
+/// the mesh pipeline emits a build error (not a warning) per SCE_MESH.md §mesh-8.2.
 #[derive(Debug, Clone)]
 pub struct PatternViolation {
     /// The state containing the `<send>`.

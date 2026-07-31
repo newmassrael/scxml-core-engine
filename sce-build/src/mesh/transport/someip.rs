@@ -1,20 +1,20 @@
-//! SCE_MESH.md §9.6.2 Session 4b — SOME/IP cross-device scxml-invoke Rust mirror.
+//! SCE_MESH.md §mesh-9.6.2 Session 4b — SOME/IP cross-device scxml-invoke Rust mirror.
 //!
 //! ## Why a dedicated vsomeip application (Split design rationale)
 //!
-//! §9.6 cross-device `<invoke type="scxml" src="#peer">` traffic runs on a
+//! §mesh-9.6 cross-device `<invoke type="scxml" src="#peer">` traffic runs on a
 //! vsomeip application that is SEPARATE from the per-`<send>`-target
 //! applications generated for ordinary SOME/IP method/event/field bindings.
 //! The split is intentional and textbook for the SCE architecture, not
 //! pragmatic incrementalism:
 //!
-//!   1. **§13 OEM boundary protection.** `vsomeip.json applications[*]` is
+//!   1. **§mesh-13 OEM boundary protection.** `vsomeip.json applications[*]` is
 //!      OEM-owned territory. SCE does not register SCE-reserved services
 //!      (`0x8100..0x81FF`, see [`SCXML_INVOKE_SERVICE_BASE`]) inside an
 //!      OEM-declared application. The consolidated `<machine>[_<partition>]_sce_app_`
 //!      keeps SCE registrations on an SCE-named application that the OEM
 //!      explicitly declares for that purpose.
-//!   2. **Failure isolation.** A §9.6 peer disconnect or handler exception
+//!   2. **Failure isolation.** A §mesh-9.6 peer disconnect or handler exception
 //!      stays inside the dedicated application's callback thread and cannot
 //!      block the `<send>` SOME/IP path that may carry safety-relevant
 //!      traffic.
@@ -30,10 +30,10 @@
 //! ## What this Rust module owns (RFC F.X-1, RFC F.X-3)
 //!
 //! Two parallel hybrid (counter + optional author-pin) allocators occupy
-//! disjoint sub-ranges of the SCE-reserved §9.6 256-slot space:
+//! disjoint sub-ranges of the SCE-reserved §mesh-9.6 256-slot space:
 //!
 //! - [`assign_invoke_service_ids`] (RFC F.X-1) — `[0x8100, 0x817F]`.
-//!   Source of truth for §9.6 SOMEIP scxml-invoke service IDs. Invoked
+//!   Source of truth for §mesh-9.6 SOMEIP scxml-invoke service IDs. Invoked
 //!   once per build by [`crate::mesh::deploy::assign_someip_invoke_service_ids`]
 //!   over the full deploy participant set; produces a deterministic
 //!   `BTreeMap<machine_name, service_id>` that codegen consumes via
@@ -44,7 +44,7 @@
 //!   shares this assignment to reject overflow / pin-out-of-range /
 //!   pin-vs-pin-collision configurations at parse time.
 //! - [`assign_liveness_service_ids`] (RFC F.X-3) — `[0x8180, 0x81FF]`.
-//!   Source of truth for §16.4 region-partition liveness service IDs.
+//!   Source of truth for §mesh-16.4 region-partition liveness service IDs.
 //!   Same hybrid pattern, disjoint range, partition-keyed participants
 //!   (`<machine>__P__<partition>`). The deploy-time validator
 //!   ([`crate::mesh::deploy::validate_someip_liveness_service_ids`])
@@ -57,23 +57,23 @@
 //! sub-range's 128-slot ceiling, and the disjoint partition gives
 //! cross-subsystem stability without requiring author pins.
 
-// ── SCE-reserved §9.6 namespace constants ───────────────────────────────────
+// ── SCE-reserved §mesh-9.6 namespace constants ───────────────────────────────────
 
-/// Base of the SCE-reserved §9.6 scxml-invoke service ID range. SCE-managed
+/// Base of the SCE-reserved §mesh-9.6 scxml-invoke service ID range. SCE-managed
 /// services occupy `[SCXML_INVOKE_SERVICE_BASE, SCXML_INVOKE_SERVICE_BASE +
 /// 0x100)` (`0x8100..0x81FF`). Mirror of the C++ `SCXML_INVOKE_SERVICE_BASE`
 /// constexpr in `SomeipScxmlInvokeEndpoint.h`.
 pub const SCXML_INVOKE_SERVICE_BASE: u16 = 0x8100;
 
-/// Inclusive ceiling of the §9.6 scxml-invoke service ID sub-range under the
+/// Inclusive ceiling of the §mesh-9.6 scxml-invoke service ID sub-range under the
 /// hybrid (counter + optional pin) allocator (RFC F.X-1). The sub-range is
 /// `[0x8100, 0x817F]` — 128 slots. The upper half `[0x8180, 0x81FF]` of the
-/// SCE-reserved 256-slot space is reserved for the §16.4 region-liveness
+/// SCE-reserved 256-slot space is reserved for the §mesh-16.4 region-liveness
 /// landing (F.X-3); subsystem range partitioning gives F.X-1 invoke IDs
 /// stability across F.X-3's later landing without requiring author pins.
 pub const SCXML_INVOKE_SERVICE_CEILING: u16 = 0x817F;
 
-/// Number of slots in the §9.6 invoke sub-range (`SCXML_INVOKE_SERVICE_CEILING -
+/// Number of slots in the §mesh-9.6 invoke sub-range (`SCXML_INVOKE_SERVICE_CEILING -
 /// SCXML_INVOKE_SERVICE_BASE + 1`). Used as the overflow ceiling by
 /// [`assign_invoke_service_ids`] and named in the
 /// [`crate::mesh::error::DeployError::SomeipScxmlInvokeServiceIdOverflow`]
@@ -82,19 +82,19 @@ pub const SCXML_INVOKE_SERVICE_CEILING: u16 = 0x817F;
 pub const SCXML_INVOKE_SERVICE_RANGE_SIZE: usize =
     (SCXML_INVOKE_SERVICE_CEILING - SCXML_INVOKE_SERVICE_BASE + 1) as usize;
 
-/// Base of the SCE-reserved §16.4 region-partition liveness service ID
+/// Base of the SCE-reserved §mesh-16.4 region-partition liveness service ID
 /// sub-range (RFC F.X-3). The upper half of the SCE-reserved 256-slot
 /// space, disjoint from [`SCXML_INVOKE_SERVICE_BASE`]'s lower half so
 /// liveness participants never shift invoke participants' auto-assigned
 /// slots when the deploy participant set changes.
 pub const SCXML_LIVENESS_SERVICE_BASE: u16 = 0x8180;
 
-/// Inclusive ceiling of the §16.4 region-partition liveness service ID
+/// Inclusive ceiling of the §mesh-16.4 region-partition liveness service ID
 /// sub-range under the hybrid (counter + optional pin) allocator
 /// (RFC F.X-3). The sub-range is `[0x8180, 0x81FF]` — 128 slots.
 pub const SCXML_LIVENESS_SERVICE_CEILING: u16 = 0x81FF;
 
-/// Number of slots in the §16.4 liveness sub-range
+/// Number of slots in the §mesh-16.4 liveness sub-range
 /// (`SCXML_LIVENESS_SERVICE_CEILING - SCXML_LIVENESS_SERVICE_BASE + 1`).
 /// Used as the overflow ceiling by [`assign_liveness_service_ids`] and
 /// named in the
@@ -104,7 +104,7 @@ pub const SCXML_LIVENESS_SERVICE_CEILING: u16 = 0x81FF;
 pub const SCXML_LIVENESS_SERVICE_RANGE_SIZE: usize =
     (SCXML_LIVENESS_SERVICE_CEILING - SCXML_LIVENESS_SERVICE_BASE + 1) as usize;
 
-/// Base of the SCE-reserved §16.7 row 8 machine-level liveness service ID
+/// Base of the SCE-reserved §mesh-16.7 row 8 machine-level liveness service ID
 /// sub-range (RFC F.X-4). Disjoint from F.X-1 invoke (`[0x8100, 0x817F]`)
 /// and F.X-3 region-liveness (`[0x8180, 0x81FF]`); the gap `[0x8200, 0x827F]`
 /// is reserved as documented headroom for a future fourth SCE subsystem
@@ -112,12 +112,12 @@ pub const SCXML_LIVENESS_SERVICE_RANGE_SIZE: usize =
 /// have to predict where that axis goes.
 pub const SCXML_MACHINE_LIVENESS_SERVICE_BASE: u16 = 0x8280;
 
-/// Inclusive ceiling of the §16.7 row 8 machine-level liveness service ID
+/// Inclusive ceiling of the §mesh-16.7 row 8 machine-level liveness service ID
 /// sub-range under the hybrid (counter + optional pin) allocator
 /// (RFC F.X-4). The sub-range is `[0x8280, 0x82FF]` — 128 slots.
 pub const SCXML_MACHINE_LIVENESS_SERVICE_CEILING: u16 = 0x82FF;
 
-/// Number of slots in the §16.7 row 8 machine-liveness sub-range
+/// Number of slots in the §mesh-16.7 row 8 machine-liveness sub-range
 /// (`SCXML_MACHINE_LIVENESS_SERVICE_CEILING - SCXML_MACHINE_LIVENESS_SERVICE_BASE + 1`).
 /// Used as the overflow ceiling by [`assign_machine_liveness_service_ids`]
 /// and named in the
@@ -127,13 +127,13 @@ pub const SCXML_MACHINE_LIVENESS_SERVICE_CEILING: u16 = 0x82FF;
 pub const SCXML_MACHINE_LIVENESS_SERVICE_RANGE_SIZE: usize =
     (SCXML_MACHINE_LIVENESS_SERVICE_CEILING - SCXML_MACHINE_LIVENESS_SERVICE_BASE + 1) as usize;
 
-/// Single-instance MVP for §9.6 endpoints. Mirror of the C++
+/// Single-instance MVP for §mesh-9.6 endpoints. Mirror of the C++
 /// `SCXML_INVOKE_INSTANCE_ID` constexpr. Multi-instance pool support for
-/// §9.6 endpoints would require lifting §14.4 Gap 7 plumbing into the
+/// §mesh-9.6 endpoints would require lifting §mesh-14.4 Gap 7 plumbing into the
 /// helper; not in this session.
 pub const SCXML_INVOKE_INSTANCE_ID: u16 = 0x0001;
 
-/// Per-wire method IDs. Hex digits replicate the SCE_MESH.md §9.6.2 wire
+/// Per-wire method IDs. Hex digits replicate the SCE_MESH.md §mesh-9.6.2 wire
 /// number for vsomeip-trace readability — wire-14 → `0x0014`, wire-20 →
 /// `0x0020`. NOT a numeric identity with `PatternKind` enum values
 /// (`0x0014 = 20 decimal, not 14`); the C++ helper's `methodForPattern`
@@ -242,7 +242,7 @@ fn range_alloc<E>(
 
 // ── Hybrid (counter + optional pin) service ID assigner ────────────────────
 
-/// Errors from the hybrid §9.6 SOMEIP scxml-invoke service ID assigner
+/// Errors from the hybrid §mesh-9.6 SOMEIP scxml-invoke service ID assigner
 /// ([`assign_invoke_service_ids`]). Each variant carries the operator-facing
 /// payload needed to reach a clear deploy.yaml fix; the deploy-layer
 /// validator
@@ -277,7 +277,7 @@ pub enum AssignInvokeServiceIdError {
     },
 }
 
-/// Hybrid (counter + optional author-pin) assigner for §9.6 SOMEIP
+/// Hybrid (counter + optional author-pin) assigner for §mesh-9.6 SOMEIP
 /// scxml-invoke service IDs. Per RFC F.X-1.
 ///
 /// **Input.** `participants` maps each canonical participant's machine name
@@ -325,9 +325,9 @@ pub fn assign_invoke_service_ids(
     )
 }
 
-// ── Hybrid (counter + optional pin) §16.4 region-liveness assigner ─────────
+// ── Hybrid (counter + optional pin) §mesh-16.4 region-liveness assigner ─────────
 
-/// Errors from the hybrid §16.4 region-partition liveness service ID
+/// Errors from the hybrid §mesh-16.4 region-partition liveness service ID
 /// assigner ([`assign_liveness_service_ids`]). Each variant carries the
 /// operator-facing payload needed to reach a clear deploy.yaml fix; the
 /// deploy-layer validator
@@ -362,7 +362,7 @@ pub enum AssignLivenessServiceIdError {
     },
 }
 
-/// Hybrid (counter + optional author-pin) assigner for §16.4 region-partition
+/// Hybrid (counter + optional author-pin) assigner for §mesh-16.4 region-partition
 /// liveness service IDs. Per RFC F.X-3.
 ///
 /// **Input.** `participants` maps each canonical liveness participant key
@@ -416,9 +416,9 @@ pub fn assign_liveness_service_ids(
     )
 }
 
-// ── Hybrid (counter + optional pin) §16.7 row 8 machine-liveness assigner ──
+// ── Hybrid (counter + optional pin) §mesh-16.7 row 8 machine-liveness assigner ──
 
-/// Errors from the hybrid §16.7 row 8 machine-level liveness service ID
+/// Errors from the hybrid §mesh-16.7 row 8 machine-level liveness service ID
 /// assigner ([`assign_machine_liveness_service_ids`]). Each variant carries
 /// the operator-facing payload needed to reach a clear deploy.yaml fix; the
 /// deploy-layer validator
@@ -453,7 +453,7 @@ pub enum AssignMachineLivenessServiceIdError {
     },
 }
 
-/// Hybrid (counter + optional author-pin) assigner for §16.7 row 8
+/// Hybrid (counter + optional author-pin) assigner for §mesh-16.7 row 8
 /// machine-level liveness service IDs. Per RFC F.X-4.
 ///
 /// **Input.** `participants` maps each canonical liveness participant key
@@ -726,7 +726,7 @@ mod tests {
         }
     }
 
-    // ── §16.4 region-liveness assigner (RFC F.X-3) ──────────────────────
+    // ── §mesh-16.4 region-liveness assigner (RFC F.X-3) ──────────────────────
 
     fn lp(entries: &[(&str, Option<u16>)]) -> BTreeMap<String, Option<u16>> {
         entries.iter().map(|(k, v)| (k.to_string(), *v)).collect()
@@ -912,7 +912,7 @@ mod tests {
         assert!(invoke_set.is_disjoint(&liveness_set));
     }
 
-    // ── §16.7 row 8 machine-liveness assigner (RFC F.X-4) ──────────────
+    // ── §mesh-16.7 row 8 machine-liveness assigner (RFC F.X-4) ──────────────
 
     #[test]
     fn machine_liveness_constants_disjoint_from_invoke_and_region() {
