@@ -11,7 +11,7 @@
 //   2. Add {% elif %} blocks in mesh_transport.h.jinja2  (C++ codegen)
 // The template's `#error` fallback catches (2) drift at C++ compile time.
 //
-// Per-transport scxml-invoke codegen helpers (SCE_MESH.md §9.6 L1399 (b))
+// Per-transport scxml-invoke codegen helpers (SCE_MESH.md §mesh-9.6 L1399 (b))
 // live in sibling submodules: resolve_connect_endpoint and future
 // per-peer resolvers stay off this registry so the descriptor layer
 // does not re-grow inline per-transport branches.
@@ -110,7 +110,7 @@ pub struct TransportDescriptor {
     /// Does this transport inherently suppress envelope duplicates?
     ///
     /// Consumed by the codegen's `dispatchToSender` branching (SCE_MESH.md
-    /// §10.5): when every transport on a receiver sets this `true`, the
+    /// §mesh-10.5): when every transport on a receiver sets this `true`, the
     /// generated `TransportRouter` omits the runtime `DedupRouter` member
     /// entirely. When at least one is `false`, the receiver emits a
     /// `DedupRouter` and every inbound call site funnels through
@@ -128,7 +128,7 @@ pub struct TransportDescriptor {
     /// Does this transport inherently deliver per-(source, target)
     /// envelopes in send order?
     ///
-    /// Consumed by the codegen's ordering branching (SCE_MESH.md §10.6):
+    /// Consumed by the codegen's ordering branching (SCE_MESH.md §mesh-10.6):
     /// when a binding declares `ordering: required` AND this flag is
     /// `false`, the generated `TransportRouter` emits an
     /// `OrderingBuffer` member and routes inbound envelopes through
@@ -153,13 +153,13 @@ pub struct TransportDescriptor {
     /// so the runtime `OrderingBuffer` cannot distinguish "skipped for
     /// this receiver" from "not destined for this receiver".
     ///
-    /// Topology validation (SCE_MESH.md §10.6.2) rejects a binding
+    /// Topology validation (SCE_MESH.md §mesh-10.6.2) rejects a binding
     /// declaring `ordering: required` on a transport whose
     /// `ordering_representable` is `false`.
     pub ordering_representable: bool,
     /// Does this transport carry a native routing layer that can
     /// substitute runtime values into a binding's address (SCE_MESH.md
-    /// §14.4)?
+    /// §mesh-14.4)?
     ///
     /// `true` for transports whose native stack delivers an envelope to
     /// whatever peer matches a given address without SCE maintaining a
@@ -179,7 +179,7 @@ pub struct TransportDescriptor {
     ///   - local / shm: endpoints are compile-time process addresses.
     ///   - custom_tcp: `connect:` / `listen:` are single static TCP
     ///     endpoints. Adding a pool would require SCE to implement its
-    ///     own SD protocol, which the §3.3 design invariant explicitly
+    ///     own SD protocol, which the §mesh-3.3 design invariant explicitly
     ///     rejects.
     ///   - can: broadcast bus with no peer-level addressing.
     ///
@@ -189,7 +189,7 @@ pub struct TransportDescriptor {
     /// (`mesh/pool-not-supported-by-transport`).
     pub supports_pool: bool,
     /// Is the deploy.yaml `machines.<name>.subscriptions:` (SCE_MESH.md
-    /// §13 machine-lifetime path) realised end-to-end on this transport?
+    /// §mesh-13 machine-lifetime path) realised end-to-end on this transport?
     ///
     /// Distinct from the general `PubSub` capability: a transport may
     /// support pub/sub for SCXML-driven `<send event="event.subscribe.X">`
@@ -219,7 +219,7 @@ pub struct TransportDescriptor {
     /// `mesh/topology-machine-lifetime-subscription-unsupported`.
     pub supports_machine_lifetime_subscribe: bool,
     /// Can this transport host an SCE machine as a multi-instance
-    /// server? (SCE_MESH.md §14.4 multi-instance server pool, Gap 7.)
+    /// server? (SCE_MESH.md §mesh-14.4 multi-instance server pool, Gap 7.)
     ///
     /// `true` for transports whose native routing layer delivers an
     /// inbound message tagged with a peer-identifying instance
@@ -235,7 +235,7 @@ pub struct TransportDescriptor {
     /// distinguisher:
     ///   - Zenoh: a KeyExpr identifies a *subject* not a *peer*; there
     ///     is no server-side inbound attribute that distinguishes one
-    ///     hosted instance from another. SCE_MESH.md §14.4
+    ///     hosted instance from another. SCE_MESH.md §mesh-14.4
     ///     multi-instance scope deliberately excludes Zenoh server
     ///     pools.
     ///   - local / shm / custom_tcp: endpoints are compile-time process
@@ -251,7 +251,7 @@ pub struct TransportDescriptor {
     /// the diagnostic (`DeployError::ServerPoolNotSupported`).
     pub supports_multi_instance_server: bool,
     /// Can this transport carry inter-partition IPC traffic within a
-    /// single machine (SCE_MESH.md §14 L2729-2730)?
+    /// single machine (SCE_MESH.md §mesh-14 L2729-2730)?
     ///
     /// `partitions:` splits a machine across M OS processes; traffic
     /// between those processes flows over a transport chosen via
@@ -318,7 +318,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // per machine; a second instance would be a second process.
         supports_multi_instance_server: false,
         // In-process direct dispatch cannot cross the OS process
-        // boundary that `partitions:` defines (§14 L2729-2730).
+        // boundary that `partitions:` defines (§mesh-14 L2729-2730).
         supports_inter_partition_ipc: false,
     };
     static SHM: TransportDescriptor = TransportDescriptor {
@@ -330,7 +330,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // (sender SM → receiver SM, ShmChannel.h) with no reverse path,
         // so every pattern requiring a reply leg is unrealisable here:
         // RequestReply needs `service.response`, and FieldAccess needs
-        // the SCE_MESH.md §8.3 `field.notify` reply to a
+        // the SCE_MESH.md §mesh-8.3 `field.notify` reply to a
         // `field.get`/`field.set` request. The field reply machinery
         // (`handleServerResponse`, getter/setter receive handlers) is
         // emitted only for the someip/zenoh transport arms; shm's send
@@ -358,7 +358,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // names — no peer-identity inbound distinguisher.
         supports_multi_instance_server: false,
         // Shared-memory ring buffer per channel is the canonical
-        // same-machine IPC mechanism (§14 L2730 "kind tcp/shm").
+        // same-machine IPC mechanism (§mesh-14 L2730 "kind tcp/shm").
         supports_inter_partition_ipc: true,
     };
     static SOMEIP: TransportDescriptor = TransportDescriptor {
@@ -417,7 +417,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // SOME/IP is an inter-machine middleware: traffic runs through
         // the vsomeip routing daemon and relies on service discovery.
         // Same-machine IPC via SOME/IP would route through that daemon
-        // instead of the direct channel §14 intends; authors should
+        // instead of the direct channel §mesh-14 intends; authors should
         // pick `shm` or `custom_tcp` for inter-partition traffic.
         supports_inter_partition_ipc: false,
     };
@@ -446,23 +446,23 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // matching subscriber. No SCE-side enumeration required.
         supports_pool: true,
         // Binding-wide `key:` is sufficient for dispatch — no per-event
-        // external resolution needed for subscribe. SCE_MESH.md §13
+        // external resolution needed for subscribe. SCE_MESH.md §mesh-13
         // machine-lifetime path is fully wired end-to-end.
         supports_machine_lifetime_subscribe: true,
         // Zenoh KeyExpr identifies a subject, not a peer. There is no
         // server-side inbound distinguisher between two instances of
         // the same hosted machine (a subscriber/queryable on the same
-        // key receives every request identically). SCE_MESH.md §14.4
+        // key receives every request identically). SCE_MESH.md §mesh-14.4
         // multi-instance exclusion clause codifies this.
         supports_multi_instance_server: false,
         // Zenoh is an inter-machine fabric: traffic flows through a
         // routing layer that scouts peers across the network. Same-
         // machine IPC via Zenoh would route through that fabric
-        // instead of the direct channel §14 intends; authors should
+        // instead of the direct channel §mesh-14 intends; authors should
         // pick `shm` or `custom_tcp` for inter-partition traffic.
         supports_inter_partition_ipc: false,
     };
-    // SCE Mesh §16.8.3 reference transport: TCP loopback, length-prefixed
+    // SCE Mesh §mesh-16.8.3 reference transport: TCP loopback, length-prefixed
     // CBOR envelope framing, zero external dependencies. Each binding has a
     // per-target client (its `connect:` endpoint) and the device exposes a
     // single `listen:` server (declared in `transports.custom_tcp.listen`),
@@ -486,7 +486,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         ordering_representable: true,
         // No native routing layer. Endpoints are static in deploy.yaml;
         // adding a pool would require SCE to implement its own SD
-        // protocol (§3.3 design invariant rejects middleware SD).
+        // protocol (§mesh-3.3 design invariant rejects middleware SD).
         supports_pool: false,
         // No pub/sub capability in this session — machine-lifetime is
         // moot. Dedup + duplex correlation for FireForget-only today.
@@ -530,7 +530,7 @@ pub fn lookup(transport: &str) -> Option<&'static TransportDescriptor> {
         // before the flag is consulted.
         supports_multi_instance_server: false,
         // DDS is an inter-machine multi-participant middleware, not
-        // a same-machine IPC channel. Unimplemented + out of §14's
+        // a same-machine IPC channel. Unimplemented + out of §mesh-14's
         // IPC scope.
         supports_inter_partition_ipc: false,
     };
@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn custom_tcp_per_target_with_shared_server() {
-        // §16.8.3 reference transport: per-binding `connect:` (client field)
+        // §mesh-16.8.3 reference transport: per-binding `connect:` (client field)
         // + device-level `transports.custom_tcp.listen:` (shared server).
         let d = lookup("custom_tcp").expect("known");
         assert!(d.shape.has_per_target_field);
@@ -699,7 +699,7 @@ mod tests {
         }
     }
 
-    // ── supplies_dedup (SCE_MESH.md §10.5) ──────────────────
+    // ── supplies_dedup (SCE_MESH.md §mesh-10.5) ──────────────────
 
     #[test]
     fn in_process_transports_supply_dedup() {
@@ -751,7 +751,7 @@ mod tests {
         }
     }
 
-    // ── supplies_ordering / ordering_representable (SCE_MESH.md §10.6) ──
+    // ── supplies_ordering / ordering_representable (SCE_MESH.md §mesh-10.6) ──
 
     #[test]
     fn in_process_transports_supply_ordering() {
@@ -854,12 +854,12 @@ mod tests {
 
     #[test]
     fn only_shm_and_custom_tcp_support_inter_partition_ipc() {
-        // SCE_MESH.md §14 L2729-2730: `partitions.<n>.transport_binding:`
+        // SCE_MESH.md §mesh-14 L2729-2730: `partitions.<n>.transport_binding:`
         // chooses the transport that carries inter-partition traffic
         // within a single machine. The spec default line reads "kind
         // tcp/shm" — shm is the canonical same-machine IPC mechanism
         // (ring buffer per channel) and custom_tcp is the TCP loopback
-        // reference transport (§16.8.3). Every other transport is
+        // reference transport (§mesh-16.8.3). Every other transport is
         // designed either for intra-process dispatch (local) or for
         // inter-machine middleware (someip / zenoh / dds / can); forcing
         // partition IPC through them contradicts the spec's direct-
@@ -885,7 +885,7 @@ mod tests {
 
     #[test]
     fn only_someip_supports_multi_instance_server() {
-        // SCE_MESH.md §14.4 / Gap 7: SOME/IP is the sole transport
+        // SCE_MESH.md §mesh-14.4 / Gap 7: SOME/IP is the sole transport
         // whose native routing layer exposes a peer-level inbound
         // distinguisher (`msg->get_instance()`). Every other
         // transport — implemented or not — stays at `false` until a

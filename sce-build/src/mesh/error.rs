@@ -75,11 +75,11 @@ impl From<Box<TopologyError>> for MeshError {
 
 /// Why a `transport_binding:` value was rejected by
 /// [`DeployError::PartitionTransportBindingUnsupported`]. Two shapes
-/// share one diagnostic code (§14 L2729-2730); this enum keeps them
+/// share one diagnostic code (§mesh-14 L2729-2730); this enum keeps them
 /// structurally distinguishable without forcing consumers to
 /// substring-grep the prose.
 ///
-/// The `Display` impl emits the exact phrases the §14 diagnostic
+/// The `Display` impl emits the exact phrases the §mesh-14 diagnostic
 /// template splices via `{failure}`, so the generated JSON payload is
 /// byte-identical to the pre-typed `reason: String` shape — the goal
 /// of this refactor is drift-trap closure, not message change.
@@ -117,7 +117,7 @@ impl std::fmt::Display for PartitionTransportBindingFailure {
 
 /// Why a cross-device `<invoke type="scxml" src="#<peer>">` deploy
 /// declaration was rejected by
-/// [`DeployError::ScxmlInvokeCrossDeviceTransport`] (SCE_MESH.md §9.6
+/// [`DeployError::ScxmlInvokeCrossDeviceTransport`] (SCE_MESH.md §mesh-9.6
 /// L1393). The shapes are structurally distinct so tests + IDE
 /// diagnostics can match without prose-parsing:
 ///
@@ -128,7 +128,7 @@ impl std::fmt::Display for PartitionTransportBindingFailure {
 ///   pid-namespaced; local is in-process).
 /// - `TransportUnwired` — binding names a structurally capable
 ///   transport (someip / zenoh / dds) but the C++ wire-14/20 dispatch
-///   has not yet landed for it. Same precedent as §16.5's
+///   has not yet landed for it. Same precedent as §mesh-16.5's
 ///   `partition-wire21-custom-tcp-unimplemented`: reject at build time
 ///   rather than silent runtime fallback.
 /// - `TransportListenMissing` — binding selects a wired transport
@@ -308,7 +308,7 @@ pub enum DeployError {
 
     /// A machine declared an `ordering:` section with a value that
     /// violates the per-machine ordering timing constraints
-    /// (SCE_MESH.md §10.6.1): both fields must be positive AND
+    /// (SCE_MESH.md §mesh-10.6.1): both fields must be positive AND
     /// `tick_period_ms` must be strictly less than `gap_timeout_ms`
     /// (Nyquist). Rejected at parse time so a bad value cannot reach
     /// the generated router.
@@ -319,7 +319,7 @@ pub enum DeployError {
     InvalidOrderingTimings { machine: String, reason: String },
 
     /// A machine declared a `liveliness:` section whose `lease_ms`
-    /// violates the minimum-floor constraint (SCE Mesh §16.7 row 8;
+    /// violates the minimum-floor constraint (SCE Mesh §mesh-16.7 row 8;
     /// see `MIN_LIVELINESS_LEASE_MS` in deploy.rs). Rejected at parse
     /// time so a bad value cannot reach the generated router.
     #[error(
@@ -329,7 +329,7 @@ pub enum DeployError {
     InvalidLiveliness { machine: String, reason: String },
 
     /// A machine declared a `server.query_timeout_ms` whose value
-    /// violates the minimum-floor constraint (SCE Mesh §9.5 gap Z2;
+    /// violates the minimum-floor constraint (SCE Mesh §mesh-9.5 gap Z2;
     /// see `MIN_SERVER_QUERY_TIMEOUT_MS` in deploy.rs). Rejected at
     /// parse time so a bad value cannot reach the generated router.
     #[error(
@@ -340,10 +340,10 @@ pub enum DeployError {
 
     /// A machine declared an `outbound_buffer:` section whose
     /// `max_pending_per_target` violates the minimum constraint
-    /// (SCE Mesh §10.10; see `MIN_OUTBOUND_BUFFER_MAX_PENDING` in
+    /// (SCE Mesh §mesh-10.10; see `MIN_OUTBOUND_BUFFER_MAX_PENDING` in
     /// deploy.rs). Rejected at parse time so a zero-capacity buffer —
     /// semantically equivalent to no buffer — cannot reach the
-    /// generated router under the guise of opting into §10.10
+    /// generated router under the guise of opting into §mesh-10.10
     /// readiness gating.
     #[error(
         "machine '{machine}': invalid `outbound_buffer:` section in deploy.yaml — {reason}. \
@@ -352,7 +352,7 @@ pub enum DeployError {
     InvalidOutboundBuffer { machine: String, reason: String },
 
     /// A `retry:` section on a transport binding violates the
-    /// §16.7 row 3 parse-time constraints (see `RetryPolicyConfig`
+    /// §mesh-16.7 row 3 parse-time constraints (see `RetryPolicyConfig`
     /// validation rules in deploy.rs). Rejected at parse time so a
     /// degenerate retry policy (zero retries, sub-unit multiplier,
     /// zero initial backoff, etc.) cannot reach the generated router
@@ -370,7 +370,7 @@ pub enum DeployError {
     },
 
     /// A per-binding `auth:` section is malformed or placed on a
-    /// transport that does not support §16.7 row 10 in this release
+    /// transport that does not support §mesh-16.7 row 10 in this release
     /// (custom_tcp / shm). Surfaced at parse time so authors do not
     /// reach codegen with a silently-no-op auth wiring (the runtime
     /// would never raise UNAUTHORIZED for those transports — the
@@ -387,12 +387,12 @@ pub enum DeployError {
     },
 
     /// A `discovery:` top-level block appeared in deploy.yaml. SCE Mesh
-    /// §3.3 invariant: transport-native routing is the source of truth
+    /// §mesh-3.3 invariant: transport-native routing is the source of truth
     /// for peer availability, and SCE does not maintain a peer table
-    /// (the §13 rejected list rejects SCE-maintained peer tables and a
+    /// (the §mesh-13 rejected list rejects SCE-maintained peer tables and a
     /// `discovery.mode: static | dynamic` deploy switch outright).
     /// Authors wanting per-binding runtime target
-    /// selection use value-field placeholders (§14.4); authors wanting
+    /// selection use value-field placeholders (§mesh-14.4); authors wanting
     /// transport-level peer discovery configure the external OEM config
     /// (zenoh.json5 scouting, vsomeip.json service-discovery). Rejected
     /// at parse time so an authored block cannot silently round-trip
@@ -411,9 +411,9 @@ pub enum DeployError {
 
     /// A binding carries a `{name}` placeholder value but the binding's
     /// transport declares `supports_pool: false` in the registry
-    /// (SCE Mesh §14.4). Transports without a native routing layer
+    /// (SCE Mesh §mesh-14.4). Transports without a native routing layer
     /// (local, shm, custom_tcp, can) cannot substitute runtime values
-    /// without SCE reimplementing transport discovery, which the §3.3
+    /// without SCE reimplementing transport discovery, which the §mesh-3.3
     /// design invariant explicitly rejects.
     #[error(
         "machine '{machine}': binding '{binding}' on transport '{transport}' carries a \
@@ -428,7 +428,7 @@ pub enum DeployError {
     },
 
     /// A SOME/IP binding uses a placeholder but does not declare the
-    /// required `instances:` list (SCE Mesh §14.4). vsomeip's
+    /// required `instances:` list (SCE Mesh §mesh-14.4). vsomeip's
     /// `request_service(SERVICE, ANY_INSTANCE)` is interpreted as
     /// specific-instance-0xFFFF, not a wildcard, so codegen must know
     /// the finite set of instance IDs to pre-request at init().
@@ -439,7 +439,7 @@ pub enum DeployError {
     )]
     PoolMissingInstanceList { machine: String, binding: String },
 
-    /// A binding declared an empty `instances: []` list (SCE Mesh §14.4).
+    /// A binding declared an empty `instances: []` list (SCE Mesh §mesh-14.4).
     /// An empty pool would generate zero `request_service` calls and the
     /// runtime would refuse every placeholder value, so the
     /// configuration is silently broken.
@@ -472,7 +472,7 @@ pub enum DeployError {
     /// `server.instances:` at parse time; the `transport` field lets
     /// the author see which transport the deploy.yaml declared so the
     /// diagnostic distinguishes the per-transport policy from the
-    /// machine-level one. See SCE_MESH.md §14.4.
+    /// machine-level one. See SCE_MESH.md §mesh-14.4.
     #[error(
         "machine '{machine}': `server.instances:` is not supported on transport '{transport}' \
              — only transports with a peer-identifying inbound distinguisher (SOME/IP today) can \
@@ -552,10 +552,10 @@ pub enum DeployError {
     /// A single machine is used as both a remote `<invoke type="scxml"
     /// src="#<M>">` target (mesh peer) and a local `<invoke src="<M's
     /// source path>">` target (direct file reference) within the same
-    /// deployment (SCE_MESH.md §9.6). The two shapes require different
+    /// deployment (SCE_MESH.md §mesh-9.6). The two shapes require different
     /// code-generation decisions on `<M>`: a mesh peer must emit a
     /// non-templated, default-constructible engine for
-    /// `ChildSessionAdapter<Engine>` (§9.6 child session lifecycle),
+    /// `ChildSessionAdapter<Engine>` (§mesh-9.6 child session lifecycle),
     /// while a local invoke target must emit the `ParentStateMachine`-
     /// templated shape so the parent's `Event` enum is reachable at
     /// `<send target="#_parent">` emission time. Supporting both
@@ -581,7 +581,7 @@ pub enum DeployError {
     },
 
     /// Two entries under `partitions:` declare the same partition name
-    /// (SCE_MESH.md §14 rule 6). Partition names are process identities
+    /// (SCE_MESH.md §mesh-14 rule 6). Partition names are process identities
     /// at runtime and double as log-correlation tags; aliased entries
     /// would silently mask the earlier one under standard YAML map
     /// semantics, so the parser detects the collision via a custom
@@ -595,7 +595,7 @@ pub enum DeployError {
     PartitionDuplicateName { name: String },
 
     /// A partition's `contains:` references machines hosted on more
-    /// than one device (SCE_MESH.md §14 rule 7). A partition occupies
+    /// than one device (SCE_MESH.md §mesh-14 rule 7). A partition occupies
     /// exactly one process on one device; spanning multiple devices
     /// would require cross-device transport for the partition's
     /// internal membership, contradicting the single-process
@@ -610,7 +610,7 @@ pub enum DeployError {
     },
 
     /// A single orthogonal unit (parallel region or invoke) appears in
-    /// more than one partition's `contains:` block (SCE_MESH.md §14
+    /// more than one partition's `contains:` block (SCE_MESH.md §mesh-14
     /// rule 8). The unit would have no well-defined host process; the
     /// analyzer never silently picks one. Remove the unit from every
     /// partition except the intended one.
@@ -625,7 +625,7 @@ pub enum DeployError {
 
     /// A partition's `contains:` entry references a machine that is
     /// not listed in the same partition's `machines:` field
-    /// (SCE_MESH.md §14 rule 9). A partition cannot reach into
+    /// (SCE_MESH.md §mesh-14 rule 9). A partition cannot reach into
     /// another partition's address space; the membership declaration
     /// and the `contains:` entries must agree.
     #[error(
@@ -636,7 +636,7 @@ pub enum DeployError {
     PartitionMachineNotListed { partition: String, machine: String },
 
     /// A partition has no `contains:` entries at all — no parallel
-    /// regions and no invokes (SCE_MESH.md §14 rule 10). An empty
+    /// regions and no invokes (SCE_MESH.md §mesh-14 rule 10). An empty
     /// partition has no runtime purpose and usually indicates a
     /// copy-paste error. Authors who want a reserved entry must
     /// declare the units they plan to host.
@@ -648,7 +648,7 @@ pub enum DeployError {
     PartitionEmpty { partition: String },
 
     /// A partition name contains characters that are not legal in a
-    /// C++ identifier (SCE_MESH.md §14 partition shape). Codegen bakes
+    /// C++ identifier (SCE_MESH.md §mesh-14 partition shape). Codegen bakes
     /// each partition name into the generated namespace path
     /// (`SCE::Generated::<machine>::P_<partition>`) per arch-debt
     /// #4 closure; a name like `motor-left` or `0worker` would emit
@@ -665,7 +665,7 @@ pub enum DeployError {
     PartitionNameNotIdentifier { partition: String },
 
     /// An author-declared machine id contains the reserved
-    /// `__sce_synth_invoke__` infix (SCE_MESH.md §14 rule 5 + §9.6.6).
+    /// `__sce_synth_invoke__` infix (SCE_MESH.md §mesh-14 rule 5 + §mesh-9.6.6).
     /// The infix is used to name machines synthesised from
     /// `<invoke type="scxml">` inline `<content>`: a colliding author
     /// id would shadow or be shadowed by a synthesised peer at runtime,
@@ -686,7 +686,7 @@ pub enum DeployError {
     /// A machine listed under some partition's `machines:` leaves one or
     /// more orthogonal units (parallel regions or invokes) uncovered,
     /// *and* a `<machine>_default:` partition already exists
-    /// (SCE_MESH.md §14 rule 1). The default is therefore incomplete —
+    /// (SCE_MESH.md §mesh-14 rule 1). The default is therefore incomplete —
     /// the cheapest repair is to extend its `contains:` with the
     /// missing units, which is why this diagnostic is distinct from
     /// [`Self::PartitionPartialCoverageRequiresDefault`] (where the
@@ -702,7 +702,7 @@ pub enum DeployError {
     /// A machine is mentioned in some partition's `machines:` list but
     /// one or more of its orthogonal units is not covered by any
     /// partition's `contains:`, and **no** `<machine>_default:`
-    /// partition has been declared (SCE_MESH.md §14 rule 2). The error
+    /// partition has been declared (SCE_MESH.md §mesh-14 rule 2). The error
     /// message reproduces the spec L2793-2800 wording verbatim so
     /// authors can follow the prescribed repair (extend an existing
     /// partition or add a dedicated `<machine>_default:` with the
@@ -720,11 +720,11 @@ pub enum DeployError {
     },
 
     /// A machine that declares a SOME/IP server pool (`server.instances:`,
-    /// SCE_MESH.md §14.4) is listed under some partition's `machines:`
+    /// SCE_MESH.md §mesh-14.4) is listed under some partition's `machines:`
     /// block. The two grammars describe orthogonal axes: a pool is one
     /// router offering N SOME/IP sessions on a single process, while a
     /// partition splits a machine across M OS processes (SCE_MESH.md
-    /// §14). deploy.yaml does not define a combined meaning today, so
+    /// §mesh-14). deploy.yaml does not define a combined meaning today, so
     /// the combination is rejected at parse time instead of silently
     /// accepted. Authors drop the pool to partition the machine, or
     /// drop the partition listing to keep the pool.
@@ -742,7 +742,7 @@ pub enum DeployError {
 
     /// A partition declared `transport_binding:` naming a transport
     /// that does not carry inter-partition IPC within a single
-    /// machine (SCE_MESH.md §14 L2729-2730). The spec default is
+    /// machine (SCE_MESH.md §mesh-14 L2729-2730). The spec default is
     /// "kind tcp/shm"; today `shm` and `custom_tcp` qualify. A
     /// transport the registry does not recognise, or a recognised
     /// transport whose `supports_inter_partition_ipc` is `false`,
@@ -752,7 +752,7 @@ pub enum DeployError {
     /// without parsing the prose. Partition IPC carried over `local`
     /// cannot cross process boundaries; carrying it over `someip` /
     /// `zenoh` / `dds` / `can` routes through a middleware daemon or
-    /// broadcast fabric instead of the direct channel §14 intends.
+    /// broadcast fabric instead of the direct channel §mesh-14 intends.
     #[error(
         "partition '{partition}': `transport_binding: {transport}` is not a valid \
              inter-partition IPC transport — {failure}. SCE Mesh §14 requires a transport \
@@ -766,7 +766,7 @@ pub enum DeployError {
         failure: PartitionTransportBindingFailure,
     },
 
-    /// SCE_MESH.md §9.6 L1393 — `<invoke type="scxml" src="#<peer>">`
+    /// SCE_MESH.md §mesh-9.6 L1393 — `<invoke type="scxml" src="#<peer>">`
     /// classified as cross-device (parent's partition's `device:` differs
     /// from peer's partition's `device:`) but the parent's
     /// `bindings["#<peer>"]` declaration is absent, names an incapable
@@ -777,7 +777,7 @@ pub enum DeployError {
     ///
     /// Same-device cross-partition invokes are accepted without any
     /// `bindings` declaration — they take the implicit shm channel
-    /// which is today's only wired path (§9.6.2 wire-14/20 over shm).
+    /// which is today's only wired path (§mesh-9.6.2 wire-14/20 over shm).
     #[error(
         "machine '{}' (device '{}') → \
              `<invoke type=\"scxml\" src=\"#{}\">` on device '{}': {}. \
@@ -790,11 +790,11 @@ pub enum DeployError {
     )]
     ScxmlInvokeCrossDeviceTransport(Box<ScxmlInvokeCrossDeviceTransportPayload>),
 
-    /// §9.6 SOMEIP scxml-invoke participant count exceeds the
+    /// §mesh-9.6 SOMEIP scxml-invoke participant count exceeds the
     /// hybrid-allocator sub-range ceiling (RFC F.X-1). Subsystem range
     /// partitioning gives invoke 128 slots in `[0x8100, 0x817F]`; the upper
-    /// half of the SCE-reserved range is reserved for §16.4 region-liveness
-    /// (F.X-3). Beyond 128 §9.6 SOMEIP participants, the hybrid counter +
+    /// half of the SCE-reserved range is reserved for §mesh-16.4 region-liveness
+    /// (F.X-3). Beyond 128 §mesh-9.6 SOMEIP participants, the hybrid counter +
     /// pin allocator cannot fit them inside the sub-range — operator must
     /// either reduce the participant count or wait on the multi-domain
     /// landing (today's single-domain assumption is the conservative
@@ -813,7 +813,7 @@ pub enum DeployError {
         ceiling: usize,
     },
 
-    /// A machine pinned `someip_service_id:` outside the §9.6 invoke
+    /// A machine pinned `someip_service_id:` outside the §mesh-9.6 invoke
     /// sub-range `[0x8100, 0x817F]`. Pins outside the sub-range either
     /// collide with the F.X-3 region-liveness reservation (`[0x8180,
     /// 0x81FF]`) or escape the SCE-reserved range entirely
@@ -853,7 +853,7 @@ pub enum DeployError {
         pinned_id: u16,
     },
 
-    /// Total §16.4 SOMEIP region-liveness participant count exceeds the
+    /// Total §mesh-16.4 SOMEIP region-liveness participant count exceeds the
     /// 128-slot ceiling of the liveness sub-range `[0x8180, 0x81FF]`
     /// (RFC F.X-3). Operator fix: reduce the partition count, or split
     /// the deploy across multi-OEM domains (separate landing).
@@ -871,7 +871,7 @@ pub enum DeployError {
         ceiling: usize,
     },
 
-    /// A partition pinned `someip_liveness_service_id:` outside the §16.4
+    /// A partition pinned `someip_liveness_service_id:` outside the §mesh-16.4
     /// liveness sub-range `[0x8180, 0x81FF]`. Pins below the sub-range
     /// collide with the F.X-1 invoke reservation; pins above escape the
     /// SCE-reserved range entirely. Operator fix: choose a pin inside
@@ -911,7 +911,7 @@ pub enum DeployError {
         pinned_id: u16,
     },
 
-    /// More machines opt into §16.7 row 8 SOME/IP machine-level liveness
+    /// More machines opt into §mesh-16.7 row 8 SOME/IP machine-level liveness
     /// (RFC F.X-4) than fit in the F.X-4-reserved sub-range
     /// `[0x8280, 0x82FF]` (128 slots). Operator fix: drop `liveliness:`
     /// from a SOME/IP-only machine, switch some machines to Zenoh
@@ -934,7 +934,7 @@ pub enum DeployError {
     },
 
     /// A machine pinned `someip_machine_liveness_service_id:` outside the
-    /// §16.7 row 8 SOME/IP machine-liveness sub-range `[0x8280, 0x82FF]`
+    /// §mesh-16.7 row 8 SOME/IP machine-liveness sub-range `[0x8280, 0x82FF]`
     /// (RFC F.X-4). Pins below the sub-range collide with F.X-3 region-
     /// liveness or F.X-1 invoke; pins above escape the SCE-reserved
     /// namespace into OEM-owned space. Operator fix: choose a pin inside
@@ -977,7 +977,7 @@ pub enum DeployError {
 
     /// A partition declared `barrier_timeout_ms:` with a value that
     /// makes the distributed parallel-final barrier (SCE_MESH.md
-    /// §16.5) meaningless. Today the sole rejected value is `0`: a
+    /// §mesh-16.5) meaningless. Today the sole rejected value is `0`: a
     /// zero-millisecond timer would fire before the first region can
     /// report `ParallelRegionDone`, raising
     /// `error.communication / PARALLEL_BARRIER_TIMEOUT` on every
@@ -989,8 +989,8 @@ pub enum DeployError {
     /// non-completion through standard SCXML transitions. Range-only
     /// at parse time; the deeper rule that `barrier_timeout_ms:`
     /// applies only on partitions hosting a `<parallel>` root is a
-    /// SCXML cross-reference rule (SCE_MESH.md §16.5) — its runtime
-    /// consumer is the §16.5 scope, not this validator.
+    /// SCXML cross-reference rule (SCE_MESH.md §mesh-16.5) — its runtime
+    /// consumer is the §mesh-16.5 scope, not this validator.
     #[error(
         "partition '{partition}': `barrier_timeout_ms: {value}` is invalid — {reason}. \
              SCE Mesh §14 L2731-2732 pins the W3C normative default as infinity (null / \
@@ -1005,8 +1005,8 @@ pub enum DeployError {
 
     /// A distributed `<parallel>` (regions span two or more partitions)
     /// has no partition claiming its root via `hosts_parallel_roots:`
-    /// (SCE_MESH.md §14 rule 12, L2838). Without a claimant, the
-    /// §16.5 `ParallelCompletionTracker` has no unique owner and
+    /// (SCE_MESH.md §mesh-14 rule 12, L2838). Without a claimant, the
+    /// §mesh-16.5 `ParallelCompletionTracker` has no unique owner and
     /// `done.state.<parallel_id>` cannot be raised. The author repairs
     /// by naming exactly one partition (of those hosting at least one
     /// region of the parallel) as the root.
@@ -1024,7 +1024,7 @@ pub enum DeployError {
     },
 
     /// Two or more partitions claim the same `(machine, parallel)` pair
-    /// as their root (SCE_MESH.md §14 rule 12, L2839). Tracker
+    /// as their root (SCE_MESH.md §mesh-14 rule 12, L2839). Tracker
     /// ownership is per-`<parallel>`-unique; ambiguous claims would
     /// produce two `done.state.<parallel_id>` raises (one per root).
     /// The author repairs by removing all but one claim.
@@ -1041,7 +1041,7 @@ pub enum DeployError {
     },
 
     /// A `hosts_parallel_roots[*].machine:` entry names a machine that
-    /// is not in the partition's `machines:` list (SCE_MESH.md §14 rule
+    /// is not in the partition's `machines:` list (SCE_MESH.md §mesh-14 rule
     /// 12, L2840 — rule 9 shape applied to root entries). One partition
     /// cannot claim root for a parallel in another partition's
     /// machine's document.
@@ -1061,10 +1061,10 @@ pub enum DeployError {
 
     /// A partition claims `(machine, parallel)` as its root but hosts
     /// no region of that `<parallel>` in its `contains.parallel_regions:`
-    /// (SCE_MESH.md §14 rule 12, L2841). A root that co-hosts no region
+    /// (SCE_MESH.md §mesh-14 rule 12, L2841). A root that co-hosts no region
     /// would force every region update to cross process boundaries as
     /// inter-partition traffic — the spec rejects the shape to keep the
-    /// §16.5 tracker's aggregation path coherent.
+    /// §mesh-16.5 tracker's aggregation path coherent.
     #[error(
         "partition '{partition}': claims root for machine '{machine}' \
              `<parallel id=\"{parallel}\">` but hosts no region of that parallel in \
@@ -1082,7 +1082,7 @@ pub enum DeployError {
 
     /// A partition declared `barrier_timeout_ms:` but did not claim
     /// any `<parallel>` root via `hosts_parallel_roots:` (SCE_MESH.md
-    /// §14 rule 12, L2842). The timeout has no §16.5 tracker to gate
+    /// §mesh-14 rule 12, L2842). The timeout has no §mesh-16.5 tracker to gate
     /// — it would silently do nothing. Distinct from
     /// [`Self::PartitionBarrierTimeoutInvalid`] which is a value-range
     /// check; this diagnostic catches the orthogonal configuration
@@ -1098,16 +1098,16 @@ pub enum DeployError {
     PartitionBarrierTimeoutWithoutRoot { partition: String, value: u32 },
 
     /// A partition declared `transport_binding: custom_tcp` and
-    /// participates in a distributed `<parallel>` (§16.5) wire-21
+    /// participates in a distributed `<parallel>` (§mesh-16.5) wire-21
     /// route — but the wire-21 channel emitter currently materializes
     /// `PartitionWire21Channel = SCE::Mesh::ShmChannel<>` unconditionally.
     /// Compiling such a partition would produce a shm channel the
     /// runtime never opens, which surfaces at SM step time as a
     /// missing-callback throw inside `sendParallelRegionDone`.
     /// Reject at deploy-validation time so the configuration gap
-    /// surfaces here instead of as a delayed runtime fault. Spec §14
+    /// surfaces here instead of as a delayed runtime fault. Spec §mesh-14
     /// rule 4 accepts custom_tcp; the gap is in the codegen surface
-    /// (SCE_MESH.md §16.5 banner + matrix carve-out).
+    /// (SCE_MESH.md §mesh-16.5 banner + matrix carve-out).
     #[error(
         "partition '{partition}': `transport_binding: custom_tcp` is set, but the \
              partition participates in distributed `<parallel id=\"{parallel}\">` \
@@ -1124,11 +1124,11 @@ pub enum DeployError {
         parallel: String,
     },
 
-    /// SCE_MESH.md §16.3 R1 — two or more child regions of a
+    /// SCE_MESH.md §mesh-16.3 R1 — two or more child regions of a
     /// `<parallel>` write the same ancestor-scope data location.
     /// Under `distributability: strict` this is a build failure;
     /// `permissive` (the default) auto-merges the offending regions
-    /// per §16.4 and records a
+    /// per §mesh-16.4 and records a
     /// [`crate::mesh::distributability::MergeNotice`] instead.
     #[error("machine '{machine}', `<parallel id=\"{parallel}\">`: R1 shared-write — \
              regions {} all assign to ancestor data '{location}'. \
@@ -1146,12 +1146,12 @@ pub enum DeployError {
         regions: Vec<String>,
     },
 
-    /// SCE_MESH.md §16.3 R2 — a `<transition target>` resolves to a
+    /// SCE_MESH.md §mesh-16.3 R2 — a `<transition target>` resolves to a
     /// state inside a sibling region of the same `<parallel>`.
     /// Cross-region transitions require macrostep atomicity across
     /// the W3C exit-set/enter-set computation, which distribution
     /// cannot supply. `strict` fails; `permissive` auto-merges via
-    /// §16.4.
+    /// §mesh-16.4.
     #[error("machine '{machine}', `<parallel id=\"{parallel}\">`: R2 cross-region \
              transition — regions {} are connected by a transition that crosses \
              the region boundary. SCE_MESH.md §16.3 R2 forbids this because \
@@ -1171,7 +1171,7 @@ pub enum DeployError {
 
     /// A machine declared `platform.class` and `platform.os` that are
     /// not mutually admissible per [`crate::mesh::deploy::PlatformClass::admits_os`]
-    /// (SCE Mesh §14, SCE Protocol-Synthesis RFC §synth-5-K). `class: mcu` admits only
+    /// (SCE Mesh §mesh-14, SCE Protocol-Synthesis RFC §synth-5-K). `class: mcu` admits only
     /// `bare_metal` / `rtos`; `class: ap` admits only the general-purpose
     /// OS values. Rejected at parse time so a contradictory pairing
     /// cannot reach the codegen-matrix walker (RFC §synth-5-J-4 / §synth-5-J-5).
@@ -1835,7 +1835,7 @@ pub enum ExternalConfigError {
     /// single (machine, config) pair are batched into one error so operators
     /// see the full picture instead of fixing them one at a time.
     ///
-    /// Format mirrors SCE_MESH.md §13 example — one line per missing entity
+    /// Format mirrors SCE_MESH.md §mesh-13 example — one line per missing entity
     /// with the deploy.yaml kind (`service`/`method`/`event_group`) and the
     /// unmet assertion.
     #[error("deploy.yaml for machine '{machine}' references SOME/IP entities that do not exist in\n\
@@ -1901,7 +1901,7 @@ pub enum ExternalConfigError {
     /// are rejected on every transport — they never had a meaning on
     /// non-SOME/IP transports, and on SOME/IP they are replaced by
     /// name-based references (`service:`, `events.*.method:`, …) that
-    /// resolve against `transports.someip.config:`. See SCE_MESH.md §14.
+    /// resolve against `transports.someip.config:`. See SCE_MESH.md §mesh-14.
     #[error(
         "machine '{machine}': binding '{target}' (transport: {transport}) uses \
              reserved SOME/IP numeric-ID key(s) {fields:?}. deploy.yaml does not declare \
@@ -2149,7 +2149,7 @@ pub enum TopologyError {
     /// broadcast semantics leave no per-(sender, receiver) sequence
     /// domain — the runtime `OrderingBuffer` cannot operate because a
     /// sender-stamped `sequence_no` is indistinguishable at each
-    /// receiver on the bus (SCE_MESH.md §10.6.2). CAN is the only
+    /// receiver on the bus (SCE_MESH.md §mesh-10.6.2). CAN is the only
     /// in-tree transport in this category today.
     #[error(
         "machine '{machine}': binding for '{target}' (transport: {transport}) declares \
@@ -2196,7 +2196,7 @@ pub enum TopologyError {
     /// Detected at topology time so the diagnostic points at the
     /// deploy.yaml entry rather than surfacing as a runtime no-op.
     ///
-    /// SCE_MESH.md §13 machine-lifetime path: the `source:` attribute
+    /// SCE_MESH.md §mesh-13 machine-lifetime path: the `source:` attribute
     /// is the same target identifier the machine's `bindings:` map is
     /// keyed on — the two must agree for the subscribe to resolve.
     #[error("machine '{machine}': subscription source '{source_target}' has no matching binding. \
@@ -2288,7 +2288,7 @@ pub enum CodegenError {
     /// A machine combines a multi-instance SOME/IP server pool
     /// (`server.instances: [N > 1]`) with an outbound RPC client
     /// path whose correlation state lives in a router-scoped table
-    /// (SCE Mesh §9.5 + §10.9 + §14.4). Two kinds of RPC client are
+    /// (SCE Mesh §mesh-9.5 + §mesh-10.9 + §mesh-14.4). Two kinds of RPC client are
     /// covered:
     ///
     /// * [`RpcClientKind::MeshRpc`] — any `<invoke type="sce:mesh-rpc">`
@@ -2774,7 +2774,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
             actual: Some(partition.clone()),
             expected: None,
             // Two equally-valid repairs: switch to a supported transport
-            // OR drop the key entirely to accept §14 L2730 defaults.
+            // OR drop the key entirely to accept §mesh-14 L2730 defaults.
             // Author intent decides — no mechanical one.
             fix: None,
             // key_fragments feed the fnv1a id hash; formatting `failure`
@@ -2797,7 +2797,7 @@ fn deploy_fields(e: &DeployError) -> DiagnosticPayload {
                 stage: Stage::MeshDeploy,
                 // `{parent}/{peer}` names the per-invoke pair that triggered
                 // the rejection — matches the shape `ScxmlInvokeTargetConflict`
-                // uses so downstream UIs can render both §9.6 diagnostics the
+                // uses so downstream UIs can render both §mesh-9.6 diagnostics the
                 // same way.
                 actual: Some(format!("{parent}/{peer}")),
                 expected: None,

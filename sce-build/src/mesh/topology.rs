@@ -22,7 +22,7 @@ use std::path::Path;
 /// Per-event pattern metadata, detected at build time from the event name
 /// prefix convention (`pattern::detect_pattern`). Used by codegen to generate
 /// pattern-aware send logic (wireTo → PatternKind) and RPC correlation tables.
-/// SCE_MESH.md §13 path B: no longer carries sce:* attribute provenance.
+/// SCE_MESH.md §mesh-13 path B: no longer carries sce:* attribute provenance.
 #[derive(Debug, Clone, Serialize)]
 pub struct EventPatternInfo {
     /// SCXML event name (e.g. "service.request.brake_status").
@@ -40,7 +40,7 @@ pub struct EventPatternInfo {
     pub reply_event: Option<String>,
 }
 
-/// Per-event resolved SOME/IP numeric IDs (SCE_MESH.md §14).
+/// Per-event resolved SOME/IP numeric IDs (SCE_MESH.md §mesh-14).
 ///
 /// Tagged enum: each event binds to exactly one SOME/IP resource family
 /// (RPC method, event group, field getter, or field setter) per the event's
@@ -108,7 +108,7 @@ pub struct BindingDefaultIds {
     pub setter_id: Option<u16>,
 }
 
-/// Binding-level SOME/IP service identity (SCE_MESH.md §14). Populated
+/// Binding-level SOME/IP service identity (SCE_MESH.md §mesh-14). Populated
 /// by name-based resolution of `service:` against vsomeip.json in
 /// `external.rs`; inline `service_id:`/`instance_id:` are rejected
 /// outright (see [`ExternalConfigError::ReservedSomeipIdKeys`]).
@@ -169,7 +169,7 @@ impl BindingDefaultIds {
     }
 }
 
-/// SCE Mesh §9.5: a single `<invoke type="sce:mesh-rpc">` attached to
+/// SCE Mesh §mesh-9.5: a single `<invoke type="sce:mesh-rpc">` attached to
 /// a resolved target. Collected from `SCXMLModel.invokes` in
 /// [`collect_send_summary`] and attached to the matching
 /// [`ResolvedTarget`] in [`finalize_targets`].
@@ -196,7 +196,7 @@ pub struct MeshRpcInvokeSite {
     /// compose `invoke_<suffix>` / `cancel_<suffix>` cleanly.
     pub field_suffix: String,
     /// Value of the required `<param name="_mesh_event">`. Populates
-    /// the outbound envelope's `type` field per §9.5 wire mapping.
+    /// the outbound envelope's `type` field per §mesh-9.5 wire mapping.
     pub mesh_event: String,
     /// Value of the optional `<param name="_mesh_deadline_ms">`.
     /// `None` means no per-invoke deadline; the deploy.yaml binding
@@ -266,7 +266,7 @@ pub enum TransportState {
         /// Non-typed passthrough. Always serialised (see Someip::extra).
         extra: std::collections::HashMap<String, serde_yaml_ng::Value>,
     },
-    /// custom_tcp reference transport (SCE_MESH.md §16.8.3). One TCP
+    /// custom_tcp reference transport (SCE_MESH.md §mesh-16.8.3). One TCP
     /// client per binding connecting to `connect`. The device's optional
     /// listen endpoint is device-shared state and lives on
     /// [`crate::mesh::deploy::CustomTcpTransportConfig`], not here.
@@ -323,7 +323,7 @@ pub struct ResolvedTarget {
     pub events: Vec<String>,
     /// Per-event pattern metadata for codegen (pattern-aware send + RPC correlation).
     pub event_patterns: Vec<EventPatternInfo>,
-    /// Inbound machine-lifetime subscription events (SCE_MESH.md §13,
+    /// Inbound machine-lifetime subscription events (SCE_MESH.md §mesh-13,
     /// Z5a). Populated by
     /// [`contribute_subscription_partials`] from deploy.yaml
     /// `machines.<name>.subscriptions:` entries; empty for targets
@@ -347,7 +347,7 @@ pub struct ResolvedTarget {
     /// summary collected in [`collect_send_summary`].
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub invoke_sites: Vec<MeshRpcInvokeSite>,
-    /// SCE_MESH.md §10.6 per-binding ordering declaration. Copied
+    /// SCE_MESH.md §mesh-10.6 per-binding ordering declaration. Copied
     /// verbatim from the binding's `ordering:` key; default is
     /// [`OrderingRequirement::None`]. Codegen consumes this alongside
     /// the registry-level `supplies_ordering` to decide whether the
@@ -358,14 +358,14 @@ pub struct ResolvedTarget {
         skip_serializing_if = "crate::mesh::deploy::OrderingRequirement::is_none"
     )]
     pub ordering: crate::mesh::deploy::OrderingRequirement,
-    /// SCE_MESH.md §16.7 row 3 retry policy. `None` ⇒ no retry layer
+    /// SCE_MESH.md §mesh-16.7 row 3 retry policy. `None` ⇒ no retry layer
     /// (codegen wires the OutboundBuffer dispatcher directly to the
     /// transport-send closure, Stage 1/2 behaviour); `Some(_)` ⇒
     /// codegen emits a per-target `RetryingDispatcher` member +
     /// wraps the OutboundBuffer dispatcher.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry: Option<crate::mesh::deploy::RetryPolicyConfig>,
-    /// SCE_MESH.md §16.7 row 10 auth policy. `None` ⇒ no row-10 wiring;
+    /// SCE_MESH.md §mesh-16.7 row 10 auth policy. `None` ⇒ no row-10 wiring;
     /// transport rejection stays classified as row 1 / row 8. `Some(_)`
     /// ⇒ codegen emits the auth-classification arm at the transport's
     /// rejection site (Zenoh ZException::what() inspection for cert
@@ -373,7 +373,7 @@ pub struct ResolvedTarget {
     /// row 10 when `sd_denied_classifies_as_unauthorized: true`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auth: Option<crate::mesh::deploy::AuthPolicyConfig>,
-    /// SCE_MESH.md §14.4 — runtime pool substitution plan, or `None` if
+    /// SCE_MESH.md §mesh-14.4 — runtime pool substitution plan, or `None` if
     /// this target has no placeholder bindings. The typed sum type
     /// (`Zenoh { placeholders }` vs `Someip { instance_from, instances }`)
     /// replaces the historical pattern of consulting `pt.extra` +
@@ -384,7 +384,7 @@ pub struct ResolvedTarget {
     pub pool_plan: Option<PoolPlan>,
 }
 
-/// SCE_MESH.md §14.4 — resolved binding pool plan for runtime target
+/// SCE_MESH.md §mesh-14.4 — resolved binding pool plan for runtime target
 /// substitution. Transport-specific because each transport exposes a
 /// different substitution surface (Zenoh uses `{name}` embeds inside a
 /// `key:` string; SOME/IP uses a typed `uint16_t` instance selector).
@@ -455,7 +455,7 @@ impl std::fmt::Display for TopologyWarning {
     }
 }
 
-/// Informational notice emitted when SCE_MESH.md §9.5 deadline precedence
+/// Informational notice emitted when SCE_MESH.md §mesh-9.5 deadline precedence
 /// silently overrides a deploy.yaml binding-level value with a per-invoke
 /// `<param name="_mesh_deadline_ms">`. The override itself is the spec's
 /// expected usage (per-invoke wins); the notice surfaces the divergence
@@ -504,7 +504,7 @@ pub struct TargetResolution {
     /// Per-target resolved binding state, in deterministic
     /// `summary.targets` (BTreeSet) iteration order.
     pub targets: Vec<ResolvedTarget>,
-    /// SCE_MESH.md §9.5 deadline-precedence notices emitted when a
+    /// SCE_MESH.md §mesh-9.5 deadline-precedence notices emitted when a
     /// per-invoke value silently overrode a binding-level fallback.
     /// Empty in the common case where the two agree (or only one is
     /// present).
@@ -544,7 +544,7 @@ where
 // `TargetId::is_internal()` — the previous free helper `is_internal_target`
 // was removed when the newtype migration centralised target semantics.
 
-// ── Server role detection (SCE_MESH.md §13 Session E) ───────
+// ── Server role detection (SCE_MESH.md §mesh-13 Session E) ───────
 
 /// A confirmed server RPC pair: the machine transitions on a
 /// `service.request.X` event AND produces a matching `service.response.X`
@@ -574,7 +574,7 @@ pub enum FieldAccessKind {
 /// `field.get.X` (or `field.set.X`) event AND produces a matching
 /// `field.notify.X` somewhere in its actions (send or raise). Structurally
 /// parallel to [`ServerRpcPair`] — both patterns share the
-/// request/response injection + transport reply path (SCE_MESH.md §8.3).
+/// request/response injection + transport reply path (SCE_MESH.md §mesh-8.3).
 #[derive(Debug, Clone, Serialize)]
 pub struct ServerFieldAccessPair {
     /// Inbound request event (e.g. `"field.get.vehicle_speed"`).
@@ -590,7 +590,7 @@ pub struct ServerFieldAccessPair {
 /// via the transport's native pub/sub mechanism — SOME/IP
 /// `offer_event` + `notify`, Zenoh `session.put`.
 ///
-/// SCE_MESH.md §8.1: eventgroup notifications are declared in the
+/// SCE_MESH.md §mesh-8.1: eventgroup notifications are declared in the
 /// `server.events` block of deploy.yaml with an `event_group:` binding.
 /// The SCXML model raises the event from any transition; the build-time
 /// `inject_server_response_sends` appends a synthetic `<send>` so the
@@ -611,21 +611,21 @@ pub struct ServerBinding {
     pub rpc_pairs: Vec<ServerRpcPair>,
     /// `service.fire_forget.X` events the server must accept from
     /// clients. Detected by [`detect_server_fire_forget_events`] —
-    /// inbound-only, no paired response event. SCE_MESH.md §8.3 claims
+    /// inbound-only, no paired response event. SCE_MESH.md §mesh-8.3 claims
     /// FireForget is realized end-to-end, which requires the server
     /// transport to install a receive handler
     /// (SOME/IP `register_message_handler` with MT_REQUEST and no
     /// response, Zenoh `declare_subscriber` on the server key).
     pub fire_forget_events: Vec<String>,
     /// Confirmed field access pairs detected from the SCXML model.
-    /// SCE_MESH.md §8.3: `field.get.X`/`field.set.X` requests are paired
+    /// SCE_MESH.md §mesh-8.3: `field.get.X`/`field.set.X` requests are paired
     /// with `field.notify.X` replies by convention. Codegen emits a
     /// server handler that forwards the request to the engine and stashes
     /// the transport-native request handle; the paired
     /// `<raise event="field.notify.X">` flows through
     /// `inject_server_response_sends` + `handleServerResponse` to reply.
     pub field_access_pairs: Vec<ServerFieldAccessPair>,
-    /// Server-initiated eventgroup notification events (SCE_MESH.md §8.1).
+    /// Server-initiated eventgroup notification events (SCE_MESH.md §mesh-8.1).
     /// These events are published spontaneously (not in response to a
     /// request) via SOME/IP `offer_event` + `notify` or Zenoh
     /// `session.put`. Declared in deploy.yaml `server.events` with
@@ -638,7 +638,7 @@ pub struct ServerBinding {
     pub state: TransportState,
     /// Per-event pattern metadata for the inbound request events.
     pub event_patterns: Vec<EventPatternInfo>,
-    /// SCE Mesh §9.5 gap Z2: per-server Zenoh queryable response
+    /// SCE Mesh §mesh-9.5 gap Z2: per-server Zenoh queryable response
     /// deadline. Propagated verbatim from [`super::deploy::ServerConfig`].
     /// `None` ⇒ no deadline armed (pre-Z2 behaviour); `Some` ⇒ codegen
     /// arms a `MeshDeadlineScheduler` entry at every
@@ -653,7 +653,7 @@ pub struct ServerBinding {
     /// response lifecycles are consumer-gated and would land under
     /// their own knob rather than overloading this one.
     pub query_timeout_ms: Option<u64>,
-    /// SCE_MESH.md §14.4 — multi-instance server pool member
+    /// SCE_MESH.md §mesh-14.4 — multi-instance server pool member
     /// list. Propagated verbatim from
     /// [`super::deploy::ServerConfig::instances`] once the parse-time
     /// validator has confirmed the transport supports it. Codegen
@@ -666,7 +666,7 @@ pub struct ServerBinding {
 
 /// Detect server RPC pairs from an SCXML model.
 ///
-/// SCE_MESH.md §13 Session E: a machine is a confirmed RPC server for
+/// SCE_MESH.md §mesh-13 Session E: a machine is a confirmed RPC server for
 /// suffix `X` iff:
 ///   1. It has a `<transition event="service.request.X">` in any state.
 ///   2. Somewhere in its actions (send or raise across all states), it
@@ -760,7 +760,7 @@ pub fn detect_server_pairs(model: &SCXMLModel) -> Vec<ServerRpcPair> {
 /// Detect `service.fire_forget.X` events the server-role machine must
 /// accept from clients.
 ///
-/// SCE_MESH.md §8.3: `service.fire_forget` is realized end-to-end across
+/// SCE_MESH.md §mesh-8.3: `service.fire_forget` is realized end-to-end across
 /// transports. When a machine is declared as a server in deploy.yaml AND
 /// has a `<transition event="service.fire_forget.X">`, the transport
 /// layer must install an inbound handler (SOME/IP
@@ -787,7 +787,7 @@ pub fn detect_server_fire_forget_events(model: &SCXMLModel) -> Vec<String> {
 
 /// Detect server FieldAccess pairs from an SCXML model.
 ///
-/// SCE_MESH.md §8.3: a machine is a confirmed FieldAccess server for
+/// SCE_MESH.md §mesh-8.3: a machine is a confirmed FieldAccess server for
 /// suffix `X` iff:
 ///   1. It has a `<transition event="field.get.X">` or
 ///      `<transition event="field.set.X">` in any state.
@@ -871,7 +871,7 @@ pub fn detect_server_field_access_pairs(model: &SCXMLModel) -> Vec<ServerFieldAc
 
 /// Detect server-side eventgroup notification events from deploy.yaml.
 ///
-/// SCE_MESH.md §8.1: the `server.events` block in deploy.yaml declares
+/// SCE_MESH.md §mesh-8.1: the `server.events` block in deploy.yaml declares
 /// events the machine can publish spontaneously (without a preceding
 /// request) via the transport's native pub/sub mechanism. Detection is
 /// transport-aware:
@@ -921,7 +921,7 @@ pub fn detect_server_eventgroup_events(
 
 /// Inject synthetic `<send>` actions for server response events.
 ///
-/// SCE_MESH.md §13 Session E / §8.3: the SCXML spec says server machines
+/// SCE_MESH.md §mesh-13 Session E / §mesh-8.3: the SCXML spec says server machines
 /// use `<raise event="service.response.X">` or `<raise event="field.notify.X">`
 /// for responses. `<raise>` puts events in the internal queue only — the
 /// mesh send callback does not fire. This function injects a synthetic
@@ -1289,7 +1289,7 @@ fn build_server_transport_state(
 // ── Single-pass send action collection ──────────────────────
 
 /// Details of a single `<send>` action, collected for downstream validators.
-/// SCE_MESH.md §13 path B: no longer carries sce:* attribute values — pattern
+/// SCE_MESH.md §mesh-13 path B: no longer carries sce:* attribute values — pattern
 /// and reply pairing are derived from the event name by the analyzer.
 ///
 /// Only actions with a non-empty `target` attribute are captured; empty-target
@@ -1379,12 +1379,12 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
         });
     });
 
-    // SCE Mesh §9.5: collect `<invoke type="sce:mesh-rpc">` sites.
+    // SCE Mesh §mesh-9.5: collect `<invoke type="sce:mesh-rpc">` sites.
     // Each invoke's `src="#target"` becomes an external target that
     // goes through the same deploy.yaml resolution as `<send>`
     // targets — the transport selects the RPC wire (SOME/IP method
     // call, Zenoh get/reply) and the deadline binding supplies any
-    // fallback for missing per-invoke deadlines (§9.5 precedence).
+    // fallback for missing per-invoke deadlines (§mesh-9.5 precedence).
     let mut invoke_sites_by_target: BTreeMap<TargetId, Vec<MeshRpcInvokeSite>> = BTreeMap::new();
     for invoke in &model.invokes {
         let Invoke::MeshRpc(info) = invoke else {
@@ -1394,7 +1394,7 @@ pub fn collect_send_summary(model: &SCXMLModel) -> SendActionSummary {
         // target. `SrcExpr` is evaluated at `<invoke>` entry; its target
         // cannot be enumerated at build time and is looked up against
         // the existing static topology at runtime — a miss raises
-        // `error.invoke.<id>` with `RpcStatus::Unavailable` (§9.5).
+        // `error.invoke.<id>` with `RpcStatus::Unavailable` (§mesh-9.5).
         let Some(src_literal) = info.target.src_literal() else {
             continue;
         };
@@ -1453,7 +1453,7 @@ fn collect_target_events(model: &SCXMLModel) -> Vec<(TargetId, String)> {
 /// Analyze `<send>` actions and produce per-target event/pattern/reply
 /// metadata by pure inference (no deploy.yaml involvement).
 ///
-/// SCE_MESH.md §13 path B decomposition: this pass owns pattern detection
+/// SCE_MESH.md §mesh-13 path B decomposition: this pass owns pattern detection
 /// and topology-inferred RPC pairing. `resolve_targets` consumes the result
 /// and is responsible only for matching targets to deploy.yaml bindings.
 /// Separating the two enforces single responsibility: pairing is a property
@@ -1470,7 +1470,7 @@ pub fn analyze_event_pairs(
         if action.target.is_internal() || action.event.is_empty() {
             continue;
         }
-        // Spec §14: "everything else → FireForget" — events that don't match
+        // Spec §mesh-14: "everything else → FireForget" — events that don't match
         // a reserved prefix default to FireForget rather than dropping out
         // of the pattern table. Falling out would leave such events with
         // no per-event metadata for codegen to emit, so app-level events
@@ -1489,11 +1489,11 @@ pub fn analyze_event_pairs(
         });
     }
 
-    // SCE_MESH.md §9.5: <invoke type="sce:mesh-rpc"> contributes its
+    // SCE_MESH.md §mesh-9.5: <invoke type="sce:mesh-rpc"> contributes its
     // `_mesh_event` as an RpcRequest event on the target binding. Without
     // this, a SOME/IP binding targeted only by mesh-rpc invokes has an
     // empty `event_patterns` → no per-event method_id constant is emitted
-    // → the §14.4 pool dispatch in invokeMeshRpc finds no method match
+    // → the §mesh-14.4 pool dispatch in invokeMeshRpc finds no method match
     // and silently returns RpcStatus::Unavailable for every invoke. The
     // Zenoh path is independent (ZENOH_KEY_<target> is per-target, not
     // per-event), but the SOME/IP per-event ID resolution is driven off
@@ -1540,36 +1540,36 @@ pub(crate) struct PartialTarget {
     /// stage touches invokes (per-invoke deadlines / event names are
     /// authoritative from `<param>`, no vsomeip.json lookup needed).
     pub invoke_sites: Vec<MeshRpcInvokeSite>,
-    /// SCE_MESH.md §10.6 per-binding ordering declaration, copied
+    /// SCE_MESH.md §mesh-10.6 per-binding ordering declaration, copied
     /// verbatim from the `BindingConfig`. Carried through to
     /// [`ResolvedTarget::ordering`] so codegen can compute the
     /// per-binding `needs_ordering` decision without revisiting
     /// deploy.yaml.
     pub ordering: crate::mesh::deploy::OrderingRequirement,
-    /// SCE_MESH.md §16.7 row 3 retry policy, copied verbatim from the
+    /// SCE_MESH.md §mesh-16.7 row 3 retry policy, copied verbatim from the
     /// `BindingConfig`. `None` ⇒ no retry layer; OutboundBuffer's
     /// dispatcher goes straight to the transport. `Some(_)` ⇒ codegen
     /// emits a `RetryingDispatcher` per opt-in target and wires the
     /// OutboundBuffer to it.
     pub retry: Option<crate::mesh::deploy::RetryPolicyConfig>,
-    /// SCE_MESH.md §16.7 row 10 auth policy, copied verbatim from the
+    /// SCE_MESH.md §mesh-16.7 row 10 auth policy, copied verbatim from the
     /// `BindingConfig`. Threaded through `build_partials` /
     /// `finalize_targets` so `ResolvedTarget.auth` is the codegen
     /// source-of-truth.
     pub auth: Option<crate::mesh::deploy::AuthPolicyConfig>,
-    /// SCE_MESH.md §14.4 — raw `BindingConfig.instance_from` copied
+    /// SCE_MESH.md §mesh-14.4 — raw `BindingConfig.instance_from` copied
     /// for SOME/IP pool resolution in [`finalize_targets`]. `None`
     /// means no SOME/IP pool is requested at this binding; the exact
     /// SOME/IP validation (transport match, instances pairing) has
     /// already run at parse time in `validate_pool_capability` so
     /// `Some(_)` here implies a SOME/IP binding.
     pub instance_from: Option<String>,
-    /// SCE_MESH.md §14.4 — raw `BindingConfig.instances` copied for
+    /// SCE_MESH.md §mesh-14.4 — raw `BindingConfig.instances` copied for
     /// SOME/IP pool resolution. `None` / empty means no bounded pool.
     pub instances: Option<Vec<u16>>,
 }
 
-/// SCXML-outbound contributor (SCE_MESH.md §9.5 `<invoke>` + §13 `<send>`).
+/// SCXML-outbound contributor (SCE_MESH.md §mesh-9.5 `<invoke>` + §mesh-13 `<send>`).
 ///
 /// Resolves every `<send>`/`<invoke>` target in the model against the
 /// machine's deploy.yaml bindings and produces a [`PartialTarget`] per
@@ -1616,7 +1616,7 @@ pub(crate) fn contribute_send_partials(
     for target in &summary.targets {
         match bindings.get(target) {
             Some(binding) => {
-                // SCE_MESH.md §9.5 deadline precedence:
+                // SCE_MESH.md §mesh-9.5 deadline precedence:
                 //   1. per-invoke <param name="_mesh_deadline_ms">    (authoritative)
                 //   2. deploy.yaml bindings.<target>.deadline_ms      (fallback)
                 //   3. absent ⇒ no deadline
@@ -1705,7 +1705,7 @@ pub(crate) fn contribute_send_partials(
             validate_shm_extras_partial(machine_name, pt)?;
         }
 
-        // SCE_MESH.md §10.6.2: `ordering: required` on a transport whose
+        // SCE_MESH.md §mesh-10.6.2: `ordering: required` on a transport whose
         // broadcast semantics leave no per-(sender, receiver) sequence
         // domain is structurally unrepairable by a runtime buffer.
         // Reject at topology time with an actionable diagnostic rather
@@ -1738,7 +1738,7 @@ pub(crate) fn contribute_send_partials(
 ///
 /// Returns both the resolved targets and any informational notices the
 /// resolution stage produced (currently: deadline overrides per
-/// SCE_MESH.md §9.5). Notices are non-fatal and exposed for the CLI to
+/// SCE_MESH.md §mesh-9.5). Notices are non-fatal and exposed for the CLI to
 /// surface to the operator; consumers that only care about the targets
 /// can pattern-match `(resolved, _)`.
 /// Bundled inputs for every build-time target contributor that feeds
@@ -1758,7 +1758,7 @@ pub struct TargetContributions<'a> {
     /// [`contribute_send_partials`].
     pub send_summary: &'a SendActionSummary,
     /// deploy.yaml `machines.<name>.subscriptions:` entries. Consumed by
-    /// [`contribute_subscription_partials`] (SCE_MESH.md §13 / Z5a).
+    /// [`contribute_subscription_partials`] (SCE_MESH.md §mesh-13 / Z5a).
     /// Empty slice is the "no machine-lifetime subscriptions" case; the
     /// contributor short-circuits without consulting bindings.
     pub subscriptions: &'a [super::deploy::SubscriptionConfig],
@@ -1838,7 +1838,7 @@ fn merge_partial_into(partials: &mut Vec<PartialTarget>, new: PartialTarget) {
     }
 }
 
-/// Machine-lifetime inbound contributor (SCE_MESH.md §13 / Z5a).
+/// Machine-lifetime inbound contributor (SCE_MESH.md §mesh-13 / Z5a).
 ///
 /// Folds deploy.yaml `machines.<name>.subscriptions:` entries into a
 /// list of [`PartialTarget`]s so the subscribe dispatched at `init()`
@@ -1962,7 +1962,7 @@ fn sorted_target_keys(
     keys
 }
 
-/// SCE_MESH.md §14.4 — cross-reference pool placeholder / instance_from
+/// SCE_MESH.md §mesh-14.4 — cross-reference pool placeholder / instance_from
 /// names against every `<invoke type="sce:mesh-rpc">` site targeting a
 /// pooled binding. A pool binding that no using invoke supplies
 /// substitution values for is a silently-broken deployment (every
@@ -2578,7 +2578,7 @@ pub fn validate_event_coverage(
             if event.is_empty() {
                 continue; // No event name — content-only send
             }
-            // SCE_MESH.md §13: subscribe/unsubscribe events are transport-
+            // SCE_MESH.md §mesh-13: subscribe/unsubscribe events are transport-
             // layer lifecycle actions, not receiver-engine events.
             if let Some(p) = super::pattern::detect_pattern(event) {
                 if p == super::pattern::CommunicationPattern::Subscribe
@@ -2619,7 +2619,7 @@ pub fn validate_event_coverage(
     warnings
 }
 
-// SCE_MESH.md §13 path B: QoS is a transport binding concern (declared in
+// SCE_MESH.md §mesh-13 path B: QoS is a transport binding concern (declared in
 // deploy.yaml or external config such as vsomeip.json), not a per-<send>
 // SCXML annotation — so there is no `sce:qos` consistency validator here.
 
@@ -2629,7 +2629,7 @@ pub fn validate_event_coverage(
 /// (SCE_MESH.md Section 8.2).
 ///
 /// Uses pre-collected action details from `SendActionSummary` to avoid
-/// redundant model traversal. SCE_MESH.md §13 path B: patterns are inferred
+/// redundant model traversal. SCE_MESH.md §mesh-13 path B: patterns are inferred
 /// from event names only — never fails on author-provided input, so the
 /// return type is a plain `Vec` of transport-mismatch violations.
 pub fn validate_pattern_capability(
@@ -2652,7 +2652,7 @@ pub fn validate_pattern_capability(
             continue;
         }
 
-        // SCE_MESH.md §13 path B: pattern is cached on SendActionDetail by
+        // SCE_MESH.md §mesh-13 path B: pattern is cached on SendActionDetail by
         // collect_send_summary (inferred from event name). Application-specific
         // events have no pattern — skip capability check.
         let Some(pattern) = action.pattern else {
@@ -2756,7 +2756,7 @@ pub fn load_receiver_models(
 
 /// Strict event coverage check for a single sender: every `<send event="Y"/>`
 /// to a static target must have a matching `<transition event="Y"/>` in the
-/// receiver — with the §9.5 exemption that RpcReply events targeting a
+/// receiver — with the §mesh-9.5 exemption that RpcReply events targeting a
 /// receiver that declares `<invoke type="sce:mesh-rpc">` are consumed by the
 /// correlation table before reaching SCXML, so the reply event name will
 /// never appear on a literal transition and must not be flagged.
@@ -2776,7 +2776,7 @@ pub fn check_sender_event_coverage(
         .map(|(name, m)| (name.as_str(), collect_transition_events(m)))
         .collect();
 
-    // Collect each receiver's §9.5 reply-event exemption set: for every
+    // Collect each receiver's §mesh-9.5 reply-event exemption set: for every
     // `<invoke type="sce:mesh-rpc">` the receiver hosts, the paired reply
     // event (derived via `CommunicationPattern::infer_reply_event`) is
     // delivered through InvokeCorrelation, not a literal transition.
@@ -2805,7 +2805,7 @@ pub fn check_sender_event_coverage(
         if event.is_empty() {
             continue; // content-only <send>; no event name to match
         }
-        // SCE_MESH.md §13: subscribe and unsubscribe events are transport-
+        // SCE_MESH.md §mesh-13: subscribe and unsubscribe events are transport-
         // layer lifecycle actions consumed by the sender's own router, not
         // by the receiver engine. Skip coverage check for both patterns.
         if let Some(p) = super::pattern::detect_pattern(event) {
@@ -2822,7 +2822,7 @@ pub fn check_sender_event_coverage(
         };
         if let Some(rpc_replies) = receiver_rpc_replies.get(receiver_name) {
             if rpc_replies.contains(event) {
-                continue; // §9.5 reply consumed by correlation, not SCXML
+                continue; // §mesh-9.5 reply consumed by correlation, not SCXML
             }
         }
         if !event_matches_any(event, rx_events) {
@@ -2848,7 +2848,7 @@ pub fn check_sender_event_coverage(
     findings
 }
 
-// ── Subscription auto-symmetry (SCE_MESH.md §13) ────────────
+// ── Subscription auto-symmetry (SCE_MESH.md §mesh-13) ────────────
 
 /// A single auto-symmetry site: an `<onentry>` `<send event="event.subscribe.X">`
 /// that qualifies for automatic `<onexit>` unsubscribe generation.
@@ -2917,7 +2917,7 @@ impl std::fmt::Display for SubscriptionLintNotice {
 /// Detect subscribe sends eligible for auto-symmetry and inject
 /// synthetic unsubscribe sends into the model's `<onexit>` blocks.
 ///
-/// SCE_MESH.md §13 auto-symmetry rules:
+/// SCE_MESH.md §mesh-13 auto-symmetry rules:
 ///   1. Direct child of `<onentry>` (not nested in `<if>`, `<foreach>`)
 ///   2. No manual `<send event="event.unsubscribe.X">` in `<onexit>`
 ///   3. Not a duplicate subscribe in the same `<onentry>` block
@@ -3364,7 +3364,7 @@ topology:
 
     #[test]
     fn check_sender_event_coverage_exempts_mesh_rpc_reply() {
-        // §9.5 scenario: brake hosts <invoke type="sce:mesh-rpc"> with
+        // §mesh-9.5 scenario: brake hosts <invoke type="sce:mesh-rpc"> with
         // mesh_event="service.request.compute_force"; motor replies with
         // "service.response.compute_force" targeting #brake. Brake has NO
         // literal transition for the reply event (it rides the correlation
@@ -3531,7 +3531,7 @@ topology:
     #[test]
     fn pattern_validation_detects_field_get_on_shm() {
         // shm is one-way with no reverse path — FieldAccess (which needs
-        // the §8.3 field.notify reply) is unrealisable, so the descriptor
+        // the §mesh-8.3 field.notify reply) is unrealisable, so the descriptor
         // advertises FireForget only. field.get over shm must be rejected
         // at build time rather than silently never receiving its reply.
         const FIELD_GET_SCXML: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
@@ -3875,7 +3875,7 @@ topology:
         }
     }
 
-    // ── SCE_MESH.md §9.5: per-invoke vs binding-level deadline ─────
+    // ── SCE_MESH.md §mesh-9.5: per-invoke vs binding-level deadline ─────
 
     /// Build a sender model with one `<invoke type="sce:mesh-rpc">`
     /// targeting `#motor`, optionally embedding a per-invoke deadline.
@@ -3975,7 +3975,7 @@ topology:
         assert_eq!(n.binding_value, 200);
         assert_eq!(n.invoke_id, "_invoke_0");
         assert_eq!(n.target.as_str(), "#motor");
-        // §9.5: per-invoke is authoritative.
+        // §mesh-9.5: per-invoke is authoritative.
         assert_eq!(res.targets[0].invoke_sites[0].deadline_ms, Some(50));
         // Display message must name both values so a deploy author can
         // diff intent vs effect without re-running with --verbose.
@@ -4140,7 +4140,7 @@ topology:
         );
     }
 
-    // ── §10.6 ordering validation ────────────────────────────
+    // ── §mesh-10.6 ordering validation ────────────────────────────
 
     #[test]
     fn zenoh_with_ordering_required_passes_topology() {
@@ -4265,7 +4265,7 @@ topology:
 
     #[test]
     fn can_with_ordering_none_passes_ordering_check() {
-        // CAN with default ordering (None) bypasses the §10.6 check
+        // CAN with default ordering (None) bypasses the §mesh-10.6 check
         // entirely — no runtime reconstruction is requested. The
         // build still fails later at codegen because CAN has
         // implemented=false, but the topology-stage ordering check
@@ -4303,7 +4303,7 @@ topology:
         );
     }
 
-    // ── Machine-lifetime subscription synthesis (SCE Mesh §13 / Z5a) ──
+    // ── Machine-lifetime subscription synthesis (SCE Mesh §mesh-13 / Z5a) ──
     //
     // A machine that declares `subscriptions:` without any SCXML `<send>`
     // to the subscription source must still produce a `ResolvedTarget`
@@ -4524,7 +4524,7 @@ topology:
         // subscription source at a SOME/IP binding would otherwise build
         // successfully and silently drop every subscribe envelope at the
         // transport. Topology-stage reject pins this fail-closed so the
-        // §13 "delivered" claim stays honest transport-agnostically.
+        // §mesh-13 "delivered" claim stays honest transport-agnostically.
         let scxml = r##"<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
        name="brake" initial="idle">
