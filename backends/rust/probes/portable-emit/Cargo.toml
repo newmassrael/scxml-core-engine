@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 #
-# Watching-zenoh RFC §5.J.2: single-emit portability gate. Proves that ONE
+# SCE Protocol-Synthesis RFC §5.J.2: single-emit portability gate. Proves that ONE
 # `--no-std` generated machine compiles against BOTH runtime profiles:
 #
 #   - the std runtime (the AP profile — `cargo build`, host target), and
@@ -33,7 +33,7 @@ name = "sce-portable-emit-probe"
 version = "0.0.0"
 edition = "2021"
 publish = false
-description = "single-emit portability gate: one --no-std machine on both runtime profiles (watching-zenoh RFC §5.J.2)"
+description = "single-emit portability gate: one --no-std machine on both runtime profiles (SCE Protocol-Synthesis RFC §5.J.2)"
 license = "LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial"
 
 [lib]

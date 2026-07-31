@@ -9,7 +9,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "SCE Link trait surface for byte-stream link endpoints (watching-zenoh RFC §5.C). SCE owns the trait + StubLink test impl; per-OS impls (lwIP / tokio / QNX) live downstream in watching-zenoh as separate crates."
+description = "SCE Link trait surface for byte-stream link endpoints (SCE Protocol-Synthesis RFC §5.C). SCE owns the trait + StubLink test impl; per-OS impls (lwIP / tokio / QNX) live downstream as separate crates."
 
 [lib]
 name = "sce_link_runtime"

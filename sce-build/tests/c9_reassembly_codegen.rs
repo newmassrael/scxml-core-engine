@@ -1,6 +1,6 @@
 //! Fragment / reassembly buffer-pool variant codegen surface.
 //!
-//! Per watching-zenoh RFC §synth-5-M lines 2680-2698 (variant schema) +
+//! Per SCE Protocol-Synthesis RFC §synth-5-M lines 2680-2698 (variant schema) +
 //! 2864-2876 (fragment FSM consumer) + 2976-2981 (codegen self-check
 //! anchor) + 2659-2664 (backend coverage). `8c6b4e1e` shipped the
 //! `BufferPoolVariant::Reassembly(ReassemblyConfig)` schema + 2

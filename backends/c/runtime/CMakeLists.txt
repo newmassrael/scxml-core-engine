@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 # SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 #
-# backends/c/runtime — C11 backend 4-tier layout (RFC §5.J.1, watching-zenoh
+# backends/c/runtime — C11 backend 4-tier layout (RFC §5.J.1, downstream MCU
 # consumer; ARCHITECTURE.md §"C11 backend layering").
 #
 # Mirrors the cpp 4-tier shape (sce_core / sce_base / sce_scripting /
@@ -34,7 +34,7 @@
 #                           for host-compatible builds; opt out by
 #                           setting SCE_C_RUNTIME_POSIX=OFF for bare-
 #                           metal consumers that supply their own
-#                           platform impl (e.g. watching-zenoh's
+#                           platform impl (e.g. an lwIP-based
 #                           `sce_link_runtime_lwip`).
 
 # ── Tier 1: sce_c_runtime (INTERFACE — public headers) ──────────
@@ -73,8 +73,7 @@ endif()
 # ── Tier 4: sce_c_runtime_posix (STATIC, optional — platform impl) ──
 # Default ON: the SCE-shipped POSIX reference implementation of
 # `clock.h` (§scxml-6.2 delayed-send clock) and `http_client.h`
-# (§scxml-C-2 BasicHTTP fixtures). Bare-metal consumers (e.g.
-# watching-zenoh per `consumer_watching_zenoh.md`) opt out and supply
+# (§scxml-C-2 BasicHTTP fixtures). Bare-metal consumers opt out and supply
 # their own `sce_c_runtime_<target>` providing the same symbols.
 option(SCE_C_RUNTIME_POSIX "Build the POSIX reference impl for backends/c/runtime" ON)
 if(SCE_C_RUNTIME_POSIX)

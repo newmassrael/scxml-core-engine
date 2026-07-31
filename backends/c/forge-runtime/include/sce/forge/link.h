@@ -5,7 +5,7 @@
  * SCE Forge — byte-stream link contract (C11).
  *
  * Mirrors the Rust trait surface at `backends/rust/link-runtime/src/lib.rs`
- * (watching-zenoh RFC §synth-5-C). For C11 the polymorphic surface
+ * (SCE Protocol-Synthesis RFC §synth-5-C). For C11 the polymorphic surface
  * uses the canonical Linux-kernel "trait in C" pattern: a per-instance
  * `sce_forge_link_t` carrying a pointer to a shared `const
  * sce_forge_link_ops_t` vtable plus the driver's per-instance state.
@@ -15,7 +15,7 @@
  * This header ships the contract surface only, plus a
  * generated wrapper struct per `<scxml sce:kind="link">` declaration.
  * Real per-platform impls (`sce_link_runtime_lwip` /
- * `sce_link_runtime_tokio` / QNX) live downstream in watching-zenoh
+ * `sce_link_runtime_tokio` / QNX) live downstream
  * and supply concrete `sce_forge_link_ops_t` tables.
  *
  * Borrowed-slice lifetime (RFC §synth-5-C):
@@ -79,7 +79,7 @@ typedef bool (*sce_forge_link_rx_fn)(void *self, sce_forge_link_rx_frame_t *out)
  * it), `block` blocks until the driver accepts the frame. */
 typedef sce_forge_link_status_t (*sce_forge_link_tx_fn)(void *self, sce_forge_link_tx_frame_t frame);
 
-/* Budget-aware tick hook (watching-zenoh RFC §synth-5-N line 3050).
+/* Budget-aware tick hook (SCE Protocol-Synthesis RFC §synth-5-N line 3050).
  * The cooperative scheduler invokes `poll(self, deadline_us)` once
  * per tick per link, with `deadline_us` capped to the deploy.yaml
  * `scheduler.per_link_budget_us` value the scheduler codegen (item C10) pins as

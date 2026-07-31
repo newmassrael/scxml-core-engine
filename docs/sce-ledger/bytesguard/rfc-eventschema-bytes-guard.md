@@ -3,7 +3,7 @@
 Status: DRAFT, 2026-06-03. Commits 0 LOC; implementation lands after §3 locks are confirmed.
 Branch: `main` (HEAD `8e13729a1` at draft time).
 Date: 2026-06-03.
-Driver: a `watching-zenoh` switchboard example (wz R311gv) wires a `bytes`
+Driver: a downstream switchboard example wires a `bytes`
 EventSchema field into an observable transition guard
 (`_event.data.raw === 'ack'`). Today that guard passes validation, is
 selected as a native typed-payload guard, and the Rust emitter lowers it to

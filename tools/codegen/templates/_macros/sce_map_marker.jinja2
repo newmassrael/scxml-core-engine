@@ -1,7 +1,7 @@
 {# SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial #}
 {# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael #}
 {#
-   Watching-zenoh RFC §synth-5-O — per-backend SCE-MAP marker macros.
+   SCE Protocol-Synthesis RFC §synth-5-O — per-backend SCE-MAP marker macros.
 
    Spec lines 3094-3160 fix the marker syntax per backend:
      - C  / Cpp:   `#line {line} "{file}"` (preprocessor directive)
@@ -15,7 +15,7 @@
      - Python:     `# SCE-MAP: {file}:{line}`
 
    `loc` is the IR-attached `Option<SourceLocation>` populated by the
-   parser at every emission-eligible node (watching-zenoh RFC §synth-5-O;
+   parser at every emission-eligible node (SCE Protocol-Synthesis RFC §synth-5-O;
    see `sce-build/src/forge/provenance.rs`). The macro
    silently elides when `loc` is None — the codegen pre-emit walker
    (`validate_emission_provenance`) already gates on the populate, so
@@ -34,7 +34,7 @@
    so a syntax tweak there edits one place.
 
    The macro signature carries optional `symbol_id` + `line_end`
-   parameters (watching-zenoh RFC §synth-5-O). When provided
+   parameters (SCE Protocol-Synthesis RFC §synth-5-O). When provided
    the marker line gains a `(symbol=<mangled>)` suffix and the line
    number widens into a `<start>-<end>` range so consumers can map
    PC offsets within a function back to the originating SCXML

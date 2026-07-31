@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
-// template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425169
+// template-hash: 140c4d555915ab51dfdb5b562572972b7994e3bced0046a696f7c65e279b5a12
+// generated-at: 1785462746
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -135,19 +135,19 @@ pub struct Test403aPolicy {
     last_transition_source_state: Test403aState,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
-    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
     // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
     // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
     // session identity is ever tracked and the alloc-coupled `String` is omitted.
     pub session_id: Option<String>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
-    // `--no-std` (Watching-zenoh RFC §synth-5-J-2) the SCXML `<invoke>` element
+    // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
     // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
-    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std — `<invoke>` is codegen-rejected
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std — `<invoke>` is codegen-rejected
     // under no_std, so a machine is never instantiated as a child and this
     // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
@@ -310,7 +310,7 @@ impl StatePolicy for Test403aPolicy {
 
     // W3C SCXML 3.6: Get initial children of a compound state
     //
-    // Watching-zenoh RFC §synth-5-J-2: return type is the runtime crate's
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: return type is the runtime crate's
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).

@@ -66,7 +66,7 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
-// Watching-zenoh RFC §synth-5-J-2 (C3 Atomic B-β): cfg-assert the
+// SCE Protocol-Synthesis RFC §synth-5-J-2 (C3 Atomic B-β): cfg-assert the
 // incompatible feature combinations at compile time. The `no_std`
 // feature is mutually exclusive with `http-send` (tokio/reqwest are
 // std-coupled) and with both script-engine features (Lua and QuickJS
@@ -80,10 +80,10 @@
 compile_error!(
     "`no_std` and `http-send` are mutually exclusive: tokio/reqwest are std-coupled. \
      Either drop `http-send` (and any `<send type=\"BasicHTTPEventProcessor\">` from \
-     your SCXML), or drop `no_std`. Watching-zenoh RFC §5.J.2 line 1983."
+     your SCXML), or drop `no_std`. SCE Protocol-Synthesis RFC §5.J.2 line 1983."
 );
 
-// ── Bounded-collection type aliases (watching-zenoh RFC §synth-5-J-2) ──────
+// ── Bounded-collection type aliases (SCE Protocol-Synthesis RFC §synth-5-J-2) ──────
 //
 // Under `--features=no_std` the runtime crate is `#![no_std]` with **no
 // `alloc` dependency** per spec line 1989-1994 ("zero `alloc`
@@ -472,7 +472,7 @@ pub mod helpers;
 pub mod http;
 /// §scxml-6.4 invoke lifecycle helpers.
 ///
-/// Watching-zenoh RFC §synth-5-J-2: whole-module gated to `!no_std`. `<invoke>` is
+/// SCE Protocol-Synthesis RFC §synth-5-J-2: whole-module gated to `!no_std`. `<invoke>` is
 /// rejected upstream at codegen time via `codegen/no-std-invoke-not-supported`
 /// (B-γ2c `591979e5`), so the lifecycle helpers (PendingInvoke / ChildSession
 /// / defer_invoke / cancel_invokes_for_state / execute_pending_invokes /
@@ -481,7 +481,7 @@ pub mod http;
 #[cfg(not(feature = "no_std"))]
 pub mod invoke;
 pub mod policy;
-/// Per-machine scheduled-send-id storage policy (watching-zenoh RFC §synth-5-J-2).
+/// Per-machine scheduled-send-id storage policy (SCE Protocol-Synthesis RFC §synth-5-J-2).
 pub mod sched_send_id;
 /// ECMAScript engine abstraction.
 ///

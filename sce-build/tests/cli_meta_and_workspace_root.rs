@@ -3,7 +3,7 @@
 //
 // Regression tests for sce-codegen CLI meta surface + workspace-root
 // resolution. Pins three contract points downstream consumers
-// (watching-zenoh and beyond) depend on:
+// depend on:
 //
 //   1. `--version` returns `sce-codegen <CARGO_PKG_VERSION>`. Standard
 //      CLI convention; lets vendor pinners verify the binary matches

@@ -1,7 +1,7 @@
 # RFC — SCE Forge Extensions for Wire Protocol Synthesis
 
-**Status:** **Draft (2026-04-24)**. Originates from the `watching-zenoh`
-project, which aims to synthesize a Zenoh-protocol-compatible stack
+**Status:** **Draft (2026-04-24)**. Originates from a downstream protocol-synthesis
+consumer, which aims to synthesize a Zenoh-protocol-compatible stack
 (Rust for AP, C for MCU) entirely from SCXML + SCE Forge sources. This
 RFC enumerates the SCE capabilities that project requires but SCE does
 not yet provide, with motivation, proposed shape, non-goals, and phased
@@ -36,7 +36,7 @@ the downstream project.
 
 ### 1.1 Downstream project
 
-`watching-zenoh` synthesizes a Zenoh-protocol-compatible networking
+The downstream consumer synthesizes a Zenoh-protocol-compatible networking
 stack from SCXML + SCE Forge as the single source of truth. Two
 artifacts are produced from the same sources:
 
@@ -142,7 +142,7 @@ are designed so these can extend the design, not replace it.
 | **AP on QNX** | Phase D+ — second AP target. QNX SDP 7.1+ with io-sock POSIX sockets baseline; QNX-native `dispatch_*` reactor (mio has no QNX backend). QNX-native typed-message and shared-memory IPC link-classes (and any future OS-specific classes) land additively at Phase D.2 entry; not pre-declared in the §5.C enum | Phase D.2. Schema accommodates the OS dimension from review #13 (§5.K `platform.os: qnx`, §5.J OS-axis backend convention); `sce_link_runtime_qnx` crate is Phase D second deliverable. **The design is QNX-aware (OS axis is first-class in `platform.os`) so adding QNX does not require schema rework** |
 | AP on macOS / FreeBSD / Windows | Phase E — additional AP targets after Linux + QNX baselines stabilize. Each follows the same OS-axis pattern (`sce_link_runtime_kqueue` / `sce_link_runtime_iocp`); these enum values land in `platform.os` when the corresponding phase opens, not preemptively | Phase E |
 
-**MVP criterion reference.** The downstream watching-zenoh project
+**MVP criterion reference.** The downstream project
 uses **full zenoh-pico feature parity** (in peer + client modes) as
 its MVP gate. The kind set and codec DSL in §5 are sized accordingly:
 `bounded-collection`, runtime wildcard KeyExpr matching, fragment
@@ -1810,7 +1810,7 @@ no plugin is loaded.
 
 **What does NOT go here.** CRC, VLE, keyexpr matching — these are all
 expressible via §5.A and MUST be authored as algorithm kinds, not as
-extern references. This was established in the watching-zenoh RFC
+extern references. This was established in the SCE Protocol-Synthesis RFC
 review of 2026-04-24.
 
 **Linker flavor declaration.** Vendor toolchains differ in linker
@@ -3398,7 +3398,7 @@ emission and outbound byte shape.
 
 #### §6.2.3 Upstream interop (project-level, not SCE)
 
-`watching-zenoh`
+The downstream project
 owns CI that runs `zenohd` in Docker and verifies generated AP
 backend can SCOUT → HELLO → OPEN → Established. Not an SCE
 responsibility but an acceptance criterion for §7 Phase rollout
@@ -3532,9 +3532,9 @@ linked RFC and an expiry date.
 ## §7 Phased rollout
 
 Each phase is an independently shippable PR or PR series. Downstream
-consumers (watching-zenoh and any others) can adopt phase-by-phase.
+consumers can adopt phase-by-phase.
 
-The MVP gate for the downstream watching-zenoh project is **full
+The MVP gate for the downstream project is **full
 zenoh-pico feature parity** (§2.2). Phases are sized against that
 gate, not against a narrower "leaf subset" framing. Weeks are
 SCE-maintainer-side effort estimates; downstream project work
@@ -3629,7 +3629,7 @@ Phase C — Dynamic state & concurrency (weeks 17–26)
       required beyond C6+C7)
   C13 deploy.yaml links/buffer_pools/extern_symbols + all dynamic-state
       bounds (§5.K full)
-  C14 Test: watching-zenoh MCU node achieves **zenoh-pico parity** —
+  C14 Test: the downstream MCU node achieves **zenoh-pico parity** —
       all peer/client operations interop with upstream zenohd and
       upstream zenoh-pico nodes
   C15 Test: multi-core MCU inbox stress (if any target plugin available)
@@ -3806,7 +3806,7 @@ interface for event-driven patterns (e.g. "new subscriber arrived").
 
 ## §9 Impact summary
 
-**MVP criterion recap.** The downstream watching-zenoh project's
+**MVP criterion recap.** The downstream project's
 MVP gate is **full zenoh-pico feature parity** in peer + client
 modes (§2.2). This is larger than an earlier "leaf subset" framing
 and requires §5.L (bounded-collection), §5.M (fragment /
@@ -3863,7 +3863,7 @@ landing — and, like that effort, delivered in shippable phases
 (A–C gate the MVP; D extends toward AP router mode and the
 broader Zenoh feature set).
 
-**Downstream project LOC estimate (watching-zenoh authoring):**
+**Downstream project LOC estimate (consumer authoring):**
 - SCXML sources (FSM, codec, algorithm, link, pool, worker,
   bounded-collection declarations): ~7000 LOC
 - Hand-written runtime crates
@@ -3987,10 +3987,10 @@ on a size-vs-speed attribute.
 
 ## Appendix C — Honest scope of the end-state
 
-Downstream consumers (watching-zenoh and similar) should document
+Downstream consumers should document
 these boundaries plainly in their own READMEs.
 
-### What `watching-zenoh` WILL deliver when all phases land:
+### What the downstream consumer WILL deliver when all phases land:
 
 - Zenoh protocol version **pinned** (e.g. Zenoh 1.x wire format).
 - **Leaf/peer mode** only. Can initiate peer handshakes, subscribe,
@@ -4004,10 +4004,10 @@ these boundaries plainly in their own READMEs.
 - Honest peer-declared KeyExpr intersection at runtime — incoming
   `DeclSubscriber` / `DeclQueryable` / `Interest` wire frames carry
   arbitrary zenoh-style chunked patterns (literal / `*` / `**` / `$*`
-  DSL mixes), matched against the local wz-owned KE registry via a
+  DSL mixes), matched against the local consumer-owned KE registry via a
   dedicated chunk-intersect algorithm.
 
-### What `watching-zenoh` will NOT deliver:
+### What the downstream consumer will NOT deliver:
 
 - Router mode (no `zenohd` replacement).
 - Subscription aggregation across a network (no graph algorithm).
@@ -4015,12 +4015,12 @@ these boundaries plainly in their own READMEs.
   declared pool slot (those paths stage-copy through a dedicated
   buffer and are marked as such in diagnostics and logs).
 - Auth / crypto extensions — deferred; not in the MVP wire subset.
-- Full KeyExpr wildcard *authoring* for `watching-zenoh`-owned
-  keyexprs — the wz-own KE set is compile-time fixed; the runtime
+- Full KeyExpr wildcard *authoring* for consumer-owned
+  keyexprs — the consumer-owned KE set is compile-time fixed; the runtime
   `declare_*` API accepts only literal keyexprs registered at build
   time (§5.F const-fold). Peer-declared keyexpr wildcards arrive as
   wire-runtime strings and are matched via the runtime intersection
-  algorithm (see *What `watching-zenoh` WILL deliver*).
+  algorithm (see *What the downstream consumer WILL deliver*).
 - Drop-in ABI compatibility with `zenoh-c` or `zenoh-pico` APIs;
   compatibility is at the **wire** level, not the API level.
 

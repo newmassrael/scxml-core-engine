@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §synth-5-O — empirical preservation
+// SCE Protocol-Synthesis RFC §synth-5-O — empirical preservation
 // guard for Rust's dual-emit SCE-MAP marker contract.
 //
 // Spec lines 3135-3136 (verbatim): "Rust MUST emit BOTH `#[doc =

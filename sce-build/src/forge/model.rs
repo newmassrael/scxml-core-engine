@@ -94,16 +94,16 @@ pub enum ForgeKind {
     /// Threshold monitoring with hysteresis.
     Observer,
     /// Pure synchronous function with bounded loops and mutable locals
-    /// — watching-zenoh RFC §synth-5-A (item A3). Free function emit on
+    /// — SCE Protocol-Synthesis RFC §synth-5-A (item A3). Free function emit on
     /// every backend (`#![no_std]`-clean on Rust when no bytes param).
     Algorithm,
-    /// Byte-stream link endpoint — watching-zenoh RFC §synth-5-C. MCU-class
+    /// Byte-stream link endpoint — SCE Protocol-Synthesis RFC §synth-5-C. MCU-class
     /// kind (RFC §synth-5-J-4): emits only on `(rust, *)` and
     /// `(c11, bare_metal)`. SCE owns the `Link` trait surface in
     /// `sce-link-runtime`; per-OS impls (`sce_link_runtime_lwip`,
-    /// `_tokio`, `_qnx`) live downstream in watching-zenoh.
+    /// `_tokio`, `_qnx`) live downstream.
     Link,
-    /// SRAM-placed, DMA-aligned slot table — watching-zenoh RFC §synth-5-E.
+    /// SRAM-placed, DMA-aligned slot table — SCE Protocol-Synthesis RFC §synth-5-E.
     /// Second MCU-class kind (RFC §synth-5-J-4): emits only on `(rust, *)`
     /// and `(c11, bare_metal)`. The slot table carries the
     /// `<sce:slot-count>` / `<sce:slot-size>` / `<sce:section>` /
@@ -114,7 +114,7 @@ pub enum ForgeKind {
     /// intrinsic registry.
     BufferPool,
     /// Concurrent execution context driven by a `<sce:link-rx>` source —
-    /// watching-zenoh RFC §synth-5-D lines 858-913. Third MCU-class kind (RFC
+    /// SCE Protocol-Synthesis RFC §synth-5-D lines 858-913. Third MCU-class kind (RFC
     /// §synth-5-J-4): emits only on `(rust, *)` (tokio::spawn on AP, cooperative-
     /// scheduler slot on MCU) and `(c11, bare_metal)` (cooperative-
     /// scheduler slot, fixed ring-buffer inbox). The schema carries a
@@ -125,7 +125,7 @@ pub enum ForgeKind {
     /// deploy.yaml.
     Worker,
     /// Typed container with build-time-declared capacity but runtime-varying
-    /// occupancy — watching-zenoh RFC §synth-5-L lines 2540-2655. zenoh-pico parity
+    /// occupancy — SCE Protocol-Synthesis RFC §synth-5-L lines 2540-2655. zenoh-pico parity
     /// (runtime subscription declare/undeclare + queryable + reassembly
     /// tables) requires this on MCU where heap is forbidden. Six-language
     /// emitter table per §synth-5-J-5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap
@@ -608,7 +608,7 @@ pub struct TransformModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
     pub outputs: Vec<ForgeField>,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="transform">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -673,7 +673,7 @@ pub struct LookupModel {
     pub output: ForgeField,
     pub entries: Vec<LookupEntry>,
     pub miss_policy: MissPolicy,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="lookup">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -787,7 +787,7 @@ pub struct EnumModel {
     /// legal. Width narrowing remains active regardless of this opt-
     /// out — only the membership check silent-skips when `false`.
     pub strict_variants: bool,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="enum">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -847,7 +847,7 @@ pub struct EventSchemaModel {
     /// [`SceType::Enum`] referring to an imported `sce:kind="enum"`
     /// document.
     pub fields: Vec<ForgeField>,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="event-schema">` root element
     /// (or the synthesized location of the lowered inline form).
     /// Drives the per-kind body function's SCE-MAP marker. Same
@@ -901,7 +901,7 @@ pub struct ConditionModel {
     pub inputs: Vec<ForgeField>,
     /// ECMAScript expression that evaluates to boolean.
     pub expr: String,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="condition">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -918,7 +918,7 @@ pub struct ValidatorModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
     pub rules: ValidatorRules,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="validator">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1101,7 +1101,7 @@ pub struct ProcedureModel {
     pub initial: String,
     /// All states in document order (regular + final).
     pub states: Vec<ProcedureState>,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="procedure">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1882,7 +1882,7 @@ pub struct CodecModel {
     /// not implemented until a consumer needs it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub test_vectors: Vec<CodecTestVector>,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="codec">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2308,7 +2308,7 @@ pub struct FilterModel {
     /// Smoothing factor (0..1) for low-pass filter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alpha: Option<f64>,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="filter">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2391,7 +2391,7 @@ pub struct InterpolationModel {
     pub axes: Vec<InterpolationAxis>,
     /// Table values (flat, row-major for 2D).
     pub values: Vec<f64>,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="interpolation">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2400,7 +2400,7 @@ pub struct InterpolationModel {
 
 // ── Timer kind ────────────────────────────────────────────────
 
-/// Timer kind shape per watching-zenoh RFC §synth-5-D line 880-886.
+/// Timer kind shape per SCE Protocol-Synthesis RFC §synth-5-D line 880-886.
 ///
 /// One timer per forge doc — keepalive, retry, watchdog, etc. The
 /// timer self-manages its lifecycle through `reset_on` (event-driven
@@ -2451,7 +2451,7 @@ pub struct TimerModel {
     /// Event name raised when the timer fires.
     /// `<sce:fire-event>...</sce:fire-event>` (required).
     pub fire_event: String,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="timer">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2492,7 +2492,7 @@ pub struct ObserverModel {
     /// When absent, the observer falls back to a file-local enum and cannot
     /// be composed with other observers (see SCE_FORGE.md §4.11).
     pub event_domain: Option<String>,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="observer">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2906,7 +2906,7 @@ pub struct AlgorithmModel {
     /// `<sce:test-vector>` form (see [`CodecTestVector`]).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub test_vectors: Vec<TestVector>,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="algorithm">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3151,7 +3151,7 @@ pub struct LinkModel {
     pub tx_pool: Option<String>,
     /// `<sce:stage-pool ref="...">` — stage-copy destination pool.
     /// Single source of truth for `Sample::take()`'s copy target,
-    /// per watching-zenoh RFC §synth-5-E (schema locality
+    /// per SCE Protocol-Synthesis RFC §synth-5-E (schema locality
     /// belongs on the link kind, not on the deploy.yaml binding —
     /// rx_pool/tx_pool precedent). When a SCXML state declares
     /// `<sce:on-sample link="X">`, the on-sample validator looks up link X
@@ -3167,7 +3167,7 @@ pub struct LinkModel {
     /// on-sample subscriber exists for a link without `stage_pool`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stage_pool: Option<String>,
-    /// `<sce:accept-stage-copy-rate/>` — watching-zenoh RFC §synth-5-K
+    /// `<sce:accept-stage-copy-rate/>` — SCE Protocol-Synthesis RFC §synth-5-K
     /// lines 2356-2361 + 2509-2511 per-link opt-out for the §synth-5-M /
     /// ARCHITECTURE §9.3 stage-copy-rate gate. Presence of the
     /// element (presence-only: no body / no attribute
@@ -3182,14 +3182,14 @@ pub struct LinkModel {
     /// preserve their prior behavior verbatim.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub accept_stage_copy_rate: bool,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="link">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
 }
 
-/// Watching-zenoh RFC §synth-5-C lines 814-820 — listener-link sibling-pair
+/// SCE Protocol-Synthesis RFC §synth-5-C lines 814-820 — listener-link sibling-pair
 /// role discriminator. A `<sce:link>` whose deploy-resolved
 /// `domain_attrs.trust_class` is `session_arming` and whose machine
 /// source SCXML carries any `Accepting.*` substate (RFC §synth-5-C line 806 +
@@ -3234,7 +3234,7 @@ impl LinkInstanceRole {
     }
 }
 
-/// Watching-zenoh RFC §synth-5-C lines 802-833 + §synth-5-M lines 2782-2783
+/// SCE Protocol-Synthesis RFC §synth-5-C lines 802-833 + §synth-5-M lines 2782-2783
 /// — resolved link-instance produced by the orchestrator's
 /// listener-pair walker. For a non-listener `<sce:link>` the
 /// orchestrator emits a single `Listener`-role instance; for a
@@ -3466,7 +3466,7 @@ pub struct BufferPoolModel {
     /// three reassembly-specific fields (max-fragments-per-message,
     /// reassembly-timeout-ms, per-peer-quota).
     pub variant: BufferPoolVariant,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="buffer-pool">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3667,7 +3667,7 @@ pub struct BoundedCollectionModel {
     pub ordering: CollectionOrdering,
     /// `<sce:concurrency>` — default `SingleWriter` per spec line 2560.
     pub concurrency: ConcurrencyMode,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="bounded-collection">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3719,7 +3719,7 @@ pub struct WorkerModel {
     /// machine via `<sce:link-rx>`-driven event mapping.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outbox: Option<String>,
-    /// Watching-zenoh RFC §synth-5-O: post-preprocessor source
+    /// SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source
     /// position of the `<scxml sce:kind="worker">` root element.
     /// Drives the per-kind body function's SCE-MAP marker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3906,7 +3906,7 @@ pub struct ParsedForge {
     pub document: ForgeDocument,
     pub imports: Vec<ForgeImport>,
     /// `<sce:extern>` declarations parsed from the document root
-    /// (watching-zenoh RFC §synth-5-I). Empty for documents that
+    /// (SCE Protocol-Synthesis RFC §synth-5-I). Empty for documents that
     /// do not declare any externs. Each entry has already been
     /// validated against the §synth-5-I baseline registry — wire-format
     /// rejection (4-code family `extern/symbol-not-in-whitelist` /

@@ -2,14 +2,14 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
 // NL→IR Item C1 Path A (EventSchema MCU native lowering, RFC §10.4 step 5)
-// — C11 runtime-parity gate for the watching-zenoh value path.
+// — C11 runtime-parity gate for the downstream value path.
 //
 // Proves the C11 backend's native typed `_event.data` lowering end-to-end:
 // a transition guarded on `_event.data.elapsed_ms === 0` is lowered to a
 // tagged-union comparison against `pending_payload` with NO script engine
 // (the Lua `lua_eval_guard` path is unreachable on an MCU). The driver
 // injects a typed payload through the per-event `..._raise_job_completed_typed`
-// seam — the entry the watching-zenoh consumer calls after decoding bytes,
+// seam — the entry the downstream consumer calls after decoding bytes,
 // which binds the event name + payload tag + union member in one site — and
 // asserts the guard fires for `elapsed_ms == 0` and misses for a non-zero
 // value, the C11 twin of the Rust slice runtime test.

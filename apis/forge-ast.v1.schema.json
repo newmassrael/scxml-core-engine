@@ -150,7 +150,7 @@
               "type": "null"
             }
           ],
-          "description": "Watching-zenoh RFC §synth-5-O source traceability: post-preprocessor source position of the executable-content element this action represents (`<raise>` / `<send>` / `<assign>` / `<log>` / `<script>` / `<if>` / `<foreach>` / `<cancel>`). Populated by [`crate::parser::SCXMLParser::parse_executable_content_single`]. Carries per-action attribution detail beyond the function-level SCE-MAP markers the templates emit; today this field is read by the pre-emit `validate_emission_provenance` walker."
+          "description": "SCE Protocol-Synthesis RFC §synth-5-O source traceability: post-preprocessor source position of the executable-content element this action represents (`<raise>` / `<send>` / `<assign>` / `<log>` / `<script>` / `<if>` / `<foreach>` / `<cancel>`). Populated by [`crate::parser::SCXMLParser::parse_executable_content_single`]. Carries per-action attribution detail beyond the function-level SCE-MAP markers the templates emit; today this field is read by the pre-emit `validate_emission_provenance` walker."
         },
         "static_value": {
           "type": "string"
@@ -1830,7 +1830,7 @@
               "type": "array"
             },
             "event_queue_capacity": {
-              "description": "Watching-zenoh RFC §synth-5-J-2 + §synth-5-L: per-document event-queue capacity declared via `<scxml sce:capacity=\"N\">` on the root element. Drives the generated `EVENT_QUEUE_CAPACITY` bound that the heapless event-queue uses in `--no-std` emission. Unit: events (not bytes).\n\nResolution rule: per-instance attribute wins; fallback to deploy.yaml `machines.<m>.scheduler.default_event_queue_capacity` when the attribute is absent. Both being absent is permitted (the emitted machine falls back to the runtime's default queue bound).\n\nSchema invariant enforced by the parser: present-but-malformed (non-numeric, zero, or u32-overflow) surfaces `validation/invalid-attribute` — no silent coercion.",
+              "description": "SCE Protocol-Synthesis RFC §synth-5-J-2 + §synth-5-L: per-document event-queue capacity declared via `<scxml sce:capacity=\"N\">` on the root element. Drives the generated `EVENT_QUEUE_CAPACITY` bound that the heapless event-queue uses in `--no-std` emission. Unit: events (not bytes).\n\nResolution rule: per-instance attribute wins; fallback to deploy.yaml `machines.<m>.scheduler.default_event_queue_capacity` when the attribute is absent. Both being absent is permitted (the emitted machine falls back to the runtime's default queue bound).\n\nSchema invariant enforced by the parser: present-but-malformed (non-numeric, zero, or u32-overflow) surfaces `validation/invalid-attribute` — no silent coercion.",
               "format": "uint32",
               "minimum": 0.0,
               "type": [
@@ -2068,7 +2068,7 @@
               ]
             },
             "on_sample_links": {
-              "description": "watching-zenoh RFC §synth-5-E sample-callback codegen wire-up — sorted set of every `link` name referenced by any state's `<sce:on-sample link=\"X\" .../>` block. Derived in [`crate::analyzer::analyze_model_features`] as the union over `state.on_sample_blocks`. Empty when the machine has no sample subscriptions (the common case); non-empty drives the Rust state_machine template's `deliver_link_X_sample` method emission (host-driven delivery, generic over `M: SampleMeta` so the codegen does not need to know the link's concrete metadata type at template-render time).",
+              "description": "SCE Protocol-Synthesis RFC §synth-5-E sample-callback codegen wire-up — sorted set of every `link` name referenced by any state's `<sce:on-sample link=\"X\" .../>` block. Derived in [`crate::analyzer::analyze_model_features`] as the union over `state.on_sample_blocks`. Empty when the machine has no sample subscriptions (the common case); non-empty drives the Rust state_machine template's `deliver_link_X_sample` method emission (host-driven delivery, generic over `M: SampleMeta` so the codegen does not need to know the link's concrete metadata type at template-render time).",
               "items": {
                 "type": "string"
               },
@@ -2158,7 +2158,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O source traceability: post-preprocessor source position of the `<scxml>` root element. Populated by [`crate::parser::SCXMLParser::parse_impl`]. Drives the per-backend SCE-MAP marker above the generated state machine's top-level definition (`impl <SmName>` / `class <SmName>` / `struct <SmName>` / `fn main` for procedure-test wrappers). XInclude / sce:template expanded content gets the position in the *included* source via the preprocessor coordinate map."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O source traceability: post-preprocessor source position of the `<scxml>` root element. Populated by [`crate::parser::SCXMLParser::parse_impl`]. Drives the per-backend SCE-MAP marker above the generated state machine's top-level definition (`impl <SmName>` / `class <SmName>` / `struct <SmName>` / `fn main` for procedure-test wrappers). XInclude / sce:template expanded content gets the position in the *included* source via the preprocessor coordinate map."
             },
             "states": {
               "additionalProperties": {
@@ -2268,7 +2268,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"transform\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"transform\">` root element. Drives the per-kind body function's SCE-MAP marker."
             }
           },
           "required": [
@@ -2315,7 +2315,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"lookup\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"lookup\">` root element. Drives the per-kind body function's SCE-MAP marker."
             }
           },
           "required": [
@@ -2359,7 +2359,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"condition\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"condition\">` root element. Drives the per-kind body function's SCE-MAP marker."
             }
           },
           "required": [
@@ -2422,7 +2422,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"codec\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"codec\">` root element. Drives the per-kind body function's SCE-MAP marker."
             },
             "test_vectors": {
               "description": "RFC §synth-5-B inline test vectors. Each row carries one wire `hex` byte sequence + the expected decoded field-value tree. Generates a per-backend round-trip sidecar (`<fixture>_test.{rs,h}`) next to the codec header — symmetric with the algorithm `<sce:test-vector>` machinery (RFC §synth-5-B item B2). The sidecar ships on Rust + C11 with plain (non-variant, non-TLV-chain, non-parent-flags) codecs only; variant + recursive-variant + TLV-chain + parent-flags codecs reject through the per-language gate in `render_codec_test_vector_sidecar` — wider coverage is not implemented until a consumer needs it.",
@@ -2481,7 +2481,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"validator\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"validator\">` root element. Drives the per-kind body function's SCE-MAP marker."
             }
           },
           "required": [
@@ -2538,7 +2538,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"procedure\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"procedure\">` root element. Drives the per-kind body function's SCE-MAP marker."
             },
             "states": {
               "description": "All states in document order (regular + final).",
@@ -2595,7 +2595,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"filter\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"filter\">` root element. Drives the per-kind body function's SCE-MAP marker."
             },
             "window": {
               "description": "Window size for moving-average and debounce.",
@@ -2659,7 +2659,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"interpolation\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"interpolation\">` root element. Drives the per-kind body function's SCE-MAP marker."
             },
             "values": {
               "description": "Table values (flat, row-major for 2D).",
@@ -2683,7 +2683,7 @@
           "type": "object"
         },
         {
-          "description": "Timer kind shape per watching-zenoh RFC §synth-5-D line 880-886.\n\nOne timer per forge doc — keepalive, retry, watchdog, etc. The timer self-manages its lifecycle through `reset_on` (event-driven restart) and `cancel_on_state_exit` (state-exit-driven cancel), and emits `fire_event` when the period elapses.\n\n**Pre-C1 legacy shape removed.** Before 2026-05-12, this kind declared multiple `TimerEntry` records under `<datamodel>` with `sce:timer=\"periodic|timeout|delayed\"` + integer-millisecond attributes. The legacy shape did not cover the §synth-5-D semantics (event-driven reset, state-exit cancel, single named timer per doc); C1 migrates SCE to the spec-mandated shape per `feedback_spec_mirror_parity.md` and `feedback_pre_release_no_compat.md` (pre-1.0 rename permitted).\n\nCodegen contract (RFC §synth-5-D lines 902-906): - AP: deadline tracker on top of generic event queue (e.g. `tokio::time::interval` for Rust, `ScheduledExecutorService` for Kotlin, `time.AfterFunc` for Go, `asyncio.sleep` for Python) - MCU: compile-time slot in a static timer wheel\n\nDiagnostics (RFC §synth-5-D lines 909-910): - `timer/period-below-tick-rate` — `period_us` declared shorter than `scheduler.tick_period_us`; cooperative scheduler cannot dispatch faster than its tick rate. - `timer/slot-overflow` — total timer doc count for a machine exceeds `scheduler.timer_wheel_depth`; the static wheel cannot hold any more.",
+          "description": "Timer kind shape per SCE Protocol-Synthesis RFC §synth-5-D line 880-886.\n\nOne timer per forge doc — keepalive, retry, watchdog, etc. The timer self-manages its lifecycle through `reset_on` (event-driven restart) and `cancel_on_state_exit` (state-exit-driven cancel), and emits `fire_event` when the period elapses.\n\n**Pre-C1 legacy shape removed.** Before 2026-05-12, this kind declared multiple `TimerEntry` records under `<datamodel>` with `sce:timer=\"periodic|timeout|delayed\"` + integer-millisecond attributes. The legacy shape did not cover the §synth-5-D semantics (event-driven reset, state-exit cancel, single named timer per doc); C1 migrates SCE to the spec-mandated shape per `feedback_spec_mirror_parity.md` and `feedback_pre_release_no_compat.md` (pre-1.0 rename permitted).\n\nCodegen contract (RFC §synth-5-D lines 902-906): - AP: deadline tracker on top of generic event queue (e.g. `tokio::time::interval` for Rust, `ScheduledExecutorService` for Kotlin, `time.AfterFunc` for Go, `asyncio.sleep` for Python) - MCU: compile-time slot in a static timer wheel\n\nDiagnostics (RFC §synth-5-D lines 909-910): - `timer/period-below-tick-rate` — `period_us` declared shorter than `scheduler.tick_period_us`; cooperative scheduler cannot dispatch faster than its tick rate. - `timer/slot-overflow` — total timer doc count for a machine exceeds `scheduler.timer_wheel_depth`; the static wheel cannot hold any more.",
           "properties": {
             "cancel_on_state_exit": {
               "description": "State id whose exit cancels the timer. `<sce:cancel-on state-exit=\"...\"/>` (optional).",
@@ -2728,7 +2728,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"timer\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"timer\">` root element. Drives the per-kind body function's SCE-MAP marker."
             }
           },
           "required": [
@@ -2779,7 +2779,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"observer\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"observer\">` root element. Drives the per-kind body function's SCE-MAP marker."
             }
           },
           "required": [
@@ -2826,7 +2826,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"algorithm\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"algorithm\">` root element. Drives the per-kind body function's SCE-MAP marker."
             },
             "test_vectors": {
               "description": "RFC §synth-5-B \"Test vector\": inline `<sce:test-vector hex value/>` reference oracles. Each entry generates a per-backend round-trip test that runs the algorithm on `hex` and asserts the return value equals `value`. This shape covers the algorithm kind with scalar return; codec documents carry their own multi-field `<sce:test-vector>` form (see [`CodecTestVector`]).",
@@ -2848,7 +2848,7 @@
           "description": "Link document — RFC §synth-5-C byte-stream link endpoint.",
           "properties": {
             "accept_stage_copy_rate": {
-              "description": "`<sce:accept-stage-copy-rate/>` — watching-zenoh RFC §synth-5-K lines 2356-2361 + 2509-2511 per-link opt-out for the §synth-5-M / ARCHITECTURE §9.3 stage-copy-rate gate. Presence of the element (presence-only: no body / no attribute parsing) suppresses `reassembly/expected-fragmentation-rate-high` under `pool_defaults.stage_copy_policy: warn` and `pool/stage-copy-policy-error` under `error`. Under `forbid` (RFC line 2512-2516) the opt-out itself is rejected via `pool/stage-copy-accept-rejected-under-forbid`.\n\nDefault `false` so existing fixtures without the opt-out preserve their prior behavior verbatim.",
+              "description": "`<sce:accept-stage-copy-rate/>` — SCE Protocol-Synthesis RFC §synth-5-K lines 2356-2361 + 2509-2511 per-link opt-out for the §synth-5-M / ARCHITECTURE §9.3 stage-copy-rate gate. Presence of the element (presence-only: no body / no attribute parsing) suppresses `reassembly/expected-fragmentation-rate-high` under `pool_defaults.stage_copy_policy: warn` and `pool/stage-copy-policy-error` under `error`. Under `forbid` (RFC line 2512-2516) the opt-out itself is rejected via `pool/stage-copy-accept-rejected-under-forbid`.\n\nDefault `false` so existing fixtures without the opt-out preserve their prior behavior verbatim.",
               "type": "boolean"
             },
             "backpressure": {
@@ -2910,10 +2910,10 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"link\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"link\">` root element. Drives the per-kind body function's SCE-MAP marker."
             },
             "stage_pool": {
-              "description": "`<sce:stage-pool ref=\"...\">` — stage-copy destination pool. Single source of truth for `Sample::take()`'s copy target, per watching-zenoh RFC §synth-5-E (schema locality belongs on the link kind, not on the deploy.yaml binding — rx_pool/tx_pool precedent). When a SCXML state declares `<sce:on-sample link=\"X\">`, the on-sample validator looks up link X in the [`super::cross_doc_registry::SceCrossDocRegistry`]; the link's `stage_pool` field decides whether `take()` is wired (resolves to a buffer-pool kind whose slots back the owned-copy destination) or whether `take()` will panic at runtime (`PanicOnTakeHook` default). Absence is legal for borrow-only callbacks that never call `take()`; presence + a missing on-sample subscriber is fine too (the field is link- declared, not on-sample-coupled). The SCXML-side enforcement raises `pool/sample-take-without-stage-pool` only when an on-sample subscriber exists for a link without `stage_pool`.",
+              "description": "`<sce:stage-pool ref=\"...\">` — stage-copy destination pool. Single source of truth for `Sample::take()`'s copy target, per SCE Protocol-Synthesis RFC §synth-5-E (schema locality belongs on the link kind, not on the deploy.yaml binding — rx_pool/tx_pool precedent). When a SCXML state declares `<sce:on-sample link=\"X\">`, the on-sample validator looks up link X in the [`super::cross_doc_registry::SceCrossDocRegistry`]; the link's `stage_pool` field decides whether `take()` is wired (resolves to a buffer-pool kind whose slots back the owned-copy destination) or whether `take()` will panic at runtime (`PanicOnTakeHook` default). Absence is legal for borrow-only callbacks that never call `take()`; presence + a missing on-sample subscriber is fine too (the field is link- declared, not on-sample-coupled). The SCXML-side enforcement raises `pool/sample-take-without-stage-pool` only when an on-sample subscriber exists for a link without `stage_pool`.",
               "type": [
                 "string",
                 "null"
@@ -2994,7 +2994,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"buffer-pool\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"buffer-pool\">` root element. Drives the per-kind body function's SCE-MAP marker."
             },
             "variant": {
               "allOf": [
@@ -3057,7 +3057,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"worker\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"worker\">` root element. Drives the per-kind body function's SCE-MAP marker."
             }
           },
           "required": [
@@ -3132,7 +3132,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"bounded-collection\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"bounded-collection\">` root element. Drives the per-kind body function's SCE-MAP marker."
             }
           },
           "required": [
@@ -3167,7 +3167,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"enum\">` root element. Drives the per-kind body function's SCE-MAP marker."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"enum\">` root element. Drives the per-kind body function's SCE-MAP marker."
             },
             "strict_variants": {
               "description": "Strict variant membership switch. When `true` (the default), integer literals compared against (receive-side) or assigned to (send-side) an `enum:<alias>`-typed field must be one of the values declared on this enum's `variants`. Set to `false` via `sce:strict-variants=\"false\"` on the enum's `<scxml>` root for open-set status vocabularies (UDS NRC, OEM-extensible response codes) where wire-side values outside the declared set are legal. Width narrowing remains active regardless of this opt- out — only the membership check silent-skips when `false`.",
@@ -3231,7 +3231,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Watching-zenoh RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"event-schema\">` root element (or the synthesized location of the lowered inline form). Drives the per-kind body function's SCE-MAP marker. Same convention as `EnumModel.source_location`."
+              "description": "SCE Protocol-Synthesis RFC §synth-5-O: post-preprocessor source position of the `<scxml sce:kind=\"event-schema\">` root element (or the synthesized location of the lowered inline form). Drives the per-kind body function's SCE-MAP marker. Same convention as `EnumModel.source_location`."
             }
           },
           "required": [
@@ -3417,35 +3417,35 @@
           "type": "string"
         },
         {
-          "description": "Pure synchronous function with bounded loops and mutable locals — watching-zenoh RFC §synth-5-A (item A3). Free function emit on every backend (`#![no_std]`-clean on Rust when no bytes param).",
+          "description": "Pure synchronous function with bounded loops and mutable locals — SCE Protocol-Synthesis RFC §synth-5-A (item A3). Free function emit on every backend (`#![no_std]`-clean on Rust when no bytes param).",
           "enum": [
             "algorithm"
           ],
           "type": "string"
         },
         {
-          "description": "Byte-stream link endpoint — watching-zenoh RFC §synth-5-C. MCU-class kind (RFC §synth-5-J-4): emits only on `(rust, *)` and `(c11, bare_metal)`. SCE owns the `Link` trait surface in `sce-link-runtime`; per-OS impls (`sce_link_runtime_lwip`, `_tokio`, `_qnx`) live downstream in watching-zenoh.",
+          "description": "Byte-stream link endpoint — SCE Protocol-Synthesis RFC §synth-5-C. MCU-class kind (RFC §synth-5-J-4): emits only on `(rust, *)` and `(c11, bare_metal)`. SCE owns the `Link` trait surface in `sce-link-runtime`; per-OS impls (`sce_link_runtime_lwip`, `_tokio`, `_qnx`) live downstream.",
           "enum": [
             "link"
           ],
           "type": "string"
         },
         {
-          "description": "SRAM-placed, DMA-aligned slot table — watching-zenoh RFC §synth-5-E. Second MCU-class kind (RFC §synth-5-J-4): emits only on `(rust, *)` and `(c11, bare_metal)`. The slot table carries the `<sce:slot-count>` / `<sce:slot-size>` / `<sce:section>` / `<sce:alignment>` / `<sce:dma-channel>` / `<sce:cache-policy>` schema, the 7-state lifecycle FSM (`free` / `cpu-mut` / `dma-armed-{tx,rx}` / `dma-busy-{tx,rx}` / `cpu-ref`), and cache-maintenance pinning routed through the §synth-5-I `<sce:call>` intrinsic registry.",
+          "description": "SRAM-placed, DMA-aligned slot table — SCE Protocol-Synthesis RFC §synth-5-E. Second MCU-class kind (RFC §synth-5-J-4): emits only on `(rust, *)` and `(c11, bare_metal)`. The slot table carries the `<sce:slot-count>` / `<sce:slot-size>` / `<sce:section>` / `<sce:alignment>` / `<sce:dma-channel>` / `<sce:cache-policy>` schema, the 7-state lifecycle FSM (`free` / `cpu-mut` / `dma-armed-{tx,rx}` / `dma-busy-{tx,rx}` / `cpu-ref`), and cache-maintenance pinning routed through the §synth-5-I `<sce:call>` intrinsic registry.",
           "enum": [
             "buffer_pool"
           ],
           "type": "string"
         },
         {
-          "description": "Concurrent execution context driven by a `<sce:link-rx>` source — watching-zenoh RFC §synth-5-D lines 858-913. Third MCU-class kind (RFC §synth-5-J-4): emits only on `(rust, *)` (tokio::spawn on AP, cooperative- scheduler slot on MCU) and `(c11, bare_metal)` (cooperative- scheduler slot, fixed ring-buffer inbox). The schema carries a parse-time author guard for `worker/shared-mutable-state`; codegen is Rust + C11 dual-emit (heapless::spsc / opaque sce_inbox_* types) with cross-resolution + ordering codes; deploy-aware `MachineSchedulerConfig` + worker-count validation runs against deploy.yaml.",
+          "description": "Concurrent execution context driven by a `<sce:link-rx>` source — SCE Protocol-Synthesis RFC §synth-5-D lines 858-913. Third MCU-class kind (RFC §synth-5-J-4): emits only on `(rust, *)` (tokio::spawn on AP, cooperative- scheduler slot on MCU) and `(c11, bare_metal)` (cooperative- scheduler slot, fixed ring-buffer inbox). The schema carries a parse-time author guard for `worker/shared-mutable-state`; codegen is Rust + C11 dual-emit (heapless::spsc / opaque sce_inbox_* types) with cross-resolution + ordering codes; deploy-aware `MachineSchedulerConfig` + worker-count validation runs against deploy.yaml.",
           "enum": [
             "worker"
           ],
           "type": "string"
         },
         {
-          "description": "Typed container with build-time-declared capacity but runtime-varying occupancy — watching-zenoh RFC §synth-5-L lines 2540-2655. zenoh-pico parity (runtime subscription declare/undeclare + queryable + reassembly tables) requires this on MCU where heap is forbidden. Six-language emitter table per §synth-5-J-5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap struct / Cpp `std::array<T, N>` + `std::bitset<N>` / Kotlin `Array<T?>` + `BooleanArray` / Go fixed-array + mask / Python list + bytearray mask). Parse-time validators cover the two structure-only codes (`collection/ordering-sorted-requires- index-by` + `collection/overflow-policy-oldest-wins-requires-ordering- insertion`); cross-doc element-type resolution + index-by-field verification + the atomics-import check run as cross-doc validators; capacity resolves against deploy.yaml and all six backends emit.",
+          "description": "Typed container with build-time-declared capacity but runtime-varying occupancy — SCE Protocol-Synthesis RFC §synth-5-L lines 2540-2655. zenoh-pico parity (runtime subscription declare/undeclare + queryable + reassembly tables) requires this on MCU where heap is forbidden. Six-language emitter table per §synth-5-J-5 (Rust `heapless::Vec<T, N>` / C11 slot+bitmap struct / Cpp `std::array<T, N>` + `std::bitset<N>` / Kotlin `Array<T?>` + `BooleanArray` / Go fixed-array + mask / Python list + bytearray mask). Parse-time validators cover the two structure-only codes (`collection/ordering-sorted-requires- index-by` + `collection/overflow-policy-oldest-wins-requires-ordering- insertion`); cross-doc element-type resolution + index-by-field verification + the atomics-import check run as cross-doc validators; capacity resolves against deploy.yaml and all six backends emit.",
           "enum": [
             "bounded_collection"
           ],
@@ -4191,7 +4191,7 @@
       ]
     },
     "OnSampleNode": {
-      "description": "`<sce:on-sample>` SCXML extension (watching-zenoh RFC §synth-5-E). Wraps the RFC's subscriber callback contract (\"the subscriber callback receives `&Sample<'_>`; the slot returns to the pool when the callback returns\") into a state-level declaration that the codegen template lowers to a per-state callback registration on the link's RX path. Valid only inside `<state>` and `<parallel>`. `link` (forge link kind artifact name) + `event` (SCXML event name dispatched on Sample arrival) are both required; `callback` is an optional `rust:` prefix-typed reference into the user's symbol space.",
+      "description": "`<sce:on-sample>` SCXML extension (SCE Protocol-Synthesis RFC §synth-5-E). Wraps the RFC's subscriber callback contract (\"the subscriber callback receives `&Sample<'_>`; the slot returns to the pool when the callback returns\") into a state-level declaration that the codegen template lowers to a per-state callback registration on the link's RX path. Valid only inside `<state>` and `<parallel>`. `link` (forge link kind artifact name) + `event` (SCXML event name dispatched on Sample arrival) are both required; `callback` is an optional `rust:` prefix-typed reference into the user's symbol space.",
       "properties": {
         "callback": {
           "description": "`callback=\"rust:crate::path::fn\"` — optional extern reference into the user's symbol space. When present, codegen emits `path(&sample)` at the dispatch site, forcing borrow-mode at the call boundary; rustc enforces the user's signature shape against the borrow contract. The language prefix today is `rust:` only; future axes (`c:`, `kotlin:`, …) reuse the same attribute via the same language-prefixed parsing. Absence (`None`) means codegen synthesizes a default dispatch shim — the bare `<sce:on-sample link/event>` shape.",
@@ -4291,7 +4291,7 @@
         },
         "externs": {
           "default": [],
-          "description": "`<sce:extern>` declarations parsed from the document root (watching-zenoh RFC §synth-5-I). Empty for documents that do not declare any externs. Each entry has already been validated against the §synth-5-I baseline registry — wire-format rejection (4-code family `extern/symbol-not-in-whitelist` / `extern/abi-mismatch` / `extern/signature-mismatch` / `extern/ordering-unspecified`) raises during parsing, so a `ParsedForge` carrying any externs is guaranteed registry-clean. The parser produces this list; downstream codegen consumes it for per-language `extern \"...\" {}` emission (see [`crate::forge::extern_emit`]).\n\nWire shape: always emitted (even as `[]`) so consumers see a uniform schema. `imports` follows the same rule. Earlier `skip_serializing_if = \"Vec::is_empty\"` forced consumers to branch on presence-vs-empty, a paper cut the AST export's long-term-correctness review surfaced.",
+          "description": "`<sce:extern>` declarations parsed from the document root (SCE Protocol-Synthesis RFC §synth-5-I). Empty for documents that do not declare any externs. Each entry has already been validated against the §synth-5-I baseline registry — wire-format rejection (4-code family `extern/symbol-not-in-whitelist` / `extern/abi-mismatch` / `extern/signature-mismatch` / `extern/ordering-unspecified`) raises during parsing, so a `ParsedForge` carrying any externs is guaranteed registry-clean. The parser produces this list; downstream codegen consumes it for per-language `extern \"...\" {}` emission (see [`crate::forge::extern_emit`]).\n\nWire shape: always emitted (even as `[]`) so consumers see a uniform schema. `imports` follows the same rule. Earlier `skip_serializing_if = \"Vec::is_empty\"` forced consumers to branch on presence-vs-empty, a paper cut the AST export's long-term-correctness review surfaced.",
           "items": {
             "$ref": "#/definitions/ExternDeclaration"
           },
@@ -4750,7 +4750,7 @@
       ]
     },
     "SourceLocation": {
-      "description": "Source location attached to an error for machine-readable diagnostics.\n\nCarried by the [`Located`] wrapper struct (below) to answer *where* an error was raised. The leaf error enums stay focused on *what* is wrong — identity, expected/actual values, stage — and remain orthogonal to position.\n\nWatching-zenoh RFC §synth-5-O: also reused as the per-IR-node provenance record. Every emission-eligible node carries an `Option<SourceLocation>` so codegen templates can emit per-backend SCE-MAP markers (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`) above the function header that node lowers to. Serialised so minijinja templates can `{% if state.source_location %}{{ ... }}{% endif %}`.",
+      "description": "Source location attached to an error for machine-readable diagnostics.\n\nCarried by the [`Located`] wrapper struct (below) to answer *where* an error was raised. The leaf error enums stay focused on *what* is wrong — identity, expected/actual values, stage — and remain orthogonal to position.\n\nSCE Protocol-Synthesis RFC §synth-5-O: also reused as the per-IR-node provenance record. Every emission-eligible node carries an `Option<SourceLocation>` so codegen templates can emit per-backend SCE-MAP markers (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`) above the function header that node lowers to. Serialised so minijinja templates can `{% if state.source_location %}{{ ... }}{% endif %}`.",
       "properties": {
         "col": {
           "description": "1-based source column. Optional — only node-precise raises carry column info.",
@@ -4937,7 +4937,7 @@
               "type": "null"
             }
           ],
-          "description": "Watching-zenoh RFC §synth-5-O source traceability: post-preprocessor source position of the `<state>` / `<final>` / `<parallel>` element. Populated by [`crate::parser::SCXMLParser::parse_states`]. Drives the per-state SCE-MAP marker that codegen templates emit above the on-entry / on-exit / transition-handler functions this state lowers to."
+          "description": "SCE Protocol-Synthesis RFC §synth-5-O source traceability: post-preprocessor source position of the `<state>` / `<final>` / `<parallel>` element. Populated by [`crate::parser::SCXMLParser::parse_states`]. Drives the per-state SCE-MAP marker that codegen templates emit above the on-entry / on-exit / transition-handler functions this state lowers to."
         },
         "transitions": {
           "items": {
@@ -5264,7 +5264,7 @@
               "type": "null"
             }
           ],
-          "description": "Watching-zenoh RFC §synth-5-O source traceability: post-preprocessor source position of the `<transition>` element, populated by [`crate::parser::SCXMLParser::parse_transition`] from `roxmltree::Document::text_pos_at`. Templates emit per-backend SCE-MAP markers above the transition's emitted handler function (Rust `// SCE-MAP:` + `#[doc]`, C/C++ `#line`, Go `//line`, Kotlin `// SCE-MAP:`)."
+          "description": "SCE Protocol-Synthesis RFC §synth-5-O source traceability: post-preprocessor source position of the `<transition>` element, populated by [`crate::parser::SCXMLParser::parse_transition`] from `roxmltree::Document::text_pos_at`. Templates emit per-backend SCE-MAP markers above the transition's emitted handler function (Rust `// SCE-MAP:` + `#[doc]`, C/C++ `#line`, Go `//line`, Kotlin `// SCE-MAP:`)."
         },
         "target": {
           "type": "string"

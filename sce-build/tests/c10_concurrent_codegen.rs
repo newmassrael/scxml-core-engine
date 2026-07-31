@@ -1,6 +1,6 @@
 //! Multi-link concurrency contract + 3 codes (260 → 263).
 //!
-//! Per watching-zenoh RFC §synth-5-N lines 3031-3062: cooperative scheduler
+//! Per SCE Protocol-Synthesis RFC §synth-5-N lines 3031-3062: cooperative scheduler
 //! slot ceiling, per-link budget sanity, FSM event-queue sizing, plus
 //! per-machine `LinkBus` + scheduler artifact emit.
 //!
@@ -270,7 +270,7 @@ fn inbound_event_queue_unsized_variant_shape() {
         "message must surface event count: {rendered}"
     );
     assert!(
-        rendered.contains("watching-zenoh RFC §5.N line 3062"),
+        rendered.contains("SCE Protocol-Synthesis RFC §5.N line 3062"),
         "spec anchor must be quoted: {rendered}"
     );
     assert!(

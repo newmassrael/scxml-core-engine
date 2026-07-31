@@ -6,8 +6,8 @@ name: sce-forge codec no_std no-alloc build
 # borrowed `&'a [u8]` / `&'a str` scalar views and `heapless::Vec<T, N>`
 # bounded inline list storage, gating every alloc `Vec` / `String` /
 # `VecSink` / `encode_to_vec` site behind `#[cfg(feature = "alloc")]`.
-# This is the SCE-side mirror of the consumer build (watching-zenoh codec
-# crate) that motivated the round by failing `--no-default-features`.
+# This is the SCE-side mirror of a downstream codec
+# crate build that motivated the round by failing `--no-default-features`.
 #
 # Covers both tiers: scalar codecs (Tail / LengthRef byte views) AND
 # list-bearing codecs (repeat / tlv-chain), the latter now heap-free via

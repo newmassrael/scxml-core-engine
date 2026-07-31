@@ -1,7 +1,7 @@
 // SCE-GENERATED — DO NOT EDIT
 // source-hash: 50977319f11c1ff3aac5be1771f46084e92b202125e3d418050cec95e667f58c
-// template-hash: 615c09cf1e666fafc78d1f8f6d6f319491336c3f372af9d38785e88a213f5256
-// generated-at: 1785425169
+// template-hash: 140c4d555915ab51dfdb5b562572972b7994e3bced0046a696f7c65e279b5a12
+// generated-at: 1785462746
 
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright (c) 2025-2026 [Author of input SCXML file]
@@ -75,7 +75,7 @@
 
 use core::time::Duration;
 use sce_rust_runtime::{Engine, StatePolicy};
-// Watching-zenoh RFC §synth-5-J-2: `.push_bounded()` on the microstep conflict-resolution
+// SCE Protocol-Synthesis RFC §synth-5-J-2: `.push_bounded()` on the microstep conflict-resolution
 // buffers (std `Vec` / no_std capacity-bounded `heapless::Vec`).
 use sce_rust_runtime::BoundedPush;
 
@@ -161,7 +161,7 @@ pub struct Test403bPolicy {
     has_transition_actions: bool,
     // W3C SCXML 3.4: Active state configuration for parallel states / In() predicate
     //
-    // Watching-zenoh RFC §synth-5-J-2: type is the runtime crate's
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: type is the runtime crate's
     // [`StateChain`] alias — `Vec<S>` under std, `heapless::Vec<S, MAX_HIERARCHY_DEPTH>`
     // under no_std. The std alias preserves the existing ABI; the no_std alias keeps
     // the generated code allocator-free.
@@ -170,7 +170,7 @@ pub struct Test403bPolicy {
     next_event_is_external: bool,
     // W3C SCXML 5.10: Event name for _event.name binding
     //
-    // Watching-zenoh RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: typed as the runtime crate's [`SceString`]
     // alias — `String` under std (unchanged ABI), `heapless::String<MAX_EVENT_STRING_LEN>`
     // under no_std — so the emitted field is allocator-free on MCU targets.
     pending_event_name: ::sce_rust_runtime::SceString,
@@ -191,7 +191,7 @@ pub struct Test403bPolicy {
     var1: i64,
     // W3C SCXML 5.10: Session ID (script engine + invoke tracking).
     //
-    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std. Under `--no-std` both the
     // script engine (`codegen/no-std-script-not-supported`) and `<invoke>`
     // (`codegen/no-std-invoke-not-supported`) are codegen-rejected, so no
     // session identity is ever tracked and the alloc-coupled `String` is omitted.
@@ -209,12 +209,12 @@ pub struct Test403bPolicy {
     in_predicate_states: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated under std — any SM can be invoked as a child. Under
-    // `--no-std` (Watching-zenoh RFC §synth-5-J-2) the SCXML `<invoke>` element
+    // `--no-std` (SCE Protocol-Synthesis RFC §synth-5-J-2) the SCXML `<invoke>` element
     // is codegen-rejected, so no parent_external_queue handle is ever
     // wired in, and the Arc<Mutex<...>> (alloc-coupled) is omitted.
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
     // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent).
-    // Watching-zenoh RFC §synth-5-J-2: gated to !no_std — `<invoke>` is codegen-rejected
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: gated to !no_std — `<invoke>` is codegen-rejected
     // under no_std, so a machine is never instantiated as a child and this
     // identity is dead. Mirrors the `parent_external_queue` / `invoke` module gate.
     pub invoke_id: String,
@@ -602,7 +602,7 @@ impl StatePolicy for Test403bPolicy {
 
     // W3C SCXML 3.6: Get initial children of a compound state
     //
-    // Watching-zenoh RFC §synth-5-J-2: return type is the runtime crate's
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: return type is the runtime crate's
     // [`StateChain`] alias and the body uses `state_chain_from_slice` instead of
     // `vec![...]` so the emitted code compiles under `--no-std` (`vec!` is a
     // std-only macro; heapless has no equivalent).
@@ -653,7 +653,7 @@ impl StatePolicy for Test403bPolicy {
         self.last_transition_source_state = state;
     }
 
-    // Watching-zenoh RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
+    // SCE Protocol-Synthesis RFC §synth-5-J-2: trait default in `sce-rust-runtime::policy`
     // returns `StateChain<Self::State>`; this override matches that signature
     // so the std alias-to-`Vec<S>` and no_std alias-to-`heapless::Vec<S, …>`
     // both resolve correctly.
@@ -703,7 +703,7 @@ impl StatePolicy for Test403bPolicy {
     ) {
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
         //
-        // Watching-zenoh RFC §synth-5-J-2: `push_chain` is the runtime crate's
+        // SCE Protocol-Synthesis RFC §synth-5-J-2: `push_chain` is the runtime crate's
         // cfg-branched push wrapper — `Vec::push` under std, `heapless::Vec::push`
         // with the depth-guard `.expect()` under no_std. Lets template-emitted code
         // share the same call shape with `Engine::get_active_states`.

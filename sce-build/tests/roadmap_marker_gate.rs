@@ -10,7 +10,7 @@
 //
 // Allowed citation forms are unaffected and never match here:
 // W3C SCXML sections ("W3C SCXML 3.13"), ledger citations in the
-// namespaced sigil form, and external watching-zenoh RFC
+// namespaced sigil form, and external SCE Protocol-Synthesis RFC
 // sections ("RFC §synth-5-B", "item A3"). English uses of the bare word
 // "phase" ("two-phase commit") also do not match — the pattern
 // requires a token suffix (a digit-led token, a single letter, or
@@ -113,7 +113,7 @@ fn tree_carries_no_roadmap_markers_or_gitignored_doc_references() {
     // Internal chain codenames: Greek-suffixed item subdivisions
     // ("B5-ν", "C13-α", "B7-η'"), Axis-N programs, decision-register
     // keys ("Q-Outbox-8", "Q-C10-β-3", "Q-A4" — `\b` keeps the genuine
-    // watching-zenoh "OQ-Wnn" labels out since `O` is a word char),
+    // upstream-RFC "OQ-Wnn" labels out since `O` is a word char),
     // and "<letter><digit> lock-in" decision ids ("T3 lock-in").
     // Bare item numbers ("item B7", "C13") stay legal — only the
     // memory-only subdivision/decision shapes are banned.

@@ -1,7 +1,7 @@
 //! C7 keyexpr-fixture — reference exemplar parity test across all 6
 //! backends.
 //!
-//! Per watching-zenoh RFC §synth-5-A line 311 + §synth-5-L lines 2642-2647.
+//! Per SCE Protocol-Synthesis RFC §synth-5-A line 311 + §synth-5-L lines 2642-2647.
 //! Ships two fixtures in `tests/forge/resources/`:
 //!
 //! - `algorithm_keyexpr_intersect_exact.scxml` — inner algorithm,
@@ -296,7 +296,7 @@ fn keyexpr_match_first_emits_on_all_six_backends() {
     // Drift guard: every backend's keyexpr_match_first emit must
     // surface both axes (BC iter + cross-algo dispatch). Regression
     // on either axis on any backend would be caught here before the
-    // watching-zenoh-side C8 / C12 fixtures (which author their own
+    // downstream-side C8 / C12 fixtures (which author their own
     // keyexpr_intersect variants against this v1 contract) exercise
     // the full pattern.
     for lang in [

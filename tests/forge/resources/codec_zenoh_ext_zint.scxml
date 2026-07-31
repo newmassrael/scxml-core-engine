@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh extension ZInt body (RFC §synth-5-B variant-entry chain,
-     surface G from the watching-zenoh authoring path).
+     surface G from the downstream authoring path).
 
      Mirrors zenoh-pico `_z_msg_ext_encode_zint` / `_z_msg_ext_decode_zint`
      (src/protocol/codec/ext.c lines 46-60): the ZInt-encoded extension

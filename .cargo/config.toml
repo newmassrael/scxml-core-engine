@@ -7,7 +7,7 @@
 # workspace `Cargo.toml`; default targets remain the host triple
 # (no `[build] target = ...` here).
 
-# ── Watching-zenoh RFC §5.J.2 (C3 Atomic B-γ1): MCU target ──
+# ── SCE Protocol-Synthesis RFC §5.J.2 (C3 Atomic B-γ1): MCU target ──
 #
 # `thumbv7em-none-eabihf` is the canonical Cortex-M4F target SCE
 # emits Rust code for under `--no-std`. The target is registered

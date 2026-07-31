@@ -139,8 +139,7 @@ impl RustDeriveCategory {
     /// and [`Self::EventSchemaPayload`]: locked at this single site so
     /// the three stay byte-equivalent. [`Self::CodecStruct`] is
     /// load-bearing for downstream consumers that wrap codec types in
-    /// their own `#[derive(Debug)]` enums (watching-zenoh
-    /// `wz-session-core::NetworkMessage`, `DriverLoopOutcome`); a
+    /// their own `#[derive(Debug)]` enums; a
     /// missing `Debug` here forces every such wrap site to write a
     /// manual `core::fmt::Debug` impl that recurses opaquely.
     pub fn derives(self) -> &'static [&'static str] {
@@ -233,8 +232,8 @@ mod tests {
 
     #[test]
     fn codec_struct_includes_debug() {
-        // watching-zenoh consumer signal (2026-05-28): downstream
-        // crates wrap codec types in `#[derive(Debug)]` enums, so
+        // Consumer signal (2026-05-28): downstream crates wrap
+        // codec types in `#[derive(Debug)]` enums, so
         // CodecStruct must carry Debug.
         assert!(RustDeriveCategory::CodecStruct.derives().contains(&"Debug"));
     }

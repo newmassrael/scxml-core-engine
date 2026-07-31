@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// `<sce:extern>` whitelisted intrinsic registry — watching-zenoh RFC §synth-5-I
+// `<sce:extern>` whitelisted intrinsic registry — SCE Protocol-Synthesis RFC §synth-5-I
 // (lines 1691-1924). Closed table that mirrors the spec's
 // concrete v1 whitelist (lines 1717-1750):
 //
@@ -275,7 +275,7 @@ const fn irq(name: &'static str, sig: &'static str, purpose: &'static str) -> Sy
 use MemoryOrdering::*;
 use Width::*;
 
-/// Baseline whitelist — 101 symbols. Source of truth: watching-zenoh
+/// Baseline whitelist — 101 symbols. Source of truth: SCE Protocol-Synthesis
 /// RFC §synth-5-I lines 1717-1750. Per-width × per-ordering combinations
 /// expanded inline so each row matches its spec line one-to-one.
 ///

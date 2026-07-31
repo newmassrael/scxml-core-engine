@@ -72,7 +72,7 @@ pub struct DeployConfig {
     /// absent key means "permissive".
     #[serde(default)]
     pub distributability: Option<DistributabilityMode>,
-    /// watching-zenoh RFC §synth-5-I lines 1761-1764 — target-plugin path
+    /// SCE Protocol-Synthesis RFC §synth-5-I lines 1761-1764 — target-plugin path
     /// pointer for `<sce:extern>` whitelist extension: a path-pointed
     /// YAML file (loaded via
     /// [`crate::forge::target_plugin::parse_target_plugin_yaml`]),
@@ -398,7 +398,7 @@ pub struct PartitionInvokeRef {
     pub invoke: String,
 }
 
-/// Per-machine platform classification (SCE Mesh §14, watching-zenoh
+/// Per-machine platform classification (SCE Mesh §14, SCE Protocol-Synthesis
 /// RFC §synth-5-K). The class axis chooses between MCU-class targets (small,
 /// bare-metal / RTOS, no general-purpose OS) and AP-class targets
 /// (Linux/QNX/macOS/FreeBSD/Windows). The class gates downstream
@@ -413,7 +413,7 @@ pub enum PlatformClass {
     Mcu,
 }
 
-/// Per-machine OS axis (SCE Mesh §14, watching-zenoh RFC §synth-5-K).
+/// Per-machine OS axis (SCE Mesh §14, SCE Protocol-Synthesis RFC §synth-5-K).
 ///
 /// Authored values are gated against `class` by
 /// [`validate_platform_class_os_consistency`]: when `class: mcu`, only
@@ -470,7 +470,7 @@ impl PlatformClass {
     }
 }
 
-/// Per-machine platform descriptor (SCE Mesh §14, watching-zenoh RFC
+/// Per-machine platform descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC
 /// §synth-5-K). Captures the target's class/OS plus cache and core-count
 /// invariants the codegen-matrix walker (RFC §synth-5-J-4 / §synth-5-J-5) and the
 /// §synth-5-E cache-policy validator consume.
@@ -510,7 +510,7 @@ pub struct PlatformConfig {
     /// phases. Optional at parse time.
     #[serde(default)]
     pub core_count: Option<u32>,
-    /// Core clock frequency in MHz (watching-zenoh RFC §synth-5-K line 2185).
+    /// Core clock frequency in MHz (SCE Protocol-Synthesis RFC §synth-5-K line 2185).
     /// Drives the stage-copy WCET formula (`expected_p99_bytes ×
     /// memcpy_cycles_per_byte / clock_freq_mhz`) gated by
     /// `reassembly/stage-copy-wcet-exceeds-slot-budget` (RFC §synth-5-M line
@@ -520,7 +520,7 @@ pub struct PlatformConfig {
     /// bound to a link on this machine.
     #[serde(default)]
     pub clock_freq_mhz: Option<u32>,
-    /// Per-target memcpy cost in cycles-per-byte (watching-zenoh RFC
+    /// Per-target memcpy cost in cycles-per-byte (SCE Protocol-Synthesis RFC
     /// §synth-5-K line 2188-2192). Architecture defaults per spec:
     /// M0/M0+ = 4.0, M3/M4 = 2.0, M7 = 1.0, A-class = 0.5. Used by the
     /// §synth-5-M `reassembly/stage-copy-wcet-exceeds-slot-budget` consumer
@@ -529,7 +529,7 @@ pub struct PlatformConfig {
     /// reassembly-variant pool is bound.
     #[serde(default)]
     pub memcpy_cycles_per_byte: Option<f32>,
-    /// Per-byte VLE decode cost (watching-zenoh RFC §synth-5-K line 2193-2200).
+    /// Per-byte VLE decode cost (SCE Protocol-Synthesis RFC §synth-5-K line 2193-2200).
     /// Architecture defaults per spec: M0/M0+ = 12.0, M3/M4 = 8.0,
     /// M7 = 6.0, A-class = 3.0. REQUIRED at the §synth-5-B aggregate WCET
     /// consumer when any codec on the deploy contains a `vle_*` field
@@ -537,7 +537,7 @@ pub struct PlatformConfig {
     /// (presence enforced by §synth-5-B consumer when load-bearing).
     #[serde(default)]
     pub vle_decode_cycles_per_byte: Option<f32>,
-    /// Fixed cost per TLV chain entry in microseconds (watching-zenoh
+    /// Fixed cost per TLV chain entry in microseconds (SCE Protocol-Synthesis
     /// RFC §synth-5-K line 2201-2208). id-byte + length VLE + dispatch.
     /// Architecture defaults per spec: M0/M0+ = 1.5, M3/M4 = 0.8,
     /// M7 = 0.5, A-class = 0.2. REQUIRED at §synth-5-B aggregate WCET when
@@ -545,7 +545,7 @@ pub struct PlatformConfig {
     /// `scheduler.kind=cooperative`. Optional at parse time.
     #[serde(default)]
     pub tlv_chain_per_entry_overhead_us: Option<f32>,
-    /// Watching-zenoh RFC §synth-5-O — escalation flag for the
+    /// SCE Protocol-Synthesis RFC §synth-5-O — escalation flag for the
     /// `traceability/symbol-name-exceeds-c-identifier-limit`
     /// diagnostic. Default `None` = warn-only (the sourcemap still
     /// emits, the long identifier still ships to downstream compilers
@@ -557,7 +557,7 @@ pub struct PlatformConfig {
     /// the default.
     #[serde(default)]
     pub strict_c99_identifiers: Option<bool>,
-    /// Watching-zenoh RFC §5.2 — search root for `<sce:driver
+    /// SCE Protocol-Synthesis RFC §5.2 — search root for `<sce:driver
     /// href="..."/>` resolution. When set, `href` values are resolved
     /// relative to this directory; otherwise resolution falls back to
     /// the SCXML file's parent directory. Optional at parse time;
@@ -565,7 +565,7 @@ pub struct PlatformConfig {
     /// alongside `mcu/driver-header-not-found`.
     #[serde(default)]
     pub driver_root: Option<String>,
-    /// Watching-zenoh RFC §5.2 — C11-backend-only linker
+    /// SCE Protocol-Synthesis RFC §5.2 — C11-backend-only linker
     /// section attribute injection. When `class` is set, every emitted
     /// statechart function definition is prefixed with
     /// `__attribute__((section("<class>")))`. When `driver` is set,
@@ -580,7 +580,7 @@ pub struct PlatformConfig {
     pub c11_section_attribute: Option<C11SectionAttribute>,
 }
 
-/// Watching-zenoh RFC §5.2 — C11 linker section attribute
+/// SCE Protocol-Synthesis RFC §5.2 — C11 linker section attribute
 /// injection knobs. Set on `machines.<n>.platform.c11_section_attribute`
 /// in `deploy.yaml`. `class` controls statechart function placement;
 /// `driver` is reserved for the driver-glue half — parsed but
@@ -608,7 +608,7 @@ pub struct C11SectionAttribute {
 }
 
 /// Trust-class enum for `machines.<n>.links.<name>.domain_attrs.trust_class`
-/// (watching-zenoh RFC §synth-5-K line 2265 + §synth-5-M line 2716-2732). Three
+/// (SCE Protocol-Synthesis RFC §synth-5-K line 2265 + §synth-5-M line 2716-2732). Three
 /// values determine what traffic the link may carry and whether
 /// reassembly pools may bind to it:
 /// - `untrusted` — Scout / Hello only (small, never fragmented). Pool
@@ -700,7 +700,7 @@ impl LinkRole {
 }
 
 /// RX-dispatch policy for `machines.<n>.links.<name>.rx_dispatch`
-/// (watching-zenoh RFC §synth-5-K line 2254-2262).
+/// (SCE Protocol-Synthesis RFC §synth-5-K line 2254-2262).
 ///
 /// - `isr_to_pool` — RX-complete IRQ immediately re-arms next slot
 ///   from descriptor ring (wire-rate absorption). Required when
@@ -722,7 +722,7 @@ pub enum RxDispatch {
     WorkerTick,
 }
 
-/// Machine-wide stage-copy policy enum (watching-zenoh RFC §synth-5-K
+/// Machine-wide stage-copy policy enum (SCE Protocol-Synthesis RFC §synth-5-K
 /// lines 2351-2369). Drives the policy promotion of
 /// `reassembly/expected-fragmentation-rate-high` (warning under
 /// `warn`) to `pool/stage-copy-policy-error` (hard error under
@@ -776,7 +776,7 @@ impl StageCopyPolicy {
     pub const ALL: &'static [&'static str] = &["warn", "error", "forbid"];
 }
 
-/// Machine-wide pool-defaults block (watching-zenoh RFC §synth-5-K
+/// Machine-wide pool-defaults block (SCE Protocol-Synthesis RFC §synth-5-K
 /// lines 2350-2369). Today carries only `stage_copy_policy`; further
 /// pool-default fields are consumer-gated and land here additively
 /// (each gated on its consumer per `[[feedback-silently-broken-hooks]]`).
@@ -828,7 +828,7 @@ impl StageCopyPolicy {
 }
 
 /// HMAC primitive used by the `stateless_accept` cookie scheme
-/// (watching-zenoh RFC §synth-5-K lines 2325-2330). Today's MVP variant is
+/// (SCE Protocol-Synthesis RFC §synth-5-K lines 2325-2330). Today's MVP variant is
 /// `cookie_hmac_sha256`; alternative primitives (e.g. Blake2s for
 /// SoCs without SHA-256 acceleration) land as new enum values when
 /// the need is concrete per spec line 2326-2330 — not preemptively.
@@ -841,7 +841,7 @@ pub enum HmacMode {
     CookieHmacSha256,
 }
 
-/// Per-peer tracking table parameters (watching-zenoh RFC §synth-5-K line
+/// Per-peer tracking table parameters (SCE Protocol-Synthesis RFC §synth-5-K line
 /// 2460-2462 + §synth-5-M lines 2705-2706). Author-declared capacity of the
 /// peer-tracking table the FSM maintains for anti-flood and per-peer
 /// quota accounting. C13 deferred-2 carries only `capacity`; future
@@ -862,7 +862,7 @@ pub struct PeerTable {
     pub capacity: u32,
 }
 
-/// Stateless-accept cookie scheme block (watching-zenoh RFC §synth-5-K
+/// Stateless-accept cookie scheme block (SCE Protocol-Synthesis RFC §synth-5-K
 /// lines 2320-2349). REQUIRED when `LinkDomainAttrs.untrusted_source`
 /// is `true`; optional but recommended on `trust_class:
 /// session_arming` links facing >0 untrusted peers.
@@ -916,7 +916,7 @@ pub struct StatelessAccept {
     pub max_handshake_time_s: Option<u32>,
 }
 
-/// Per-link domain attributes (watching-zenoh RFC §synth-5-K line 2263-2271).
+/// Per-link domain attributes (SCE Protocol-Synthesis RFC §synth-5-K line 2263-2271).
 ///
 /// When declared, `trust_class` is REQUIRED — spec
 /// line 2731 makes `established_session` the explicit gating intent
@@ -936,7 +936,7 @@ pub struct LinkDomainAttrs {
     pub untrusted_source: bool,
 }
 
-/// Per-link configuration entry (watching-zenoh RFC §synth-5-K line 2232-2349).
+/// Per-link configuration entry (SCE Protocol-Synthesis RFC §synth-5-K line 2232-2349).
 ///
 /// Only `bind` + `driver` are required at the schema
 /// level; every other field is `Option` because spec mandates them
@@ -1100,7 +1100,7 @@ impl LinkConfig {
     }
 }
 
-/// Per-machine scheduler descriptor (SCE Mesh §14, watching-zenoh RFC
+/// Per-machine scheduler descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC
 /// §synth-5-K lines 2209-2222).
 ///
 /// Three knobs are REQUIRED when `kind: cooperative`:
@@ -1152,7 +1152,7 @@ pub struct MachineSchedulerConfig {
     #[serde(default)]
     pub keepalive_jitter_budget_us: Option<u32>,
     /// Static timer wheel depth — number of timer slots available
-    /// (watching-zenoh RFC §synth-5-D line 904 "compile-time slot in a
+    /// (SCE Protocol-Synthesis RFC §synth-5-D line 904 "compile-time slot in a
     /// static timer wheel" + line 910 `timer/slot-overflow`).
     /// Optional at parse time; when present alongside
     /// `machines.<m>.timers`, the slot-overflow validator
@@ -1162,7 +1162,7 @@ pub struct MachineSchedulerConfig {
     /// don't have the wheel sizing information).
     #[serde(default)]
     pub timer_wheel_depth: Option<u32>,
-    /// Watching-zenoh RFC §synth-5-J-2 + §synth-5-L (item C3):
+    /// SCE Protocol-Synthesis RFC §synth-5-J-2 + §synth-5-L (item C3):
     /// fallback event-queue capacity for machines
     /// whose SCXML document omits the per-instance
     /// `<scxml sce:capacity="N">` attribute. Unit: events.
@@ -1176,7 +1176,7 @@ pub struct MachineSchedulerConfig {
     /// no_std codegen path has nothing to source the literal from.
     #[serde(default)]
     pub default_event_queue_capacity: Option<u32>,
-    /// Watching-zenoh RFC §synth-5-N line 3056-3057 — per-link
+    /// SCE Protocol-Synthesis RFC §synth-5-N line 3056-3057 — per-link
     /// work cap inside one cooperative scheduler tick. Unit:
     /// microseconds. Optional at parse time; required for both
     /// §synth-5-N codes that consume it
@@ -1192,7 +1192,7 @@ pub struct MachineSchedulerConfig {
     pub per_link_budget_us: Option<u32>,
 }
 
-/// Per-machine scheduler kind axis (SCE Mesh §14, watching-zenoh RFC
+/// Per-machine scheduler kind axis (SCE Mesh §14, SCE Protocol-Synthesis RFC
 /// §synth-5-K). `tokio` and `rt` host the scheduler in async / RTOS-task
 /// contexts; `cooperative` is the SCE-built single-thread tick loop
 /// used on bare-metal MCUs (the §synth-7 foundation target).
@@ -1214,7 +1214,7 @@ impl SchedulerKind {
     }
 }
 
-/// Per-machine worker placement entry (watching-zenoh RFC §synth-5-D + §synth-5-I).
+/// Per-machine worker placement entry (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-I).
 /// Declares which core hosts each worker doc's inbox producer
 /// (link-rx-driven path) and consumer (SCXML processing thread).
 ///
@@ -1232,7 +1232,7 @@ pub struct WorkerPlacementConfig {
     pub consumer_core: u32,
 }
 
-/// Per-machine worker descriptor (watching-zenoh RFC §synth-5-D + §synth-5-K).
+/// Per-machine worker descriptor (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-K).
 /// Authors list every worker doc bound to the machine and declare its
 /// runtime placement when cross-core ordering matters. Absent
 /// `placement:` ⇒ codegen-invariant validator silent-skips for that
@@ -1251,7 +1251,7 @@ pub struct WorkerDeployConfig {
     pub placement: Option<WorkerPlacementConfig>,
 }
 
-/// Per-machine timer doc descriptor (watching-zenoh RFC §synth-5-D + §synth-5-K,
+/// Per-machine timer doc descriptor (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-K,
 /// C1). Authors list every `sce:kind="timer"` doc bound to the
 /// machine; the map's length feeds the static timer wheel slot count
 /// check ([`validate_machine_timer_wheel_capacity`]). The schema
@@ -1262,7 +1262,7 @@ pub struct WorkerDeployConfig {
 #[serde(deny_unknown_fields)]
 pub struct TimerDeployConfig {}
 
-/// SRAM region descriptor (SCE Mesh §14, watching-zenoh RFC §synth-5-K).
+/// SRAM region descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC §synth-5-K).
 /// Region attributes ride as raw strings at parse time so the schema
 /// admits forward-extension ("dma_coherent", "non_cacheable", "fast",
 /// "nocache") without a closed enum here; the §synth-5-E placement validator
@@ -1282,7 +1282,7 @@ pub struct SramRegionConfig {
     pub attr: Vec<String>,
 }
 
-/// Per-machine memory layout (SCE Mesh §14, watching-zenoh RFC §synth-5-K).
+/// Per-machine memory layout (SCE Mesh §14, SCE Protocol-Synthesis RFC §synth-5-K).
 /// SRAM region map and DMA-channel inventory feed the §synth-5-E placement /
 /// cache-policy validators (the buffer-pool placement checks in
 /// `lib.rs` consume `sram_regions` and the pool `cache_policy`).
@@ -2124,7 +2124,7 @@ pub struct MachineConfig {
     )]
     pub someip_machine_liveness_service_id: Option<u16>,
 
-    /// Per-machine platform descriptor (SCE Mesh §14, watching-zenoh RFC
+    /// Per-machine platform descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC
     /// §synth-5-K). Absent ⇒ no platform classification declared on this
     /// machine; downstream codegen-matrix consumers fall back to their
     /// own defaults. Present ⇒ class/os pair is admissible per
@@ -2133,14 +2133,14 @@ pub struct MachineConfig {
     #[serde(default)]
     pub platform: Option<PlatformConfig>,
 
-    /// Per-machine scheduler descriptor (SCE Mesh §14, watching-zenoh RFC
+    /// Per-machine scheduler descriptor (SCE Mesh §14, SCE Protocol-Synthesis RFC
     /// §synth-5-K). Absent ⇒ machine inherits the partition / device runtime
     /// defaults. Present ⇒ `kind` is required, and `kind: cooperative`
     /// requires `worker_stack_budget` ([`validate_scheduler_cooperative_stack_budget`]).
     #[serde(default)]
     pub scheduler: Option<MachineSchedulerConfig>,
 
-    /// Per-machine memory layout (SCE Mesh §14, watching-zenoh RFC §synth-5-K).
+    /// Per-machine memory layout (SCE Mesh §14, SCE Protocol-Synthesis RFC §synth-5-K).
     /// Absent ⇒ no SRAM/DMA layout declared; the §synth-5-E placement
     /// validator skips this machine. Present ⇒ region attributes ride as
     /// raw strings; structural interpretation lives in the §synth-5-E
@@ -2148,7 +2148,7 @@ pub struct MachineConfig {
     #[serde(default)]
     pub memory: Option<MemoryConfig>,
 
-    /// Per-machine worker doc registry (watching-zenoh RFC §synth-5-D + §synth-5-K).
+    /// Per-machine worker doc registry (SCE Protocol-Synthesis RFC §synth-5-D + §synth-5-K).
     /// Keyed by worker name (matches `<scxml sce:kind="worker"
     /// name="...">`). The map's length feeds the cooperative slot-count
     /// check ([`validate_machine_scheduler_worker_capacity`]); each entry
@@ -2162,7 +2162,7 @@ pub struct MachineConfig {
     #[serde(default)]
     pub workers: HashMap<String, WorkerDeployConfig>,
 
-    /// Per-machine Timer doc registry (watching-zenoh RFC §synth-5-D, C1).
+    /// Per-machine Timer doc registry (SCE Protocol-Synthesis RFC §synth-5-D, C1).
     /// Keyed by timer name (matches `<scxml sce:kind="timer"
     /// name="...">`). The map's length feeds the static timer wheel
     /// slot-overflow check
@@ -2175,7 +2175,7 @@ pub struct MachineConfig {
     #[serde(default)]
     pub timers: HashMap<String, TimerDeployConfig>,
 
-    /// Per-machine dynamic-state capacity ceilings (watching-zenoh RFC
+    /// Per-machine dynamic-state capacity ceilings (SCE Protocol-Synthesis RFC
     /// §synth-5-L lines 2570-2585 + 2649). Keyed by limit name —
     /// the dotted suffix of a `<sce:capacity source="deploy"
     /// key="machines.<machine>.limits.<limit>">` reference on a
@@ -2204,7 +2204,7 @@ pub struct MachineConfig {
     #[serde(default)]
     pub limits: HashMap<String, u32>,
 
-    /// Per-machine link configuration registry (watching-zenoh RFC §synth-5-K
+    /// Per-machine link configuration registry (SCE Protocol-Synthesis RFC §synth-5-K
     /// line 2232-2349). Keyed by link name (joined against forge
     /// `<scxml sce:kind="link" name="X">` document names via the
     /// cross-doc validator pair `deploy/{link-not-declared-in-deploy,
@@ -2225,7 +2225,7 @@ pub struct MachineConfig {
     #[serde(default)]
     pub links: HashMap<String, LinkConfig>,
 
-    /// Machine-wide pool-defaults block (watching-zenoh RFC §synth-5-K
+    /// Machine-wide pool-defaults block (SCE Protocol-Synthesis RFC §synth-5-K
     /// lines 2350-2369). Today carries only
     /// `stage_copy_policy`; further consumer-gated fields land additively per
     /// `[[feedback-silently-broken-hooks]]`. Absent ⇒
@@ -2618,7 +2618,7 @@ pub struct BindingConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_from: Option<String>,
 
-    /// watching-zenoh RFC §synth-5-E — name reference into the forge
+    /// SCE Protocol-Synthesis RFC §synth-5-E — name reference into the forge
     /// pool registry naming the buffer-pool kind artifact whose slots
     /// the link's RX-side `Sample::take()` copies into. Resolved
     /// against [`forge::pool_registry::ForgePoolRegistry`] (built by
@@ -2759,7 +2759,7 @@ pub fn parse_deploy_str(content: &str) -> Result<DeployConfig, DeployError> {
     Ok(cfg)
 }
 
-/// Watching-zenoh RFC §synth-5-K line 2517-2519 parse-time typo guard
+/// SCE Protocol-Synthesis RFC §synth-5-K line 2517-2519 parse-time typo guard
 /// (`deploy/stage-copy-policy-unknown`). Walks every machine's
 /// `pool_defaults.stage_copy_policy` String field and rejects values
 /// outside the closed set [`StageCopyPolicy::ALL`] = {warn, error,
@@ -2842,7 +2842,7 @@ fn validate_pool_defaults(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// explicitly — the §synth-5-B framer codec carries the frame-size
 /// invariant at the protocol-decoder layer instead:
 ///   - `serial_uart = 0` (UART has no IP-stack overhead;
-///     watching-zenoh RFC §synth-5-C line 729 + spec C11 atomic)
+///     SCE Protocol-Synthesis RFC §synth-5-C line 729 + spec C11 atomic)
 ///
 /// Unknown drivers fall through to forge cross-doc registry
 /// lookup in the orchestrator pass; the parse-time validator
@@ -3200,7 +3200,7 @@ pub fn validate_links_cross_doc(
     Ok(())
 }
 
-/// Watching-zenoh RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 3747 cross-
+/// SCE Protocol-Synthesis RFC §synth-5-C lines 765-771 + §synth-8 Q8 line 3747 cross-
 /// doc consistency check between forge `<sce:link-class>` and the
 /// deploy.yaml `driver:` allowlist entry.
 ///
@@ -3294,7 +3294,7 @@ pub fn resolve_link_rx_pool_slot_count<'a>(
     Some((rx_pool_ref, pool.slot_count, &pool.variant))
 }
 
-/// Watching-zenoh RFC §synth-5-K lines 2489-2500 (`deploy/link-burst-
+/// SCE Protocol-Synthesis RFC §synth-5-K lines 2489-2500 (`deploy/link-burst-
 /// absorption-insufficient` + `deploy/link-rx-dispatch-worker-tick-
 /// on-high-burst`) — cross-doc validators that consume
 /// [`resolve_link_rx_pool_slot_count`] to check the cooperative-tick
@@ -3401,7 +3401,7 @@ pub fn validate_links_burst_invariants(
     Ok(())
 }
 
-/// Watching-zenoh RFC §synth-5-M lines 2946-2999 cross-doc validators for
+/// SCE Protocol-Synthesis RFC §synth-5-M lines 2946-2999 cross-doc validators for
 /// reassembly-variant buffer pools bound to deploy-declared links.
 ///
 /// Six codes ride through this one entry point;
@@ -3821,7 +3821,7 @@ pub fn validate_reassembly_cross_doc(
     Ok(())
 }
 
-/// Watching-zenoh RFC §synth-5-K line 2466-2469 — stateless_accept extern
+/// SCE Protocol-Synthesis RFC §synth-5-K line 2466-2469 — stateless_accept extern
 /// allowlist (C13 deferred-2). For each link with a `stateless_accept`
 /// block, the `hmac_extern` + `rng_extern` symbol names must be
 /// present in the §synth-5-I baseline intrinsics whitelist
@@ -3886,7 +3886,7 @@ pub fn validate_stateless_accept_externs(
     Ok(())
 }
 
-/// SCE Mesh §14 (watching-zenoh RFC §synth-5-K) — when a machine declares a
+/// SCE Mesh §14 (SCE Protocol-Synthesis RFC §synth-5-K) — when a machine declares a
 /// `platform:` block, the `class` axis (`mcu` / `ap`) and the `os`
 /// axis must be mutually admissible per [`PlatformClass::admits_os`].
 /// `class: mcu` admits only `bare_metal` / `rtos`; `class: ap` admits
@@ -3914,7 +3914,7 @@ fn validate_platform_class_os_consistency(cfg: &DeployConfig) -> Result<(), Depl
     Ok(())
 }
 
-/// SCE Mesh §14 (watching-zenoh RFC §synth-5-K, line 2160-2164) — when a
+/// SCE Mesh §14 (SCE Protocol-Synthesis RFC §synth-5-K, line 2160-2164) — when a
 /// machine's scheduler runs in cooperative mode, `worker_stack_budget`
 /// is REQUIRED. The cooperative worker drives `<send>` queue draining
 /// inside a fixed stack frame; without an authored bound the codegen
@@ -3941,7 +3941,7 @@ fn validate_scheduler_cooperative_stack_budget(cfg: &DeployConfig) -> Result<(),
     Ok(())
 }
 
-/// watching-zenoh RFC §synth-5-K line 2428-2429 (`deploy/worker-slot-budget-missing`)
+/// SCE Protocol-Synthesis RFC §synth-5-K line 2428-2429 (`deploy/worker-slot-budget-missing`)
 /// — when a machine's scheduler runs in cooperative mode,
 /// `worker_slot_budget_us` is REQUIRED. The per-slot WCET ceiling feeds
 /// the §synth-5-B aggregate WCET check and the cooperative slot-count
@@ -3968,7 +3968,7 @@ fn validate_worker_slot_budget_required_when_cooperative(
     Ok(())
 }
 
-/// watching-zenoh RFC §synth-5-K line 2430-2431
+/// SCE Protocol-Synthesis RFC §synth-5-K line 2430-2431
 /// (`deploy/keepalive-jitter-budget-missing`) — when a machine's
 /// scheduler runs in cooperative mode, `keepalive_jitter_budget_us` is
 /// REQUIRED. The sum of worst-case slot budgets in one tick window must
@@ -3998,7 +3998,7 @@ fn validate_keepalive_jitter_required_when_cooperative(
     Ok(())
 }
 
-/// watching-zenoh RFC §synth-5-K line 2423
+/// SCE Protocol-Synthesis RFC §synth-5-K line 2423
 /// (`deploy/scheduler-incompatible-with-worker-count`) — when a machine
 /// declares more workers than the cooperative scheduler can host in one
 /// tick window, raise the deploy-side anchor for the over-subscription.
@@ -4017,7 +4017,7 @@ fn validate_keepalive_jitter_required_when_cooperative(
 /// when a Worker doc compiles against a machine without an entry for
 /// itself in `machines.<m>.workers` (signals: undeclared worker, scheduler
 /// cannot account for it).
-/// Watching-zenoh RFC §synth-5-N lines 3060-3061 — paired
+/// SCE Protocol-Synthesis RFC §synth-5-N lines 3060-3061 — paired
 /// validators for the multi-link concurrency contract on the
 /// cooperative-scheduler path.
 ///
@@ -4135,7 +4135,7 @@ fn validate_machine_scheduler_worker_capacity(cfg: &DeployConfig) -> Result<(), 
     Ok(())
 }
 
-/// watching-zenoh RFC §synth-5-D line 910 (`timer/slot-overflow`) — when a
+/// SCE Protocol-Synthesis RFC §synth-5-D line 910 (`timer/slot-overflow`) — when a
 /// machine declares more `Timer` docs under `machines.<m>.timers` than
 /// `scheduler.timer_wheel_depth` static wheel slots can accommodate,
 /// the build cannot fit the timer set into the wheel at compile time.
@@ -4894,7 +4894,7 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
 }
 
 /// Transports whose RX path supports buffer-pool kind staging
-/// (watching-zenoh RFC §synth-5-E). A binding may
+/// (SCE Protocol-Synthesis RFC §synth-5-E). A binding may
 /// declare `stage_pool: <name>` only on a transport in this list; any
 /// other transport raises `mesh/deploy-stage-pool-transport-mismatch`.
 ///
@@ -4905,13 +4905,13 @@ fn validate_pool_capability(cfg: &DeployConfig) -> Result<(), DeployError> {
 /// concrete transport-side wiring landing.
 /// The empty list keeps the diagnostic strict — every
 /// `stage_pool` declaration today fails loud, matching the
-/// `feedback_silently_broken_hooks.md` invariant. See watching-zenoh
+/// `feedback_silently_broken_hooks.md` invariant. See SCE Protocol-Synthesis
 /// RFC §synth-5-E.
 const TRANSPORTS_SUPPORTING_STAGE_POOL: &[&str] = &[];
 
 /// Validate that every `binding.stage_pool` declaration sits on a
 /// transport whose RX path supports buffer-pool kind staging
-/// (watching-zenoh RFC §synth-5-E). Runs as part of
+/// (SCE Protocol-Synthesis RFC §synth-5-E). Runs as part of
 /// [`parse_deploy_str`] so the diagnostic fires at parse time —
 /// independent of forge-side cross-reference resolution, which lives
 /// in [`validate_stage_pool_references`] (a separate post-parse pass
@@ -4946,7 +4946,7 @@ fn validate_stage_pool_transport(cfg: &DeployConfig) -> Result<(), DeployError> 
 }
 
 /// Validate that every `binding.stage_pool` reference resolves to a
-/// declared forge buffer-pool kind name (watching-zenoh RFC §synth-5-E
+/// declared forge buffer-pool kind name (SCE Protocol-Synthesis RFC §synth-5-E
 /// cross-schema reference resolution). Runs
 /// as a post-parse pass — `parse_deploy_str` produces the
 /// `DeployConfig` first, the build pipeline assembles the
@@ -9281,7 +9281,7 @@ topology:
         assert!(machine.memory.is_none());
     }
 
-    // ── watching-zenoh RFC §synth-5-E stage_pool field ────────────────────
+    // ── SCE Protocol-Synthesis RFC §synth-5-E stage_pool field ────────────────────
     //
     // These cover the deploy.yaml side of the cross-schema reference
     // surface. The transport-mismatch path is exercised at parse time

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SCE Forge conformance: Zenoh locator string body (RFC §synth-5-B string,
-     surface H from the watching-zenoh authoring path).
+     surface H from the downstream authoring path).
 
      Mirrors zenoh-pico `_z_string_encode` / `_z_string_decode`
      (src/protocol/codec.c lines 324-343) which the locator-list

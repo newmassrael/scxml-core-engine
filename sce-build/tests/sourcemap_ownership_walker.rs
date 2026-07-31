@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2026 newmassrael
 //
-// Watching-zenoh RFC §synth-5-O — ownership-boundary
+// SCE Protocol-Synthesis RFC §synth-5-O — ownership-boundary
 // walker integration fixture.
 //
 // `forge::sourcemap::validate_emitted_files_have_markers` runs at the
@@ -199,7 +199,7 @@ fn walker_diagnostic_code_is_meta_generated_source_line_marker_missing() {
         code_str,
         "\"traceability/meta-generated-source-line-marker-missing\""
     );
-    assert_eq!(d.spec, Some("watching-zenoh RFC §5.O"));
+    assert_eq!(d.spec, Some("SCE Protocol-Synthesis RFC §5.O"));
     assert_eq!(
         d.actual.as_deref(),
         Some("out/test144/test144_sm.rs"),

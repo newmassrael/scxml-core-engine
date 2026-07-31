@@ -3,7 +3,7 @@
 //
 // SCE C11 runtime — cross-fixture defaults.
 //
-// RFC §synth-5-J-1 (watching-zenoh downstream MCU backend). The C++ AOT
+// RFC §synth-5-J-1 (downstream MCU backend). The C++ AOT
 // runtime in `sce/include/static/StaticExecutionEngine.h` is a class
 // template — the compiler instantiates it once per generated state
 // machine, so every concrete data layout (event queue, event

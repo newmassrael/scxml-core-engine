@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  watching-zenoh RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7-lowering
+  SCE Protocol-Synthesis RFC §synth-5-A line 311 + §synth-5-L line 2642-2647 (C7-lowering
   2026-05-13): minimal algorithm-over-BC exemplar. Imports the BC
   `local_sub_table.scxml` under alias `subs` and iterates via
   `<sce:foreach in="subs">` to find the first occupied slot whose

@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
 // SCE Link runtime — `Link` trait surface for byte-stream link
-// endpoints declared via `<scxml sce:kind="link">` (watching-zenoh
+// endpoints declared via `<scxml sce:kind="link">` (SCE Protocol-Synthesis
 // RFC §5.C). SCE owns the trait so every downstream `impl Link` in
 // `sce_link_runtime_lwip` / `sce_link_runtime_tokio` /
 // `sce_link_runtime_qnx` shares a single rust type identity, which
@@ -13,7 +13,7 @@
 // `LinkError` enum + a no-op `StubLink` for ctest. Real per-OS
 // impls (lwIP DMA-aligned slot acquisition, tokio's `tokio_udp`
 // driver, QNX's `dispatch_create()` reactor binding) live downstream
-// in watching-zenoh as separate crates that depend on this crate
+// as separate crates that depend on this crate
 // for type identity. The buffer-pool kind (RFC §5.E) lifts the
 // borrowed-slice surface to slot-backed without a trait change —
 // see the `RxFrame` / `TxFrame` doc-comments.
@@ -77,7 +77,7 @@ pub enum LinkError {
     Backpressure,
 }
 
-/// Byte-stream link surface (watching-zenoh RFC §5.C). Implementations
+/// Byte-stream link surface (SCE Protocol-Synthesis RFC §5.C). Implementations
 /// own the platform driver (lwIP / tokio / QNX) and route the framer
 /// codec's RX (decode) / TX (encode) calls through their I/O primitive.
 /// All implementations share this single rust type identity — the
@@ -96,7 +96,7 @@ pub trait Link {
     /// `block` blocks until the driver accepts the frame.
     fn tx(&mut self, frame: TxFrame<'_>) -> Result<(), LinkError>;
 
-    /// Budget-aware tick hook (watching-zenoh RFC §5.N line 3050).
+    /// Budget-aware tick hook (SCE Protocol-Synthesis RFC §5.N line 3050).
     /// The cooperative scheduler invokes `poll(deadline_us)` once per
     /// tick per link, with `deadline_us` capped to the deploy.yaml
     /// `scheduler.per_link_budget_us` value the codegen pins as
@@ -123,7 +123,7 @@ pub trait Link {
 
 // === Sample API ==================================================================
 //
-// Sample machinery for the buffer-pool kind (watching-zenoh RFC §5.E).
+// Sample machinery for the buffer-pool kind (SCE Protocol-Synthesis RFC §5.E).
 // Design decisions:
 //   - Single SampleMeta trait, not split per-axis.
 //   - GAT-based borrow/owned (`type Borrowed<'pool>` + `type Owned`).
@@ -269,7 +269,7 @@ impl<'pool, M: SampleMeta + 'pool> Sample<'pool, M> {
     /// `M::Owned` already holds an independent payload `Vec`.
     ///
     /// The intra-`take()` ordering choice is consistent with
-    /// `watching-zenoh/docs/rfc-sce-protocol-synthesis.md` lines 1262-1274,
+    /// `docs/spec/synth/rfc-sce-protocol-synthesis.md` lines 1262-1274,
     /// which describe `take()` as "releases the underlying slot immediately"
     /// (an API-timing contract: slot is released synchronously by the time
     /// `take()` returns) without pinning intra-method ordering. The
@@ -349,8 +349,7 @@ impl Default for LinkConfig {
 /// No-op `impl Link` for ctest of generated code. Records every
 /// transmitted frame into an internal buffer so tests can assert on
 /// TX behavior; `rx` always returns `None` since no driver is wired.
-/// Real impls (`sce_link_runtime_lwip::Link` etc.) live downstream
-/// in watching-zenoh.
+/// Real impls (`sce_link_runtime_lwip::Link` etc.) live downstream.
 ///
 /// `std`-only because it uses `Vec` for the recorded TX log —
 /// fixtures only exercise `std`, so no `no_std` stub is provided.

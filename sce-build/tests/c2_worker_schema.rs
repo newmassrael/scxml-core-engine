@@ -413,11 +413,11 @@ fn worker_shared_state_layers_share_diagnostic_code() {
 }
 
 /// Spec anchor: `worker/shared-mutable-state` resolves to
-/// "watching-zenoh RFC §synth-5-D" per the worker spec-anchor mapping.
+/// "SCE Protocol-Synthesis RFC §synth-5-D" per the worker spec-anchor mapping.
 #[test]
 fn worker_shared_state_spec_anchor_matches_rfc_section() {
     let anchor = DiagnosticCode::WorkerSharedMutableState.spec_anchor();
-    assert_eq!(anchor, Some("watching-zenoh RFC §5.D"));
+    assert_eq!(anchor, Some("SCE Protocol-Synthesis RFC §5.D"));
 }
 
 /// Schema-level confirmation: a parsed Worker carries the right

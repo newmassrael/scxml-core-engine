@@ -263,7 +263,7 @@ cargo build --manifest-path backends/rust/probes/portable-emit/Cargo.toml \
 # not the crate-global depth-64 default. The const size assertion catches a
 # silent revert of the per-machine `StatePolicy::EventQueue` to the bare
 # (depth-64) form — which a plain compile gate misses, since the bare form
-# still compiles. This is watching-zenoh's MCU SRAM blocker class.
+# still compiles. This is the downstream MCU SRAM blocker class.
 "$REPO_ROOT/target/release/sce-codegen" --workspace-root "$REPO_ROOT" generate \
     -l rust --no-std --output-dir backends/rust/probes/nostd-queue-size/machine/src \
     sce-build/tests/fixtures/no_std/event_queue_capacity_probe.scxml >/dev/null 2>&1 \

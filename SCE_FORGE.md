@@ -1154,7 +1154,7 @@ private:
 
 ### 4.12 algorithm
 
-A pure synchronous function — bounded loops, language-native locals, no I/O, no allocation on the no-alloc profile. An `<sce:signature>` declares the parameters and return type; an `<sce:body>` holds the statement list (`<sce:var>`, `<sce:assign>`, `<sce:append>`, `<sce:if>`/`<sce:else>`, `<sce:while>`, `<sce:foreach>`, `<sce:return>`, `<sce:call>`). The kind's full surface is specified by watching-zenoh RFC §synth-5-A; this section documents the SCE-owned **byte-buffer-build** primitive.
+A pure synchronous function — bounded loops, language-native locals, no I/O, no allocation on the no-alloc profile. An `<sce:signature>` declares the parameters and return type; an `<sce:body>` holds the statement list (`<sce:var>`, `<sce:assign>`, `<sce:append>`, `<sce:if>`/`<sce:else>`, `<sce:while>`, `<sce:foreach>`, `<sce:return>`, `<sce:call>`). The kind's full surface is specified by SCE Protocol-Synthesis RFC §synth-5-A; this section documents the SCE-owned **byte-buffer-build** primitive.
 
 #### Byte-buffer-build
 

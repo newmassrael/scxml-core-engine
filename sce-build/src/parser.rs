@@ -227,7 +227,7 @@ pub fn expand_preprocessors(
     Ok((expanded, final_map, deps))
 }
 
-/// Watching-zenoh RFC §synth-5-O: capture the post-preprocessor
+/// SCE Protocol-Synthesis RFC §synth-5-O: capture the post-preprocessor
 /// source position of an XML element for the SCE-MAP traceability
 /// chain. Templates lower the returned [`SourceLocation`] to a
 /// per-backend marker (`#line` / `//line` / `// SCE-MAP:` / `#[doc]`)
@@ -778,7 +778,7 @@ impl SCXMLParser {
             }
         }
 
-        // Watching-zenoh RFC §synth-5-J-2 + §synth-5-L:
+        // SCE Protocol-Synthesis RFC §synth-5-J-2 + §synth-5-L:
         // `<scxml sce:capacity="N">` declares the
         // per-document event-queue capacity. Two-pass extraction:
         // (1) read the namespaced attribute via the SCE_NAMESPACE
@@ -812,7 +812,7 @@ impl SCXMLParser {
                 },
             };
 
-        // Watching-zenoh RFC §synth-5-O: anchor the model at the
+        // SCE Protocol-Synthesis RFC §synth-5-O: anchor the model at the
         // `<scxml>` root element's post-preprocessor position. Codegen
         // templates lower this to the top-level SCE-MAP marker above
         // the generated state machine. XInclude / sce:template
@@ -908,7 +908,7 @@ impl SCXMLParser {
         // Parse states recursively
         self.parse_states(&root, None, &mut model, base_dir, diag_label)?;
 
-        // watching-zenoh RFC §synth-5-E — `<sce:on-sample>`
+        // SCE Protocol-Synthesis RFC §synth-5-E — `<sce:on-sample>`
         // structural validators run immediately after the states pass
         // so the diagnostic surfaces before any downstream derivation
         // (feature detection, parallel-region computation, etc.) can
@@ -1579,7 +1579,7 @@ impl SCXMLParser {
                 }
             }
 
-            // watching-zenoh RFC §synth-5-E:
+            // SCE Protocol-Synthesis RFC §synth-5-E:
             // `<sce:on-sample>` is valid inside `<state>` and `<parallel>` only.
             // The AST nodes are collected here; a separate placement
             // validator (`validate_on_sample_placement`) walks the rest of
@@ -1721,7 +1721,7 @@ impl SCXMLParser {
                 }
             }
 
-            // watching-zenoh RFC §synth-5-E:
+            // SCE Protocol-Synthesis RFC §synth-5-E:
             // `<sce:on-sample>` valid inside `<parallel>` symmetric to
             // `<state>` above. The single helper keeps the two arms in
             // lockstep so a future placement-rule extension touches one
@@ -3865,7 +3865,7 @@ fn scxml_child<'a>(
         .find(|c| c.is_element() && c.tag_name().name() == tag && is_scxml_ns(c))
 }
 
-/// watching-zenoh RFC §synth-5-E helper: collect all `<sce:on-sample>`
+/// SCE Protocol-Synthesis RFC §synth-5-E helper: collect all `<sce:on-sample>`
 /// children of a `<state>` or `<parallel>` element into the supplied
 /// vector, in document order. The namespace check (`SCE_NAMESPACE`)
 /// distinguishes `<sce:on-sample>` from a hypothetical W3C-namespace
@@ -3955,7 +3955,7 @@ fn validate_axis3_accept_side_state_naming(
     ))
 }
 
-/// watching-zenoh RFC §synth-5-E `<sce:on-sample>` placement validator.
+/// SCE Protocol-Synthesis RFC §synth-5-E `<sce:on-sample>` placement validator.
 /// Walks the entire document looking for `<sce:on-sample>` elements
 /// whose immediate parent is **not** `<state>` or `<parallel>`. Such
 /// strays are silently ignored by [`collect_on_sample_blocks`] (it
@@ -4020,7 +4020,7 @@ fn validate_on_sample_placement(
     Ok(())
 }
 
-/// watching-zenoh RFC §synth-5-E `<sce:on-sample>` uniqueness validator.
+/// SCE Protocol-Synthesis RFC §synth-5-E `<sce:on-sample>` uniqueness validator.
 /// Each `<sce:on-sample link="X">` block must appear at most once per
 /// state — duplicate registrations on the same link compete for the
 /// same RX callback slot at runtime, producing undefined dispatch
@@ -4058,7 +4058,7 @@ fn validate_on_sample_uniqueness(
     Ok(())
 }
 
-/// watching-zenoh RFC §synth-5-E `<sce:on-sample>` event-name conflict
+/// SCE Protocol-Synthesis RFC §synth-5-E `<sce:on-sample>` event-name conflict
 /// validator. §scxml-5.10 reserves the `error.*` and `done.*`
 /// event-name families for built-in lifecycle events; an author
 /// dispatching a sample-arrival event into one of these families
@@ -4101,7 +4101,7 @@ fn validate_on_sample_event_names(
     Ok(())
 }
 
-/// watching-zenoh RFC §synth-5-E callback path validator
+/// SCE Protocol-Synthesis RFC §synth-5-E callback path validator
 /// (`pool/sample-callback-signature-non-borrow`, spec lines 1516-1519).
 /// When `<sce:on-sample callback="...">` is present (an extern
 /// reference), enforce the language-prefixed Rust
@@ -4232,7 +4232,7 @@ fn is_rust_path_segment(seg: &str) -> bool {
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// watching-zenoh RFC §synth-5-E `<sce:on-sample>` cross-ref
+/// SCE Protocol-Synthesis RFC §synth-5-E `<sce:on-sample>` cross-ref
 /// validator. Walks every state's `on_sample_blocks` and looks each
 /// `link=` reference up in the supplied [`SceCrossDocRegistry`]
 /// (built once per build by walking every parsed `.forge` file).
@@ -7163,7 +7163,7 @@ mod tests {
         );
     }
 
-    // ── watching-zenoh RFC §synth-5-E — `<sce:on-sample>` structural tests ──
+    // ── SCE Protocol-Synthesis RFC §synth-5-E — `<sce:on-sample>` structural tests ──
     //
     // These cover the SCXML extension's parser-AST + 3 structural
     // validator surfaces. Cross-ref behaviour (link-not-declared,
@@ -7358,7 +7358,7 @@ mod tests {
         );
     }
 
-    // ── watching-zenoh RFC §synth-5-E — `<sce:on-sample>` cross-ref ───────
+    // ── SCE Protocol-Synthesis RFC §synth-5-E — `<sce:on-sample>` cross-ref ───────
     //
     // Cross-ref validator integrates with the build's
     // SceCrossDocRegistry (populated by walking every parsed `.forge`
@@ -7497,7 +7497,7 @@ mod tests {
             .expect("states without on-sample blocks need no registry entries");
     }
 
-    // ── watching-zenoh RFC §synth-5-E — stage-pool gate ──
+    // ── SCE Protocol-Synthesis RFC §synth-5-E — stage-pool gate ──
     //
     // The stage-pool gate is a third validator gate after the kind-resolution gates:
     // a registered link without `<sce:stage-pool>` cannot back an
@@ -7568,7 +7568,7 @@ mod tests {
             .expect("link with stage_pool resolves regardless of pool registry contents");
     }
 
-    // ── watching-zenoh RFC §synth-5-E — `callback="rust:..."` ──
+    // ── SCE Protocol-Synthesis RFC §synth-5-E — `callback="rust:..."` ──
     //
     // The optional `<sce:on-sample callback="rust:crate::path::fn">`
     // attribute pairs with the `validate_on_sample_callback_paths`

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later WITH LicenseRef-SCE-Linking-Exception OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// Watching-zenoh RFC §synth-5-O — per-function SCE-MAP marker
+// SCE Protocol-Synthesis RFC §synth-5-O — per-function SCE-MAP marker
 // presence fixture.
 //
 // Beyond the module-level markers (one per generated file), the

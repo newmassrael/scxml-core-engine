@@ -26,7 +26,7 @@ http-send = []
 # Deterministic fake-clock scheduler for tests (swaps PullScheduler impl)
 test-clock = []
 
-# Watching-zenoh RFC §5.J.2: bare-metal MCU profile of the runtime.
+# SCE Protocol-Synthesis RFC §5.J.2: bare-metal MCU profile of the runtime.
 # Selecting `no_std` declares `#![no_std]` at the crate root and
 # pulls in `heapless` for fixed-capacity collections (§5.J.2 line
 # 1989: zero `alloc` dependency). Mutually exclusive with

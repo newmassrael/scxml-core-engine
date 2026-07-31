@@ -184,7 +184,7 @@ find_package(PkgConfig REQUIRED)
 
 # Modular Architecture - Add subdirectories
 add_subdirectory(sce)                 # Unified SCE library with integrated parsing
-add_subdirectory(backends/c/runtime)       # C11 heapless runtime (RFC §5.J.1, watching-zenoh)
+add_subdirectory(backends/c/runtime)       # C11 heapless runtime (RFC §5.J.1)
 
 # Tools - TXML conversion (code generation is handled by sce-codegen Rust binary)
 # TXML converter (Native builds only - requires filesystem operations)
